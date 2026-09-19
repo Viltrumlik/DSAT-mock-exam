@@ -7,10 +7,14 @@ in the builder never reaches the new tables (the one-shot ``migrate_midterms_to_
 command only moves what already existed).
 
 This module mirrors the **definition + questions** of a legacy midterm into the new tables
-on publish/unpublish/delete, so builder-authored midterms appear in the new teacher area.
-It never touches attempt/cert/grant data (those are migrated once), and it refuses to
-rebuild questions once any attempt exists — attempt answers key on ``Question.id``, so a
-delete+recreate would orphan them.
+on publish/unpublish/delete and after every builder edit, so builder-authored midterms appear
+in the new teacher area and edits show at once. It never touches attempt/cert/grant data.
+
+What a student was shown never changes after they start: each attempt pins its modules when
+it starts (``MidtermAttempt.paper_module``), and an edit to a pinned module lands on a fresh
+one the midterm is re-pointed to (``_refresh_module``). Only a correction to the answer key
+still reaches a pinned paper (``_CORRECTION_FIELDS``). The midterm is always the latest
+paper; every sitting keeps its own.
 
 Idempotent on ``Midterm.legacy_mock_exam_id`` (unique). Safe to call inside a request path;
 callers wrap it so a mirror failure never breaks the legacy publish itself.
@@ -46,9 +50,9 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
     """Create or refresh the ``midterms.Midterm`` mirror of a legacy midterm MockExam.
 
     Returns the mirror ``Midterm`` (or ``None`` when ``mock`` is not a midterm). Refreshes
-    the definition (title/subject/scale/timing/publish state) every call. Rebuilds the
-    owned question module from the legacy sections only when ``sync_questions`` is set AND
-    the mirror has no attempts yet.
+    the definition (title/subject/scale/timing/publish state) every call, and the questions
+    when ``sync_questions`` is set. Sittings already started are unaffected by either: they
+    carry their own paper, scale and pass mark (``MidtermAttempt.paper_*``).
     """
     if not _is_legacy_midterm(mock):
         return None
@@ -153,18 +157,21 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
                 duration2 = max(1, int(getattr(mock, "midterm_module2_minutes", 60) or 60))
                 midterm.duration_minutes_2 = duration2
             else:
-                _revert_module_2_into_module_1(midterm.question_module_2, module)
                 old = midterm.question_module_2
+                pinned = _paper_is_pinned(old.id) or _paper_is_pinned(module.id)
+                if not pinned:
+                    _revert_module_2_into_module_1(old, module)
                 midterm.question_module_2 = None
                 midterm.save(update_fields=["question_module_2"])
-                old.delete()
+                if not pinned:
+                    old.delete()
+                # Pinned: both modules are somebody's two-module paper. Module 2 is only
+                # detached, and the flattened content below goes onto a fresh module 1.
     midterm.save()
 
-    # Mirror questions from the legacy sections LIVE — refresh IN PLACE on every sync so
-    # builder edits/additions show immediately (no frozen snapshot). Question.id is
-    # preserved per position, so existing attempt answers (keyed on Question.id) survive.
-    # No longer gated on attempts — historical immutability was intentionally dropped to
-    # match assessments/pastpapers.
+    # Mirror questions from the legacy sections LIVE on every sync so builder edits/additions
+    # show immediately. A module nobody has been given is refreshed in place (ids kept); one a
+    # sitting was given keeps its rows and the edit goes onto a fresh module (_refresh_module).
     if sync_questions:
         practice_tests = list(mock.tests.all().order_by("id"))
         # A form the teacher has not written yet does not count towards "this is a versioned
@@ -211,14 +218,24 @@ def upsert_midterm_from_legacy(mock, *, sync_questions: bool = True):
             # module 2 is empty. RE-HOME the overflow rows into module 2, preserving each
             # Question.id, so any answer a student already gave to a module-2 question is not
             # orphaned. A plain split (trim + recreate) would give module 2 fresh ids and lose
-            # those answers. Idempotent: a no-op once module 2 already holds rows.
-            _rehome_overflow_to_module2(module, module2, len(m1_live))
-            _sync_module_questions_in_place(module, m1_live)
-            _sync_module_questions_in_place(module2, m2_live)
+            # those answers. Idempotent: a no-op once module 2 already holds rows. Never on a
+            # module somebody has been given — its rows are their paper; the split then lands
+            # on fresh modules instead.
+            if not _paper_is_pinned(module.id):
+                _rehome_overflow_to_module2(module, module2, len(m1_live))
+            _repoint(
+                midterm,
+                question_module=_refresh_module(module, m1_live, module_order=1, time_limit=duration),
+                question_module_2=_refresh_module(module2, m2_live, module_order=2, time_limit=duration2),
+            )
         else:
             # Single-module, single form: flatten its authored modules into the one module.
             _retire_unreferenced_versions(midterm)
-            _sync_module_questions_in_place(module, _iter_live_questions(practice_tests[:1]))
+            live = _iter_live_questions(practice_tests[:1])
+            _repoint(
+                midterm,
+                question_module=_refresh_module(module, live, module_order=1, time_limit=duration),
+            )
 
     return midterm
 
@@ -351,12 +368,104 @@ def _legacy_form_has_questions(practice_test) -> bool:
     return Question.objects.filter(module__practice_test_id=practice_test.pk).exists()
 
 
+def _paper_is_pinned(module_id) -> bool:
+    """True when some sitting has been given this module as its paper.
+
+    Such a module is that student's paper for good (``MidtermAttempt.paper_module``): it is
+    never re-worded, trimmed, moved or deleted again, whatever the builder does next — only a
+    correction to the key reaches it (``_CORRECTION_FIELDS``).
+    """
+    if not module_id:
+        return False
+    from django.db.models import Q
+
+    from .models import MidtermAttempt
+
+    return MidtermAttempt.objects.filter(
+        Q(paper_module_id=module_id) | Q(paper_module_2_id=module_id)
+    ).exists()
+
+
+# What a correction may change without changing the question a student was shown: the key,
+# and what the reports read. Such a fix reaches every paper in place — including one being sat
+# right now, so a wrong key found mid-exam does not mis-grade the room — while every finished
+# sitting keeps the score and breakdown frozen when it was handed in.
+_CORRECTION_FIELDS = frozenset({"correct_answers", "explanation", "skill_id", "score"})
+
+
+def _module_diff(module, live_questions):
+    """The fields that differ between ``module`` and ``live_questions``, position by position.
+
+    An empty set when they match; ``None`` when the question list itself changed shape
+    (added, removed) — never a mere correction.
+    """
+    from exams.models import Question
+
+    existing = list(Question.objects.filter(module_id=module.id).order_by("order", "id"))
+    if len(existing) != len(live_questions):
+        return None
+    return {
+        f
+        for q, src in zip(existing, live_questions)
+        for f in _QUESTION_FIELDS
+        if getattr(q, f) != getattr(src, f)
+    }
+
+
+def _refresh_module(module, live_questions, *, module_order: int, time_limit: int):
+    """The module that should carry ``live_questions`` from now on. The caller re-points to it.
+
+    - Nothing changed: the same module, untouched — a sync after every builder click must
+      not mint modules.
+    - Only a correction (``_CORRECTION_FIELDS``): applied in place, wherever the paper is.
+    - Anything a student sees changed, and nobody has been given this paper: refreshed in
+      place, ids kept.
+    - Anything a student sees changed, and somebody HAS been given it (finished, or sitting
+      it right now): it is left exactly as it is, and the new content goes onto a fresh
+      module. That is what lets an admin rebuild a paper 215 students have already sat —
+      which is how 2026-09-18 deleted every question they had answered — without touching a
+      single one of their results.
+    """
+    from django.db import transaction
+
+    from exams.models import Module
+
+    with transaction.atomic():
+        if module is not None:
+            # Row lock first. start_attempt takes the same lock before pinning a module, so a
+            # student starting at this very moment either pins it before the check below (and
+            # the edit forks) or after the edit commits (and gets the whole new paper) — never
+            # a paper half-rewritten under them.
+            Module.objects.select_for_update().get(pk=module.pk)
+            diff = _module_diff(module, live_questions)
+            if diff is not None and diff <= _CORRECTION_FIELDS:
+                if diff:
+                    _sync_module_questions_in_place(module, live_questions)
+                return module
+        if module is None or _paper_is_pinned(module.id):
+            module = Module.objects.create(
+                practice_test=None, module_order=module_order, time_limit_minutes=time_limit
+            )
+        _sync_module_questions_in_place(module, live_questions)
+        return module
+
+
+def _repoint(owner, **modules) -> None:
+    """Point a Midterm/MidtermVersion at the modules ``_refresh_module`` handed back."""
+    changed = [f for f, m in modules.items() if getattr(owner, f"{f}_id") != (m.id if m else None)]
+    for f in changed:
+        setattr(owner, f, modules[f])
+    if changed:
+        owner.save(update_fields=changed)
+
+
 def _sync_module_questions_in_place(module, live_questions) -> None:
     """Make ``module``'s mirrored Questions match ``live_questions`` (ordered) BY POSITION.
 
-    Updates content in place (preserving ``Question.id`` so attempt answers survive),
-    appends new questions, and trims extras. This is what makes midterm content live:
-    re-running it after a builder edit refreshes the mirror without orphaning attempts.
+    Updates content in place (preserving ``Question.id``), appends new questions, and trims
+    extras. Call it only through ``_refresh_module``, which hands it a module a sitting was
+    given only for a correction (same questions, same length — nothing is trimmed): anything
+    more on such a module would rewrite a paper somebody sat.
     """
     from exams.models import Question
 
@@ -380,8 +489,7 @@ def _sync_module_questions_in_place(module, live_questions) -> None:
         else:
             q = Question(module_id=module.id, order=i, **fields)
             q.save(_plain_db_save=True)
-    # Trim questions the builder no longer has (orphans any attempt answer for them — the
-    # accepted live-content tradeoff).
+    # Trim questions the builder no longer has — only ever on a module no sitting holds.
     for q in existing[len(live_questions):]:
         q.delete()
 
@@ -463,25 +571,40 @@ def _sync_versions(midterm, practice_tests, *, two_module: bool = False, duratio
             v1_live = _questions_for_legacy_order([pt], 1)
             # Preserve in-progress attempt answers on a single→two flip (see the non-versioned
             # branch): re-home this version's overflow rows into module 2 keeping Question.id.
-            _rehome_overflow_to_module2(module, module2, len(v1_live))
-            _sync_module_questions_in_place(module, v1_live)
-            _sync_module_questions_in_place(module2, _questions_for_legacy_order([pt], 2))
+            if not _paper_is_pinned(module.id):
+                _rehome_overflow_to_module2(module, module2, len(v1_live))
+            _repoint(
+                version,
+                question_module=_refresh_module(module, v1_live, module_order=1, time_limit=duration),
+                question_module_2=_refresh_module(
+                    module2, _questions_for_legacy_order([pt], 2), module_order=2, time_limit=dur2
+                ),
+            )
         else:
             if version.question_module_2_id and not _has_live_two_module_attempts(midterm):
                 # Reverting 2->1: move module 2's rows back onto module 1 keeping Question.id
                 # (see _revert_module_2_into_module_1) BEFORE the flatten re-matches by
-                # position, then drop the emptied module.
-                _revert_module_2_into_module_1(version.question_module_2, module)
+                # position, then drop the emptied module. Unless somebody was given them: then
+                # module 2 is only detached, and the flatten lands on a fresh module 1.
                 old = version.question_module_2
+                pinned = _paper_is_pinned(old.id) or _paper_is_pinned(module.id)
+                if not pinned:
+                    _revert_module_2_into_module_1(old, module)
                 version.question_module_2 = None
                 version.save(update_fields=["question_module_2"])
-                old.delete()
+                if not pinned:
+                    old.delete()
             elif version.question_module_2_id:
                 logger.warning(
                     "midterm %s version %s: two-module revert deferred — live module-2 attempts exist",
                     midterm.pk, version.pk,
                 )
-            _sync_module_questions_in_place(module, _iter_live_questions([pt]))
+            _repoint(
+                version,
+                question_module=_refresh_module(
+                    module, _iter_live_questions([pt]), module_order=1, time_limit=duration
+                ),
+            )
     # Drop versions whose legacy PracticeTest no longer exists — through the reference guard,
     # never with a bare delete(). Removing a form in the builder reaches this line, and a
     # version somebody is sitting must survive its form being deleted.

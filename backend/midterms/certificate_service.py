@@ -28,6 +28,7 @@ from access.resources import RT_MIDTERM_V2
 from users.email_utils import display_email
 
 from .models import Midterm, MidtermAttempt
+from .outcomes import fraction
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,8 @@ def _snapshot(*, cert_defaults, midterm: Midterm, student, attempt: MidtermAttem
         midterm_title=midterm.title,
         subject=midterm.subject,
         score=attempt.score,
-        scoring_scale=midterm.scoring_scale,
+        # The scale this sitting was scored on — the midterm's may have changed since.
+        scoring_scale=attempt.scoring_scale,
     )
     return cert_defaults
 
@@ -188,7 +190,7 @@ def _latest_completed_attempts(midterm: Midterm, student_ids):
     latest = {}
     qs = MidtermAttempt.objects.filter(
         midterm=midterm, student_id__in=student_ids, is_completed=True
-    ).order_by("created_at")
+    ).select_related("midterm").order_by("created_at")
     for att in qs:
         latest[att.student_id] = att  # last write wins
     return latest
@@ -318,7 +320,11 @@ def issue_classroom_certificates(midterm: Midterm, classroom, actor, *, force=Fa
     # never runs: still_to_sit already refused above.)
     eligible = {sid: att for sid, att in latest.items() if sid not in still_to_sit}
 
-    finishers = [(sid, att.score) for sid, att in eligible.items()]
+    # By share of the work: after a scale change the class can hold 90/100 beside 300/800.
+    finishers = [
+        (sid, fraction(att.score, att.scoring_scale) if att.score is not None else None)
+        for sid, att in eligible.items()
+    ]
     ranks, cohort_size = _competition_ranks(finishers)
     instructor_name = _display_name(actor)
 

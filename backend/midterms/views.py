@@ -528,11 +528,12 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
             "released": bool(state["results_visible"]),
             "mock_kind": "MIDTERM",
             "subject": midterm.subject,
-            "scoring_scale": midterm.scoring_scale,
+            # The scale THIS sitting was scored on — the midterm's may have changed since.
+            "scoring_scale": attempt.scoring_scale,
         }
         if state["results_visible"]:
             payload["total_score"] = attempt.score
-            payload["score_ceiling"] = midterm.score_ceiling
+            payload["score_ceiling"] = attempt.score_ceiling
         if state.get("certificate"):
             payload["certificate"] = state["certificate"]
         return Response(payload)

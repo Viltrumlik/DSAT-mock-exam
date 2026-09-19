@@ -26,6 +26,7 @@ from access.resources import RT_MIDTERM_V2
 from access.services import normalized_role
 
 from .models import Midterm, MidtermAttempt, MidtermResit
+from .outcomes import fraction
 from users.photos import profile_image_url
 
 User = get_user_model()
@@ -325,7 +326,7 @@ class MidtermStandaloneResultsView(APIView):
         # NEWEST wins, which matters once a re-sit gives a student two of them.
         attempts = {
             a.student_id: a
-            for a in MidtermAttempt.objects.filter(midterm=midterm).order_by("created_at")
+            for a in MidtermAttempt.objects.filter(midterm=midterm).select_related("midterm").order_by("created_at")
         }
         sittings: dict[int, int] = {}
         for sid in MidtermAttempt.objects.filter(midterm=midterm, is_completed=True).values_list(
@@ -354,12 +355,22 @@ class MidtermStandaloneResultsView(APIView):
                     "state": att.current_state if att else "NOT_STARTED",
                     "submitted": bool(att and att.is_completed),
                     "score": att.score if (att and att.is_completed) else None,
-                    "score_ceiling": midterm.score_ceiling,
+                    # Each finished sitting on its own scale: after a scale change one table
+                    # can hold both 0-100 and 200-800 scores.
+                    "score_ceiling": att.score_ceiling if (att and att.is_completed) else midterm.score_ceiling,
+                    "scoring_scale": att.scoring_scale if (att and att.is_completed) else midterm.scoring_scale,
                     # How many times they have finished it, and whether they are currently
                     # allowed to sit it again (see MidtermResit).
                     "sittings": sittings.get(student.id, 0),
                     "resit_open": student.id in resit_open,
                 }
             )
-        rows.sort(key=lambda r: (r["score"] is None, -(r["score"] or 0), r["student_name"]))
+        # By share of the work, not the raw number: 90/100 must not sort below 300/800.
+        rows.sort(
+            key=lambda r: (
+                r["score"] is None,
+                -fraction(r["score"], r["scoring_scale"]),
+                r["student_name"],
+            )
+        )
         return Response({"midterm": _midterm_brief(midterm), "students": rows})

@@ -3,6 +3,7 @@ import {
   MIDTERM_STATE_LABELS,
   midtermProgress,
   midtermStateLabel,
+  scoreOnScale,
   scoringScaleLabel,
   summarizeStandalone,
   type StandaloneResultRow,
@@ -77,7 +78,28 @@ describe("midtermProgress", () => {
   });
 });
 
+describe("scoreOnScale", () => {
+  it("converts through the share of the work, respecting the 800 scale's 200 floor", () => {
+    expect(scoreOnScale(90, 100, 800)).toBe(740);
+    expect(scoreOnScale(0, 100, 800)).toBe(200);
+    expect(scoreOnScale(500, 800, 100)).toBe(50);
+    expect(scoreOnScale(72, 100, 100)).toBe(72);
+  });
+});
+
 describe("summarizeStandalone", () => {
+  it("averages papers sat on different scales on the midterm's current one", () => {
+    // Sat before the scale changed (90 of 100) and after it (500 of 800): 740 and 500.
+    const s = summarizeStandalone(
+      [
+        row({ student_id: 1, state: "COMPLETED", submitted: true, score: 90, score_ceiling: 100 }),
+        row({ student_id: 2, state: "COMPLETED", submitted: true, score: 500, score_ceiling: 800 }),
+      ],
+      800,
+    );
+    expect(s.average_score).toBe(620);
+  });
+
   it("is null, not zero, when nobody has finished", () => {
     const s = summarizeStandalone(
       [row({ student_id: 1 }), row({ student_id: 2, state: "ACTIVE" })],

@@ -29,7 +29,7 @@ class MyMidtermsView(APIView):
         ids = resolve_accessible_midterm_ids(user)
         midterms = {m.id: m for m in Midterm.objects.filter(id__in=ids)}
         attempts = {}
-        for a in MidtermAttempt.objects.filter(student=user, midterm_id__in=ids).order_by("created_at"):
+        for a in MidtermAttempt.objects.filter(student=user, midterm_id__in=ids).select_related("midterm").order_by("created_at"):
             attempts[a.midterm_id] = a  # last (latest) wins
         # Midterms this student may sit AGAIN even though they have already completed them —
         # an unspent MidtermResit (a student who failed a month and repeated it). Without this
@@ -79,8 +79,10 @@ class MyMidtermsView(APIView):
                 "midterm_id": mid,
                 "title": m.title,
                 "subject": m.subject,
-                "scoring_scale": m.scoring_scale,
-                "score_ceiling": m.score_ceiling,
+                # A finished row shows the score on the scale it was sat on; an unsat one
+                # shows the scale the student is about to be given.
+                "scoring_scale": att.scoring_scale if submitted else m.scoring_scale,
+                "score_ceiling": att.score_ceiling if submitted else m.score_ceiling,
                 "duration_minutes": m.duration_minutes,
                 "question_count": m.display_question_count(),
                 "flavor": flavor,

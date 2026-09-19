@@ -66,6 +66,10 @@ interface PanelStudent {
   state: string;
   submitted: boolean;
   score: number | null;
+  /** Out of what THIS sitting was scored on — after a scale change a room holds both. */
+  score_ceiling?: number;
+  /** The same paper on the midterm's current scale; drives the chart, never shown as a score. */
+  score_on_scale?: number | null;
   rank: number | null;
   certificate_code: string | null;
   /** How many times they have finished it — >1 means they have already re-sat. */
@@ -90,7 +94,11 @@ interface PanelData {
     notified_at: string | null;
   };
   students: PanelStudent[];
-  stats: { assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null };
+  stats: {
+    assigned: number; completed: number; average: number | null; highest: number | null; lowest: number | null;
+    /** Some papers were sat on another scale; the totals count them converted to this one. */
+    mixed_scales?: boolean;
+  };
   all_finished: boolean;
   certificates_issued: boolean;
   has_versions: boolean;
@@ -201,8 +209,9 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
     setIgnoreStart(data.schedule.ignore_start);
   }, [data]);
 
+  // On the midterm's current scale, so a paper sat before a scale change lands in the right band.
   const scores = useMemo(
-    () => (data?.students ?? []).map((s) => s.score).filter((s): s is number => s != null),
+    () => (data?.students ?? []).map((s) => s.score_on_scale ?? s.score).filter((s): s is number => s != null),
     [data],
   );
   const ceiling = data?.midterm.score_ceiling ?? 100;
@@ -419,6 +428,12 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
                 <StatCard className="h-full" label="Lowest" value={stats.lowest ?? "—"} sub={stats.lowest == null ? "No scores yet" : `out of ${scale}`} />
               </div>
             </div>
+            {stats.mixed_scales && (
+              <p className="text-xs text-muted-foreground">
+                Some students sat this midterm before its scale changed. The table shows each score
+                on the scale it was sat on; these totals and the chart convert them to {scale} points.
+              </p>
+            )}
 
             {/* A distribution only where there is enough of one to read. */}
             {scores.length >= MIN_SCORES_FOR_CHART ? (
@@ -517,7 +532,7 @@ export function MidtermPanel({ classId, midtermId, title, onBack }: { classId: n
 
                           <td className="py-2 pr-3 text-foreground">
                             {s.score != null ? (
-                              <span className="font-semibold tabular-nums">{s.score} <span className="font-normal text-muted-foreground">/ {scale}</span></span>
+                              <span className="font-semibold tabular-nums">{s.score} <span className="font-normal text-muted-foreground">/ {s.score_ceiling ?? scale}</span></span>
                             ) : (
                               <span className="text-muted-foreground" title="No score yet — this paper has not been scored.">—</span>
                             )}

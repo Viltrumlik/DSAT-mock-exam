@@ -133,16 +133,17 @@ def build_error_report(attempt) -> dict:
 
     correct_count = sum(1 for r in rows if r.is_correct)
 
-    # Prefer the pass mark FROZEN on the verdict: changing a midterm's pass mark later must
-    # not re-judge a student who already sat it.
+    # Prefer the verdict FROZEN for this very sitting; otherwise the sitting's own pass mark
+    # (MidtermAttempt.paper_pass_mark). Never the midterm's current one: changing a pass mark
+    # or a scale later must not re-judge a student who already sat it. The student's outcome
+    # row may belong to a LATER sitting (a re-sit), so it only counts when it is this one's.
     outcome = MidtermOutcome.objects.filter(midterm_id=midterm.pk, student_id=attempt.student_id).first()
-    if not midterm.is_graded:
+    if not attempt.is_graded:
         pass_mark, passed = None, None
-    elif outcome is not None:
+    elif outcome is not None and outcome.attempt_id == attempt.id:
         pass_mark, passed = int(outcome.pass_mark), bool(outcome.passed)
     else:
-        pass_mark = midterm.effective_pass_mark
-        passed = midterm.is_passing_score(attempt.score)
+        pass_mark, passed = attempt.pass_mark, attempt.passed
 
     return {
         "attempt_id": attempt.id,
@@ -153,8 +154,9 @@ def build_error_report(attempt) -> dict:
             "title": midterm.title,
             "subject": midterm.subject,
             "subject_label": SUBJECT_LABELS.get(midterm.subject, midterm.subject),
-            "scoring_scale": midterm.scoring_scale,
-            "score_ceiling": midterm.score_ceiling,
+            # This report is about ONE sitting, so its scale is the sitting's own.
+            "scoring_scale": attempt.scoring_scale,
+            "score_ceiling": attempt.score_ceiling,
             "level": midterm.level or "",
             "midterm_type": midterm.midterm_type,
         },
@@ -163,7 +165,7 @@ def build_error_report(attempt) -> dict:
         "total_count": len(rows),
         "pass_mark": pass_mark,
         "passed": passed,
-        "is_graded": midterm.is_graded,
+        "is_graded": attempt.is_graded,
         # Questions with no taxonomy tag are NOT folded into a skill row — the UI discloses
         # the gap instead of quietly under-reporting a skill's question count.
         "unclassified_total": unclassified_total,

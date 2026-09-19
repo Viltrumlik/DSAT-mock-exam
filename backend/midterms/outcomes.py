@@ -59,6 +59,20 @@ def score_for_fraction(frac: float, scoring_scale: str) -> int:
     return int(round(floor + max(0.0, min(1.0, frac)) * (ceiling - floor)))
 
 
+def rescale(score, from_scale: str, to_scale: str) -> int | None:
+    """The same share of the work, expressed on another scale.
+
+    Only for putting sittings on different scales into one total, rank or chart — a midterm
+    whose scale changed after some students sat it holds both. Never shown as a student's own
+    score: that is always ``attempt.score`` out of ``attempt.score_ceiling``.
+    """
+    if score is None:
+        return None
+    if from_scale == to_scale:
+        return int(score)
+    return score_for_fraction(fraction(score, from_scale), to_scale)
+
+
 # ── pass mark ────────────────────────────────────────────────────────────────
 # Used when a midterm was authored without an explicit pass mark. Expressed as a fraction
 # so both scales stay consistent: 0.50 -> 50/100 and 500/800.
