@@ -10,3 +10,4 @@ export { DataTable, type Column } from "./DataTable";
 export { Dialog } from "./Dialog";
 export { TeacherPage } from "./TeacherPage";
 export { TONE_INK, TONE_WASH, CARD_SURFACE, type Tone } from "./tones";
+export { Donut, BarRows, TrendLine, type Slice, type BarRow } from "./charts";

@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, type ReactElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { parseClassroomList } from "@/lib/criticalApiContract";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 /**
  * A request that fails behind the teacher portal's class overview (`/teacher`) and the three pages drawn
@@ -24,7 +23,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 const api = vi.hoisted(() => ({
   list: vi.fn(),
-  teacherToday: vi.fn(),
   getInterventions: vi.fn(),
   getLeaderboard: vi.fn(),
 }));
@@ -47,7 +45,6 @@ vi.mock("@/components/ui/charts", async () => ({
 
 const { useTeacherDashboard } = await import("../useTeacherDashboard");
 const { useTeacherAnalytics } = await import("../useTeacherAnalytics");
-const { TeacherDashboard } = await import("../TeacherDashboard");
 const { TeacherAnalytics } = await import("../TeacherAnalytics");
 const { TeacherStudents } = await import("../TeacherStudents");
 const { TeacherHomework } = await import("../TeacherHomework");
@@ -139,24 +136,8 @@ function leaderboard(classId: number) {
 }
 
 /** Every request answers, the class list through the real contract parser. */
-/**
- * `GET /api/classes/teacher/today/` — the one request the rebuilt dashboard's first three blocks
- * read. Its own failures are covered in `teacherDashboardToday.test.tsx`; here it answers, so that
- * what these tests fail is the class list and the per-class interventions behind the fourth block.
- */
-const TODAY = {
-  date: "2026-09-21",
-  next_lesson_date: "2026-09-22",
-  lessons: [
-    { classroom_id: ALGEBRA.id, name: ALGEBRA.name, subject: "MATH", lesson_time: "10:00", student_count: 2, homework: null },
-  ],
-  waiting_to_check: [],
-  upcoming_midterms: [],
-};
-
 function serve() {
   api.list.mockImplementation(async () => parseClassroomList([ALGEBRA, GEOMETRY], "GET /classes/"));
-  api.teacherToday.mockImplementation(async () => TODAY);
   api.getInterventions.mockImplementation(async (classId: number) => interventions(classId));
   api.getLeaderboard.mockImplementation(async (classId: number) => leaderboard(classId));
 }
@@ -388,107 +369,10 @@ describe("useTeacherDashboard — a request that failed is not a class overview"
   });
 });
 
-describe("TeacherDashboard — what the teacher sees when a load fails", () => {
-  /**
-   * The dashboard was rebuilt on 2026-09-20: four blocks, each loading and failing on its own, so
-   * one failed request costs its block and not the page. What survives from the page that stood
-   * here is the rule it was written for — a request that failed is never drawn as "there is
-   * nothing here" — now read per block.
-   *
-   * Today's lessons come from one request and are covered in `teacherDashboardToday.test.tsx`.
-   * These cases fail the class list and the per-class interventions, which is what the students
-   * block still reads, one request per class.
-   */
-  async function mountDashboard() {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
-    await mount(
-      <QueryClientProvider client={client}>
-        <TeacherDashboard />
-      </QueryClientProvider>,
-    );
-    await tick();
-    await tick();
-  }
-
-  it("a class list that did not load says so, with Try again — not 'No classes yet'", async () => {
-    api.list.mockRejectedValueOnce(httpError(500));
-    await mountDashboard();
-
-    expect(text()).not.toContain("No classes yet");
-    expect(text()).toContain("This didn't load");
-    expect(text()).not.toContain("doctype");
-    expect(buttons()).toContain("Try again");
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await tick();
-    await tick();
-
-    expect(text()).not.toContain("This didn't load");
-    expect(text()).toContain("Average 45% · Geometry");
-  });
-
-  it("while Try again waits, the block is loading — not 'No classes yet'", async () => {
-    const release = failThenHold(api.list, networkError);
-    await mountDashboard();
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await tick();
-
-    expect(text()).not.toContain("No classes yet");
-    expect(text()).not.toContain("This didn't load");
-
-    await act(async () => release());
-    await tick();
-    await tick();
-
-    expect(text()).toContain("Average 45% · Geometry");
-  });
-
-  it("one class's interventions not loading says so — not the other class's students alone", async () => {
-    let failing = true;
-    failWhere(api.getInterventions, (classId) => failing && classId === GEOMETRY.id, () => httpError(500));
-    await mountDashboard();
-
-    // Geometry is where the teacher is needed. Drawn from Algebra 2 alone, the block said all was well.
-    expect(text()).not.toContain("Everyone is on track");
-    expect(text()).toContain("This didn't load");
-
-    failing = false;
-    await act(async () => button("Try again").click());
-    await until(() => api.getInterventions.mock.calls.length > 2);
-    await tick();
-    await tick();
-
-    // Geometry's one student is both below the score line and behind on work. They are one
-    // student, so they are listed once, under the heavier of the two reasons.
-    expect(text()).toContain("Average 45% · Geometry");
-    expect(text()).not.toContain("1 not turned in · Geometry");
-    expect(text().match(/Third Student/g)).toHaveLength(1);
-  });
-
-  it("shows the server's reason when it gave one", async () => {
-    failWhere(api.getInterventions, (classId) => classId === GEOMETRY.id, () => httpError(403, FORBIDDEN));
-    await mountDashboard();
-
-    expect(text()).toContain(FORBIDDEN.detail);
-    expect(text()).not.toContain("only this block failed to read them");
-  });
-
-  it("still says 'No classes yet' to a teacher with no classes", async () => {
-    serveNoClasses();
-    await mountDashboard();
-
-    expect(text()).toContain("No classes yet");
-    expect(text()).not.toContain("This didn't load");
-    expect(buttons()).not.toContain("Try again");
-    // The four blocks are not drawn at all: a teacher with no classes is told the one true thing,
-    // not shown four empty ones.
-    expect(text()).not.toContain("No lesson today");
-  });
-});
-
+// The teacher Dashboard used to be tested here, against the class list and the per-class
+// interventions it once fanned out. Rebuilt on 2026-09-20 it reads ONE endpoint and none of
+// these, so its own failure cases live in `teacherDashboardToday.test.tsx`. What the pages
+// below still share with it is the rule: a request that failed is never drawn as data.
 
 describe("useTeacherAnalytics — a request that failed is not class analytics", () => {
   it("a class list that did not load is an error, not a teacher with no classes", async () => {
