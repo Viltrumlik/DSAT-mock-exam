@@ -1,18 +1,25 @@
 """The teacher Dashboard's "today", as one payload.
 
 Backs ``GET /api/classes/teacher/today/`` (see the 2026-09-20 teacher-foundation design,
-§4.1–4.3 and §5). Everything the endpoint knows lives here, so the view stays thin and the
-payload is testable without HTTP: ``build_teacher_today(user)`` returns the dict.
+§4.1–4.3 and §5, as widened by the owner's 2026-09-21 note). Everything the endpoint knows
+lives here, so the view stays thin and the payload is testable without HTTP:
+``build_teacher_today(user)`` returns the dict.
 
-Three blocks:
+Four blocks:
 
-* ``lessons`` — one row per class of the caller's that meets **today**, in time order, with
-  the homework due at that lesson and the names of the students who have not turned it in.
-* ``waiting_to_check`` — per class, how many submissions are turned in and not yet reviewed.
+* ``classes`` — one row per class the caller teaches, **whether or not it meets today**,
+  carrying that class's schedule (room, days, time), the datetime of its next lesson, and a
+  ``state`` saying where that lesson stands right now. A class meeting today also carries the
+  homework due at that lesson and the names of the students who have not turned it in.
+* ``grading_queue`` — manual grading waiting on the teacher, three levels deep:
+  class → assignment → the students whose work is waiting.
+* ``stats`` — three aggregates the Dashboard draws as charts: a week of attendance per class,
+  thirty days of homework completion per class, and a fourteen-day attendance trend.
 * ``upcoming_midterms`` — scheduled midterms for those classes inside the next 14 days.
 
-plus ``next_lesson_date``, which names the teacher's next lesson day so the client can render
-§4.1's empty state ("no lesson today, your next one is …") without a second request.
+plus ``date``, ``now``, and ``next_lesson_date``, which names the teacher's next lesson day so
+the client can render §4.1's empty state ("no lesson today, your next one is …") without a
+second request.
 
 Read-only: nothing here writes, and no ``get_or_create`` is reachable from it.
 
@@ -20,15 +27,19 @@ Read-only: nothing here writes, and no ``get_or_create`` is reachable from it.
 ``ClassroomMembership`` in — the fail-closed rule ``classroom_capabilities`` already applies
 per classroom, evaluated here from the membership rows we already hold so it costs no extra
 query. A global admin therefore sees the classes they are a member of, not all twenty-eight,
-and a staff user who is a member of nothing gets three empty lists.
+and a staff user who is a member of nothing gets empty lists rather than a 403.
 
-**Query count: 7 per call, flat in the number of classes.** One for the caller's
-memberships, one for the active students of the classes meeting today, one for today's
-homework, two for who turned it in (submissions + assessment attempts), one for the grading
-queue, one for the midterm schedules. Blocks with no input short-circuit and cost nothing.
+**Query count: at most 12 per call, flat in the number of classes.** One for the caller's
+memberships, one for the active students of every class of theirs, one for today's homework,
+two for who turned it in (submissions + assessment attempts), one for the grading queue, one
+for the attendance week, three for the thirty-day homework rate (assignments + the same two
+turned-in reads), one for the attendance trend, one for the midterm schedules. Every block
+aggregates over the whole class list in one read; none of them loops a query per class.
+Blocks with no input short-circuit and cost nothing, so a quiet day costs fewer than 12.
 
 **Timezone.** The platform runs ``Asia/Tashkent``; "today" is ``timezone.localdate()`` and
-the day window is that local date's midnight-to-midnight.
+the day window is that local date's midnight-to-midnight. Every timestamp this payload emits
+is rendered in that zone (``+05:00``), so the client never has to convert a lesson time.
 """
 
 from __future__ import annotations
@@ -37,17 +48,61 @@ from collections import defaultdict
 from datetime import datetime, time, timedelta
 from types import SimpleNamespace
 
-from django.db.models import Count, Exists, Max, OuterRef
+from django.db.models import Count, Exists, OuterRef
 from django.utils import timezone
 
 from .capabilities import is_global_admin
-from .lesson_schedule import lesson_weekdays, parse_lesson_time
+from .lesson_schedule import lesson_weekdays, next_lesson_start_after, parse_lesson_time
 from .models import Assignment, ClassroomMembership, Submission
+from .models_attendance import AttendanceRecord
 from .models_schedule import MidtermSchedule
 
 #: How far ahead §4.3 looks for a scheduled midterm. Inclusive at both ends: a midterm
 #: starting exactly fourteen days from now is still "within the next 14 days".
 MIDTERM_WINDOW_DAYS = 14
+
+#: Lesson length when ``Classroom.lesson_hours`` does not give one.
+#:
+#: The column is ``PositiveIntegerField(default=2)``, so a row written through the ORM always
+#: carries a number — but 0 is storable and older rows predate the field, and a zero-length
+#: lesson would be "over" the instant it began. **When ``lesson_hours`` is not set, a lesson
+#: is assumed to run two hours**, which is the school's own default and the length both
+#: classrooms with an explicit range in ``lesson_time`` are written down as.
+DEFAULT_LESSON_HOURS = 2
+
+#: Caps on what the grading queue *lists*, never on what it *counts*. One live class carries
+#: 134 waiting submissions; sending every one of them would make the Dashboard's first paint
+#: a data dump. Both ``waiting`` figures stay the true, uncapped total, so the teacher always
+#: reads the real size of the job and the client can say "showing 12 of 47".
+GRADING_QUEUE_MAX_ASSIGNMENTS = 8
+GRADING_QUEUE_MAX_STUDENTS = 12
+
+#: Windows for the three ``stats`` blocks, all counted in whole local days ending today.
+ATTENDANCE_WEEK_DAYS = 7
+ATTENDANCE_TREND_DAYS = 14
+HOMEWORK_STATS_DAYS = 30
+
+# The product never calls a student absent — "missed" is the word every teacher-facing
+# surface uses — so AttendanceRecord.STATUS_ABSENT is reported under the key ``missed``.
+# EXCUSED is carried in the weekly block and deliberately absent from the trend, which the
+# owner asked for as three lines.
+ATTENDANCE_STATUS_KEYS = {
+    AttendanceRecord.STATUS_PRESENT: "present",
+    AttendanceRecord.STATUS_LATE: "late",
+    AttendanceRecord.STATUS_ABSENT: "missed",
+    AttendanceRecord.STATUS_EXCUSED: "excused",
+}
+
+# Weekday labels for ``lesson_days_label``. The DAYS are read from
+# ``lesson_schedule.lesson_weekdays`` so ODD/EVEN can never drift from the schedule module;
+# only the English abbreviations live here. ``calendar.day_abbr`` is deliberately not used —
+# it follows the process locale, and this label is part of an API contract.
+WEEKDAY_ABBR = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+# Sort floor for a missing ``submitted_at``. Only ever compared against itself: every sort key
+# below puts "has no timestamp" in its own leading bucket, so this naive datetime never meets
+# an aware one.
+_NO_TIMESTAMP = datetime.min
 
 # Turned in means what classes/views.py's ``interventions`` action already means by it, so
 # the Dashboard and the students-needing-attention block cannot disagree. Quoting it
@@ -65,20 +120,48 @@ TURNED_IN_SUBMISSION_STATUSES = (
     Submission.STATUS_RETURNED,
 )
 
+#: ``state`` values, in the order the owner asked to read them:
+#:
+#:   "the group whose lesson is coming stands first, before and during the lesson, and once
+#:    it is over the next one takes its place"
+#:
+#: so a lesson in progress outranks one that has not started, which outranks one already
+#: taught, which outranks a class with no readable schedule at all.
+STATE_NOW = "now"
+STATE_UPCOMING = "upcoming"
+STATE_DONE = "done"
+STATE_OFF = "off"
+STATE_ORDER = {STATE_NOW: 0, STATE_UPCOMING: 1, STATE_DONE: 2, STATE_OFF: 3}
 
-def _student_name(user) -> str:
-    """A display name for a student. Never an email — §5 forbids it in this payload.
 
-    ``username`` is a separate field here (``USERNAME_FIELD`` is ``email``), but 37 of the
-    live students carry an email-shaped one, so it is used only when it is not an address.
-    Ten students have neither a first nor a last name today; they read as "Student" rather
-    than leaking a login into a list a whole class's teacher can see.
+def _local_iso(value) -> str | None:
+    """An aware datetime as ISO-8601 in school time (``…+05:00``), or ``None``.
+
+    Values read back from the database are UTC-aware; a lesson time built from a classroom's
+    schedule is already local. Both are rendered the same way here so the client never has to
+    ask which timestamp came from where.
     """
-    name = f"{(user.first_name or '').strip()} {(user.last_name or '').strip()}".strip()
+    return timezone.localtime(value).isoformat() if value else None
+
+
+def _display_name(first, last, username) -> str:
+    """A display name from the three raw fields. Never an email — §5 forbids it here.
+
+    ``username`` is a separate field (``USERNAME_FIELD`` is ``email``), but 37 of the live
+    students carry an email-shaped one, so it is used only when it is not an address. Ten
+    students have neither a first nor a last name today; they read as "Student" rather than
+    leaking a login into a list a whole class's teacher can see.
+    """
+    name = f"{(first or '').strip()} {(last or '').strip()}".strip()
     if name:
         return name
-    username = (user.username or "").strip()
+    username = (username or "").strip()
     return username if username and "@" not in username else "Student"
+
+
+def _student_name(user) -> str:
+    """:func:`_display_name` for a loaded user object."""
+    return _display_name(user.first_name, user.last_name, user.username)
 
 
 def _staff_classrooms(user) -> list:
@@ -122,6 +205,10 @@ def _meets_today(classroom, today) -> bool:
     Tue/Thu/Sat, Sunday belongs to neither) — never re-derived here. A class whose
     ``start_date`` is still in the future has not begun, so it does not meet today; that is
     the rule ``next_lesson_start_after`` and the calendar both already apply.
+
+    Note this asks nothing about ``lesson_time``: a class with an unreadable time still meets
+    today, and its homework is still due at that lesson. It simply cannot be placed on a
+    clock, which is what ``state == "off"`` says.
     """
     weekdays = lesson_weekdays(classroom)
     if not weekdays or today.weekday() not in weekdays:
@@ -133,20 +220,71 @@ def _lesson_time_label(classroom) -> str | None:
     """``"18:00"`` for a readable ``lesson_time``, ``None`` when it cannot be parsed.
 
     ``None`` is not "no lesson": the class is still listed (the client renders "Time not
-    set"), it is simply sorted after the timed ones. Parsing is
-    ``lesson_schedule.parse_lesson_time`` — the single source of truth for "18:00",
-    "08:00-10:00", "4:00 PM" and the blank one live classroom carries.
+    set"). Parsing is ``lesson_schedule.parse_lesson_time`` — the single source of truth for
+    "18:00", "08:00-10:00", "4:00 PM" and the blank one live classroom carries.
     """
     parsed = parse_lesson_time(classroom.lesson_time)
     return parsed.strftime("%H:%M") if parsed else None
+
+
+def _lesson_days_label(classroom) -> str:
+    """``"Mon, Wed, Fri"`` for ODD, ``"Tue, Thu, Sat"`` for EVEN, ``""`` for neither.
+
+    Derived from ``lesson_schedule.lesson_weekdays`` rather than written out twice, so a class
+    whose ``lesson_days`` the schedule module does not recognise gets an empty label instead
+    of a confident wrong one.
+    """
+    return ", ".join(WEEKDAY_ABBR[d] for d in sorted(lesson_weekdays(classroom)))
+
+
+def _lesson_length(classroom) -> timedelta:
+    """How long one lesson of this class runs.
+
+    ``Classroom.lesson_hours`` when it is set; **two hours when it is not** (see
+    :data:`DEFAULT_LESSON_HOURS`). The explicit end of a ranged ``lesson_time``
+    ("16:00-18:00") is deliberately not consulted: the owner named ``lesson_hours`` as the
+    length, and ``lesson_time`` is published here as the START of the lesson only.
+    """
+    hours = getattr(classroom, "lesson_hours", None) or DEFAULT_LESSON_HOURS
+    return timedelta(hours=hours)
+
+
+def _next_lesson_and_state(classroom, now, today, day_start):
+    """``(next_lesson_at | None, state)`` for one class.
+
+    ``next_lesson_at`` is today's lesson while that lesson is still ahead or in progress, and
+    the next scheduled day's lesson once today's has finished — or when the class does not
+    meet today at all. ``None`` when the class has no usable schedule.
+
+    The weekday maths is not redone here: asking
+    ``lesson_schedule.next_lesson_start_after`` for the first lesson start after *the instant
+    before midnight* answers "today's lesson if there is one, otherwise the next" in one call,
+    and keeps the ``start_date`` floor (a class that has not begun resolves to its first
+    lesson, not to a lesson in its past).
+    """
+    first = next_lesson_start_after(classroom, after=day_start - timedelta(microseconds=1))
+    if first is None:
+        # No weekdays, or a lesson_time nothing can read. The class is still listed — it is
+        # a real class with real students — it just cannot be put on a clock.
+        return None, STATE_OFF
+
+    if timezone.localtime(first).date() != today:
+        return first, STATE_UPCOMING
+
+    if now < first:
+        return first, STATE_UPCOMING
+    if now < first + _lesson_length(classroom):
+        return first, STATE_NOW
+    # Today's lesson is over; the next one takes its place.
+    return next_lesson_start_after(classroom, after=first), STATE_DONE
 
 
 def _next_lesson_date(classrooms, today) -> str | None:
     """The next date, after ``today``, on which ANY of these classes meets. ISO, or ``None``.
 
     §4.1 promises a teacher with no lesson today a quiet line naming their next lesson day,
-    and the client cannot name it from ``lessons`` when that list is empty — so it is
-    answered here, on every response, and read whenever ``lessons`` is empty.
+    and the client cannot always name it from ``classes`` — so it is answered here, on every
+    response.
 
     Strictly after today: this names the NEXT lesson day, so a teacher asked on a Monday
     whose ODD classes are meeting in a few hours is told about Wednesday. Days come from
@@ -239,28 +377,47 @@ def _turned_in_by_assignment(assignment_ids, student_ids) -> dict[int, set[int]]
     return turned_in
 
 
-def _waiting_to_check(classrooms) -> list[dict]:
-    """§4.2 — submissions turned in and not yet reviewed, per class, newest first.
+def _active_student_subquery(classroom_path: str):
+    """``Exists`` clause: this row's student is an active student of this row's classroom.
+
+    Correlated rather than a flat ``student_id__in`` list, for two reasons: a student active
+    in one of the caller's classes may have been removed from another, and a teacher of
+    twenty-eight classes would otherwise ship five hundred ids into every query.
+    """
+    return Exists(
+        ClassroomMembership.objects.filter(
+            classroom_id=OuterRef(classroom_path),
+            user_id=OuterRef("student_id"),
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        )
+    )
+
+
+def _grading_queue(classrooms) -> list[dict]:
+    """§4.2 — the manual grading waiting on this teacher, class → assignment → students.
 
     SUBMITTED only, which is the gradebook's ``GB_SUBMITTED``: "manual work awaiting
     grading". REVIEWED is done and RETURNED has already been looked at and sent back, so
     neither is waiting. Auto-graded work never enters this queue for the same reason — it is
-    written straight to REVIEWED with a score (views_gradebook's status taxonomy).
+    written straight to REVIEWED with a score (views_gradebook's status taxonomy). Classwork
+    is excluded because there is nothing to hand in, and DRAFT/ARCHIVED homework was never
+    asked for.
 
     Only active students count: a removed student's unreviewed work is not a job on anyone's
     desk, the same rule interventions applies to every figure it reports.
 
-    Classes with nothing waiting are omitted rather than sent as a zero.
+    Ordering answers "what should I open first" at each level: the classes with most waiting
+    first, then inside a class the assignment whose oldest piece of work has waited longest,
+    then inside that the students in the order they handed in. Both lists are capped (see
+    :data:`GRADING_QUEUE_MAX_ASSIGNMENTS`) while both ``waiting`` counts stay true totals.
+
+    Classes with nothing waiting are omitted rather than sent as a zero. One query.
     """
     by_id = {c.id: c for c in classrooms}
     if not by_id:
         return []
-    active_student = ClassroomMembership.objects.filter(
-        classroom_id=OuterRef("assignment__classroom_id"),
-        user_id=OuterRef("student_id"),
-        role=ClassroomMembership.ROLE_STUDENT,
-        status=ClassroomMembership.STATUS_ACTIVE,
-    )
+
     rows = (
         Submission.objects.filter(
             assignment__classroom_id__in=list(by_id),
@@ -268,23 +425,229 @@ def _waiting_to_check(classrooms) -> list[dict]:
             status=Submission.STATUS_SUBMITTED,
         )
         .exclude(assignment__category=Assignment.CATEGORY_CLASSWORK)
-        .filter(Exists(active_student))
-        .values("assignment__classroom_id")
-        .annotate(count=Count("id"), newest=Max("updated_at"))
+        .filter(_active_student_subquery("assignment__classroom_id"))
+        .values_list(
+            "assignment__classroom_id",
+            "assignment_id",
+            "assignment__title",
+            "student_id",
+            "student__first_name",
+            "student__last_name",
+            "student__username",
+            # Every SUBMITTED row is written through Submission.mark_submitted(), which sets
+            # this — but the column is nullable, and a row that lost its timestamp must still
+            # be shown. It sorts last and is sent as null rather than being dropped.
+            "submitted_at",
+        )
+        .order_by()
     )
+
+    per_class: dict[int, dict[int, dict]] = defaultdict(dict)
+    for cid, aid, title, sid, first, last, username, submitted_at in rows:
+        assignment = per_class[cid].get(aid)
+        if assignment is None:
+            assignment = {"assignment_id": aid, "title": title, "students": []}
+            per_class[cid][aid] = assignment
+        assignment["students"].append(
+            {"id": sid, "name": _display_name(first, last, username), "_at": submitted_at}
+        )
+
     out = []
-    for r in rows:
-        classroom = by_id.get(r["assignment__classroom_id"])
-        if classroom is None or not r["count"]:
+    for cid, assignments in per_class.items():
+        classroom = by_id.get(cid)
+        if classroom is None:
             continue
+        rendered = []
+        for assignment in assignments.values():
+            students = sorted(
+                assignment["students"],
+                key=lambda s: (s["_at"] is None, s["_at"] or _NO_TIMESTAMP, s["id"]),
+            )
+            oldest = students[0]["_at"] if students else None
+            rendered.append({
+                "assignment_id": assignment["assignment_id"],
+                "title": assignment["title"],
+                "waiting": len(students),  # the true total, before the cap below
+                "students": [
+                    {"id": s["id"], "name": s["name"], "submitted_at": _local_iso(s["_at"])}
+                    for s in students[:GRADING_QUEUE_MAX_STUDENTS]
+                ],
+                "_oldest": oldest,
+            })
+        if not rendered:
+            continue
+        rendered.sort(
+            key=lambda a: (
+                a["_oldest"] is None,
+                a["_oldest"] or _NO_TIMESTAMP,
+                a["title"],
+                a["assignment_id"],
+            )
+        )
         out.append({
             "classroom_id": classroom.id,
             "name": classroom.name,
-            "count": r["count"],
-            "_newest": r["newest"],
+            "waiting": sum(a["waiting"] for a in rendered),  # every assignment, not the 8
+            "assignments": [
+                {k: v for k, v in a.items() if k != "_oldest"}
+                for a in rendered[:GRADING_QUEUE_MAX_ASSIGNMENTS]
+            ],
         })
-    out.sort(key=lambda r: (r["_newest"] is None, r["_newest"]), reverse=True)
-    return [{k: v for k, v in r.items() if k != "_newest"} for r in out]
+    out.sort(key=lambda r: (-r["waiting"], r["name"]))
+    return out
+
+
+def _attendance_week(classrooms, today) -> list[dict]:
+    """Attendance counts per class over the last seven local days, today included.
+
+    Counts every ``AttendanceRecord`` in the window, not only records belonging to students
+    who are still on the roster: last week's register is a record of what happened, and
+    removing a student on Friday must not rewrite Monday's numbers. ABSENT is reported as
+    ``missed``.
+
+    Classes with no register in the window are omitted rather than sent as four zeros — a
+    class that did not meet is not a class with perfect attendance. One query.
+    """
+    by_id = {c.id: c for c in classrooms}
+    if not by_id:
+        return []
+    rows = (
+        AttendanceRecord.objects.filter(
+            session__classroom_id__in=list(by_id),
+            session__date__gte=today - timedelta(days=ATTENDANCE_WEEK_DAYS - 1),
+            session__date__lte=today,
+        )
+        .values("session__classroom_id", "status")
+        .annotate(n=Count("id"))
+    )
+    counts: dict[int, dict[str, int]] = defaultdict(
+        lambda: {"present": 0, "late": 0, "missed": 0, "excused": 0}
+    )
+    for r in rows:
+        key = ATTENDANCE_STATUS_KEYS.get(r["status"])
+        if key is None:
+            continue  # an unknown status is not silently folded into one of the four
+        counts[r["session__classroom_id"]][key] += r["n"]
+
+    out = []
+    for cid, bucket in counts.items():
+        classroom = by_id.get(cid)
+        if classroom is None:
+            continue
+        out.append({"classroom_id": classroom.id, "name": classroom.name, **bucket})
+    out.sort(key=lambda r: (r["name"], r["classroom_id"]))
+    return out
+
+
+def _attendance_trend(classrooms, today) -> list[dict]:
+    """One row per day, across all the caller's classes, for the last fourteen days.
+
+    Only days that have a register at all: a Sunday, a holiday and a day nobody marked are
+    all "no data", and drawing them as three zeros would show a collapse that did not happen.
+    Oldest first, so the client can plot it straight. EXCUSED is counted by no line here — the
+    owner asked for three — but a day holding only excused records still appears, because the
+    class did meet. One query.
+    """
+    by_id = {c.id: c for c in classrooms}
+    if not by_id:
+        return []
+    rows = (
+        AttendanceRecord.objects.filter(
+            session__classroom_id__in=list(by_id),
+            session__date__gte=today - timedelta(days=ATTENDANCE_TREND_DAYS - 1),
+            session__date__lte=today,
+        )
+        .values("session__date", "status")
+        .annotate(n=Count("id"))
+    )
+    by_day: dict[object, dict[str, int]] = {}
+    for r in rows:
+        bucket = by_day.setdefault(
+            r["session__date"], {"present": 0, "late": 0, "missed": 0}
+        )
+        key = ATTENDANCE_STATUS_KEYS.get(r["status"])
+        if key in bucket:
+            bucket[key] += r["n"]
+    return [{"date": day.isoformat(), **by_day[day]} for day in sorted(by_day)]
+
+
+def _homework_30d(classrooms, students_by_class, now) -> list[dict]:
+    """Homework completion per class over the last thirty days.
+
+    ``expected`` is the number of (active student × assignment) pairs the class was asked
+    for; ``turned_in`` is how many of those pairs were actually handed in, counted exactly as
+    the lesson block counts it (a Submission in ``TURNED_IN_SUBMISSION_STATUSES`` **or** a
+    submitted/graded AssessmentAttempt, unioned so homework carrying both records is one
+    pair, never two).
+
+    The window ends at ``now``, not at the end of today: homework due at tonight's lesson has
+    not come due yet, and counting it would report every class as behind every evening.
+
+    Classes with nothing due in the window are omitted — an ``expected`` of zero is not a
+    completion rate of zero. Three queries, all class-wide.
+    """
+    by_id = {c.id: c for c in classrooms}
+    if not by_id:
+        return []
+    assignment_rows = (
+        Assignment.objects.homework()
+        .filter(
+            classroom_id__in=list(by_id),
+            status=Assignment.STATUS_PUBLISHED,
+            due_at__gte=now - timedelta(days=HOMEWORK_STATS_DAYS),
+            due_at__lte=now,
+        )
+        .values_list("id", "classroom_id")
+    )
+    classroom_of = dict(assignment_rows)  # assignment_id → classroom_id
+    if not classroom_of:
+        return []
+    assignment_ids = list(classroom_of)
+
+    pairs: set[tuple[int, int]] = set()
+    pairs.update(
+        Submission.objects.filter(
+            assignment_id__in=assignment_ids,
+            status__in=TURNED_IN_SUBMISSION_STATUSES,
+        )
+        .filter(_active_student_subquery("assignment__classroom_id"))
+        .values_list("assignment_id", "student_id")
+    )
+
+    from assessments.models import AssessmentAttempt
+
+    pairs.update(
+        AssessmentAttempt.objects.filter(
+            homework__assignment_id__in=assignment_ids,
+            status__in=(AssessmentAttempt.STATUS_SUBMITTED, AssessmentAttempt.STATUS_GRADED),
+        )
+        .filter(_active_student_subquery("homework__assignment__classroom_id"))
+        .values_list("homework__assignment_id", "student_id")
+    )
+
+    assignments_per_class: dict[int, int] = defaultdict(int)
+    for classroom_id in classroom_of.values():
+        assignments_per_class[classroom_id] += 1
+    turned_in_per_class: dict[int, int] = defaultdict(int)
+    for assignment_id, _student_id in pairs:
+        turned_in_per_class[classroom_of[assignment_id]] += 1
+
+    out = []
+    for classroom_id, assignment_count in assignments_per_class.items():
+        classroom = by_id.get(classroom_id)
+        if classroom is None:
+            continue
+        expected = assignment_count * len(students_by_class.get(classroom_id, []))
+        if not expected:
+            continue  # a class with no students was asked for nothing
+        out.append({
+            "classroom_id": classroom.id,
+            "name": classroom.name,
+            "expected": expected,
+            "turned_in": turned_in_per_class.get(classroom_id, 0),
+        })
+    out.sort(key=lambda r: (r["name"], r["classroom_id"]))
+    return out
 
 
 def _midterm_brief(schedule) -> tuple[int | None, str, int | None]:
@@ -358,7 +721,10 @@ def _upcoming_midterms(classrooms, now) -> list[dict]:
             "title": title,
             "classroom_id": classroom.id,
             "name": classroom.name,
-            "starts_at": schedule.starts_at.isoformat(),
+            # School time, like every other timestamp this payload emits. It used to go out in
+            # UTC here alone: the same instant, but it reads as a different hour to anyone
+            # comparing it against the lesson times beside it.
+            "starts_at": _local_iso(schedule.starts_at),
             "pass_mark": pass_mark,
         })
     return out
@@ -379,50 +745,58 @@ def build_teacher_today(user, now=None) -> dict:
     classrooms = _staff_classrooms(user)  # query 1
     payload = {
         "date": today.isoformat(),
+        "now": _local_iso(now),
         "next_lesson_date": _next_lesson_date(classrooms, today),
-        "lessons": [],
-        "waiting_to_check": [],
+        "classes": [],
+        "grading_queue": [],
+        "stats": {"attendance_week": [], "homework_30d": [], "attendance_trend": []},
         "upcoming_midterms": [],
     }
     if not classrooms:
         return payload
 
-    # ── 4.1 Today's lessons ──────────────────────────────────────────────────
-    todays = [c for c in classrooms if _meets_today(c, today)]
-    todays_ids = [c.id for c in todays]
-
+    # ── the roster, once, for every class ────────────────────────────────────
+    # query 2 — student_count, the missing-homework names, and the denominator of the
+    # thirty-day homework rate all come out of this one read.
     students_by_class: dict[int, list] = defaultdict(list)
-    if todays_ids:  # query 2 — count AND names in one read
-        memberships = (
-            ClassroomMembership.objects.filter(
-                classroom_id__in=todays_ids,
-                role=ClassroomMembership.ROLE_STUDENT,
-                status=ClassroomMembership.STATUS_ACTIVE,
-            )
-            .select_related("user")
-            .order_by("user__last_name", "user__first_name", "user_id")
+    memberships = (
+        ClassroomMembership.objects.filter(
+            classroom_id__in=[c.id for c in classrooms],
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
         )
-        for m in memberships:
-            students_by_class[m.classroom_id].append(m.user)
+        .select_related("user")
+        .order_by("user__last_name", "user__first_name", "user_id")
+    )
+    for m in memberships:
+        students_by_class[m.classroom_id].append(m.user)
 
+    # ── 4.1 Every class, with its schedule and where its lesson stands ───────
+    todays_ids = [c.id for c in classrooms if _meets_today(c, today)]
     homework_by_class = _todays_homework(todays_ids, day_start, day_end)  # query 3
-    all_student_ids = [u.id for users in students_by_class.values() for u in users]
+    todays_student_ids = [u.id for cid in todays_ids for u in students_by_class.get(cid, [])]
     turned_in = _turned_in_by_assignment(  # queries 4 + 5
-        [a.id for a in homework_by_class.values()], all_student_ids
+        [a.id for a in homework_by_class.values()], todays_student_ids
     )
 
-    lessons = []
-    for classroom in todays:
+    rows = []
+    for classroom in classrooms:
         students = students_by_class.get(classroom.id, [])
-        homework = homework_by_class.get(classroom.id)
+        next_lesson_at, state = _next_lesson_and_state(classroom, now, today, day_start)
         row = {
             "classroom_id": classroom.id,
             "name": classroom.name,
             "subject": classroom.subject,
+            "room": classroom.room_number or "",
+            "lesson_days": classroom.lesson_days or "",
+            "lesson_days_label": _lesson_days_label(classroom),
             "lesson_time": _lesson_time_label(classroom),
             "student_count": len(students),
+            "next_lesson_at": _local_iso(next_lesson_at),
+            "state": state,
             "homework": None,
         }
+        homework = homework_by_class.get(classroom.id)
         if homework is not None:
             done = turned_in.get(homework.id, set())
             missing = [u for u in students if u.id not in done]
@@ -436,13 +810,27 @@ def build_teacher_today(user, now=None) -> dict:
                     {"id": u.id, "name": _student_name(u)} for u in missing
                 ],
             }
-        lessons.append(row)
+        rows.append((state, next_lesson_at, row))
 
-    # In time order; a class whose time cannot be read is listed AFTER the timed ones
-    # rather than dropped (§7).
-    lessons.sort(key=lambda r: (r["lesson_time"] is None, r["lesson_time"] or "", r["name"]))
-    payload["lessons"] = lessons
+    # The owner's order: in progress, then coming (soonest first), then taught, then a class
+    # with no clock at all. Only ``upcoming`` is sorted by its datetime — the rest tie and
+    # fall through to the name, which is why the sort key's second slot is a constant for
+    # them (types never meet: the rank differs first).
+    rows.sort(
+        key=lambda r: (
+            STATE_ORDER[r[0]],
+            r[1] if r[0] == STATE_UPCOMING else 0,
+            r[2]["name"],
+            r[2]["classroom_id"],
+        )
+    )
+    payload["classes"] = [row for _state, _at, row in rows]
 
-    payload["waiting_to_check"] = _waiting_to_check(classrooms)  # query 6
-    payload["upcoming_midterms"] = _upcoming_midterms(classrooms, now)  # query 7
+    payload["grading_queue"] = _grading_queue(classrooms)  # query 6
+    payload["stats"] = {
+        "attendance_week": _attendance_week(classrooms, today),  # query 7
+        "homework_30d": _homework_30d(classrooms, students_by_class, now),  # queries 8–10
+        "attendance_trend": _attendance_trend(classrooms, today),  # query 11
+    }
+    payload["upcoming_midterms"] = _upcoming_midterms(classrooms, now)  # query 12
     return payload
