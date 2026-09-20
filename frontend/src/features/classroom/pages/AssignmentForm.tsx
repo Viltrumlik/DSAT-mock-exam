@@ -160,6 +160,12 @@ type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment" | "
 
 export default function AssignmentForm({ classId, editingAssignment = null, kind = "HOMEWORK", onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
+  // A draft being edited has not reached the class yet, so the primary button publishes it.
+  // Once it is out, the same button only saves — a teacher must never press a button whose
+  // label promises something other than what it does.
+  const isEditingDraft =
+    isEditing &&
+    String((editingAssignment as { status?: string })?.status || "").toUpperCase() === "DRAFT";
   // When editing, the kind is whatever the row already is — the prop only chooses what a NEW
   // one will be, and re-categorising existing work from this form would silently move it in
   // or out of automatic scoring.
@@ -534,6 +540,16 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           practice_scope: practiceScope,
           allow_file_upload: allowFileUpload,
           allow_unapproved: allowUnapproved,
+          // Only a DRAFT's buttons decide a status. Leaving `status` out is what kept a draft
+          // a draft no matter which button was pressed — a partial update simply never
+          // touched it, so "Publish" saved the edits and the row still read "Not published" —
+          // but sending it unconditionally is worse, and in the other direction: on an
+          // ARCHIVED row the primary button reads "Save changes" and would carry
+          // status: "PUBLISHED", putting last term's homework back in front of the whole
+          // class off a typo fix. A partial update that omits `status` leaves it exactly as
+          // it stands, which is what a plain save means. Republishing archived work is the
+          // Unarchive action's job, and it has a tail this save does not run.
+          ...(isEditingDraft ? { status: publishStatus } : {}),
         };
 
         const updated = await classesApi.updateAssignment(classId, editId, body);
@@ -1034,12 +1050,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
             </p>
             <div className="flex gap-2">
               <ClassroomButton type="button" variant="secondary" onClick={onCancel}>Cancel</ClassroomButton>
-              {!isEditing && (
+              {/* Editing a draft keeps the choice the create form offers: put the work down
+                  again without handing it to the class. A published row has no such button —
+                  taking work back off the class is a retraction, not a save. */}
+              {(!isEditing || isEditingDraft) && (
                 <ClassroomButton type="button" variant="secondary" className="cr-press cr-ripple" onPointerDown={spawnRipple} onClick={() => handleSubmit("DRAFT")} disabled={submitDisabled}>Save as draft</ClassroomButton>
               )}
               <ClassroomButton type="button" variant="primary" className="cr-press cr-ripple flex-1" onPointerDown={spawnRipple} onClick={() => handleSubmit("PUBLISHED")} disabled={submitDisabled}>
                 {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {isEditing ? "Save changes" : "Publish assignment"}
+                {isEditing ? (isEditingDraft ? "Publish" : "Save changes") : "Publish assignment"}
                 {cartItems.length > 0 ? <span className="ml-1 rounded-md bg-white/25 px-1.5 py-0.5 text-xs">{cartItems.length}</span> : null}
               </ClassroomButton>
             </div>

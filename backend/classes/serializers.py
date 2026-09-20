@@ -670,7 +670,14 @@ class AssignmentSerializer(serializers.ModelSerializer):
         )
     )
     def get_attachment_urls(self, obj):
-        """Primary file first, then extra attachments (same order as upload).
+        """The standing primary file first, then the extras in ``id`` order.
+
+        That is NOT upload order once a teacher has added a file to an existing homework:
+        adding demotes the old primary into ``extra_attachments``, and a demoted row is
+        created at that moment, so it takes the HIGHEST id. With
+        ``AssignmentExtraAttachment.Meta.ordering = ["id"]`` the newest handout therefore
+        leads the list and the original trails it. The order is pinned by tests and is not
+        changed here; this says what it is so a reader stops expecting upload order.
 
         Each entry is an object carrying the display filename + type so the student
         UI can show the right icon and a working download (not a bare URL string)."""
