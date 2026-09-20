@@ -492,6 +492,24 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.audit_classroom_telegram_groups",
         "schedule": crontab(minute="*/30"),
     },
+    # Today's attendance register, already there when the lesson starts. `ensure_sessions`
+    # has existed since attendance shipped and its management command says "run it from
+    # cron" — nothing ever did, so the register was created by a teacher opening the
+    # Attendance tab. Attendance is the most-used thing in this panel; it should be waiting.
+    #
+    # Every ten minutes, all day — NOT once in the early morning, which is the obvious slot
+    # and the wrong one. A register opens when its lesson STARTS, never before (a register
+    # for a room that is still empty invites a teacher to guess — see attendance_auto), so a
+    # 05:00 Asia/Tashkent run would find nothing due for a 14:00 lesson and open nothing at
+    # all. Ten minutes is the most a teacher should wait for the register after walking in,
+    # and it covers the early classes too: `lesson_time` is free text and production carries
+    # starts from 08:00 to 18:00. Re-runs are free — `ensure_sessions` is idempotent and
+    # costs one SELECT per active class — so the extra passes buy punctuality with queries
+    # rather than correctness.
+    "classroom-open-attendance-registers": {
+        "task": "classes.tasks.open_todays_attendance_registers",
+        "schedule": crontab(minute="*/10"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
