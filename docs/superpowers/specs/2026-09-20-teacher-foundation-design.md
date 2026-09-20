@@ -91,11 +91,20 @@ a provider in the root layout. The kit uses it as-is.
 the dz palette and face, and differs only in weight: hairline row separators instead of
 cards, one tone of ink for figures, no hover lift.
 
-### 3.2 The shell
+### 3.2 The shell — corrected during the build
 
-`components/shell/TeacherAppShell.tsx` wraps its children in the `.dzboard` scope so every
-teacher page inherits the tokens and the face. The sidebar, the top bar and the mobile drawer
-are restyled from the same tokens. Items, order, labels and routes are untouched (D5).
+The plan here was for `TeacherAppShell` to wear the scope and for the sidebar, top bar and
+mobile drawer to be restyled from the same tokens. They are not, and deliberately:
+`components/shell/AppShell.tsx` is **one 730-line component shared by the student shell and
+the teacher shell**, so restyling it would change what students see, against D6.
+
+Instead `TeacherPage` — the kit's page frame — carries the `.dzboard` scope, and a page wears
+the look by wearing the frame. The chrome around it stays as it is. That is also the truer
+reading of D2: on the student side the dashboard's look sits inside this same chrome, so a
+teacher page in the same look and the same chrome matches the screen the owner pointed at.
+
+Forking the chrome for teachers, or giving `AppShell` a skin flag, is a decision for the
+sub-project that takes on the sidebar's contents (D5), not for this one.
 
 ## 4. The Dashboard
 
