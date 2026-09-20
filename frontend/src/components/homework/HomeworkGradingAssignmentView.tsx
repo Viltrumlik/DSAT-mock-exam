@@ -230,8 +230,12 @@ export default function HomeworkGradingAssignmentView({
           All homework
         </Link>
         <span className="text-muted-foreground">/</span>
+        {/* The teacher route, not `/classes/…`. This view is mounted only under
+            /teacher/homework/grading, and teacher.mastersat.uz bounces every path outside
+            /teacher back to the portal — so the student link sent a teacher to their own
+            dashboard and looked, from the outside, like a page that had lost the class. */}
         <Link
-          href={`/classes/${classId}/assignments/${assignmentId}`}
+          href={`/teacher/classrooms/${classId}/assignments/${assignmentId}`}
           className="text-sm font-semibold text-primary hover:underline"
         >
           Open in class
