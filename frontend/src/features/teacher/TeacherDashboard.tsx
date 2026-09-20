@@ -1,195 +1,263 @@
 "use client";
 
+/**
+ * The teacher's first screen, rebuilt on the teacher kit.
+ *
+ * Both teachers who answered the 2026-09-14 letter, asked what they want on opening, named the
+ * same two things: today's lessons with their times, and who has not uploaded homework. The
+ * page that stood here showed neither — it showed class averages, completion percentages and
+ * two charts, none of which either teacher mentioned, and it fanned out two requests per class
+ * to build them. The owner's decision on 2026-09-20 was to remove those, not demote them.
+ *
+ * Every block loads, fails and empties on its own: one failed request costs the reader that
+ * block, never the page, and a block that failed says so rather than rendering as "nothing".
+ */
+
 import Link from "next/link";
+import { AlertTriangle, CalendarDays, ClipboardPen, Clock, Table2, Timer, UserCheck } from "lucide-react";
 import {
-  Users, UserCheck, Gauge, ClipboardCheck, GraduationCap, ArrowRight,
-  ClipboardPen, Table2, LineChart as LineIcon, AlertTriangle, CalendarClock, Radar as RadarIcon, RefreshCw,
-} from "lucide-react";
-import { cn } from "@/lib/cn";
+  Button, Card, DataTable, EmptyState, ErrorState, Pill, Skeleton, TeacherPage, type Column,
+} from "./ui";
 import {
-  Alert, Card, CardContent, Badge, Button, Avatar, Progress, EmptyState, Skeleton,
-  Table, TableHead, TableBody, TableRow, TableHeaderCell, TableCell,
-} from "@/components/ui";
-import { ChartCard, LineChart, BarChart, type ChartSeries } from "@/components/ui/charts";
-import { useTeacherDashboard, type TeacherDashboardModel } from "./useTeacherDashboard";
+  useTeacherToday, type TeacherToday, type TodayLesson, type UpcomingMidterm, type WaitingRow,
+} from "./useTeacherToday";
+import { useTeacherAttention, type AttentionRow } from "./useTeacherAttention";
 
-const trendSeries: ChartSeries[] = [{ key: "score", label: "Group mean" }];
+export type TeacherDashboardPreview = { today: TeacherToday; attention: AttentionRow[] };
 
-export function TeacherDashboard({ previewModel }: { previewModel?: TeacherDashboardModel }) {
-  const { status, model, error, retry } = useTeacherDashboard(previewModel);
+function dayLabel(iso: string): string {
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return "";
+  return new Date(t).toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+}
 
-  if (status === "booting") return <TeacherSkeleton />;
-  if (status === "unauthenticated") {
-    return <div className="mx-auto max-w-md py-16"><Card><CardContent className="py-10 text-center"><p className="ds-h3">Teacher</p><p className="mt-2 text-sm text-muted-foreground">Sign in with a teacher account to continue.</p></CardContent></Card></div>;
-  }
-  if (status === "error") {
+export function TeacherDashboard({ preview }: { preview?: TeacherDashboardPreview }) {
+  const today = useTeacherToday(!preview);
+  const data = preview?.today ?? today.data;
+  const attention = useTeacherAttention(preview?.attention);
+
+  // A teacher with no classes at all is not a teacher with four empty blocks. Say the one true
+  // thing once — and only from a zero the class list actually returned, never from a list that
+  // failed or has not arrived, which is the difference between "you have none" and "we could
+  // not read them".
+  const noClasses = attention.status === "ready" && attention.classCount === 0;
+
+  if (noClasses) {
     return (
-      <div className="mx-auto max-w-2xl space-y-3 py-12">
-        <Alert tone="danger" title="Couldn’t load your class overview">
-          {error?.detail ?? "Your classes and their students are unchanged — only this page failed to load."}
-        </Alert>
-        <Button variant="secondary" size="sm" leftIcon={<RefreshCw aria-hidden />} onClick={retry}>Try again</Button>
-      </div>
-    );
-  }
-  if (status === "empty" || !model) {
-    return (
-      <div className="mx-auto max-w-2xl py-12">
-        <EmptyState icon={GraduationCap} title="No classes yet" description="When you're assigned classes, their health, submissions, and student insights appear here." />
-      </div>
-    );
-  }
-
-  const m = model;
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="ds-overline text-primary">Teacher</p>
-          <h1 className="ds-h1 mt-1">Class overview</h1>
-          <p className="ds-small mt-1">{m.classCount} {m.classCount === 1 ? "class" : "classes"} · who needs support and what to grade next.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/teacher/grading"><Button leftIcon={<ClipboardPen />}>Grade</Button></Link>
-          <Link href="/teacher/gradebook"><Button variant="secondary" leftIcon={<Table2 />}>Gradebook</Button></Link>
-        </div>
-      </div>
-
-      {/* Hero KPIs */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
-        <Kpi icon={Users} label="Students" value={m.totalStudents} />
-        <Kpi icon={UserCheck} label="Active this week" value={m.activeStudents} hint={`${m.totalStudents - m.activeStudents} inactive`} />
-        <Kpi icon={Gauge} label="Avg score" value={m.avgScore != null ? `${m.avgScore}%` : "—"} />
-        <Kpi icon={ClipboardCheck} label="Submission rate" value={m.submissionRate != null ? `${m.submissionRate}%` : "—"} />
-        <Kpi icon={GraduationCap} label="Classes" value={m.classCount} />
-      </div>
-
-      {/* Action zone: needs attention + quick actions */}
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardContent>
-            <div className="mb-4 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-warning" /><p className="ds-h4">Students needing support</p></div>
-            {m.needsAttention.length === 0 ? (
-              <EmptyState compact icon={UserCheck} title="Everyone's on track" description="No low averages or missing work right now." />
-            ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
-                {m.needsAttention.map((s) => (
-                  <Link key={s.id} href="/teacher/students" className="ds-ring flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:border-border-strong hover:bg-surface-2">
-                    <Avatar name={s.name} src={s.avatarUrl} size={34} />
-                    <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{s.name}</p><p className="truncate text-[12px] text-muted-foreground">{s.reason}</p></div>
-                    <span className={cn("h-2 w-2 shrink-0 rounded-full", s.tone === "danger" ? "bg-warning" : "bg-info")} />
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+      <TeacherPage title="Today">
         <Card>
-          <CardContent className="flex flex-col gap-2">
-            <p className="ds-h4 mb-1">Quick actions</p>
-            <QuickAction icon={ClipboardPen} label="Grade submissions" href="/teacher/grading" />
-            <QuickAction icon={Table2} label="Open gradebook" href="/teacher/gradebook" />
-            <QuickAction icon={Users} label="Students" href="/teacher/students" />
-            <QuickAction icon={LineIcon} label="Class analytics" href="/teacher/analytics" />
-          </CardContent>
+          <EmptyState
+            title="No classes yet"
+            hint="When a class is assigned to you, its lessons, the homework due at them and the midterms coming appear here."
+          />
         </Card>
-      </div>
+      </TeacherPage>
+    );
+  }
 
-      {/* Missing + upcoming */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card><CardContent>
-          <p className="ds-h4 mb-3">Lagging submissions</p>
-          {m.missing.length === 0 ? <EmptyState compact title="Submissions look healthy" description="No assignments below 70% completion." /> : (
-            <ul className="flex flex-col gap-1.5">
-              {m.missing.map((a) => (
-                <li key={a.id}>
-                  <Link href="/teacher/homework" className="ds-ring -mx-1 block rounded-lg px-1 py-1 transition-colors hover:bg-surface-2">
-                    <div className="mb-1 flex items-center justify-between gap-2"><span className="min-w-0 truncate text-sm font-semibold text-foreground">{a.title}</span><span className="ds-num shrink-0 text-[12px] font-bold text-muted-foreground">{a.completion}%</span></div>
-                    <Progress value={a.completion} tone={a.completion < 40 ? "warning" : "primary"} size="sm" />
-                    <p className="mt-0.5 text-[11px] text-label-foreground">{a.className}</p>
-                  </Link>
-                </li>
-              ))}
+  return (
+    <TeacherPage
+      title="Today"
+      subtitle={data?.date ? dayLabel(data.date) : undefined}
+      actions={
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Link href="/teacher/grading"><Button variant="ghost"><ClipboardPen size={15} aria-hidden />Grade</Button></Link>
+          <Link href="/teacher/gradebook"><Button variant="ghost"><Table2 size={15} aria-hidden />Gradebook</Button></Link>
+        </div>
+      }
+    >
+      <Card title="Your lessons" subtitle="In the order they run" icon={<CalendarDays size={20} aria-hidden />} padded={false}>
+        <div style={{ padding: "6px 24px 18px" }}>
+          {!preview && today.isPending ? (
+            <Skeleton height={54} count={3} />
+          ) : !preview && today.isError ? (
+            <ErrorState
+              title="Today's lessons didn't load"
+              detail="Your classes and their homework are unchanged — this is only the page failing to read them."
+              onRetry={() => void today.refetch()}
+            />
+          ) : (data?.lessons.length ?? 0) === 0 ? (
+            <EmptyState
+              title="No lesson today"
+              hint={data?.nextLessonDate ? `Your next lesson is ${dayLabel(data.nextLessonDate)}.` : undefined}
+            />
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {data!.lessons.map((l) => <LessonRow key={l.classroomId} lesson={l} />)}
             </ul>
           )}
-        </CardContent></Card>
-        <Card><CardContent>
-          <div className="mb-3 flex items-center gap-2"><CalendarClock className="h-4 w-4 text-primary" /><p className="ds-h4">Upcoming deadlines</p></div>
-          {m.upcoming.length === 0 ? <EmptyState compact title="Nothing due soon" description="Upcoming assignment deadlines appear here." /> : (
-            <ul className="flex flex-col gap-2">
-              {m.upcoming.map((u) => (
-                <li key={u.id} className="flex items-center justify-between gap-3 rounded-xl border border-border p-3"><div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{u.title}</p><p className="text-[11px] text-label-foreground">{u.className}</p></div><Badge variant={u.soon ? "warning" : "neutral"}>{u.dueLabel}</Badge></li>
-              ))}
-            </ul>
-          )}
-        </CardContent></Card>
+        </div>
+      </Card>
+
+      <Card title="Waiting to be checked" subtitle="Turned in, not yet graded" icon={<ClipboardPen size={20} aria-hidden />}>
+        {!preview && today.isPending ? (
+          <Skeleton height={40} count={2} />
+        ) : !preview && today.isError ? (
+          <ErrorState title="This didn't load" onRetry={() => void today.refetch()} />
+        ) : (
+          <DataTable<WaitingRow>
+            label="Work waiting to be checked, by class"
+            rows={data?.waitingToCheck ?? []}
+            rowKey={(r) => r.classroomId}
+            columns={WAITING_COLUMNS}
+            empty={<EmptyState title="Nothing waiting" hint="Work your students turn in shows up here." />}
+          />
+        )}
+      </Card>
+
+      <Card title="Midterms coming" subtitle="The next two weeks" icon={<Timer size={20} aria-hidden />}>
+        {!preview && today.isPending ? (
+          <Skeleton height={40} count={2} />
+        ) : !preview && today.isError ? (
+          <ErrorState title="This didn't load" onRetry={() => void today.refetch()} />
+        ) : (
+          <DataTable<UpcomingMidterm>
+            label="Midterms scheduled in the next two weeks"
+            rows={data?.upcomingMidterms ?? []}
+            rowKey={(m) => `${m.midtermId}-${m.classroomId}`}
+            columns={MIDTERM_COLUMNS}
+            empty={<EmptyState title="No midterm scheduled" hint="Midterms you schedule for your classes appear here." />}
+          />
+        )}
+      </Card>
+
+      <Card title="Students needing support" subtitle="Low averages and work not turned in" icon={<AlertTriangle size={20} aria-hidden />}>
+        {attention.status === "loading" ? (
+          <Skeleton height={54} count={2} />
+        ) : attention.status === "error" ? (
+          <ErrorState
+            title="This didn't load"
+            detail={attention.detail ?? "Your students are unchanged — only this block failed to read them."}
+            onRetry={attention.retry}
+          />
+        ) : attention.rows.length === 0 ? (
+          <EmptyState title="Everyone is on track" hint="Nobody is behind on work or below the score line right now." />
+        ) : (
+          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))" }}>
+            {attention.rows.map((s) => (
+              <Link
+                key={s.id}
+                href="/teacher/students"
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                  border: "1px solid var(--dz-border)", borderRadius: 14, textDecoration: "none",
+                }}
+              >
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "var(--dz-ink)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {s.name}
+                  </span>
+                  <span style={{ display: "block", fontSize: 12, color: "var(--dz-mute)" }}>{s.reason}</span>
+                </span>
+                <Pill tone={s.tone}>{s.tone === "danger" ? "Score" : "Homework"}</Pill>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
+    </TeacherPage>
+  );
+}
+
+/* ── Today's lessons ─────────────────────────────────────────────────────── */
+
+function LessonRow({ lesson }: { lesson: TodayLesson }) {
+  const hw = lesson.homework;
+  const total = hw ? hw.turnedIn + hw.missing : 0;
+  return (
+    <li style={{ borderTop: "1px solid var(--dz-border)", padding: "12px 0" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+        <span
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 12,
+            background: "var(--dz-indigo-soft)", color: "var(--dz-indigo)", fontSize: 14, fontWeight: 800,
+            whiteSpace: "nowrap",
+          }}
+        >
+          <Clock size={14} aria-hidden />
+          {lesson.lessonTime ?? "Time not set"}
+        </span>
+        {/* 160px of basis, not `flex: 1`: on a phone the row has room for the time chip and the
+            name but not the pill too, and a name allowed to shrink to nothing broke "Math Junior 3"
+            over three lines. With a floor, the pill wraps to its own line instead. */}
+        <span style={{ minWidth: 0, flex: "1 1 160px" }}>
+          <Link
+            href={`/teacher/classrooms/${lesson.classroomId}`}
+            style={{ fontSize: 15, fontWeight: 800, color: "var(--dz-ink)", textDecoration: "none" }}
+          >
+            {lesson.name}
+          </Link>
+          <span style={{ display: "block", fontSize: 12, color: "var(--dz-mute)", fontWeight: 600 }}>
+            {[lesson.subject, `${lesson.studentCount} students`].filter(Boolean).join(" · ")}
+          </span>
+        </span>
+        {hw ? (
+          <Pill tone={hw.missing === 0 ? "success" : "warning"}>
+            <UserCheck size={13} aria-hidden />
+            {hw.turnedIn}/{total} turned in
+          </Pill>
+        ) : (
+          <Pill tone="neutral">No homework due</Pill>
+        )}
       </div>
 
-      {/* Charts */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Are class scores trending up?" description="Group mean per practice assignment">
-          <LineChart data={m.classAvgTrend} xKey="label" series={trendSeries} height={220} yDomain={[400, 1600]} emptyMessage={{ title: "No scored assignments yet", description: "Group means appear as classes complete practice tests." }} />
-        </ChartCard>
-        <ChartCard title="Which assignments need a push?" description="Completion by assignment">
-          {m.completionByAssignment.length === 0 ? <EmptyState compact title="No assignments yet" description="Completion appears once work is assigned." /> : (
-            <BarChart data={m.completionByAssignment} xKey="label" series={[{ key: "completion", label: "Completion %" }]} height={220} />
-          )}
-        </ChartCard>
-      </div>
-
-      {/* SAT strand — honest gap */}
-      <ChartCard title="Which SAT strands need reinforcement?" description="Class strand performance">
-        <EmptyState icon={RadarIcon} title="Strand analysis needs per-skill data" description="Class-level SAT strand performance isn't available from current data. It unlocks when assessment results expose per-strand detail — no estimates shown here." />
-      </ChartCard>
-
-      {/* Class health */}
-      <section>
-        <div className="mb-4"><h2 className="ds-h3">Class health</h2><p className="ds-small">Sorted by lowest average first.</p></div>
-        <Card><CardContent className="p-0">
-          <Table containerClassName="border-0">
-            <TableHead><TableRow><TableHeaderCell>Class</TableHeaderCell><TableHeaderCell>Students</TableHeaderCell><TableHeaderCell>Avg score</TableHeaderCell><TableHeaderCell>Completion</TableHeaderCell><TableHeaderCell></TableHeaderCell></TableRow></TableHead>
-            <TableBody>
-              {m.classes.map((c) => (
-                <TableRow key={c.id}>
-                  <TableCell className="font-semibold">{c.name}</TableCell>
-                  <TableCell className="ds-num">{c.students}</TableCell>
-                  <TableCell><Badge variant={c.avgScore == null ? "neutral" : c.avgScore < 60 ? "warning" : "success"}>{c.avgScore != null ? `${c.avgScore}%` : "—"}</Badge></TableCell>
-                  <TableCell className="w-40"><div className="flex items-center gap-2"><Progress value={c.completion} size="sm" /><span className="ds-num shrink-0 text-[12px] text-muted-foreground">{c.completion}%</span></div></TableCell>
-                  <TableCell className="text-right"><Link href="/teacher/gradebook" className="ds-ring inline-flex items-center gap-1 rounded-lg text-[13px] font-semibold text-primary">Open <ArrowRight className="h-3.5 w-3.5" /></Link></TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </CardContent></Card>
-      </section>
-    </div>
+      {hw && hw.missing > 0 && (
+        <details style={{ marginTop: 8 }}>
+          <summary style={{ cursor: "pointer", fontSize: 13, fontWeight: 700, color: "var(--dz-indigo)" }}>
+            {hw.missing} not turned in
+          </summary>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+            {hw.missingStudents.map((s) => (
+              <span
+                key={s.id}
+                style={{
+                  padding: "4px 10px", borderRadius: 999, background: "var(--dz-neutral-soft)",
+                  fontSize: 13, fontWeight: 600, color: "var(--dz-ink)",
+                }}
+              >
+                {s.name}
+              </span>
+            ))}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--dz-mute)", marginTop: 8 }}>{hw.title}</div>
+        </details>
+      )}
+    </li>
   );
 }
 
-function Kpi({ icon: Icon, label, value, hint }: { icon: React.ElementType; label: string; value: React.ReactNode; hint?: string }) {
-  return (
-    <Card><CardContent className="flex flex-col gap-2">
-      <div className="flex items-center justify-between"><span className="ds-overline">{label}</span><span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary-soft text-primary"><Icon className="h-4 w-4" /></span></div>
-      <span className="ds-num text-[26px] font-extrabold leading-none text-foreground">{value}</span>
-      {hint ? <span className="text-[12px] text-muted-foreground">{hint}</span> : null}
-    </CardContent></Card>
-  );
-}
-function QuickAction({ icon: Icon, label, href }: { icon: React.ElementType; label: string; href: string }) {
-  return (
-    <Link href={href} className="ds-ring group flex items-center gap-3 rounded-xl bg-surface-2 p-3 transition-colors hover:bg-surface-3">
-      <Icon className="h-5 w-5 shrink-0 text-primary" />
-      <span className="flex-1 text-sm font-semibold text-foreground">{label}</span>
-      <ArrowRight className="h-4 w-4 shrink-0 text-label-foreground transition-colors group-hover:text-foreground" />
-    </Link>
-  );
-}
-function TeacherSkeleton() {
-  return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
-      <Skeleton className="h-10 w-64" />
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">{[0,1,2,3,4].map((i) => <Skeleton key={i} className="h-28 rounded-2xl" />)}</div>
-      <div className="grid gap-4 lg:grid-cols-3"><Skeleton className="h-56 rounded-2xl lg:col-span-2" /><Skeleton className="h-56 rounded-2xl" /></div>
-    </div>
-  );
-}
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+
+const WAITING_COLUMNS: Column<WaitingRow>[] = [
+  {
+    key: "class",
+    header: "Class",
+    render: (r) => (
+      <Link href={`/teacher/classrooms/${r.classroomId}?tab=grading`} style={{ fontWeight: 700, color: "var(--dz-ink)", textDecoration: "none" }}>
+        {r.name}
+      </Link>
+    ),
+  },
+  { key: "count", header: "Waiting", align: "right", width: 110, render: (r) => r.count },
+];
+
+const MIDTERM_COLUMNS: Column<UpcomingMidterm>[] = [
+  { key: "title", header: "Midterm", render: (m) => <span style={{ fontWeight: 700 }}>{m.title}</span> },
+  {
+    key: "class",
+    header: "Class",
+    render: (m) => (
+      <Link href={`/teacher/classrooms/${m.classroomId}?tab=midterms`} style={{ color: "var(--dz-indigo)", textDecoration: "none", fontWeight: 600 }}>
+        {m.className}
+      </Link>
+    ),
+  },
+  { key: "date", header: "Date", render: (m) => dayLabel(m.startsAt) },
+  {
+    key: "pass",
+    header: "Pass mark",
+    align: "right",
+    width: 120,
+    render: (m) => (m.passMark == null ? <span style={{ color: "var(--dz-faint)" }}>Not graded</span> : m.passMark),
+  },
+];
