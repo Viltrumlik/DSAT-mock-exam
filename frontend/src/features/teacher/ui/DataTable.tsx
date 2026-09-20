@@ -69,6 +69,10 @@ export function DataTable<T>({ columns, rows, rowKey, empty, onRowClick, label }
                     height: 40, padding: "0 12px", verticalAlign: "middle",
                     textAlign: c.align === "right" ? "right" : "left",
                     fontWeight: c.align === "right" ? 700 : 500,
+                    // A cell keeps its line. On a phone a four-column table would otherwise
+                    // break every class name over three lines; the container scrolls instead,
+                    // which is the readable way to lose a column edge rather than a word.
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {c.render(row)}
