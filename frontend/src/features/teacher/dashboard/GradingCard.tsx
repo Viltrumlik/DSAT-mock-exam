@@ -79,7 +79,7 @@ export function GradingCard({ queue, loading, failed, onRetry }: {
                         <div key={asg.assignmentId}>
                           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
                             <Link
-                              href={`/teacher/homework/grading/${klass.classroomId}/${asg.assignmentId}`}
+                              href={`/teacher/grading?class=${klass.classroomId}&homework=${asg.assignmentId}`}
                               style={{ fontSize: 14, fontWeight: 700, color: "var(--dz-indigo)", textDecoration: "none" }}
                             >
                               {asg.title}
@@ -109,7 +109,7 @@ export function GradingCard({ queue, loading, failed, onRetry }: {
                             ))}
                             {hidden > 0 && (
                               <Link
-                                href={`/teacher/homework/grading/${klass.classroomId}/${asg.assignmentId}`}
+                                href={`/teacher/grading?class=${klass.classroomId}&homework=${asg.assignmentId}`}
                                 style={{
                                   padding: "4px 10px", borderRadius: 999, background: "var(--dz-indigo-soft)",
                                   fontSize: 13, fontWeight: 700, color: "var(--dz-indigo)", textDecoration: "none",

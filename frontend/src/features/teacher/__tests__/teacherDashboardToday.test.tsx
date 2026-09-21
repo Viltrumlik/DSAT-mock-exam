@@ -174,7 +174,8 @@ describe("the teacher dashboard — manual grading", () => {
     expect(text()).toContain("Quadratics, week 3");
     expect(text()).toContain("Dilnoza S.");
     expect(text()).toContain("Eldor U.");
-    expect(links()).toContain("/teacher/homework/grading/1/88");
+    // Into that homework on the one grading screen, not into a second grading surface.
+    expect(links()).toContain("/teacher/grading?class=1&homework=88");
   });
 
   it("says how many are hidden when the server capped the list", async () => {
