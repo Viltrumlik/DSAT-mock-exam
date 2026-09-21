@@ -175,6 +175,7 @@ INSTALLED_APPS = [
     'questionbank.apps.QuestionBankConfig',
     'midterms.apps.MidtermsConfig',
     'mocks.apps.MocksConfig',
+    'livequiz.apps.LiveQuizConfig',
     'question_reports.apps.QuestionReportsConfig',
     'journals.apps.JournalsConfig',
     'rewards.apps.RewardsConfig',
@@ -240,6 +241,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'config.wsgi.application'
 
+# ─── ASGI / WebSockets ─────────────────────────────────────────────────────────
+# Gunicorn keeps serving every HTTP request from config.wsgi. This entrypoint is used ONLY
+# by the separate daphne process that terminates /ws/ (deploy/ecosystem.config.js:
+# sat-livequiz). The separation is the point: a socket in the gunicorn process would park
+# one of its three sync workers, which is exactly how the SSE endpoint took the site down.
+ASGI_APPLICATION = 'config.asgi.application'
+
+# Live Quiz. Off unless explicitly switched on, and only the literal "true" counts — the
+# same idiom as the REALTIME_* flags, so a stray "1" does not quietly enable it.
+LIVE_QUIZ_ENABLED = os.getenv("LIVE_QUIZ_ENABLED", "False").lower() == "true"
+
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 # Uses PostgreSQL in production (when DATABASE_URL is set), SQLite locally.
@@ -293,6 +305,23 @@ else:
             "LOCATION": "unique-snowflake",
         }
     }
+
+# ─── Channel layer (Live Quiz WebSockets) ──────────────────────────────────────
+# Redis in production, so every daphne process sees the same room and a student connected
+# to one worker still receives a question opened on another.
+#
+# In-memory otherwise, so a developer and the test suite need no Redis at all. That layer
+# does NOT reach across processes: never run more than one ASGI worker without REDIS_URL,
+# or half the class will sit in a lobby that has already started.
+if REDIS_URL:
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        }
+    }
+else:
+    CHANNEL_LAYERS = {"default": {"BACKEND": "channels.layers.InMemoryChannelLayer"}}
 
 # Production: fail fast if Redis is not configured (LocMem breaks cross-worker throttles and metrics).
 CLASSROOM_ENFORCE_REDIS_CACHE = _env_bool(
