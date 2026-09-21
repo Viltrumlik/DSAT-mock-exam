@@ -27,6 +27,8 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from core import quiet
+
 from . import constants
 from .models import PointAward, PointAwardAudit, RewardRule, RewardSeason
 
@@ -175,7 +177,11 @@ def _notify_earned(student, award_row, *, previous_points: int | None) -> None:
     # award that then rolls back has read something that is not true and cannot un-read it.
     # Django discards ``on_commit`` callbacks registered after a savepoint that is rolled back,
     # which is precisely the failure path ``award``'s savepoint exists to handle.
-    transaction.on_commit(_send)
+    #
+    # ``quiet.preserving`` carries the caller's intent across that wait. A backfill settles the
+    # ledger deliberately without announcing it (``core.quiet``), and by commit time its
+    # ``with`` block is long gone — the flag has to be read here, where the award was decided.
+    transaction.on_commit(quiet.preserving(_send))
 
 
 def award(

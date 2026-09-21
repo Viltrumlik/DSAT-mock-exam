@@ -14,6 +14,7 @@ from django.db.models import Max
 from django.utils import timezone
 
 from classes.models import ClassroomMembership
+from core import quiet
 
 from .constants import PRIORITY_HIGH, PRIORITY_LOW, PRIORITY_MEDIUM
 from .load import evaluate_backpressure, should_emit
@@ -267,6 +268,25 @@ def persist_realtime_batch(rows: list[dict], *, dedupe_window_seconds: int | Non
 
 
 def emit_to_user(*, user_id: int, event_type: str, payload: dict) -> None:
+    # A backfill has nothing to nudge anyone about: the facts it settles are weeks old, and an
+    # open tab refetching forty times in a row is the same interruption as a notification by
+    # another name (``core.quiet``).
+    #
+    # This is a chokepoint: ``emit_to_classroom_members`` funnels through ``emit_to_users``, so
+    # these two functions are every realtime emit in the codebase, and every caller now passes
+    # through this check. That is safe because the check is false for all of them — ``is_quiet``
+    # is a ``ContextVar`` defaulting to False, set only inside ``quiet_delivery()``, which has
+    # exactly one caller (``backfill_finished_pastpapers``) and is scoped to its call stack. A
+    # request thread cannot see a backfill's flag, and a backfill cannot leave it behind.
+    #
+    # It is defence for the chokepoint, not for that backfill: the pastpaper path reaches no
+    # emit at all (an auto-graded submission lands on REVIEWED, and ``_ensure_stream_submission``
+    # only emits for SUBMITTED), so deleting these two lines would not change what that command
+    # does today. The next silent sweep — mock sections, assessments — runs through code that
+    # does emit, and a "quiet" that silenced the bell but left the tab nudging would be a quiet
+    # in name only. Pinned by ``classes.tests_pastpaper_completion_settles.QuietSilencesRealtimeTests``.
+    if quiet.is_quiet():
+        return
     rows = [_normalize_emit_row(user_id=int(user_id), event_type=str(event_type), payload=payload or {})]
     if _queue_available():
         _enqueue(rows)
@@ -275,6 +295,8 @@ def emit_to_user(*, user_id: int, event_type: str, payload: dict) -> None:
 
 
 def emit_to_users(*, user_ids: Iterable[int], event_type: str, payload: dict) -> None:
+    if quiet.is_quiet():  # see :func:`emit_to_user`
+        return
     p = payload or {}
     uids = {int(x) for x in user_ids if x}
     rows = [_normalize_emit_row(user_id=uid, event_type=str(event_type), payload=p) for uid in uids]

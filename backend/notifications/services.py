@@ -34,6 +34,8 @@ from typing import Callable
 from django.db import transaction
 from django.utils import timezone
 
+from core import quiet
+
 from . import constants
 from .models import Notification, NotificationPreference, PushSubscription
 
@@ -68,6 +70,12 @@ def notify(
     identical notification arrived a minute ago.
     """
     if user is None or not event or not title:
+        return None
+    # A backfill replays facts the student already lived through, so it settles the ledger
+    # without ringing the bell about August (``core.quiet``). Checked here rather than at the
+    # dozens of hook sites, because a hook is handed a model instance and has nowhere to put
+    # the intent.
+    if quiet.is_quiet():
         return None
     try:
         category = constants.category_for(event)
@@ -160,6 +168,9 @@ def notify_many(
         if pk and pk not in by_id:
             by_id[pk] = user
     if not by_id or not event or not title:
+        return 0
+    # See :func:`notify` — a backfill settles the ledger without announcing it.
+    if quiet.is_quiet():
         return 0
 
     try:
