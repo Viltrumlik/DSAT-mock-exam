@@ -12,10 +12,11 @@ import VideoPlayer from "@/components/VideoPlayer";
 import { normalizeApiError } from "@/lib/apiError";
 import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui";
 import { useClassroom } from "../hooks";
-import { capabilitiesFor } from "../capabilities";
+import { capabilitiesFor, type Capabilities } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
 import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, launcherLabel, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { HomeworkQuestionStatistics } from "@/features/questionAnalysis/HomeworkQuestionStatistics";
+import { MostMissed } from "@/features/teacher/mistakes";
 import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
@@ -69,13 +70,13 @@ export function AssignmentDetailPage({ classId, assignmentId, basePath }: { clas
         <ArrowLeft className="h-4 w-4" /> Back to class
       </Link>
       {caps.isStaff
-        ? <TeacherView base={base} assignment={a.data} />
+        ? <TeacherView base={base} assignment={a.data} caps={caps} />
         : <StudentView classId={classId} base={base} assignment={a.data} />}
     </div>
   );
 }
 
-function TeacherView({ base, assignment }: { base: string; assignment: AssignmentDetail }) {
+function TeacherView({ base, assignment, caps }: { base: string; assignment: AssignmentDetail; caps: Capabilities }) {
   const router = useRouter();
   const kind = assignmentKind(assignment);
   // What there is to analyse: assessment sets, past papers, both, or — for an essay, a video
@@ -127,10 +128,26 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
           )}
         </Card>
       )}
+      {/* What the class got wrong most, worst first, and a pop-up to read any of those
+          questions in full and work it — the owner asked for this inside the homework, where a
+          teacher already is, rather than on a console page they never open. It leads the
+          statistics below it: the ranked five are the work, the breakdowns are the reference.
+
+          Gated on the CAPABILITY, not on this branch. `AssignmentDetail` is the same page on
+          the student route and the teacher route, and a row here carries a question prompt
+          while the pop-up behind it carries the recorded answer key. Reading the capability
+          means a future refactor that moves this render cannot quietly open it to a class. */}
+      {caps.canViewClassAnalytics && scope.hasAny && (
+        <MostMissed
+          assignmentId={assignment.id}
+          hasAssessments={scope.hasAssessments}
+          hasPastPapers={scope.hasPastPapers}
+        />
+      )}
       {/* Staff only, and only from this branch. The flagged cards carry question prompts,
           recorded answer keys and exactly which questions the class fell over — none of which
           a student may read, least of all one who can still hand this homework in. */}
-      {scope.hasAny && (
+      {caps.canViewClassAnalytics && scope.hasAny && (
         <HomeworkQuestionStatistics
           assignmentId={assignment.id}
           hasAssessments={scope.hasAssessments}
