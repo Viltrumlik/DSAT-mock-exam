@@ -11,8 +11,9 @@
  *
  * The admin questions endpoint is the only path to a paper's items that opens no attempt: the
  * runner's payload comes into existence when a sitting starts, and a teacher reading a paper
- * must not start one. It answers with the answer key attached, which a teacher is allowed to
- * see — this surface simply does not show it yet.
+ * must not start one. It answers with the answer key and the explanation attached, both of
+ * which a teacher is allowed to see: the reader holds them back until the teacher answers the
+ * question and presses Check, and then shows them (QuestionWorkPane).
  */
 
 import { teacherApi } from "@/features/teacher/api";

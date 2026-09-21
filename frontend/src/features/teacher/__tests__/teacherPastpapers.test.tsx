@@ -224,7 +224,7 @@ describe("a past paper, opened", () => {
     expect(text()).toContain("Module 1 · Question 1 of 2");
   });
 
-  it("keeps the answer key to itself — Check is a later slice", async () => {
+  it("keeps the answer key to itself until the question is answered", async () => {
     getPastpaperSection.mockResolvedValue(SECTIONS[0]);
     getQuestions.mockImplementation((_testId: number, moduleId: number) =>
       Promise.resolve(moduleId === 411 ? QUESTIONS_M1 : []),
@@ -232,9 +232,9 @@ describe("a past paper, opened", () => {
     await mount(<TeacherPaper paperId={41} />);
 
     expect(text()).not.toContain("The passage sets up a disagreement.");
-    // And the seam that would reveal it is genuinely not built yet. (The old assertion here
-    // looked for the string "Correct answer", which nothing in this slice renders in any
-    // state — green by construction, whatever the component did.)
+    // Nobody has answered anything in this case, so there is nothing to check: the button that
+    // would reveal the key is not rendered at all. (The reveal itself is driven end to end in
+    // teacherQuestionWork.test.tsx, against both hosts.)
     const labels = [...host.querySelectorAll("button")].map((b) => (b.textContent ?? "").trim());
     expect(labels).not.toContain("Check");
   });

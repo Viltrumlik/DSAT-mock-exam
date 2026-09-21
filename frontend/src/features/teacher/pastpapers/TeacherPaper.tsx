@@ -12,9 +12,10 @@
  * question writes nowhere. There is no attempt, no timer, no score. A teacher clicking a choice
  * is thinking, not sitting the paper, so the choice lives in this component and dies with it.
  *
- * The answer key rides along in the payload (the endpoint is the authoring one), but nothing
- * shows it yet: Check, and the explanation beside the question, are a later slice. The seams
- * they need are marked below — a footer under each question, and a second column.
+ * The answer key rides along in the payload (the endpoint is the authoring one), and since the
+ * checking slice it is what Check reveals — in QuestionWorkPane, which owns both seams this
+ * file used to hold open: the footer under the question and the column beside it. Pressing
+ * Check still writes nowhere; it compares two strings in the browser.
  */
 
 import { useMemo, useState } from "react";
@@ -25,6 +26,7 @@ import type { AssessmentChoice } from "@/features/assessments/types";
 import { AssessmentText } from "@/lib/assessmentText";
 import { resolveImageUrl } from "@/features/testing-simulation/utils/image";
 import { Button, Card, EmptyState, ErrorState, Skeleton, TeacherPage } from "../ui";
+import { answerKeyFromReviewQuestion, QuestionWorkPane } from "../questionWork";
 import type { TeacherPaperQuestion } from "./api";
 import { useTeacherPaper } from "./hooks";
 import { paperSubtitle, paperTitle } from "./labels";
@@ -128,20 +130,25 @@ export function TeacherPaper({ paperId }: { paperId: number }) {
   return (
     <TeacherPage title={title} subtitle={subtitle} actions={BACK_TO_LIBRARY}>
       <Card padded={false}>
-        {/* One column today. The explanation pane a later slice adds is the second one, which
-            is why the question sits in a grid rather than filling the card on its own. */}
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gap: 20, padding: "20px 22px" }}>
-          <article>
-            <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--dz-faint)", margin: 0 }}>
-              Module {place.moduleOrder} · Question {place.n} of {place.of}
-            </p>
-            <QuestionBody
-              question={current}
-              value={answers[current.key] ?? null}
-              onChange={(next) => setAnswers((prev) => ({ ...prev, [current.key]: next }))}
-            />
-            {/* A per-question footer goes here: Check, and what it reveals. Nothing yet. */}
-          </article>
+        {/* Two columns now, and the pane owns the grid: the explanation to the left of the
+            question on a wide screen, under it on a phone. */}
+        <div style={{ padding: "20px 22px" }}>
+          <QuestionWorkPane
+            questionId={current.key}
+            answer={answers[current.key] ?? null}
+            answerKey={answerKeyFromReviewQuestion(current)}
+          >
+            <article>
+              <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".1em", textTransform: "uppercase", color: "var(--dz-faint)", margin: 0 }}>
+                Module {place.moduleOrder} · Question {place.n} of {place.of}
+              </p>
+              <QuestionBody
+                question={current}
+                value={answers[current.key] ?? null}
+                onChange={(next) => setAnswers((prev) => ({ ...prev, [current.key]: next }))}
+              />
+            </article>
+          </QuestionWorkPane>
         </div>
 
         <footer style={{ borderTop: "1px solid var(--dz-border)", padding: "14px 22px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
