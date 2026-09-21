@@ -5,11 +5,11 @@ Two protocols, and only one of them is used by the site you are looking at:
 
 ``http``
     Plain Django. Nothing serves the site over this in production — gunicorn serves every
-    HTTP request from ``config.wsgi``. It is here so ``daphne config.asgi:application``
-    is a complete server in development.
+    HTTP request from ``config.wsgi``. It is here so
+    ``uvicorn config.asgi:application`` is a complete server in development.
 
 ``websocket``
-    The live quiz, and only the live quiz. Terminated by a separate daphne process on its
+    The live quiz, and only the live quiz. Terminated by a separate uvicorn process on its
     own port (``deploy/ecosystem.config.js``: ``sat-livequiz``), which nginx routes ``/ws/``
     to. Keeping sockets out of the gunicorn process is the whole point: the SSE endpoint
     parked one of three sync workers per client in August 2026 and took the site down with

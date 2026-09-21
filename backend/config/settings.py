@@ -243,7 +243,7 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 # ─── ASGI / WebSockets ─────────────────────────────────────────────────────────
 # Gunicorn keeps serving every HTTP request from config.wsgi. This entrypoint is used ONLY
-# by the separate daphne process that terminates /ws/ (deploy/ecosystem.config.js:
+# by the separate uvicorn process that terminates /ws/ (deploy/ecosystem.config.js:
 # sat-livequiz). The separation is the point: a socket in the gunicorn process would park
 # one of its three sync workers, which is exactly how the SSE endpoint took the site down.
 ASGI_APPLICATION = 'config.asgi.application'

@@ -314,6 +314,10 @@ $PM2 stop sat-celery-beat 2>/dev/null || true
 $PM2 delete sat-celery-worker 2>/dev/null || true
 $PM2 delete sat-celery-beat 2>/dev/null || true
 $PM2 stop sat-backend 2>/dev/null || true
+# The live quiz ASGI process holds open sockets against the OLD release's code. Left
+# running through a migrate it would keep serving it, and `startOrReload` would not
+# necessarily replace a process whose definition has not changed.
+$PM2 stop sat-livequiz 2>/dev/null || true
 $PM2 stop sat-frontend 2>/dev/null || true
 sleep 1
 
@@ -405,6 +409,7 @@ perform_post_cutover_failure_rollback() {
   echo "[POST-DEPLOY FAILED] Validation after symlink; rolling back DB + current + PM2"
   $PM2 stop sat-frontend 2>/dev/null || true
   $PM2 stop sat-backend 2>/dev/null || true
+  $PM2 stop sat-livequiz 2>/dev/null || true
   $PM2 stop sat-celery-worker 2>/dev/null || true
   $PM2 stop sat-celery-beat 2>/dev/null || true
   $PM2 delete sat-celery-worker 2>/dev/null || true

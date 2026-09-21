@@ -62,10 +62,16 @@ boto3==1.43.61
 # VAPID keys and the platform behaves exactly as it did before, bell included).
 pywebpush>=2.0.0
 
-# Live Quiz WebSockets. Installed everywhere, but only the separate `sat-livequiz` daphne
+# Live Quiz WebSockets. Installed everywhere, but only the separate `sat-livequiz` uvicorn
 # process (deploy/ecosystem.config.js) ever serves a socket — gunicorn still runs
 # config.wsgi and is untouched by these. Inert unless LIVE_QUIZ_ENABLED=true.
+#
 # channels 4.3.x is the first line to declare Django 6.0 support.
+#
+# uvicorn rather than daphne, which is the more usual pairing with Channels: daphne drags in
+# twisted + autobahn + cbor2, and cbor2 has no wheel for this toolchain and will not build
+# from source. uvicorn[standard] brings `websockets` and nothing heavier. Nothing in the app
+# imports either one — ASGI_APPLICATION is a string — so the server is purely a deploy choice.
 channels==4.3.2
 channels-redis==4.3.0
-daphne==4.2.3
+uvicorn[standard]==0.53.0

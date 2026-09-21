@@ -11,6 +11,7 @@ const backendCwd = '/var/www/satapp/current/backend';
 const frontendCwd = '/var/www/satapp/current/frontend';
 const venvGunicorn = '/var/www/satapp/current/backend/venv/bin/gunicorn';
 const venvCelery = '/var/www/satapp/current/backend/venv/bin/celery';
+const venvUvicorn = '/var/www/satapp/current/backend/venv/bin/uvicorn';
 // Celery beat persists its schedule (a shelve DB) to disk. The cwd is the
 // per-release tree (created root-owned by the deploy), so the default
 // `celerybeat-schedule` file there is unwritable by the `satapp` service user
@@ -43,6 +44,36 @@ module.exports = {
       script: venvGunicorn,
       args:
         'config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 120 --access-logfile - --error-logfile -',
+      interpreter: 'none',
+      instances: 1,
+      autorestart: true,
+      watch: false,
+      max_memory_restart: '512M',
+      env: {
+        DJANGO_SETTINGS_MODULE: 'config.settings',
+      },
+      log_date_format: 'YYYY-MM-DD HH:mm:ss',
+    },
+    {
+      // ── Live quiz WebSockets (ASGI, separate from Gunicorn) ─
+      //
+      // Its own process on its own port, and that is the whole point. A WebSocket held
+      // open for a 20-minute quiz would park one of Gunicorn's three SYNC workers for the
+      // duration — which is precisely how /api/realtime/events/ took the site down in
+      // August 2026. Here, thirty open sockets cost one async process and nothing else.
+      //
+      // nginx routes only /ws/ here (deploy/nginx.conf). Everything else still goes to
+      // Gunicorn on :8000, untouched.
+      //
+      // ONE worker on purpose. The in-memory channel layer does not span processes, so
+      // without REDIS_URL a second worker would put half a class in a lobby that had
+      // already started. Prod does set REDIS_URL, but one async worker carries far more
+      // sockets than this school will ever open at once, so the risk buys nothing.
+      name: 'sat-livequiz',
+      cwd: backendCwd,
+      script: venvUvicorn,
+      args:
+        'config.asgi:application --host 127.0.0.1 --port 8001 --workers 1 --log-level info',
       interpreter: 'none',
       instances: 1,
       autorestart: true,
