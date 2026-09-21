@@ -43,6 +43,24 @@ question two students answered must not weigh as much as one thirty students ans
 QUESTION, not about the current roster: their answer was a real answer to it. Dropping them
 would silently change the numbers every time a teacher tidies up a class list.
 
+## Which wrong answer, not just how many
+
+An error rate says a question needs a lesson; it does not say what the lesson is. So every
+row also carries ``answer_tally`` — for a multiple-choice question, how many students picked
+each option with the key marked; for a numeric or short-text one, the wrong answers that came
+up most often, because a full tally of typed answers is noise. It is built from the SAME
+rows the rate is (one answer per student, first counted attempt) and costs no extra query:
+the answer was always in the table, this module simply used to drop it in the ``values_list``.
+The two privacy floors that stop a tally naming a student live in ``answer_tally``.
+
+One field in that block means something narrower here than it does on the past-paper report,
+and its name cannot say so: ``answer_tally.no_answer`` counts only rows whose stored answer
+was blank or unreadable. It CANNOT count a student who never reached the question, for the
+same reason the denominator is "graded" and not "assigned" — no row is written until a
+student answers, so there is nothing to count. The past-paper builder reads a whole module
+blob per sitting and therefore does count them. A page that labels this field "left blank"
+is right there and silently low here.
+
 ## Inside one homework, after its deadline
 
 The same analysis is also served *per homework* — the owner's second sentence about it:
@@ -64,6 +82,8 @@ from django.utils.html import strip_tags
 from access.services import is_global_scope_staff
 from classes.models import Classroom, ClassroomMembership
 
+from .answer_tally import Option, ResponseTally, answer_block, option_block
+from .grading import grade_answer
 from .models import (
     AssessmentAnswer,
     AssessmentAttempt,
@@ -372,31 +392,120 @@ def _first_counted_attempts(homework_ids: list[int]) -> dict[int, int]:
     return {attempt_id: student_id for _rank, attempt_id, student_id in first.values()}
 
 
-def _verdicts(attempt_students: dict[int, int]) -> dict[int, dict[int, bool | None]]:
-    """``{question_id: {student_id: is_correct}}`` over the counted attempts only.
+@dataclass(frozen=True)
+class _Response:
+    """One student's answer to one question: the verdict AND what they actually wrote.
+
+    The answer used to be dropped in the ``values_list`` below, which is why this report
+    could say twelve students missed question 7 but never that nine of them picked C — the
+    thing that says what to re-teach. It costs a column, not a query.
+    """
+
+    is_correct: bool | None
+    answer: object
+
+
+def _responses(attempt_students: dict[int, int]) -> dict[int, dict[int, _Response]]:
+    """``{question_id: {student_id: _Response}}`` over the counted attempts only.
 
     Keyed by student rather than accumulated as counters so "distinct students" is literal
     rather than something the arithmetic has to be trusted to preserve.
     """
-    per_question: dict[int, dict[int, bool | None]] = {}
+    per_question: dict[int, dict[int, _Response]] = {}
     if not attempt_students:
         return per_question
     rows = AssessmentAnswer.objects.filter(
         attempt_id__in=list(attempt_students.keys())
-    ).values_list("attempt_id", "question_id", "is_correct")
-    for attempt_id, question_id, is_correct in rows:
+    ).values_list("attempt_id", "question_id", "is_correct", "answer")
+    for attempt_id, question_id, is_correct, answer in rows:
         student_id = attempt_students.get(attempt_id)
         if student_id is None:  # pragma: no cover - defensive
             continue
-        per_question.setdefault(question_id, {}).setdefault(student_id, is_correct)
+        per_question.setdefault(question_id, {}).setdefault(
+            student_id, _Response(is_correct=is_correct, answer=answer)
+        )
     return per_question
 
 
-def _tally_for(verdicts: dict[int, bool | None]) -> ItemTally:
-    correct = sum(1 for v in verdicts.values() if v is True)
-    wrong = sum(1 for v in verdicts.values() if v is False)
-    ungraded = sum(1 for v in verdicts.values() if v is None)
+def _tally_for(responses: dict[int, _Response]) -> ItemTally:
+    verdicts = [r.is_correct for r in responses.values()]
+    correct = sum(1 for v in verdicts if v is True)
+    wrong = sum(1 for v in verdicts if v is False)
+    ungraded = sum(1 for v in verdicts if v is None)
     return ItemTally(correct=correct, wrong=wrong, ungraded=ungraded)
+
+
+def _options_for(question: AssessmentQuestion) -> list[Option]:
+    """The fixed answers this question offered, or ``[]`` when the student typed their own.
+
+    Multiple choice carries its options in ``choices``; True/False carries a pair nobody
+    writes down. Numeric and short text offer none at all, and a per-option count of a
+    question with no options is meaningless — those get the top-wrong-answers shape instead.
+    A multiple-choice question whose ``choices`` were never filled in falls through to that
+    same shape rather than inventing options: a blank list is an authoring gap, not four
+    empty bars.
+
+    Which option is the key is decided by the grader, never by comparing strings here. Two
+    rules for the same question is how a page comes to mark C correct beside a student whose
+    C was marked wrong. For the same reason the True/False pair carries the grader's OWN
+    spellings as aliases: ``grading._to_bool`` accepts ``t/1/yes/y`` and ``f/0/no/n``, so a
+    runner that stored a boolean as ``1`` produced an answer the grader marked correct. Left
+    off this list it would have matched no option, landed in ``unrecognised``, and — once
+    every answer did that — reported a question the whole class answered as unreadable.
+    """
+    extra_aliases: dict[str, tuple] = {}
+    if question.question_type == AssessmentQuestion.TYPE_BOOLEAN:
+        raw: list[tuple[str, str]] = [("true", "True"), ("false", "False")]
+        extra_aliases = {"true": ("t", "1", "yes", "y"), "false": ("f", "0", "no", "n")}
+    elif question.question_type == AssessmentQuestion.TYPE_MULTIPLE_CHOICE:
+        raw = []
+        for entry in question.choices or []:
+            if isinstance(entry, dict):
+                key = str(entry.get("id") or "").strip()
+                text = str(entry.get("text") or "").strip()
+            else:
+                key, text = str(entry or "").strip(), ""
+            if key:
+                raw.append((key, text))
+    else:
+        return []
+
+    options: list[Option] = []
+    seen: set[str] = set()
+    for key, text in raw:
+        # A duplicated id would give one option two bars and split its count between them.
+        marker = key.strip().lower()
+        if marker in seen:
+            continue
+        seen.add(marker)
+        options.append(
+            Option.build(
+                key,
+                text,
+                is_correct=grade_answer(
+                    question_type=question.question_type,
+                    correct_answer=question.correct_answer,
+                    answer=key,
+                    config=question.grading_config or {},
+                ),
+                extra_aliases=extra_aliases.get(key, ()),
+            )
+        )
+    return options
+
+
+def _answer_tally(question: AssessmentQuestion, responses: dict[int, _Response]) -> dict:
+    """What this question's answers were, not merely how many were wrong.
+
+    Pure arithmetic over rows already fetched — no query, per question or per student. The
+    privacy floor and the two shapes live in ``answer_tally``; all that is decided here is
+    which shape this question is.
+    """
+    tally = ResponseTally()
+    for response in responses.values():
+        tally.record(response.answer, is_correct=response.is_correct)
+    options = _options_for(question)
+    return option_block(tally, options) if options else answer_block(tally)
 
 
 def _taxonomy_for(question: AssessmentQuestion) -> tuple[object, str, object, str]:
@@ -473,7 +582,7 @@ def build_item_analysis(
 
     set_ids = {hw.assessment_set_id for hw in homeworks}
     attempt_students = _first_counted_attempts([hw.id for hw in homeworks])
-    verdicts = _verdicts(attempt_students)
+    responses = _responses(attempt_students)
 
     questions = list(
         AssessmentQuestion.objects.filter(assessment_set_id__in=set_ids, is_active=True)
@@ -497,7 +606,8 @@ def build_item_analysis(
     for question in questions:
         aset = question.assessment_set
         positions[aset.id] = positions.get(aset.id, 0) + 1
-        tally = _tally_for(verdicts.get(question.id, {}))
+        question_responses = responses.get(question.id, {})
+        tally = _tally_for(question_responses)
         flagged = tally.needs_analysis(threshold)
         prompt, truncated = _excerpt(question.prompt)
         skill_id, skill_name, domain_id, domain_name = _taxonomy_for(question)
@@ -527,6 +637,9 @@ def build_item_analysis(
                 "ungraded": tally.ungraded,
                 "error_rate": tally.error_rate,
                 "needs_analysis": flagged,
+                # Not just how many got it wrong — WHICH wrong answer they picked. The rate
+                # says a question needs a lesson; this says what the lesson is about.
+                "answer_tally": _answer_tally(question, question_responses),
                 "skill": skill_name or None,
                 "domain": domain_name or None,
             }
@@ -558,7 +671,7 @@ def build_item_analysis(
     )
 
     scoped_question_ids = {q.id for q in questions}
-    retired = len([qid for qid in verdicts if qid not in scoped_question_ids])
+    retired = len([qid for qid in responses if qid not in scoped_question_ids])
 
     return {
         "classroom": _classroom_block(classroom),
