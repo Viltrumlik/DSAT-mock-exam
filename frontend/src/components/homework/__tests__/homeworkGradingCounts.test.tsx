@@ -5,7 +5,7 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
 
 /**
  * What the homework grading hub (`/teacher/homework/grading`) says about each homework: its
- * "N missing" and "All in" badges, the "N / M submitted" line, the overdue banner, which homework it
+ * "N not turned in" and "All in" badges, the "N / M submitted" line, the overdue banner, which homework it
  * lists first, and whether it asks if a homework nobody has turned in reached the students.
  *
  * The first four were `members_count - submissions_count`, and neither number is the one they need.
@@ -17,7 +17,7 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * as submitted.
  *
  * So a class of 20 students with a teacher and a TA, every one of whom had turned the homework in,
- * read "2 missing" and could never read "All in". And one draft was enough to stop the hub asking
+ * read "2 not turned in" and could never read "All in". And one draft was enough to stop the hub asking
  * "was this assignment communicated to students?", while the grading page it links to still said
  * "No submissions yet".
  */
@@ -130,9 +130,9 @@ function row(classId: number, id: number): Element {
   return link;
 }
 
-/** The badges on a row: "N missing" and "All in". */
+/** The badges on a row: "N not turned in" and "All in". */
 function badges(el: Element): string[] {
-  return [...el.querySelectorAll("span")].map(text).filter((t) => /^\d+ missing$/.test(t) || t === "All in");
+  return [...el.querySelectorAll("span")].map(text).filter((t) => /^\d+ not turned in$/.test(t) || t === "All in");
 }
 
 /** A row's "N / M submitted" line, or null when it has none. */
@@ -147,7 +147,7 @@ function asksIfCommunicated(el: Element): boolean {
 
 /** The overdue banner's headline, or null when there is no banner. */
 function banner(): string | null {
-  return [...host.querySelectorAll("p")].map(text).find((t) => t.includes("overdue with missing submissions")) ?? null;
+  return [...host.querySelectorAll("p")].map(text).find((t) => t.includes("past due with work not turned in")) ?? null;
 }
 
 /** The homework rows from top to bottom, by the page each one opens. */
@@ -181,7 +181,7 @@ describe("HomeworkGradingHub — who has turned the homework in", () => {
   it("counts a draft or work returned for revision as missing, and not the work of a student who left", async () => {
     await renderHub([ALGEBRA], { 1: [ESSAY, WORKSHEET, READING] });
 
-    expect(badges(row(1, 102))).toEqual(["4 missing"]);
+    expect(badges(row(1, 102))).toEqual(["4 not turned in"]);
     expect(submittedLine(row(1, 102))).toBe("16 / 20 submitted");
     expect(submittedLine(row(1, 103))).toBe("0 / 20 submitted");
   });
@@ -199,7 +199,7 @@ describe("HomeworkGradingHub — who has turned the homework in", () => {
   it("raises the banner for, and lists first, only the overdue homework that is really missing work", async () => {
     await renderHub([ALGEBRA], { 1: [ESSAY, WORKSHEET, READING] });
 
-    expect(banner()).toBe("1 assignment overdue with missing submissions");
+    expect(banner()).toBe("1 assignment past due with work not turned in");
     // Worksheet is overdue and missing four. The rest follow, latest deadline first.
     expect(order()).toEqual([`${BASE}/1/102`, `${BASE}/1/103`, `${BASE}/1/101`]);
   });

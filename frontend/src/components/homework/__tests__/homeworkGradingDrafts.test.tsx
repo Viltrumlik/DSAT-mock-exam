@@ -10,7 +10,7 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * a deadline from the moment it is saved: `create` gives homework the start of the class's next
  * lesson whatever its status, and only publishing replaces it. Once that lesson began, the hub
  * called the draft overdue with every student missing it, listed it first, counted it in the
- * "overdue with missing submissions" banner and asked whether it had been communicated to students —
+ * "past due with work not turned in" banner and asked whether it had been communicated to students —
  * about homework no student can see or turn in.
  */
 
@@ -120,7 +120,7 @@ function order(): string[] {
 
 /** The overdue banner's headline, or null when there is no banner. */
 function banner(): string | null {
-  return [...host.querySelectorAll("p")].map(text).find((t) => t.includes("overdue with missing submissions")) ?? null;
+  return [...host.querySelectorAll("p")].map(text).find((t) => t.includes("past due with work not turned in")) ?? null;
 }
 
 beforeEach(() => {
@@ -146,7 +146,7 @@ describe("HomeworkGradingHub — homework that has not reached students", () => 
     expect(order()).toEqual([`${BASE}/1/101`, `${BASE}/1/103`]);
     expect(host.textContent).not.toContain("Unit 3 review");
     // The worksheet is still overdue with work missing, and alone in the banner.
-    expect(banner()).toBe("1 assignment overdue with missing submissions");
+    expect(banner()).toBe("1 assignment past due with work not turned in");
     // Nor is anyone asked whether the draft reached students.
     expect(host.textContent).not.toContain("was this assignment communicated to students?");
   });

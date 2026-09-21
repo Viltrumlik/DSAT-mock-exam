@@ -90,8 +90,10 @@ function computeRisk(s: Omit<StudentRecord, "riskLevel" | "riskReasons">): { lev
   if (s.assessmentLow != null) { reasons.push(`Average ${s.assessmentLow}%`); atRisk = true; }
   if (s.inactiveDays != null && s.inactiveDays >= 14) { reasons.push(`Inactive ${s.inactiveDays}d`); atRisk = true; }
   else if (s.inactiveDays != null && s.inactiveDays >= 7) { reasons.push(`Inactive ${s.inactiveDays}d`); watch = true; }
-  if (s.overdueCount >= 2) { reasons.push(`${s.overdueCount} missing`); atRisk = true; }
-  else if (s.overdueCount === 1) { reasons.push("1 missing"); watch = true; }
+  // Display string only — `overdueCount` is the wire field and keeps its name. The same fact is
+  // labelled "Not turned in" on the students drawer and the gradebook, so it reads the same here.
+  if (s.overdueCount >= 2) { reasons.push(`${s.overdueCount} not turned in`); atRisk = true; }
+  else if (s.overdueCount === 1) { reasons.push("1 not turned in"); watch = true; }
   if (s.reviewAvg != null && s.reviewAvg < 60) { reasons.push(`Grade avg ${s.reviewAvg}%`); atRisk = true; }
   else if (s.reviewAvg != null && s.reviewAvg < 70) { reasons.push(`Grade avg ${s.reviewAvg}%`); watch = true; }
   if (s.completionPct != null && s.completionPct < 40) { reasons.push(`${s.completionPct}% turned in`); watch = true; }
@@ -218,7 +220,7 @@ export function useTeacherAnalytics(previewModel?: TeacherAnalyticsModel): Teach
       const watchCount = students.filter((s) => s.riskLevel === "watch").length;
 
       const recommendations: { id: string; title: string; detail: string; href: string }[] = [];
-      if (atRiskCount > 0) recommendations.push({ id: "atrisk", title: `Check in with ${atRiskCount} at-risk ${atRiskCount === 1 ? "student" : "students"}`, detail: "Low averages, missing work, or inactivity.", href: "/teacher/students" });
+      if (atRiskCount > 0) recommendations.push({ id: "atrisk", title: `Check in with ${atRiskCount} at-risk ${atRiskCount === 1 ? "student" : "students"}`, detail: "Low averages, work not turned in, or inactivity.", href: "/teacher/students" });
       const worstAssignment = [...assignments].sort((a, b) => a.completionPct - b.completionPct)[0];
       if (worstAssignment && worstAssignment.completionPct < 60) recommendations.push({ id: "completion", title: `Boost completion on “${worstAssignment.title}”`, detail: `${worstAssignment.completionPct}% turned in · ${worstAssignment.className}`, href: "/teacher/homework" });
       const challenging = assignments.find((a) => a.effectiveness === "challenging");

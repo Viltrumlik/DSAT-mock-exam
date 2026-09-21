@@ -48,9 +48,10 @@ export function TeacherHomework({ previewModel }: { previewModel?: TeacherAnalyt
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
+      {/* No "Teacher" eyebrow: the whole panel is the teacher's. The line under the title is a
+          count the teacher cannot get anywhere else, so it stays. */}
       <div>
-        <p className="ds-overline text-primary">Teacher</p>
-        <h1 className="ds-h1 mt-1">Homework</h1>
+        <h1 className="ds-h1">Homework</h1>
         <p className="ds-small mt-1">{model.assignments.length} assignments across {model.classCount} {model.classCount === 1 ? "class" : "classes"}.</p>
       </div>
 

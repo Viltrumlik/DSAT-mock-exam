@@ -17,7 +17,9 @@ const STATUS_META: Record<GradebookStatus, { label: string; tone: PillTone; bar:
   GRADED: { label: "Graded", tone: "success", bar: "bg-emerald-500" },
   SUBMITTED: { label: "Needs grading", tone: "warning", bar: "bg-amber-500" },
   NEEDS_REVISION: { label: "Needs revision", tone: "info", bar: "bg-sky-500" },
-  MISSING: { label: "Missing", tone: "neutral", bar: "bg-slate-300 dark:bg-slate-600" },
+  // `MISSING` is the wire status and keeps its name; only what a teacher reads changes, so this
+  // tab says the same thing as the teacher-panel gradebook instead of a second vocabulary.
+  MISSING: { label: "Not turned in", tone: "neutral", bar: "bg-slate-300 dark:bg-slate-600" },
 };
 
 function DistributionBar({ counts, autoGraded }: { counts: GradebookCounts; autoGraded: boolean }) {
@@ -104,7 +106,7 @@ function Overview({ classId, onOpen }: { classId: number; onOpen: (id: number) =
               <span className="text-emerald-600">{a.counts.graded} graded</span>
               {!a.is_auto_graded && a.counts.needs_grading > 0 && <span className="text-amber-600">{a.counts.needs_grading} to grade</span>}
               {a.counts.needs_revision > 0 && <span className="text-sky-600">{a.counts.needs_revision} revising</span>}
-              {a.counts.missing > 0 && <span>{a.counts.missing} missing</span>}
+              {a.counts.missing > 0 && <span>{a.counts.missing} not turned in</span>}
               {a.is_auto_graded && a.performance?.average != null && (
                 <span className="text-primary">Avg {a.performance.average} · High {a.performance.highest} · Low {a.performance.lowest}</span>
               )}
@@ -155,7 +157,7 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
   const chips: { key: Filter; label: string; n: number }[] = [
     { key: "ALL", label: "All", n: c.total },
     ...(!a.is_auto_graded ? [{ key: "SUBMITTED" as Filter, label: "Needs grading", n: c.needs_grading }] : []),
-    { key: "MISSING", label: "Missing", n: c.missing },
+    { key: "MISSING", label: "Not turned in", n: c.missing },
     { key: "NEEDS_REVISION", label: "Revising", n: c.needs_revision },
     { key: "GRADED", label: "Graded", n: c.graded },
   ];

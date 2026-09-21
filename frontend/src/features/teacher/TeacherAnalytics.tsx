@@ -43,10 +43,11 @@ export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnaly
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-12">
+      {/* The scope of the numbers below, which nothing else on the page states. The rest of the old
+          line ("who's at risk, what's working…") was a table of contents for what follows. */}
       <div>
-        <p className="ds-overline text-primary">Teacher</p>
-        <h1 className="ds-h1 mt-1">Class analytics</h1>
-        <p className="ds-small mt-1">Who&apos;s at risk, what&apos;s working, and where to intervene — across {m.classCount} {m.classCount === 1 ? "class" : "classes"}.</p>
+        <h1 className="ds-h1">Class analytics</h1>
+        <p className="ds-small mt-1">Across {m.classCount} {m.classCount === 1 ? "class" : "classes"}.</p>
       </div>
 
       {/* KPIs */}
@@ -78,7 +79,8 @@ export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnaly
 
       {/* Risk analysis */}
       <section>
-        <div className="mb-4"><h2 className="ds-h3">Risk analysis</h2><p className="ds-small">Student segmentation by real signals — averages, missing work, inactivity.</p></div>
+        {/* Kept: which signals put a student in a band is the one thing the charts don't show. */}
+        <div className="mb-4"><h2 className="ds-h3">Risk analysis</h2><p className="ds-small">From averages, work not turned in, and inactivity.</p></div>
         <div className="grid gap-4 lg:grid-cols-3">
           <ChartCard title="How is the cohort split?" description="Student segmentation" legend={[{ key: "on", label: "On track", color: "var(--chart-3)" }, { key: "w", label: "Watch", color: "var(--chart-2)" }, { key: "r", label: "At risk", color: "var(--chart-4)" }]}>
             <DonutChart data={segmentation} height={220} centerValue={m.totalStudents} centerLabel="Students" />
@@ -101,7 +103,8 @@ export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnaly
 
       {/* Performance analysis */}
       <section>
-        <div className="mb-4"><h2 className="ds-h3">Performance analysis</h2><p className="ds-small">Class comparisons and assignment effectiveness.</p></div>
+        {/* The two cards below are titled "How do classes compare?" and "Assignment effectiveness". */}
+        <div className="mb-4"><h2 className="ds-h3">Performance analysis</h2></div>
         <div className="grid gap-4 lg:grid-cols-2">
           <ChartCard title="How do classes compare?" description="Completion rate by class">
             {m.classes.length === 0 ? <EmptyState compact title="No class data" /> : (
@@ -130,7 +133,8 @@ export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnaly
 
       {/* SAT analysis */}
       <section>
-        <div className="mb-4"><h2 className="ds-h3">SAT analysis</h2><p className="ds-small">Score progress over time. Strand-level data isn&apos;t available yet.</p></div>
+        {/* The strand caveat is not lost — the strand card itself carries it, where it applies. */}
+        <div className="mb-4"><h2 className="ds-h3">SAT analysis</h2></div>
         <div className="grid gap-4 lg:grid-cols-2">
           <ChartCard title="Are group means improving?" description="Practice group mean per assignment over time">
             <LineChart data={m.classAvgTrend} xKey="label" series={trendSeries} height={220} yDomain={[400, 1600]} emptyMessage={{ title: "No scored practice yet", description: "Group means appear as classes complete practice tests." }} />

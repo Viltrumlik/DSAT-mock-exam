@@ -172,7 +172,7 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
           <EmptyState
             icon={ClipboardList}
             title="No midterms given yet"
-            description="Assign a published midterm to the class and it will appear here with its roster, schedule and results."
+            description="Assign a published midterm to the class and it will appear here with its class list, schedule and results."
             action={<Button icon={Plus} onClick={() => setCatalogOpen(true)}>Assign a midterm</Button>}
           />
         ) : (

@@ -11,7 +11,6 @@ import {
   ClipboardCheck,
   FileText,
   Hourglass,
-  Info,
   Search,
   UserMinus,
   UserPlus,
@@ -37,7 +36,6 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { Avatar } from "@/components/ui/Avatar";
 import {
   Button,
-  buttonClassName,
   Card,
   CardHeader,
   ConfirmDialog,
@@ -59,8 +57,8 @@ import type { PillTone } from "@/features/classroom/ui";
  * Standalone means ONE TEACHER GIVING ONE PAPER TO NAMED STUDENTS: a per-student
  * ResourceAccessGrant with classroom = NULL. That is the whole scope of this page, and it is
  * also the thing teachers got wrong — a midterm assigned through a classroom is a different
- * object (a MidtermSchedule on that class) and never appears here, so the page says so out
- * loud instead of showing an empty table and letting the teacher conclude it is broken.
+ * object (a MidtermSchedule on that class) and never appears here, so the page header says
+ * where those live, once, rather than letting a teacher conclude the page is broken.
  *
  * The page answers, in order: which midterms have I given out, who still has to sit them,
  * and whose results are waiting for me. The published catalog is still one click away —
@@ -120,36 +118,6 @@ function MidtermMeta({ m }: { m: MidtermCatalogItem }) {
         </Pill>
       )}
     </span>
-  );
-}
-
-/**
- * The single line that stops the biggest confusion in this area. A teacher who assigned a
- * midterm through a classroom lands here, finds nothing, and needs to be told where their
- * results actually are — not left to discover it.
- */
-function ClassroomHandoffNote({ compact = false }: { compact?: boolean }) {
-  return (
-    <Card pad={compact ? "sm" : "md"} className="border-primary/25 bg-primary/5">
-      <div className="flex flex-wrap items-start gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-          <Info className="h-4 w-4" aria-hidden />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">
-            This page covers midterms given to individual students.
-          </p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gave a midterm to a whole class instead? That sitting belongs to the classroom, and its
-            results are in the classroom&rsquo;s own Midterms tab — together with the schedule, the
-            access code, class ranks and certificates. Nothing you assigned that way will appear here.
-          </p>
-        </div>
-        <Link href="/teacher/classrooms" className={buttonClassName({ variant: "secondary", size: "sm" })}>
-          Open Classrooms
-        </Link>
-      </div>
-    </Card>
   );
 }
 
@@ -249,10 +217,13 @@ export function StandaloneMidtermsList() {
     );
   }, [items, catalogQuery, catalogSubject]);
 
+  // The one thing a teacher cannot see from here — that a midterm given to a whole class is a
+  // different object, kept somewhere else — is said once, in the header that every state renders.
+  // It used to be a paragraph in a bordered note, repeated on four of them.
   const header = (
     <PageHeader
       title="Midterms"
-      description="Give a midterm to individual students and follow their results. Each paper is auto-graded on submit and issues a certificate in your name."
+      description="Midterms you give to named students. A midterm given to a whole class lives in that classroom’s own Midterms tab."
     />
   );
 
@@ -261,7 +232,6 @@ export function StandaloneMidtermsList() {
     return (
       <div className={SHELL}>
         {header}
-        <ClassroomHandoffNote />
         <LoadingState label="Checking which midterms you have given out…" />
       </div>
     );
@@ -298,7 +268,6 @@ export function StandaloneMidtermsList() {
     return (
       <div className={SHELL}>
         {header}
-        <ClassroomHandoffNote />
         <Card className="mt-4">
           <EmptyState
             icon={FileText}
@@ -314,7 +283,6 @@ export function StandaloneMidtermsList() {
   return (
     <div className={SHELL}>
       {header}
-      <ClassroomHandoffNote />
 
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Midterms given out" value={totals.givenOut} icon={FileText} sub={`of ${items.length} published`} />
@@ -759,10 +727,6 @@ export function StandaloneMidtermDetail({ midtermId }: { midtermId: number }) {
               : "Nobody has finished it yet"
           }
         />
-      </div>
-
-      <div className="mt-4">
-        <ClassroomHandoffNote compact />
       </div>
 
       {showPicker && (

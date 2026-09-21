@@ -128,8 +128,8 @@ function GradingInner({ previewItems }: { previewItems?: QueueItem[] }) {
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <p className="ds-overline text-primary">Teacher</p>
-          <h1 className="ds-h1 mt-1">Grading</h1>
+          {/* The line under the title is a count and two shortcuts — none of it is on screen otherwise. */}
+          <h1 className="ds-h1">Grading</h1>
           <p className="ds-small mt-1">{items.length} awaiting a grade · <kbd className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold">⌘↵</kbd> save &amp; next · <kbd className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold">↑↓</kbd> navigate</p>
         </div>
       </div>

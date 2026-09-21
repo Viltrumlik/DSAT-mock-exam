@@ -300,7 +300,7 @@ describe("useTeacherAnalytics — each student's homework grades", () => {
     expect(model!.recommendations[0]).toEqual({
       id: "atrisk",
       title: "Check in with 1 at-risk student",
-      detail: "Low averages, missing work, or inactivity.",
+      detail: "Low averages, work not turned in, or inactivity.",
       href: "/teacher/students",
     });
   });
@@ -388,6 +388,6 @@ describe("TeacherAnalytics — grade signals in the totals", () => {
     expect([kpi("Students"), kpi("At risk"), kpi("Watch")]).toEqual(["6", "1", "2"]);
     // The at-risk list names the student and the reason.
     expect(stat(host, nameOf(FAILING))).toBe("Grade avg 52%");
-    expect(stat(host, "Check in with 1 at-risk student")).toBe("Low averages, missing work, or inactivity.");
+    expect(stat(host, "Check in with 1 at-risk student")).toBe("Low averages, work not turned in, or inactivity.");
   });
 });

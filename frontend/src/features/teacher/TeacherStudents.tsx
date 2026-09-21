@@ -50,10 +50,10 @@ export function TeacherStudents({ previewModel }: { previewModel?: TeacherAnalyt
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
+      {/* Two counts, and nothing telling the teacher that a card opens when you tap it. */}
       <div>
-        <p className="ds-overline text-primary">Teacher</p>
-        <h1 className="ds-h1 mt-1">Students</h1>
-        <p className="ds-small mt-1">{model.students.length} students · {model.atRiskCount} at risk. Tap a card for the full picture.</p>
+        <h1 className="ds-h1">Students</h1>
+        <p className="ds-small mt-1">{model.students.length} students · {model.atRiskCount} at risk.</p>
       </div>
 
       {/* Filters */}
@@ -113,7 +113,8 @@ export function TeacherStudents({ previewModel }: { previewModel?: TeacherAnalyt
                 <DrawerStat icon={ClipboardCheck} label="Assignment completion" value={detail.completionPct != null ? `${detail.completionPct}%` : "—"} bar={detail.completionPct ?? undefined} />
                 <DrawerStat icon={Activity} label="Practice average" value={detail.practiceAverage != null ? String(detail.practiceAverage) : "No practice yet"} />
                 <DrawerStat icon={Clock} label="Activity" value={isActive(detail) ? "Active this week" : `Inactive ${detail.inactiveDays}d`} />
-                <DrawerStat icon={ShieldAlert} label="Missing work" value={detail.overdueCount > 0 ? `${detail.overdueCount} assignments` : "None"} />
+                {/* "Not turned in", never "Missing": what a student still owes is not a failing. */}
+                <DrawerStat icon={ShieldAlert} label="Not turned in" value={detail.overdueCount > 0 ? `${detail.overdueCount} assignments` : "None"} />
               </div>
             </div>
 

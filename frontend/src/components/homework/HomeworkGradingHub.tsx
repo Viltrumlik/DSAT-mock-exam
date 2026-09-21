@@ -212,13 +212,11 @@ export default function HomeworkGradingHub({
         </Link>
       </div>
 
+      {/* No "Grading" eyebrow over "Grade homework", and no paragraph describing the list below it:
+          the rows say who has turned work in, and opening one is the only thing to do here. */}
       <div className="mb-8">
-        <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-primary">Grading</p>
         {/* § 4.2 — heading scale aligned to page-level content hierarchy */}
         <h1 className="text-xl font-bold tracking-tight text-foreground">Grade homework</h1>
-        <p className="mt-2 text-muted-foreground">
-          Open an assignment to see who turned work in, review uploads and pastpaper results, and enter grades.
-        </p>
       </div>
 
       {refreshError ? (
@@ -279,12 +277,12 @@ export default function HomeworkGradingHub({
           <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 flex items-start gap-3">
             <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
             <div>
+              {/* "Not turned in", never "missing": the homework is past its deadline, the student is
+                  not a delinquent. The advice about what to do next was the teacher's call anyway. */}
               <p className="text-sm font-extrabold text-red-800">
-                {attentionCount} assignment{attentionCount === 1 ? "" : "s"} overdue with missing submissions
+                {attentionCount} assignment{attentionCount === 1 ? "" : "s"} past due with work not turned in
               </p>
-              <p className="text-xs text-red-700 mt-0.5">
-                Highlighted below — consider chasing students or extending the deadline.
-              </p>
+              <p className="text-xs text-red-700 mt-0.5">Highlighted below.</p>
             </div>
           </div>
         )}
@@ -312,7 +310,7 @@ export default function HomeworkGradingHub({
                         {needsAttention && (
                           <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700">
                             <AlertTriangle className="h-3 w-3" />
-                            {missing} missing
+                            {missing} not turned in
                           </span>
                         )}
                         {allIn && (

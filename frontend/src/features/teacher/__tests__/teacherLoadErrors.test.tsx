@@ -11,12 +11,12 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * failure was drawn as data:
  * - the class list → "No classes yet";
  * - a class's people or homework → "No students yet", or a gradebook with no columns;
- * - one homework's submissions → every student "missing" it, in their "N!" badge and in "Missing work";
+ * - one homework's submissions → every student "missing" it, in their "N!" badge and in "Not turned in";
  * - any of the queue's requests → a queue without that work, and "All caught up" when none came back.
  *
  * A load that fails is its own state: the page says what did not load and offers "Try again", which runs
  * that load again. A load that only partly came back has failed too. A class's gradebook is not drawn
- * from some of its homework, because its averages, trends and "Missing work" are taken over all of it.
+ * from some of its homework, because its averages, trends and "Not turned in" are taken over all of it.
  * The queue is not listed from some of its requests, because it would stop short of work that is waiting.
  */
 
@@ -239,7 +239,7 @@ describe("useGradebook — a request that failed is not a gradebook", () => {
     );
     expect(missing).toEqual([]);
     expect(read().model?.missingCount ?? 0).toBe(0);
-    // None of the class is drawn: its averages, trends and "Missing work" are taken over all of its homework.
+    // None of the class is drawn: its averages, trends and "Not turned in" are taken over all of its homework.
     expect(read().model).toBeNull();
     expect(read().matrixError).toEqual({ detail: null });
   });
@@ -384,7 +384,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(text()).not.toContain("No students yet");
     expect(chartCard("How is the class distributed?")).not.toContain("No graded work yet");
     expect(stat("Students")).toBe("—");
-    expect(stat("Missing work")).toBe("—");
+    expect(stat("Not turned in")).toBe("—");
     expect(text()).toContain("Couldn’t load the gradebook for Algebra 2");
     expect(text()).toContain("Grades and submissions are unchanged — only this view failed to load.");
     // The other class is still one click away.
@@ -395,7 +395,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
 
     expect(text()).not.toContain("Couldn’t load");
     expect(stat("Students")).toBe("2");
-    expect(stat("Missing work")).toBe("0");
+    expect(stat("Not turned in")).toBe("0");
   });
 
   it("while Try again waits on the class, its gradebook's place is loading — not 'No students yet'", async () => {
@@ -416,14 +416,14 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(stat("Students")).toBe("2");
   });
 
-  it("one homework's submissions not loading puts no '!' on anyone and no number in 'Missing work'", async () => {
+  it("one homework's submissions not loading puts no '!' on anyone and no number in “Not turned in”", async () => {
     let failing = true;
     failWhere(api.listSubmissions, (_classId, assignmentId) => failing && assignmentId === 102, networkError);
     await mount(<TeacherGradebook />);
     await until(pageSettled);
 
     expect(text()).not.toMatch(/\d!/);
-    expect(stat("Missing work")).toBe("—");
+    expect(stat("Not turned in")).toBe("—");
     expect(text()).toContain("Couldn’t load the gradebook for Algebra 2");
 
     failing = false;
@@ -431,7 +431,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(text()).not.toMatch(/\d!/);
-    expect(stat("Missing work")).toBe("0");
+    expect(stat("Not turned in")).toBe("0");
     expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 
@@ -450,7 +450,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(chartCard("How is the class distributed?")).toContain("No graded work yet");
-    expect(stat("Missing work")).toBe("0");
+    expect(stat("Not turned in")).toBe("0");
   });
 });
 

@@ -51,10 +51,10 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5">
+      {/* The key at the foot of the page says what the colours mean; a subtitle saying they mean
+          something was only a longer way of pointing at it. */}
       <div>
-        <p className="ds-overline text-primary">Teacher</p>
-        <h1 className="ds-h1 mt-1">Gradebook</h1>
-        <p className="ds-small mt-1">Spot gaps and dips at a glance — color shows performance, not just numbers.</p>
+        <h1 className="ds-h1">Gradebook</h1>
       </div>
 
       {classes.length > 1 ? (
@@ -69,7 +69,9 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
         <Stat icon={Gauge} label="Class average" value={model?.classAverage != null ? `${model.classAverage}%` : "—"} />
         <Stat icon={Users} label="Students" value={model?.students.length ?? "—"} />
-        <Stat icon={AlertTriangle} label="Missing work" value={model?.missingCount ?? "—"} tone={model && model.missingCount > 0 ? "warning" : undefined} />
+        {/* "Not turned in", never "Missing": the wire status stays `missing`, the teacher reads the
+            growth-oriented words. */}
+        <Stat icon={AlertTriangle} label="Not turned in" value={model?.missingCount ?? "—"} tone={model && model.missingCount > 0 ? "warning" : undefined} />
         <ChartCard title="How is the class distributed?" className="sm:col-span-3 lg:col-span-1">
           {!model || model.distribution.every((d) => d.count === 0) ? (
             // With no gradebook loaded there is nothing to say about grades, least of all that there are none.
@@ -111,7 +113,15 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
                   {model.students.map((s) => (
                     <tr key={s.id}>
                       <td className="sticky left-0 z-10 bg-card px-4 py-2.5 font-semibold text-foreground">
-                        <span className="flex items-center gap-2"><Avatar src={s.avatarUrl} name={s.name} size={24} /><span className="truncate">{s.name}</span>{s.missing > 0 ? <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-bold text-warning-foreground">{s.missing}!</span> : null}</span>
+                        <span className="flex items-center gap-2"><Avatar src={s.avatarUrl} name={s.name} size={24} /><span className="truncate">{s.name}</span>{s.missing > 0 ? (
+                          /* A `title` on an element that has text is read as a description, not a name, so a
+                             screen reader would still announce "3 exclamation". The glyph is hidden from the
+                             tree and the sr-only span carries the name; the title stays for mouse users. */
+                          <span title={`${s.missing} not turned in`} className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-bold text-warning-foreground">
+                            <span aria-hidden="true">{s.missing}!</span>
+                            <span className="sr-only">{s.missing} not turned in</span>
+                          </span>
+                        ) : null}</span>
                       </td>
                       {s.cells.map((c) => (
                         <td key={c.assignmentId} className="px-1.5 py-1.5 text-center">
@@ -139,7 +149,7 @@ export function TeacherGradebook({ preview }: { preview?: { classes: ClassOption
         <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-success" />Strong 80+</span>
         <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-info" />On track 60–79</span>
         <span className="mr-3"><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-warning" />Needs attention &lt;60</span>
-        <span>· <strong>–</strong> missing · <strong>•</strong> awaiting grade</span>
+        <span>· <strong>–</strong> not turned in · <strong>•</strong> awaiting grade</span>
       </p>
     </div>
   );
