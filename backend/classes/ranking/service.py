@@ -117,12 +117,22 @@ def _recompute_academic(classroom, student_ids, period_key, now) -> int:
 
     Every active student is written, including those on 0 — an academic board is the
     teacher's roster view, and a student who has done nothing is exactly who they want to
-    see on it.
+    see on it. Since ranks are now shared between equal XP, that has a consequence worth
+    expecting before a teacher reports it: a class where six students have earned nothing
+    writes six rows on the same rank, and the board ends without a last place. That is the
+    honest reading. Numbering those six 5th through 10th would be inventing an order between
+    students the board has nothing to tell apart, and it is the same invention — on a smaller
+    scale — that produced the two-students-one-score complaint this rule was introduced for.
     """
+    from rewards.leaderboard import competition_ranks, xp_rank_key
     from rewards.services import xp_board_totals_for
 
     totals = xp_board_totals_for(student_ids, classroom=classroom)
 
+    # Ordered on three keys so the roster reads the same way twice, ranked on XP alone so two
+    # students showing the same score are given the same number. `rewards.leaderboard` owns
+    # that rule for every board in the product — the classroom board and the school-wide one
+    # answering differently about the same two students is what made it a shared function.
     computed = sorted(
         ((sid, totals.get(sid, {"xp": 0, "awards": 0})) for sid in student_ids),
         key=lambda t: (-t[1]["xp"], -t[1]["awards"], t[0]),
@@ -131,7 +141,7 @@ def _recompute_academic(classroom, student_ids, period_key, now) -> int:
     prev = _previous_ranks(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
     prev_scores = _previous_scores(classroom, RankingSnapshot.KIND_ACADEMIC, period_key)
 
-    for rank, (sid, row) in enumerate(computed, start=1):
+    for rank, (sid, row) in competition_ranks(computed, key=lambda pair: xp_rank_key(pair[1])):
         prev_rank = prev.get(sid)
         xp = float(row["xp"])
         trend = _academic_trend(prev_scores.get(sid), xp)

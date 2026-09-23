@@ -101,7 +101,10 @@ class RankingsView(_ClassroomScopedView):
         snaps = list(
             RankingSnapshot.objects.filter(classroom=classroom, kind=kind, period_key=latest_period)
             .select_related("student")
-            .order_by("rank")
+            # `rank` stopped identifying a row the day equal XP started sharing a number, and
+            # Postgres is free to return equal sort keys in whatever order it pleases — so a
+            # board ordered on rank alone would deal its tied rows differently on each refresh.
+            .order_by("rank", "student_id")
         ) if latest_period else []
 
         # Staff/admin see everything; students are governed by the config.
