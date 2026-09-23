@@ -12,6 +12,7 @@ import {
   LoadingState, ErrorState, EmptyState, ConfirmDialog,
 } from "../ui";
 import { MidtermPanel } from "./MidtermPanel";
+import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
 
 const scheduleSelectCls =
@@ -143,7 +144,18 @@ export function Midterms({ classroom }: { classroom: ClassroomWithRole }) {
   }
 
   if (open) {
-    return <MidtermPanel classId={id} midtermId={open.id} title={open.title} onBack={() => setOpen(null)} />;
+    // Derived from THIS `classroom` and handed down, because this object is the one the
+    // student site already rewrote to STUDENT (`consumer`). The panel must not go looking for
+    // the membership itself — see the `caps` prop there.
+    return (
+      <MidtermPanel
+        classId={id}
+        midtermId={open.id}
+        title={open.title}
+        caps={capabilitiesFor(classroom.my_role)}
+        onBack={() => setOpen(null)}
+      />
+    );
   }
 
   return (
