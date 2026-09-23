@@ -27,6 +27,7 @@ export type LiveQuizEvent =
   | "game_resumed"
   | "game_finished"
   | "session_terminated"
+  | "removed_from_session"
   | "error"
   | "pong";
 

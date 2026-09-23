@@ -27,6 +27,7 @@ from core.errors.api import AppError
 
 from . import constants as const
 from . import events, services
+from .state_machine import InvalidTransition
 from .models import LiveQuizParticipant, LiveQuizSession
 
 logger = logging.getLogger("livequiz")
@@ -131,6 +132,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             const.CMD_RESUME_GAME: self._cmd_resume,
             const.CMD_END_GAME: self._cmd_end_game,
             const.CMD_SUBMIT_ANSWER: self._cmd_submit_answer,
+            const.CMD_REMOVE_PARTICIPANT: self._cmd_remove_participant,
             const.CMD_LEAVE_SESSION: self._cmd_leave,
         }
         handler = handlers.get(command)
@@ -142,6 +144,10 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             await handler(content or {})
         except AppError as exc:
             await self._error(str(getattr(exc, "code", "") or const.ERR_BAD_STATE), exc.detail)
+        except InvalidTransition as exc:
+            # A move the rules do not allow — pausing a game that has not begun, say. That
+            # is the host being ahead of the room, not a fault, and it must not read as one.
+            await self._error(const.ERR_BAD_STATE, str(exc))
         except Exception:  # pragma: no cover - defensive; never kill the room
             logger.exception(
                 "livequiz_command_failed session=%s command=%s", self.session_id, command
@@ -166,10 +172,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
     async def _cmd_advance(self, _content):
         session, question = await self._advance()
         if question is None:
-            await self._broadcast(
-                const.EV_GAME_FINISHED,
-                {"leaderboard": await self._leaderboard(), "session": await self._state()},
-            )
+            await self._announce_finished()
             return
         await self._announce_question(session, question)
 
@@ -189,10 +192,23 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
 
     async def _cmd_end_game(self, _content):
         self._cancel_timer()
-        session = await self._session()
-        if session.status == const.STATUS_QUESTION_ACTIVE:
-            await self._call(services.close_question)
-        await self._finish()
+        session = await self._call(services.end_game)
+        if session.status == const.STATUS_TERMINATED:
+            # It never started, so there is no result to show — say so plainly instead of
+            # putting an empty leaderboard on the projector.
+            await self._broadcast(const.EV_SESSION_TERMINATED, await self._state())
+            return
+        await self._announce_finished()
+
+    async def _cmd_remove_participant(self, content):
+        removed = await self._remove_participant(content.get("participant_id"))
+        if removed is None:
+            await self._error(const.ERR_NOT_PARTICIPANT, "There is no such player in this room.")
+            return
+        # Sent to the whole room: the lobby already shows every name, so this tells nobody
+        # anything new, and it is the removed player's own socket that acts on it.
+        await self._broadcast(const.EV_REMOVED, {"participant_id": removed})
+        await self._broadcast(const.EV_LOBBY_UPDATED, await self._lobby())
 
     async def _cmd_leave(self, _content):
         await self.close()
@@ -259,8 +275,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             await asyncio.sleep(const.COUNTDOWN_SECONDS)
             await self._cmd_advance({})
 
-    async def _finish(self):
-        await self._call(services.finish_game)
+    async def _announce_finished(self):
         await self._broadcast(
             const.EV_GAME_FINISHED,
             {"leaderboard": await self._leaderboard(), "session": await self._state()},
@@ -311,6 +326,15 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         if audience and audience != self.role:
             return
         await self.send_json({"type": message["event"], "data": message["data"]})
+
+        # The player who was removed hears it and then goes. Closing here rather than
+        # waiting for them to navigate away means the lobby count is right immediately.
+        if (
+            message["event"] == const.EV_REMOVED
+            and self.participant_id
+            and message["data"].get("participant_id") == self.participant_id
+        ):
+            await self.close(code=CLOSE_FORBIDDEN)
 
     async def _error(self, code: str, detail: str) -> None:
         await self.send_json({"type": const.EV_ERROR, "data": events.error(code, detail)})
@@ -473,6 +497,14 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             services.mark_connected(participant)
         else:
             services.mark_disconnected(participant)
+
+    @database_sync_to_async
+    def _remove_participant(self, participant_id):
+        if participant_id is None:
+            return None
+        session = LiveQuizSession.objects.select_related("classroom").get(pk=self.session_id)
+        removed = services.remove_participant(session=session, participant_id=participant_id)
+        return removed.id if removed else None
 
     @database_sync_to_async
     def _touch(self):

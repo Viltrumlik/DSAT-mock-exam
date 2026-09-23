@@ -53,6 +53,7 @@ export interface LiveQuizRoom {
   tally: QuestionOutcome["tally"] | null;
   timeWarning: boolean;
   finished: boolean;
+  removed: boolean;
   error: { code: string; detail: string } | null;
 }
 
@@ -75,6 +76,7 @@ const EMPTY: LiveQuizRoom = {
   tally: null,
   timeWarning: false,
   finished: false,
+  removed: false,
   error: null,
 };
 
@@ -115,6 +117,8 @@ export function useLiveQuiz(sessionId: number | null) {
       pause: () => send("pause_game"),
       resume: () => send("resume_game"),
       endGame: () => send("end_game"),
+      removePlayer: (participantId: number) =>
+        send("remove_participant", { participant_id: participantId }),
       submitAnswer: (questionId: number, answer: unknown) =>
         send("submit_answer", { question_id: questionId, answer }),
     }),
@@ -215,6 +219,13 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame): LiveQuizRoom {
         timeWarning: false,
         leaderboard: data.leaderboard?.rows ?? prev.leaderboard,
       };
+
+    case "removed_from_session":
+      // Broadcast to the room, so check it is actually us before showing the message. The
+      // socket is closed by the server a moment later; this is what the student reads.
+      return prev.me && data.participant_id === prev.me.id
+        ? { ...prev, removed: true }
+        : { ...prev, participants: prev.participants.filter((p) => p.id !== data.participant_id) };
 
     case "session_terminated":
       return { ...prev, status: "TERMINATED", endsAt: null };

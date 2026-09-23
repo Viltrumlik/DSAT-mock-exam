@@ -326,3 +326,99 @@ class LiveQuizSocketTests(TransactionTestCase):
             self.assertFalse(connected)
 
         async_to_sync(run)()
+
+    def test_a_host_ending_a_game_that_never_started_stops_the_room(self):
+        """The class did not turn up, or the wrong room was opened.
+
+        Pressing End in the lobby has to close the room — and release its code — rather
+        than reporting a fault and leaving it open.
+        """
+
+        async def run():
+            communicator = self._communicator(self.teacher)
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.receive_json_from()  # session_state
+
+            await communicator.send_json_to({"type": const.CMD_END_GAME})
+            await communicator.receive_json_from()
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+        self.session.refresh_from_db()
+        self.assertIn(self.session.status, const.TERMINAL_STATUSES)
+        # The code is free again: nothing live is holding it.
+        self.assertIsNone(services.find_session_by_code(self.session.join_code))
+
+    def test_an_illegal_move_reads_as_a_bad_state_not_a_crash(self):
+        """A host pausing a game that has not begun is a mistake, not a server fault."""
+
+        async def run():
+            communicator = self._communicator(self.teacher)
+            await communicator.connect()
+            await communicator.receive_json_from()
+
+            await communicator.send_json_to({"type": const.CMD_PAUSE_GAME})
+            reply = await await_frame(communicator, const.EV_ERROR)
+
+            self.assertEqual(reply["data"]["code"], const.ERR_BAD_STATE)
+            self.assertNotEqual(reply["data"]["code"], "server_error")
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+    def test_the_host_can_remove_a_player_and_they_cannot_come_back(self):
+        """Somebody read the code off the board from the corridor."""
+        participant = services.join_session(session=self.session, user=self.student)
+
+        async def run():
+            host = self._communicator(self.teacher)
+            await host.connect()
+            await host.receive_json_from()
+
+            player = self._communicator(self.student)
+            await player.connect()
+            await player.receive_json_from()
+
+            await host.send_json_to(
+                {"type": const.CMD_REMOVE_PARTICIPANT, "participant_id": participant.id}
+            )
+            told = await await_frame(player, const.EV_REMOVED)
+            self.assertEqual(told["data"]["participant_id"], participant.id)
+
+            await host.disconnect()
+
+        async_to_sync(run)()
+
+        participant.refresh_from_db()
+        self.assertEqual(participant.status, const.PARTICIPANT_KICKED)
+
+        # The code no longer lets them back in.
+        with self.assertRaises(Exception):
+            services.join_session(session=self.session, user=self.student)
+
+        # And they are off the board.
+        self.assertNotIn(
+            participant.id, [p.id for p in services.participants_of(self.session)]
+        )
+
+    def test_a_student_cannot_remove_anybody(self):
+        participant = services.join_session(session=self.session, user=self.student)
+
+        async def run():
+            communicator = self._communicator(self.student)
+            await communicator.connect()
+            await communicator.receive_json_from()
+
+            await communicator.send_json_to(
+                {"type": const.CMD_REMOVE_PARTICIPANT, "participant_id": participant.id}
+            )
+            reply = await await_frame(communicator, const.EV_ERROR)
+            self.assertEqual(reply["data"]["code"], const.ERR_NOT_HOST)
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+        participant.refresh_from_db()
+        self.assertEqual(participant.status, const.PARTICIPANT_JOINED)

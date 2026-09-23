@@ -77,6 +77,7 @@ EV_GAME_PAUSED = "game_paused"
 EV_GAME_RESUMED = "game_resumed"
 EV_GAME_FINISHED = "game_finished"
 EV_SESSION_TERMINATED = "session_terminated"
+EV_REMOVED = "removed_from_session"  # to the one taken out of the room
 EV_ERROR = "error"
 EV_PONG = "pong"
 
@@ -91,6 +92,7 @@ CMD_END_QUESTION = "end_question"
 CMD_PAUSE_GAME = "pause_game"
 CMD_RESUME_GAME = "resume_game"
 CMD_END_GAME = "end_game"
+CMD_REMOVE_PARTICIPANT = "remove_participant"
 CMD_LEAVE_SESSION = "leave_session"
 CMD_HEARTBEAT = "heartbeat"
 
@@ -105,6 +107,7 @@ HOST_ONLY_COMMANDS = frozenset(
         CMD_PAUSE_GAME,
         CMD_RESUME_GAME,
         CMD_END_GAME,
+        CMD_REMOVE_PARTICIPANT,
     }
 )
 

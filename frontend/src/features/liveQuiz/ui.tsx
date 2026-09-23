@@ -7,7 +7,7 @@
  * played in, rather than as a game bolted onto the side.
  */
 
-import { Users, WifiOff } from "lucide-react";
+import { Users, WifiOff, X } from "lucide-react";
 
 import { Card, Pill } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
@@ -105,7 +105,14 @@ export function JoinCode({ code }: { code: string }) {
   );
 }
 
-export function LobbyGrid({ participants }: { participants: LiveParticipant[] }) {
+export function LobbyGrid({
+  participants,
+  onRemove,
+}: {
+  participants: LiveParticipant[];
+  /** Host only. Absent for a player, who must not be offered a control they'd be refused. */
+  onRemove?: (participant: LiveParticipant) => void;
+}) {
   const present = participants.filter((p) => p.status === "JOINED");
 
   if (present.length === 0) {
@@ -123,11 +130,22 @@ export function LobbyGrid({ participants }: { participants: LiveParticipant[] })
         <span
           key={person.id}
           className={cn(
-            "rounded-full border border-border bg-card px-3.5 py-1.5 text-sm font-medium",
+            "inline-flex items-center gap-1.5 rounded-full border border-border bg-card py-1.5 pl-3.5 text-sm font-medium",
+            onRemove ? "pr-1.5" : "pr-3.5",
             !person.present && "opacity-50",
           )}
         >
           {person.display_name}
+          {onRemove && (
+            <button
+              type="button"
+              onClick={() => onRemove(person)}
+              aria-label={`Remove ${person.display_name}`}
+              className="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-rose-500/10 hover:text-rose-600"
+            >
+              <X className="h-3.5 w-3.5" aria-hidden />
+            </button>
+          )}
         </span>
       ))}
     </div>

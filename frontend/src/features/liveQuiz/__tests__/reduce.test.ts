@@ -138,3 +138,31 @@ describe("the client's picture of the room", () => {
     expect(room).toBe(EMPTY_ROOM);
   });
 });
+
+describe("being removed from the room", () => {
+  const withMe = () =>
+    reduce(
+      EMPTY_ROOM,
+      frame("session_state", {
+        status: "LOBBY",
+        participants: [
+          { id: 5, user_id: 50, display_name: "Ali" },
+          { id: 6, user_id: 60, display_name: "Dilnoza" },
+        ],
+        me: { id: 5, user_id: 50, display_name: "Ali" },
+      }),
+    );
+
+  it("tells me when it is me", () => {
+    const room = reduce(withMe(), frame("removed_from_session", { participant_id: 5 }));
+    expect(room.removed).toBe(true);
+  });
+
+  it("only drops the name when it is somebody else", () => {
+    // The frame goes to the whole room, so every other client sees it too and must not
+    // conclude that it was thrown out.
+    const room = reduce(withMe(), frame("removed_from_session", { participant_id: 6 }));
+    expect(room.removed).toBe(false);
+    expect(room.participants.map((p) => p.id)).toEqual([5]);
+  });
+});

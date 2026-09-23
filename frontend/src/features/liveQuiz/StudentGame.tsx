@@ -230,7 +230,16 @@ export function StudentGame({ sessionId }: { sessionId: number }) {
         </>
       )}
 
-      {room.status === "TERMINATED" && (
+      {room.removed && (
+        <Card className="py-10 text-center">
+          <p className="text-lg font-semibold">You are no longer in this quiz</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Your teacher removed you from the room. Ask them if this was a mistake.
+          </p>
+        </Card>
+      )}
+
+      {room.status === "TERMINATED" && !room.removed && (
         <Card className="py-10 text-center">
           <p className="text-lg font-semibold">The quiz was stopped</p>
           <p className="mt-1 text-sm text-muted-foreground">Your teacher ended this session.</p>

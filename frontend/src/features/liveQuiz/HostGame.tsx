@@ -9,6 +9,7 @@
  */
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { ChevronRight, Pause, Play, Square, Trophy, Users } from "lucide-react";
 
 import { Button, Card, ConfirmDialog, LoadingState } from "@/features/classroom/ui";
@@ -27,6 +28,7 @@ import {
 } from "./ui";
 
 export function HostGame({ sessionId }: { sessionId: number }) {
+  const router = useRouter();
   const { room, actions } = useLiveQuiz(sessionId);
   const secondsLeft = useSecondsLeft(room.endsAt);
   const [confirmEnd, setConfirmEnd] = useState(false);
@@ -74,7 +76,7 @@ export function HostGame({ sessionId }: { sessionId: number }) {
       {room.status === "LOBBY" && (
         <Card pad="lg" className="space-y-6">
           <JoinCode code={room.joinCode} />
-          <LobbyGrid participants={room.participants} />
+          <LobbyGrid participants={room.participants} onRemove={(p) => actions.removePlayer(p.id)} />
           <Button block size="lg" disabled={playing.length === 0} onClick={actions.startGame}>
             {playing.length === 0 ? "Waiting for players…" : `Start with ${playing.length}`}
           </Button>
@@ -213,6 +215,15 @@ export function HostGame({ sessionId }: { sessionId: number }) {
             <p className="mb-3 text-sm font-semibold">Final standings</p>
             <LeaderboardList rows={room.leaderboard} />
           </Card>
+
+          <Button
+            block
+            variant="secondary"
+            size="lg"
+            onClick={() => router.push(`/teacher/live/${sessionId}/results`)}
+          >
+            See which questions to go over
+          </Button>
         </>
       )}
 

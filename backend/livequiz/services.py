@@ -483,6 +483,57 @@ def terminate_session(*, session) -> LiveQuizSession:
     return session
 
 
+def remove_participant(*, session, participant_id: int) -> LiveQuizParticipant | None:
+    """Take a player out of the room, for good.
+
+    Somebody reads the code off the board from the corridor, or a student joins the wrong
+    class's game. The row is kept rather than deleted — their answers stay attached to the
+    questions they actually answered — but they leave the leaderboard and cannot rejoin,
+    because ``join_session`` refuses a KICKED place and the socket refuses the handshake.
+    """
+    if session.is_over:
+        raise Conflict("That quiz has finished.", code=const.ERR_BAD_STATE)
+
+    participant = LiveQuizParticipant.objects.filter(
+        session=session, pk=int(participant_id)
+    ).first()
+    if participant is None:
+        return None
+
+    LiveQuizParticipant.objects.filter(pk=participant.pk).update(
+        status=const.PARTICIPANT_KICKED, connections=0
+    )
+    participant.refresh_from_db()
+    return participant
+
+
+def end_game(*, session) -> LiveQuizSession:
+    """Stop the room, whatever it happens to be doing.
+
+    The host has one "End" button and it has to mean the right thing from any screen, so
+    the decision lives here rather than in the consumer:
+
+    * A game that never reached a question is **terminated**, not finished. Nothing was
+      played, there is no result worth keeping, and the room should give its code back.
+      The state machine agrees — there is no LOBBY → FINISHED edge — and before this
+      existed, pressing End in the lobby raised InvalidTransition and the host was told
+      "something went wrong" while the room stayed open.
+    * An open question is closed first, so the answers already given are counted.
+    * Anything else finishes normally, with places written.
+    """
+    if session.is_over:
+        return session
+
+    if session.status in (const.STATUS_LOBBY, const.STATUS_STARTING):
+        return terminate_session(session=session)
+
+    if session.status == const.STATUS_QUESTION_ACTIVE:
+        close_question(session=session)
+        session.refresh_from_db()
+
+    return finish_game(session=session)
+
+
 # ─── Answers ──────────────────────────────────────────────────────────────────
 
 
