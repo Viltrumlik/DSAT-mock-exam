@@ -7,7 +7,7 @@
 export { Card, Stat, Pill, Button, Field, Skeleton } from "./primitives";
 export { EmptyState, ErrorState } from "./states";
 export { DataTable, type Column } from "./DataTable";
-export { Dialog } from "./Dialog";
+export { Dialog, type DialogSize } from "./Dialog";
 export { TeacherPage } from "./TeacherPage";
 export { TONE_INK, TONE_WASH, CARD_SURFACE, type Tone } from "./tones";
 export { Donut, BarRows, TrendLine, type Slice, type BarRow } from "./charts";
