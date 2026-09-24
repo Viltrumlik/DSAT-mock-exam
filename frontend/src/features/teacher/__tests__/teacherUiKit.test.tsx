@@ -93,6 +93,79 @@ describe("DataTable", () => {
     expect(host.querySelector("table")).toBeNull();
     expect(text()).toContain("Nothing waiting");
   });
+
+  /**
+   * A clickable row is not a link, and a teacher only discovers the difference when they want
+   * two classes open at once. `rowHref` is what closes that gap; these pin the three gestures
+   * apart, because getting any one of them wrong silently costs the teacher their list.
+   *
+   * What jsdom CAN check is which handler ran and with what — not that a real browser opened a
+   * tab. `window.open` is spied on rather than called.
+   */
+  describe("a row that has somewhere to go", () => {
+    const ROWS: Row[] = [{ id: 1, name: "Math Junior 3", count: 7 }];
+
+    function renderRows(onRowClick: (r: Row) => void) {
+      render(
+        <DataTable<Row>
+          rows={ROWS}
+          rowKey={(r) => r.id}
+          columns={COLUMNS}
+          onRowClick={onRowClick}
+          rowHref={(r) => `/teacher/classrooms/${r.id}`}
+        />,
+      );
+      return host.querySelector("tbody tr")!;
+    }
+
+    it("sends a plain click through the router, not the browser", () => {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      const go = vi.fn();
+      const row = renderRows(go);
+
+      act(() => { row.dispatchEvent(new MouseEvent("click", { bubbles: true })); });
+
+      expect(go).toHaveBeenCalledTimes(1);
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it("holds the list still when a modifier says 'not here'", () => {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      const go = vi.fn();
+      const row = renderRows(go);
+
+      act(() => { row.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true })); });
+
+      // The router must NOT have run: that is the whole bug — a cmd-click that navigated in
+      // place threw away the list the teacher was working through.
+      expect(go).not.toHaveBeenCalled();
+      expect(open).toHaveBeenCalledWith("/teacher/classrooms/1", "_blank", "noopener,noreferrer");
+    });
+
+    it("answers a middle-click, which never arrives as a click at all", () => {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      const go = vi.fn();
+      const row = renderRows(go);
+
+      act(() => { row.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 })); });
+
+      expect(open).toHaveBeenCalledWith("/teacher/classrooms/1", "_blank", "noopener,noreferrer");
+      expect(go).not.toHaveBeenCalled();
+    });
+
+    it("without a href, leaves both gestures alone rather than guessing", () => {
+      const open = vi.spyOn(window, "open").mockImplementation(() => null);
+      const go = vi.fn();
+      render(<DataTable<Row> rows={ROWS} rowKey={(r) => r.id} columns={COLUMNS} onRowClick={go} />);
+      const row = host.querySelector("tbody tr")!;
+
+      act(() => { row.dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true })); });
+      act(() => { row.dispatchEvent(new MouseEvent("auxclick", { bubbles: true, button: 1 })); });
+
+      expect(open).not.toHaveBeenCalled();
+      expect(go).toHaveBeenCalledTimes(1); // the modified click, handled as an ordinary one
+    });
+  });
 });
 
 describe("the small pieces", () => {

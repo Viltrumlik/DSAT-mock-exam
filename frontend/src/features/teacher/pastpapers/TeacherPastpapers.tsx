@@ -148,6 +148,8 @@ export function TeacherPastpapers() {
               rows={rows}
               rowKey={(p) => p.id}
               onRowClick={(p) => router.push(`/teacher/pastpapers/${p.id}`)}
+              // Comparing two papers means having two open. Same reason as the class list.
+              rowHref={(p) => `/teacher/pastpapers/${p.id}`}
               empty={
                 narrowed ? (
                   <EmptyState title="No paper matches" hint="Try another region, another year, or a shorter search." />

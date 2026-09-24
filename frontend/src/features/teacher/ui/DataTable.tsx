@@ -20,14 +20,33 @@ export type Column<T> = {
  * Rows carry their own empty case: `empty` renders INSTEAD of a headed table with no body, so a
  * class with nobody in it never looks like a table that failed to load.
  */
-export function DataTable<T>({ columns, rows, rowKey, empty, onRowClick, label }: {
+export function DataTable<T>({ columns, rows, rowKey, empty, onRowClick, rowHref, label }: {
   columns: Column<T>[];
   rows: T[];
   rowKey: (row: T) => string | number;
   empty?: ReactNode;
   onRowClick?: (row: T) => void;
+  /**
+   * Where a row goes, for the clicks a router cannot answer.
+   *
+   * A clickable row is not a link, and the difference is only visible when a teacher wants two
+   * classes open at once: cmd-click and middle-click ask the BROWSER for a new tab, and a row
+   * that only has an `onClick` either navigates in place — throwing away the list they were
+   * working through — or, for middle-click, does nothing at all, because browsers fire
+   * `auxclick` there and never `click`. Give this and both gestures work on the whole row.
+   *
+   * It does not replace `onRowClick`: a plain click still goes through the router, which is
+   * faster than a document load and keeps the app's state.
+   */
+  rowHref?: (row: T) => string;
   label?: string;
 }) {
+  const openInNewTab = (row: T) => {
+    if (!rowHref) return;
+    // `noopener` is not optional on a programmatic open: without it the new tab gets a live
+    // `window.opener` handle back into this one.
+    window.open(rowHref(row), "_blank", "noopener,noreferrer");
+  };
   if (rows.length === 0 && empty != null) return <>{empty}</>;
   return (
     <div style={{ overflowX: "auto" }}>
@@ -59,8 +78,25 @@ export function DataTable<T>({ columns, rows, rowKey, empty, onRowClick, label }
           {rows.map((row) => (
             <tr
               key={rowKey(row)}
-              onClick={onRowClick ? () => onRowClick(row) : undefined}
-              style={{ borderTop: "1px solid var(--dz-border)", cursor: onRowClick ? "pointer" : undefined }}
+              onClick={
+                onRowClick || rowHref
+                  ? (e) => {
+                      // A held modifier means "not here" — honour it before the router sees it.
+                      if (rowHref && (e.metaKey || e.ctrlKey || e.shiftKey)) { openInNewTab(row); return; }
+                      onRowClick?.(row);
+                    }
+                  : undefined
+              }
+              // Middle-click never fires `click`, so a row without this simply swallows it.
+              onAuxClick={
+                rowHref
+                  ? (e) => { if (e.button === 1) { e.preventDefault(); openInNewTab(row); } }
+                  : undefined
+              }
+              style={{
+                borderTop: "1px solid var(--dz-border)",
+                cursor: onRowClick || rowHref ? "pointer" : undefined,
+              }}
             >
               {columns.map((c) => (
                 <td
