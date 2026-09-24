@@ -34,6 +34,18 @@ export interface AssignmentDetail {
     /** Present once the student has studied it; absent on the teacher payload. */
     state?: ContentState;
   }[] | null;
+  /**
+   * What a file submission may carry: count, per-file bytes, batch bytes, allowed extensions.
+   * All four are settings ops can change, and the batch figure is further capped by what the
+   * proxy will pass, so the upload panel reads them from here instead of keeping its own copy.
+   * Absent on a backend older than that field — see `resolveSubmissionLimits`.
+   */
+  submission_limits?: {
+    max_files_per_submission?: number | null;
+    max_file_bytes?: number | null;
+    max_batch_bytes?: number | null;
+    allowed_extensions?: string[] | null;
+  } | null;
   external_url?: string | null;
   external_urls?: string[] | null;
   /** Each link's optional name, index-aligned with `external_urls`. Blank = show the link. */

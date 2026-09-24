@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -21,6 +21,10 @@ import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
 import { materialMeta, formatBytes } from "./materialMeta";
+import {
+  acceptAttribute, checkSubmissionBatch, fileExtension, fileIdentity, fileTypeList,
+  resolveSubmissionLimits, sizeLabel,
+} from "../submissionLimits";
 import { Download } from "lucide-react";
 
 /** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
@@ -394,7 +398,14 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
       {/* File upload panel */}
       {uploadOpen && canUpload && (
-        <UploadPanel classId={classId} assignmentId={assignment.id} my={my} onClose={() => setUploadOpen(false)} />
+        <UploadPanel
+          classId={classId}
+          assignmentId={assignment.id}
+          my={my}
+          // What this submission may carry, as the server reports it on the assignment.
+          limits={assignment.submission_limits}
+          onClose={() => setUploadOpen(false)}
+        />
       )}
 
       {/* Teacher materials — links + attachments. (Instructions render as numbered
@@ -514,17 +525,58 @@ function resolveAction(kind: AssignmentKind, status: MySubmission["workflow_stat
   return { label: `Start ${KIND_LABEL[kind]}`, icon: Play, mode: "start" };
 }
 
-function UploadPanel({ classId, assignmentId, my, onClose }: {
-  classId: number; assignmentId: number; my: MySubmission | null; onClose: () => void;
+function UploadPanel({ classId, assignmentId, my, limits: served, onClose }: {
+  classId: number; assignmentId: number; my: MySubmission | null;
+  limits?: AssignmentDetail["submission_limits"]; onClose: () => void;
 }) {
   const submit = useSubmitHomework(classId, assignmentId);
   const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const limits = useMemo(() => resolveSubmissionLimits(served), [served]);
+  // Files already on this submission hold slots against the count: a resubmit adds to what is
+  // there rather than replacing it, and the server counts attached plus arriving. The batch total
+  // is the queued files alone — what is already stored does not travel again.
+  const attached = my?.files?.length ?? 0;
+  const check = useMemo(() => checkSubmissionBatch(files, attached, limits), [files, attached, limits]);
+
+  /**
+   * A second pick ADDS to the queue.
+   *
+   * An operating-system picker only reaches into one folder at a time, so "four images and six
+   * PDFs" is naturally two trips. Replacing the list on the second trip threw the first four away
+   * without a word, and the student found out when their teacher did.
+   */
+  function addPicked(picked: FileList | null) {
+    setErr(null);
+    const incoming = Array.from(picked ?? []);
+    if (incoming.length === 0) return;
+    setFiles((current) => {
+      const seen = new Set(current.map(fileIdentity));
+      const added: File[] = [];
+      for (const f of incoming) {
+        const id = fileIdentity(f);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        added.push(f);
+      }
+      return added.length > 0 ? [...current, ...added] : current;
+    });
+  }
+
+  function removeAt(index: number) {
+    setErr(null);
+    setFiles((current) => current.filter((_, i) => i !== index));
+  }
+
   async function send() {
     setErr(null);
-    if (files.length === 0) return setErr("Choose at least one file.");
+    if (files.length === 0) return setErr("Choose at least one file to turn in.");
+    // Stop here rather than at the end of the upload: the server applies these same limits, but
+    // only once every byte has already gone over the wire — and the proxy in front of it answers
+    // an oversized body with an HTML page no student can read.
+    if (check.problem) return setErr(check.problem);
     const fd = new FormData();
     fd.append("submit", "true");
     if (typeof my?.revision === "number") fd.append("expected_revision", String(my.revision));
@@ -545,16 +597,95 @@ function UploadPanel({ classId, assignmentId, my, onClose }: {
       <CardHeader title="Upload your work" actions={<Button variant="ghost" size="sm" icon={X} onClick={onClose}>Cancel</Button>} />
       {err && <p className="mt-2 text-sm text-rose-500">{err}</p>}
       <div className="mt-3 space-y-3">
-        <input ref={inputRef} type="file" multiple className="hidden"
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          // A hint to the file dialog, which usually offers "All files" anyway — the real check
+          // is `checkSubmissionBatch`, because the server refuses the whole batch on one bad file.
+          accept={acceptAttribute(limits)}
+          className="hidden"
+          onChange={(e) => {
+            addPicked(e.target.files);
+            // Clearing the input lets the same file fire `change` again, so a file removed by
+            // mistake can be picked straight back.
+            e.target.value = "";
+          }}
+        />
         <button onClick={() => inputRef.current?.click()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border py-6 text-sm text-muted-foreground hover:bg-surface-2">
-          <Upload className="h-4 w-4" /> Choose files
+          <Upload className="h-4 w-4" /> {files.length > 0 ? "Add more files" : "Choose files"}
         </button>
+        <p className="text-xs text-muted-foreground">
+          Pick from one folder then another — everything you choose is kept. Up to{" "}
+          {limits.maxFiles} files in a submission, {sizeLabel(limits.maxFileBytes)} per file,
+          {" "}{sizeLabel(limits.maxBatchBytes)} in one upload.
+          {attached > 0 && (
+            ` ${attached} ${attached === 1 ? "file is" : "files are"} already turned in and will stay.`
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">Files that work: {fileTypeList(limits)}.</p>
         {files.length > 0 && (
-          <ul className="space-y-1 text-sm text-foreground">
-            {files.map((f, i) => <li key={i} className="flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" /> {f.name}</li>)}
+          <ul className="space-y-2">
+            {files.map((f, i) => {
+              const meta = materialMeta(f.name);
+              const Icon = meta.Icon;
+              const over = check.tooBig.includes(f);
+              const wrongKind = check.disallowed.includes(f);
+              // Either one loses the whole batch at the server, so both read the same here: this
+              // is the file to swap out before pressing Submit.
+              const flagged = over || wrongKind;
+              return (
+                <li
+                  key={fileIdentity(f)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border px-3 py-2.5",
+                    flagged
+                      ? "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/15"
+                      : "border-border",
+                  )}
+                >
+                  <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", meta.iconWrap)}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-foreground">{f.name}</span>
+                    <span className={cn(
+                      "block text-[11px]",
+                      flagged ? "text-amber-700 dark:text-amber-200" : "text-muted-foreground",
+                    )}>
+                      <span className={cn("rounded px-1 py-0.5 text-[9px] font-bold", meta.badge)}>{meta.label}</span>
+                      <span className="ml-1.5">{sizeLabel(f.size)}</span>
+                      {wrongKind && (
+                        <span className="ml-1.5">· {fileExtension(f.name) || "this kind"} isn’t taken here</span>
+                      )}
+                      {over && <span className="ml-1.5">· over {sizeLabel(limits.maxFileBytes)}</span>}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAt(i)}
+                    aria-label={`Remove ${f.name}`}
+                    className="cr-press inline-flex shrink-0 items-center justify-center rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+        )}
+        {files.length > 0 && (
+          <p className="text-xs font-medium text-muted-foreground">
+            {files.length} {files.length === 1 ? "file" : "files"} ready ·{" "}
+            {sizeLabel(check.totalBytes)} of {sizeLabel(limits.maxBatchBytes)}
+            {attached > 0 && ` · ${check.totalFiles} of ${limits.maxFiles} files in all`}
+          </p>
+        )}
+        {check.problem && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200">
+            {check.problem}
+          </p>
         )}
         <Button block loading={submit.isPending} disabled={files.length === 0} onClick={send}>Submit homework</Button>
       </div>

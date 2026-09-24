@@ -14,7 +14,10 @@ if TYPE_CHECKING:
     from django.core.files.uploadedfile import UploadedFile
 
 
-def _allowed_extensions() -> frozenset[str]:
+def allowed_submission_extensions() -> frozenset[str]:
+    """Public: ``submission_limits`` serves this to the upload panel, which refuses a file the
+    loop in ``validate_submission_upload`` would reject — and that rejection costs the student
+    the whole batch, because the view returns on the first bad file."""
     return getattr(
         settings,
         "CLASSROOM_SUBMISSION_ALLOWED_FILE_EXTENSIONS",
@@ -36,7 +39,7 @@ def validate_submission_upload(f: UploadedFile) -> None:
     _, ext = os.path.splitext(base)
     ext_lower = ext.lower()
 
-    allowed = _allowed_extensions()
+    allowed = allowed_submission_extensions()
     if ext_lower and ext_lower not in allowed:
         allowed_display = ", ".join(sorted(allowed))
         raise ValidationError(

@@ -774,6 +774,16 @@ CLASSROOM_SUBMISSION_MAX_BATCH_BYTES = int(
     os.getenv("CLASSROOM_SUBMISSION_MAX_BATCH_BYTES", str(100 * 1024 * 1024))
 )
 
+# The largest request body Nginx will pass through to Django: ``client_max_body_size`` in the
+# ``location /api/`` block (deploy/nginx.conf, and 60M on the deployed host today). A batch over
+# it never reaches the view at all — Nginx answers 413 with its own HTML page, which the client
+# shows verbatim — so it, not the batch cap above, is what an upload can really carry. The
+# assignment payload advertises the smaller of the two so a student is stopped while picking
+# rather than after the upload. Keep in step with the deployed Nginx value.
+CLASSROOM_SUBMISSION_MAX_REQUEST_BYTES = int(
+    os.getenv("CLASSROOM_SUBMISSION_MAX_REQUEST_BYTES", str(60 * 1024 * 1024))
+)
+
 # Prune ``HomeworkStagedUpload`` rows (status=attached) older than this many days.
 CLASSROOM_HOMEWORK_STAGED_RETENTION_DAYS = int(os.getenv("CLASSROOM_HOMEWORK_STAGED_RETENTION_DAYS", "30"))
 
