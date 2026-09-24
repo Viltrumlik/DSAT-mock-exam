@@ -3,8 +3,9 @@
 /**
  * Where a teacher starts a live quiz and picks up one already running.
  *
- * The set list comes from the same rules the homework builder uses — active, this class's
- * subject, this class's level — so a teacher is offered the same content in both places.
+ * The sets are the vocabulary bank's own — the same word sets a teacher already assigns as
+ * vocabulary homework. A student's private custom set is never offered: it is theirs to
+ * study, not something to put on the board.
  */
 
 import { useMemo, useState } from "react";
@@ -66,7 +67,7 @@ export function HostConsole() {
     mutationFn: () =>
       liveQuizApi.createSession({
         classroom_id: classroomId as number,
-        assessment_set_id: setId as number,
+        vocab_set_id: setId as number,
         config,
       }),
     onSuccess: (session) => {
@@ -80,7 +81,7 @@ export function HostConsole() {
       <div>
         <h1 className="text-xl font-bold">Live quiz</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Put a quiz on the board and let the class play it together.
+          Put a word set on the board and let the class play it together.
         </p>
       </div>
 
@@ -161,25 +162,25 @@ export function HostConsole() {
               />
             )}
 
-            {options.data && options.data.assessment_sets.length === 0 && (
+            {options.data && options.data.vocab_sets.length === 0 && (
               <EmptyState
                 icon={Radio}
                 title="Nothing to play yet"
-                description="This class has no question sets at its level and subject."
+                description="A live quiz needs a word set with at least four words, so every question can have four options."
               />
             )}
 
-            {options.data && options.data.assessment_sets.length > 0 && (
-              <Field label="Quiz">
+            {options.data && options.data.vocab_sets.length > 0 && (
+              <Field label="Word set">
                 <Select
                   value={setId ?? ""}
                   onChange={(event) => setSetId(Number(event.target.value) || null)}
                 >
-                  <option value="">Choose a quiz…</option>
-                  {options.data.assessment_sets.map((row) => (
+                  <option value="">Choose a word set…</option>
+                  {options.data.vocab_sets.map((row) => (
                     <option key={row.id} value={row.id}>
-                      {row.title} · {row.question_count} questions
-                      {row.is_approved ? "" : " (not approved)"}
+                      {row.section ? `${row.section} — ` : ""}
+                      {row.title} · {row.word_count} words
                     </option>
                   ))}
                 </Select>
@@ -246,7 +247,7 @@ export function HostConsole() {
                 }
                 className="h-4 w-4 rounded border-border"
               />
-              Shuffle the order of the questions
+              Shuffle the order of the words
             </label>
 
             {create.isError && (

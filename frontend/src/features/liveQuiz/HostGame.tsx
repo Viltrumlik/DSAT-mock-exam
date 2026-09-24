@@ -121,14 +121,6 @@ export function HostGame({ sessionId }: { sessionId: number }) {
               <AssessmentText text={room.question.prompt} block />
             </div>
 
-            {room.question.question_image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={room.question.question_image}
-                alt=""
-                className="mt-4 max-h-80 w-auto rounded-xl border border-border"
-              />
-            )}
 
             {room.question.choices.length > 0 && (
               <div className="mt-5 grid gap-2 sm:grid-cols-2">

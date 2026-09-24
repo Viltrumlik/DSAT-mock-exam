@@ -28,7 +28,7 @@ from classes.capabilities import classroom_capabilities
 from core.errors.api import BadRequest, Conflict, Forbidden, NotFound
 
 from . import constants as const
-from . import scoring, state_machine
+from . import question_builder, scoring, state_machine
 from .engine_db_guard import TransitionConflict, require_session_update
 from .models import (
     LiveQuizAnswer,
@@ -79,7 +79,6 @@ def normalize_config(raw: dict | None) -> dict:
         "show_leaderboard_between",
         "reveal_correctness",
         "shuffle_questions",
-        "shuffle_choices",
         "manual_advance",
     ):
         out[key] = bool(raw.get(key, const.CONFIG_DEFAULTS[key]))
@@ -129,61 +128,63 @@ def can_host_in(user, classroom) -> bool:
 # ─── Creating a room ──────────────────────────────────────────────────────────
 
 
-def _image_paths(question) -> dict:
-    """The ImageField *names* for one assessment question, as a compact dict."""
-    pairs = (
-        ("question", question.question_image),
-        ("A", question.option_a_image),
-        ("B", question.option_b_image),
-        ("C", question.option_c_image),
-        ("D", question.option_d_image),
-    )
-    return {key: field.name for key, field in pairs if field}
+def _freeze_questions(*, session, vocab_set, config) -> int:
+    """Generate this session's questions from the set's words. Returns how many.
 
-
-def _freeze_questions(*, session, assessment_set, config) -> int:
-    """Copy the set's live questions into this session. Returns how many.
-
-    This copy is the whole reason the game is reproducible. See ``LiveQuizQuestion``.
+    Built once, here, and stored. The wrong options are chosen at random, so a question that
+    was never written down could never be shown again — not to a student asking why they were
+    marked wrong, and not to the teacher going over it afterwards.
     """
-    source = list(assessment_set.questions.filter(is_active=True).order_by("order", "id"))
-    if not source:
-        raise BadRequest("That quiz has no questions to play.", code="empty_set")
+    words = [item.word for item in vocab_set.items.select_related("word").order_by("order", "id")]
+    words = [w for w in words if w is not None]
 
+    if len(words) < question_builder.MIN_WORDS:
+        raise BadRequest(
+            f"A live quiz needs at least {question_builder.MIN_WORDS} words, "
+            f"so every question can have four different options.",
+            code="too_few_words",
+        )
+
+    asked = list(words)
     if config["shuffle_questions"]:
-        random.shuffle(source)
+        random.shuffle(asked)
 
-    rows = []
-    for index, question in enumerate(source):
-        choices = list(question.choices or [])
-        # Shuffling is safe because a choice carries its own id and the answer key names
-        # that id, not a position. Reordering the list cannot change which one is right.
-        if config["shuffle_choices"] and question.question_type == "multiple_choice":
-            random.shuffle(choices)
-
+    rows, order = [], 0
+    for word in asked:
+        # The pool is the set's own words, as it is in every study mode: options a student
+        # has been learning, not strangers from another section.
+        built = question_builder.build_question(word=word, pool=words)
+        if built is None:
+            # Not enough genuinely different words to surround this one. Skipping beats
+            # asking a question with two right answers.
+            continue
         rows.append(
             LiveQuizQuestion(
                 session=session,
-                order=index,
-                source_question=question,
-                prompt=question.prompt,
-                question_prompt=question.question_prompt,
-                question_type=question.question_type,
-                choices=choices,
-                correct_answer=question.correct_answer,
-                grading_config=question.grading_config or {},
-                points=question.points or 1,
-                explanation=question.explanation or "",
-                image_paths=_image_paths(question),
+                order=order,
+                source_word=word,
+                form=built["form"],
+                prompt=built["prompt"],
+                question_prompt=built["question_prompt"],
+                question_type=built["question_type"],
+                choices=built["choices"],
+                correct_answer=built["correct_answer"],
+                grading_config={},
+                points=1,
+                explanation=built["explanation"],
                 time_limit_seconds=config["question_seconds"],
             )
         )
+        order += 1
+
+    if not rows:
+        raise BadRequest("These words are too alike to make a quiz from.", code="no_questions")
 
     LiveQuizQuestion.objects.bulk_create(rows)
     return len(rows)
 
 
-def create_session(*, host, classroom, assessment_set, config: dict | None = None) -> LiveQuizSession:
+def create_session(*, host, classroom, vocab_set, config: dict | None = None) -> LiveQuizSession:
     """Mint a room: a code, a frozen paper, and an empty lobby."""
     if not can_host_in(host, classroom):
         raise Forbidden("You do not teach this class.", code="not_class_staff")
@@ -199,14 +200,14 @@ def create_session(*, host, classroom, assessment_set, config: dict | None = Non
         try:
             with transaction.atomic():
                 session = LiveQuizSession.objects.create(
-                    assessment_set=assessment_set,
+                    vocab_set=vocab_set,
                     classroom=classroom,
                     host=host,
                     join_code=code,
                     status=const.STATUS_LOBBY,
                     config=normalized,
                 )
-                _freeze_questions(session=session, assessment_set=assessment_set, config=normalized)
+                _freeze_questions(session=session, vocab_set=vocab_set, config=normalized)
             return session
         except IntegrityError as exc:  # pragma: no cover - needs a real collision
             last_error = exc
@@ -224,7 +225,7 @@ def find_session_by_code(code: str) -> LiveQuizSession | None:
         return None
     return (
         LiveQuizSession.objects.filter(join_code=cleaned, status__in=const.LIVE_STATUSES)
-        .select_related("classroom", "assessment_set")
+        .select_related("classroom", "vocab_set")
         .first()
     )
 

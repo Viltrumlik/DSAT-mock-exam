@@ -10,17 +10,13 @@ const QUESTION = {
   id: 7,
   index: 0,
   total: 3,
-  prompt: "2 + 2",
-  question_prompt: "",
+  prompt: "to become less intense",
+  question_prompt: "Which word means this?",
   question_type: "multiple_choice",
-  choices: [{ id: "A", text: "4" }],
+  choices: [{ id: "A", text: "abate" }],
   points: 1,
   time_limit_seconds: 20,
-  question_image: null,
-  option_a_image: null,
-  option_b_image: null,
-  option_c_image: null,
-  option_d_image: null,
+  form: "definition_to_word",
 };
 
 describe("the client's picture of the room", () => {

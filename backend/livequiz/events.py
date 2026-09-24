@@ -11,18 +11,7 @@ student reading the socket in devtools sees exactly what a student is meant to s
 
 from __future__ import annotations
 
-from django.conf import settings
-
 from . import constants as const
-
-
-def _media_url(path: str | None) -> str | None:
-    if not path:
-        return None
-    base = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
-    if not base.endswith("/"):
-        base += "/"
-    return f"{base}{path}"
 
 
 def _iso(value):
@@ -36,9 +25,9 @@ def public_question(question, *, index: int, total: int) -> dict:
     """A question as a player may see it: no key, no explanation.
 
     Choices are passed through as stored, so the ``{id, text}`` shape the assessment runner
-    already speaks is what the live client receives too.
+    already speaks is what the live client receives too — which is why its answer widgets
+    can be reused unchanged.
     """
-    images = question.image_paths if isinstance(question.image_paths, dict) else {}
     return {
         "id": question.id,
         "index": index,
@@ -49,11 +38,7 @@ def public_question(question, *, index: int, total: int) -> dict:
         "choices": question.choices or [],
         "points": question.points,
         "time_limit_seconds": question.time_limit_seconds,
-        "question_image": _media_url(images.get("question")),
-        "option_a_image": _media_url(images.get("A")),
-        "option_b_image": _media_url(images.get("B")),
-        "option_c_image": _media_url(images.get("C")),
-        "option_d_image": _media_url(images.get("D")),
+        "form": question.form,
     }
 
 

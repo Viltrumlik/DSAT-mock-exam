@@ -18,13 +18,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from assessments.models import AssessmentSet
 from classes.capabilities import classroom_capabilities
 from classes.models import Classroom, ClassroomMembership
+from vocabulary.models import VocabSet
 from core.errors.api import Forbidden, NotFound
 
 from . import constants as const
-from . import services
+from . import question_builder, services
 from .models import LiveQuizSession
 from .serializers import CreateSessionSerializer, JoinSerializer, session_summary
 
@@ -52,7 +52,7 @@ def _summary(session) -> dict:
 
 def _load_for_host(pk, user) -> LiveQuizSession:
     session = (
-        LiveQuizSession.objects.select_related("classroom", "assessment_set").filter(pk=pk).first()
+        LiveQuizSession.objects.select_related("classroom", "vocab_set").filter(pk=pk).first()
     )
     if session is None:
         raise NotFound("No such live quiz.", code="not_found")
@@ -68,7 +68,7 @@ class SessionListCreateView(APIView):
 
     def get(self, request):
         _require_enabled()
-        queryset = LiveQuizSession.objects.select_related("classroom", "assessment_set")
+        queryset = LiveQuizSession.objects.select_related("classroom", "vocab_set")
 
         classroom_id = request.query_params.get("classroom")
         if classroom_id:
@@ -103,14 +103,16 @@ class SessionListCreateView(APIView):
         if classroom is None:
             raise NotFound("No such class.", code="classroom_not_found")
 
-        assessment_set = AssessmentSet.objects.filter(pk=data["assessment_set_id"]).first()
-        if assessment_set is None:
-            raise NotFound("No such quiz.", code="set_not_found")
+        vocab_set = VocabSet.objects.filter(pk=data["vocab_set_id"], owner__isnull=True).first()
+        if vocab_set is None:
+            # owner__isnull: a student's own custom set is theirs to study, not something a
+            # teacher can put on the board for the whole class.
+            raise NotFound("No such word set.", code="set_not_found")
 
         session = services.create_session(
             host=request.user,
             classroom=classroom,
-            assessment_set=assessment_set,
+            vocab_set=vocab_set,
             config=data.get("config") or {},
         )
         return Response(_summary(session), status=201)
@@ -144,7 +146,7 @@ class SessionResultsView(APIView):
     def get(self, request, pk):
         _require_enabled()
         session = (
-            LiveQuizSession.objects.select_related("classroom", "assessment_set")
+            LiveQuizSession.objects.select_related("classroom", "vocab_set")
             .filter(pk=pk)
             .first()
         )
@@ -209,7 +211,7 @@ class MyLiveSessionsView(APIView):
             .values_list("classroom_id", flat=True)
         )
         sessions = (
-            LiveQuizSession.objects.select_related("classroom", "assessment_set")
+            LiveQuizSession.objects.select_related("classroom", "vocab_set")
             .filter(classroom_id__in=list(classroom_ids), status__in=list(const.LIVE_STATUSES))
             .order_by("-created_at")[:20]
         )
@@ -224,7 +226,12 @@ class MyLiveSessionsView(APIView):
 
 
 class HostOptionsView(APIView):
-    """What this class can be given: the same set list the homework builder offers."""
+    """The word sets this class can be given.
+
+    Bank sets only — a set a student built for themselves is their own study aid, not
+    something to project. Sets too small to make four options are left out rather than
+    offered and then refused at creation.
+    """
 
     permission_classes = [IsAuthenticated]
 
@@ -236,34 +243,25 @@ class HostOptionsView(APIView):
         if not classroom_capabilities(request.user, classroom).is_staff:
             raise Forbidden("You do not teach this class.", code="not_class_staff")
 
-        queryset = AssessmentSet.objects.filter(is_active=True)
-        if classroom.domain_subject:
-            queryset = queryset.filter(subject=classroom.domain_subject)
-        # Level-scoped exactly as the homework picker is: a Middle class is offered Middle
-        # sets. An untagged class keeps seeing everything.
-        if classroom.level:
-            queryset = queryset.filter(level=classroom.level)
-
-        queryset = queryset.annotate(
-            question_total=Count("questions", filter=Q(questions__is_active=True))
-        ).order_by("-created_at")
+        queryset = (
+            VocabSet.objects.filter(owner__isnull=True, section__is_published=True)
+            .select_related("section")
+            .annotate(word_total=Count("items"))
+            .order_by("section__order", "order", "id")
+        )
 
         return Response(
             {
                 "classroom": {"id": classroom.id, "name": classroom.name, "level": classroom.level},
-                "assessment_sets": [
+                "vocab_sets": [
                     {
                         "id": row.id,
                         "title": row.title,
-                        "subject": row.subject,
-                        "level": row.level or "",
-                        "category": row.category or "",
-                        "question_count": row.question_total,
-                        "review_status": row.review_status,
-                        "is_approved": row.review_status == AssessmentSet.STATUS_APPROVED,
+                        "section": getattr(row.section, "title", "") or "",
+                        "word_count": row.word_total,
                     }
-                    for row in queryset[:200]
-                    if row.question_total > 0
+                    for row in queryset[:300]
+                    if row.word_total >= question_builder.MIN_WORDS
                 ],
             }
         )

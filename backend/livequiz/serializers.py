@@ -14,7 +14,7 @@ from . import constants as const
 
 class CreateSessionSerializer(serializers.Serializer):
     classroom_id = serializers.IntegerField()
-    assessment_set_id = serializers.IntegerField()
+    vocab_set_id = serializers.IntegerField()
     config = serializers.DictField(required=False, default=dict)
 
 
@@ -30,8 +30,8 @@ def session_summary(session, *, question_total: int | None = None, counts: dict 
         "status": session.status,
         "classroom_id": session.classroom_id,
         "classroom_name": getattr(session.classroom, "name", ""),
-        "assessment_set_id": session.assessment_set_id,
-        "title": getattr(session.assessment_set, "title", ""),
+        "vocab_set_id": session.vocab_set_id,
+        "title": getattr(session.vocab_set, "title", ""),
         "host_id": session.host_id,
         "current_index": session.current_index,
         "question_total": question_total,

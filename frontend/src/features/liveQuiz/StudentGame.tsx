@@ -16,18 +16,8 @@ import { AnswerInput } from "@/features/assessments/components/QuestionInputs";
 import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
-import type { LiveQuestion } from "./api";
 import { useLiveQuiz, useSecondsLeft } from "./useLiveQuiz";
 import { ConnectionBanner, CountdownBar, LeaderboardList, ScoreCard } from "./ui";
-
-function optionImages(question: LiveQuestion) {
-  return {
-    A: question.option_a_image,
-    B: question.option_b_image,
-    C: question.option_c_image,
-    D: question.option_d_image,
-  };
-}
 
 export function StudentGame({ sessionId }: { sessionId: number }) {
   const { room, actions } = useLiveQuiz(sessionId);
@@ -102,14 +92,6 @@ export function StudentGame({ sessionId }: { sessionId: number }) {
               <AssessmentText text={room.question.prompt} block />
             </div>
 
-            {room.question.question_image && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={room.question.question_image}
-                alt=""
-                className="mt-3 max-h-72 w-auto rounded-xl border border-border"
-              />
-            )}
 
             <div className={cn("mt-4", locked && "pointer-events-none opacity-60")}>
               <AnswerInput
@@ -117,7 +99,6 @@ export function StudentGame({ sessionId }: { sessionId: number }) {
                 choices={room.question.choices}
                 value={draft}
                 onChange={setDraft}
-                optionImages={optionImages(room.question)}
               />
             </div>
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from django.test import SimpleTestCase
 
 from . import constants as const
-from . import scoring, state_machine
+from . import question_builder, scoring, state_machine
 
 
 class TransitionTableTests(SimpleTestCase):
@@ -160,3 +160,94 @@ class RankingTests(SimpleTestCase):
 
     def test_an_empty_room_ranks_nobody(self):
         self.assertEqual(scoring.assign_ranks([]), {})
+
+
+class _Word:
+    """A stand-in for VocabWord: the builder only ever reads these four attributes."""
+
+    def __init__(self, pk, word, definition, example=""):
+        self.pk, self.word, self.definition, self.example = pk, word, definition, example
+
+
+def _pool(n=6):
+    return [_Word(i, f"word{i}", f"definition {i}") for i in range(1, n + 1)]
+
+
+class DistractorTests(SimpleTestCase):
+    def test_the_answer_is_never_offered_against_itself(self):
+        pool = _pool()
+        picked = question_builder.pick_distractors(pool, pool[0], 3)
+        self.assertNotIn(pool[0].pk, [w.pk for w in picked])
+
+    def test_a_word_spelled_the_same_is_not_a_distractor(self):
+        # The same headword taught in two sections. Offering both is offering the answer twice.
+        pool = _pool() + [_Word(99, "WORD1", "a different meaning entirely")]
+        picked = question_builder.pick_distractors(pool, pool[0], 5)
+        self.assertNotIn(99, [w.pk for w in picked])
+
+    def test_a_word_MEANING_the_same_is_not_a_distractor(self):
+        # The one that matters: a synonym is a second correct answer, so a student who picks
+        # it is marked wrong for being right.
+        pool = _pool() + [_Word(98, "synonym", "definition 1")]
+        picked = question_builder.pick_distractors(pool, pool[0], 5)
+        self.assertNotIn(98, [w.pk for w in picked])
+
+    def test_matching_is_insensitive_to_case_and_spacing(self):
+        pool = _pool() + [_Word(97, "elsewhere", "  DEFINITION   1 ")]
+        picked = question_builder.pick_distractors(pool, pool[0], 5)
+        self.assertNotIn(97, [w.pk for w in picked])
+
+    def test_it_returns_what_it_can_when_the_pool_is_thin(self):
+        pool = _pool(2)
+        self.assertEqual(len(question_builder.pick_distractors(pool, pool[0], 3)), 1)
+
+
+class QuestionBuildingTests(SimpleTestCase):
+    def test_a_question_has_four_distinct_options_and_one_key(self):
+        pool = _pool()
+        built = question_builder.build_question(word=pool[0], pool=pool)
+        ids = [c["id"] for c in built["choices"]]
+        texts = [c["text"] for c in built["choices"]]
+
+        self.assertEqual(ids, list(question_builder.OPTION_IDS))
+        self.assertEqual(len(set(texts)), 4)
+        self.assertIn(built["correct_answer"], ids)
+
+    def test_the_definition_form_asks_for_the_word(self):
+        pool = _pool()
+        built = question_builder.build_question(
+            word=pool[0], pool=pool, form=question_builder.FORM_DEFINITION_TO_WORD
+        )
+        self.assertEqual(built["prompt"], "definition 1")
+        self.assertEqual(built["question_prompt"], question_builder.ASK_FOR_WORD)
+        answer = next(c for c in built["choices"] if c["id"] == built["correct_answer"])
+        self.assertEqual(answer["text"], "word1")
+
+    def test_the_word_form_asks_for_the_definition(self):
+        pool = _pool()
+        built = question_builder.build_question(
+            word=pool[0], pool=pool, form=question_builder.FORM_WORD_TO_DEFINITION
+        )
+        self.assertEqual(built["prompt"], "word1")
+        self.assertEqual(built["question_prompt"], question_builder.ASK_FOR_DEFINITION)
+        answer = next(c for c in built["choices"] if c["id"] == built["correct_answer"])
+        self.assertEqual(answer["text"], "definition 1")
+
+    def test_the_key_does_not_always_land_on_A(self):
+        pool = _pool(12)
+        keys = {
+            question_builder.build_question(word=pool[0], pool=pool)["correct_answer"]
+            for _ in range(40)
+        }
+        self.assertGreater(len(keys), 1, "the answer is always in the same place")
+
+    def test_too_few_usable_words_builds_nothing(self):
+        # Three words, all meaning the same thing: there is no honest question here.
+        pool = [_Word(1, "a", "same"), _Word(2, "b", "same"), _Word(3, "c", "same")]
+        self.assertIsNone(question_builder.build_question(word=pool[0], pool=pool))
+
+    def test_the_example_sentence_becomes_the_explanation(self):
+        pool = _pool()
+        pool[0].example = "The storm began to abate."
+        built = question_builder.build_question(word=pool[0], pool=pool)
+        self.assertEqual(built["explanation"], "The storm began to abate.")

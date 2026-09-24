@@ -2,8 +2,8 @@
 
 Pure functions over plain values: no database, no session object, so the arithmetic can be
 read and tested on its own. Correctness itself is NOT decided here — that is
-``assessments.grading.grade_answer``, reused unchanged, which is why grid-in numerics with
-fractions and tolerances work in a live quiz on the first day.
+``assessments.grading.grade_answer``, reused unchanged, so a live quiz marks an answer by
+exactly the same rules as homework does.
 """
 
 from __future__ import annotations

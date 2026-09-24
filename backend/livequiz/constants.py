@@ -145,7 +145,6 @@ CONFIG_DEFAULTS: dict = {
     # silent quiz where only the final board reveals anything.
     "reveal_correctness": True,
     "shuffle_questions": False,
-    "shuffle_choices": False,
     # The host advances by hand rather than the server rolling straight into the next
     # question. A classroom wants the pause for discussion; leave it on.
     "manual_advance": True,

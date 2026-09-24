@@ -48,11 +48,11 @@ class LiveQuizSession(TimestampedModel):
     the host pressing skip — and exactly one of them must win.
     """
 
-    assessment_set = models.ForeignKey(
-        "assessments.AssessmentSet",
+    vocab_set = models.ForeignKey(
+        "vocabulary.VocabSet",
         on_delete=models.PROTECT,
         related_name="live_quiz_sessions",
-        help_text="Where the questions came from. PROTECT: a played session must stay readable.",
+        help_text="The words this game was built from. PROTECT: a played session must stay readable.",
     )
     # Required, unlike a mock sitting. The room IS a classroom: only its roster may join.
     classroom = models.ForeignKey(
@@ -142,26 +142,30 @@ class LiveQuizSession(TimestampedModel):
 class LiveQuizQuestion(TimestampedModel):
     """A question as it was when the game started — text, choices and answer key.
 
-    This is a COPY, on purpose. The assessment snapshot system was removed in July 2026
-    (assessments migration 0030), so ``AssessmentQuestion`` rows are served live and an
-    author editing a set changes it underneath everyone. Without this table a teacher fixing
-    a typo mid-game would change the question a student is looking at, and last week's
-    results would stop being reproducible.
+    A vocabulary set holds words, not questions, so these are GENERATED when the room is
+    created (``question_builder``) and then frozen. Generating them once is what makes a
+    game reviewable: the wrong options were chosen at random, and without storing them
+    nobody could ever see the question a student actually answered. It also means an editor
+    fixing a definition mid-game cannot change the question on screen.
 
-    ``source_question`` is a soft link kept for reporting. It goes NULL if the original is
-    deleted and nothing here changes.
+    ``source_word`` is a soft link kept for reporting. It goes NULL if the word is deleted
+    and nothing here changes.
     """
 
     session = models.ForeignKey(LiveQuizSession, on_delete=models.CASCADE, related_name="questions")
     order = models.PositiveIntegerField(help_text="0-based position in this session.")
 
-    source_question = models.ForeignKey(
-        "assessments.AssessmentQuestion",
+    source_word = models.ForeignKey(
+        "vocabulary.VocabWord",
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="live_quiz_questions",
     )
+
+    # Which way round this one was asked — see question_builder.FORMS. Kept so a review
+    # screen can say "you were shown the definition" rather than leaving it to be guessed.
+    form = models.CharField(max_length=32, blank=True, default="")
 
     prompt = models.TextField()
     question_prompt = models.TextField(blank=True, default="")
@@ -171,10 +175,6 @@ class LiveQuizQuestion(TimestampedModel):
     grading_config = models.JSONField(default=dict, blank=True)
     points = models.PositiveIntegerField(default=1)
     explanation = models.TextField(blank=True, default="")
-
-    # {"question": "assessment_questions/x.png", "A": "...", ...} — the ImageField *names*,
-    # resolved to URLs by the serializer. Storing paths keeps the freeze self-contained.
-    image_paths = models.JSONField(default=dict, blank=True)
 
     time_limit_seconds = models.PositiveIntegerField(default=const.CONFIG_DEFAULTS["question_seconds"])
 

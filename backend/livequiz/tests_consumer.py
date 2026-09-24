@@ -22,7 +22,7 @@ from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 
-from assessments.models import AssessmentQuestion, AssessmentSet
+from vocabulary.models import VocabSection, VocabSet, VocabSetItem, VocabWord
 from classes.models import Classroom, ClassroomMembership
 
 from . import constants as const
@@ -123,26 +123,28 @@ class LiveQuizSocketTests(TransactionTestCase):
             classroom=self.classroom, user=self.student, role=ClassroomMembership.ROLE_STUDENT
         )
 
-        self.aset = AssessmentSet.objects.create(
-            subject=AssessmentSet.SUBJECT_MATH,
-            category="Algebra",
-            title="Socket quiz",
-            created_by=self.teacher,
+        self.section = VocabSection.objects.create(
+            title="Socket Words", slug="socket-words-test", order=1
         )
-        AssessmentQuestion.objects.create(
-            assessment_set=self.aset,
-            order=0,
-            prompt="2 + 2",
-            question_type=AssessmentQuestion.TYPE_MULTIPLE_CHOICE,
-            choices=[{"id": "A", "text": "4"}, {"id": "B", "text": "5"}],
-            correct_answer="A",
-            points=1,
-        )
+        self.vocab_set = VocabSet.objects.create(section=self.section, title="Set 1", order=1)
+        WORDS = [
+            ("abate", "to become less intense"),
+            ("candid", "truthful and straightforward"),
+            ("deft", "neatly skilful and quick"),
+            ("elated", "extremely happy"),
+            ("frugal", "sparing with money"),
+        ]
+        self.words = [
+            VocabWord.objects.create(section=self.section, word=w, definition=d)
+            for w, d in WORDS
+        ]
+        for position, word in enumerate(self.words):
+            VocabSetItem.objects.create(vocab_set=self.vocab_set, word=word, order=position)
 
         self.session = services.create_session(
             host=self.teacher,
             classroom=self.classroom,
-            assessment_set=self.aset,
+            vocab_set=self.vocab_set,
             config={"question_seconds": 30, "manual_advance": True},
         )
 
@@ -253,7 +255,6 @@ class LiveQuizSocketTests(TransactionTestCase):
 
             self.assertEqual(state["data"]["status"], const.STATUS_QUESTION_ACTIVE)
             question = state["data"]["question"]
-            self.assertEqual(question["prompt"], "2 + 2")
             self.assertNotIn("correct_answer", question)
             self.assertNotIn("explanation", question)
             self.assertIn("ends_at", state["data"])
@@ -275,7 +276,7 @@ class LiveQuizSocketTests(TransactionTestCase):
                 {
                     "type": const.CMD_SUBMIT_ANSWER,
                     "question_id": question.id,
-                    "answer": "A",
+                    "answer": question.correct_answer,
                 }
             )
 
@@ -307,7 +308,11 @@ class LiveQuizSocketTests(TransactionTestCase):
             await communicator.receive_json_from()
 
             await communicator.send_json_to(
-                {"type": const.CMD_SUBMIT_ANSWER, "question_id": question.id, "answer": "A"}
+                {
+                    "type": const.CMD_SUBMIT_ANSWER,
+                    "question_id": question.id,
+                    "answer": question.correct_answer,
+                }
             )
             reply = await await_frame(communicator, const.EV_ERROR)
 

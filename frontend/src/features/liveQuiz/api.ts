@@ -35,7 +35,6 @@ export interface LiveQuizConfig {
   show_leaderboard_between: boolean;
   reveal_correctness: boolean;
   shuffle_questions: boolean;
-  shuffle_choices: boolean;
   manual_advance: boolean;
 }
 
@@ -46,7 +45,7 @@ export interface LiveSession {
   status: LiveQuizStatus;
   classroom_id: number;
   classroom_name: string;
-  assessment_set_id: number;
+  vocab_set_id: number;
   title: string;
   host_id: number | null;
   current_index: number;
@@ -75,7 +74,12 @@ export interface LiveChoice {
   text: string;
 }
 
-/** What a player is allowed to see. There is deliberately no `correct_answer` here. */
+/**
+ * What a player is allowed to see. There is deliberately no `correct_answer` here.
+ *
+ * `form` says which way round the question was asked — the definition with the words as
+ * options, or the word with the definitions.
+ */
 export interface LiveQuestion {
   id: number;
   index: number;
@@ -86,22 +90,15 @@ export interface LiveQuestion {
   choices: LiveChoice[];
   points: number;
   time_limit_seconds: number;
-  question_image: string | null;
-  option_a_image: string | null;
-  option_b_image: string | null;
-  option_c_image: string | null;
-  option_d_image: string | null;
+  form: "definition_to_word" | "word_to_definition" | "";
 }
 
 export interface LiveQuizOption {
   id: number;
   title: string;
-  subject: string;
-  level: string;
-  category: string;
-  question_count: number;
-  review_status: string;
-  is_approved: boolean;
+  /** The bank section the set belongs to, e.g. "Real Exam Words". */
+  section: string;
+  word_count: number;
 }
 
 export interface LiveResultsReport {
@@ -146,7 +143,7 @@ export const liveQuizApi = {
 
   async createSession(body: {
     classroom_id: number;
-    assessment_set_id: number;
+    vocab_set_id: number;
     config?: Partial<LiveQuizConfig>;
   }): Promise<LiveSession> {
     const { data } = await api.post("/livequiz/sessions/", body);
@@ -185,7 +182,7 @@ export const liveQuizApi = {
 
   async options(classroomId: number): Promise<{
     classroom: { id: number; name: string; level: string };
-    assessment_sets: LiveQuizOption[];
+    vocab_sets: LiveQuizOption[];
   }> {
     const { data } = await api.get("/livequiz/options/", { params: { classroom: classroomId } });
     return data;

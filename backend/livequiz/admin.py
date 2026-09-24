@@ -8,7 +8,7 @@ class LiveQuizSessionAdmin(admin.ModelAdmin):
     list_display = ("id", "join_code", "status", "classroom", "host", "created_at", "finished_at")
     list_filter = ("status", "created_at")
     search_fields = ("join_code", "classroom__name")
-    raw_id_fields = ("classroom", "host", "assessment_set")
+    raw_id_fields = ("classroom", "host", "vocab_set")
     readonly_fields = ("version", "created_at", "updated_at")
 
 
@@ -23,7 +23,7 @@ class LiveQuizParticipantAdmin(admin.ModelAdmin):
 @admin.register(LiveQuizQuestion)
 class LiveQuizQuestionAdmin(admin.ModelAdmin):
     list_display = ("id", "session", "order", "question_type", "points")
-    raw_id_fields = ("session", "source_question")
+    raw_id_fields = ("session", "source_word")
 
 
 @admin.register(LiveQuizAnswer)
