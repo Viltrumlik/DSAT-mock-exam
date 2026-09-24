@@ -14,11 +14,25 @@ The distractor rules here are a port of ``features/vocabulary/modes/utils.ts``
 The second is the subtle one. Every form of this question asks the student to pair a word
 with a meaning, so a candidate that shares the answer's definition is not a wrong answer —
 it is a second right one, and the student who picks it is marked wrong for being correct.
+
+"Meaning the same" is caught three ways, cheapest first:
+
+1. **The same definition text.** The obvious duplicate.
+2. **The curated ``synonyms`` list**, in either direction, or a synonym the two share. This
+   is the school's own judgement and it is the one to trust.
+3. **Heavily overlapping definitions** — "sparing with money" against "sparing with money
+   or food". Content words are compared after stopwords are dropped.
+
+What none of this catches is a true paraphrase with no shared words: "truthful and
+straightforward" against "honest and direct". Only a thesaurus or a language model would
+see that, and neither belongs in the path that opens a classroom game. The curated synonym
+list is the answer for those — fill it in and net 2 catches them exactly.
 """
 
 from __future__ import annotations
 
 import random
+import re
 import unicodedata
 
 OPTION_IDS = ("A", "B", "C", "D")
@@ -36,6 +50,23 @@ ASK_FOR_DEFINITION = "What does this word mean?"
 # Four options need the answer plus three others that are neither spelled nor meant alike.
 MIN_WORDS = OPTION_COUNT
 
+# Two definitions counted as the same meaning when this much of their content vocabulary is
+# shared (Jaccard). 0.6 catches "sparing with money" against "sparing with money or food"
+# while leaving genuinely different definitions that happen to share a word or two alone.
+DEFINITION_OVERLAP = 0.6
+
+# Dropped before definitions are compared: they carry no meaning of their own and would
+# make every short definition look like every other one.
+STOPWORDS = frozenset(
+    """
+    a an the and or but nor of to in on at by for with from as into onto over under
+    is are was were be being been am do does did have has had can could will would
+    shall should may might must that this these those it its their his her our your
+    not no nor very quite rather more most less least such so than then when where
+    while who whom whose which what someone something somebody anyone anything one
+    """.split()
+)
+
 
 def normalize(text: object) -> str:
     """Fold case, whitespace and full-width characters, as the study modes do."""
@@ -46,6 +77,48 @@ def normalize(text: object) -> str:
     return " ".join(folded.strip().lower().split())
 
 
+def content_words(text: object) -> set[str]:
+    """The words of a definition that carry its meaning."""
+    found = re.findall(r"[a-z']+", normalize(text))
+    return {w for w in found if len(w) > 2 and w not in STOPWORDS}
+
+
+def definitions_overlap(first: object, second: object, threshold: float = DEFINITION_OVERLAP) -> bool:
+    """Whether two definitions say the same thing in nearly the same words."""
+    left, right = content_words(first), content_words(second)
+    # A definition that boils down to a single content word carries too little to compare:
+    # "to lessen" and "to worsen" would both be {lessen} / {worsen} and any shared word at
+    # all would read as a perfect match. Those fall to the exact and synonym nets instead.
+    if len(left) < 2 or len(right) < 2:
+        return False
+    return len(left & right) / len(left | right) >= threshold
+
+
+def _synonyms_of(word) -> set[str]:
+    return {normalize(s) for s in (getattr(word, "synonyms", None) or []) if normalize(s)}
+
+
+def are_synonyms(first, second) -> bool:
+    """Whether the bank itself says these two words mean the same.
+
+    Either listing the other, or both listing a third word, is the school's own judgement
+    and outranks anything guessed from the text.
+    """
+    first_syn, second_syn = _synonyms_of(first), _synonyms_of(second)
+    if normalize(second.word) in first_syn or normalize(first.word) in second_syn:
+        return True
+    return bool(first_syn & second_syn)
+
+
+def means_the_same(first, second) -> bool:
+    """Every test for "this candidate is really a second correct answer"."""
+    if normalize(first.definition) == normalize(second.definition):
+        return True
+    if are_synonyms(first, second):
+        return True
+    return definitions_overlap(first.definition, second.definition)
+
+
 def pick_distractors(pool, target, count: int, rng=None) -> list:
     """Up to ``count`` words from ``pool`` that are safe wrong answers for ``target``."""
     if count <= 0:
@@ -53,7 +126,6 @@ def pick_distractors(pool, target, count: int, rng=None) -> list:
     rng = rng or random
 
     seen_words = {normalize(target.word)}
-    target_definition = normalize(target.definition)
 
     candidates = []
     for candidate in pool:
@@ -64,7 +136,7 @@ def pick_distractors(pool, target, count: int, rng=None) -> list:
             continue
         # Checked before `key` is reserved, so a twin dropped here does not block a
         # genuinely different word that happens to share its spelling.
-        if normalize(candidate.definition) == target_definition:
+        if means_the_same(target, candidate):
             continue
         seen_words.add(key)
         candidates.append(candidate)

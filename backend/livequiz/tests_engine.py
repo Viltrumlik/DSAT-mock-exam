@@ -165,12 +165,32 @@ class RankingTests(SimpleTestCase):
 class _Word:
     """A stand-in for VocabWord: the builder only ever reads these four attributes."""
 
-    def __init__(self, pk, word, definition, example=""):
+    def __init__(self, pk, word, definition, example="", synonyms=None):
         self.pk, self.word, self.definition, self.example = pk, word, definition, example
+        self.synonyms = synonyms or []
+
+
+# Definitions that are genuinely unlike one another, as a real word set's are. Placeholder
+# text like "definition 1" collapses to one content word and reads as every word meaning the
+# same thing, which is exactly what the overlap net is supposed to catch.
+_MEANINGS = [
+    "to become less intense or widespread",
+    "truthful and straightforward in manner",
+    "neatly skilful and quick in movement",
+    "extremely happy and full of excitement",
+    "sparing with money or food",
+    "fond of the company of other people",
+    "lasting for a very short time only",
+    "showing great attention to detail",
+    "unwilling to change a fixed opinion",
+    "producing a powerful effect on others",
+    "spreading widely through a population",
+    "deserving praise for great courage",
+]
 
 
 def _pool(n=6):
-    return [_Word(i, f"word{i}", f"definition {i}") for i in range(1, n + 1)]
+    return [_Word(i, f"word{i}", _MEANINGS[(i - 1) % len(_MEANINGS)]) for i in range(1, n + 1)]
 
 
 class DistractorTests(SimpleTestCase):
@@ -188,12 +208,12 @@ class DistractorTests(SimpleTestCase):
     def test_a_word_MEANING_the_same_is_not_a_distractor(self):
         # The one that matters: a synonym is a second correct answer, so a student who picks
         # it is marked wrong for being right.
-        pool = _pool() + [_Word(98, "synonym", "definition 1")]
+        pool = _pool() + [_Word(98, "synonym", _MEANINGS[0])]
         picked = question_builder.pick_distractors(pool, pool[0], 5)
         self.assertNotIn(98, [w.pk for w in picked])
 
     def test_matching_is_insensitive_to_case_and_spacing(self):
-        pool = _pool() + [_Word(97, "elsewhere", "  DEFINITION   1 ")]
+        pool = _pool() + [_Word(97, "elsewhere", f"  {_MEANINGS[0].upper()} ")]
         picked = question_builder.pick_distractors(pool, pool[0], 5)
         self.assertNotIn(97, [w.pk for w in picked])
 
@@ -218,7 +238,7 @@ class QuestionBuildingTests(SimpleTestCase):
         built = question_builder.build_question(
             word=pool[0], pool=pool, form=question_builder.FORM_DEFINITION_TO_WORD
         )
-        self.assertEqual(built["prompt"], "definition 1")
+        self.assertEqual(built["prompt"], _MEANINGS[0])
         self.assertEqual(built["question_prompt"], question_builder.ASK_FOR_WORD)
         answer = next(c for c in built["choices"] if c["id"] == built["correct_answer"])
         self.assertEqual(answer["text"], "word1")
@@ -231,7 +251,7 @@ class QuestionBuildingTests(SimpleTestCase):
         self.assertEqual(built["prompt"], "word1")
         self.assertEqual(built["question_prompt"], question_builder.ASK_FOR_DEFINITION)
         answer = next(c for c in built["choices"] if c["id"] == built["correct_answer"])
-        self.assertEqual(answer["text"], "definition 1")
+        self.assertEqual(answer["text"], _MEANINGS[0])
 
     def test_the_key_does_not_always_land_on_A(self):
         pool = _pool(12)
@@ -251,3 +271,79 @@ class QuestionBuildingTests(SimpleTestCase):
         pool[0].example = "The storm began to abate."
         built = question_builder.build_question(word=pool[0], pool=pool)
         self.assertEqual(built["explanation"], "The storm began to abate.")
+
+
+class MeaningTheSameTests(SimpleTestCase):
+    """The three nets that keep a second correct answer out of the options."""
+
+    def test_the_curated_synonym_list_is_believed_in_either_direction(self):
+        abate = _Word(1, "abate", "to lessen", synonyms=["subside"])
+        subside = _Word(2, "subside", "to go down again")
+        self.assertTrue(question_builder.are_synonyms(abate, subside))
+        self.assertTrue(question_builder.are_synonyms(subside, abate))
+
+    def test_two_words_listing_the_same_synonym_are_treated_as_synonyms(self):
+        a = _Word(1, "abate", "to lessen", synonyms=["decrease"])
+        b = _Word(2, "wane", "to grow smaller", synonyms=["decrease"])
+        self.assertTrue(question_builder.are_synonyms(a, b))
+
+    def test_a_definition_that_is_the_other_plus_a_few_words_is_the_same_meaning(self):
+        self.assertTrue(
+            question_builder.definitions_overlap(
+                "sparing with money", "sparing with money or food"
+            )
+        )
+
+    def test_genuinely_different_definitions_are_left_alone(self):
+        self.assertFalse(
+            question_builder.definitions_overlap(
+                "fond of the company of others", "sparing with money or food"
+            )
+        )
+
+    def test_sharing_one_ordinary_word_is_not_enough(self):
+        # Both mention "money" and nothing else; excluding on that would empty the pool.
+        self.assertFalse(
+            question_builder.definitions_overlap(
+                "money paid for work done", "a strong dislike of spending money"
+            )
+        )
+
+    def test_stopwords_do_not_make_short_definitions_look_alike(self):
+        self.assertFalse(question_builder.definitions_overlap("to be in a hurry", "to be at rest"))
+
+    def test_a_paraphrase_with_no_shared_words_is_NOT_caught(self):
+        # Documented limitation, not an oversight: only the curated synonym list catches
+        # these. If this ever starts passing, the builder gained a thesaurus.
+        self.assertFalse(
+            question_builder.definitions_overlap("truthful and straightforward", "honest and direct")
+        )
+
+
+class SynonymExclusionTests(SimpleTestCase):
+    def test_a_curated_synonym_never_becomes_an_option(self):
+        target = _Word(101, "abate", "to lessen in force", synonyms=["subside"])
+        pool = [target, _Word(102, "subside", "to settle down slowly")] + _pool(4)
+        picked = question_builder.pick_distractors(pool, target, 5)
+        self.assertNotIn(102, [w.pk for w in picked])
+
+    def test_a_near_identical_definition_never_becomes_an_option(self):
+        target = _Word(101, "frugal", "sparing with money")
+        pool = [target, _Word(102, "thrifty", "sparing with money or food")] + _pool(4)
+        picked = question_builder.pick_distractors(pool, target, 5)
+        self.assertNotIn(102, [w.pk for w in picked])
+
+    def test_a_set_of_synonyms_yields_no_question_rather_than_a_bad_one(self):
+        words = [
+            _Word(1, "abate", "to lessen", synonyms=["subside", "wane"]),
+            _Word(2, "subside", "to settle down", synonyms=["abate"]),
+            _Word(3, "wane", "to grow smaller", synonyms=["abate"]),
+            _Word(4, "diminish", "to lessen"),
+        ]
+        self.assertIsNone(question_builder.build_question(word=words[0], pool=words))
+
+    def test_an_ordinary_set_still_makes_every_question(self):
+        # The nets must not be so eager that a normal set stops working.
+        pool = _pool(8)
+        built = [question_builder.build_question(word=w, pool=pool) for w in pool]
+        self.assertTrue(all(b is not None for b in built))
