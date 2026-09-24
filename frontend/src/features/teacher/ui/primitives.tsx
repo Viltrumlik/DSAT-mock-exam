@@ -146,7 +146,18 @@ export function Skeleton({ height = 16, width = "100%", radius = 8, count = 1 }:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }} aria-hidden>
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} style={{ height, width, borderRadius: radius, background: "var(--dz-neutral-soft)" }} />
+        // `ds-skeleton` rather than a flat `--dz-*` fill, for two reasons that both bit us.
+        //
+        // It is the product's shared shimmer. A placeholder that does not move does not read as
+        // "loading" — it reads as a layout that has broken, and the teacher waits for nothing.
+        //
+        // It is also the MARKER the rest of the codebase settles on: `pageSettled()` in the load
+        // tests asks whether any `.ds-skeleton` is left. A kit skeleton without the class was
+        // invisible to that question, so pages on the kit had to widen the selector or add
+        // `aria-busy` of their own, and two spellings of "still loading" is how one of them
+        // eventually gets missed. No inline background here: the class carries a gradient, and
+        // an inline fill would win and kill the animation.
+        <div key={i} className="ds-skeleton" style={{ height, width, borderRadius: radius }} />
       ))}
     </div>
   );
