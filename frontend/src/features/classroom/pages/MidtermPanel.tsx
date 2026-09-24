@@ -49,6 +49,13 @@ const STATE_LABEL: Record<string, { label: string; tone: PillTone; hint: string 
   ABANDONED: { label: "Voided", tone: "warning", hint: "This sitting was voided by staff and does not count." },
 };
 
+/**
+ * The state that means "struck off the books". Named rather than inlined because two places
+ * have to agree on it: the chip above, and `clearedPassMark`, which must refuse to judge a
+ * paper this state has already settled the answer for.
+ */
+const VOIDED_STATE = "ABANDONED";
+
 /** Never render a raw DB enum: an unmapped state is sentence-cased rather than shouted. */
 function stateChip(state: string): { label: string; tone: PillTone; hint: string } {
   const known = STATE_LABEL[state];
@@ -126,12 +133,26 @@ interface PanelData {
  * would fail a passing paper, and judging 490 against 50 would pass a failing one; the fallback
  * to `score` is only for a row the server sent without the converted field.
  *
- * Three different things arrive here as `null`, and none of them is a fail: a midterm nothing
- * judges, a student still sitting it, and a paper handed in but not yet scored. A row with no
- * verdict must therefore look exactly like it did before this existed.
+ * FOUR different things arrive here as `null`, and none of them is a fail: a midterm nothing
+ * judges, a student still sitting it, a paper handed in but not yet scored, and a sitting staff
+ * have struck out. A row with no verdict must therefore look exactly like it did before this
+ * existed — it keeps its own state word.
+ *
+ * That fourth one is the one this function shipped wrong, and it is worth spelling out because
+ * nothing about a voided row announces itself. A voided sitting is still `submitted` and still
+ * carries a score: the panel sends `submitted: bool(att)` for any attempt row
+ * (`midterms/views_midterm_v2.py`), and `_latest_completed_attempts`
+ * (`midterms/certificate_service.py`) selects on `is_completed` alone and never excludes
+ * ABANDONED. So a paper somebody finished, that was scored, and that staff then took off the
+ * books reaches this function looking exactly like a clean pass. And because the verdict
+ * REPLACES the state chip below rather than queueing beside it, "Voided" and its hint became
+ * unreachable for every graded midterm: the teacher read a struck-out paper as a pass, with
+ * nothing left but a hover title no touch screen shows. A struck-out paper is not a result,
+ * so it gets no verdict and no line — green or red — drawn through it.
  */
 function clearedPassMark(s: PanelStudent, passMark: number | null): boolean | null {
   if (passMark == null || !s.submitted) return null;
+  if (String(s.state || "").trim().toUpperCase() === VOIDED_STATE) return null;
   const onScale = s.score_on_scale ?? s.score;
   if (onScale == null) return null;
   return onScale >= passMark; // inclusive, as `midterms/outcomes.is_passing` has it
@@ -562,8 +583,16 @@ export function MidtermPanel({
                             // it, in either theme. The tint alone never carries the verdict —
                             // the Status cell spells it out in a word for the reader who
                             // cannot tell these two hues apart.
-                            cleared === true && "bg-emerald-500/5",
-                            cleared === false && "bg-rose-500/5",
+                            //
+                            // Two values, not one alpha for both themes, because this is the
+                            // pair every other tinted row in the product uses (the review
+                            // screen, the assessment review, the builder shelves): a solid
+                            // -50 on white, and 15% of -500 on the dark panel, where a light
+                            // tint would wash out. A single 5% alpha satisfies both selectors
+                            // and is legible in neither — which would have made the teacher's
+                            // one actual request the part of this they could not see.
+                            cleared === true && "bg-emerald-50 dark:bg-emerald-500/15",
+                            cleared === false && "bg-rose-50 dark:bg-rose-500/15",
                           )}
                         >
                           <td className="py-2 pr-3 font-medium text-foreground">
@@ -601,7 +630,9 @@ export function MidtermPanel({
                               in and scored, so the verdict replaces the state rather than
                               queueing behind it, and the pass mark rides in the tooltip
                               instead of a legend nobody reads. Every row without a verdict
-                              keeps its state word exactly as before. */}
+                              keeps its state word exactly as before — which is the ONLY way
+                              a voided sitting can still say "Voided" here, since a replaced
+                              chip leaves the reader nothing else. See `clearedPassMark`. */}
                           <td className="py-2 pr-3">
                             {cleared != null ? (
                               <span title={`${chip.hint} Pass mark ${passMark} out of ${scale}.`}>

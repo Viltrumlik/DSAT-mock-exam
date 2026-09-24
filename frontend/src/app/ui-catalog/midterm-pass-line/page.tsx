@@ -49,9 +49,13 @@ const SAMPLE = {
     student(6, "Sardor Yusupov", "SCORING", true, null, null),
     // Never sat it: no verdict either.
     student(7, "Dilnoza Ergasheva", "NOT_STARTED", false, null, null),
+    // Finished, scored well, and then struck off the books by staff. It must NOT read as a
+    // pass: the verdict replaces the state chip, so a green "Passed" here would be the only
+    // thing left on the row and "Voided" would have nowhere to appear.
+    student(8, "Kamola Nazarova", "ABANDONED", true, 88, null),
   ],
   stats: {
-    assigned: 7, completed: 5, average: 71, highest: 92, lowest: 51,
+    assigned: 8, completed: 6, average: 71, highest: 92, lowest: 51,
     score_ceiling: 100, mixed_scales: false,
     pass_mark: 70,
   },

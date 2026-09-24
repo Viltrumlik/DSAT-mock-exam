@@ -214,4 +214,23 @@ describe("the pass/fail line, on both hosts", () => {
     // The student's own number is still the one on screen.
     expect(host.textContent).toContain("72");
   });
+
+  it("still says Voided for a struck-out sitting, and draws no line through it", async () => {
+    // The case the verdict swallowed. A voided paper is `submitted` and carries a score —
+    // the panel sets `submitted` from any attempt row, and the query behind it selects on
+    // `is_completed` without excluding ABANDONED — so on the arithmetic alone this looks
+    // like a clean pass. It is not a result at all. And because the verdict REPLACES the
+    // state chip rather than sitting beside it, a verdict here does not merely add a word:
+    // it deletes the only one that mattered, leaving a struck-out paper reading "Passed".
+    await mount(
+      panel({
+        students: [finished({ state: "ABANDONED", submitted: true, score: 80, score_on_scale: 80 })],
+      }),
+      "TEACHER",
+    );
+
+    expect(host.textContent).toContain("Voided");
+    for (const word of VERDICT_WORDS) expect(host.textContent).not.toContain(word);
+    expect(tintedRows()).toBe(0);
+  });
 });
