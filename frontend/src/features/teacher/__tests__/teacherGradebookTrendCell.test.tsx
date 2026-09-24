@@ -47,8 +47,8 @@ async function render(...students: StudentRow[]) {
   const model: GradebookModel = {
     assignments: HOMEWORK,
     students,
-    // The stat cards and the chart above the matrix are not read here. Left empty, the chart is not drawn: recharts
-    // measures itself with a ResizeObserver, which jsdom does not have.
+    // The figures and the spread of the class's averages above the matrix are not read here. Left empty,
+    // the spread draws "No graded work yet" in place of its bars.
     classAverage: null,
     distribution: [],
     missingCount: 0,
@@ -74,7 +74,11 @@ function trends() {
     names.map((name) => {
       const trend = cell(name, "Trend");
       const arrow = trend.querySelector(".lucide-arrow-up-right") ? "up" : trend.querySelector(".lucide-arrow-down-right") ? "down" : null;
-      const tone = trend.querySelector(".text-success-foreground") ? "success" : trend.querySelector(".text-warning-foreground") ? "warning" : null;
+      // The cell's colour is one of the teacher kit's tone tokens, set inline: `--dz-success` for a rise,
+      // `--dz-amber` — the kit's warning ink — for a fall. It was a pair of utility classes before the page
+      // moved to the kit; what is asserted below has not changed.
+      const colour = (trend.firstElementChild as HTMLElement | null)?.style.color ?? "";
+      const tone = colour.includes("dz-success") ? "success" : colour.includes("dz-amber") ? "warning" : null;
       return [name, { points: trend.textContent, arrow, tone }];
     }),
   );
