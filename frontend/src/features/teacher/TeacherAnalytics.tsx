@@ -87,10 +87,14 @@ export function TeacherAnalytics({ previewModel }: { previewModel?: TeacherAnaly
           </ChartCard>
           <Card className="lg:col-span-2"><CardContent>
             <div className="mb-3 flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-warning" /><p className="ds-h4">At-risk students</p></div>
+            {/* The rows below lead into each student's OWN classroom, which is where a teacher can
+                actually do something about them. They used to point at a panel-wide Students page;
+                the owner removed that page, and a list of at-risk names leading nowhere would be
+                worse than no list. Every row is one student, so the classroom is never a guess. */}
             {atRisk.length === 0 ? <EmptyState compact title="No one at risk" description="No students currently meet the at-risk thresholds." /> : (
               <div className="grid gap-2 sm:grid-cols-2">
                 {atRisk.slice(0, 8).map((s) => (
-                  <Link key={`${s.classId}-${s.id}`} href="/teacher/students" className="ds-ring flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-surface-2">
+                  <Link key={`${s.classId}-${s.id}`} href={`/teacher/classrooms/${s.classId}`} className="ds-ring flex items-center gap-3 rounded-xl border border-border p-3 transition-colors hover:bg-surface-2">
                     <Avatar name={s.name} size={34} />
                     <div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-foreground">{s.name}</p><p className="truncate text-[12px] text-muted-foreground">{s.riskReasons.slice(0, 2).join(" · ") || s.className}</p></div>
                   </Link>

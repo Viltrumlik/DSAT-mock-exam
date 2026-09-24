@@ -4,7 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { parseClassroomList } from "@/lib/criticalApiContract";
 
 /**
- * Each student's homework grades on the teacher's analytics model, which `/teacher/students`, `/teacher/analytics` and
+ * Each student's homework grades on the teacher's analytics model, which `/teacher/analytics` and
  * `/teacher/homework` are drawn from.
  *
  * `GET /api/classes/<id>/leaderboard/` sends the homework grade board as `homework_grade_leaderboard.rows`, one row per
@@ -43,7 +43,6 @@ vi.mock("@/components/ui/charts", async () => ({
 }));
 
 const { useTeacherAnalytics } = await import("../useTeacherAnalytics");
-const { TeacherStudents } = await import("../TeacherStudents");
 const { TeacherAnalytics } = await import("../TeacherAnalytics");
 
 const DAY = 86_400_000;
@@ -307,11 +306,16 @@ describe("useTeacherAnalytics — each student's homework grades", () => {
     const { model } = await loadAnalytics();
 
     expect([model!.atRiskCount, model!.watchCount]).toEqual([1, 2]);
+    // The link leads into that student's OWN classroom. It used to point at a panel-wide
+    // Students page, which the owner removed; asserting the classroom by looking the student
+    // up — rather than writing the id in by hand — is what makes this fail if the rule ever
+    // silently becomes "send them to the class list" for a single student.
+    const atRisk = model!.students.find((s) => s.riskLevel === "at-risk")!;
     expect(model!.recommendations[0]).toEqual({
       id: "atrisk",
       title: "Check in with 1 at-risk student",
       detail: "Low averages, work not turned in, or inactivity.",
-      href: "/teacher/students",
+      href: `/teacher/classrooms/${atRisk.classId}`,
     });
   });
 
@@ -345,48 +349,6 @@ describe("useTeacherAnalytics — each student's homework grades", () => {
       ["Practice test 2", null],
     ]);
     expect(model!.classAvgTrend).toEqual([{ label: "Sep 1", score: 1165 }]);
-  });
-});
-
-describe("TeacherStudents — the grades a teacher sees", () => {
-  it("each card shows the student's grade average, completion and risk", async () => {
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect([STRONG, FAILING, SLIPPING, BEHIND, UNGRADED, NEWCOMER].map((p) => [nameOf(p), stat(card(p), "Grade avg"), stat(card(p), "Completion"), badge(p)])).toEqual([
-      ["Strong Grades", "91.5%", "75%", "On track"],
-      ["Failing Grades", "52%", "75%", "At risk"],
-      ["Slipping Grades", "65%", "50%", "Watch"],
-      ["Behind Homework", "88%", "25%", "Watch"],
-      ["Nothing Graded", "—", "50%", "On track"],
-      ["No Homework", "—", "—", "On track"],
-    ]);
-  });
-
-  it("the drawer gives the average grade, completion and practice average, and why the student is flagged", async () => {
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-    const drawer = await openDrawer(FAILING);
-
-    expect(["Why flagged", "Average grade", "Assignment completion", "Practice average"].map((label) => stat(drawer, label))).toEqual([
-      "Grade avg 52%",
-      "52%",
-      "75%",
-      "1020",
-    ]);
-  });
-
-  it("the drawer says a student has no grades and no practice yet, not 0", async () => {
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-    const drawer = await openDrawer(UNGRADED);
-
-    expect(["Why flagged", "Average grade", "Assignment completion", "Practice average"].map((label) => stat(drawer, label))).toEqual([
-      null,
-      "No grades yet",
-      "50%",
-      "No practice yet",
-    ]);
   });
 });
 

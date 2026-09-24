@@ -166,7 +166,6 @@ export const teacherNav: NavSection[] = [
       // Run an invigilated full mock: let students in with the admin's code, press Start.
       { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen, hiddenInSidebar: true },
-      { href: "/teacher/students", label: "Students", icon: Users, hiddenInSidebar: true },
       // Appended, never slotted in. The school has restored this sidebar's shape once
       // already, so this adds ONE leaf at the end of the section and touches nothing else:
       // no label renamed, no href re-routed, no item unhidden or reordered.

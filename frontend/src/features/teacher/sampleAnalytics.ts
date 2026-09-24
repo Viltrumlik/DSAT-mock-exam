@@ -52,9 +52,9 @@ export const SAMPLE_TEACHER_ANALYTICS: TeacherAnalyticsModel = {
     { label: "Apr 26", score: 1290 }, { label: "May 14", score: 1320 }, { label: "Jun 1", score: 1360 },
   ],
   recommendations: [
-    { id: "atrisk", title: "Check in with 2 at-risk students", detail: "Low averages, work not turned in, or inactivity.", href: "/teacher/students" },
+    { id: "atrisk", title: "Check in with 2 at-risk students", detail: "Low averages, work not turned in, or inactivity.", href: "/teacher/classrooms" },
     { id: "completion", title: "Boost completion on “Full mock 3”", detail: "41% turned in · Mock cohort", href: "/teacher/homework" },
     { id: "review", title: "Review “Full mock 3” as a class", detail: "Group mean below the class average.", href: "/teacher/gradebook" },
-    { id: "inactive", title: "Re-engage 3 inactive students", detail: "No activity in 7+ days.", href: "/teacher/students" },
+    { id: "inactive", title: "Re-engage 3 inactive students", detail: "No activity in 7+ days.", href: "/teacher/classrooms" },
   ],
 };

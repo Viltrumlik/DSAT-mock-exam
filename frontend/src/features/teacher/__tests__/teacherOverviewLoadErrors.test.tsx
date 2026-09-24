@@ -5,7 +5,8 @@ import { parseClassroomList } from "@/lib/criticalApiContract";
 
 /**
  * A request that fails behind the teacher portal's class overview (`/teacher`) and the three pages drawn
- * from one analytics model (`/teacher/analytics`, `/teacher/students`, `/teacher/homework`).
+ * from one analytics model (`/teacher/analytics` and `/teacher/homework`; the Students page that also read it
+ * was removed at the owner's request).
  *
  * Both hooks caught every rejected request and carried on with an empty answer in its place, so a failure
  * was drawn as data:
@@ -46,7 +47,6 @@ vi.mock("@/components/ui/charts", async () => ({
 const { useTeacherDashboard } = await import("../useTeacherDashboard");
 const { useTeacherAnalytics } = await import("../useTeacherAnalytics");
 const { TeacherAnalytics } = await import("../TeacherAnalytics");
-const { TeacherStudents } = await import("../TeacherStudents");
 const { TeacherHomework } = await import("../TeacherHomework");
 
 const DAY = 86_400_000;
@@ -542,82 +542,6 @@ describe("TeacherAnalytics — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(text()).toContain("No classes yet");
-    expect(text()).not.toContain("Couldn’t load");
-    expect(buttons()).not.toContain("Try again");
-  });
-});
-
-describe("TeacherStudents — what the teacher sees when a load fails", () => {
-  it("a class list that did not load says so, with Try again — not 'No students yet'", async () => {
-    api.list.mockRejectedValueOnce(networkError());
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).not.toContain("No students yet");
-    expect(text()).toContain("Couldn’t load your students");
-    expect(text()).toContain("Your students and their work are unchanged — only this page failed to load.");
-    expect(buttons()).toContain("Try again");
-
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(api.list).toHaveBeenCalledTimes(2);
-    expect(text()).not.toContain("Couldn’t load");
-    expect(card("Third Student")).toContain("At risk");
-  });
-
-  it("while Try again waits, the page is loading — not 'No students yet' or 'No students match'", async () => {
-    const release = failThenHold(api.list, () => httpError(502));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await tick();
-
-    expect(pageSettled()).toBe(false);
-    expect(text()).not.toContain("No students yet");
-    expect(text()).not.toContain("No students match");
-    expect(text()).not.toContain("Couldn’t load");
-
-    await act(async () => release());
-    await until(pageSettled);
-    expect(heading()).toBe("Students");
-  });
-
-  it("one class's interventions not loading says so — its students are not listed 'On track'", async () => {
-    let failing = true;
-    failWhere(api.getInterventions, (classId) => failing && classId === GEOMETRY.id, () => httpError(500));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    // Without Geometry's interventions, its student read "On track" and "Active": no average, no absence, nothing missing.
-    expect(card("Third Student") ?? "").not.toContain("On track");
-    expect(text()).toContain("Couldn’t load your students");
-
-    failing = false;
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(card("Third Student")).toContain("At risk");
-  });
-
-  it("shows the server's reason when it gave one", async () => {
-    failWhere(api.getInterventions, (classId) => classId === ALGEBRA.id, () => httpError(403, FORBIDDEN));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).toContain("Couldn’t load your students");
-    expect(text()).toContain(FORBIDDEN.detail);
-    expect(text()).not.toContain("only this page failed to load");
-  });
-
-  it("still says 'No students yet' to a teacher with no classes", async () => {
-    serveNoClasses();
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).toContain("No students yet");
     expect(text()).not.toContain("Couldn’t load");
     expect(buttons()).not.toContain("Try again");
   });
