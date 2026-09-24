@@ -225,8 +225,18 @@ async function loadAnalytics() {
 /** Students in id order: Algebra 2's five, then Geometry's one. */
 const inIdOrder = <T extends { id: number }>(rows: T[]) => [...rows].sort((a, b) => a.id - b.id);
 
-/** No loading placeholder is left on the page. */
-const pageSettled = () => host.querySelector(".ds-skeleton") === null;
+/**
+ * No loading placeholder is left on the page. Both markers are matched on purpose: every
+ * placeholder in the product, including the teacher kit's `Skeleton`, carries `.ds-skeleton` —
+ * it is the shared shimmer and the settle signal — and two teacher pages additionally mark the
+ * region they are filling `aria-busy`. Either one left behind means the page is still loading.
+ *
+ * The kit's skeleton did NOT carry the class when this selector was widened, and a test that
+ * asked only about `.ds-skeleton` called a half-loaded teacher page settled. The class is there
+ * now; the second clause stays because `aria-busy` is the marker for a region that is being
+ * filled in place rather than replaced by placeholders.
+ */
+const pageSettled = () => host.querySelector('.ds-skeleton, [aria-busy="true"]') === null;
 /** A student's card on the students page, found by the name it leads with. */
 function card(p: Person) {
   return [...host.querySelectorAll("button")].find((b) => b.querySelector("p")?.textContent === nameOf(p)) ?? null;
