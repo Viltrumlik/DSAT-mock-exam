@@ -416,6 +416,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     # never scored automatically, so this reward is the ONLY outcome a student can read
     # off the page — without it a classwork assignment renders as work with no result.
     classwork_award = serializers.SerializerMethodField(read_only=True)
+    # What a submission may carry. The same constant dict on every row of a list, which is a
+    # few dozen bytes that gzip away to nothing — worth it so the upload panel never has to
+    # keep its own copy of a limit ops can change with an environment variable.
+    submission_limits = serializers.SerializerMethodField(read_only=True)
 
     class Meta:
         model = Assignment
@@ -443,6 +447,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "assigned_at",
             "assessment_progress",
             "classwork_award",
+            "submission_limits",
             "module",
             "external_url",
             "external_urls",
@@ -455,6 +460,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "attachment_urls",
             "category",
             "max_score",
+            # The share of the grade the teacher marks by hand, chosen on the create form's
+            # Others tab. Writable on create AND on update: publishing a draft goes through
+            # update(), and a field dropped there is a bug this branch has fixed once already.
+            "manual_grade_weight_percent",
             "status",
             "published_at",
             "archived_at",
@@ -481,6 +490,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
             "subject",
             "assigned_at",
             "classwork_award",
+            "submission_limits",
             # Homework has no manual deadline. ``due_at`` is DERIVED server-side as the
             # start of the classroom's next lesson (classes.lesson_schedule.homework_due_at)
             # and is null when no next lesson can be computed. Client input is ignored.
@@ -494,6 +504,18 @@ class AssignmentSerializer(serializers.ModelSerializer):
         content — a homework can have both a solvable pastpaper/assessment AND a
         file the student turns in (manual + auto grading together)."""
         return not bool(getattr(obj, "allow_file_upload", False))
+
+    @extend_schema_field(serializers.DictField(read_only=True))
+    def get_submission_limits(self, obj):
+        """The count, per-file size, batch size and file types ``submit`` will accept.
+
+        Served rather than mirrored in the client: all four come from settings ops can override,
+        and the batch figure is further capped by what the proxy will pass, which the browser has
+        no way to discover on its own. Independent of the assignment — it is here because this is
+        the payload the page that uploads already fetches."""
+        from .submission_limits import submission_limits_payload
+
+        return submission_limits_payload()
 
     @staticmethod
     def _hw_list(obj):
@@ -1285,6 +1307,9 @@ class SubmissionSerializer(serializers.ModelSerializer):
     attempt = serializers.SerializerMethodField()
     review = serializers.SerializerMethodField()
     workflow_status = serializers.SerializerMethodField()
+    # One homework, one grade. Null on homework with no manual component — those are read
+    # from ``review`` exactly as before. See classes.grade_composition.
+    composed_grade = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
@@ -1301,6 +1326,7 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "student",
             "review",
             "workflow_status",
+            "composed_grade",
         ]
         read_only_fields = [
             "id",
@@ -1310,12 +1336,25 @@ class SubmissionSerializer(serializers.ModelSerializer):
             "student",
             "review",
             "workflow_status",
+            "composed_grade",
             "return_note",
             "returned_at",
         ]
 
     def get_workflow_status(self, obj):
         return submission_workflow_status(obj)
+
+    @extend_schema_field(serializers.DictField(allow_null=True, read_only=True))
+    def get_composed_grade(self, obj):
+        """The homework's single grade: the auto-graded parts and the teacher's mark,
+        weighted by the share the teacher set when they created it.
+
+        Null when no manual share was asked for, which is every homework set before that
+        question existed — those still read their grade off ``review``. Computed only for
+        the homework that opted in, so a class list of ordinary homework costs nothing."""
+        from .grade_composition import composed_grade_payload
+
+        return composed_grade_payload(obj)
 
     def get_student(self, obj):
         u = obj.student

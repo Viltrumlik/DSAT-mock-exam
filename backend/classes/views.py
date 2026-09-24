@@ -3144,7 +3144,19 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             .first()
         )
         if not sub:
-            return Response({}, status=status.HTTP_200_OK)
+            # Nothing handed in yet — but the auto-graded half of a homework with a manual
+            # share can already be settled, and on vocabulary- or upload-only homework no
+            # Submission row exists until the student uploads. Serving the composition only
+            # with a row would hide the part of their grade that IS decided, and the line
+            # that says their teacher is still checking, for as long as they have not
+            # uploaded. The key is present and null on homework with no manual component, so
+            # a client reads one shape either way.
+            from .grade_composition import composed_grade_payload_for
+
+            return Response(
+                {"composed_grade": composed_grade_payload_for(assignment, request.user)},
+                status=status.HTTP_200_OK,
+            )
         return Response(SubmissionSerializer(sub, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], url_path="submissions")
@@ -3265,6 +3277,25 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
                 )
                 if "grade" in data:
                     review.grade = data["grade"]
+                    if data["grade"] is not None:
+                        # A person just AWARDED a number, so the row is no longer
+                        # machine-graded. The flag was only ever set by the auto-grading
+                        # paths and never cleared here, so a teacher who re-marked an
+                        # auto-graded submission left a row that still claimed to be
+                        # automatic: the gradebook credited the machine, the assessment
+                        # re-sync's "never overwrite a human teacher's grade" guard did not
+                        # recognise the mark it was protecting, and a composed grade could
+                        # not tell the teacher's share from the engine's.
+                        #
+                        # Only here, and only for a number. This endpoint also takes a
+                        # feedback-only save — "Have another go." with no grade typed — and
+                        # clearing the flag for one of those hands the machine's own score
+                        # to the teacher: the re-sync guard then refuses to update it ever
+                        # again, so a student who re-sat the quiz and scored 100 would keep
+                        # the 0 they were first given, on homework that never asked for a
+                        # manual share at all. Clearing a grade (an explicit null) does not
+                        # mark the row either — there is no mark left to protect.
+                        review.is_auto = False
                 if "feedback" in data:
                     review.feedback = data["feedback"]
                 review.teacher = request.user
