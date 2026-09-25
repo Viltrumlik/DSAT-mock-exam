@@ -8,6 +8,45 @@ const nextConfig: NextConfig = {
   // Django uses APPEND_SLASH and expects them; mismatches cause redirect loops.
   skipTrailingSlashRedirect: true,
 
+  /**
+   * Paths whose screen has been retired.
+   *
+   * Two homework-grading screens graded alongside `/teacher/grading` until the owner asked for
+   * them to go — a teacher meeting two ways to do one job has to work out which one counts.
+   * The screens are deleted; these paths are not, because a path outlives the screen: a
+   * bookmark, a tab left open since last week, a link in somebody's notes.
+   *
+   * The deep link carries a class and a homework, and the classroom's own Grading tab opens on
+   * exactly that pair (`?tab=` is read by ClassroomWorkspace, `?assignment=` by the tab), so
+   * the old address lands on the same homework's students rather than merely nearby. The
+   * numeric constraint matters: without it a path with rubbish where an id should be would be
+   * carried into the redirect and drop a teacher into a classroom that does not exist. Those
+   * fall to the second rule instead, which also catches the bare hub.
+   *
+   * Here rather than in `middleware.ts`, which does run — verified against production, where
+   * `teacher.mastersat.uz/ops` answers 307 `/teacher` — but which returns early on localhost by
+   * design (`isLocalhost`). A retirement is not host policy: the screen is gone on every host
+   * and in development too, and a rule nobody can reach while developing is a rule nobody
+   * tests. `redirects()` is also the framework's own place for a path that has moved.
+   *
+   * `permanent: false` (307): a 308 is cached by browsers indefinitely, and nothing about this
+   * is worth making impossible to take back.
+   */
+  async redirects() {
+    return [
+      {
+        source: "/teacher/homework/grading/:classId(\\d+)/:assignmentId(\\d+)",
+        destination: "/teacher/classrooms/:classId?tab=grading&assignment=:assignmentId",
+        permanent: false,
+      },
+      {
+        source: "/teacher/homework/grading/:path*",
+        destination: "/teacher/grading",
+        permanent: false,
+      },
+    ];
+  },
+
   // Proxy /api/* → backend in development.
   // Default: production server (real data). Override with API_PROXY_TARGET=http://localhost:8000
   // when you want to hit a local Django.
