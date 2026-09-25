@@ -136,12 +136,17 @@ export const supportTeacherNavSection: NavSection = {
 /**
  * Teacher information architecture (see docs/UI_REBUILD_IA.md §5).
  *
- * Five pages — Analytics, Materials, Students, Homework, Gradebook — are marked
- * `hiddenInSidebar` rather than deleted. The learning center wants them off the teacher's
- * sidebar, but the routes, their inbound links from classroom pages, and every endpoint
- * behind them are still live and still used by ops and admin. Hiding is therefore the whole
- * change: deleting the routes would 404 links that other roles follow, and the work would
- * have to be undone to bring any of the five back.
+ * Four pages — Analytics, Materials, Homework, Gradebook — are marked `hiddenInSidebar`
+ * rather than deleted. The learning center wants them off the teacher's sidebar, but the
+ * routes, their inbound links from classroom pages, and every endpoint behind them are still
+ * live and still used by ops and admin. Hiding is therefore the whole change: deleting the
+ * routes would 404 links that other roles follow, and the work would have to be undone to
+ * bring any of the four back.
+ *
+ * Students was a fifth until the owner said it was not needed, and that one really was
+ * deleted — page, route and entry. The at-risk rows on Analytics that used to lead there now
+ * lead into each student's own classroom, which is the difference between removing a page and
+ * hiding one: hiding leaves the links working, deleting means finding them all.
  *
  * Grading was the sixth until it was brought back, which is also what keeps the
  * `teacher-grading` section on screen — the sidebar drops a section once nothing visible is
