@@ -14,6 +14,7 @@ import {
   School,
   Timer,
   CirclePlay,
+  Radio,
   FolderOpen,
   BookA,
   ShieldCheck,
@@ -100,6 +101,10 @@ export const studentNav: NavSection[] = [
       // one on now and then, and a permanent entry would be a dead link most of the term.
       { href: "/events", label: "Events", icon: CalendarDays, hiddenInSidebar: true },
       { href: "/rewards", label: "Points", icon: Coins, hiddenInSidebar: true },
+      // Live quiz, like Events and Surveys: reached from the code the teacher projects
+      // ("Join at mastersat.uz/live"), not from a sidebar entry that would be a dead link
+      // on every day nobody is running one. The route still resolves and ⌘K still finds it.
+      { href: "/live", label: "Live quiz", icon: Radio, hiddenInSidebar: true },
       // No Question Bank: the school took it out of the student area (students never used
       // it). The route stays for staff — see app/(main)/question-bank/page.tsx — and the
       // bank itself is authored in the builder, which has its own nav.
@@ -169,7 +174,12 @@ export const teacherNav: NavSection[] = [
       { href: "/teacher/assessments", label: "Assessments", icon: ClipboardCheck },
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
       // Run an invigilated full mock: let students in with the admin's code, press Start.
+      // No `isNew` here any more: the badge had been on Mock sittings long enough that it
+      // stopped meaning new and started meaning decoration. Live quiz below keeps its own,
+      // because it genuinely is.
       { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay },
+      // Appended, like Mock sittings before it: one leaf, no group touched, nothing renamed.
+      { href: "/teacher/live", label: "Live quiz", icon: Radio, isNew: true },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen, hiddenInSidebar: true },
       // Appended, never slotted in. The school has restored this sidebar's shape once
       // already, so this adds ONE leaf at the end of the section and touches nothing else:
