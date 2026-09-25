@@ -50,6 +50,11 @@ public final class AssessmentRunner {
     private var seq: [Int: Int] = [:]
     private var nextSeq = 1
     private var saveTasks: [Int: Task<Void, Never>] = [:]
+    /// Answers changed on this phone and not yet confirmed by the server. A flush sends
+    /// these and the failed ones — never the whole set: re-sending every answered question
+    /// ran a long set straight into the server's 60-writes-a-minute answer throttle, and the
+    /// 429s then counted as "unsaved".
+    private var dirty: Set<Int> = []
 
     /// Typing coalesces; picking a choice does not.
     ///
@@ -99,6 +104,7 @@ public final class AssessmentRunner {
     /// coalesce.
     public func setAnswer(_ value: JSONValue, for questionId: Int, immediate: Bool = true) {
         answers[questionId] = value
+        dirty.insert(questionId)
         saveTasks[questionId]?.cancel()
         saveTasks[questionId] = Task { [weak self] in
             guard let self else { return }
@@ -136,6 +142,15 @@ public final class AssessmentRunner {
                 currentIndex: currentIndex
             )
             unsaved.remove(questionId)
+            // Only clean if nothing newer was typed while this write was in flight; if it
+            // was, its own scheduled write is still coming.
+            if answers[questionId] == value { dirty.remove(questionId) }
+        } catch APIError.conflict {
+            // The server already holds a NEWER answer for this question (another device,
+            // or a later write that overtook this one). Retrying would lose again; the
+            // question is settled.
+            unsaved.remove(questionId)
+            if answers[questionId] == value { dirty.remove(questionId) }
         } catch let error as APIError {
             unsaved.insert(questionId)
             lastError = error
@@ -152,7 +167,7 @@ public final class AssessmentRunner {
     public func flush() async {
         for (_, task) in saveTasks { task.cancel() }
         saveTasks.removeAll()
-        let pending = Set(answers.keys).union(unsaved)
+        let pending = dirty.union(unsaved)
         for id in pending.sorted() {
             await push(questionId: id)
         }
@@ -166,6 +181,15 @@ public final class AssessmentRunner {
         // Flush FIRST. A submit that races an unsent answer grades work the student did
         // but the server never saw.
         await flush()
+        // And if the flush could not land everything, do not hand in: the grade would be
+        // for a set the student did not submit. The answers are kept; trying again once
+        // the connection is back sends them first.
+        guard unsaved.isEmpty else {
+            if lastError == nil {
+                lastError = .transport(underlying: "Some answers have not reached the server yet.")
+            }
+            return false
+        }
         do {
             try await api.submit(attemptId: attemptId)
             return true

@@ -172,11 +172,11 @@ public struct ScheduleEvent: Decodable, Sendable, Equatable, Identifiable {
 /// never costs a round trip first.
 public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     public let id: Int
-    public let title: String
-    public let instructions: String?
-    public let dueAt: String?
+    public internal(set) var title: String
+    public internal(set) var instructions: String?
+    public internal(set) var dueAt: String?
     public let assignedAt: String?
-    public let subject: String?
+    public internal(set) var subject: String?
     public let contentType: String?
     public let itemCount: Int?
     public let classroomId: Int?
@@ -188,16 +188,26 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     // Content
     public let assessmentHomeworks: [AssessmentHomeworkLink]
     public let vocabHomeworks: [VocabHomeworkLink]
-    public let practiceBundleTests: [PracticeBundleTest]
-    public let mockExamId: Int?
-    public let practiceTestPackId: Int?
-    public let attachments: [AssignmentAttachment]
-    public let externalURLs: [String]
-    public let videoURL: String?
-    public let videoFileURL: String?
+    public internal(set) var practiceBundleTests: [PracticeBundleTest]
+    public internal(set) var mockExamId: Int?
+    public internal(set) var practiceTestPackId: Int?
+    public internal(set) var attachments: [AssignmentAttachment]
+    public internal(set) var externalURLs: [String]
+    public internal(set) var videoURL: String?
+    public internal(set) var videoFileURL: String?
     /// True when the teacher wants work handed in through the attached content, not as a
     /// file. The upload UI hides rather than failing at submit time.
-    public let locksFileUpload: Bool
+    public internal(set) var locksFileUpload: Bool
+    /// The teacher's own switch for a file hand-in. Only the detail endpoint sends it.
+    public internal(set) var allowFileUpload: Bool?
+    /// Names for `externalURLs`, index-aligned; an empty name means "show the address".
+    public internal(set) var externalURLLabels: [String]
+    /// `HOMEWORK` or `CLASSWORK`. Only the detail and per-class lists send it.
+    public internal(set) var category: String?
+    /// What the homework is marked out of (a decimal string on the wire).
+    public internal(set) var maxScore: Double?
+    /// Classwork only: what the teacher gave for it, once they have.
+    public internal(set) var classworkAward: ClassworkAward?
 
     public var isOverdue: Bool {
         guard let dueAt, let due = JSONCoding.parseServerDate(dueAt) else { return false }
@@ -233,6 +243,11 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
         case videoURL = "video_url"
         case videoFileURL = "video_file_url"
         case locksFileUpload = "locks_file_upload"
+        case allowFileUpload = "allow_file_upload"
+        case externalURLLabels = "external_url_labels"
+        case category
+        case maxScore = "max_score"
+        case classworkAward = "classwork_award"
     }
 
     public init(from decoder: Decoder) throws {
@@ -263,6 +278,15 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
         videoURL = try? c.decodeIfPresent(String.self, forKey: .videoURL)
         videoFileURL = try? c.decodeIfPresent(String.self, forKey: .videoFileURL)
         locksFileUpload = (try? c.decodeIfPresent(Bool.self, forKey: .locksFileUpload)) as? Bool ?? false
+        allowFileUpload = (try? c.decodeIfPresent(Bool.self, forKey: .allowFileUpload)) ?? nil
+        externalURLLabels = (try? c.decodeIfPresent([String].self, forKey: .externalURLLabels)) as? [String] ?? []
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        if let d = try? c.decodeIfPresent(Double.self, forKey: .maxScore) {
+            maxScore = d
+        } else {
+            maxScore = (try? c.decodeIfPresent(String.self, forKey: .maxScore)).flatMap { $0.flatMap(Double.init) }
+        }
+        classworkAward = (try? c.decodeIfPresent(ClassworkAward.self, forKey: .classworkAward)) ?? nil
     }
 }
 

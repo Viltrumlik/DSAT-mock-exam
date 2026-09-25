@@ -84,9 +84,9 @@ struct HomeworkListView: View {
             .padding(16)
         }
         .background(Theme.background)
-        .navigationDestination(for: AssignmentListing.self) { assignment in
-            HomeworkDetailView(assignment: assignment)
-        }
+        // No `navigationDestination` here: the row's value is resolved at the root of the
+        // Learn stack (see `LearnHubView.Route`). Declared on this pushed screen, it made
+        // SwiftUI rebuild the list on every tap and drop the push.
         .refreshable { await load() }
         // Title left blank on purpose: the page draws its own headline, and the bar is
         // here only for the Back button — which a pushed screen must never lose.
@@ -154,7 +154,7 @@ struct HomeworkRow: View {
                         .font(.system(size: 12, weight: .heavy))
                         .foregroundStyle(StatusLabel.color(assignment.workflowStatus))
 
-                    if let due = DueLabel.text(assignment.dueAt) {
+                    if let due = DueLabel.text(assignment.dueAt, handedIn: ["submitted", "graded", "reviewed"].contains((assignment.workflowStatus ?? "").lowercased())) {
                         Text("·").foregroundStyle(Theme.textLabel)
                         // States a fact. Even a passed deadline is phrased as information,
                         // never as an accusation.

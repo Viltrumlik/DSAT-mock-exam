@@ -13,9 +13,21 @@ struct HomeworkDetailView: View {
     let assignment: AssignmentListing
 
     @Environment(Session.self) private var session
+    /// The whole assignment. The list row this screen is opened from never carries the
+    /// instructions, attachments, links or video (they are not in `my-assignments`), so they
+    /// come from the detail endpoint; until it answers, the row stands in.
+    @State private var detail: AssignmentListing?
     @State private var submission: Submission?
     @State private var loadError: String?
     @State private var isLoading = true
+
+    /// The row, enriched — never replaced — by the detail (see `AssignmentListing.merging`).
+    private var current: AssignmentListing { detail.map { assignment.merging(detail: $0) } ?? assignment }
+
+    /// With the teacher already — its deadline is a date, not something to catch up on.
+    private var isHandedIn: Bool {
+        ["submitted", "graded", "reviewed"].contains((submission?.workflowStatus ?? current.workflowStatus ?? "").lowercased())
+    }
 
     /// Files chosen but not yet uploaded. They keep their token from the moment they are
     /// picked, so a retry after a failure re-sends the same identity and the server
@@ -31,7 +43,7 @@ struct HomeworkDetailView: View {
     @State private var assessmentAttemptId: Int?
     @State private var reviewAttemptId: Int?
 
-    private var classroomId: Int? { assignment.classroomId }
+    private var classroomId: Int? { current.classroomId }
 
     var body: some View {
         Group {
@@ -66,6 +78,13 @@ struct HomeworkDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 headerCard
+                // Keyed off the submission's own status (DRAFT/SUBMITTED/REVIEWED/RETURNED).
+                // The web keys off `workflow_status` against the wrong value set, which is why a
+                // graded homework there shows "To do" and hides its feedback — not copied.
+                if let submission, let review = submission.review,
+                   ["REVIEWED", "RETURNED"].contains((submission.status ?? "").uppercased()) {
+                    reviewCard(review, returned: submission.isReturned)
+                }
                 if let note = submission?.returnNote, !note.isEmpty { returnNote(note) }
                 lessonVideo
                 taskSection
@@ -96,23 +115,23 @@ struct HomeworkDetailView: View {
     private var headerCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HeroHeader(
-                eyebrow: assignment.classroomName?.isEmpty == false ? assignment.classroomName! : "Homework",
+                eyebrow: current.classroomName?.isEmpty == false ? current.classroomName! : "Homework",
                 eyebrowIcon: "checklist",
-                title: assignment.title,
+                title: current.title,
                 tiles: heroTiles
             )
 
             HStack(spacing: 8) {
-                let status = submission?.workflowStatus ?? assignment.workflowStatus
+                let status = submission?.workflowStatus ?? current.workflowStatus
                 Chip(text: StatusLabel.homework(status), tone: StatusLabel.tone(status))
-                if let due = DueLabel.text(assignment.dueAt) {
+                if let due = DueLabel.text(current.dueAt, handedIn: isHandedIn) {
                     // A passed deadline reads as an invitation to catch up, never as an
                     // accusation.
                     Chip(text: due.text, icon: "calendar", tone: due.late ? .warning : .neutral)
                 }
             }
 
-            if let instructions = assignment.instructions, !instructions.isEmpty {
+            if let instructions = current.instructions, !instructions.isEmpty {
                 RichText(text: instructions).cardStyle()
             }
         }
@@ -120,16 +139,61 @@ struct HomeworkDetailView: View {
 
     private var heroTiles: [HeroTile] {
         var tiles: [HeroTile] = []
-        if !assignment.assessmentHomeworks.isEmpty {
-            tiles.append(HeroTile("Quizzes", icon: "square.and.pencil", value: assignment.assessmentHomeworks.count))
+        if !current.assessmentHomeworks.isEmpty {
+            tiles.append(HeroTile("Quizzes", icon: "square.and.pencil", value: current.assessmentHomeworks.count))
         }
-        if !assignment.vocabHomeworks.isEmpty {
-            tiles.append(HeroTile("Word sets", icon: "character.book.closed", value: assignment.vocabHomeworks.count))
+        if !current.vocabHomeworks.isEmpty {
+            tiles.append(HeroTile("Word sets", icon: "character.book.closed", value: current.vocabHomeworks.count))
         }
-        if let due = DueLabel.text(assignment.dueAt) {
+        if let due = DueLabel.text(current.dueAt, handedIn: isHandedIn) {
             tiles.append(HeroTile("Deadline", icon: "calendar", value: due.text))
         }
         return tiles
+    }
+
+    /// The teacher's mark, and what they said. First after the header, because once work has
+    /// been marked this is the one thing a student opens the page to read.
+    private func reviewCard(_ review: SubmissionReview, returned: Bool) -> some View {
+        let tone = returned ? Theme.warning : Theme.success
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                IconTile(systemName: returned ? "arrow.uturn.backward.circle.fill" : "checkmark.seal.fill", tone: tone)
+                VStack(alignment: .leading, spacing: 2) {
+                    // The site's own titles: a returned piece is an invitation to revise.
+                    Text(returned ? "Revision requested" : "Feedback").font(.system(size: 16, weight: .heavy))
+                    if let at = review.reviewedAt {
+                        Text(RelativeTime.short(at))
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                Spacer(minLength: 0)
+                if let score = review.scoreText {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text(score)
+                            .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                            .foregroundStyle(tone)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                        if review.isAuto {
+                            Text("Auto-marked")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                    }
+                }
+            }
+            if let feedback = review.feedback, !feedback.isEmpty {
+                Text(feedback)
+                    .font(.system(size: 15))
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if !returned {
+                Text("No written feedback — your score is shown above.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .cardStyle()
     }
 
     private func returnNote(_ note: String) -> some View {
@@ -157,14 +221,14 @@ struct HomeworkDetailView: View {
     /// it goes rather than a bare blue link.
     @ViewBuilder
     private var lessonVideo: some View {
-        if let raw = assignment.videoFileURL, !raw.isEmpty, let url = URL(string: raw) {
+        if let raw = current.videoFileURL, !raw.isEmpty, let url = URL(string: raw) {
             VStack(alignment: .leading, spacing: 8) {
                 Overline("Lesson")
                 VideoPlayer(player: AVPlayer(url: url))
                     .frame(height: 210)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             }
-        } else if let raw = assignment.videoURL, !raw.isEmpty, let url = URL(string: raw) {
+        } else if let raw = current.videoURL, !raw.isEmpty, let url = URL(string: raw) {
             VStack(alignment: .leading, spacing: 8) {
                 Overline("Lesson")
                 Link(destination: url) {
@@ -206,12 +270,12 @@ struct HomeworkDetailView: View {
     /// — "what do I have to do" — rather than two kinds of object.
     @ViewBuilder
     private var taskSection: some View {
-        let hasTasks = !assignment.assessmentHomeworks.isEmpty || !assignment.vocabHomeworks.isEmpty
+        let hasTasks = !current.assessmentHomeworks.isEmpty || !current.vocabHomeworks.isEmpty
         if hasTasks {
             VStack(alignment: .leading, spacing: 10) {
                 Overline("What to do")
 
-                ForEach(assignment.assessmentHomeworks) { link in
+                ForEach(current.assessmentHomeworks) { link in
                     TaskRow(
                         title: link.title,
                         subtitle: assessmentSubtitle(link),
@@ -230,7 +294,7 @@ struct HomeworkDetailView: View {
                     }
                 }
 
-                ForEach(assignment.vocabHomeworks) { link in
+                ForEach(current.vocabHomeworks) { link in
                     NavigationLink {
                         VocabSetView(setId: link.setId, title: link.setTitle)
                     } label: {
@@ -271,20 +335,21 @@ struct HomeworkDetailView: View {
 
     @ViewBuilder
     private var materialsSection: some View {
-        if !assignment.attachments.isEmpty || !assignment.externalURLs.isEmpty {
+        if !current.attachments.isEmpty || !current.externalURLs.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Overline("Materials")
-                ForEach(assignment.attachments) { file in
+                ForEach(current.attachments) { file in
                     if let url = URL(string: file.url) {
                         Link(destination: url) {
                             materialRow(file.fileName, icon: "doc.fill")
                         }
                     }
                 }
-                ForEach(assignment.externalURLs, id: \.self) { raw in
-                    if let url = URL(string: raw) {
+                // Links carry the names the teacher gave them; an unnamed one shows its host.
+                ForEach(current.namedLinks, id: \.url) { link in
+                    if let url = URL(string: link.url) {
                         Link(destination: url) {
-                            materialRow(url.host ?? raw, icon: "link")
+                            materialRow(link.label.isEmpty ? (url.host ?? link.url) : link.label, icon: "link")
                         }
                     }
                 }
@@ -304,9 +369,33 @@ struct HomeworkDetailView: View {
 
     // MARK: - Handing in
 
+    /// Whether the server would still take a change: not after the deadline (unless the work
+    /// came back for a revision), never once reviewed.
+    private var handInClosed: Bool {
+        current.isHandInClosed(submissionStatus: submission?.status)
+    }
+
     @ViewBuilder
     private var handInSection: some View {
-        if !assignment.locksFileUpload {
+        if current.offersFileUpload && handInClosed {
+            // Said before the student picks anything, rather than after an upload is refused.
+            VStack(alignment: .leading, spacing: 10) {
+                Overline("Hand in")
+                if let files = submission?.files, !files.isEmpty {
+                    ForEach(files) { file in
+                        SubmittedFileRow(file: file, onRemove: nil)
+                    }
+                }
+                Label(
+                    (submission?.status ?? "").uppercased() == "REVIEWED"
+                        ? "Your teacher has marked this — it can't be changed now."
+                        : "Hand-in closed at the deadline.",
+                    systemImage: "lock.fill"
+                )
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            }
+        } else if current.offersFileUpload {
             VStack(alignment: .leading, spacing: 10) {
                 Overline("Hand in")
 
@@ -404,12 +493,16 @@ struct HomeworkDetailView: View {
     private func stagePhotos(_ items: [PhotosPickerItem]) async {
         guard !items.isEmpty else { return }
         for (offset, item) in items.enumerated() {
-            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            guard let original = try? await item.loadTransferable(type: Data.self) else { continue }
+            // Camera photos are re-encoded as JPEG before they leave the phone, for two
+            // reasons. The server's upload allowlist has no `.heic`, so a recent iPhone photo
+            // sent as-is was refused. And a camera JPEG/HEIC carries EXIF — including where
+            // the photo was taken, which is the student's home more often than not; a fresh
+            // JPEG keeps the pixels and the orientation and nothing else. Screenshots (PNG)
+            // carry no location and go as they are.
+            let (data, kind) = PhotoUpload.prepare(original)
             // Camera roll items have no useful filename, so name them for the teacher who
-            // will open them: a list of "image.jpg" is unreadable. The extension comes from
-            // the bytes, not a guess — a screenshot is a PNG and a recent iPhone photo may
-            // be HEIC, and the server validates uploads by extension.
-            let kind = MultipartForm.imageKind(for: data)
+            // will open them: a list of "image.jpg" is unreadable.
             let stamp = Int(Date().timeIntervalSince1970)
             staged.append(MultipartForm.File(
                 filename: "photo-\(stamp)-\(offset + 1).\(kind.extension)",
@@ -457,13 +550,22 @@ struct HomeworkDetailView: View {
             do {
                 let updated = try await session.student.submitHomework(
                     classroomId: classroomId,
-                    assignmentId: assignment.id,
+                    assignmentId: current.id,
                     files: staged,
                     expectedRevision: submission?.revision
                 )
                 // Only clear the staged files once the server has them.
                 staged = []
                 submission = updated
+            } catch APIError.validation(_, _, let fields) where fields["file_tokens"] != nil {
+                // "Token already used": an earlier attempt DID land — its response was lost on
+                // the way back. The files are already on the server, so re-read what it holds
+                // instead of telling the student the upload failed and inviting a duplicate.
+                staged = []
+                submission = (try? await session.student.mySubmission(
+                    classroomId: classroomId,
+                    assignmentId: assignment.id
+                )) ?? submission
             } catch let error as APIError {
                 actionError = error.errorDescription
             } catch {
@@ -479,7 +581,7 @@ struct HomeworkDetailView: View {
         do {
             submission = try await session.student.submitHomework(
                 classroomId: classroomId,
-                assignmentId: assignment.id,
+                assignmentId: current.id,
                 removeFileIds: [file.id],
                 expectedRevision: submission?.revision,
                 markAsSubmitted: false
@@ -498,19 +600,21 @@ struct HomeworkDetailView: View {
             return
         }
         loadError = nil
+        // The detail is an improvement, not a requirement: if it fails the list row still
+        // shows the tasks, so its failure is not the page's failure.
+        async let fullAssignment = try? session.student.assignment(classroomId: classroomId, id: assignment.id)
         do {
+            // nil is "nothing handed in yet" — a normal state, not a failure.
             submission = try await session.student.mySubmission(
                 classroomId: classroomId,
                 assignmentId: assignment.id
             )
-        } catch APIError.http(let status, _) where status == 404 {
-            // Nothing handed in yet is a normal state, not a failure.
-            submission = nil
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
             loadError = error.localizedDescription
         }
+        if let full = await fullAssignment { detail = full }
         isLoading = false
     }
 }
@@ -596,7 +700,8 @@ struct TaskRowLabel: View {
 
 struct SubmittedFileRow: View {
     let file: SubmissionFile
-    let onRemove: @MainActor () async -> Void
+    /// `nil` once hand-in has closed: the file is shown, not offered for removal.
+    let onRemove: (@MainActor () async -> Void)?
 
     @State private var isRemoving = false
 
@@ -612,7 +717,7 @@ struct SubmittedFileRow: View {
             Spacer()
             if isRemoving {
                 ProgressView()
-            } else {
+            } else if let onRemove {
                 Button {
                     isRemoving = true
                     Task {

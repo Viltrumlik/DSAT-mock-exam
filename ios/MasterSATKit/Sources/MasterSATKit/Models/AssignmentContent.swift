@@ -105,10 +105,15 @@ public struct PracticeBundleTest: Decodable, Sendable, Equatable, Identifiable {
     public let subject: String
     public let state: String
     public let attemptId: Int?
+    /// Sat before this homework was set and not since: it reads "Start again", and only a
+    /// sitting finished after the homework was set counts for it.
+    public let retake: Bool
+    public let collectionName: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, subject, state
+        case id, name, subject, state, retake
         case attemptId = "attempt_id"
+        case collectionName = "collection_name"
     }
 
     public init(from decoder: Decoder) throws {
@@ -118,6 +123,8 @@ public struct PracticeBundleTest: Decodable, Sendable, Equatable, Identifiable {
         subject = (try? c.decodeIfPresent(String.self, forKey: .subject)) as? String ?? ""
         state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "not_started"
         attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
+        retake = (try? c.decodeIfPresent(Bool.self, forKey: .retake)) as? Bool ?? false
+        collectionName = try? c.decodeIfPresent(String.self, forKey: .collectionName)
     }
 }
 

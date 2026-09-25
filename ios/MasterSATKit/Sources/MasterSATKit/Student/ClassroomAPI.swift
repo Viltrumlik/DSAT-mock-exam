@@ -22,12 +22,25 @@ public struct ClassroomAPI: Sendable {
     ///
     /// The code is the only way back into a class a student was removed from, so a wrong
     /// one has to fail loudly with the server's own wording rather than being swallowed.
+    ///
+    /// The server answers `{"joined": true, "role": …, "classroom": {…}}` — the class is
+    /// NESTED. Decoding the body as a `Classroom` failed on every successful join: the student
+    /// was in the class on the server and looking at an error on the phone.
     @discardableResult
     public func join(code: String) async throws -> Classroom {
         try await client.send(
             try .post("/classes/join/", json: ["join_code": code.trimmingCharacters(in: .whitespaces)]),
-            as: Classroom.self
-        )
+            as: JoinResponse.self
+        ).classroom
+    }
+
+    /// Classwork for one class — done in the lesson, so it is not in `my-assignments`, which
+    /// is homework only.
+    public func classwork(classroomId: Int) async throws -> [AssignmentListing] {
+        try await client.send(
+            .get("/classes/\(classroomId)/assignments/", query: [URLQueryItem(name: "category", value: "CLASSWORK")]),
+            as: ListOrResults<AssignmentListing>.self
+        ).items
     }
 
     public func people(classroomId: Int) async throws -> [ClassroomMember] {
@@ -56,4 +69,8 @@ public struct ClassroomAPI: Sendable {
             as: RankingBoard.self
         )
     }
+}
+
+private struct JoinResponse: Decodable, Sendable {
+    let classroom: Classroom
 }

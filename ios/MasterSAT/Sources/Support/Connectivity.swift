@@ -22,10 +22,13 @@ final class Connectivity {
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                let wasOffline = !self.isOnline
+                // Only on a real change. The monitor reports every interface wobble, and an
+                // @Observable property notifies on EVERY assignment — equal or not. Each one
+                // re-rendered the root, which rebuilt the tabs' navigation links and popped
+                // whatever screen the student had open.
+                guard let self, self.isOnline != online else { return }
                 self.isOnline = online
-                if online && wasOffline { self.onReconnect?() }
+                if online { self.onReconnect?() }
             }
         }
         monitor.start(queue: DispatchQueue(label: "uz.mastersat.connectivity"))

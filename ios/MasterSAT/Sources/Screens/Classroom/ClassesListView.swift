@@ -269,21 +269,14 @@ struct ClassroomDetailView: View {
         .cardStyle(padding: 16)
 
         VStack(alignment: .leading, spacing: 14) {
-            CardHeading(icon: "trophy.fill", title: "Leaderboard", subtitle: "How the class is doing", tone: Theme.amber)
-
-            Picker("Board", selection: $boardKind) {
-                ForEach(RankingKind.allCases, id: \.self) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: boardKind) { _, _ in Task { await loadBoard() } }
+            // One board. The SAT board was retired on the server (it now always answers
+            // empty), and the class ranks on XP from the rewards ledger — the same XP the
+            // school-wide leaderboard counts.
+            CardHeading(icon: "trophy.fill", title: "Leaderboard", subtitle: "Ranked on XP", tone: Theme.amber)
 
             if let board {
                 if board.isHidden {
                     DashedEmpty(title: "Your teacher keeps this board private.")
-                } else if boardKind == .sat && !board.satAvailable {
-                    // Foundation and junior classes do not rank on SAT at all. Saying so
-                    // beats an empty list that reads as "nobody has scored".
-                    DashedEmpty(title: "This class does not rank on SAT scores.")
                 } else if board.rows.isEmpty {
                     DashedEmpty(title: "No results on this board yet.")
                 } else {

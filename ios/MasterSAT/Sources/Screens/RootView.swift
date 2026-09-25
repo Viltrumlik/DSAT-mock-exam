@@ -6,23 +6,13 @@ struct RootView: View {
 
     var body: some View {
         content
-            // Offline is said once, here, rather than by every screen failing on its own.
-            .overlay(alignment: .top) {
-                if !session.connectivity.isOnline {
-                    OfflineBanner().allowsHitTesting(false)
-                }
-            }
-            .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+            // Both overlays read their own state in their own bodies. If this body read
+            // connectivity or the release gate, every change to either would rebuild the tab
+            // view below — and with it the navigation stacks, popping open screens.
+            .overlay(alignment: .top) { OfflineOverlay() }
             // Above everything, including the sign-in form: a build below the minimum can do
             // nothing useful, and signing in to it would only meet a refusal.
-            .overlay {
-                if session.releaseGate.isBlocked {
-                    UpdateRequiredView(config: session.releaseGate.config) {
-                        await session.recheckRelease()
-                    }
-                    .transition(.opacity)
-                }
-            }
+            .overlay { UpdateGateOverlay() }
     }
 
     @ViewBuilder
@@ -40,6 +30,33 @@ struct RootView: View {
             } else {
                 RootTabView(user: user)
             }
+        }
+    }
+}
+
+/// Offline is said once, here, rather than by every screen failing on its own.
+private struct OfflineOverlay: View {
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        Group {
+            if !session.connectivity.isOnline {
+                OfflineBanner().allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+    }
+}
+
+private struct UpdateGateOverlay: View {
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        if session.releaseGate.isBlocked {
+            UpdateRequiredView(config: session.releaseGate.config) {
+                await session.recheckRelease()
+            }
+            .transition(.opacity)
         }
     }
 }
@@ -75,13 +92,28 @@ struct RootTabView: View {
 /// the whole of it and gets a page rather than a menu — each card says what is behind it
 /// and how much of it there is.
 struct LearnHubView: View {
+    /// Every screen the hub opens, as a value.
+    ///
+    /// Value-based on purpose. The cards used to be `NavigationLink(destination:)`, and a
+    /// screen pushed that way that itself pushes by value (the homework list does) was
+    /// rebuilt the moment its row was tapped: the push was dropped, the list reset to its
+    /// first tab, and the homework never opened. With every destination declared here, at
+    /// the root of the stack, a push is only ever a value appended to the path.
+    enum Route: Hashable {
+        case classrooms, homework, assessments, midterms
+    }
+
     @Environment(Session.self) private var session
     @State private var assignments: [AssignmentListing] = []
     @State private var classroomCount: Int?
     @State private var midtermResults: Int?
 
+    /// The same rule as the homework list's "To do" tab — handed-in work is not waiting on
+    /// the student, so it is not counted as open here either.
     private var openHomework: Int {
-        assignments.filter { ($0.workflowStatus ?? "").lowercased() != "graded" }.count
+        assignments.filter {
+            !["submitted", "graded", "reviewed"].contains(($0.workflowStatus ?? "").lowercased())
+        }.count
     }
 
     private var openAssessments: Int {
@@ -103,7 +135,7 @@ struct LearnHubView: View {
                         icon: "person.3.fill",
                         tone: Theme.accent,
                         count: classroomCount,
-                        destination: ClassesListView()
+                        route: Route.classrooms
                     )
                     HubCard(
                         title: "Homework",
@@ -111,7 +143,7 @@ struct LearnHubView: View {
                         icon: "checklist",
                         tone: Theme.info,
                         count: openHomework,
-                        destination: HomeworkListView()
+                        route: Route.homework
                     )
                     HubCard(
                         title: "Assessments",
@@ -119,7 +151,7 @@ struct LearnHubView: View {
                         icon: "square.and.pencil",
                         tone: Theme.success,
                         count: openAssessments,
-                        destination: AssessmentsListView()
+                        route: Route.assessments
                     )
                     // Papers are sat in the centre, so this card carries no badge for work
                     // waiting — it counts what has come back: scores and skill reports.
@@ -129,7 +161,7 @@ struct LearnHubView: View {
                         icon: "calendar.badge.clock",
                         tone: Theme.amber,
                         count: midtermResults,
-                        destination: MidtermsView()
+                        route: Route.midterms
                     )
                 }
                 .padding(16)
@@ -140,6 +172,17 @@ struct LearnHubView: View {
             .toolbar(.hidden, for: .navigationBar)
             .onAppear { Task { await load() } }
             .refreshable { await load() }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .classrooms: ClassesListView()
+                case .homework: HomeworkListView()
+                case .assessments: AssessmentsListView()
+                case .midterms: MidtermsView()
+                }
+            }
+            .navigationDestination(for: AssignmentListing.self) { assignment in
+                HomeworkDetailView(assignment: assignment)
+            }
         }
     }
 
@@ -153,18 +196,16 @@ struct LearnHubView: View {
     }
 }
 
-struct HubCard<Destination: View>: View {
+struct HubCard<Route: Hashable>: View {
     let title: String
     let subtitle: String
     let icon: String
     let tone: Color
     var count: Int?
-    let destination: Destination
+    let route: Route
 
     var body: some View {
-        NavigationLink {
-            destination
-        } label: {
+        NavigationLink(value: route) {
             HStack(spacing: 14) {
                 IconTile(systemName: icon, tone: tone, size: 46)
                 VStack(alignment: .leading, spacing: 3) {

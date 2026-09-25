@@ -65,14 +65,18 @@ final class ReleaseGate {
     }
 
     private func apply(_ fresh: ClientConfig) {
-        config = fresh
+        // Assign only what changed: an @Observable property notifies on every write, and a
+        // re-check every half hour that rewrote identical values would re-render every screen
+        // that reads the gate.
+        if config != fresh { config = fresh }
         let verdict = fresh.requirement(for: AppVersion(AppInfo.version))
-        requirement = verdict
-        showsNudge = verdict == .available && UpdateNudge.shouldShow(
+        if requirement != verdict { requirement = verdict }
+        let nudge = verdict == .available && UpdateNudge.shouldShow(
             latest: fresh.latestVersion,
             lastShownVersion: defaults.string(forKey: Key.nudgedVersion),
             lastShownAt: defaults.object(forKey: Key.nudgedAt) as? Date
         )
+        if showsNudge != nudge { showsNudge = nudge }
     }
 }
 

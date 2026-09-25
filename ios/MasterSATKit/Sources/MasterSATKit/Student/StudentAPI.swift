@@ -156,10 +156,23 @@ public struct StudentAPI: Sendable {
 
     // MARK: - Homework submission
 
-    public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission {
+    /// The student's submission, or `nil` when nothing has been handed in yet.
+    public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission? {
         try await client.send(
             .get("/classes/\(classroomId)/assignments/\(assignmentId)/my-submission/"),
-            as: Submission.self
+            as: MaybeSubmission.self
+        ).submission
+    }
+
+    /// One assignment, whole.
+    ///
+    /// `my-assignments` is batched for the list and never carries the instructions, the
+    /// attachments, the links, the lesson video or whether an upload is expected — the detail
+    /// screen reads those from here, the same serializer the web's page uses.
+    public func assignment(classroomId: Int, id: Int) async throws -> AssignmentListing {
+        try await client.send(
+            .get("/classes/\(classroomId)/assignments/\(id)/"),
+            as: AssignmentListing.self
         )
     }
 

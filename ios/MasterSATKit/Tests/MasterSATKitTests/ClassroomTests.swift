@@ -52,9 +52,13 @@ import Testing
 
     @Test("Joining posts the code to the join endpoint")
     func joinPostsCode() async throws {
-        server.handler = { _ in .json(["id": 9, "name": "Joined"]) }
+        // The server's real shape: the class is NESTED under "classroom". The old stub
+        // returned a bare class, which is exactly why the broken decode was never caught.
+        server.handler = { _ in .json(["joined": true, "role": "STUDENT", "classroom": ["id": 9, "name": "Joined"]]) }
 
-        _ = try await api().join(code: "  ABC123 ")
+        let joined = try await api().join(code: "  ABC123 ")
+        #expect(joined.id == 9)
+        #expect(joined.name == "Joined")
 
         let request = try #require(server.requests.first)
         #expect(request.url?.absoluteString == "https://mastersat.uz/api/classes/join/")
