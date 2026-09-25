@@ -42,6 +42,9 @@ import { useGradebook, type Cell, type ClassOption, type GradebookModel } from "
  * both quiet here on purpose — neither is a mark, and `cellText` is what tells them apart.
  */
 function cellTone(c: Cell): Tone {
+  // A composition that could not be worked out is not a low grade, and must not read as one
+  // — but it must not read as "nothing here" either. Amber, with no number in it.
+  if (c.composed === "unavailable") return "warning";
   if (c.status === "missing") return "neutral";
   if (c.status === "submitted") return "info";
   const g = c.grade;
@@ -51,9 +54,21 @@ function cellTone(c: Cell): Tone {
   return "warning";
 }
 function cellText(c: Cell): string {
+  if (c.composed === "unavailable") return "?";
   if (c.status === "missing") return "–";
   if (c.grade != null) return String(c.grade);
   return "•";
+}
+/**
+ * What a chip with no number in it means, for the pointer and for a screen reader.
+ *
+ * Only the two composition states say anything: "–" and the row's own count already tell a
+ * teacher what work is not turned in, and titling those cells too would say it three times.
+ */
+function cellTitle(c: Cell): string | undefined {
+  if (c.composed === "unavailable") return "The whole grade could not be worked out. The mark itself is saved.";
+  if (c.composed === "awaiting") return "Waiting on your mark — the automatically graded part is already settled.";
+  return undefined;
 }
 // A trend in whole points, like the Avg column. Grades have two decimals, but the float difference of two doesn't
 // (83.33 − 76.67 is 6.659999999999997), so the move goes back to hundredths before it is rounded: left as it is,
@@ -301,8 +316,11 @@ function Matrix({ model, forClass }: { model: GradebookModel; forClass: string }
  */
 function CellChip({ cell }: { cell: Cell }) {
   const tone = cellTone(cell);
+  const title = cellTitle(cell);
   return (
     <span
+      title={title}
+      aria-label={title}
       style={{
         display: "inline-flex", alignItems: "center", justifyContent: "center",
         height: 28, minWidth: 36, padding: "0 6px", borderRadius: 9,
