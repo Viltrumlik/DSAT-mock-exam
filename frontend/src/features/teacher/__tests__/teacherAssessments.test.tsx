@@ -299,7 +299,12 @@ describe("the assessment library — when the server pages the list", () => {
     await type('input[aria-label="Search assessments"]', "rational exponents");
     expect(text()).toContain("Rational exponents");
     expect(text()).not.toContain("No assessment matches");
-  });
+    // The 201 sets are the claim — the view pins max_limit = 200, so anything smaller could not
+    // tell page-walking from a single clamped request. Rendering them twice (on mount, and again
+    // after the search) makes this test 8-50x the cost of every sibling in the file: ~0.9s alone,
+    // but past the 5s default once 125 files contend for the CPU, which turned the whole suite
+    // red. Its own limit, rather than a smaller fixture that would stop proving anything.
+  }, 30_000);
 
   it("says so when it stops before the end of the list", async () => {
     // A server that never stops offering a next page. The walk has its own ceiling, and when it
