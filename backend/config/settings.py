@@ -962,3 +962,16 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
 VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
 VAPID_SUBJECT = os.getenv("VAPID_SUBJECT", "mailto:admin@mastersat.uz")
+
+# ── Apple Push, for the iOS app (optional) ────────────────────────────────────
+#
+# Inert until all of KEY_ID, TEAM_ID and a key are set (`notifications.apns.is_configured()`),
+# exactly like VAPID above. Needs an Apple Developer Program membership: create an APNs auth key
+# (.p8) at developer.apple.com → Keys. APNS_AUTH_KEY takes the key text ("\n" for newlines is
+# accepted); APNS_AUTH_KEY_PATH takes a path to the .p8 instead. Restart gunicorn AND the celery
+# worker after setting them — the worker is what sends.
+APNS_KEY_ID = os.getenv("APNS_KEY_ID", "")
+APNS_TEAM_ID = os.getenv("APNS_TEAM_ID", "")
+APNS_AUTH_KEY = os.getenv("APNS_AUTH_KEY", "")
+APNS_AUTH_KEY_PATH = os.getenv("APNS_AUTH_KEY_PATH", "")
+APNS_TOPIC = os.getenv("APNS_TOPIC", "uz.mastersat.app")

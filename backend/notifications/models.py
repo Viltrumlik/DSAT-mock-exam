@@ -93,6 +93,43 @@ class PushSubscription(models.Model):
         return f"{self.user_id} @ {self.endpoint[:40]}…"
 
 
+class ApnsDevice(models.Model):
+    """One install of the iOS app that has agreed to receive push.
+
+    The native twin of `PushSubscription`. Keyed on the device token Apple hands the app — a
+    token identifies one app on one phone, so re-registering updates the row (and moves it to
+    whoever is signed in now: a shared family iPad must not keep buzzing for the last student).
+    """
+
+    ENV_SANDBOX = "sandbox"
+    ENV_PRODUCTION = "production"
+    ENV_CHOICES = [(ENV_SANDBOX, "Sandbox (development builds)"), (ENV_PRODUCTION, "Production")]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="apns_devices")
+    #: Hex, as the app sends it. 64 characters today; Apple has said it may grow, so room is left.
+    token = models.CharField(max_length=200, unique=True)
+    #: Which APNs host the token belongs to. A development build's token is refused by the
+    #: production host and vice versa, so it is recorded rather than guessed.
+    environment = models.CharField(max_length=16, choices=ENV_CHOICES, default=ENV_PRODUCTION)
+    bundle_id = models.CharField(max_length=128, blank=True, default="")
+    app_version = models.CharField(max_length=32, blank=True, default="")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    #: Set when APNs says the token is dead (410 Unregistered, BadDeviceToken). Kept a while,
+    #: like a failed web subscription, so "why did my phone stop buzzing?" is answerable.
+    failed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    failure_reason = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        db_table = "notification_apns_devices"
+        ordering = ["-last_seen_at"]
+        indexes = [models.Index(fields=["user", "failed_at"], name="notif_apns_user_failed")]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} @ {self.token[:12]}… ({self.environment})"
+
+
 class NotificationPreference(models.Model):
     """Per-student, per-category opt-out.
 
