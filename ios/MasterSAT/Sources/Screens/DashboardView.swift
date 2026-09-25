@@ -77,6 +77,12 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
 
+                    if session.releaseGate.showsNudge {
+                        UpdateNudgeCard(config: session.releaseGate.config) {
+                            withAnimation { session.releaseGate.dismissNudge() }
+                        }
+                    }
+
                     TargetScoresCard(
                         overall: current.targetScore,
                         english: sectionTargets.english,

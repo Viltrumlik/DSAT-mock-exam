@@ -30,7 +30,11 @@ from .versioning import UPDATE_REQUIRED, format_version, parse_client_header
 _HEADER_META = "HTTP_" + NATIVE_CLIENT_HEADER.upper().replace("-", "_")
 _EXEMPT_PREFIXES = ("/api/mobile/",)
 
-UPDATE_REQUIRED_DETAIL = "This version of the MasterSAT app is no longer supported. Update it to keep going."
+#: Said the same way the app's own update screen says it — including that nothing is lost,
+#: which is the first thing a student wonders when an app stops.
+UPDATE_REQUIRED_DETAIL = (
+    "This version of MasterSAT is no longer supported. Update to keep going — nothing you've done is lost."
+)
 
 
 class NativeClientVersionGateMiddleware:

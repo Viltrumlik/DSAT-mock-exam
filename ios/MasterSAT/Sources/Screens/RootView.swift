@@ -5,13 +5,41 @@ struct RootView: View {
     @Environment(Session.self) private var session
 
     var body: some View {
+        content
+            // Offline is said once, here, rather than by every screen failing on its own.
+            .overlay(alignment: .top) {
+                if !session.connectivity.isOnline {
+                    OfflineBanner().allowsHitTesting(false)
+                }
+            }
+            .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+            // Above everything, including the sign-in form: a build below the minimum can do
+            // nothing useful, and signing in to it would only meet a refusal.
+            .overlay {
+                if session.releaseGate.isBlocked {
+                    UpdateRequiredView(config: session.releaseGate.config) {
+                        await session.recheckRelease()
+                    }
+                    .transition(.opacity)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch session.phase {
         case .launching:
             ProgressView().controlSize(.large)
         case .signedOut(let message):
             AuthView(notice: message)
+        case .unreachable:
+            UnreachableView()
         case .signedIn(let user):
-            RootTabView(user: user)
+            if user.isFrozen {
+                FrozenAccountView()
+            } else {
+                RootTabView(user: user)
+            }
         }
     }
 }

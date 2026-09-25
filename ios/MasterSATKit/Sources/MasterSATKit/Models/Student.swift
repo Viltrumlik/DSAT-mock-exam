@@ -5,7 +5,10 @@ import Foundation
 /// A lean subset: Swift's `Decodable` ignores fields it does not declare, so the payload's
 /// staff-only and security-console fields simply pass by. Add a property here only when a
 /// screen actually reads it.
-public struct CurrentUser: Decodable, Sendable, Equatable, Identifiable {
+///
+/// Encodable too, in the server's own keys, so the app can keep the last copy on the device
+/// and open while offline instead of greeting a signed-in student with the sign-in form.
+public struct CurrentUser: Codable, Sendable, Equatable, Identifiable {
     public let id: Int
     public let email: String
     public let username: String?
@@ -67,6 +70,25 @@ public struct CurrentUser: Decodable, Sendable, Equatable, Identifiable {
         profileComplete = try? c.decodeIfPresent(Bool.self, forKey: .profileComplete)
         missingFields = try? c.decodeIfPresent([String].self, forKey: .missingFields)
         emailVerified = try? c.decodeIfPresent(Bool.self, forKey: .emailVerified)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(email, forKey: .email)
+        try c.encodeIfPresent(username, forKey: .username)
+        try c.encodeIfPresent(firstName, forKey: .firstName)
+        try c.encodeIfPresent(lastName, forKey: .lastName)
+        try c.encodeIfPresent(role, forKey: .role)
+        try c.encode(isFrozen, forKey: .isFrozen)
+        try c.encodeIfPresent(profileImageURL, forKey: .profileImageURL)
+        try c.encodeIfPresent(satExamDate, forKey: .satExamDate)
+        try c.encodeIfPresent(targetScore, forKey: .targetScore)
+        try c.encodeIfPresent(targetEnglish, forKey: .targetEnglish)
+        try c.encodeIfPresent(targetMath, forKey: .targetMath)
+        try c.encodeIfPresent(profileComplete, forKey: .profileComplete)
+        try c.encodeIfPresent(missingFields, forKey: .missingFields)
+        try c.encodeIfPresent(emailVerified, forKey: .emailVerified)
     }
 }
 
