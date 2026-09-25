@@ -108,13 +108,28 @@ async function mount(mySubmission: object) {
       </QueryClientProvider>,
     );
   });
-  // The homework and `/my-submission/` are two queries and settle on different ticks. Waiting on
-  // the title alone catches the page mid-load, with the feedback card not yet drawn.
-  for (let tick = 0; tick < 50 && !host.textContent?.includes("Unit 3 review"); tick++) {
-    await act(async () => { await Promise.resolve(); });
-  }
-  for (let tick = 0; tick < 20; tick++) {
-    await act(async () => { await Promise.resolve(); });
+  await settle();
+}
+
+/**
+ * Run the page until it stops changing.
+ *
+ * The homework and `/my-submission/` are two queries that settle on different ticks, and React
+ * Query resolves across MACROtasks — a fixed count of `await Promise.resolve()` flushes only
+ * microtasks and caught the page mid-load under parallel load, which read as a missing pill.
+ */
+async function settle(maxTicks = 150) {
+  let last = "";
+  let stable = 0;
+  for (let tick = 0; tick < maxTicks; tick++) {
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+    const now = host.innerHTML;
+    if (now === last && now !== "") {
+      if (++stable >= 5) return;
+    } else {
+      stable = 0;
+      last = now;
+    }
   }
 }
 
@@ -211,5 +226,60 @@ describe("a student's own grade, when the teacher's mark is a share of it", () =
   it("stays quiet before hand-in on homework with no manual share", async () => {
     await mount({ composed_grade: null });
     expect(feedbackCard()).toBe("");
+  });
+});
+
+/**
+ * The two ends of the share — where one side of the composition carries nothing.
+ *
+ * Both were introduced by the fix above and caught in review. A grade screen's edge states are
+ * where a careful number turns back into a wrong one: with nothing to compose, the honest thing
+ * is the mark and a sentence, never a blank and never a promise.
+ */
+describe("the ends of the share", () => {
+  it("still shows the mark when a 0% share has nothing to compose with", async () => {
+    // Share 0 AND nothing auto-graded: the composition has no number to give, and it is not
+    // awaiting anything either. Dropping the pill blanked the score under "shown above".
+    await mount({
+      id: 7,
+      status: "REVIEWED",
+      workflow_status: "REVIEWED",
+      files: [],
+      review: { grade: "72.00", max_score: "100.00", feedback: "" },
+      composed_grade: composed({
+        state: "final", percent: null, automatic_percent: null, manual_percent: 72,
+        manual_weight_percent: 0, automatic_weight_percent: 100,
+      }),
+    });
+
+    expect(pill()).toBe("72.00/100.00");
+    // And it says why the mark will not move the grade, instead of implying that it did.
+    expect(feedbackCard()).toContain("This grade is worked out automatically");
+  });
+
+  it("does not call a weightless automatic score part of the grade", async () => {
+    // The teacher's mark is the whole grade. An automatic score can still be recorded against
+    // the homework, and it carries nothing — "already decided" would promise a part that
+    // does not exist.
+    await mount({
+      composed_grade: composed({
+        state: "awaiting_manual_mark", percent: null, is_final: false,
+        automatic_percent: 95, manual_percent: null,
+        manual_weight_percent: 100, automatic_weight_percent: 0,
+      }),
+    });
+
+    expect(feedbackCard()).toBe("");
+  });
+
+  it("still shows the settled part when the automatic side really does carry weight", async () => {
+    await mount({
+      composed_grade: composed({
+        state: "awaiting_manual_mark", percent: 76, is_final: false,
+        automatic_percent: 95, manual_percent: null,
+      }),
+    });
+
+    expect(feedbackCard()).toContain("Part of this grade is already decided");
   });
 });

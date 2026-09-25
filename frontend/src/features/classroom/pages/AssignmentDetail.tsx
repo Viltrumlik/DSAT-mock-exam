@@ -186,7 +186,10 @@ function gradePill(
     if (share.unavailable) return <Pill tone="warning">Total unavailable</Pill>;
     if (share.awaiting) return <Pill tone="warning">Waiting on your teacher&apos;s mark</Pill>;
     if (share.percent != null) return <Pill tone={tone}>{pct(share.percent)}</Pill>;
-    return undefined;
+    // No composed number and nothing owed: the share is 0 AND nothing on the homework is graded
+    // automatically, so the composition has nothing to add up. The mark below is the only number
+    // there is, and it is what this page showed before the share existed — dropping the pill
+    // here would blank the score under a line that says the score is shown above.
   }
   if (review.grade == null) return undefined;
   return (
@@ -207,9 +210,18 @@ function GradeBreakdown({ share }: { share: ManualShare }) {
       </p>
     );
   }
-  // A share of 0 or 100 has no split worth explaining: the grade is wholly the teacher's, or
-  // wholly the engines', and the pill above already shows it.
-  if (share.manualWeight === 0 || share.automaticWeight === 0) return null;
+  // A review that carries no weight is worth saying out loud: the student is looking at a mark
+  // and a grade that will not move with it, and silence here reads as the mark having counted.
+  if (share.manualWeight === 0) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        This grade is worked out automatically. Your teacher&apos;s comments are theirs, and they do
+        not change the number.
+      </p>
+    );
+  }
+  // A share of 100 has no split to explain — the pill above is wholly the teacher's mark.
+  if (share.automaticWeight === 0) return null;
   // The mark comes from the composition, never from `review.grade`: on a review the platform
   // wrote itself that key holds the automatic score, and printing it here would credit the
   // teacher with a number they never typed.
@@ -574,7 +586,11 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
               <p className="mt-2 text-sm text-muted-foreground">No written feedback — your score is shown above.</p>
             )}
           </Card>
-        ) : share && share.awaiting && !share.unavailable && share.automaticPercent != null ? (
+        ) : share && share.awaiting && !share.unavailable
+            && share.automaticWeight > 0 && share.automaticPercent != null ? (
+          // `automaticWeight > 0` is load-bearing: where the teacher's mark is the whole grade,
+          // an automatic score can still be recorded and it carries nothing. Calling that number
+          // "already decided" would promise a student a part of their grade that does not exist.
           <SettledSoFar share={share} />
         ) : null}
       </div>
