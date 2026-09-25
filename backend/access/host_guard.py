@@ -182,6 +182,10 @@ class SubdomainAPIGuardMiddleware:
             # marks who came. The student-facing page is on the apex, which needs no entry.
             if path.startswith("/api/events/"):
                 return self.get_response(request)
+            # Live quiz: an admin can open and watch a room for any class. Students play on
+            # the apex, which needs no entry here.
+            if path.startswith("/api/livequiz/"):
+                return self.get_response(request)
             # Notifications: the bell is in the shell, so it renders on every console. Without
             # this it 403s on all of them except the apex, and an admin's bell would be
             # permanently empty rather than obviously broken.
@@ -285,6 +289,10 @@ class SubdomainAPIGuardMiddleware:
                 return self.get_response(request)
             # Notifications: the bell lives in the shell on the teacher portal too.
             if path.startswith("/api/notifications/"):
+                return self.get_response(request)
+            # Live quiz: the teacher portal is where a game is created and hosted. Without
+            # this the host page 403s and renders as an empty list rather than an error.
+            if path.startswith("/api/livequiz/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
