@@ -25,6 +25,7 @@ import {
   acceptAttribute, checkSubmissionBatch, fileExtension, fileIdentity, fileTypeList,
   resolveSubmissionLimits, sizeLabel,
 } from "../submissionLimits";
+import { describeManualShare, type ManualShare } from "../submissionsApi";
 import { Download } from "lucide-react";
 
 /** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
@@ -164,6 +165,88 @@ function TeacherView({ base, assignment, caps }: { base: string; assignment: Ass
   );
 }
 
+const pct = (n: number) => `${+n.toFixed(2)}%`;
+
+/**
+ * The number in the student's Feedback pill.
+ *
+ * On homework where the teacher's mark carries only a share of the grade, `review.grade` is that
+ * mark and nothing more: with a 20% share, a teacher's 50 sits inside a grade the server composed
+ * as 90. Drawing the mark here printed a bare "50" — no denominator, no share, and a different
+ * number from the one the teacher's own screens were served. So once a share exists, the raw mark
+ * never stands in for the grade again; the whole number, or an honest word about why there isn't
+ * one yet, takes its place. The arithmetic is the server's and is never redone here.
+ */
+function gradePill(
+  review: NonNullable<MySubmission["review"]>,
+  share: ManualShare | null,
+  tone: "success" | "warning",
+) {
+  if (share) {
+    if (share.unavailable) return <Pill tone="warning">Total unavailable</Pill>;
+    if (share.awaiting) return <Pill tone="warning">Waiting on your teacher&apos;s mark</Pill>;
+    if (share.percent != null) return <Pill tone={tone}>{pct(share.percent)}</Pill>;
+    return undefined;
+  }
+  if (review.grade == null) return undefined;
+  return (
+    <Pill tone={tone}>
+      {review.grade}{review.max_score ? `/${review.max_score}` : ""}
+      {review.is_auto ? " · Auto" : ""}
+    </Pill>
+  );
+}
+
+/** Where the student's grade came from, said under the pill that shows it. */
+function GradeBreakdown({ share }: { share: ManualShare }) {
+  if (share.unavailable) {
+    return (
+      <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+        Your teacher&apos;s mark is saved and it counts. It is only the single number adding it to the
+        automatically graded part that could not be worked out here — ask your teacher for the total.
+      </p>
+    );
+  }
+  // A share of 0 or 100 has no split worth explaining: the grade is wholly the teacher's, or
+  // wholly the engines', and the pill above already shows it.
+  if (share.manualWeight === 0 || share.automaticWeight === 0) return null;
+  // The mark comes from the composition, never from `review.grade`: on a review the platform
+  // wrote itself that key holds the automatic score, and printing it here would credit the
+  // teacher with a number they never typed.
+  const mark = share.manualPercent != null ? ` Your teacher marked it ${pct(share.manualPercent)}.` : "";
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      Your teacher&apos;s mark is worth {share.manualWeight}% of this grade; the other{" "}
+      {share.automaticWeight}% is graded automatically
+      {share.automaticPercent != null ? ` and stands at ${pct(share.automaticPercent)}` : ""}.
+      {mark}
+    </p>
+  );
+}
+
+/**
+ * The part of the grade that is already decided, before the teacher has marked anything.
+ *
+ * Vocabulary mastered on Monday settles the automatic side immediately; the upload slot may not
+ * be used until Friday. The server composes and serves that number with no submission row at all
+ * — this is the screen that finally shows it, instead of leaving the student to guess.
+ */
+function SettledSoFar({ share }: { share: ManualShare }) {
+  return (
+    <Card>
+      <CardHeader
+        title="Part of this grade is already decided"
+        actions={<Pill tone="info">{pct(share.automaticPercent as number)} so far</Pill>}
+      />
+      <p className="mt-2 text-sm text-muted-foreground">
+        The automatically graded {share.automaticWeight}% of this homework is settled at{" "}
+        {pct(share.automaticPercent as number)}. The remaining {share.manualWeight}% is your
+        teacher&apos;s mark, and they are still checking your work — this grade can only go up.
+      </p>
+    </Card>
+  );
+}
+
 function StudentView({ classId, base, assignment }: { classId: number; base: string; assignment: AssignmentDetail }) {
   const router = useRouter();
   const sub = useMySubmission(classId, assignment.id);
@@ -171,6 +254,10 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
   const my = sub.data ?? null;
   const status = my?.workflow_status ?? my?.status ?? null;
   const done = status === "REVIEWED";
+  // Null on nearly every homework — only one that gives the teacher's mark a share of the grade
+  // composes at all. `my` itself can be a response with no submission in it, carrying this key
+  // and nothing else, so it is read off `my` rather than off the review.
+  const share = describeManualShare(my?.composed_grade);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [startingId, setStartingId] = useState<number | null>(null);
 
@@ -475,22 +562,20 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
           <Card>
             <CardHeader
               title={status === "RETURNED" ? "Revision requested" : "Feedback"}
-              actions={my.review.grade != null ? (
-                <Pill tone={status === "RETURNED" ? "warning" : "success"}>
-                  {my.review.grade}{my.review.max_score ? `/${my.review.max_score}` : ""}
-                  {my.review.is_auto ? " · Auto" : ""}
-                </Pill>
-              ) : undefined}
+              actions={gradePill(my.review, share, status === "RETURNED" ? "warning" : "success")}
             />
             {status === "RETURNED" && my.return_note && (
               <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">{my.return_note}</p>
             )}
+            {share && <GradeBreakdown share={share} />}
             {my.review.feedback ? (
               <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{my.review.feedback}</p>
             ) : status === "REVIEWED" && (
               <p className="mt-2 text-sm text-muted-foreground">No written feedback — your score is shown above.</p>
             )}
           </Card>
+        ) : share && share.awaiting && !share.unavailable && share.automaticPercent != null ? (
+          <SettledSoFar share={share} />
         ) : null}
       </div>
 

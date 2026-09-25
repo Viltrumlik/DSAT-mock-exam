@@ -99,6 +99,14 @@ export type ManualShare = {
   automaticWeight: number;
   /** The engines' part on its own 0-100 scale. Null when nothing here is graded automatically. */
   automaticPercent: number | null;
+  /**
+   * The teacher's own mark, on its own 0-100 scale, or null while it is still owed.
+   *
+   * Not the same as `review.grade`, which is out of the review's ceiling and — on a review the
+   * platform wrote itself — is the automatic score rather than any teacher's judgement. This is
+   * the server's reading of the mark, and the only one a screen should attribute to a person.
+   */
+  manualPercent: number | null;
   /** The whole grade as it stands. Null while nothing that carries weight has a number behind it. */
   percent: number | null;
   /** The mark is still owed AND can still move `percent`. */
@@ -134,6 +142,7 @@ export function describeManualShare(composed: ComposedGrade | null | undefined):
     manualWeight,
     automaticWeight,
     automaticPercent: finite(composed.automatic_percent),
+    manualPercent: finite(composed.manual_percent),
     percent: finite(composed.percent),
     awaiting: composed.state === STATE_AWAITING_MANUAL,
     unavailable: composed.state === STATE_UNAVAILABLE,
