@@ -185,6 +185,7 @@ INSTALLED_APPS = [
     'events.apps.EventsConfig',
     'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
+    'mobile.apps.MobileConfig',
 ]
 
 MIDDLEWARE = [
@@ -206,6 +207,10 @@ MIDDLEWARE = [
     # middleware overrides it with a no-Domain deletion only when a duplicate was detected.
     'core.cookie_cleanup.LegacyCookieCleanupMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
+    # Refuse iOS builds older than the release policy's minimum (426), BEFORE the CSRF check so
+    # an old build's POST is told "update" rather than "Bad origin". Only requests declaring an
+    # app build are judged; /api/mobile/ is never refused. See mobile/middleware.py.
+    'mobile.middleware.NativeClientVersionGateMiddleware',
     # Enforce CSRF for cookie-authenticated API requests (DRF APIViews are CSRF-exempt by default).
     'config.csrf_api.APICSRFEnforceMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -511,6 +516,11 @@ CELERY_BEAT_SCHEDULE = {
     "notifications-prune-push-subscriptions": {
         "task": "notifications.prune_push_subscriptions",
         "schedule": crontab(hour=4, minute=25),
+    },
+    # iOS crash and error reports older than 90 days (mobile/tasks.py).
+    "mobile-prune-diagnostics": {
+        "task": "mobile.prune_diagnostics",
+        "schedule": crontab(hour=4, minute=35),
     },
     # Reconcile every class Telegram group with the site. The webhook is the fast path and
     # handles the ordinary join and leave; this is what catches everything the webhook could
@@ -842,6 +852,9 @@ REST_FRAMEWORK = {
         'assessment_assign_global': os.getenv('ASSESSMENT_ASSIGN_GLOBAL_THROTTLE', '2000/hour'),
         # SPA auth client telemetry (batched; default allows ~1 flush/min + beacons + retries).
         'client_auth_telemetry': os.getenv('AUTH_CLIENT_TELEMETRY_THROTTLE', '120/hour'),
+        # iOS crash/error reports (mobile.views.DiagnosticsUploadView), per client address. A
+        # class behind one school NAT uploads together after a bad build, hence the headroom.
+        'mobile_diagnostics': os.getenv('MOBILE_DIAGNOSTICS_THROTTLE', '240/hour'),
         # Student-submitted question error reports (per user).
         'question_report': os.getenv('QUESTION_REPORT_THROTTLE', '20/hour'),
         # Tighter limit when a classroom is under mitigation (auto after abuse spike).
