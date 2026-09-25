@@ -70,7 +70,25 @@ public actor APIClient {
         try await sendForData(endpoint)
     }
 
-    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false) async throws -> Data {
+    /// Send and decode, throwing a coded refusal (`{"code": "full", "detail": "…"}`) as
+    /// `APIRefusal` instead of folding it into an `APIError` that has nowhere to keep the code.
+    ///
+    /// For the APIs whose screens branch on that code (events: `full`, `started`,
+    /// `cancel_window_closed`, …). Authentication, the one refresh-and-retry, and every
+    /// failure that is not a coded refusal behave exactly as in `send`.
+    public func sendCoded<T: Decodable & Sendable>(_ endpoint: Endpoint, as type: T.Type = T.self) async throws -> T {
+        let data = try await sendForData(endpoint, codedRefusals: true)
+        if T.self == Empty.self, let empty = Empty() as? T { return empty }
+        do {
+            return try JSONCoding.decoder.decode(T.self, from: data)
+        } catch {
+            let detail = String(describing: error)
+            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
+            throw APIError.decoding(context: endpoint.path, underlying: detail)
+        }
+    }
+
+    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false, codedRefusals: Bool = false) async throws -> Data {
         let request = try buildRequest(endpoint)
 
         let data: Data
@@ -91,9 +109,12 @@ public actor APIClient {
             // One refresh, one retry. `isRetry` is what makes that a hard ceiling: a token
             // the server rejects twice is not a token a third attempt will fix.
             _ = try await refreshTokens()
-            return try await sendForData(endpoint, isRetry: true)
+            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals)
         }
 
+        if codedRefusals, let refusal = APIRefusal(status: http.statusCode, body: data) {
+            throw refusal
+        }
         throw mapFailure(status: http.statusCode, data: data, endpoint: endpoint)
     }
 
