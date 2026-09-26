@@ -119,10 +119,14 @@ public enum ProfileLessons {
         public let start: Date
         /// The lesson is on right now.
         public let live: Bool
+        /// The schedule gave the lesson a time. Without one the day is all there is to say —
+        /// "Mon, Sep 28 at 00:00" reads as a lesson at midnight.
+        public let hasTime: Bool
 
-        public init(start: Date, live: Bool) {
+        public init(start: Date, live: Bool, hasTime: Bool = true) {
             self.start = start
             self.live = live
+            self.hasTime = hasTime
         }
     }
 
@@ -145,7 +149,7 @@ public enum ProfileLessons {
         for event in events where event.type == .classMeeting && event.classroomId == classroomId {
             guard let window = window(of: event, hours: length, calendar: calendar), window.end > now else { continue }
             if best.map({ window.start < $0.start }) ?? true {
-                best = Next(start: window.start, live: window.start <= now)
+                best = Next(start: window.start, live: window.start <= now, hasTime: !clockTimes(in: event.time).isEmpty)
             }
         }
         return best
@@ -154,13 +158,15 @@ public enum ProfileLessons {
     /// "On now", "Today at 14:00", "Tomorrow at 16:00", "Wed, Sep 16 at 14:00".
     public static func label(_ lesson: Next, now: Date = Date(), calendar: Calendar = .current) -> String {
         if lesson.live { return "On now" }
-        let clock = calendar.dateComponents([.hour, .minute], from: lesson.start)
-        let hhmm = String(format: "%02d:%02d", clock.hour ?? 0, clock.minute ?? 0)
+        let day: String
         switch ProfileCalendar.days(from: now, to: lesson.start, calendar: calendar) {
-        case 0: return "Today at \(hhmm)"
-        case 1: return "Tomorrow at \(hhmm)"
-        default: return "\(ProfileCalendar.format(lesson.start, "EEE, MMM d", calendar: calendar)) at \(hhmm)"
+        case 0: day = "Today"
+        case 1: day = "Tomorrow"
+        default: day = ProfileCalendar.format(lesson.start, "EEE, MMM d", calendar: calendar)
         }
+        guard lesson.hasTime else { return day }
+        let clock = calendar.dateComponents([.hour, .minute], from: lesson.start)
+        return "\(day) at \(String(format: "%02d:%02d", clock.hour ?? 0, clock.minute ?? 0))"
     }
 
     /// A lesson's start and end. `time` is a start ("14:00") or a range ("08:00-10:00"); with

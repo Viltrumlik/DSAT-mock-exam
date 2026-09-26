@@ -206,6 +206,12 @@ enum ProfileFixtures {
         #expect(next(ranged, 8, hours: 1)?.live == true)
     }
 
+    @Test("A lesson with no time on a later day names the day, never a midnight start")
+    func noTimeAhead() throws {
+        #expect(label(next([try F.lesson("2026-09-16", "", classroom: 3)], 3, hours: 2)) == "Wed, Sep 16")
+        #expect(label(next([try F.lesson("2026-09-15", "", classroom: 4)], 4, hours: 2)) == "Tomorrow")
+    }
+
     @Test("No length means two hours; a lesson with no time is on all day")
     func defaults() throws {
         // 14:00 + the default 2 hours is still on at 15:30.
