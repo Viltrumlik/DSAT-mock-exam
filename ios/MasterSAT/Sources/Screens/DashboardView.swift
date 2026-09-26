@@ -154,6 +154,9 @@ struct DashboardView: View {
                 await load()
             }
             .onAppear { Task { await load() } }
+            // A newer account from the session (a goal or date saved on Profile) replaces the
+            // copy this page kept from its own last save — otherwise Home shows the old goal.
+            .onChange(of: user) { profile = nil }
             .onChange(of: viewYear) { Task { await loadSchedule() } }
             .onChange(of: viewMonth) { Task { await loadSchedule() } }
             .navigationDestination(item: $openedAssignmentId) { id in
@@ -343,6 +346,8 @@ struct DashboardView: View {
     private func saveGoal(english: Int, math: Int) async {
         do {
             profile = try await session.student.updateProfile(targetEnglish: english, targetMath: math)
+            // The session's copy too, so Profile — which reads it — shows the same goal.
+            await session.refreshUser()
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
@@ -356,6 +361,7 @@ struct DashboardView: View {
         defer { savingExamDate = false }
         do {
             profile = try await session.student.updateProfile(satExamDate: .some(date))
+            await session.refreshUser()
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
