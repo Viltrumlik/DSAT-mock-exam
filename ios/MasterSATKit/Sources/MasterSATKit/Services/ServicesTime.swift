@@ -121,14 +121,15 @@ public enum ServicesTime {
 
     // MARK: - Formatters
 
-    // Shared and never mutated after setup — formatting from several threads is safe on
-    // that condition, which is what `nonisolated(unsafe)` states (as in `JSONCoding`).
-    nonisolated(unsafe) private static let clockFormatter = formatter("HH:mm")
-    nonisolated(unsafe) private static let fullFormatter = formatter("EEE, MMM d, HH:mm")
-    nonisolated(unsafe) private static let monthDayFormatter = formatter("MMM d")
-    nonisolated(unsafe) private static let weekdayFormatter = formatter("EEE")
-    nonisolated(unsafe) static let longDayFormatter = formatter("MMMM d")
-    nonisolated(unsafe) static let longDayYearFormatter = formatter("MMMM d, yyyy")
+    // Shared, and never mutated after setup. `DateFormatter` is `Sendable` in this SDK —
+    // formatting from several threads is safe as long as nobody reconfigures it — so these
+    // need no `nonisolated(unsafe)` (the compiler warns that it is unnecessary).
+    private static let clockFormatter = formatter("HH:mm")
+    private static let fullFormatter = formatter("EEE, MMM d, HH:mm")
+    private static let monthDayFormatter = formatter("MMM d")
+    private static let weekdayFormatter = formatter("EEE")
+    static let longDayFormatter = formatter("MMMM d")
+    static let longDayYearFormatter = formatter("MMMM d, yyyy")
 
     private static func formatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
