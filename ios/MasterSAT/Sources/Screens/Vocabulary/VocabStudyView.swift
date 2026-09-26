@@ -147,9 +147,15 @@ struct VocabStudyView: View {
 
     @MainActor
     private func restart() async {
+        let previous = runner
         outcome = nil
         runner = nil
         runKey += 1
+        // Whatever the last run still holds — a grading call that failed, answers not yet
+        // sent — goes out before the run is let go, rather than vanishing with it.
+        if let previous, previous.isStarted, !previous.isFinished {
+            Task { await previous.flush(isPartial: true) }
+        }
         await begin()
     }
 
