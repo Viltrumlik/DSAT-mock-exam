@@ -19,14 +19,7 @@ struct VocabularyView: View {
     @State private var tab: Tab = .bank
     @State private var isBuilding = false
 
-    private var totals: (words: Int, sets: Int, mastered: Int, learning: Int) {
-        sections.reduce(into: (0, 0, 0, 0)) { acc, section in
-            acc.0 += section.wordCount
-            acc.1 += section.setCount
-            acc.2 += section.progress.mastered
-            acc.3 += section.progress.learning
-        }
-    }
+    private var totals: VocabHubTotals { VocabHubTotals(sections: sections) }
 
     /// Sets a teacher set that are still outstanding — the number worth badging.
     private var outstanding: Int {
@@ -58,9 +51,9 @@ struct VocabularyView: View {
                         blurb: "Four ways to study every set — flashcards, matching, speed and a full test. Any one of them counts as done.",
                         tiles: [
                             HeroTile("Words", icon: "textformat", value: isLoading ? nil : totals.words),
-                            HeroTile("Mastered", icon: "checkmark.circle", value: isLoading ? nil : totals.mastered),
-                            HeroTile("Learning", icon: "chart.line.uptrend.xyaxis", value: isLoading ? nil : totals.learning),
+                            HeroTile("Words mastered", icon: "checkmark.circle", value: isLoading ? nil : totals.wordsMastered),
                             HeroTile("Sets", icon: "square.stack", value: isLoading ? nil : totals.sets),
+                            HeroTile("Sets mastered", icon: "trophy", value: isLoading ? nil : totals.setsMastered),
                         ]
                     ) {
                         Button { isBuilding = true } label: {
@@ -278,7 +271,6 @@ struct MasteryBar: View {
         GeometryReader { geometry in
             HStack(spacing: 2) {
                 segment(progress.mastered, Theme.success, geometry.size.width)
-                segment(progress.learning, Theme.amber, geometry.size.width)
                 Rectangle().fill(Theme.surface2)
             }
         }
@@ -300,8 +292,7 @@ struct MasteryLegend: View {
     var body: some View {
         HStack(spacing: 14) {
             entry("Mastered", progress.mastered, Theme.success)
-            entry("Learning", progress.learning, Theme.amber)
-            entry("New", max(0, progress.total - progress.mastered - progress.learning), Theme.textLabel)
+            entry("New", max(0, progress.total - progress.mastered), Theme.textLabel)
             Spacer(minLength: 0)
         }
     }
@@ -366,7 +357,6 @@ struct VocabSetView: View {
     @State private var studying: StudyMode?
 
     private var mastered: Int { detail?.words.filter { $0.status == .mastered }.count ?? 0 }
-    private var learning: Int { detail?.words.filter { $0.status == .learning }.count ?? 0 }
 
     var body: some View {
         Group {
@@ -426,8 +416,7 @@ struct VocabSetView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 0) {
                 pill("Mastered", mastered, Theme.success)
-                pill("Learning", learning, Theme.amber)
-                pill("New", detail.words.count - mastered - learning, Theme.textSecondary)
+                pill("New", detail.words.count - mastered, Theme.textSecondary)
             }
             Bar(
                 fraction: detail.words.isEmpty ? 0 : Double(mastered) / Double(detail.words.count),
@@ -523,7 +512,6 @@ struct WordRow: View {
     private var statusColour: Color {
         switch word.status {
         case .mastered: return Theme.success
-        case .learning: return Theme.amber
         case .new: return Theme.textLabel
         }
     }
