@@ -177,6 +177,8 @@ struct DashboardView: View {
             HomeEventsButton()
             NavigationLink { PointsView() } label: { RewardsPointsPill() }
                 .buttonStyle(.plain)
+            // RootTabView routes what the inbox opens, the same way it routes a tapped push.
+            NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
         }
     }
 

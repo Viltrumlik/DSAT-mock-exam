@@ -68,23 +68,57 @@ private struct UpdateGateOverlay: View {
 /// phone is the wrong instrument for a three-hour paper. What the phone IS good for is the
 /// daily loop: what was set, working through it, and learning words. Midterm *results*
 /// still land here, on Home, because a score is worth checking anywhere.
+enum RootTab: Hashable {
+    case home, learn, words, rewards, profile
+}
+
 struct RootTabView: View {
     let user: CurrentUser
 
+    @Environment(Session.self) private var session
+    @Environment(\.openURL) private var openURL
+    @State private var selection: RootTab = .home
+    @State private var presented: PresentedLink?
+
+    private var router: NotificationRouter { .shared }
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             DashboardView(user: user)
                 .tabItem { Label("Home", systemImage: "house") }
+                .tag(RootTab.home)
             LearnHubView()
                 .tabItem { Label("Learn", systemImage: "graduationcap") }
+                .tag(RootTab.learn)
             VocabularyView()
                 .tabItem { Label("Words", systemImage: "character.book.closed") }
+                .tag(RootTab.words)
             RewardsHubView()
                 .tabItem { Label("Rewards", systemImage: "trophy") }
+                .tag(RootTab.rewards)
             ProfileView(user: user)
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tag(RootTab.profile)
         }
         .tint(Theme.accent)
+        // A tapped push, a reminder or an inbox row lands here. `onAppear` covers the tap
+        // that launched the app from closed, which sets the link before this view exists.
+        .onAppear { if let link = router.consume() { open(link) } }
+        .onChange(of: router.pendingLink) { _, link in
+            if link != nil, let next = router.consume() { open(next) }
+        }
+        .sheet(item: $presented) { LinkDestinationSheet(link: $0.link) }
+    }
+
+    private func open(_ link: AppLink) {
+        if let tab = link.tab {
+            presented = nil
+            selection = tab
+        } else if link.opensOnTheWeb {
+            if let url = link.webURL(base: session.client.config.baseURL) { openURL(url) }
+        } else {
+            presented = PresentedLink(link: link)
+        }
     }
 }
 

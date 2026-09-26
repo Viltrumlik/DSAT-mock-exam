@@ -9,7 +9,7 @@ import Foundation
 /// rotation revokes the token it spends, so the second and third would present an
 /// already-revoked refresh and sign the student out mid-quiz.
 public actor APIClient {
-    public let config: APIConfig
+    public nonisolated let config: APIConfig
     private let storage: TokenStorage
     private let session: URLSession
     private var refreshTask: Task<TokenPair, Error>?

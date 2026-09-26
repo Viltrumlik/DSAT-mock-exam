@@ -3,6 +3,8 @@ import MasterSATKit
 
 @main
 struct MasterSATApp: App {
+    /// Hands iOS's device token (and push taps) to PushRegistrar and NotificationRouter.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var session = Session()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -236,6 +238,10 @@ final class Session {
     }
 
     func signOut() async {
+        // First, while the tokens still work: the server stops pushing this student's
+        // news to a phone someone else may sign in on next. Bounded — it never holds up
+        // signing out.
+        await PushRegistrar.shared.unregister(using: client)
         await auth.signOut()
         // Before the phase flips, so nothing scheduled for this student survives to
         // interrupt whoever signs in next on the same phone.
@@ -247,6 +253,9 @@ final class Session {
     /// The server ended the session (a refresh was rejected — a password changed elsewhere,
     /// "sign out other devices", an expired login).
     private func sessionEnded() {
+        // The tokens are already gone, so the server cannot be told — but the local half
+        // (forgetting the device token) is what stops a stale registration being reused.
+        Task { await PushRegistrar.shared.unregister() }
         notifications.clearEverything()
         UserCache.clear()
         phase = .signedOut(message: "Your session has expired. Please sign in again.")
