@@ -261,7 +261,8 @@ struct VocabTestView: View {
             stats: [
                 ModeStat(label: "Correct", value: "\(ScoreText.string(right))/\(ScoreText.string(answers.count))", tone: .success),
                 ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: right, of: answers.count)))%"),
-                ModeStat(label: "Missed", value: ScoreText.string(wrong.count), tone: wrong.isEmpty ? .neutral : .danger),
+                // "To review", not "Missed": the count is the next thing to do, not a verdict.
+                ModeStat(label: "To review", value: ScoreText.string(wrong.count), tone: wrong.isEmpty ? .neutral : .danger),
             ],
             restartLabel: "Take it again",
             extra: AnyView(TestReview(wrong: wrong))

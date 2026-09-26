@@ -9,6 +9,13 @@ import MasterSATKit
 /// meant to be read.
 struct AssessmentReviewView: View {
     let attemptId: Int
+    /// The assessment homework this attempt belongs to. When the caller knows it, the page
+    /// offers "Retry assessment" — a fresh attempt, as the web's result page does. The old
+    /// attempt and its review are kept.
+    var homeworkId: Int?
+    /// Called once a retry's runner closes, so the page that opened this one can reload
+    /// before the student lands back on it.
+    var onRetryClosed: (@MainActor () -> Void)?
 
     /// "To improve", never "Wrong". The filter a student uses most is the one about the
     /// work still to do, and it should not read as a verdict.
@@ -22,10 +29,14 @@ struct AssessmentReviewView: View {
     }
 
     @Environment(Session.self) private var session
+    @Environment(\.dismiss) private var dismiss
     @State private var review: AssessmentReview?
     @State private var filter: Filter = .all
     @State private var index = 0
     @State private var loadError: String?
+    @State private var isRetrying = false
+    @State private var retryAttemptId: Int?
+    @State private var retryError: String?
 
     private var questions: [AssessmentReviewQuestion] { review?.questions ?? [] }
 
@@ -60,6 +71,10 @@ struct AssessmentReviewView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         ScoreHero(review: review, questions: questions)
 
+                        // Offered once the attempt is marked, as the web's result page offers
+                        // it — a submission still waiting for its mark has nothing to retry yet.
+                        if homeworkId != nil, review.result != nil { retryButton }
+
                         if let feedback = review.teacherFeedback, !feedback.body.isEmpty {
                             teacherNote(feedback)
                         }
@@ -93,6 +108,52 @@ struct AssessmentReviewView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .onChange(of: filter) { index = 0 }
+        .fullScreenCover(item: $retryAttemptId) { id in
+            AssessmentRunnerView(attemptId: id) {
+                retryAttemptId = nil
+                onRetryClosed?()
+                // This review is of the attempt before; the new one lives on the board.
+                dismiss()
+            }
+        }
+        .alert(
+            "Couldn't start this assessment",
+            isPresented: Binding(get: { retryError != nil }, set: { if !$0 { retryError = nil } })
+        ) {
+            Button("OK", role: .cancel) { retryError = nil }
+        } message: {
+            Text(verbatim: retryError ?? "")
+        }
+    }
+
+    private var retryButton: some View {
+        Button { Task { await retry() } } label: {
+            HStack(spacing: 8) {
+                if isRetrying {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.counterclockwise")
+                }
+                Text(isRetrying ? "Starting…" : "Retry assessment")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+        .disabled(isRetrying)
+    }
+
+    @MainActor
+    private func retry() async {
+        guard let homeworkId, !isRetrying else { return }
+        isRetrying = true
+        defer { isRetrying = false }
+        do {
+            retryAttemptId = try await session.assessments.start(homeworkId: homeworkId).id
+        } catch let error as APIError {
+            retryError = error.errorDescription
+        } catch {
+            retryError = error.localizedDescription
+        }
     }
 
     private var emptyTitle: String {

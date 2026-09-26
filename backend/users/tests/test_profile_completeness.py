@@ -102,6 +102,22 @@ class MeEndpointExposureTests(TestCase):
         self.assertTrue(body["profile_complete"])
         self.assertEqual(body["missing_fields"], [])
 
+    def test_a_username_taken_in_another_case_is_refused_not_a_500(self):
+        # The database holds usernames unique whatever their case; the field's own check
+        # did not, so this PATCH used to die on the constraint with a 500.
+        User.objects.create_user("taken@t.com", "secret123", username="sam_uat")
+        u = _complete_user()
+        self.client.force_authenticate(u)
+        r = self.client.patch(reverse("user-me"), {"username": "Sam_UAT"}, format="json")
+        self.assertEqual(r.status_code, 400, r.content)
+        exact = self.client.patch(reverse("user-me"), {"username": "sam_uat"}, format="json")
+        self.assertEqual(exact.status_code, 400, exact.content)
+        self.assertEqual(r.json()["username"], exact.json()["username"])
+        # Changing only the case of your OWN name is not a clash with yourself.
+        mine = u.username
+        ok = self.client.patch(reverse("user-me"), {"username": mine.upper()}, format="json")
+        self.assertEqual(ok.status_code, 200, ok.content)
+
     def test_completion_state_is_read_only(self):
         u = _complete_user()
         u.email_verified = False

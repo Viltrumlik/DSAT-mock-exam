@@ -426,9 +426,11 @@ struct PillTabs<Tab: Hashable>: View {
 /// already knows they are behind; the app's job is to make the next step obvious, not to
 /// score the last one.
 enum DueLabel {
-    static func text(_ iso: String?) -> (text: String, late: Bool)? {
+    /// `handedIn`: work that is already with the teacher is never "catch up" — the student is
+    /// not behind on it, and the deadline is just a date.
+    static func text(_ iso: String?, handedIn: Bool = false) -> (text: String, late: Bool)? {
         guard let iso, let date = JSONCoding.parseServerDate(iso) else { return nil }
-        let late = date < Date()
+        let late = date < Date() && !handedIn
         let days = abs(Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0)
         let f = DateFormatter()
         f.locale = .autoupdatingCurrent

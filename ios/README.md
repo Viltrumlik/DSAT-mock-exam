@@ -18,10 +18,11 @@ What it does host is the daily loop: what was set, working through it, and learn
 
 | Tab | Holds |
 | --- | --- |
-| **Home** | Target scores, SAT countdown, lesson calendar, homework, midterm results |
-| **Learn** | Classroom, Homework, Assessments |
+| **Home** | The web's top bar (Events, points and coins, the notification bell), stories, target scores, SAT countdown, level · XP · points · strikes, lesson calendar, homework, midterm results |
+| **Learn** | Classroom, Homework, Assessments, Midterms, Roadmap, My Progress, Live quiz (while it is switched on), Services (support hours, SAT registration) |
 | **Words** | The word bank, the student's own sets, assigned sets |
-| **Profile** | Account, target score, sign out |
+| **Rewards** | Leaderboard, Points (and turning them into coins), Shop |
+| **Profile** | The web's `/profile`: a hero, then Overview (XP, strikes, points, homework turned in; the goal and latest results; homework to do; "Finish your profile"; payments — coming soon), Classes, and Settings (account, notifications, sign-in & password, devices, About); Surveys, Events and sign out under the tabs |
 
 Midterm **results** still land here even though the paper was not sat here — a score is
 worth checking anywhere. An unreleased one says so rather than showing a blank, because a
@@ -43,10 +44,12 @@ control → target scores → SAT countdown → lesson calendar → next lesson 
 The calendar's colour precedence (highlight beats a test, a test beats a class, a class
 beats today) is copied deliberately; reordering it silently hides a day's real state.
 
-`/assessments` is three columns on the web. Three columns do not fit a phone, so the
-columns become tabs and their counts move onto the tab bar — the same information, the same
-order, one column at a time. The card anatomy is unchanged: subject-coloured top edge, icon
-tile, solid subject badge, title, class · subject, a body per state, one full-width action.
+`/assessments` narrows the web's way: a To-do strip first, then subjects, then the domains
+inside a subject, then that domain's board, with search across everything. The card anatomy is
+the web's: subject-coloured top edge, icon tile, solid subject badge, title, class · subject,
+question count and time estimate, a body per state, one full-width action. A passed deadline
+is an amber "Catch up" chip, and a refused start is an alert on the card — never the whole
+board turning into an error.
 
 Sign in and register are the site's own `/login` and `/register`, kept in
 `Sources/Screens/Auth/`. The web puts a brand panel beside the form and hides it below
@@ -92,7 +95,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-114 tests, well under a second. This is the part that must never regress, so it is also the
+628 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -236,9 +239,10 @@ sheet and stays blank.
 screen kept awake, one thing on screen at a time, and type sized for a phone held at arm's
 length. All four study modes ship, each with the site's own rules:
 
-- **Flashcards** flip, and the missed pile comes back as the *next round* — with a
-  checkpoint between rounds showing what stuck and what did not — rather than being
-  slipped back into one endless queue.
+- **Flashcards** flip, and each answer holds the card for five seconds with the definition
+  showing ("Nice — sit with the definition for a beat"), as the web does. "Still learning"
+  (not "Wrong") sends a card to the *next round* — with a checkpoint between rounds showing
+  what stuck — rather than slipping it back into one endless queue.
 - **Matching** deals six pairs a round, and the clock runs across the whole set, so the
   score is how fast and how cleanly, not how many.
 - **Speed** is sixty seconds and two options, with the clock repeated on the prompt card:
@@ -252,20 +256,229 @@ letter masking, the spelling comparison — are in the kit and tested. A distrac
 a word that *means* the same thing, because that is a second correct answer rather than a
 wrong one.
 
-All four end on one screen: a gradient hero, three stats, and the same two ways out.
+All four end on one screen: a gradient hero, three stats, the mastery line ("Game mastered ·
+1/4") and the same two ways out. Mastery is **per game**: a set is mastered when all four
+games have been played with every word right, which is what the four-colour bar on every set
+card shows. A set opened from a homework sends its `assignment_id`, so the run counts for that
+homework; the grading call goes out exactly once, and "Retry save" appears if it did not land.
+Sections and games carry the web's colour identity (`Screens/Vocabulary/VocabPalette.swift`).
 
 **Leaving the foreground flushes.** Backgrounding is the phone's version of closing the
 tab, and iOS can kill a backgrounded app without warning. A half-finished vocabulary run
 flushes as `partial: true` so 20 of 25 cards still count; an assessment writes every
 pending answer before it goes.
 
+## Notifications: the inbox, push, and local reminders
+
+Three layers, each doing what the others cannot:
+
+- **The inbox** is the site's notification centre — the same rows, sections and preferences.
+  The bell on Home counts what is unread and checks every minute while it is on screen; the
+  app icon's badge reads the same number.
+- **Push** goes over APNs (`backend/notifications/apns.py`): same events and the same
+  per-section switches as the web's push, a second transport. It is **inert until
+  configured** on both ends — the server needs `APNS_KEY_ID`, `APNS_TEAM_ID`,
+  `APNS_AUTH_KEY_PATH` (or `APNS_AUTH_KEY`) and `APNS_TOPIC`, and the app needs
+  `MASTERSAT_PUSH: YES` in `project.yml`, which attaches the `aps-environment` entitlement.
+  A free Personal Team cannot sign that entitlement at all, so it is off by default and the
+  build says so on the notification settings page. The app reads which APNs environment it
+  was signed for from its own provisioning profile; the server tries the other host once on
+  `BadDeviceToken` and remembers the one that worked. Signing out unregisters the phone
+  first, while the tokens still work, so a handed-down phone never buzzes with somebody
+  else's grades.
+- **Local reminders** stay, for the reason they were built: they are scheduled against dates
+  the app has already fetched — a homework's due date, a midterm's opening time — work
+  offline, and need no server at all.
+
+Tapping any of them — a push, a reminder, an inbox row — lands in one router
+(`NotificationRouter` → `RootTabView`). A link that names a tab switches to it; a page the
+app has opens in a sheet with its own stack, so "Done" leaves the student where they were;
+a page only the site has (the live quiz, for now) opens in the browser, and only on our own
+host.
+
+What follows is about the local half.
+
+The rule lives in the kit (`ReminderPlan`) and is tested, because "which reminders" is
+logic, not UI. Three that took thinking:
+
+- **iOS keeps only the 64 soonest pending notifications** and silently drops the rest, so
+  the plan sorts and caps itself. Losing the far-future ones is the right outcome — but
+  only if we choose them rather than letting the system pick.
+- **Ids carry no timestamp.** Rescheduling runs on every load of Home; an id built from
+  `now` would stack a fresh copy of the same reminder each time until a student had forty.
+- **The whole schedule is rebuilt, not appended to.** A homework handed in, a due date
+  moved, a midterm cancelled all have to *remove* a reminder, and absence from the new plan
+  is the only signal there is.
+
+What this cannot do is tell a student something they could not have known when the app was
+last open — a published score is the case in point, and that is what push is for.
+
+The permission ask is a soft prompt on Home first, and only once there is something real to
+be reminded about. iOS asks exactly once per install and a refusal is permanent — spending
+that single chance on a student who has just signed in is how an app ends up with
+notifications it can never turn on.
+
+## Midterms
+
+Papers are sat in the centre, on a laptop, under supervision — the app has no Start button
+and should not. What the phone is good for is the three things around the paper, so those
+are the three things the section has: **when** the next one opens (a ticking countdown),
+**what you scored** once the teacher publishes it, and **which skills cost you the marks**.
+
+The error report is the same payload the centre's own report uses, built from results frozen
+at scoring time. Two rules it inherits and the UI keeps: a skill answered perfectly does not
+appear (it is not an error, and listing it would bury the three that matter), and untagged
+questions are disclosed separately rather than folded into a skill — quietly under-reporting
+a skill's question count points revision at the wrong thing.
+
+The report sits behind the same publication gate as the score and carries strictly more, so
+a sealed one answers 403 with a sentence to show. That failure is held apart from the
+review's: a sealed report must not blank a score the student is allowed to see.
+
+## Live quiz
+
+A teacher runs a vocabulary quiz room; students join with the code on the board and play in
+real time. The web keeps `/live` out of its sidebar — a permanent entry is a dead link most of
+the term — and a phone has no address bar for the code, so the app offers the way in only
+when it means something: a Home card while a room is running in one of the student's classes,
+and a Learn card while the feature is switched on.
+
+The socket is `wss://<host>/ws/livequiz/<id>/` (trailing slash required) with
+`Authorization: Bearer <access>`, `Origin: <the API origin>` and `X-MasterSAT-Client`; the
+app never holds the web's cookie. Every handshake refusal arrives as the same HTTP 403, so
+after a final one the app asks the room's results endpoint why. It heartbeats every 25 s and
+replaces a socket that misses a reply for 10 s; reconnects back off 1 s × 1.8 up to 15 s;
+a refused handshake refreshes the token once; the countdown runs on the server's clock,
+measured from the heartbeat round trip; an answer lost in a drop is sent again. Leaving for
+the background closes the socket — otherwise the server counts the student as present and a
+question cannot close early when everyone else has answered.
+
+Locally, one uvicorn process serves the API and the socket (`runserver` cannot):
+`LIVE_QUIZ_ENABLED=true … python3 -m uvicorn config.asgi:application --port 8000`.
+
+**PR #238 must deploy before the feature is switched on:** a question that ran out of time
+was closed in the database but never announced (the timer task cancelled itself), so every
+phone sat at 0 s until the teacher pressed Skip.
+
+## The account
+
+The web's profile-completion gate, on the server's word (`profile_complete` +
+`missing_fields`): name, username, then an email confirmed by a 6-digit code, before anything
+else. It has been live on the site since 2026-07-20; students who confirmed there are not
+asked again. Settings holds the account (photo, names, phone), notifications, sign-in and
+password, devices, and About. Three server behaviours shape it:
+
+- The server marks "this device" from the web's refresh cookie, so every row reaches the app
+  as not-current; the app finds its own row by its refresh token's issue time.
+- `revoke_all` with `keep_current` also revokes the phone, so "other devices" revokes rows one
+  at a time, and "Sign out everywhere" says it includes this phone.
+- A password change revokes the phone's own session too, so the app says so and signs in
+  again rather than failing three hours later.
+
+## Talking to production
+
+`APIConfig.production` is `https://mastersat.uz`, and the `-apiBaseURL` override is compiled
+out of release builds entirely — a shipped app cannot be pointed at another host.
+
+The native sign-in bypass (`users.auth_cookies.is_native_client`, which requires
+`X-MasterSAT-Client` *and* the absence of an auth cookie) is on `main`. What this branch adds
+on the server — `/api/mobile/…`, APNs registration, the live-quiz socket's Bearer header —
+is not deployed yet. Until it is, `/api/mobile/config/` answers 404, which the app treats as
+"no policy" (a failed check never blocks), and crash reports that the server refuses are
+dropped rather than left to jam the queue.
+
+## Keeping phones current: the release policy
+
+A web deploy reaches every student on their next page load; an app update waits for the
+App Store and for each student to take it. So the server can say, per platform
+(`AppReleasePolicy`, edited at **/ops/mobile**):
+
+- **latest** — a newer build exists. Home shows a dismissible "A new version is out" card,
+  at most every three days.
+- **minimum** — anything older may not continue. Every API call from an older build is
+  answered `426` with `code: "update_required"` by `NativeClientVersionGateMiddleware`,
+  and the app puts "Time to update" over everything, with the store link. Nothing the
+  student did is lost; "Check again" re-reads the policy.
+
+The app sends its version and build on every request (`X-MasterSAT-Client:
+ios/1.1.0 (2; iOS 26.0; iPhone17,1)`), asks `/api/mobile/config/` at launch and on return to
+the foreground, and takes the stricter of the server's verdict and its own comparison.
+Versions compare as integers, and an unreadable one is never blocked. The policy is cached
+for a minute per server process, so a change at /ops/mobile can take that long to bite.
+
+Raise `MARKETING_VERSION` in `project.yml` for a release and `CURRENT_PROJECT_VERSION` for
+**every** upload — App Store Connect refuses a build number it has already seen.
+
+## Crash and error reports
+
+No third-party SDK. MetricKit hands the app its own crash, hang and CPU/disk-exception
+diagnostics (on the next launch, as iOS delivers them); the app also records, without
+crashing, a response it could not decode (the backend moved and this build did not) and any
+5xx. They queue on the phone (`DiagnosticsStore`: capped per launch, per signature and in
+total) and go to the learning center's own server, `/api/mobile/diagnostics/`, credited to
+the signed-in student when there is one. The first crash with a new signature on a version
+alerts the ops channel. **/ops/mobile** groups them by signature and version, with the full
+payload one click away; rows older than 90 days are pruned nightly.
+
+## Offline
+
+The last signed-in user is cached, so a launch with no network opens the app — not the sign
+in screen — with a banner saying what is on screen may be out of date. The banner trusts the
+network path monitor only until the server answers: any HTTP response lifts it, because the
+monitor can report no route while requests are going through (the simulator does it after
+the Mac changes networks). A refresh that fails during a deploy (502/503/504) says "wait a
+minute" and never signs the student out.
+
+## App Store readiness
+
+- `Resources/PrivacyInfo.xcprivacy` — every kind of data that leaves the phone (account,
+  the student's work and photos, crash and performance reports to our own server), no
+  tracking; the one required-reason API is UserDefaults (CA92.1).
+- `ITSAppUsesNonExemptEncryption = NO` — HTTPS only, so uploads skip the export question.
+- `NSPhotoLibraryAddUsageDescription` — saving an event ticket to Photos (iOS terminates an
+  app that writes there without one). Picking homework photos needs no key.
+- Homework photos go up as JPEG with the location and camera metadata stripped, HEIC
+  converted, the long side capped at 3000 px.
+
+Two things only the owner can decide, and review will ask about both: **a paid Apple
+Developer account** (TestFlight, the App Store and push all need one) and **deleting an
+account from inside the app**, which guideline 5.1.1(v) requires of any app that creates
+accounts — the backend has no self-deletion today.
+
 ## Verification status
+
+Catch-up, 2026-09-25/26 — against a local backend on Postgres, iPhone 17 Pro simulator:
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 114 tests |
+| `MasterSATKit` — build + tests | ✅ 628 tests |
+| Backend `mobile` (policy, 426 gate, diagnostics) / `notifications` (APNs) / `livequiz` / `users` | ✅ 33 / 91 / 87 / 183 tests |
+| Update gate — 426 → "Time to update" → policy lowered → "Check again" | ✅ driven |
+| Rewards — hub, leaderboard, convert 40 points → 4 coins, buy a 2-coin item | ✅ driven; one transaction, one order, stock 5 → 4 |
+| Home — Events button, points pill, bell, stories, survey card, level/XP/points/strikes | ✅ driven |
+| Bell → inbox → a survey notification → the survey in a sheet → submitted | ✅ driven; one response, one 20-point award |
+| Events — sign up, ticket PNG, Save to Photos | ✅ driven (the save crashed first; fixed) |
+| Support — book an hour, cancel it with a reason | ✅ driven; the reason reached the database |
+| Classroom — list, class page, podium, assignments, a past paper's homework | ✅ driven |
+| Midterms, Roadmap, My Progress, Services — loaded and empty states | ✅ driven |
+| Offline banner lifted by a server answer | ✅ driven |
+| Profile-completion gate — names, 6-digit email code, lands on Home | ✅ driven; the server then reported the profile complete |
+| Settings — hub, devices (this phone found among three sessions) | ✅ driven |
+| Vocabulary — hub, section, set, Flashcards with the 5-second hold, "Game mastered · 1/4" | ✅ driven; one graded session, credit on all six words |
+| Live quiz — Home card, code, countdown, answer (+105), standings, final screen | ✅ driven against uvicorn with a scripted teacher; found the timer bug fixed in PR #238 |
+| Profile — hero, four tiles, checklist, payments, Classes tab with classmates | ✅ driven; a goal set from the checklist showed on Home and in the database |
+| Push end to end | ❌ needs a paid account and an APNs key |
+
+Earlier:
+
+| Component | Status |
+| --- | --- |
+| `MasterSATKit` — build + tests | ✅ 124 tests |
 | Backend (`classes`) | ✅ 307 tests |
-| `MasterSAT` app target — build | ✅ builds for iPhone and iPad simulators (Xcode 26.3) |
+| `MasterSAT` app target — build | ✅ Debug and Release, iPhone and iPad simulators (Xcode 26.3) |
+| Notifications — permission ask, 4 reminders scheduled, banner delivered | ✅ driven on the simulator |
+| Midterms — countdown, upcoming states, score, per-skill report | ✅ driven against a local backend |
+| Points at production | ✅ reached `mastersat.uz`; refused by it — see above |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
 | Sign in — wrong password, reveal toggle, submit from the keyboard | ✅ driven on the simulator |
 | Register — an account created, auto-signed-in, and the duplicate-name refusal | ✅ driven against a local backend |
@@ -273,7 +486,7 @@ pending answer before it goes.
 | App icon on the home screen | ✅ checked on the simulator |
 | Home — goal sliders, exam-date picker, ticking countdown, calendar | ✅ driven on the simulator |
 | Assessments board — tabs, counts, card states | ✅ driven on the simulator |
-| Classroom (hero, tabs, roster, materials, leaderboard) | ✅ driven on the simulator |
+| Classroom (hero, tabs, people, materials, leaderboard) | ✅ driven on the simulator |
 | Vocabulary hub — hero totals, three tabs, section cards | ✅ driven on the simulator |
 | Vocabulary — all four modes and the outcome screen | ✅ driven on the simulator |
 | Desmos — graphing and scientific | ✅ driven on the simulator |
@@ -289,12 +502,8 @@ present on a clean tree and are unrelated to this work.
 - The question map is built and the build is clean, but it was never opened on a device —
   the simulator bridge went unreliable at the end of that session.
 - Editing an existing custom vocabulary set. They can be built and deleted, not renamed.
-- Push notifications. There is no push transport server-side yet; this needs APNs plus a
-  sender, not just client work.
-- Offline reading of already-fetched homework.
-
-Homework photos are uploaded as the picker returns them, EXIF and all. Stripping location
-metadata before it reaches a school server would be a sensible next step.
+- Offline reading of already-fetched homework (the app opens offline; pages need the network).
+- Deleting an account from inside the app — waiting on the owner (see App Store readiness).
 
 ## Removed, and where to find it
 

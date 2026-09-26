@@ -9,7 +9,7 @@ import Foundation
 /// rotation revokes the token it spends, so the second and third would present an
 /// already-revoked refresh and sign the student out mid-quiz.
 public actor APIClient {
-    public let config: APIConfig
+    public nonisolated let config: APIConfig
     private let storage: TokenStorage
     private let session: URLSession
     private var refreshTask: Task<TokenPair, Error>?
@@ -18,16 +18,23 @@ public actor APIClient {
     /// UI state and shows the sign-in screen.
     private let onSignOut: @Sendable () -> Void
 
+    /// Things the app as a whole must hear about, whichever screen made the request: the
+    /// server refusing this build, and responses the app could not make sense of. The
+    /// second is how a phone that has fallen behind its backend gets noticed at all.
+    private let onEvent: @Sendable (APIClientEvent) -> Void
+
     public init(
         config: APIConfig,
         storage: TokenStorage,
         session: URLSession = .shared,
-        onSignOut: @escaping @Sendable () -> Void = {}
+        onSignOut: @escaping @Sendable () -> Void = {},
+        onEvent: @escaping @Sendable (APIClientEvent) -> Void = { _ in }
     ) {
         self.config = config
         self.storage = storage
         self.session = session
         self.onSignOut = onSignOut
+        self.onEvent = onEvent
     }
 
     public var isAuthenticated: Bool { storage.load() != nil }
@@ -51,7 +58,9 @@ public actor APIClient {
         do {
             return try JSONCoding.decoder.decode(T.self, from: data)
         } catch {
-            throw APIError.decoding(context: endpoint.path, underlying: String(describing: error))
+            let detail = String(describing: error)
+            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
+            throw APIError.decoding(context: endpoint.path, underlying: detail)
         }
     }
 
@@ -61,7 +70,25 @@ public actor APIClient {
         try await sendForData(endpoint)
     }
 
-    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false) async throws -> Data {
+    /// Send and decode, throwing a coded refusal (`{"code": "full", "detail": "…"}`) as
+    /// `APIRefusal` instead of folding it into an `APIError` that has nowhere to keep the code.
+    ///
+    /// For the APIs whose screens branch on that code (events: `full`, `started`,
+    /// `cancel_window_closed`, …). Authentication, the one refresh-and-retry, and every
+    /// failure that is not a coded refusal behave exactly as in `send`.
+    public func sendCoded<T: Decodable & Sendable>(_ endpoint: Endpoint, as type: T.Type = T.self) async throws -> T {
+        let data = try await sendForData(endpoint, codedRefusals: true)
+        if T.self == Empty.self, let empty = Empty() as? T { return empty }
+        do {
+            return try JSONCoding.decoder.decode(T.self, from: data)
+        } catch {
+            let detail = String(describing: error)
+            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
+            throw APIError.decoding(context: endpoint.path, underlying: detail)
+        }
+    }
+
+    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false, codedRefusals: Bool = false) async throws -> Data {
         let request = try buildRequest(endpoint)
 
         let data: Data
@@ -75,6 +102,7 @@ public actor APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport(underlying: "Response was not HTTP")
         }
+        onEvent(.serverReached)
 
         if (200..<300).contains(http.statusCode) { return data }
 
@@ -82,9 +110,12 @@ public actor APIClient {
             // One refresh, one retry. `isRetry` is what makes that a hard ceiling: a token
             // the server rejects twice is not a token a third attempt will fix.
             _ = try await refreshTokens()
-            return try await sendForData(endpoint, isRetry: true)
+            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals)
         }
 
+        if codedRefusals, let refusal = APIRefusal(status: http.statusCode, body: data) {
+            throw refusal
+        }
         throw mapFailure(status: http.statusCode, data: data, endpoint: endpoint)
     }
 
@@ -106,6 +137,8 @@ public actor APIClient {
         if !endpoint.isUnauthenticated {
             guard let tokens = storage.load() else { throw APIError.notAuthenticated }
             request.setValue("Bearer \(tokens.access)", forHTTPHeaderField: "Authorization")
+        } else if endpoint.attachesTokenIfAvailable, let tokens = storage.load() {
+            request.setValue("Bearer \(tokens.access)", forHTTPHeaderField: "Authorization")
         }
         // Never let the URL loading system serve a stale snapshot from cache: an
         // attempt read from cache is an attempt whose answers are already out of date.
@@ -122,6 +155,19 @@ public actor APIClient {
             return .forbidden(detail: detail, reason: Self.reason(from: data))
         case 409:
             return .conflict(detail: detail)
+        case 426:
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let error = APIError.upgradeRequired(
+                detail: detail,
+                minimumVersion: object?["minimum_version"] as? String,
+                updateURL: object?["update_url"] as? String
+            )
+            onEvent(.upgradeRequired(error))
+            return error
+        case 502, 503, 504:
+            // The body here is nginx's maintenance page or a gateway error, not the API's
+            // JSON — there is no `detail` worth showing, only "wait a minute".
+            return .unavailable(status: status)
         case 400:
             // A serializer refusal, not a malformed request. Only the field-map shape
             // qualifies — a plain `{"detail": …}` 400 already reads well as `.http`.
@@ -133,6 +179,9 @@ public actor APIClient {
                 fields: fields
             )
         default:
+            if status >= 500 {
+                onEvent(.serverError(status: status, path: endpoint.path))
+            }
             return .http(status: status, detail: detail)
         }
     }
@@ -230,7 +279,26 @@ public actor APIClient {
             guard let http = response as? HTTPURLResponse else {
                 throw APIError.transport(underlying: "Response was not HTTP")
             }
-            guard (200..<300).contains(http.statusCode) else {
+            switch http.statusCode {
+            case 200..<300:
+                break
+            case 426:
+                // An old build asking to renew is refused as an old build, not as a bad
+                // session: the tokens are fine and must survive until the update.
+                let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                throw APIError.upgradeRequired(
+                    detail: (object?["detail"] as? String) ?? "",
+                    minimumVersion: object?["minimum_version"] as? String,
+                    updateURL: object?["update_url"] as? String
+                )
+            // The server being deployed, overloaded or broken says nothing about the refresh
+            // token. Treating these as a rejection signed out every student whose access
+            // token happened to expire during a release.
+            case 502, 503, 504:
+                throw APIError.unavailable(status: http.statusCode)
+            case 429, 500...599:
+                throw APIError.http(status: http.statusCode, detail: "")
+            default:
                 throw APIError.unauthorized
             }
             guard let body = try? JSONCoding.decoder.decode(RefreshResponse.self, from: data),
@@ -256,15 +324,45 @@ public actor APIClient {
             return pair
         } catch {
             refreshTask = nil
-            // Only a rejection ends the session. A transport failure leaves the tokens
-            // alone so the app recovers when connectivity returns.
-            if case APIError.transport = error {} else {
+            // Only a rejection ends the session. A transport failure, a server that is
+            // down or deploying, or a refused old build all leave the tokens alone, so the
+            // app recovers the moment the network, the server or the build does.
+            if Self.refreshFailureEndsSession(error) {
                 storage.clear()
                 onSignOut()
+            }
+            if let apiError = error as? APIError, case .upgradeRequired = apiError {
+                onEvent(.upgradeRequired(apiError))
             }
             throw error
         }
     }
+
+    static func refreshFailureEndsSession(_ error: Error) -> Bool {
+        guard let error = error as? APIError else { return true }
+        switch error {
+        case .transport, .unavailable, .upgradeRequired:
+            return false
+        case .http(let status, _):
+            return !(status == 429 || status >= 500)
+        default:
+            return true
+        }
+    }
+}
+
+/// App-wide signals from the client. See `APIClient.onEvent`.
+public enum APIClientEvent: Sendable {
+    /// The server answered 426: this build is below the minimum. The app shows its update
+    /// screen over everything.
+    case upgradeRequired(APIError)
+    /// A 2xx whose body did not match the model — the backend moved and this build did not.
+    case decodingFailed(path: String, detail: String)
+    /// A 5xx other than the deploy-time 502/503/504.
+    case serverError(status: Int, path: String)
+    /// The server answered — any status. Proof the phone is online, whatever the network
+    /// path monitor last said: it can report no route while requests are going through.
+    case serverReached
 }
 
 /// Decodable stand-in for endpoints with no meaningful body.

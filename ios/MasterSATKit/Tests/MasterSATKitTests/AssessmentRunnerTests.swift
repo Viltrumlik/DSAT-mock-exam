@@ -268,4 +268,41 @@ private func bundleJSON(
 
         #expect(runner.unsaved.isEmpty)
     }
+
+    @Test("A flush sends only what changed on this phone")
+    func flushSendsOnlyChanges() async throws {
+        // The old flush re-sent EVERY answered question; on a long set that ran straight into
+        // the server's 60-writes-a-minute throttle.
+        server.handler = { _ in .json(bundleJSON()) }
+        let runner = runner()
+        await runner.load()
+        let before = server.requests.count
+        server.handler = { _ in .json(["ok": true]) }
+
+        await runner.flush()
+        #expect(server.requests.count == before)
+
+        runner.setAnswer(.string("B"), for: 30, immediate: false)
+        await runner.flush()
+        let answers = server.requests.dropFirst(before).filter { $0.url?.absoluteString.contains("/attempts/answer/") == true }
+        #expect(answers.count == 1)
+    }
+
+    @Test("It will not hand in while an answer has not reached the server")
+    func submitRefusesWithUnsavedAnswers() async throws {
+        server.handler = { _ in .json(bundleJSON()) }
+        let runner = runner()
+        await runner.load()
+        server.handler = { request in
+            request.url?.absoluteString.contains("/attempts/answer/") == true
+                ? .json(["detail": "boom"], status: 500)
+                : .json(["ok": true])
+        }
+        runner.setAnswer(.string("C"), for: 30)
+        let ok = await runner.submit()
+
+        #expect(!ok)
+        #expect(runner.unsaved.contains(30))
+        #expect(!server.requests.contains { $0.url?.absoluteString.contains("/attempts/submit/") == true })
+    }
 }

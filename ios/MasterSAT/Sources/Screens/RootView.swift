@@ -5,13 +5,63 @@ struct RootView: View {
     @Environment(Session.self) private var session
 
     var body: some View {
+        content
+            // Both overlays read their own state in their own bodies. If this body read
+            // connectivity or the release gate, every change to either would rebuild the tab
+            // view below — and with it the navigation stacks, popping open screens.
+            .overlay(alignment: .top) { OfflineOverlay() }
+            // Above everything, including the sign-in form: a build below the minimum can do
+            // nothing useful, and signing in to it would only meet a refusal.
+            .overlay { UpdateGateOverlay() }
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch session.phase {
         case .launching:
             ProgressView().controlSize(.large)
         case .signedOut(let message):
             AuthView(notice: message)
+        case .unreachable:
+            UnreachableView()
         case .signedIn(let user):
-            RootTabView(user: user)
+            if user.isFrozen {
+                FrozenAccountView()
+            } else if user.mustCompleteProfile {
+                // The web's gate, on the server's word (`profile_complete` + `missing_fields`):
+                // name, username and a confirmed email before anything else. It lifts itself —
+                // finishing refreshes the user, which moves `phase` on.
+                CompleteProfileView(user: user, onDone: {})
+            } else {
+                RootTabView(user: user)
+            }
+        }
+    }
+}
+
+/// Offline is said once, here, rather than by every screen failing on its own.
+private struct OfflineOverlay: View {
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        Group {
+            if !session.connectivity.isOnline {
+                OfflineBanner().allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+    }
+}
+
+private struct UpdateGateOverlay: View {
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        if session.releaseGate.isBlocked {
+            UpdateRequiredView(config: session.releaseGate.config) {
+                await session.recheckRelease()
+            }
+            .transition(.opacity)
         }
     }
 }
@@ -23,21 +73,57 @@ struct RootView: View {
 /// phone is the wrong instrument for a three-hour paper. What the phone IS good for is the
 /// daily loop: what was set, working through it, and learning words. Midterm *results*
 /// still land here, on Home, because a score is worth checking anywhere.
+enum RootTab: Hashable {
+    case home, learn, words, rewards, profile
+}
+
 struct RootTabView: View {
     let user: CurrentUser
 
+    @Environment(Session.self) private var session
+    @Environment(\.openURL) private var openURL
+    @State private var selection: RootTab = .home
+    @State private var presented: PresentedLink?
+
+    private var router: NotificationRouter { .shared }
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             DashboardView(user: user)
                 .tabItem { Label("Home", systemImage: "house") }
+                .tag(RootTab.home)
             LearnHubView()
                 .tabItem { Label("Learn", systemImage: "graduationcap") }
+                .tag(RootTab.learn)
             VocabularyView()
                 .tabItem { Label("Words", systemImage: "character.book.closed") }
+                .tag(RootTab.words)
+            RewardsHubView()
+                .tabItem { Label("Rewards", systemImage: "trophy") }
+                .tag(RootTab.rewards)
             ProfileView(user: user)
                 .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tag(RootTab.profile)
         }
         .tint(Theme.accent)
+        // A tapped push, a reminder or an inbox row lands here. `onAppear` covers the tap
+        // that launched the app from closed, which sets the link before this view exists.
+        .onAppear { if let link = router.consume() { open(link) } }
+        .onChange(of: router.pendingLink) { _, link in
+            if link != nil, let next = router.consume() { open(next) }
+        }
+        .sheet(item: $presented) { LinkDestinationSheet(link: $0.link) }
+    }
+
+    private func open(_ link: AppLink) {
+        if let tab = link.tab {
+            presented = nil
+            selection = tab
+        } else if link.opensOnTheWeb {
+            if let url = link.webURL(base: session.client.config.baseURL) { openURL(url) }
+        } else {
+            presented = PresentedLink(link: link)
+        }
     }
 }
 
@@ -47,19 +133,37 @@ struct RootTabView: View {
 /// the whole of it and gets a page rather than a menu — each card says what is behind it
 /// and how much of it there is.
 struct LearnHubView: View {
+    /// Every screen the hub opens, as a value.
+    ///
+    /// Value-based on purpose. The cards used to be `NavigationLink(destination:)`, and a
+    /// screen pushed that way that itself pushes by value (the homework list does) was
+    /// rebuilt the moment its row was tapped: the push was dropped, the list reset to its
+    /// first tab, and the homework never opened. With every destination declared here, at
+    /// the root of the stack, a push is only ever a value appended to the path.
+    enum Route: Hashable {
+        case classrooms, homework, assessments, midterms, roadmap, progress, services, liveQuiz
+    }
+
     @Environment(Session.self) private var session
     @State private var assignments: [AssignmentListing] = []
     @State private var classroomCount: Int?
+    @State private var midtermResults: Int?
+    /// Rooms running in the student's classes — nil while live quizzes are switched off (or
+    /// the answer could not be had), which also hides the card.
+    @State private var liveRooms: [LiveQuizSummary]?
 
+    /// The same rule as the homework list's "To do" tab — handed-in work is not waiting on
+    /// the student, so it is not counted as open here either.
     private var openHomework: Int {
-        assignments.filter { ($0.workflowStatus ?? "").lowercased() != "graded" }.count
+        assignments.filter {
+            !["submitted", "graded", "reviewed"].contains(($0.workflowStatus ?? "").lowercased())
+        }.count
     }
 
+    /// The board's own "To do" — the same rule the Assessments page opens on, so the badge
+    /// and the page can never disagree.
     private var openAssessments: Int {
-        assignments
-            .flatMap(\.assessmentHomeworks)
-            .filter { ($0.progress?.state ?? "not_started") != "completed" }
-            .count
+        AssessmentBoard(assignments: assignments).todo().count
     }
 
     var body: some View {
@@ -74,7 +178,7 @@ struct LearnHubView: View {
                         icon: "person.3.fill",
                         tone: Theme.accent,
                         count: classroomCount,
-                        destination: ClassesListView()
+                        route: Route.classrooms
                     )
                     HubCard(
                         title: "Homework",
@@ -82,7 +186,7 @@ struct LearnHubView: View {
                         icon: "checklist",
                         tone: Theme.info,
                         count: openHomework,
-                        destination: HomeworkListView()
+                        route: Route.homework
                     )
                     HubCard(
                         title: "Assessments",
@@ -90,7 +194,52 @@ struct LearnHubView: View {
                         icon: "square.and.pencil",
                         tone: Theme.success,
                         count: openAssessments,
-                        destination: AssessmentsListView()
+                        route: Route.assessments
+                    )
+                    // Papers are sat in the centre, so this card carries no badge for work
+                    // waiting — it counts what has come back: scores and skill reports.
+                    HubCard(
+                        title: "Midterms",
+                        subtitle: "When the next one is, and how the last went",
+                        icon: "calendar.badge.clock",
+                        tone: Theme.amber,
+                        count: midtermResults,
+                        route: Route.midterms
+                    )
+                    HubCard(
+                        title: "Roadmap",
+                        subtitle: "Your level, lesson by lesson, and what comes next",
+                        icon: "map.fill",
+                        tone: Theme.accentDeep,
+                        route: Route.roadmap
+                    )
+                    HubCard(
+                        title: "My Progress",
+                        subtitle: "How you're doing, beside your group",
+                        icon: "chart.line.uptrend.xyaxis",
+                        tone: Theme.success,
+                        route: Route.progress
+                    )
+                    // The web keeps Live quiz out of its sidebar — a permanent entry is a dead
+                    // link on every day nobody runs one; students arrive by the projected code.
+                    // A phone has no address bar for that code, so the card is here, but only
+                    // while the feature is switched on.
+                    if let liveRooms {
+                        HubCard(
+                            title: "Live quiz",
+                            subtitle: "Join your class's quiz with the code on the board",
+                            icon: "dot.radiowaves.left.and.right",
+                            tone: Theme.warning,
+                            count: liveRooms.count,
+                            route: Route.liveQuiz
+                        )
+                    }
+                    HubCard(
+                        title: "Services",
+                        subtitle: "Support hours with a teacher, and registering for the SAT",
+                        icon: "lifepreserver",
+                        tone: Theme.subjectEnglish,
+                        route: Route.services
                     )
                 }
                 .padding(16)
@@ -101,6 +250,21 @@ struct LearnHubView: View {
             .toolbar(.hidden, for: .navigationBar)
             .onAppear { Task { await load() } }
             .refreshable { await load() }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .classrooms: ClassesListView()
+                case .homework: HomeworkListView()
+                case .assessments: AssessmentsListView()
+                case .midterms: MidtermsView()
+                case .roadmap: RoadmapView()
+                case .progress: MyProgressView()
+                case .services: ServicesView()
+                case .liveQuiz: LiveQuizJoinView()
+                }
+            }
+            .navigationDestination(for: AssignmentListing.self) { assignment in
+                HomeworkDetailView(assignment: assignment)
+            }
         }
     }
 
@@ -110,21 +274,22 @@ struct LearnHubView: View {
         // better outcome than a hub that refuses to draw.
         assignments = (try? await session.student.assignments()) ?? []
         classroomCount = (try? await session.classrooms.classrooms())?.count
+        midtermResults = (try? await session.student.midterms())?.filter(\.submitted).count
+        liveRooms = (try? await LiveQuizAPI(client: session.client).mine())?
+            .filter { $0.status != .finished && $0.status != .terminated }
     }
 }
 
-struct HubCard<Destination: View>: View {
+struct HubCard<Route: Hashable>: View {
     let title: String
     let subtitle: String
     let icon: String
     let tone: Color
     var count: Int?
-    let destination: Destination
+    let route: Route
 
     var body: some View {
-        NavigationLink {
-            destination
-        } label: {
+        NavigationLink(value: route) {
             HStack(spacing: 14) {
                 IconTile(systemName: icon, tone: tone, size: 46)
                 VStack(alignment: .leading, spacing: 3) {

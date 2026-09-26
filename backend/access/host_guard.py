@@ -191,6 +191,10 @@ class SubdomainAPIGuardMiddleware:
             # permanently empty rather than obviously broken.
             if path.startswith("/api/notifications/"):
                 return self.get_response(request)
+            # Mobile app: the release policy and the crash reports are managed from the admin
+            # console (/ops/mobile). The app itself calls the apex, which needs no entry.
+            if path.startswith("/api/mobile/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

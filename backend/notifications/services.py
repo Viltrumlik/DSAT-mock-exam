@@ -284,6 +284,15 @@ def _hint_many(user_ids) -> None:
         logger.warning("notification_hint_many_failed n=%s", len(ids))
 
 
+def _apns_configured() -> bool:
+    try:
+        from . import apns
+
+        return apns.is_configured()
+    except Exception:
+        return False
+
+
 def queue_push(notification: Notification) -> None:
     """Hand the fan-out to Celery, **after the caller's transaction commits**.
 
@@ -311,10 +320,14 @@ def queue_push(notification: Notification) -> None:
     behaviour you want anyway, since there is then nothing to push about.
     """
     try:
-        from .tasks import send_push_for_notification
+        from .tasks import send_apns_for_notifications, send_push_for_notification
 
         notification_id = notification.pk
         transaction.on_commit(lambda: send_push_for_notification.delay(notification_id))
+        # The iOS app's transport, as its own task — queued only when APNs is configured, so
+        # a deployment without it publishes nothing extra to the broker.
+        if _apns_configured():
+            transaction.on_commit(lambda: send_apns_for_notifications.delay([notification_id]))
     except Exception:
         logger.warning("push_enqueue_failed notification=%s", notification.pk)
 
@@ -335,9 +348,11 @@ def queue_push_many(notification_ids) -> None:
     if not ids:
         return
     try:
-        from .tasks import send_push_for_notifications
+        from .tasks import send_apns_for_notifications, send_push_for_notifications
 
         transaction.on_commit(lambda: send_push_for_notifications.delay(ids))
+        if _apns_configured():
+            transaction.on_commit(lambda: send_apns_for_notifications.delay(ids))
     except Exception:
         logger.warning("push_enqueue_many_failed n=%s", len(ids))
 
@@ -376,6 +391,10 @@ def mark_read(user, ids=None, *, category=None) -> int:
 
 def prune_failed_subscriptions(older_than_days: int = 30) -> int:
     """Delete push subscriptions that have been failing for a while."""
+    from .models import ApnsDevice
+
     cutoff = timezone.now() - timedelta(days=older_than_days)
     deleted, _ = PushSubscription.objects.filter(failed_at__lt=cutoff).delete()
-    return deleted
+    # iOS devices whose token APNs has declared dead, on the same schedule.
+    apns_deleted, _ = ApnsDevice.objects.filter(failed_at__lt=cutoff).delete()
+    return deleted + apns_deleted

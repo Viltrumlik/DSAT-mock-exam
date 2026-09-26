@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Signed into the app only when MASTERSAT_PUSH = YES (project.yml) — a free Personal Team
+  cannot sign it.
+
+  "development" is right for every build Xcode runs on a phone. Exporting an archive for
+  TestFlight or the App Store re-signs it with the distribution profile, which carries
+  "production"; the app reads the environment it actually got from its profile at run time
+  and tells the server, and the server tries the other APNs host once if it guessed wrong.
+-->
+<plist version="1.0">
+<dict>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

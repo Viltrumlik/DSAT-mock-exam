@@ -8,6 +8,8 @@ codebase, and one of the routes below writes into every account in the school.
 from django.urls import path
 
 from .views import (
+    ApnsRegisterView,
+    ApnsUnregisterView,
     NotificationBroadcastView,
     NotificationListView,
     NotificationPreferencesView,
@@ -27,4 +29,7 @@ urlpatterns = [
     path("push/config/", PushConfigView.as_view(), name="notifications-push-config"),
     path("push/subscribe/", PushSubscribeView.as_view(), name="notifications-push-subscribe"),
     path("push/unsubscribe/", PushUnsubscribeView.as_view(), name="notifications-push-unsubscribe"),
+    # The iOS app's transport (APNs). See notifications/apns.py.
+    path("push/apns/register/", ApnsRegisterView.as_view(), name="notifications-apns-register"),
+    path("push/apns/unregister/", ApnsUnregisterView.as_view(), name="notifications-apns-unregister"),
 ]

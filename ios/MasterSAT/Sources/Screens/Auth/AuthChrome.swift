@@ -377,6 +377,12 @@ enum AuthErrorCopy {
             return (detail.isEmpty ? "Something went wrong. Please try again." : detail, true)
         case .conflict(let detail):
             return (detail.isEmpty ? "Something went wrong. Please try again." : detail, false)
+        case .unavailable:
+            // A release in progress. The words say "wait", because that is all it takes.
+            return (api.errorDescription ?? "MasterSAT is updating right now. Please try again in a minute.", true)
+        case .upgradeRequired:
+            // The update screen is already covering this one; this is only its caption.
+            return (api.errorDescription ?? "Please update the app to sign in.", false)
         case .decoding, .notAuthenticated:
             return (api.errorDescription ?? "Something went wrong. Please try again.", false)
         }

@@ -22,6 +22,19 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- HTTPS only, which is exempt: without this, every upload stops at the export-compliance
+	     question in App Store Connect. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<!-- The share sheet's "Save Image" (an event ticket) writes to Photos, and iOS terminates
+	     an app that does that without saying why. Picking homework photos needs no key: the
+	     system picker runs outside the app. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MasterSAT saves your event ticket to Photos so you can show it at the door.</string>
+	<!-- YES only in a build signed with the push entitlement (MASTERSAT_PUSH in project.yml).
+	     The app asks iOS for a device token only then. -->
+	<key>MasterSATPushEnabled</key>
+	<string>$(MASTERSAT_PUSH)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

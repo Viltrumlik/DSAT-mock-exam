@@ -13,6 +13,8 @@ production.
 
 from __future__ import annotations
 
+import re
+
 import hashlib
 
 from django.contrib.auth import get_user_model
@@ -26,7 +28,7 @@ from access.permissions import IsSuperAdmin
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import constants, push as push_service, services
-from .models import Notification, NotificationPreference, PushSubscription
+from .models import ApnsDevice, Notification, NotificationPreference, PushSubscription
 from .serializers import (
     AUDIENCE_STAFF,
     AUDIENCE_STUDENTS,
@@ -281,9 +283,13 @@ class PushConfigView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        from . import apns
+
         return Response({
             "enabled": push_service.is_configured(),
             "public_key": push_service.public_key(),
+            # The iOS app's transport. Separate flag: either half can be configured alone.
+            "apns_enabled": apns.is_configured(),
         })
 
 
@@ -327,4 +333,55 @@ class PushUnsubscribeView(APIView):
         deleted, _ = PushSubscription.objects.filter(
             user=request.user, endpoint=endpoint
         ).delete()
+        return Response({"deleted": deleted})
+
+
+_APNS_TOKEN_RE = re.compile(r"^[0-9a-f]{32,200}$")
+
+
+class ApnsRegisterView(APIView):
+    """`POST /api/notifications/push/apns/register/` — the iOS app's device token.
+
+    Upserted on the token, which identifies one app install on one phone. Re-registering moves
+    the row to whoever is signed in now and clears a previous failure, so a phone handed to a
+    sibling stops buzzing for the first student the moment the second signs in.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        token = str(request.data.get("token") or "").strip().lower()
+        if not _APNS_TOKEN_RE.match(token):
+            return Response({"detail": "A hex device token is required."}, status=400)
+        environment = str(request.data.get("environment") or "").strip().lower()
+        if environment not in {ApnsDevice.ENV_SANDBOX, ApnsDevice.ENV_PRODUCTION}:
+            environment = ApnsDevice.ENV_PRODUCTION
+        device, created = ApnsDevice.objects.update_or_create(
+            token=token,
+            defaults={
+                "user": request.user,
+                "environment": environment,
+                "bundle_id": str(request.data.get("bundle_id") or "")[:128],
+                "app_version": str(request.data.get("app_version") or "")[:32],
+                "failed_at": None,
+                "failure_reason": "",
+            },
+        )
+        return Response(
+            {"detail": "Registered.", "id": device.pk},
+            status=http.HTTP_201_CREATED if created else http.HTTP_200_OK,
+        )
+
+
+class ApnsUnregisterView(APIView):
+    """`POST /api/notifications/push/apns/unregister/` — sent on sign-out, before the tokens go."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        token = str(request.data.get("token") or "").strip().lower()
+        if not token:
+            return Response({"detail": "token is required."}, status=400)
+        # Scoped to the caller: one student cannot switch off another's phone.
+        deleted, _ = ApnsDevice.objects.filter(user=request.user, token=token).delete()
         return Response({"deleted": deleted})

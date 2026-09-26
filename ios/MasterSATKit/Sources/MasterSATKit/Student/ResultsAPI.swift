@@ -16,6 +16,18 @@ public struct ResultsAPI: Sendable {
         try await client.send(.get("/midterms/attempts/\(attemptId)/review/"), as: MidtermResult.self)
     }
 
+    /// Which skills cost the student the paper.
+    ///
+    /// Behind the same release gate as the score, and it answers 403 with a sentence to
+    /// show — "Your teacher has not published these results yet." — rather than an empty
+    /// report. Let that reach the caller; it is the only honest thing to put on screen.
+    public func midtermErrorReport(attemptId: Int) async throws -> MidtermErrorReport {
+        try await client.send(
+            .get("/midterms/attempts/\(attemptId)/error-report/"),
+            as: MidtermErrorReport.self
+        )
+    }
+
     /// A midterm certificate by its public code.
     public func certificate(code: String) async throws -> CertificateDetail {
         try await client.send(.get("/classes/certificates/midterm/\(code)/"), as: CertificateDetail.self)
@@ -55,8 +67,8 @@ public struct MidtermResult: Decodable, Sendable, Equatable {
     }
 }
 
-/// A certificate looked up by code. The download itself is a PDF the app opens in a
-/// browser rather than decoding.
+/// A certificate looked up by code. The PDF itself is fetched with `CertificateAPI` — it
+/// needs the student's token, so a browser cannot open it.
 public struct CertificateDetail: Decodable, Sendable, Equatable {
     public let code: String
     public let studentName: String?
