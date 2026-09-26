@@ -179,8 +179,10 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     public internal(set) var subject: String?
     public let contentType: String?
     public let itemCount: Int?
-    public let classroomId: Int?
-    public let classroomName: String?
+    /// Only `my-assignments` sends these; a per-class list is stamped with them by the
+    /// caller (`inClassroom`), since the detail screen loads by class.
+    public internal(set) var classroomId: Int?
+    public internal(set) var classroomName: String?
     /// Server-computed: submitted / graded / returned / not started. The client must not
     /// recompute this — the rule lives with the grading pipeline, not here.
     public let workflowStatus: String?
@@ -188,9 +190,21 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     // Content
     public let assessmentHomeworks: [AssessmentHomeworkLink]
     public let vocabHomeworks: [VocabHomeworkLink]
+    /// The openable contents in launcher order, each with its display name — quizzes, a
+    /// mock, practice packs, a past paper. Vocabulary sets are not in it.
+    public internal(set) var contents: [AssignmentContentItem]
     public internal(set) var practiceBundleTests: [PracticeBundleTest]
     public internal(set) var mockExamId: Int?
     public internal(set) var practiceTestPackId: Int?
+    /// Every attached practice pack; `practiceTestPackId` is the legacy single one.
+    public internal(set) var practiceTestPackIds: [Int]
+    /// Standalone past-paper sections (the single legacy FK, and the list).
+    public internal(set) var practiceTestId: Int?
+    public internal(set) var practiceTestIds: [Int]
+    public internal(set) var moduleId: Int?
+    /// What one hand-in may carry. Sent only by servers that have it; `SubmissionLimits.standard`
+    /// is the server's own default otherwise.
+    public internal(set) var submissionLimits: SubmissionLimits?
     public internal(set) var attachments: [AssignmentAttachment]
     public internal(set) var externalURLs: [String]
     public internal(set) var videoURL: String?
@@ -235,9 +249,15 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
         case workflowStatus = "workflow_status"
         case assessmentHomeworks = "assessment_homeworks"
         case vocabHomeworks = "vocab_homeworks"
+        case contents
         case practiceBundleTests = "practice_bundle_tests"
         case mockExam = "mock_exam"
         case practiceTestPack = "practice_test_pack"
+        case practiceTestPackIds = "practice_test_pack_ids"
+        case practiceTest = "practice_test"
+        case practiceTestIds = "practice_test_ids"
+        case module
+        case submissionLimits = "submission_limits"
         case attachmentURLs = "attachment_urls"
         case externalURLs = "external_urls"
         case videoURL = "video_url"
@@ -268,10 +288,17 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
             as? [AssessmentHomeworkLink] ?? []
         vocabHomeworks = (try? c.decodeIfPresent([VocabHomeworkLink].self, forKey: .vocabHomeworks))
             as? [VocabHomeworkLink] ?? []
+        contents = (try? c.decodeIfPresent([AssignmentContentItem].self, forKey: .contents))
+            as? [AssignmentContentItem] ?? []
         practiceBundleTests = (try? c.decodeIfPresent([PracticeBundleTest].self, forKey: .practiceBundleTests))
             as? [PracticeBundleTest] ?? []
         mockExamId = try? c.decodeIfPresent(Int.self, forKey: .mockExam)
         practiceTestPackId = try? c.decodeIfPresent(Int.self, forKey: .practiceTestPack)
+        practiceTestPackIds = (try? c.decodeIfPresent([Int].self, forKey: .practiceTestPackIds)) as? [Int] ?? []
+        practiceTestId = try? c.decodeIfPresent(Int.self, forKey: .practiceTest)
+        practiceTestIds = (try? c.decodeIfPresent([Int].self, forKey: .practiceTestIds)) as? [Int] ?? []
+        moduleId = try? c.decodeIfPresent(Int.self, forKey: .module)
+        submissionLimits = (try? c.decodeIfPresent(SubmissionLimits.self, forKey: .submissionLimits)) ?? nil
         attachments = (try? c.decodeIfPresent([AssignmentAttachment].self, forKey: .attachmentURLs))
             as? [AssignmentAttachment] ?? []
         externalURLs = (try? c.decodeIfPresent([String].self, forKey: .externalURLs)) as? [String] ?? []

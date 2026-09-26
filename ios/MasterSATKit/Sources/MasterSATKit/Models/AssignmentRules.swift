@@ -54,17 +54,40 @@ extension AssignmentListing {
         merged.classworkAward = detail.classworkAward ?? classworkAward
         merged.mockExamId = detail.mockExamId ?? mockExamId
         merged.practiceTestPackId = detail.practiceTestPackId ?? practiceTestPackId
+        merged.practiceTestPackIds = detail.practiceTestPackIds.isEmpty ? practiceTestPackIds : detail.practiceTestPackIds
+        merged.practiceTestId = detail.practiceTestId ?? practiceTestId
+        merged.practiceTestIds = detail.practiceTestIds.isEmpty ? practiceTestIds : detail.practiceTestIds
+        merged.moduleId = detail.moduleId ?? moduleId
+        merged.submissionLimits = detail.submissionLimits ?? submissionLimits
+        if !detail.contents.isEmpty { merged.contents = detail.contents }
         // Past-paper sections carry the student's own state and only the detail lists them.
         if !detail.practiceBundleTests.isEmpty { merged.practiceBundleTests = detail.practiceBundleTests }
         return merged
     }
 
+    /// This row, told which class it belongs to — for rows from a per-class list, which
+    /// never say. What the row already knows wins.
+    public func inClassroom(id: Int, name: String?) -> AssignmentListing {
+        var stamped = self
+        if stamped.classroomId == nil { stamped.classroomId = id }
+        if (stamped.classroomName ?? "").isEmpty, let name, !name.isEmpty { stamped.classroomName = name }
+        return stamped
+    }
+
     public var isClasswork: Bool { (category ?? "").uppercased() == "CLASSWORK" }
+
+    /// Every practice pack attached, the legacy single one included.
+    public var allPracticePackIds: [Int] {
+        var ids = practiceTestPackIds
+        if let practiceTestPackId, !ids.contains(practiceTestPackId) { ids.insert(practiceTestPackId, at: 0) }
+        return ids
+    }
 
     /// Anything the student opens and works through, rather than hands in.
     public var hasLaunchableContent: Bool {
         !assessmentHomeworks.isEmpty || !vocabHomeworks.isEmpty || !practiceBundleTests.isEmpty
-            || mockExamId != nil || practiceTestPackId != nil
+            || mockExamId != nil || !allPracticePackIds.isEmpty
+            || practiceTestId != nil || !practiceTestIds.isEmpty || moduleId != nil
     }
 
     /// Whether to offer a file hand-in — the web's own rule: the teacher allowed one, or

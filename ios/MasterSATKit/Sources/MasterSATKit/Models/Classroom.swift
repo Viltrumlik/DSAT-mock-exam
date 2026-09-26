@@ -7,26 +7,48 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
     public let subject: String?
     public let level: String?
     public let scheduleSummary: String?
+    /// `ODD` (Mon, Wed, Fri) or `EVEN` (Tue, Thu, Sat).
+    public let lessonDays: String?
+    /// Free text, as the centre typed it — "18:00".
     public let lessonTime: String?
     public let roomNumber: String?
+    /// Every ACTIVE membership, staff included. Not a head-count of the class.
     public let membersCount: Int?
+    /// Enrolled students only. What "N students" means — `membersCount` also counts staff.
+    public let studentCount: Int?
     public let isActive: Bool
     public let teacherName: String?
     public let teacherPhotoURL: String?
+    /// The class's Telegram group as a plain invite link, for classes the bot does not
+    /// manage. Empty when there is none.
+    public let telegramGroupURL: String?
+    public let classDescription: String?
+    public let branchName: String?
+    public let regionName: String?
     /// The viewer's membership role. Nil once they have been removed — the list still
     /// returns the row, so the app must not assume a row means access.
     public let myRole: String?
 
     public var isStudent: Bool { (myRole ?? "").uppercased() == "STUDENT" }
 
+    /// "N students": the enrolled students, falling back to the older all-members count on
+    /// a server that does not send one.
+    public var headCount: Int? { studentCount ?? membersCount }
+
     private enum CodingKeys: String, CodingKey {
         case id, name, subject, level
         case scheduleSummary = "schedule_summary"
+        case lessonDays = "lesson_days"
         case lessonTime = "lesson_time"
         case roomNumber = "room_number"
         case membersCount = "members_count"
+        case studentCount = "student_count"
         case isActive = "is_active"
         case teacherDetails = "teacher_details"
+        case telegramGroupURL = "telegram_group_url"
+        case classDescription = "description"
+        case branchName = "branch_name"
+        case regionName = "region_name"
         case myRole = "my_role"
     }
 
@@ -45,10 +67,16 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
         subject = try? c.decodeIfPresent(String.self, forKey: .subject)
         level = try? c.decodeIfPresent(String.self, forKey: .level)
         scheduleSummary = try? c.decodeIfPresent(String.self, forKey: .scheduleSummary)
+        lessonDays = try? c.decodeIfPresent(String.self, forKey: .lessonDays)
         lessonTime = try? c.decodeIfPresent(String.self, forKey: .lessonTime)
         roomNumber = try? c.decodeIfPresent(String.self, forKey: .roomNumber)
         membersCount = try? c.decodeIfPresent(Int.self, forKey: .membersCount)
+        studentCount = try? c.decodeIfPresent(Int.self, forKey: .studentCount)
         isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) as? Bool ?? true
+        telegramGroupURL = try? c.decodeIfPresent(String.self, forKey: .telegramGroupURL)
+        classDescription = try? c.decodeIfPresent(String.self, forKey: .classDescription)
+        branchName = try? c.decodeIfPresent(String.self, forKey: .branchName)
+        regionName = try? c.decodeIfPresent(String.self, forKey: .regionName)
         myRole = try? c.decodeIfPresent(String.self, forKey: .myRole)
 
         // The teacher arrives as a nested object whose name may be pre-composed or split.
@@ -76,6 +104,8 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
 /// One person in a classroom, from `/api/classes/{id}/people/`.
 public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
     public let id: Int
+    /// The MEMBERSHIP role — a permission tier (OWNER/TEACHER/TA/STUDENT, plus the legacy
+    /// ADMIN/CO_TEACHER). It is not a job title; see `staffTitle`.
     public let role: String
     public let status: String?
     public let joinedAt: String?
@@ -83,6 +113,9 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
     public let name: String
     public let email: String?
     public let photoURL: String?
+    /// The person's ACCOUNT role (`teacher`, `support_teacher`, `admin`, `super_admin`, …),
+    /// which is what the teaching team is titled by.
+    public let accountRole: String?
 
     /// Staff, in the roles the classroom actually stores. Legacy `ADMIN`/`CO_TEACHER`
     /// still appear on older classrooms, so match them too rather than only the new names.
@@ -90,15 +123,14 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
         ["OWNER", "TEACHER", "TA", "ADMIN", "CO_TEACHER"].contains(role.uppercased())
     }
 
-    public var roleLabel: String {
-        switch role.uppercased() {
-        case "OWNER", "ADMIN": return "Owner"
-        case "TEACHER": return "Teacher"
-        case "TA", "CO_TEACHER": return "Teaching Assistant"
-        case "STUDENT": return "Student"
-        default: return role.capitalized
-        }
-    }
+    public var isStudent: Bool { role.uppercased() == "STUDENT" }
+
+    /// What a member of the teaching team is called: "Owner", "Admin", "Teacher" or
+    /// "Support teacher". Nil for a student. See `StaffTitle`.
+    public var staffTitle: String? { StaffTitle.title(membershipRole: role, accountRole: accountRole) }
+
+    /// The title under a person's name: the staff title, or "Student".
+    public var roleLabel: String { staffTitle ?? "Student" }
 
     private enum CodingKeys: String, CodingKey {
         case id, role, status, user
@@ -106,7 +138,7 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
     }
 
     private enum UserKeys: String, CodingKey {
-        case id, email, username
+        case id, email, username, role
         case firstName = "first_name"
         case lastName = "last_name"
         case profileImageURL = "profile_image_url"
@@ -123,6 +155,7 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
         userId = (try? u.decode(Int.self, forKey: .id)) ?? 0
         email = try? u.decodeIfPresent(String.self, forKey: .email)
         photoURL = try? u.decodeIfPresent(String.self, forKey: .profileImageURL)
+        accountRole = try? u.decodeIfPresent(String.self, forKey: .role)
         let full = [
             try? u.decodeIfPresent(String.self, forKey: .firstName),
             try? u.decodeIfPresent(String.self, forKey: .lastName),
@@ -170,13 +203,16 @@ public struct ClassroomMaterial: Decodable, Sendable, Equatable, Identifiable {
     }
 }
 
-/// Which leaderboard. SAT ranks on pastpaper scores; Academic on classwork.
+/// Which leaderboard. One board now: the class ranks on XP from the rewards ledger.
+///
+/// The SAT board was retired on the server (`rankings/sat/` answers a permanent empty stub
+/// with `sat_available: false`), so it is not offered here at all — asking for it could only
+/// ever tell every class "this class does not rank on SAT scores".
 public enum RankingKind: String, Sendable, CaseIterable {
-    case sat = "SAT"
     case academic = "ACADEMIC"
 
     public var path: String { rawValue.lowercased() }
-    public var label: String { self == .sat ? "SAT" : "Academic" }
+    public var label: String { "Academic" }
 }
 
 public struct RankingRow: Decodable, Sendable, Equatable, Identifiable {
