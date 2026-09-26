@@ -221,7 +221,7 @@ struct ProfileOverviewTab: View {
             .profileWell(ProfileTone.amber, opacity: 0.09)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
-        .accessibilityLabel("Test day: \(day.value) \(day.unit ?? ""). \(day.detail)")
+        .accessibilityLabel("Test day: \([day.value, day.unit].compactMap { $0 }.joined(separator: " ")). \(day.detail)")
         .accessibilityHint("Choose your SAT date")
     }
 
