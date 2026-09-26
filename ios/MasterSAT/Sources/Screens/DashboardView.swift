@@ -154,8 +154,18 @@ struct DashboardView: View {
         }
     }
 
+    /// The web's top bar, on the phone: what sits beside the page rather than in it.
+    private var topBar: some View {
+        HStack(spacing: 8) {
+            Spacer(minLength: 0)
+            NavigationLink { PointsView() } label: { RewardsPointsPill() }
+                .buttonStyle(.plain)
+        }
+    }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
+            topBar
             PageTitle("Welcome back, \(current.firstName?.isEmpty == false ? current.firstName! : current.displayName)")
             Button {
                 showingGoal = true
