@@ -243,17 +243,23 @@ function GradeBreakdown({ share }: { share: ManualShare }) {
  * be used until Friday. The server composes and serves that number with no submission row at all
  * — this is the screen that finally shows it, instead of leaving the student to guess.
  */
-function SettledSoFar({ share }: { share: ManualShare }) {
+function SettledSoFar({ share, soFar, automatic }: { share: ManualShare; soFar: number; automatic: number }) {
   return (
     <Card>
       <CardHeader
         title="Part of this grade is already decided"
-        actions={<Pill tone="info">{pct(share.automaticPercent as number)} so far</Pill>}
+        // `soFar` is the WHOLE grade as it stands — the automatic side already weighted — which
+        // is the same number, off the same field, that the teacher's own screen calls "so far".
+        // The automatic side's own percent belongs in the sentence below, where it is labelled:
+        // shown up here it reads as the grade, and on an 80/20 split a student saw 95% beside
+        // "can only go up" and then finished on 90.
+        actions={<Pill tone="info">{pct(soFar)} so far</Pill>}
       />
       <p className="mt-2 text-sm text-muted-foreground">
         The automatically graded {share.automaticWeight}% of this homework is settled at{" "}
-        {pct(share.automaticPercent as number)}. The remaining {share.manualWeight}% is your
-        teacher&apos;s mark, and they are still checking your work — this grade can only go up.
+        {pct(automatic)}, which puts the whole grade at {pct(soFar)} so far. The remaining{" "}
+        {share.manualWeight}% is your teacher&apos;s mark, and they are still checking your work —
+        this grade can only go up.
       </p>
     </Card>
   );
@@ -586,12 +592,12 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
               <p className="mt-2 text-sm text-muted-foreground">No written feedback — your score is shown above.</p>
             )}
           </Card>
-        ) : share && share.awaiting && !share.unavailable
-            && share.automaticWeight > 0 && share.automaticPercent != null ? (
+        ) : share && share.awaiting && !share.unavailable && share.automaticWeight > 0
+            && share.automaticPercent != null && share.percent != null ? (
           // `automaticWeight > 0` is load-bearing: where the teacher's mark is the whole grade,
           // an automatic score can still be recorded and it carries nothing. Calling that number
           // "already decided" would promise a student a part of their grade that does not exist.
-          <SettledSoFar share={share} />
+          <SettledSoFar share={share} soFar={share.percent} automatic={share.automaticPercent} />
         ) : null}
       </div>
 

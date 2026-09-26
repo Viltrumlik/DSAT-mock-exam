@@ -214,13 +214,32 @@ describe("a student's own grade, when the teacher's mark is a share of it", () =
   });
 
   it("shows the part of the grade already settled before anything has been handed in", async () => {
-    // `/my-submission/` with no submission row: this key and nothing else.
+    // `/my-submission/` with no submission row: this key and nothing else. 80/20 split, the
+    // automatic side settled at 100, so the WHOLE grade stands at 80 so far.
     await mount({ composed_grade: composed({ state: "awaiting_manual_mark", percent: 80, is_final: false, manual_percent: null }) });
 
     const card = feedbackCard();
     expect(card).toContain("Part of this grade is already decided");
-    expect(card).toContain("100% so far");
+    expect(card).toContain("80% so far");
+    expect(card).toContain("settled at 100%");
     expect(card).toContain("this grade can only go up");
+  });
+
+  it("calls the whole grade 'so far', never the automatic side on its own", async () => {
+    // The number beside "so far" is the one the teacher's own screen shows, off the same field.
+    // Printing the automatic side there told a student on an 80/20 split with 95% automatic that
+    // they stood at 95 and could "only go up" — and they finish on 90 unless their teacher marks
+    // above 95. Two people reading one payload and getting different numbers is the whole bug
+    // this branch has been closing; it must not reappear in the sentence that reassures a child.
+    await mount({
+      composed_grade: composed({
+        state: "awaiting_manual_mark", percent: 76, is_final: false,
+        automatic_percent: 95, manual_percent: null,
+      }),
+    });
+
+    expect(pill()).toBe("76% so far");
+    expect(feedbackCard()).toContain("settled at 95%, which puts the whole grade at 76% so far");
   });
 
   it("stays quiet before hand-in on homework with no manual share", async () => {
