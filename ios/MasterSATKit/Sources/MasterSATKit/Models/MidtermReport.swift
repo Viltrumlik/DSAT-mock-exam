@@ -30,6 +30,13 @@ public struct MidtermErrorReport: Decodable, Sendable, Equatable {
     /// Only the skills that actually cost marks; a fully-correct skill is not an error.
     /// Already sorted by the server: most marks lost first.
     public let skills: [SkillRow]
+    /// Every skill (or topic) the paper tested, fully-correct ones included, in the
+    /// taxonomy's order — the curriculum's, on a paper taught from one. Empty from a server
+    /// older than the field, and then the section is simply not shown.
+    public let covered: [SkillRow]
+    /// "topic" on junior and foundation maths papers, tagged from the learning center's own
+    /// topic list; "skill" on SAT-tagged ones. See `noun`.
+    public let topicNoun: String?
 
     public struct Paper: Decodable, Sendable, Equatable {
         public let id: Int
@@ -94,7 +101,8 @@ public struct MidtermErrorReport: Decodable, Sendable, Equatable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case date, midterm, score, skills, passed
+        case date, midterm, score, skills, passed, covered
+        case topicNoun = "topic_noun"
         case attemptId = "attempt_id"
         case studentName = "student_name"
         case correctCount = "correct_count"
@@ -120,6 +128,8 @@ public struct MidtermErrorReport: Decodable, Sendable, Equatable {
         unclassifiedTotal = (try? c.decodeIfPresent(Int.self, forKey: .unclassifiedTotal)) as? Int ?? 0
         unclassifiedWrong = (try? c.decodeIfPresent(Int.self, forKey: .unclassifiedWrong)) as? Int ?? 0
         skills = (try? c.decodeIfPresent([SkillRow].self, forKey: .skills)) as? [SkillRow] ?? []
+        covered = ((try? c.decodeIfPresent([SkillRow].self, forKey: .covered)) ?? nil) ?? []
+        topicNoun = try? c.decodeIfPresent(String.self, forKey: .topicNoun)
     }
 
     /// Marks lost across every tagged skill, plus the untagged ones. This is the number the

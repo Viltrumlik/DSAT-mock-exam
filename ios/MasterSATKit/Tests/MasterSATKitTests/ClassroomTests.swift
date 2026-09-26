@@ -85,7 +85,10 @@ import Testing
         #expect(people[0].isStaff)
         #expect(people[1].isStaff == false)
         #expect(people[2].isStaff)
-        #expect(people[2].roleLabel == "Teaching Assistant")
+        // A legacy co-teacher seat with no account role is support staff. There is no
+        // "Teaching assistant" at the learning center.
+        #expect(people[2].roleLabel == "Support teacher")
+        #expect(people[1].roleLabel == "Student")
         // No name at all: the email is better than "Student".
         #expect(people[2].name == "c@x.uz")
     }
@@ -112,17 +115,17 @@ import Testing
     func noResultVersusHiddenScore() async throws {
         server.handler = { _ in
             .json([
-                "kind": "SAT",
-                "sat_available": true,
+                "kind": "ACADEMIC",
+                "sat_available": false,
                 "config": ["leaderboard_mode": "FULL", "hide_score_values": false],
                 "rows": [
-                    ["rank": 1, "name": "A", "score": 1400, "has_result": true, "is_me": false],
+                    ["rank": 1, "name": "A", "score": 140, "has_result": true, "is_me": false],
                     ["rank": 2, "name": "B", "score": nil, "has_result": false, "is_me": true],
                 ],
             ])
         }
 
-        let board = try await api().rankings(classroomId: 4, kind: .sat)
+        let board = try await api().rankings(classroomId: 4)
 
         #expect(board.rows[0].hasResult)
         // Both have a nil score on a hidden board; only `has_result` tells them apart, and
@@ -131,14 +134,14 @@ import Testing
         #expect(board.rows[1].isMe)
     }
 
-    @Test("SAT ranking is not offered to a class that does not rank on it")
-    func satUnavailable() async throws {
-        server.handler = { _ in
-            .json(["kind": "SAT", "rows": [], "sat_available": false, "config": [:]])
-        }
+    @Test("Only the XP board is ever asked for — the SAT board is retired")
+    func onlyTheAcademicBoard() async throws {
+        server.handler = { _ in .json(["kind": "ACADEMIC", "rows": [], "config": [:]]) }
 
-        let board = try await api().rankings(classroomId: 4, kind: .sat)
+        _ = try await api().rankings(classroomId: 4)
 
-        #expect(board.satAvailable == false)
+        let url = try #require(server.requests.first?.url?.absoluteString)
+        #expect(url.hasSuffix("/api/classes/4/rankings/academic/"))
+        #expect(RankingKind.allCases == [.academic])
     }
 }

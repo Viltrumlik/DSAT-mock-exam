@@ -113,10 +113,17 @@ struct HomeworkListView: View {
 struct HomeworkRow: View {
     let assignment: AssignmentListing
 
-    /// The icon says what KIND of work it is at a glance — a quiz, words, a video, or
-    /// something to hand in — which is the first thing a student wants from a list.
+    /// Papers sat on a computer — a past paper, a mock, a practice pack — as the list row
+    /// names them (`contents`; the list does not carry the sections themselves).
+    private var paperCount: Int {
+        assignment.contents.filter { ["PASTPAPER", "MOCK", "PRACTICE"].contains($0.kind) }.count
+    }
+
+    /// The icon says what KIND of work it is at a glance — a quiz, a paper, words, a video,
+    /// or something to hand in — which is the first thing a student wants from a list.
     private var icon: String {
         if !assignment.assessmentHomeworks.isEmpty { return "square.and.pencil" }
+        if paperCount > 0 { return "doc.text" }
         if !assignment.vocabHomeworks.isEmpty { return "character.book.closed.fill" }
         if assignment.videoURL?.isEmpty == false || assignment.videoFileURL?.isEmpty == false {
             return "play.rectangle.fill"
@@ -129,6 +136,9 @@ struct HomeworkRow: View {
         var parts: [String] = []
         if !assignment.assessmentHomeworks.isEmpty {
             parts.append("\(ScoreText.string(assignment.assessmentHomeworks.count)) quiz\(assignment.assessmentHomeworks.count == 1 ? "" : "zes")")
+        }
+        if paperCount > 0 {
+            parts.append("\(ScoreText.string(paperCount)) paper\(paperCount == 1 ? "" : "s") on a computer")
         }
         if !assignment.vocabHomeworks.isEmpty {
             parts.append("\(ScoreText.string(assignment.vocabHomeworks.count)) word set\(assignment.vocabHomeworks.count == 1 ? "" : "s")")

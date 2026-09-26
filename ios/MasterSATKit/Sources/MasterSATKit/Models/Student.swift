@@ -179,8 +179,10 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     public internal(set) var subject: String?
     public let contentType: String?
     public let itemCount: Int?
-    public let classroomId: Int?
-    public let classroomName: String?
+    /// Only `my-assignments` sends these; a per-class list is stamped with them by the
+    /// caller (`inClassroom`), since the detail screen loads by class.
+    public internal(set) var classroomId: Int?
+    public internal(set) var classroomName: String?
     /// Server-computed: submitted / graded / returned / not started. The client must not
     /// recompute this — the rule lives with the grading pipeline, not here.
     public let workflowStatus: String?
@@ -188,9 +190,21 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
     // Content
     public let assessmentHomeworks: [AssessmentHomeworkLink]
     public let vocabHomeworks: [VocabHomeworkLink]
+    /// The openable contents in launcher order, each with its display name — quizzes, a
+    /// mock, practice packs, a past paper. Vocabulary sets are not in it.
+    public internal(set) var contents: [AssignmentContentItem]
     public internal(set) var practiceBundleTests: [PracticeBundleTest]
     public internal(set) var mockExamId: Int?
     public internal(set) var practiceTestPackId: Int?
+    /// Every attached practice pack; `practiceTestPackId` is the legacy single one.
+    public internal(set) var practiceTestPackIds: [Int]
+    /// Standalone past-paper sections (the single legacy FK, and the list).
+    public internal(set) var practiceTestId: Int?
+    public internal(set) var practiceTestIds: [Int]
+    public internal(set) var moduleId: Int?
+    /// What one hand-in may carry. Sent only by servers that have it; `SubmissionLimits.standard`
+    /// is the server's own default otherwise.
+    public internal(set) var submissionLimits: SubmissionLimits?
     public internal(set) var attachments: [AssignmentAttachment]
     public internal(set) var externalURLs: [String]
     public internal(set) var videoURL: String?
@@ -235,9 +249,15 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
         case workflowStatus = "workflow_status"
         case assessmentHomeworks = "assessment_homeworks"
         case vocabHomeworks = "vocab_homeworks"
+        case contents
         case practiceBundleTests = "practice_bundle_tests"
         case mockExam = "mock_exam"
         case practiceTestPack = "practice_test_pack"
+        case practiceTestPackIds = "practice_test_pack_ids"
+        case practiceTest = "practice_test"
+        case practiceTestIds = "practice_test_ids"
+        case module
+        case submissionLimits = "submission_limits"
         case attachmentURLs = "attachment_urls"
         case externalURLs = "external_urls"
         case videoURL = "video_url"
@@ -268,10 +288,17 @@ public struct AssignmentListing: Decodable, Sendable, Equatable, Identifiable {
             as? [AssessmentHomeworkLink] ?? []
         vocabHomeworks = (try? c.decodeIfPresent([VocabHomeworkLink].self, forKey: .vocabHomeworks))
             as? [VocabHomeworkLink] ?? []
+        contents = (try? c.decodeIfPresent([AssignmentContentItem].self, forKey: .contents))
+            as? [AssignmentContentItem] ?? []
         practiceBundleTests = (try? c.decodeIfPresent([PracticeBundleTest].self, forKey: .practiceBundleTests))
             as? [PracticeBundleTest] ?? []
         mockExamId = try? c.decodeIfPresent(Int.self, forKey: .mockExam)
         practiceTestPackId = try? c.decodeIfPresent(Int.self, forKey: .practiceTestPack)
+        practiceTestPackIds = (try? c.decodeIfPresent([Int].self, forKey: .practiceTestPackIds)) as? [Int] ?? []
+        practiceTestId = try? c.decodeIfPresent(Int.self, forKey: .practiceTest)
+        practiceTestIds = (try? c.decodeIfPresent([Int].self, forKey: .practiceTestIds)) as? [Int] ?? []
+        moduleId = try? c.decodeIfPresent(Int.self, forKey: .module)
+        submissionLimits = (try? c.decodeIfPresent(SubmissionLimits.self, forKey: .submissionLimits)) ?? nil
         attachments = (try? c.decodeIfPresent([AssignmentAttachment].self, forKey: .attachmentURLs))
             as? [AssignmentAttachment] ?? []
         externalURLs = (try? c.decodeIfPresent([String].self, forKey: .externalURLs)) as? [String] ?? []
@@ -316,12 +343,19 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
     public let subject: String
     public let durationMinutes: Int?
     public let questionCount: Int?
+    /// A finished row reports the scale IT was sat on; an unsat one the midterm's current
+    /// scale. A sitting keeps its own scale and pass mark even if the paper changes later.
     public let scoreCeiling: Double?
+    /// `SCALE_100` or `SCALE_800`, on the same terms as `scoreCeiling`.
+    public let scoringScale: String?
     /// "classroom" or "standalone". Classroom results are publish-gated.
     public let flavor: String?
     public let attemptId: Int?
     public let state: String
     public let submitted: Bool
+    /// The teacher granted a re-sit of a paper this student already finished. It goes back to
+    /// "Available" — sat in the centre like any other sitting.
+    public let resitOpen: Bool
     public let isOpen: Bool
     public let isBeforeStart: Bool
     /// Inside the window, but the teacher has not generated the room's access code yet.
@@ -334,16 +368,8 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
 
     public var id: Int { midtermId }
 
+    /// A sitting begun and not handed in — resumable in the centre, even past the deadline.
     public var inProgress: Bool { attemptId != nil && !submitted && state != "NOT_STARTED" }
-
-    /// Why the student cannot begin, in their own terms. Nil when they can.
-    public var blockedReason: String? {
-        if submitted { return nil }
-        if isBeforeStart { return "Opens later" }
-        if awaitingCode { return "Waiting for your teacher to start it" }
-        if !isOpen { return "Closed" }
-        return nil
-    }
 
     private enum CodingKeys: String, CodingKey {
         case title, subject, flavor, state, submitted, score, certificate, deadline
@@ -351,6 +377,8 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
         case durationMinutes = "duration_minutes"
         case questionCount = "question_count"
         case scoreCeiling = "score_ceiling"
+        case scoringScale = "scoring_scale"
+        case resitOpen = "resit_open"
         case attemptId = "attempt_id"
         case isOpen = "is_open"
         case isBeforeStart = "is_before_start"
@@ -367,10 +395,12 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
         durationMinutes = try? c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         questionCount = try? c.decodeIfPresent(Int.self, forKey: .questionCount)
         scoreCeiling = try? c.decodeIfPresent(Double.self, forKey: .scoreCeiling)
+        scoringScale = try? c.decodeIfPresent(String.self, forKey: .scoringScale)
         flavor = try? c.decodeIfPresent(String.self, forKey: .flavor)
         attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
         state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "NOT_STARTED"
         submitted = (try? c.decodeIfPresent(Bool.self, forKey: .submitted)) as? Bool ?? false
+        resitOpen = (try? c.decodeIfPresent(Bool.self, forKey: .resitOpen)) as? Bool ?? false
         isOpen = (try? c.decodeIfPresent(Bool.self, forKey: .isOpen)) as? Bool ?? true
         isBeforeStart = (try? c.decodeIfPresent(Bool.self, forKey: .isBeforeStart)) as? Bool ?? false
         awaitingCode = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingCode)) as? Bool ?? false

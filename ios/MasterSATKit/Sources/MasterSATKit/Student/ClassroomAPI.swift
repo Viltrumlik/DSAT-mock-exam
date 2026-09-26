@@ -36,11 +36,14 @@ public struct ClassroomAPI: Sendable {
 
     /// Classwork for one class — done in the lesson, so it is not in `my-assignments`, which
     /// is homework only.
-    public func classwork(classroomId: Int) async throws -> [AssignmentListing] {
+    ///
+    /// The per-class list is the full assignment serializer and never says which class a row
+    /// belongs to, so the rows are stamped with it here: the detail screen loads by class.
+    public func classwork(classroomId: Int, classroomName: String? = nil) async throws -> [AssignmentListing] {
         try await client.send(
             .get("/classes/\(classroomId)/assignments/", query: [URLQueryItem(name: "category", value: "CLASSWORK")]),
             as: ListOrResults<AssignmentListing>.self
-        ).items
+        ).items.map { $0.inClassroom(id: classroomId, name: classroomName) }
     }
 
     public func people(classroomId: Int) async throws -> [ClassroomMember] {
@@ -57,13 +60,12 @@ public struct ClassroomAPI: Sendable {
         ).items
     }
 
-    /// One leaderboard.
+    /// The class board, ranked on XP.
     ///
-    /// A class can hide its board entirely, and foundation/junior classes do not rank on
-    /// SAT at all — both come back as a successful response describing that, not an error,
-    /// so the caller must read `isHidden` / `satAvailable` rather than treating a short
-    /// list as "nobody has scored yet".
-    public func rankings(classroomId: Int, kind: RankingKind) async throws -> RankingBoard {
+    /// A class can hide its board entirely — that comes back as a successful response
+    /// describing it (`isHidden`, with only the student's own row), not an error, so the
+    /// caller must not read a short list as "nobody has earned anything yet".
+    public func rankings(classroomId: Int, kind: RankingKind = .academic) async throws -> RankingBoard {
         try await client.send(
             .get("/classes/\(classroomId)/rankings/\(kind.path)/"),
             as: RankingBoard.self

@@ -109,9 +109,11 @@ public struct PracticeBundleTest: Decodable, Sendable, Equatable, Identifiable {
     /// sitting finished after the homework was set counts for it.
     public let retake: Bool
     public let collectionName: String?
+    /// Usually blank on a standalone section; `name` is the ready display name.
+    public let title: String?
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, subject, state, retake
+        case id, name, subject, state, retake, title
         case attemptId = "attempt_id"
         case collectionName = "collection_name"
     }
@@ -119,12 +121,49 @@ public struct PracticeBundleTest: Decodable, Sendable, Equatable, Identifiable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(Int.self, forKey: .id)
-        name = (try? c.decodeIfPresent(String.self, forKey: .name)) as? String ?? "Past Paper"
+        // Blank when absent, not "Past Paper": the display falls back through the collection
+        // name and the title first, the way the web's launcher does.
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) as? String ?? ""
         subject = (try? c.decodeIfPresent(String.self, forKey: .subject)) as? String ?? ""
         state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "not_started"
         attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
         retake = (try? c.decodeIfPresent(Bool.self, forKey: .retake)) as? Bool ?? false
         collectionName = try? c.decodeIfPresent(String.self, forKey: .collectionName)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+    }
+}
+
+/// One openable thing inside a homework, as the server names it for the launcher.
+///
+/// `kind` is `QUIZ`, `MOCK`, `PRACTICE` or `PASTPAPER`, in the order the launcher renders
+/// them; `title` is the content's real name ("Practice Test 4", not "Open Past Paper").
+public struct AssignmentContentItem: Decodable, Sendable, Equatable {
+    public let kind: String
+    public let title: String
+    public let itemCount: Int?
+    /// QUIZ only: which of the homework's assessments this is.
+    public let homeworkId: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case kind, title
+        case itemCount = "item_count"
+        case homeworkId = "homework_id"
+    }
+
+    public init(kind: String, title: String, itemCount: Int? = nil, homeworkId: Int? = nil) {
+        self.kind = kind
+        self.title = title
+        self.itemCount = itemCount
+        self.homeworkId = homeworkId
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        kind = (((try? c.decodeIfPresent(String.self, forKey: .kind)) ?? nil) ?? "").uppercased()
+        title = (((try? c.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        itemCount = try? c.decodeIfPresent(Int.self, forKey: .itemCount)
+        homeworkId = try? c.decodeIfPresent(Int.self, forKey: .homeworkId)
     }
 }
 
@@ -133,11 +172,13 @@ public struct AssignmentAttachment: Decodable, Sendable, Equatable, Identifiable
     public let url: String
     public let fileName: String
     public let contentType: String?
+    /// Bytes, when the server could read the file.
+    public let size: Int?
 
     public var id: String { url }
 
     private enum CodingKeys: String, CodingKey {
-        case url
+        case url, size
         case fileName = "file_name"
         case contentType = "content_type"
     }
@@ -147,5 +188,6 @@ public struct AssignmentAttachment: Decodable, Sendable, Equatable, Identifiable
         url = (try? c.decode(String.self, forKey: .url)) ?? ""
         fileName = (try? c.decodeIfPresent(String.self, forKey: .fileName)) as? String ?? "Attachment"
         contentType = try? c.decodeIfPresent(String.self, forKey: .contentType)
+        size = try? c.decodeIfPresent(Int.self, forKey: .size)
     }
 }

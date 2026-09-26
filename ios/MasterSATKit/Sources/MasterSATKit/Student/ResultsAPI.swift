@@ -67,8 +67,8 @@ public struct MidtermResult: Decodable, Sendable, Equatable {
     }
 }
 
-/// A certificate looked up by code. The download itself is a PDF the app opens in a
-/// browser rather than decoding.
+/// A certificate looked up by code. The PDF itself is fetched with `CertificateAPI` — it
+/// needs the student's token, so a browser cannot open it.
 public struct CertificateDetail: Decodable, Sendable, Equatable {
     public let code: String
     public let studentName: String?
