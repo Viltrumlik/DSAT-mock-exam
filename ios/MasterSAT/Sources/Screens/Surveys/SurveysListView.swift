@@ -100,7 +100,8 @@ struct SurveysListView: View {
 struct SurveyListRow: View {
     let survey: SurveyBrief
 
-    private var meta: String {
+    /// Shared with Home's survey card, so the two never describe one survey differently.
+    static func meta(_ survey: SurveyBrief) -> String {
         var parts = [CommunityFormat.count(survey.questionCount, "question", "questions")]
         if let closes = survey.closesDate { parts.append("closes \(CommunityFormat.dayMonth(closes))") }
         // Said before they open it, not after they have typed an opinion they would rather
@@ -117,7 +118,7 @@ struct SurveyListRow: View {
                     .font(.system(size: 15, weight: .heavy))
                     .foregroundStyle(Color.primary)
                     .lineLimit(2)
-                Text(meta)
+                Text(Self.meta(survey))
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)

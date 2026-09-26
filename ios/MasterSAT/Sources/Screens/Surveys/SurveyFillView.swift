@@ -37,10 +37,12 @@ struct SurveyFillView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            guard surveyId > 0, model == nil else { return }
-            let created = SurveyFillModel(surveyId: surveyId, api: SurveysAPI(client: session.client))
-            model = created
-            await created.load()
+            guard surveyId > 0 else { return }
+            let current = model ?? SurveyFillModel(surveyId: surveyId, api: SurveysAPI(client: session.client))
+            if model == nil { model = current }
+            // Re-appearing after an interrupted first load tries again; a loaded form is left
+            // exactly as the student left it.
+            if current.phase != .loaded { await current.load() }
         }
     }
 }
