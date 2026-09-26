@@ -33,7 +33,6 @@ vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ bootState: "AUTHENTICATED" }) 
 const { useTeacherDashboard } = await import("../useTeacherDashboard");
 const { useTeacherAnalytics } = await import("../useTeacherAnalytics");
 const { useGradebook } = await import("../useGradebook");
-const { useGradingQueue } = await import("../useGradingQueue");
 
 /** A `GET /api/classes/` row in the serializer's wire shape. */
 function classRow(id: number, myRole: string) {
@@ -241,16 +240,5 @@ describe("useGradebook — the classes it offers", () => {
     expect(selectedClassId).toBeNull();
     expect(api.people).not.toHaveBeenCalled();
     expect(api.listAssignments).not.toHaveBeenCalled();
-  });
-});
-
-describe("useGradingQueue — the classes it collects from", () => {
-  it("looks for work to grade in OWNER, ADMIN, TEACHER and TA classes, never in a class the user sits in", async () => {
-    listClasses([SITS_IN, ...TEACHES]);
-    const { items } = await settle(() => useGradingQueue(), (value) => !value.loading);
-
-    expect(requested(api.listAssignments)).toEqual([1, 2, 3, 4]);
-    expect(requested(api.listSubmissions)).toEqual([1, 2, 3, 4]);
-    expect(items.map((item) => item.classId).sort((a, b) => a - b)).toEqual([1, 2, 3, 4]);
   });
 });

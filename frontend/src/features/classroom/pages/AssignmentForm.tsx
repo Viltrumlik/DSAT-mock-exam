@@ -19,6 +19,7 @@ import {
   ClassroomButton,
   ClassroomField,
   crInputClass,
+  crInputInvalidClass,
   crTextareaClass,
 } from "@/components/classroom";
 import { SegmentedControl } from "@/components/SegmentedControl";
@@ -158,8 +159,41 @@ function readContentWarnings(res: unknown): string[] {
 // A live-cart entry (aggregates selections across every tab in the left column).
 type CartItem = { key: string; type: "pastpaper" | "practice" | "assessment" | "vocabulary"; title: string; meta: string; assigned: boolean; onRemove: () => void };
 
+/**
+ * The cart's kinds in the words a teacher uses, singular and plural.
+ *
+ * All four are scored by an engine — rewards.homework.bundle_items counts assessments,
+ * vocabulary and the pastpaper/pack slot, and drops only the hand-in, which is the very
+ * thing the teacher marks. So these four, and nothing else on the form, are what fills
+ * the rest of the grade.
+ */
+const AUTO_GRADED_NOUNS: Record<CartItem["type"], [string, string]> = {
+  assessment: ["assessment", "assessments"],
+  vocabulary: ["vocabulary set", "vocabulary sets"],
+  pastpaper: ["past paper", "past papers"],
+  practice: ["practice test", "practice tests"],
+};
+
+type AutoGradedCounts = Record<CartItem["type"], number>;
+
+/** "4 assessments and 2 vocabulary sets". Empty when nothing auto-graded is attached. */
+function listAutoGradedParts(counts: AutoGradedCounts): string {
+  const order: CartItem["type"][] = ["assessment", "vocabulary", "pastpaper", "practice"];
+  const phrases = order
+    .filter((type) => counts[type] > 0)
+    .map((type) => `${counts[type]} ${AUTO_GRADED_NOUNS[type][counts[type] === 1 ? 0 : 1]}`);
+  if (phrases.length <= 1) return phrases.join("");
+  return `${phrases.slice(0, -1).join(", ")} and ${phrases[phrases.length - 1]}`;
+}
+
 export default function AssignmentForm({ classId, editingAssignment = null, kind = "HOMEWORK", onCancel, onSaved }: Props) {
   const isEditing = editingAssignment != null;
+  // A draft being edited has not reached the class yet, so the primary button publishes it.
+  // Once it is out, the same button only saves — a teacher must never press a button whose
+  // label promises something other than what it does.
+  const isEditingDraft =
+    isEditing &&
+    String((editingAssignment as { status?: string })?.status || "").toUpperCase() === "DRAFT";
   // When editing, the kind is whatever the row already is — the prop only chooses what a NEW
   // one will be, and re-categorising existing work from this form would silently move it in
   // or out of automatic scoring.
@@ -181,6 +215,14 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   // Whether students may upload a file as their submission (independent of any
   // attached pastpaper/assessment — both can coexist, so manual + auto grading).
   const [allowFileUpload, setAllowFileUpload] = useState(false);
+  // Part of the grade is a mark the teacher gives by hand. OFF is today's behaviour and
+  // sends nothing at all, so `manual_grade_weight_percent` stays NULL and no homework that
+  // already exists reads any differently.
+  const [manualGradeOn, setManualGradeOn] = useState(false);
+  // The typed STRING, not a number. An empty box and a 0 are different answers here — 0 is
+  // a legal share, a review the teacher wants to give that carries no weight — and
+  // Number("") is 0, which would silently turn "I haven't said yet" into one of them.
+  const [manualShareText, setManualShareText] = useState("");
   const [selectedTestIds, setSelectedTestIds] = useState<Set<number>>(new Set());
   const [selectedAssessmentIds, setSelectedAssessmentIds] = useState<Set<number>>(new Set());
   // Sets this assignment ALREADY holds (captured on edit-hydrate). They read as
@@ -323,6 +365,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     setVideoKey(null);
     setVideoRemoved(false);
     setAllowFileUpload(false);
+    setManualGradeOn(false);
+    setManualShareText("");
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
     setOwnAssessmentSetIds(new Set());
@@ -477,6 +521,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     setSelectedVocabSetIds(nextVocabSetIds);
     setAllowFileUpload(Boolean(editingAssignment.allow_file_upload));
 
+    // The share the teacher already chose. Tested against null rather than truthiness: 0 is
+    // a share a teacher can deliberately set, and reading it as "off" would clear it on the
+    // next save.
+    const rawShare = editingAssignment.manual_grade_weight_percent;
+    const savedShare = rawShare == null ? null : Number(rawShare);
+    const hasSavedShare = savedShare != null && Number.isFinite(savedShare);
+    setManualGradeOn(hasSavedShare);
+    setManualShareText(hasSavedShare ? String(savedShare) : "");
+
     const ps = editingAssignment.practice_scope;
     if (ps === "ENGLISH" || ps === "MATH" || ps === "BOTH") setPracticeScope(ps);
     setAsgFiles([]);
@@ -485,12 +538,33 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     setFormError(null);
   }, [editingAssignment]);
 
+  // ── The teacher's own share of the grade ────────────────────────────────────
+  // 0 and 100 are both legal and mean different things; everything else is refused here,
+  // before the request, rather than coming back as a 400 the teacher has to decode.
+  const manualShareTyped = manualShareText.trim();
+  const manualShare = manualShareTyped === "" ? null : Number(manualShareTyped);
+  const manualShareError: string | null = !manualGradeOn
+    ? null
+    : manualShare === null
+      ? "Say what share of the grade you mark yourself."
+      : !Number.isInteger(manualShare)
+        ? "Use a whole number of percent."
+        : manualShare < 0 || manualShare > 100
+          ? "A share runs from 0 to 100."
+          : null;
+
   const handleSubmit = async (
     publishStatus: "DRAFT" | "PUBLISHED" = "PUBLISHED",
     allowUnapproved = false,
   ) => {
     setFormError(null);
     setContentWarnings([]);
+    if (manualShareError) {
+      // The buttons are disabled on this too, but "Save as draft" and "Publish" are two of
+      // them and a disabled button is a style: the request itself is what must not leave.
+      setFormError(manualShareError);
+      return;
+    }
     // Guard: warn before assigning an assessment that isn't approved yet so a
     // teacher doesn't hand out an incomplete/unchecked set by mistake. The backend
     // enforces the same gate — allow_unapproved is only sent after the teacher agrees.
@@ -534,6 +608,21 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           practice_scope: practiceScope,
           allow_file_upload: allowFileUpload,
           allow_unapproved: allowUnapproved,
+          // Sent on every save, both ways round. Switching the toggle off has to CLEAR the
+          // column — omitting the key would leave yesterday's share standing on a homework
+          // whose form now says it has none — and publishing a draft runs through this same
+          // body, which is the path a field has already been dropped on once.
+          manual_grade_weight_percent: manualGradeOn ? manualShare : null,
+          // Only a DRAFT's buttons decide a status. Leaving `status` out is what kept a draft
+          // a draft no matter which button was pressed — a partial update simply never
+          // touched it, so "Publish" saved the edits and the row still read "Not published" —
+          // but sending it unconditionally is worse, and in the other direction: on an
+          // ARCHIVED row the primary button reads "Save changes" and would carry
+          // status: "PUBLISHED", putting last term's homework back in front of the whole
+          // class off a typo fix. A partial update that omits `status` leaves it exactly as
+          // it stands, which is what a plain save means. Republishing archived work is the
+          // Unarchive action's job, and it has a tail this save does not run.
+          ...(isEditingDraft ? { status: publishStatus } : {}),
         };
 
         const updated = await classesApi.updateAssignment(classId, editId, body);
@@ -582,6 +671,12 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
         fd.append("vocabulary_set_ids", JSON.stringify([...selectedVocabSetIds]));
       }
       fd.append("allow_file_upload", String(allowFileUpload));
+      // Off sends nothing at all: the column defaults to NULL, and NULL is what means "no
+      // manual component". A 0 would mean something else — a review that carries no weight —
+      // and every homework created before this toggle existed would start claiming one.
+      if (manualGradeOn && manualShare != null) {
+        fd.append("manual_grade_weight_percent", String(manualShare));
+      }
       for (const f of asgFiles) fd.append("attachment_file", f);
 
       // The server reads this to decide the deadline: CLASSWORK gets none, and none is what
@@ -724,9 +819,51 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedPackIds, selectedAssessmentIds, selectedVocabSetIds, vocabSetIndex, sectionAssigned]);
 
+  // What the automatic side of the grade is actually made of, named rather than counted:
+  // "the other 80%" against nothing in particular is a number a teacher cannot check.
+  //
+  // Counted off the SELECTED IDS — what the save actually sends — and not off the cart. The
+  // cart can only show what the picker's options response listed, and an attached assessment
+  // or past paper is missing from it while that fetch is in flight, or for good once the set
+  // falls outside the picker's is_active/subject/level scope. Counting the cart told a
+  // teacher with four assessments attached that nothing filled their other 80% and invited
+  // them to make their share 100% — which would have handed the whole grade to their own
+  // mark on a homework that was already composing 20/80 correctly.
+  const autoGradedCounts = useMemo<AutoGradedCounts>(() => {
+    // One pastpaper card is one "past paper" to a teacher but several section rows to the
+    // API, so group by card where the cards are known and count anything left over singly.
+    const grouped = new Set<number>();
+    let pastpaper = 0;
+    for (const c of pastpaperCards) {
+      const ids = cardSectionIds(c);
+      if (ids.length === 0 || !ids.every((id) => selectedTestIds.has(id))) continue;
+      pastpaper += 1;
+      for (const id of ids) grouped.add(id);
+    }
+    for (const id of selectedTestIds) if (!grouped.has(id)) pastpaper += 1;
+    return {
+      assessment: selectedAssessmentIds.size,
+      vocabulary: selectedVocabSetIds.size,
+      pastpaper,
+      practice: selectedPackIds.size,
+    };
+  }, [pastpaperCards, selectedTestIds, selectedAssessmentIds, selectedVocabSetIds, selectedPackIds]);
+  const autoGradedSummary = useMemo(() => listAutoGradedParts(autoGradedCounts), [autoGradedCounts]);
+  const hasAutoGradedContent = autoGradedSummary !== "";
+  // A share below 100 says the rest of the grade comes from work that marks itself. With
+  // nothing attached that marks itself, the grade cannot be completed as described — and
+  // the teacher should learn that here, while they are still editing, not from a grade
+  // that quietly turned out to mean something else. It stays a warning rather than a block:
+  // the content may be arriving next, and the server already decides the case rather than
+  // guessing (the mark takes the whole grade), which is exactly what this says.
+  const manualShareContradiction =
+    manualGradeOn && !manualShareError && manualShare != null && manualShare < 100 && !hasAutoGradedContent;
+  /** The share once it is a number this form would actually send; null while it is not. */
+  const manualShareSettled = manualGradeOn && !manualShareError ? manualShare : null;
+
   const hasTitle = newAsg.title.trim().length > 0;
   const hasInstructions = newAsg.instructions.trim().length > 0;
-  const ready = hasTitle && hasInstructions;
+  const ready = hasTitle && hasInstructions && !manualShareError;
   const submitDisabled = !ready || creatingAsg;
   const existingAttachments = readAttachments(editingAssignment);
 
@@ -734,9 +871,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     ? "Add a title to get started."
     : !hasInstructions
       ? "Add instructions for students."
-      : cartItems.length === 0 && !allowFileUpload && !links.some((l) => l.url.trim()) && asgFiles.length === 0
-        ? "Add content, a file upload, or a link — then publish."
-        : "Ready to publish.";
+      : manualShareError
+        ? `${manualShareError} It is on the Submission tab.`
+        // The cart is emptied from THIS column, so a homework can lose its last auto-graded
+        // part while the Submission tab — where the warning sits — is out of sight.
+        : manualShareContradiction
+          ? "Nothing here is graded automatically — check your share on the Submission tab."
+          : cartItems.length === 0 && !allowFileUpload && !links.some((l) => l.url.trim()) && asgFiles.length === 0
+            ? "Add content, a file upload, or a link — then publish."
+            : "Ready to publish.";
 
   // ── Small style helpers ─────────────────────────────────────────────────────
   const cartDot: Record<CartItem["type"], string> = {
@@ -1030,16 +1173,19 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           {/* Sticky footer — readiness + actions */}
           <div className="border-t border-border bg-panel px-5 pb-[18px] pt-3.5">
             <p className="mb-2.5 flex items-center gap-2 text-[12.5px] font-semibold text-muted-foreground">
-              <span className={`h-[7px] w-[7px] shrink-0 rounded-full transition-colors ${ready ? "bg-emerald-500" : "bg-amber-500"}`} /> {footerHint}
+              <span className={`h-[7px] w-[7px] shrink-0 rounded-full transition-colors ${ready && !manualShareContradiction ? "bg-emerald-500" : "bg-amber-500"}`} /> {footerHint}
             </p>
             <div className="flex gap-2">
               <ClassroomButton type="button" variant="secondary" onClick={onCancel}>Cancel</ClassroomButton>
-              {!isEditing && (
+              {/* Editing a draft keeps the choice the create form offers: put the work down
+                  again without handing it to the class. A published row has no such button —
+                  taking work back off the class is a retraction, not a save. */}
+              {(!isEditing || isEditingDraft) && (
                 <ClassroomButton type="button" variant="secondary" className="cr-press cr-ripple" onPointerDown={spawnRipple} onClick={() => handleSubmit("DRAFT")} disabled={submitDisabled}>Save as draft</ClassroomButton>
               )}
               <ClassroomButton type="button" variant="primary" className="cr-press cr-ripple flex-1" onPointerDown={spawnRipple} onClick={() => handleSubmit("PUBLISHED")} disabled={submitDisabled}>
                 {creatingAsg ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                {isEditing ? "Save changes" : "Publish assignment"}
+                {isEditing ? (isEditingDraft ? "Publish" : "Save changes") : "Publish assignment"}
                 {cartItems.length > 0 ? <span className="ml-1 rounded-md bg-white/25 px-1.5 py-0.5 text-xs">{cartItems.length}</span> : null}
               </ClassroomButton>
             </div>
@@ -1219,6 +1365,82 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
                   <span className={`inline-block h-[19px] w-[19px] transform rounded-full bg-white shadow-sm transition-transform duration-200 ${allowFileUpload ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
                 </button>
               </div>
+
+              {/* The part of the grade the teacher marks by hand.
+                  HOMEWORK only, and the gate is not pedantry. The owner asked for this on
+                  homework, and classwork lives in a different grading world: its points are
+                  given by a teacher's hand rather than earned — `rewards.homework
+                  .recompute_bundle` returns early for CATEGORY_CLASSWORK and says so. Offering
+                  a share there would describe a split that nothing downstream performs. */}
+              {effectiveKind === "HOMEWORK" && (
+              <div className="flex flex-col gap-3 border-t border-border pt-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-bold text-foreground">This {copy.noun} has a part I mark myself</div>
+                    <p className="mt-1 text-[12.5px] text-muted-foreground">
+                      For work you read and mark — an essay, a hand-written sheet. The rest of the grade
+                      comes from the content attached here, which marks itself.
+                    </p>
+                  </div>
+                  <button type="button" role="switch" aria-checked={manualGradeOn} aria-label={`This ${copy.noun} has a part I mark myself`}
+                    onClick={() => setManualGradeOn((v) => !v)}
+                    className={`inline-flex h-[25px] w-[44px] shrink-0 items-center rounded-full transition-colors ${manualGradeOn ? "bg-primary" : "bg-border"}`}>
+                    <span className={`inline-block h-[19px] w-[19px] transform rounded-full bg-white shadow-sm transition-transform duration-200 ${manualGradeOn ? "translate-x-[22px]" : "translate-x-[3px]"}`} />
+                  </button>
+                </div>
+
+                {manualGradeOn ? (
+                  <div className="flex flex-col gap-3 rounded-[14px] border-[1.5px] border-border bg-card px-4 py-3.5">
+                    <ClassroomField label="Share of the grade you mark" htmlFor="asg-manual-share" hint="A whole number from 0 to 100." error={manualShareError}>
+                      <div className="flex items-center gap-2">
+                        <input
+                          id="asg-manual-share" type="number" inputMode="numeric" min={0} max={100} step={1}
+                          value={manualShareText}
+                          onChange={(e) => setManualShareText(e.target.value)}
+                          aria-invalid={manualShareError != null}
+                          placeholder="20"
+                          className={`${crInputClass} ${manualShareError ? crInputInvalidClass : ""} w-[6.5rem] font-semibold`}
+                        />
+                        <span className="text-[13.5px] font-bold text-muted-foreground">% of the grade</span>
+                      </div>
+                    </ClassroomField>
+
+                    {manualShareSettled == null ? null : manualShareContradiction ? (
+                      // The kit's own alert, not a hand-mixed amber: one set of colours that
+                      // is already right in both themes, and one place to change them.
+                      <ClassroomAlert tone="warning" className="text-[12.5px] leading-snug">
+                        {manualShareSettled === 0
+                          ? "Your mark is set to carry no weight, and nothing here is graded automatically — so this grade would have nothing in it. Add an assessment, a vocabulary set or a past paper, or raise your share."
+                          : `Nothing here is graded automatically, so there is nothing to fill the other ${100 - manualShareSettled}%. Add an assessment, a vocabulary set or a past paper — or make your share 100%. As it stands, your mark becomes the whole grade.`}
+                      </ClassroomAlert>
+                    ) : (
+                      <p className="text-[12.5px] leading-snug text-muted-foreground">
+                        {manualShareSettled === 100 ? (
+                          <>
+                            You mark <strong className="text-foreground">the whole grade</strong>.
+                            {hasAutoGradedContent ? ` The ${autoGradedSummary} attached here still earn points, but nothing of this grade.` : ""}
+                          </>
+                        ) : manualShareSettled === 0 ? (
+                          <>
+                            Your mark carries <strong className="text-foreground">no weight</strong> — the whole grade comes from
+                            the {autoGradedSummary}. Read the work and comment on it without changing the grade.
+                          </>
+                        ) : (
+                          <>
+                            You mark <strong className="text-foreground">{manualShareSettled}%</strong> of the grade. The other{" "}
+                            <strong className="text-foreground">{100 - manualShareSettled}%</strong> comes from the {autoGradedSummary} attached here.
+                          </>
+                        )}
+                      </p>
+                    )}
+
+                    <p className={captionCls}>
+                      Until you enter your mark, students see the automatic part of their grade and a line saying you are still checking it.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+              )}
 
               {/* External links */}
               <ClassroomField label="External links" hint="Add one or more links to outside material, like videos or articles. Give a link a name and students see the name instead of the address.">

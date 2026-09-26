@@ -126,7 +126,7 @@ export function useTeacherDashboard(previewModel?: TeacherDashboardModel): Teach
         (iv?.overdue_students ?? []).forEach((s) => {
           const key = `${c.id}-${s.student_id}`;
           if (seenAttention.has(key)) return; seenAttention.add(key);
-          needsAttention.push({ id: key, name: fullName(s), avatarUrl: s.profile_image_url ?? null, reason: `${s.overdue_count} missing · ${cname}`, tone: "warning" });
+          needsAttention.push({ id: key, name: fullName(s), avatarUrl: s.profile_image_url ?? null, reason: `${s.overdue_count} not turned in · ${cname}`, tone: "warning" });
         });
 
         (iv?.completion_summary ?? []).forEach((a) => {

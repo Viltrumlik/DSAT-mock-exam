@@ -1464,6 +1464,16 @@ export const classesApi = {
         const r = await api.get(`/classes/${classId}/interventions/`);
         return r.data;
     },
+    /**
+     * Teacher: today's lessons, the work waiting to be checked and the midterms coming, for
+     * every class the caller teaches — in ONE request. The teacher dashboard used to assemble
+     * this by fanning out two requests per class, which made it the panel's heaviest page.
+     * Shape lives with its consumer in `features/teacher/useTeacherToday.ts`.
+     */
+    teacherToday: async () => {
+        const r = await api.get('/classes/teacher/today/');
+        return r.data;
+    },
     // --- Roster management (ops admin) ---
     /** Full roster for a classroom (admins can read any class). Pass includeRemoved to also see removed members. */
     roster: async (classId: number, includeRemoved = false): Promise<ClassroomMember[]> => {

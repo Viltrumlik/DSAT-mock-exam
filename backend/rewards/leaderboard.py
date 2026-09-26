@@ -60,6 +60,59 @@ WINDOW_CHOICES = (WINDOW_ALL, WINDOW_MONTH)
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 
+# ── Ranking ───────────────────────────────────────────────────────────────────
+
+_NO_KEY_YET = object()      # no XP total can equal it, so the first row always opens a rank
+
+
+def competition_ranks(ordered, *, key):
+    """Yield ``(rank, item)`` over an already-ordered board, numbering equal keys equally.
+
+    A drop-in for ``enumerate(ordered, start=1)``, which is what every board in this product
+    used to do and is what a teacher reported as a bug: two students on the same XP were
+    handed different numbers, and the one printed second could read that only as "I am behind
+    them". Competition ranking says what the board actually means. XP 100, 90, 90, 80 ranks
+    1, 2, 2, 4 — the two 90s share second place, and the 80 keeps the position it genuinely
+    occupies rather than being promoted to third by a tie it had no part in.
+
+    **The rank key is XP alone. The display order is not, and that separation is the point.**
+    Callers sort by ``(-xp, -awards, student_id)`` so that two tied students come out in the
+    same order on every call and a board does not reshuffle itself under a student who
+    refreshes it. They pass only the XP to this function. The number of *awards* behind a
+    total appears on no screen a student or a teacher looks at — not on the board, not on the
+    Points page — and splitting a visible tie on an invisible number reproduces the exact
+    complaint this exists to answer: same XP, different rank. Ordering is presentation and may
+    use whatever it likes; ranking may only use what the reader can see for themselves.
+
+    ``ordered`` must already be in the order it will be shown, because a rank here is a
+    position within that sequence — the first item is rank 1 whatever its key is. A caller
+    that truncates may do so before ranking: lopping the tail off a descending list cannot
+    move any row that survives, so ranks derived from the slice are the same ranks the full
+    board would have given those rows. What a truncated board cannot do is tell a student
+    their own rank when they fall off the end, which is why :func:`rank_of` exists and counts
+    instead of slicing.
+
+    It yields rather than writing ``item["rank"]`` because its three callers hold different
+    shapes — two hold row dicts, and ``classes.ranking.service`` holds ``(student_id, row)``
+    pairs whose rank goes to a snapshot column rather than into the row.
+    """
+    rank = 0
+    previous = _NO_KEY_YET
+    for position, item in enumerate(ordered, start=1):
+        current = key(item)
+        if current != previous:
+            rank, previous = position, current
+        yield rank, item
+
+
+def xp_rank_key(row) -> int:
+    """The rank key itself, named once so three boards in two apps cannot drift apart on it.
+
+    ``Sum`` hands back None for a student with nothing, and None is not comparable against an
+    int — a rank key has to be a number before it is compared to one.
+    """
+    return int(row["xp"] or 0)
+
 
 @dataclass(frozen=True)
 class BoardQuery:
@@ -235,8 +288,10 @@ def _group_rows(query: BoardQuery) -> list[dict]:
         cell["xp"] += int(row["xp"] or 0)
         cell["awards"] += int(row["awards"] or 0)
 
+    # Sorted on three keys, ranked on one — see `competition_ranks`. The earning count and the
+    # student id are here to make the order repeatable, not to break a tie in the numbering.
     ordered = sorted(totals.values(), key=lambda r: (-r["xp"], -r["awards"], r["student_id"]))
-    for rank, row in enumerate(ordered, start=1):
+    for rank, row in competition_ranks(ordered, key=xp_rank_key):
         row["rank"] = rank
     return ordered
 
@@ -244,8 +299,12 @@ def _group_rows(query: BoardQuery) -> list[dict]:
 def board(query: BoardQuery, viewer):
     """``(rows, meta)`` — the ranked slice, plus what it took to build it.
 
-    Rows are ``{student_id, xp, awards, rank}`` in rank order, ties broken by earning count
-    then student id so the order is stable between two calls that return the same numbers.
+    Rows are ``{student_id, xp, awards, rank}`` in rank order. Two students on the same XP
+    carry the same ``rank`` (:func:`competition_ranks`) and are still emitted in a fixed
+    order — earning count, then student id — so a board does not reshuffle between two calls
+    that return the same numbers. The tie-break decides who is printed first; it never
+    decides who is ranked higher.
+
     Names and photos are the caller's job: this module knows nothing about display, and the
     view is where anonymity policy would belong.
     """
@@ -260,9 +319,13 @@ def board(query: BoardQuery, viewer):
             .annotate(xp=Sum("xp"), awards=Count("id"))
             .order_by("-xp", "-awards", "student_id")[: query.limit]
         )
-        for rank, row in enumerate(rows, start=1):
+        # Normalised before ranking rather than inside the same pass: `competition_ranks`
+        # compares one row's key against the last one's, so every key has to be a settled
+        # number by the time the first comparison happens.
+        for row in rows:
+            row["xp"] = xp_rank_key(row)
+        for rank, row in competition_ranks(rows, key=xp_rank_key):
             row["rank"] = rank
-            row["xp"] = int(row["xp"] or 0)
 
     return rows, {
         "scope": query.scope,
@@ -334,7 +397,15 @@ def rank_of(student, query: BoardQuery, viewer=None):
         "student_id": student.pk,
         "xp": my_xp,
         "awards": int(mine["awards"] or 0),
-        # +1 for the student themselves. Ties share the lower rank, which is the convention
-        # the classroom boards already use.
+        # Counting everyone strictly ahead on XP, +1 for the student themselves, *is*
+        # competition ranking — the same rule `competition_ranks` applies to a materialised
+        # board, written as an aggregate because this path never materialises one. Ties share
+        # a number here because two students on the same XP have the same count ahead of them.
+        #
+        # This line was right before the boards were, and that gap is what a teacher reported:
+        # a student's own card said #4 while the list beside it printed #5 against the
+        # identical XP, because the list was numbering positions and this was counting rivals.
+        # `competition_ranks` is now the definition both sides answer to; if that rule ever
+        # changes, it changes there and this aggregate has to be re-derived to match.
         "rank": ahead + 1,
     }

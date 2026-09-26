@@ -2,23 +2,18 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, ChevronRight, GraduationCap, Sparkles, Bot, User2, ClipboardList } from "lucide-react";
+import { ArrowLeft, ChevronRight, GraduationCap, Sparkles, Bot, User2, ClipboardList, Lock } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { Avatar } from "@/components/ui/Avatar";
 import { normalizeApiError } from "@/lib/apiError";
-import { pushGlobalToast } from "@/lib/toastBus";
-import { Card, CardHeader, Button, Pill, Field, Input, Textarea, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
-import type { PillTone } from "../ui";
+import { Card, CardHeader, Button, Pill, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
 import type { ClassroomWithRole } from "../types";
-import { useGradebookOverview, useGradebookAssignment, useGradeSubmission, useReturnSubmission } from "../gradebookHooks";
+import { capabilitiesFor } from "../capabilities";
+import { useGradebookOverview, useGradebookAssignment } from "../gradebookHooks";
 import type { GradebookStatus, RosterRow, GradebookCounts } from "../gradebookApi";
-
-const STATUS_META: Record<GradebookStatus, { label: string; tone: PillTone; bar: string }> = {
-  GRADED: { label: "Graded", tone: "success", bar: "bg-emerald-500" },
-  SUBMITTED: { label: "Needs grading", tone: "warning", bar: "bg-amber-500" },
-  NEEDS_REVISION: { label: "Needs revision", tone: "info", bar: "bg-sky-500" },
-  MISSING: { label: "Missing", tone: "neutral", bar: "bg-slate-300 dark:bg-slate-600" },
-};
+import { STATUS_META } from "./gradebookStatus";
+import { GradeForm } from "./GradeForm";
+import { StudentWork } from "./StudentWork";
 
 function DistributionBar({ counts, autoGraded }: { counts: GradebookCounts; autoGraded: boolean }) {
   const total = Math.max(1, counts.total);
@@ -65,6 +60,15 @@ export function Gradebook({ classroom }: { classroom: ClassroomWithRole }) {
     url.searchParams.delete("assignment");
     window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
+  // This tree is mounted by the student site too, which rewrites `my_role` on the way in. The
+  // workspace already withholds the tab, and this is the gate that holds if anything ever mounts
+  // the page directly: below it sits another student's uploaded work.
+  if (!capabilitiesFor(classroom.my_role).canGrade) {
+    return (
+      <EmptyState icon={Lock} title="Grading is for the teaching team"
+        description="Your own grades and feedback are on the Assignments tab." />
+    );
+  }
   return openId
     ? <RosterView classId={classId} assignmentId={openId} onBack={() => setOpenId(null)} />
     : <Overview classId={classId} onOpen={setOpenId} />;
@@ -104,7 +108,7 @@ function Overview({ classId, onOpen }: { classId: number; onOpen: (id: number) =
               <span className="text-emerald-600">{a.counts.graded} graded</span>
               {!a.is_auto_graded && a.counts.needs_grading > 0 && <span className="text-amber-600">{a.counts.needs_grading} to grade</span>}
               {a.counts.needs_revision > 0 && <span className="text-sky-600">{a.counts.needs_revision} revising</span>}
-              {a.counts.missing > 0 && <span>{a.counts.missing} missing</span>}
+              {a.counts.missing > 0 && <span>{a.counts.missing} not turned in</span>}
               {a.is_auto_graded && a.performance?.average != null && (
                 <span className="text-primary">Avg {a.performance.average} · High {a.performance.highest} · Low {a.performance.lowest}</span>
               )}
@@ -121,6 +125,8 @@ type Filter = "ALL" | GradebookStatus;
 function RosterView({ classId, assignmentId, onBack }: { classId: number; assignmentId: number; onBack: () => void }) {
   const { data, isLoading, isError, error, refetch } = useGradebookAssignment(classId, assignmentId);
   const [filter, setFilter] = useState<Filter>("ALL");
+  /** The student whose work is open, one level down. */
+  const [openStudent, setOpenStudent] = useState<number | null>(null);
 
   const rows = useMemo(() => {
     const all = data?.roster ?? [];
@@ -152,10 +158,29 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
   // Archived homework is hidden from students, so nothing on it is graded or returned here: work returned
   // for revision would go to a student who can no longer open it. Archiving promises the grades are kept.
   const archived = a.status === "ARCHIVED";
+
+  // Read from the WHOLE class list, never from the filtered rows: grading the student on screen
+  // drops them out of the "Needs grading" filter they were opened under, and their work must not
+  // vanish from under the teacher the moment they save it.
+  const chosen = openStudent == null ? null : data.roster.find((r) => r.student_id === openStudent);
+  if (chosen) {
+    return (
+      <StudentWork
+        classId={classId}
+        assignment={a}
+        row={chosen}
+        students={rows}
+        readOnly={archived}
+        onBack={() => setOpenStudent(null)}
+        onOpenStudent={setOpenStudent}
+      />
+    );
+  }
+
   const chips: { key: Filter; label: string; n: number }[] = [
     { key: "ALL", label: "All", n: c.total },
     ...(!a.is_auto_graded ? [{ key: "SUBMITTED" as Filter, label: "Needs grading", n: c.needs_grading }] : []),
-    { key: "MISSING", label: "Missing", n: c.missing },
+    { key: "MISSING", label: "Not turned in", n: c.missing },
     { key: "NEEDS_REVISION", label: "Revising", n: c.needs_revision },
     { key: "GRADED", label: "Graded", n: c.graded },
   ];
@@ -196,7 +221,7 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
           {rows.length === 0 ? (
             <EmptyState icon={Sparkles} title="Nothing here" description="No students in this view." />
           ) : rows.map((r) => (
-            <RosterRowItem key={r.student_id} classId={classId} assignmentId={assignmentId} row={r} autoGraded={a.is_auto_graded} maxScore={a.max_score} readOnly={archived} />
+            <RosterRowItem key={r.student_id} classId={classId} assignmentId={assignmentId} row={r} autoGraded={a.is_auto_graded} maxScore={a.max_score} readOnly={archived} onOpen={() => setOpenStudent(r.student_id)} />
           ))}
         </div>
       </Card>
@@ -204,45 +229,29 @@ function RosterView({ classId, assignmentId, onBack }: { classId: number; assign
   );
 }
 
-function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore, readOnly }: {
+function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore, readOnly, onOpen }: {
   classId: number; assignmentId: number; row: RosterRow; autoGraded: boolean; maxScore: string | null; readOnly: boolean;
+  onOpen: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [score, setScore] = useState(row.grade ?? "");
-  const [feedback, setFeedback] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const grade = useGradeSubmission(classId, assignmentId);
-  const ret = useReturnSubmission(classId, assignmentId);
 
   const meta = STATUS_META[row.status];
   // Manual grading only: a submitted/returned/graded manual row with a submission can be graded, while the
   // homework is not archived.
   const canGrade = !readOnly && !autoGraded && row.submission_id != null && row.status !== "MISSING";
 
-  async function save() {
-    setErr(null);
-    try {
-      await grade.mutateAsync({ submissionId: row.submission_id as number, grade: String(score), feedback });
-      pushGlobalToast({ tone: "success", message: `Saved grade for ${row.name}.` });
-      setOpen(false);
-    } catch (e) { setErr(normalizeApiError(e).message); }
-  }
-  async function doReturn() {
-    setErr(null);
-    try {
-      await ret.mutateAsync({ submissionId: row.submission_id as number, note: feedback });
-      pushGlobalToast({ tone: "success", message: `Returned ${row.name}'s work for revision.` });
-      setOpen(false);
-    } catch (e) { setErr(normalizeApiError(e).message); }
-  }
-
   return (
     <div className="py-2.5">
       <div className="flex items-center justify-between gap-3">
-        <span className="flex min-w-0 items-center gap-2">
+        {/* The name is the way in to the work itself — every student, graded or not, since a
+            teacher reads what was turned in as often as they change a mark. */}
+        <button type="button" onClick={onOpen}
+          className="group flex min-w-0 items-center gap-2 rounded-lg text-left"
+          aria-label={`Open ${row.name}'s work`}>
           <Avatar src={row.profile_image_url} name={row.name} size={26} />
-          <span className="min-w-0 truncate text-sm text-foreground">{row.name}</span>
-        </span>
+          <span className="min-w-0 truncate text-sm text-foreground group-hover:text-primary">{row.name}</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
+        </button>
         <div className="flex shrink-0 items-center gap-2">
           {row.status === "GRADED" && row.grade != null && (
             <span className="text-sm font-semibold text-foreground">
@@ -261,22 +270,16 @@ function RosterRowItem({ classId, assignmentId, row, autoGraded, maxScore, readO
       </div>
 
       {open && canGrade && (
-        <div className="mt-3 space-y-3 rounded-xl border border-border bg-surface-2/40 p-3">
-          {err && <p className="text-xs text-rose-500">{err}</p>}
-          <div className="flex items-end gap-3">
-            <Field label="Score" className="w-32">
-              <Input type="number" value={score} onChange={(e) => setScore(e.target.value)} placeholder={maxScore ? `/ ${maxScore}` : "Score"} />
-            </Field>
-          </div>
-          <Field label="Feedback (optional)">
-            <Textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} placeholder="Notes for the student…" className="min-h-[5rem]" />
-          </Field>
-          <div className="flex gap-2">
-            <Button size="sm" loading={grade.isPending} onClick={save} disabled={String(score).trim() === ""}>Save grade</Button>
-            <Button size="sm" variant="secondary" loading={ret.isPending} onClick={doReturn}>Return for revision</Button>
-            <Button size="sm" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          </div>
-        </div>
+        <GradeForm
+          classId={classId}
+          assignmentId={assignmentId}
+          submissionId={row.submission_id as number}
+          studentName={row.name}
+          maxScore={maxScore}
+          initialScore={row.grade}
+          onCancel={() => setOpen(false)}
+          onDone={() => setOpen(false)}
+        />
       )}
     </div>
   );

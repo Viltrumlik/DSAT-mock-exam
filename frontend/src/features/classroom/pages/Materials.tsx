@@ -5,7 +5,7 @@ import { Download, Trash2, Upload, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
-import { Card, Button, TextField, Dialog, LoadingState, EmptyState, ConfirmDialog } from "../ui";
+import { Card, Button, TextField, Dialog, LoadingState, ErrorState, EmptyState, ConfirmDialog } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import { spawnRipple } from "../ui/ripple";
 import { useMaterials, useUploadMaterial, useDeleteMaterial, type ClassroomMaterial } from "../hooks";
@@ -21,7 +21,7 @@ type Filter = "All" | MaterialCategory;
 export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
   const id = Number(classroom.id);
   const caps = capabilitiesFor(classroom.my_role);
-  const { data, isLoading } = useMaterials(id);
+  const { data, isLoading, isError, error, refetch } = useMaterials(id);
   const upload = useUploadMaterial(id);
   const del = useDeleteMaterial(id);
 
@@ -110,9 +110,16 @@ export function Materials({ classroom }: { classroom: ClassroomWithRole }) {
         </div>
       )}
 
-      {/* Grid */}
+      {/* Grid — four branches, always: loading / error / empty / data. A request that did not come
+          back is not a class with nothing shared in it, and nobody's files have gone anywhere. */}
       {isLoading ? (
         <LoadingState label="Loading materials…" />
+      ) : isError ? (
+        <ErrorState
+          title="Could not load this class’s materials."
+          message={normalizeApiError(error).message}
+          onRetry={() => refetch()}
+        />
       ) : materials.length === 0 ? (
         <EmptyState
           icon={FolderOpen}

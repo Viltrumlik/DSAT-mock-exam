@@ -5,6 +5,11 @@
  * same view students get. Nothing is persisted: questions are fetched from the
  * admin set endpoint, answered client-side, and graded locally so the teacher
  * can preview the exact student experience (runner → result → per-question review).
+ *
+ * Since the checking slice a teacher need not reach the result screen to see whether they
+ * had it right: QuestionWorkPane puts Check under the question and the explanation beside it.
+ * That is a teacher-only addition — the set comes off the ADMIN endpoint, which has always
+ * answered with correct_answer and explanation attached, so no student payload is involved.
  */
 
 import { useEffect, useMemo, useState } from "react";
@@ -20,6 +25,7 @@ import { SummaryResultView, type SummaryRow, type SummaryRowStatus } from "@/fea
 import { QuestionReviewModal } from "@/features/assessments/components/QuestionReviewModal";
 import type { PedagogicalReviewQuestion } from "@/features/assessmentsStudent/api";
 import type { AssessmentChoice, AssessmentQuestion } from "@/features/assessments/types";
+import { answerKeyFromAssessmentQuestion, QuestionWorkPane } from "@/features/teacher/questionWork";
 import { ArrowLeft, Calculator, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 
 type AdminSet = {
@@ -239,32 +245,45 @@ export default function TeacherAssessmentPracticePage() {
           </div>
         </header>
 
-        {/* Question body */}
+        {/* Question body. Wider than the 3xl the header and footer keep, because the checking
+            pane puts a second column beside the question from lg up. What that costs the
+            question is worth stating: the pane's first column is 21rem plus a 1.25rem gap, so
+            between 1024px and this 6xl cap (1152px) the question reads at ~620px against the
+            720px it had inside max-w-3xl, and only at the cap does it come back past it
+            (~748px). Below lg the columns stack and the question has the full measure. */}
         <main className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-3xl space-y-5 px-6 py-8">
-            <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Question {currentIdx + 1} of {total}</p>
-            {/* main content — shown FIRST (Reading: the passage · Math: the question) */}
-            <AssessmentText text={current.prompt} block className="rounded-2xl border border-slate-200 bg-slate-50 p-6 font-[Georgia] text-base font-medium leading-relaxed text-slate-900" />
-            {figure ? (
-              <div className="flex justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
+          <div className="mx-auto w-full max-w-6xl px-6 py-8">
+            <QuestionWorkPane
+              questionId={current.id}
+              answer={answers[current.id] ?? null}
+              answerKey={answerKeyFromAssessmentQuestion(current)}
+            >
+              <div className="space-y-5">
+                <p className="text-xs font-extrabold uppercase tracking-widest text-slate-400">Question {currentIdx + 1} of {total}</p>
+                {/* main content — shown FIRST (Reading: the passage · Math: the question) */}
+                <AssessmentText text={current.prompt} block className="rounded-2xl border border-slate-200 bg-slate-50 p-6 font-[Georgia] text-base font-medium leading-relaxed text-slate-900" />
+                {figure ? (
+                  <div className="flex justify-center overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={figure} alt="Question figure" className="max-h-[420px] max-w-full object-contain p-4" />
+                  </div>
+                ) : null}
+                {/* question prompt — shown AFTER the main content (Reading: the actual question) */}
+                {current.question_prompt && current.question_prompt.trim().length > 0 ? (
+                  <AssessmentText text={current.question_prompt} block className="border-l-4 border-primary/50 bg-slate-50 py-2 pl-5 pr-4 font-[Georgia] text-base leading-relaxed text-slate-900" />
+                ) : null}
+                <AnswerInput
+                  type={current.question_type}
+                  choices={(Array.isArray(current.choices) ? current.choices : []) as AssessmentChoice[]}
+                  value={answers[current.id] ?? null}
+                  onChange={(next) => setAnswers((p) => ({ ...p, [current.id]: next }))}
+                  optionImages={{
+                    A: current.option_a_image, B: current.option_b_image,
+                    C: current.option_c_image, D: current.option_d_image,
+                  }}
+                />
               </div>
-            ) : null}
-            {/* question prompt — shown AFTER the main content (Reading: the actual question) */}
-            {current.question_prompt && current.question_prompt.trim().length > 0 ? (
-              <AssessmentText text={current.question_prompt} block className="border-l-4 border-primary/50 bg-slate-50 py-2 pl-5 pr-4 font-[Georgia] text-base leading-relaxed text-slate-900" />
-            ) : null}
-            <AnswerInput
-              type={current.question_type}
-              choices={(Array.isArray(current.choices) ? current.choices : []) as AssessmentChoice[]}
-              value={answers[current.id] ?? null}
-              onChange={(next) => setAnswers((p) => ({ ...p, [current.id]: next }))}
-              optionImages={{
-                A: current.option_a_image, B: current.option_b_image,
-                C: current.option_c_image, D: current.option_d_image,
-              }}
-            />
+            </QuestionWorkPane>
           </div>
         </main>
 

@@ -13,7 +13,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from rest_framework.test import APIClient
 
@@ -729,3 +731,199 @@ class ItemAnalysisApiTests(PastpaperFixture):
         strict = self._get(threshold=99)
         self.assertEqual(strict.data["threshold"], 99)
         self.assertEqual(strict.data["needs_analysis"], [])
+
+
+class WhichWrongAnswerTests(PastpaperFixture):
+    """Which wrong answer the class picked — the half of an item analysis a lesson comes from.
+
+    "9 of the 12 who missed it picked C" is the finding; "12 missed it" is only the workload.
+    These pin the counts, the key marker, and the two silences the tally must keep: a question
+    nobody reached, and a cohort small enough that a count would name the students in it.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.q = self.mc(
+            self.m1, order=0, answer="a", option_c="Choice C", option_d="Choice D"
+        )
+        self.students = [self.enrol(f"pick{i}@t.com") for i in range(6)]
+
+    def record(self, picks, *, question=None):
+        question = question or self.q
+        for student, pick in zip(self.students, picks):
+            self.sit(student, {str(self.m1.id): {str(question.pk): pick}})
+
+    def tally(self, question=None):
+        return self.row(self.report(), question or self.q)["answer_tally"]
+
+    @staticmethod
+    def options(tally):
+        return {option["key"]: option for option in tally["options"]}
+
+    def test_the_tally_counts_what_the_class_picked(self):
+        # No count of one here on purpose: the cell floor gets its own case below, and this
+        # one is about the arithmetic.
+        self.record(["c", "c", "c", "c", "a", "a"])
+
+        tally = self.tally()
+        self.assertEqual(tally["kind"], "options")
+        self.assertEqual(tally["state"], "data")
+        self.assertEqual(tally["responses"], 6)
+        options = self.options(tally)
+        self.assertEqual(options["C"]["count"], 4)
+        self.assertEqual(options["A"]["count"], 2)
+        self.assertEqual(options["B"]["count"], 0)
+        self.assertEqual(options["D"]["count"], 0)
+        self.assertEqual(options["C"]["share"], 66.7)
+
+    def test_the_key_is_marked_and_comes_from_the_grader(self):
+        # The authored key is " a " with the spaces a paste left behind. ``check_answer``
+        # strips and case-folds before comparing, so A is the key; a local
+        # ``letter.lower() == correct_answers.lower()`` would mark nothing correct at all,
+        # which is why this test uses a key the two rules disagree about.
+        padded = self.mc(
+            self.m1, order=1, answer=" A ", option_c="Choice C", option_d="Choice D"
+        )
+        self.record(["c", "c", "c", "c", "a", "a"], question=padded)
+
+        tally = self.tally(padded)
+        self.assertEqual([o["key"] for o in tally["options"] if o["is_correct"]], ["A"])
+        # The class's favourite answer is NOT the key — which is the whole point of showing it.
+        self.assertFalse(self.options(tally)["C"]["is_correct"])
+
+    def test_an_options_text_does_not_steal_a_later_options_key(self):
+        # Option A's text is the letter B — ordinary on a maths paper. Grouping by text
+        # before every letter is claimed put every pick of the KEY on option A: five picks
+        # of a mistake nobody made, at the top of a re-teaching list.
+        confusing = Question.objects.create(
+            module=self.m1,
+            question_type="MATH",
+            question_text="Which letter?",
+            option_a="B",
+            option_b="C",
+            option_c="D",
+            correct_answers="b",
+            order=1,
+        )
+        self.record(["b", "b", "b", "b", "b"], question=confusing)
+
+        options = self.options(self.tally(confusing))
+        self.assertEqual(options["B"]["count"], 5)
+        self.assertEqual(options["A"]["count"], 0)
+        self.assertTrue(options["B"]["is_correct"])
+
+    def test_answers_matching_no_option_are_a_defect_not_a_silence(self):
+        # Every stored answer is a letter this question no longer offers. "Nobody reached
+        # this question" would print an empty state over a data defect.
+        self.record(["z", "z", "z", "z", "z"])
+
+        tally = self.tally()
+        self.assertEqual(tally["state"], "unreadable")
+        self.assertEqual(tally["responses"], 0)
+        self.assertEqual(tally["unrecognised"], 5)
+        self.assertIn("matches an option", tally["note"])
+
+    def test_a_count_of_one_is_held_back_and_cannot_be_subtracted_out(self):
+        # Nine picked C, one picked D. "1" is that student's answer written into a table,
+        # and a single hidden cell is just `responses` minus the visible ones.
+        self.students += [self.enrol(f"cell{i}@t.com") for i in range(4)]
+        self.record(["c"] * 9 + ["d"])
+
+        tally = self.tally()
+        options = self.options(tally)
+        self.assertEqual(tally["state"], "data")
+        self.assertEqual(tally["responses"], 10)
+        self.assertIsNone(options["D"]["count"])
+        self.assertIsNone(options["D"]["share"])
+        hidden = [o["key"] for o in tally["options"] if o["count"] is None]
+        self.assertGreaterEqual(len(hidden), 2)
+        self.assertLess(sum(o["count"] for o in tally["options"] if o["count"] is not None), 10)
+        # The finding still travels: nine of ten picked C.
+        self.assertEqual(options["C"]["count"], 9)
+        self.assertIn("held back", tally["note"])
+
+    def test_a_question_nobody_reached_says_no_data_rather_than_zeros(self):
+        # Module 2 was never opened, so its questions were never put in front of anybody.
+        unseen = self.mc(self.m2, order=0, answer="a")
+        self.record(["a", "a", "a", "a", "a", "a"])
+
+        tally = self.tally(unseen)
+        self.assertEqual(tally["state"], "no_data")
+        self.assertEqual(tally["responses"], 0)
+        self.assertTrue(tally["note"])
+        self.assertTrue(all(o["count"] is None for o in tally["options"]))
+
+    def test_below_the_floor_the_counts_are_suppressed_not_shown(self):
+        self.record(["c", "c", "c", "a"])  # four sittings: a count would name them
+
+        tally = self.tally()
+        self.assertEqual(tally["state"], "suppressed")
+        self.assertEqual(tally["responses"], 4)
+        self.assertEqual(tally["min_responses"], 5)
+        self.assertTrue(all(o["count"] is None for o in tally["options"]))
+        self.assertIn("held back", tally["note"])
+        # Suppressed is not empty: the options and the key still travel.
+        self.assertEqual([o["key"] for o in tally["options"] if o["is_correct"]], ["A"])
+        self.assertEqual(len(tally["options"]), 4)
+
+    def test_a_blank_answer_is_no_answer_not_a_pick(self):
+        self.record(["c", "c", "c", "c", "a", ""])
+
+        tally = self.tally()
+        self.assertEqual(tally["responses"], 5)
+        self.assertEqual(tally["no_answer"], 1)
+        self.assertEqual(self.row(self.report(), self.q)["omitted"], 1)
+
+    def test_a_grid_in_reports_its_commonest_wrong_answers(self):
+        grid = self.grid_in(self.m1, order=1, answer="1/2")
+        for student, given in zip(self.students, ["0.6", "0.6", "0.6", "0.5", "7", "0.6"]):
+            self.sit(student, {str(self.m1.id): {str(grid.pk): given}})
+
+        tally = self.tally(grid)
+        self.assertEqual(tally["kind"], "answers")
+        # A per-option count of a question with no options would be four empty bars.
+        self.assertEqual(tally["options"], [])
+        self.assertEqual(tally["top_wrong"], [{"answer": "0.6", "count": 4}])
+        # "7" was one student's answer: counted, but not quoted back beside a count of one.
+        self.assertEqual(tally["distinct_wrong_answers"], 2)
+        # 0.5 is the key spelled another way; the grader says so and it is not a mistake.
+        self.assertNotIn("0.5", [entry["answer"] for entry in tally["top_wrong"]])
+
+    def test_the_tally_and_the_counts_describe_the_same_sitting(self):
+        self.record(["c", "c", "c", "c", "a", "b"])
+
+        row = self.row(self.report(), self.q)
+        self.assertEqual(row["answered"], row["answer_tally"]["responses"])
+        self.assertEqual(row["wrong"], 5)
+
+
+class AnswerTallyQueryCountTests(PastpaperFixture):
+    """Three queries, whatever the paper's length. A tally per question would be a query
+    per question, over every class this page is opened for."""
+
+    def _build(self, question_count):
+        paper = PracticeTest.objects.create(
+            subject="MATH", title=f"Paper of {question_count}", collection_name="Bluebook"
+        )
+        module = paper.modules.get(module_order=1)
+        questions = [
+            self.mc(module, order=i, answer="a", option_c="Choice C", option_d="Choice D")
+            for i in range(question_count)
+        ]
+        for i in range(6):
+            student = self.enrol(f"qc{question_count}_{i}@t.com")
+            self.sit(
+                student,
+                {str(module.id): {str(q.pk): "c" for q in questions}},
+                paper=paper,
+            )
+
+        with CaptureQueriesContext(connection) as captured:
+            payload = build_pastpaper_item_analysis(paper, self.roster())
+        self.assertEqual(len(payload["questions"]), question_count)
+        return len(captured)
+
+    def test_the_query_count_does_not_grow_with_the_questions(self):
+        small = self._build(2)
+        large = self._build(8)
+        self.assertEqual(small, large, "a query per question crept back in")

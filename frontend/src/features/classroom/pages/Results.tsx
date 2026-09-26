@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Card, CardHeader, Field, Select, LoadingState } from "../ui";
+import { normalizeApiError } from "@/lib/apiError";
+import { Card, CardHeader, Field, Select, LoadingState, ErrorState } from "../ui";
 import { useUnifiedResults } from "../hooks";
 import type { ClassroomWithRole } from "../types";
 import { Avatar } from "@/components/ui/Avatar";
@@ -38,8 +39,11 @@ export function Results({ classroom }: { classroom: ClassroomWithRole }) {
     date_to: dateTo || undefined,
   }), [type, student, dateFrom, dateTo]);
 
-  const { data, isLoading } = useUnifiedResults(id, filters);
-  const rows = data?.rows ?? [];
+  const { data, isLoading, isError, error, refetch } = useUnifiedResults(id, filters);
+  // Memoised rather than `data?.rows ?? []`: a fresh array on every render re-runs the student
+  // options below on every render too, and that list feeds a <select> a teacher may have open.
+  // Same identity while the payload is unchanged.
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows]);
   const summary = data?.summary;
 
   // Student filter options derived from returned rows (real participants).
@@ -82,8 +86,16 @@ export function Results({ classroom }: { classroom: ClassroomWithRole }) {
           </Field>
         </div>
 
+        {/* Four branches, always: loading / error / empty / data. A filter that came back empty and a
+            request that never came back are different answers, and only one of them is about the class. */}
         {isLoading ? (
           <LoadingState label="Loading results…" />
+        ) : isError ? (
+          <ErrorState
+            title="Could not load these results."
+            message={normalizeApiError(error).message}
+            onRetry={() => refetch()}
+          />
         ) : rows.length === 0 ? (
           <p className="mt-5 text-sm text-muted-foreground">No results yet for this filter.</p>
         ) : (

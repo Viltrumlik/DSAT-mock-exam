@@ -101,7 +101,10 @@ class RankingsView(_ClassroomScopedView):
         snaps = list(
             RankingSnapshot.objects.filter(classroom=classroom, kind=kind, period_key=latest_period)
             .select_related("student")
-            .order_by("rank")
+            # `rank` stopped identifying a row the day equal XP started sharing a number, and
+            # Postgres is free to return equal sort keys in whatever order it pleases — so a
+            # board ordered on rank alone would deal its tied rows differently on each refresh.
+            .order_by("rank", "student_id")
         ) if latest_period else []
 
         # Staff/admin see everything; students are governed by the config.
@@ -111,14 +114,19 @@ class RankingsView(_ClassroomScopedView):
 
         rows = []
         my_row = None
-        for s in snaps:
+        # The pseudonym counts ROWS, not ranks. Equal XP now shares a rank, so a label built
+        # from `rank` gave two tied students the same name and an anonymous board printed
+        # "Student #2" twice — which reads as one student listed twice, not as a tie. The
+        # position in this list is unique by construction and stable, because the query above
+        # orders on (rank, student_id) rather than leaving ties to Postgres.
+        for position, s in enumerate(snaps, start=1):
             is_me = s.student_id == request.user.id
             show_name = staff or is_me or mode == ClassroomRankingConfig.MODE_FULL
             show_score = staff or is_me or not hide_scores
             row = {
                 "rank": s.rank,
                 "is_me": is_me,
-                "name": _display_name(s.student) if show_name else f"Student #{s.rank}",
+                "name": _display_name(s.student) if show_name else f"Student #{position}",
                 # Gated on show_name, not on its own flag: a photo identifies a student far
                 # more directly than their name does, so an ANONYMOUS board that still showed
                 # faces would not be anonymous at all.

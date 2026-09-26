@@ -2051,9 +2051,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # archived row with an Edit that could not load and a Delete that deleted nothing.
         include_archived = self.action != "list" or str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
         staff_qs = qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
-        # How many of the class's students have turned each homework in, for the grading hub's
-        # "N missing" and "All in": SUBMITTED or REVIEWED, which is what the grading page lists as
-        # submitted, from the ACTIVE students the class row's `student_count` counts. It is not
+        # How many of the class's students have turned each homework in — today the classroom's
+        # Assignments tab ("N / M submitted"); originally the grading hub's "N missing" and
+        # "All in", which this branch retired. SUBMITTED or REVIEWED, from the ACTIVE students
+        # the class row's `student_count` counts. It is not
         # `submissions_count`, which counts every row: a draft, work returned for revision, and the
         # work of a student who has left the class or joined its teaching team.
         active_students = classroom.memberships.filter(
@@ -2105,13 +2106,17 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             return None, Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
         return a, None
 
-    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
-    def publish(self, request, classroom_pk=None, pk=None):
+    def _go_live(self, a: Assignment) -> None:
+        """Everything that must happen the moment an assignment reaches the class.
+
+        The dedicated ``publish`` action is not the only door: the edit form saves with
+        ``status=PUBLISHED`` too, and while that path wrote nothing but ``status`` the
+        homework went out with no ``due_at`` — the very column
+        ``rewards.tasks.settle_due_homework`` selects on — so the class did the work and
+        was never paid for it. One helper, so the two doors cannot drift again.
+        """
         from .lesson_schedule import homework_due_at
 
-        a, err = self._manage_or_404(request, pk)
-        if err:
-            return err
         first_publish = a.published_at is None
         a.status = Assignment.STATUS_PUBLISHED
         a.archived_at = None
@@ -2142,6 +2147,12 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             except Exception:  # pragma: no cover - defensive
                 logger.exception("homework notify failed on publish for assignment %s", a.pk)
 
+    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
+    def publish(self, request, classroom_pk=None, pk=None):
+        a, err = self._manage_or_404(request, pk)
+        if err:
+            return err
+        self._go_live(a)
         return Response({"id": a.id, "status": a.status})
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticatedAndNotFrozen])
@@ -2496,6 +2507,31 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             guard = self._unapproved_assessment_guard(request, self._assessment_set_ids_from_request(request))
             if guard is not None:
                 return guard
+        # Read the standing status BEFORE the serializer overwrites it: publishing from the
+        # edit form is a DRAFT -> PUBLISHED transition, and only the old value can tell us
+        # that this save is the one that hands the work to the class.
+        previous_status = getattr(self.get_object(), "status", None)
+        # An ordinary save must never be the door archived work walks back through. `status`
+        # is writable on the serializer with no `validate_status`, and the student queryset
+        # filters on `status` alone — so a PATCH carrying PUBLISHED over an ARCHIVED row puts
+        # last term's homework back at the top of the whole class's list, keeping its stale
+        # `archived_at` and skipping `_open_to_class` (the publish tail below only fires on
+        # the DRAFT transition), which leaves the past-paper launcher dead. Unarchiving is its
+        # own action with its own semantics; say so rather than widening `_go_live` to cover
+        # a case it was not written for.
+        if (
+            previous_status == Assignment.STATUS_ARCHIVED
+            and str(request.data.get("status") or "").upper() == Assignment.STATUS_PUBLISHED
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "This homework is archived. Use Unarchive to give it back to the "
+                        "class — saving an edit cannot republish it."
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         # Same multi-upload issue as create — strip attachment_file from
         # request.data so the serializer doesn't consume one of the files.
         files = list(request.FILES.getlist("attachment_file"))
@@ -2538,6 +2574,16 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         if replace_all:
             _clear_assignment_teacher_attachments(assignment)
         if files:
+            # Without ?replace_attachments the teacher is ADDING a file, not swapping one in.
+            # The standing primary therefore steps down into the extras list before the new
+            # file takes its place; otherwise the second edit simply reassigned
+            # `attachment_file` and the first file fell off the assignment — 200 OK, no
+            # warning, and a blob left orphaned in storage that no page could reach again.
+            # `.name` re-points a row at the SAME stored blob, so nothing is re-uploaded.
+            if not replace_all and assignment.attachment_file:
+                AssignmentExtraAttachment.objects.create(
+                    assignment=assignment, file=assignment.attachment_file.name
+                )
             for f in files[1:]:
                 AssignmentExtraAttachment.objects.create(assignment=assignment, file=f)
             assignment.attachment_file = files[0]
@@ -2559,6 +2605,15 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             self._reconcile_vocab_homeworks(request, assignment)
 
         self._apply_video(request, assignment)
+
+        # The save that turned a draft into published work is a publish, whichever endpoint
+        # it arrived through. Last, so the attachments, assessments and vocabulary above are
+        # already in place by the time the class is told the homework exists.
+        if (
+            previous_status == Assignment.STATUS_DRAFT
+            and assignment.status == Assignment.STATUS_PUBLISHED
+        ):
+            self._go_live(assignment)
 
         data = self.get_serializer(assignment).data
         if content_warnings:
@@ -3090,7 +3145,19 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
             .first()
         )
         if not sub:
-            return Response({}, status=status.HTTP_200_OK)
+            # Nothing handed in yet — but the auto-graded half of a homework with a manual
+            # share can already be settled, and on vocabulary- or upload-only homework no
+            # Submission row exists until the student uploads. Serving the composition only
+            # with a row would hide the part of their grade that IS decided, and the line
+            # that says their teacher is still checking, for as long as they have not
+            # uploaded. The key is present and null on homework with no manual component, so
+            # a client reads one shape either way.
+            from .grade_composition import composed_grade_payload_for
+
+            return Response(
+                {"composed_grade": composed_grade_payload_for(assignment, request.user)},
+                status=status.HTTP_200_OK,
+            )
         return Response(SubmissionSerializer(sub, context={"request": request}).data)
 
     @action(detail=True, methods=["get"], url_path="submissions")
@@ -3124,10 +3191,25 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     )
         qs = (
             Submission.objects.filter(assignment=assignment)
-            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            # ``assignment`` is here for ``composed_grade``: the serializer asks every row's
+            # homework whether the teacher's mark carries a share of the grade. Without it
+            # that question cost one query per student — on every homework, including the
+            # overwhelming majority that never opted in and answer null. Twenty students
+            # across a twelve-homework gradebook was 240 queries for a homework this view
+            # is already holding in its hand.
+            .select_related(
+                "assignment", "student", "attempt", "attempt__practice_test", "review", "review__teacher"
+            )
             .prefetch_related("files")
         )
-        return Response(SubmissionSerializer(qs, many=True, context={"request": request}).data)
+        rows = list(qs)
+        # One Assignment object for the whole list, not one per row. Everything the
+        # composition reads off the homework — its share, its deadline, its attachments —
+        # is the same for every student on it, so anything Django caches on the instance is
+        # worked out once instead of per student.
+        for row in rows:
+            row.assignment = assignment
+        return Response(SubmissionSerializer(rows, many=True, context={"request": request}).data)
 
 
 class SubmissionAdminViewSet(ReadOnlyModelViewSet):
@@ -3211,6 +3293,25 @@ class SubmissionAdminViewSet(ReadOnlyModelViewSet):
                 )
                 if "grade" in data:
                     review.grade = data["grade"]
+                    if data["grade"] is not None:
+                        # A person just AWARDED a number, so the row is no longer
+                        # machine-graded. The flag was only ever set by the auto-grading
+                        # paths and never cleared here, so a teacher who re-marked an
+                        # auto-graded submission left a row that still claimed to be
+                        # automatic: the gradebook credited the machine, the assessment
+                        # re-sync's "never overwrite a human teacher's grade" guard did not
+                        # recognise the mark it was protecting, and a composed grade could
+                        # not tell the teacher's share from the engine's.
+                        #
+                        # Only here, and only for a number. This endpoint also takes a
+                        # feedback-only save — "Have another go." with no grade typed — and
+                        # clearing the flag for one of those hands the machine's own score
+                        # to the teacher: the re-sync guard then refuses to update it ever
+                        # again, so a student who re-sat the quiz and scored 100 would keep
+                        # the 0 they were first given, on homework that never asked for a
+                        # manual share at all. Clearing a grade (an explicit null) does not
+                        # mark the row either — there is no mark left to protect.
+                        review.is_auto = False
                 if "feedback" in data:
                     review.feedback = data["feedback"]
                 review.teacher = request.user

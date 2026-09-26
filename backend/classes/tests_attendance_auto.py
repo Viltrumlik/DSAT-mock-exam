@@ -11,6 +11,7 @@ EVEN class (Tue/Thu/Sat) on the 2nd, 4th and 6th.
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
@@ -21,6 +22,7 @@ from access import constants as C
 from classes import attendance_auto
 from classes.models import Classroom, ClassroomMembership
 from classes.models_attendance import AttendanceSession
+from classes.tasks import open_todays_attendance_registers
 
 User = get_user_model()
 
@@ -40,7 +42,10 @@ class AutoSessionFixture(TestCase):
         self.owner = User.objects.create_user("auto_owner@t.com", "secret123", role=C.ROLE_ADMIN)
         self.classroom = self.make_class()
 
-    def make_class(self, *, lesson_days=Classroom.DAYS_ODD, lesson_time="09:00", start_date=MONDAY):
+    def make_class(
+        self, *, lesson_days=Classroom.DAYS_ODD, lesson_time="09:00", start_date=MONDAY,
+        with_student=True,
+    ):
         # start_date is set by default and matters: the backfill is floored at the day the
         # class began, so without it these fixtures would reach back before the term.
         classroom = Classroom.objects.create(
@@ -50,6 +55,17 @@ class AutoSessionFixture(TestCase):
         ClassroomMembership.objects.create(
             classroom=classroom, user=self.owner, role=ClassroomMembership.ROLE_ADMIN
         )
+        # A class the sweep will reach has somebody in the room: it opens registers only for
+        # classes with at least one ACTIVE STUDENT, because an empty one has no attendance to
+        # take. ``with_student=False`` is the finished-but-unarchived course.
+        if with_student:
+            student = User.objects.create_user(
+                f"auto_student{classroom.pk}@t.com", "secret123", role=C.ROLE_STUDENT
+            )
+            ClassroomMembership.objects.create(
+                classroom=classroom, user=student, role=ClassroomMembership.ROLE_STUDENT,
+                status=ClassroomMembership.STATUS_ACTIVE,
+            )
         return classroom
 
     def dates(self, classroom=None, **kw):
@@ -201,3 +217,170 @@ class SessionsEndpointTests(AutoSessionFixture):
         )
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["title"], "")
+
+
+class OpenTodaysRegistersTaskTests(AutoSessionFixture):
+    """The beat sweep, as opposed to the read path: the register is there before the tab is.
+
+    ``ensure_sessions`` is covered above; what is tested here is the sweep around it — which
+    classes it reaches, which it leaves alone, and that neither a second run nor one broken
+    classroom costs anything.
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Beat hands the task no ``now``, so the task reads the clock itself and there is
+        # nothing to inject. Freeze the clock instead, onto the same fixed Monday the rest of
+        # this file uses — computing "today" from the real date would make this suite pass on
+        # Monday and fail on Sunday, when no classroom meets at all.
+        patcher = mock.patch("django.utils.timezone.now", return_value=at(MONDAY, 12))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_it_opens_todays_register_before_anybody_opens_the_page(self):
+        self.assertEqual(AttendanceSession.objects.count(), 0)
+
+        stats = open_todays_attendance_registers()
+
+        self.assertEqual(stats["opened"], 1)
+        self.assertEqual(stats["failed"], 0)
+        session = AttendanceSession.objects.get(classroom=self.classroom)
+        self.assertEqual(session.date, MONDAY)
+        # Nobody created it. The lesson did.
+        self.assertIsNone(session.created_by)
+
+    def test_a_class_that_does_not_meet_today_gets_no_register(self):
+        # EVEN is Tue/Thu/Sat; the frozen day is a Monday.
+        even = self.make_class(lesson_days=Classroom.DAYS_EVEN)
+
+        open_todays_attendance_registers()
+
+        self.assertFalse(AttendanceSession.objects.filter(classroom=even).exists())
+        self.assertTrue(AttendanceSession.objects.filter(classroom=self.classroom).exists())
+
+    def test_an_archived_class_gets_no_register(self):
+        archived = self.make_class()
+        archived.is_active = False
+        archived.save(update_fields=["is_active"])
+
+        stats = open_todays_attendance_registers()
+
+        self.assertEqual(stats["opened"], 1)
+        self.assertFalse(AttendanceSession.objects.filter(classroom=archived).exists())
+
+    def test_running_it_again_opens_nothing_and_duplicates_nothing(self):
+        first = open_todays_attendance_registers()
+        second = open_todays_attendance_registers()
+
+        self.assertEqual(first["opened"], 1)
+        self.assertEqual(second["opened"], 0)
+        self.assertEqual(AttendanceSession.objects.count(), 1)
+
+    def test_one_broken_classroom_does_not_stop_the_sweep(self):
+        self.make_class()
+        real = attendance_auto.ensure_sessions
+        calls = {"n": 0}
+
+        def _explode_once(classroom, **kw):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("bad data")
+            return real(classroom, **kw)
+
+        with mock.patch("classes.attendance_auto.ensure_sessions", side_effect=_explode_once):
+            stats = open_todays_attendance_registers()
+
+        # The failure is counted into the summary, not swallowed into silence: a sweep that
+        # opened nothing because every classroom threw must not read like a quiet day.
+        self.assertEqual(stats["failed"], 1)
+        self.assertEqual(stats["opened"], 1)
+
+    def test_a_lesson_that_has_not_started_yet_is_not_opened(self):
+        """Why the beat entry sweeps all day instead of running once before dawn.
+
+        A register opens when its lesson starts. At 05:00 there is nothing due for a class
+        that meets at 09:00 — let alone the 14:00 ones — so an early-morning-only entry would
+        open no register on any day.
+        """
+        with mock.patch("django.utils.timezone.now", return_value=at(MONDAY, 5)):
+            stats = open_todays_attendance_registers()
+
+        self.assertEqual(stats["opened"], 0)
+        self.assertEqual(AttendanceSession.objects.count(), 0)
+
+    def test_the_sweep_does_not_backfill_a_register_nobody_could_write(self):
+        """Tuesday is the day the sweep's ``backfill_days=0`` can be seen at all.
+
+        An ODD class does not meet on a Tuesday, so with ``backfill_days=0`` this run has
+        nothing due and opens nothing. With the module default of one day it reaches back to
+        MONDAY — a lesson day whose marking window shut two hours after the lesson ended, so
+        the register it would mint is a draft nobody below global admin could ever write in.
+
+        Wednesday cannot show the difference: a one-day window from Wednesday reaches only
+        Tuesday, which is not a lesson day either, so the assertion held whichever value
+        ``tasks.py`` passed — deleting ``backfill_days=0`` left that test green.
+        """
+        tuesday = MONDAY + timedelta(days=1)
+
+        with mock.patch("django.utils.timezone.now", return_value=at(tuesday, 12)):
+            stats = open_todays_attendance_registers()
+
+        self.assertEqual(stats["opened"], 0)
+        self.assertFalse(AttendanceSession.objects.filter(classroom=self.classroom).exists())
+
+    def test_a_later_lesson_day_opens_that_day_and_no_earlier_one(self):
+        """The other half: on a lesson day exactly one register opens, dated today.
+
+        This one cannot distinguish 0 from the one-day default — Tuesday above is what does
+        that — but it does catch a window widened to reach Monday's closed lesson.
+        """
+        wednesday = MONDAY + timedelta(days=2)
+
+        with mock.patch("django.utils.timezone.now", return_value=at(wednesday, 12)):
+            open_todays_attendance_registers()
+
+        self.assertEqual(
+            list(
+                AttendanceSession.objects.filter(classroom=self.classroom)
+                .values_list("date", flat=True)
+            ),
+            [wednesday],
+        )
+
+    def test_a_class_with_no_active_students_gets_no_register(self):
+        """A course that finished and was never archived must not collect empty drafts.
+
+        Nothing scores off them, but the Attendance tab orders ``-date``, so one per lesson
+        day for ever buries every register that can still be marked.
+        """
+        finished = self.make_class(with_student=False)
+
+        stats = open_todays_attendance_registers()
+
+        self.assertFalse(AttendanceSession.objects.filter(classroom=finished).exists())
+        # Not even looked at: the summary's own count says how many classes the sweep reached.
+        self.assertEqual(stats["scanned"], 1)
+        self.assertEqual(stats["opened"], 1)
+        self.assertTrue(AttendanceSession.objects.filter(classroom=self.classroom).exists())
+
+    def test_a_class_with_an_unreadable_schedule_is_counted_rather_than_guessed_at(self):
+        # Its teacher still has the manual escape hatch; what it must not have is a silently
+        # empty Attendance tab that nobody can explain.
+        self.make_class(lesson_days="WHENEVER")
+
+        stats = open_todays_attendance_registers()
+
+        self.assertEqual(stats["no_schedule"], 1)
+        self.assertEqual(stats["opened"], 1)
+
+    def test_the_beat_entry_names_a_task_the_worker_can_resolve(self):
+        """A beat entry is dispatched by NAME. A name the worker cannot resolve fires nothing,
+        for ever, without an error anywhere — which is how this routine sat unscheduled."""
+        from celery import current_app
+        from django.conf import settings
+
+        entry = settings.CELERY_BEAT_SCHEDULE["classroom-open-attendance-registers"]
+        current_app.loader.import_default_modules()
+
+        self.assertEqual(entry["task"], open_todays_attendance_registers.name)
+        self.assertIn(entry["task"], current_app.tasks)

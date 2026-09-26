@@ -358,6 +358,41 @@ class RankingsApiTests(TestCase):
         others = [row for row in rows if not row["is_me"]]
         self.assertTrue(all(row["name"].startswith("Student #") for row in others))
 
+    def test_anonymous_gives_tied_students_different_pseudonyms(self):
+        """Equal XP shares a rank — it must not share a name.
+
+        The pseudonym used to be built from `rank`. The day equal XP started sharing a rank
+        (`rewards.leaderboard.competition_ranks`), an anonymous board printed "Student #2"
+        twice: two people reading as one person listed twice, with no way to tell whose row
+        was whose.
+        """
+        from rewards.models import PointAward
+        from rewards.services import current_season
+
+        tied = _student("api_tied@t.com")
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=tied, role=ClassroomMembership.ROLE_STUDENT
+        )
+        # The same XP as `self.top`, to the point.
+        PointAward.objects.create(
+            student=tied, season=current_season(), event="MANUAL",
+            points=760, xp=760, classroom=self.classroom,
+            idempotency_key=f"api-seed-tie-{tied.pk}",
+        )
+        service.recompute_classroom(self.classroom, kinds=("ACADEMIC",), period_key="p1")
+
+        cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)
+        cfg.leaderboard_mode = self.cfg_model.MODE_ANONYMOUS
+        cfg.save()
+        self.client.force_authenticate(self.low)
+
+        rows = self.client.get(self._url()).json()["rows"]
+        hidden = [row for row in rows if not row["is_me"]]
+        # The tie itself is still reported — that is the ranking rule and it stays.
+        self.assertEqual(len({row["rank"] for row in hidden}), 1, "the two top students are tied")
+        names = [row["name"] for row in hidden]
+        self.assertEqual(len(set(names)), len(names), f"an anonymous board reused a name: {names}")
+
     def test_hidden_mode_only_own_row(self):
         cfg, _ = self.cfg_model.objects.get_or_create(classroom=self.classroom)
         cfg.leaderboard_mode = self.cfg_model.MODE_HIDDEN

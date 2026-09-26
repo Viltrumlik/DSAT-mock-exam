@@ -75,6 +75,23 @@ paper). Held out, never deleted: the group keeps its full ``questions`` count, a
 entirely suspect stays visible with an empty rate rather than vanishing, and the flagged list
 itself is untouched — a suspect question is exactly the one a teacher must look at.
 
+## Which wrong answer, not just how many
+
+The error rate says a question needs a lesson; it does not say what the lesson is. Every
+question row therefore carries ``answer_tally`` as well: for a multiple-choice question, how
+many students picked each option with the key marked, and for a grid-in, the wrong answers
+that came up most often — a full tally of typed numbers would be noise. It is filled in the
+same pass over ``module_answers`` as the counts, from the same ``check_answer`` call, so the
+two cannot disagree; it costs no query at all. The two floors that stop a tally on a small
+class — or a count of one inside a large one — from naming the students who gave those
+answers live in ``assessments.answer_tally``.
+
+``answer_tally.no_answer`` means more here than it does on the assessment report, and its
+name cannot say so. A counted sitting stores its whole module blob, so this builder knows
+who was shown the question and wrote nothing, and counts them — the same students as
+``omitted``. The assessment builder only ever sees rows a student wrote, so a student who
+never reached the question is invisible to its ``no_answer``. Same field, two populations.
+
 ## Taxonomy
 
 ``question_type`` (MATH/READING/WRITING) and grid-in-vs-MCQ (``is_math_input``) are stored on
@@ -108,6 +125,7 @@ from django.db.models import F
 from django.utils.html import strip_tags
 from django.utils.text import Truncator
 
+from assessments.answer_tally import Option, ResponseTally, answer_block, option_block
 from assessments.item_analysis import homework_deadline_block
 from classes.models import assignment_target_practice_test_ids
 from classes.pastpaper_report import UNCLASSIFIED
@@ -179,6 +197,10 @@ class _Item:
     omitted: int = 0
     correct: int = 0
     wrong: int = 0
+    #: What the class actually wrote, not merely whether it was right. The tally is filled
+    #: in the same pass as the counts above, from the same answer, so the two can never
+    #: describe different populations.
+    picks: ResponseTally = field(default_factory=ResponseTally)
 
     @property
     def error_rate(self) -> float | None:
@@ -355,9 +377,14 @@ def _tally(items_by_module: dict, module_question_ids: dict, modules: list, sele
                 answer = raw.get(key) if key in answered_ids else None
                 if answer is None or str(answer).strip() == "":
                     item.omitted += 1
+                    item.picks.record_no_answer()
                     continue
                 item.answered += 1
-                if item.question.check_answer(answer):
+                correct = item.question.check_answer(answer)
+                # Same verdict, same answer, one call: the tally and the counts must not be
+                # able to disagree about whether a given answer was right.
+                item.picks.record(answer, is_correct=correct)
+                if correct:
                     item.correct += 1
                 else:
                     item.wrong += 1
@@ -434,6 +461,33 @@ def _collect(items: list, resolver, threshold: int) -> dict:
     return {"coverage": {"tagged": tagged, "total": len(items)}, "groups": rows}
 
 
+def _options_for(question: Question) -> list[Option]:
+    """The choices this question offered, or ``[]`` when the student typed into a grid.
+
+    ``get_options`` is the runner's own list — the same four slots, in the same order, and it
+    already drops a slot that was never filled in, so a three-option question does not grow a
+    fourth empty bar here. A grid-in offers nothing to count per option and is asked for by
+    its top wrong answers instead.
+
+    Which letter is the key comes from ``check_answer``, the paper's one grading atom, rather
+    than from a string compare against ``correct_answers``: a tally that marked C correct
+    beside a student whose C was marked wrong would be worse than no tally at all.
+    """
+    if question.is_math_input:
+        return []
+    return [
+        Option.build(letter, option.get("text") or "", is_correct=question.check_answer(letter))
+        for letter, option in (question.get_options() or {}).items()
+    ]
+
+
+def _answer_tally(item: _Item) -> dict:
+    """What the class picked on one question. Pure arithmetic — no query, per question or
+    per sitting; the answers were already read out of ``module_answers`` above."""
+    options = _options_for(item.question)
+    return option_block(item.picks, options) if options else answer_block(item.picks)
+
+
 def _question_row(item: _Item, threshold: int) -> dict:
     """Everything needed to act on the question without opening the paper."""
     question = item.question
@@ -470,6 +524,11 @@ def _question_row(item: _Item, threshold: int) -> dict:
         "miss_rate": item.miss_rate,
         "needs_analysis": item.needs_analysis(threshold),
         "suspect_key": item.suspect_key,
+        # Which wrong answer the class landed on. A 40% error rate says re-teach this; the
+        # option they all chose says what to re-teach — and on a suspect key it is often the
+        # tell, because the whole class picking one non-key answer is what a wrong key looks
+        # like from here.
+        "answer_tally": _answer_tally(item),
     }
 
 

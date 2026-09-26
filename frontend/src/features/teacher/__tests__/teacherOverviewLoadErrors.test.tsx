@@ -5,7 +5,8 @@ import { parseClassroomList } from "@/lib/criticalApiContract";
 
 /**
  * A request that fails behind the teacher portal's class overview (`/teacher`) and the three pages drawn
- * from one analytics model (`/teacher/analytics`, `/teacher/students`, `/teacher/homework`).
+ * from one analytics model (`/teacher/analytics` and `/teacher/homework`; the Students page that also read it
+ * was removed at the owner's request).
  *
  * Both hooks caught every rejected request and carried on with an empty answer in its place, so a failure
  * was drawn as data:
@@ -45,9 +46,7 @@ vi.mock("@/components/ui/charts", async () => ({
 
 const { useTeacherDashboard } = await import("../useTeacherDashboard");
 const { useTeacherAnalytics } = await import("../useTeacherAnalytics");
-const { TeacherDashboard } = await import("../TeacherDashboard");
 const { TeacherAnalytics } = await import("../TeacherAnalytics");
-const { TeacherStudents } = await import("../TeacherStudents");
 const { TeacherHomework } = await import("../TeacherHomework");
 
 const DAY = 86_400_000;
@@ -231,8 +230,18 @@ async function mountHook<T>(useHook: () => T): Promise<() => T> {
 const settled = (value: { status: string }) => value.status !== "booting";
 
 const text = () => host.textContent ?? "";
-/** No loading placeholder is left on the page. */
-const pageSettled = () => host.querySelector(".ds-skeleton") === null;
+/**
+ * No loading placeholder is left on the page. Both markers are matched on purpose: every
+ * placeholder in the product, including the teacher kit's `Skeleton`, carries `.ds-skeleton` —
+ * it is the shared shimmer and the settle signal — and two teacher pages additionally mark the
+ * region they are filling `aria-busy`. Either one left behind means the page is still loading.
+ *
+ * The kit's skeleton did NOT carry the class when this selector was widened, and a test that
+ * asked only about `.ds-skeleton` called a half-loaded teacher page settled. The class is there
+ * now; the second clause stays because `aria-busy` is the marker for a region that is being
+ * filled in place rather than replaced by placeholders.
+ */
+const pageSettled = () => host.querySelector('.ds-skeleton, [aria-busy="true"]') === null;
 const heading = () => host.querySelector("h1")?.textContent ?? null;
 const buttons = () => [...host.querySelectorAll("button")].map((b) => b.textContent?.trim());
 function button(label: string) {
@@ -370,87 +379,10 @@ describe("useTeacherDashboard — a request that failed is not a class overview"
   });
 });
 
-describe("TeacherDashboard — what the teacher sees when a load fails", () => {
-  it("a class list that did not load says so, with Try again — not 'No classes yet'", async () => {
-    api.list.mockRejectedValueOnce(httpError(500));
-    await mount(<TeacherDashboard />);
-    await until(pageSettled);
-
-    expect(text()).not.toContain("No classes yet");
-    expect(text()).toContain("Couldn’t load your class overview");
-    expect(text()).toContain("Your classes and their students are unchanged — only this page failed to load.");
-    expect(text()).not.toContain("doctype");
-    expect(buttons()).toContain("Try again");
-
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(api.list).toHaveBeenCalledTimes(2);
-    expect(text()).not.toContain("Couldn’t load");
-    expect(heading()).toBe("Class overview");
-    expect(kpi("Students")).toBe("3");
-  });
-
-  it("while Try again waits, the page is loading — not 'No classes yet'", async () => {
-    const release = failThenHold(api.list, networkError);
-    await mount(<TeacherDashboard />);
-    await until(pageSettled);
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await tick();
-
-    expect(pageSettled()).toBe(false);
-    expect(text()).not.toContain("No classes yet");
-    expect(text()).not.toContain("Couldn’t load");
-
-    await act(async () => release());
-    await until(pageSettled);
-    expect(heading()).toBe("Class overview");
-  });
-
-  it("one class's interventions not loading says so — not an overview of the other class alone", async () => {
-    let failing = true;
-    failWhere(api.getInterventions, (classId) => failing && classId === GEOMETRY.id, () => httpError(500));
-    await mount(<TeacherDashboard />);
-    await until(pageSettled);
-
-    // Geometry is where the teacher is needed. Drawn from Algebra 2 alone, the overview said all was well.
-    expect(text()).not.toContain("Everyone's on track");
-    expect(text()).not.toContain("Submissions look healthy");
-    expect(text()).not.toContain("Nothing due soon");
-    expect(kpi("Students")).toBeNull();
-    expect(text()).toContain("Couldn’t load your class overview");
-
-    failing = false;
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(kpi("Students")).toBe("3");
-    expect(text()).toContain("Average 45% · Geometry");
-    expect(text()).toContain("Due in 2d");
-  });
-
-  it("shows the server's reason when it gave one", async () => {
-    failWhere(api.getInterventions, (classId) => classId === GEOMETRY.id, () => httpError(403, FORBIDDEN));
-    await mount(<TeacherDashboard />);
-    await until(pageSettled);
-
-    expect(text()).toContain("Couldn’t load your class overview");
-    expect(text()).toContain(FORBIDDEN.detail);
-    expect(text()).not.toContain("only this page failed to load");
-  });
-
-  it("still says 'No classes yet' to a teacher with no classes", async () => {
-    serveNoClasses();
-    await mount(<TeacherDashboard />);
-    await until(pageSettled);
-
-    expect(text()).toContain("No classes yet");
-    expect(text()).not.toContain("Couldn’t load");
-    expect(buttons()).not.toContain("Try again");
-  });
-});
+// The teacher Dashboard used to be tested here, against the class list and the per-class
+// interventions it once fanned out. Rebuilt on 2026-09-20 it reads ONE endpoint and none of
+// these, so its own failure cases live in `teacherDashboardToday.test.tsx`. What the pages
+// below still share with it is the rule: a request that failed is never drawn as data.
 
 describe("useTeacherAnalytics — a request that failed is not class analytics", () => {
   it("a class list that did not load is an error, not a teacher with no classes", async () => {
@@ -610,82 +542,6 @@ describe("TeacherAnalytics — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(text()).toContain("No classes yet");
-    expect(text()).not.toContain("Couldn’t load");
-    expect(buttons()).not.toContain("Try again");
-  });
-});
-
-describe("TeacherStudents — what the teacher sees when a load fails", () => {
-  it("a class list that did not load says so, with Try again — not 'No students yet'", async () => {
-    api.list.mockRejectedValueOnce(networkError());
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).not.toContain("No students yet");
-    expect(text()).toContain("Couldn’t load your students");
-    expect(text()).toContain("Your students and their work are unchanged — only this page failed to load.");
-    expect(buttons()).toContain("Try again");
-
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(api.list).toHaveBeenCalledTimes(2);
-    expect(text()).not.toContain("Couldn’t load");
-    expect(card("Third Student")).toContain("At risk");
-  });
-
-  it("while Try again waits, the page is loading — not 'No students yet' or 'No students match'", async () => {
-    const release = failThenHold(api.list, () => httpError(502));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await tick();
-
-    expect(pageSettled()).toBe(false);
-    expect(text()).not.toContain("No students yet");
-    expect(text()).not.toContain("No students match");
-    expect(text()).not.toContain("Couldn’t load");
-
-    await act(async () => release());
-    await until(pageSettled);
-    expect(heading()).toBe("Students");
-  });
-
-  it("one class's interventions not loading says so — its students are not listed 'On track'", async () => {
-    let failing = true;
-    failWhere(api.getInterventions, (classId) => failing && classId === GEOMETRY.id, () => httpError(500));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    // Without Geometry's interventions, its student read "On track" and "Active": no average, no absence, nothing missing.
-    expect(card("Third Student") ?? "").not.toContain("On track");
-    expect(text()).toContain("Couldn’t load your students");
-
-    failing = false;
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(card("Third Student")).toContain("At risk");
-  });
-
-  it("shows the server's reason when it gave one", async () => {
-    failWhere(api.getInterventions, (classId) => classId === ALGEBRA.id, () => httpError(403, FORBIDDEN));
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).toContain("Couldn’t load your students");
-    expect(text()).toContain(FORBIDDEN.detail);
-    expect(text()).not.toContain("only this page failed to load");
-  });
-
-  it("still says 'No students yet' to a teacher with no classes", async () => {
-    serveNoClasses();
-    await mount(<TeacherStudents />);
-    await until(pageSettled);
-
-    expect(text()).toContain("No students yet");
     expect(text()).not.toContain("Couldn’t load");
     expect(buttons()).not.toContain("Try again");
   });

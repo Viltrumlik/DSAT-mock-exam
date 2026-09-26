@@ -9,8 +9,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { classesApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { classesWithCapability } from "./classesWithCapability";
+// A pure, React-free reading of the server's `composed_grade`, declared beside the read that
+// carries it. The dependency runs one way only: nothing in `features/classroom` reaches back
+// into the teacher kit, which the student host also mounts.
+import { describeManualShare, type ComposedGrade } from "@/features/classroom/submissionsApi";
 
-export type Cell = { assignmentId: number; status: "graded" | "submitted" | "missing"; grade: number | null };
+/**
+ * Where a cell's number came from, on homework whose teacher's mark carries a share of the grade.
+ * Undefined on every other homework, which is nearly all of it.
+ */
+export type CellComposition = "final" | "awaiting" | "unavailable";
+export type Cell = { assignmentId: number; status: "graded" | "submitted" | "missing"; grade: number | null; composed?: CellComposition };
 export type StudentRow = { id: number; name: string; avatarUrl?: string | null; cells: Cell[]; average: number | null; trendDelta: number | null; missing: number };
 export type AssignmentCol = { id: number; title: string };
 export type GradebookModel = {
@@ -34,7 +43,46 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return out;
 }
-function toNum(v: unknown): number | null { const n = Number(v); return Number.isFinite(n) ? n : null; }
+/**
+ * A grade as the API sends it — a two-decimal string — or nothing.
+ *
+ * `null` and `""` are guarded before `Number` sees them: both convert to 0, and a review saved
+ * with feedback but no mark carries exactly `grade: null`. That review put a **zero** in the
+ * gradebook for a teacher who wrote a comment and had not marked yet — banded 0–49, counted into
+ * the student's average, the class average and the spread.
+ */
+function toNum(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The number one cell stands for, and where it came from.
+ *
+ * `review.grade` is the teacher's own mark. On homework that gives that mark a share of the
+ * grade it is not the grade: with a 20% share, a teacher's 50 sits inside a grade the server
+ * composed as 70, and reading the mark as the whole both printed the wrong number and banded a
+ * passing grade amber. The same wrong number then ran on into the student's average, their
+ * trend, the class average and the distribution, because all four are taken over these cells.
+ *
+ * Neither number is re-derived here — the composition is the server's, read through the same
+ * `describeManualShare` the classroom screens use, so the two readings cannot drift apart.
+ *
+ * A mark that is still owed, and a composition that could not be worked out, both give no number
+ * at all: a part-composed percent shown as the grade would read as a low grade rather than an
+ * unfinished one. `composed` is what lets the cell say which of the two it is.
+ */
+export function cellGrade(row: {
+  review?: { grade?: unknown } | null;
+  composed_grade?: ComposedGrade | null;
+}): { grade: number | null; composed?: CellComposition } {
+  const share = describeManualShare(row.composed_grade);
+  if (!share) return { grade: toNum(row.review?.grade) };
+  if (share.unavailable) return { grade: null, composed: "unavailable" };
+  if (share.awaiting) return { grade: null, composed: "awaiting" };
+  return { grade: share.percent, composed: "final" };
+}
 /** How far a student's grade moved: the newest minus the oldest, from grades in the order the homework was given. */
 export function gradeTrend(gradesOldestFirst: number[]): number | null {
   return gradesOldestFirst.length >= 2 ? gradesOldestFirst[gradesOldestFirst.length - 1] - gradesOldestFirst[0] : null;
@@ -103,16 +151,17 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
       const assignments = aRes.items.filter((a) => a.status !== "DRAFT").slice(0, ASSIGNMENT_CAP);
 
       // submissions per assignment → studentId -> {status, grade}
-      const subByAssignment = new Map<number, Map<number, { status: Cell["status"]; grade: number | null }>>();
+      type CellValue = { status: Cell["status"]; grade: number | null; composed?: CellComposition };
+      const subByAssignment = new Map<number, Map<number, CellValue>>();
       await mapWithConcurrency(assignments, 4, async (a) => {
-        const subs = (await classesApi.listSubmissions(selectedClassId, a.id)) as Array<{ student?: { id: number }; workflow_status?: string; review?: { grade?: unknown } | null }>;
-        const map = new Map<number, { status: Cell["status"]; grade: number | null }>();
+        const subs = (await classesApi.listSubmissions(selectedClassId, a.id)) as Array<{ student?: { id: number }; workflow_status?: string; review?: { grade?: unknown } | null; composed_grade?: ComposedGrade | null }>;
+        const map = new Map<number, CellValue>();
         (Array.isArray(subs) ? subs : []).forEach((s) => {
           if (!s.student) return;
           const ws = s.workflow_status;
-          const grade = toNum(s.review?.grade);
+          const { grade, composed } = cellGrade(s);
           const stat: Cell["status"] = ws === "GRADED" ? "graded" : ws === "SUBMITTED" || ws === "RETURNED" ? "submitted" : "missing";
-          map.set(s.student.id, { status: stat, grade });
+          map.set(s.student.id, { status: stat, grade, composed });
         });
         subByAssignment.set(a.id, map);
       });
@@ -122,7 +171,7 @@ export function useGradebook(preview?: { classes: ClassOption[]; model: Gradeboo
       const studentRows: StudentRow[] = students.map((u) => {
         const cells: Cell[] = assignmentCols.map((col) => {
           const v = subByAssignment.get(col.id)?.get(u.id);
-          return { assignmentId: col.id, status: v?.status ?? "missing", grade: v?.grade ?? null };
+          return { assignmentId: col.id, status: v?.status ?? "missing", grade: v?.grade ?? null, composed: v?.composed };
         });
         const graded = cells.filter((c) => c.grade != null).map((c) => c.grade as number);
         const average = graded.length ? Math.round(graded.reduce((a, b) => a + b, 0) / graded.length) : null;

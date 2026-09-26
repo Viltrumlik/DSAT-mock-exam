@@ -53,6 +53,12 @@ function apiUrl(path: string): string {
  * which sends /api to production unless API_PROXY_TARGET says otherwise.
  *
  * Off, subscribing opens nothing and calls no handler, so a page has only what it loads itself.
+ *
+ * NOTHING IN THE APP CALLS `subscribeRealtime` any more. The grading hub was its last consumer
+ * and this branch deleted it, so today the flag above is inert: set it to "1" and no stream
+ * opens, because no component asks for one. The module and its tests are kept because the
+ * constraint they encode is real and hard-won — whoever wires the next live screen needs it —
+ * but the paragraph above describes a risk that is currently dormant, not one that binds.
  */
 function streamEnabled(): boolean {
   return process.env.NEXT_PUBLIC_REALTIME_STREAM === "1";
