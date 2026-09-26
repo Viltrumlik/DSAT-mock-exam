@@ -22,6 +22,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- Add-only: saving an event ticket to Photos. Without this key iOS terminates the app
+	     the moment anything asks to add a photo — the share sheet's "Save Image" included. -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save your event ticket to Photos, so it's ready to show at the door.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
