@@ -105,6 +105,27 @@ import Testing
         #expect(sorted.map(\.staffTitle) == ["Owner", "Admin", "Teacher", "Support teacher"])
     }
 
+    // MARK: - Materials
+
+    @Test("A material's type, filter and meta line come from its file, as on the site")
+    func materialKinds() throws {
+        #expect(MaterialKind(fileName: "unit3.PDF").label == "PDF")
+        #expect(MaterialKind(fileName: "unit3.PDF").family == .pdf)
+        #expect(MaterialKind(fileName: "deck.pptx").category == .slides)
+        #expect(MaterialKind(fileName: "listening.m4a").category == .audio)
+        #expect(MaterialKind(fileName: "scores.csv").family == .sheet)
+        #expect(MaterialKind(fileName: "https://x.uz/media/a/notes.docx?sig=1").label == "DOCX")
+        #expect(MaterialKind(fileName: "README").label == "FILE")
+        #expect(MaterialKind(fileName: nil).category == .document)
+
+        let material = try JSONCoding.decoder.decode(ClassroomMaterial.self, from: JSONSerialization.data(withJSONObject: [
+            "id": 1, "title": "Unit 3", "file_name": "unit3.pdf", "file_size": 2_516_582,
+            "created_at": "2026-06-03T09:00:00+05:00",
+        ]))
+        #expect(material.kind.label == "PDF")
+        #expect(material.metaLine(locale: Locale(identifier: "en_US"), timeZone: TimeZone(identifier: "Asia/Tashkent")!) == "2.4 MB · Jun 3")
+    }
+
     // MARK: - Classwork
 
     @Test("Classwork awards: nothing yet, a looked-at zero, and XP are three different answers")

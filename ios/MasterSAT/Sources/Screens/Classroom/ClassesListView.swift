@@ -1,124 +1,114 @@
 import SwiftUI
 import MasterSATKit
 
-/// The classes a student belongs to, and the box for joining another.
+/// The classes a student belongs to — the site's `/classes`: a headline with "Join class",
+/// the All · English · Math filter, and one card per class.
 struct ClassesListView: View {
     @Environment(Session.self) private var session
     @State private var classrooms: [Classroom] = []
     @State private var isLoading = true
+    @State private var hasLoaded = false
     @State private var loadError: String?
-    @State private var joinCode = ""
-    @State private var isJoining = false
-    @State private var joinError: String?
+    @State private var filter: ClassroomSubjectFilter = .all
+    @State private var joining = false
     @State private var joinedName: String?
 
-    var body: some View {
-        Group {
-            if isLoading && classrooms.isEmpty {
-                ProgressView()
-            } else if let loadError, classrooms.isEmpty {
-                RetryNotice(message: loadError) { await load() }
-            } else {
-                list
-            }
-        }
-        .background(Theme.background)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+    private func count(_ filter: ClassroomSubjectFilter) -> Int {
+        classrooms.filter(filter.matches).count
     }
 
-    private var list: some View {
+    private var shown: [Classroom] { classrooms.filter(filter.matches) }
+
+    private var tabs: [PillTabs<ClassroomSubjectFilter>.Item] {
+        ClassroomSubjectFilter.allCases.map { item in
+            .init(
+                tab: item,
+                title: item.title,
+                icon: item == .math ? "function" : item == .english ? "book.closed" : "square.grid.2x2",
+                count: count(item)
+            )
+        }
+    }
+
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                PageTitle("Classroom")
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    PageTitle("Classes")
+                    Button { joining = true } label: {
+                        Label("Join class", systemImage: "person.badge.plus")
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .fixedSize()
+                }
 
-                if classrooms.isEmpty {
-                    DashedEmpty(
-                        title: "You are not in a class yet",
-                        hint: "Ask your teacher for the join code."
-                    )
+                if let joinedName {
+                    Label("You joined \(joinedName).", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.success)
+                }
+
+                if isLoading && !hasLoaded {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                } else if let loadError, classrooms.isEmpty {
+                    // A failed load is never "no classes yet".
+                    ClassroomErrorState(
+                        title: "Couldn't load your classes",
+                        message: "Something went wrong on our end. Check your connection and try again."
+                    ) { await load() }
+                    .accessibilityHint(loadError)
+                } else if classrooms.isEmpty {
+                    VStack(spacing: 12) {
+                        DashedEmpty(title: "No classes yet", hint: "Have a class code? Join now to get started.")
+                        Button("Join with a code") { joining = true }
+                            .buttonStyle(SecondaryButtonStyle())
+                    }
                 } else {
-                    VStack(spacing: 10) {
-                        ForEach(classrooms) { room in
+                    if loadError != nil {
+                        Label("Could not refresh just now — this is the last list we had.", systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    PillTabs(items: tabs, selection: $filter)
+                    if shown.isEmpty {
+                        DashedEmpty(title: "No \(filter.title) classes")
+                    }
+                    VStack(spacing: 12) {
+                        ForEach(shown) { room in
                             NavigationLink {
                                 ClassroomDetailView(classroom: room)
                             } label: {
-                                ClassroomRow(classroom: room)
+                                ClassroomCard(classroom: room)
                             }
                             .buttonStyle(.plain)
                         }
                     }
                 }
-
-                VStack(alignment: .leading, spacing: 12) {
-                    CardHeading(icon: "person.badge.plus", title: "Join a class", subtitle: "With the code from your teacher")
-                    HStack(spacing: 10) {
-                        TextField("Join code", text: $joinCode)
-                            .textInputAutocapitalization(.characters)
-                            .autocorrectionDisabled()
-                            .font(.system(size: 15, weight: .semibold))
-                            .padding(12)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                    .fill(Theme.card)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                    .stroke(Theme.separator, lineWidth: 1)
-                            )
-                            .submitLabel(.join)
-                            .onSubmit { join() }
-                        Button(action: join) {
-                            if isJoining { ProgressView().tint(.white) } else { Text("Join") }
-                        }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(joinCode.trimmingCharacters(in: .whitespaces).isEmpty || isJoining)
-                    }
-                    if let joinError {
-                        Text(joinError).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.danger)
-                    } else if let joinedName {
-                        Text("You joined \(joinedName).")
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.success)
-                    } else {
-                        // The code is the only way back into a class you were removed from,
-                        // so it is worth saying where it comes from.
-                        Text("Your teacher can give you the code for the class.")
-                            .font(.system(size: 12, weight: .medium)).foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .cardStyle(padding: 18)
             }
             .padding(16)
         }
         .background(Theme.background)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
         .refreshable { await load() }
-    }
-
-    @MainActor
-    private func join() {
-        isJoining = true
-        joinError = nil
-        joinedName = nil
-        Task {
-            defer { isJoining = false }
-            do {
-                let room = try await session.classrooms.join(code: joinCode)
+        .task { await load() }
+        .sheet(isPresented: $joining) {
+            JoinClassSheet { room in
                 joinedName = room.name
-                joinCode = ""
-                await load()
-            } catch let error as APIError {
-                joinError = error.errorDescription
-            } catch {
-                joinError = error.localizedDescription
+                Task { await load() }
             }
+            .presentationDetents([.medium])
         }
     }
 
     @MainActor
     private func load() async {
-        isLoading = classrooms.isEmpty
+        isLoading = true
         loadError = nil
+        defer {
+            isLoading = false
+            hasLoaded = true
+        }
         do {
             classrooms = try await session.classrooms.classrooms()
         } catch let error as APIError {
@@ -126,355 +116,142 @@ struct ClassesListView: View {
         } catch {
             loadError = error.localizedDescription
         }
-        isLoading = false
     }
 }
 
-struct ClassroomRow: View {
+/// One class on the list: the subject band, the name, "days · time · room", and the
+/// head-count of students — never of staff.
+struct ClassroomCard: View {
     let classroom: Classroom
 
     var body: some View {
-        HStack(spacing: 13) {
-            Avatar(url: classroom.teacherPhotoURL, name: classroom.teacherName ?? classroom.name, size: 44)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(classroom.name)
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                HStack(spacing: 6) {
-                    if let subject = classroom.subject, !subject.isEmpty {
-                        Text(subject.humanisedSubject)
-                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
-                    }
-                    if let teacher = classroom.teacherName, !teacher.isEmpty {
-                        Text("· \(teacher)")
-                            .font(.system(size: 12)).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                    }
-                }
-                if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
-                    Label(schedule, systemImage: "calendar")
-                        .font(.system(size: 11)).foregroundStyle(Theme.textLabel)
-                }
-            }
-            Spacer(minLength: 0)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textLabel)
-        }
-        .cardStyle(padding: 14)
-    }
-}
-
-/// One classroom: where the student stands, what has been set, who else is in it, and
-/// what the teacher has shared.
-///
-/// The four tabs mirror what a student can see on the web workspace — Overview (which
-/// hosts the rankings), Assignments, Materials, People. The staff-only tabs (Lessons,
-/// Results, Grading, Settings) are not here, because a student cannot open them there
-/// either.
-struct ClassroomDetailView: View {
-    let classroom: Classroom
-
-    enum Tab: String, CaseIterable, Identifiable {
-        case overview = "Overview"
-        case work = "Work"
-        case materials = "Materials"
-        case people = "People"
-
-        var id: String { rawValue }
-    }
-
-    @Environment(Session.self) private var session
-    @State private var tab: Tab = .overview
-    @State private var board: RankingBoard?
-    @State private var boardKind: RankingKind = .academic
-    @State private var people: [ClassroomMember] = []
-    @State private var materials: [ClassroomMaterial] = []
-    @State private var assignments: [AssignmentListing] = []
-    @State private var isLoading = true
-    @State private var loadError: String?
-
-    private var tabs: [PillTabs<Tab>.Item] {
-        [
-            .init(tab: .overview, title: "Overview", icon: "square.grid.2x2"),
-            .init(tab: .work, title: "Work", icon: "checklist", count: assignments.isEmpty ? nil : assignments.count),
-            .init(tab: .materials, title: "Materials", icon: "folder", count: materials.isEmpty ? nil : materials.count),
-            .init(tab: .people, title: "People", icon: "person.2", count: people.isEmpty ? nil : people.count),
-        ]
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HeroHeader(
-                    eyebrow: (classroom.subject?.isEmpty == false ? classroom.subject! : "Class").humanisedSubject,
-                    eyebrowIcon: "person.3.fill",
-                    title: classroom.name,
-                    blurb: classroom.teacherName.flatMap { $0.isEmpty ? nil : "With \($0)" },
-                    tiles: heroTiles
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                IconTile(
+                    systemName: classroom.isMath ? "function" : "book.closed.fill",
+                    tone: classroom.isMath ? Theme.accent : Theme.subjectEnglish,
+                    size: 44
                 )
-
-                PillTabs(items: tabs, selection: $tab)
-
-                if isLoading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
-                } else if let loadError {
-                    RetryNotice(message: loadError) { await load() }
-                } else {
-                    switch tab {
-                    case .overview: overview
-                    case .work: work
-                    case .materials: materialList
-                    case .people: peopleList
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(classroom.name)
+                        .font(.system(size: 17, weight: .heavy))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Text(classroom.cardScheduleLine)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                Spacer(minLength: 0)
             }
-            .padding(16)
-        }
-        .background(Theme.background)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .task(id: tab) { await load() }
-    }
-
-    private var heroTiles: [HeroTile] {
-        var tiles: [HeroTile] = []
-        if let members = classroom.membersCount { tiles.append(HeroTile("Students", icon: "person.2", value: members)) }
-        if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
-            tiles.append(HeroTile("Meets", icon: "calendar", value: schedule))
-        }
-        return tiles
-    }
-
-    // MARK: - Overview
-
-    @ViewBuilder
-    private var overview: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let teacher = classroom.teacherName, !teacher.isEmpty {
-                DetailRow(label: "Teacher", value: teacher)
-            }
-            if let subject = classroom.subject, !subject.isEmpty {
-                Divider(); DetailRow(label: "Subject", value: subject.humanisedSubject)
-            }
-            if let schedule = classroom.scheduleSummary, !schedule.isEmpty {
-                Divider(); DetailRow(label: "Schedule", value: schedule)
-            }
-            if let room = classroom.roomNumber, !room.isEmpty {
-                Divider(); DetailRow(label: "Room", value: room)
-            }
-            if let members = classroom.membersCount {
-                Divider(); DetailRow(label: "Members", value: ScoreText.string(members))
+            HStack(spacing: 8) {
+                if let count = classroom.headCount {
+                    Label("\(ScoreText.string(count)) \(count == 1 ? "student" : "students")", systemImage: "person.2")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                HStack(spacing: 4) {
+                    Text("Open").font(.system(size: 13, weight: .bold))
+                    Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(Theme.accent)
             }
         }
         .cardStyle(padding: 16)
-
-        VStack(alignment: .leading, spacing: 14) {
-            // One board. The SAT board was retired on the server (it now always answers
-            // empty), and the class ranks on XP from the rewards ledger — the same XP the
-            // school-wide leaderboard counts.
-            CardHeading(icon: "trophy.fill", title: "Leaderboard", subtitle: "Ranked on XP", tone: Theme.amber)
-
-            if let board {
-                if board.isHidden {
-                    DashedEmpty(title: "Your teacher keeps this board private.")
-                } else if board.rows.isEmpty {
-                    DashedEmpty(title: "No results on this board yet.")
-                } else {
-                    ForEach(board.rows) { row in
-                        RankingRowView(row: row, hideScores: board.hideScoreValues)
-                    }
-                }
-            } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
-            }
+        .overlay(alignment: .top) {
+            // The subject band along the top edge, as on the site's class card.
+            Rectangle()
+                .fill(classroom.isMath ? Theme.accent : Theme.subjectEnglish)
+                .frame(height: 4)
+                .allowsHitTesting(false)
         }
-        .cardStyle(padding: 18)
-    }
-
-    // MARK: - Work
-
-    @ViewBuilder
-    private var work: some View {
-        if assignments.isEmpty {
-            DashedEmpty(title: "Nothing set yet", hint: "Homework for this class appears here.")
-        } else {
-            ForEach(assignments) { assignment in
-                NavigationLink {
-                    HomeworkDetailView(assignment: assignment)
-                } label: {
-                    HomeworkRow(assignment: assignment).cardStyle()
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    // MARK: - Materials
-
-    @ViewBuilder
-    private var materialList: some View {
-        if materials.isEmpty {
-            DashedEmpty(title: "No materials yet", hint: "Files your teacher shares appear here.")
-        } else {
-            ForEach(materials) { MaterialRow(material: $0) }
-        }
-    }
-
-    // MARK: - People
-
-    @ViewBuilder
-    private var peopleList: some View {
-        let staff = people.filter(\.isStaff)
-        let students = people.filter { !$0.isStaff }
-        if !staff.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                DotHeading(title: "Teachers", count: staff.count)
-                ForEach(staff) { PersonRow(person: $0) }
-            }
-        }
-        if !students.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                DotHeading(title: "Students", count: students.count, tone: Theme.info)
-                ForEach(students) { PersonRow(person: $0) }
-            }
-        }
-        if people.isEmpty {
-            DashedEmpty(title: "Nobody listed yet")
-        }
-    }
-
-    // MARK: - Loading
-
-    @MainActor
-    private func load() async {
-        loadError = nil
-        do {
-            switch tab {
-            case .overview:
-                isLoading = board == nil
-                await loadBoard()
-            case .work:
-                isLoading = assignments.isEmpty
-                let all = try await session.student.assignments()
-                assignments = all.filter { $0.classroomId == classroom.id }
-            case .materials:
-                isLoading = materials.isEmpty
-                materials = try await session.classrooms.materials(classroomId: classroom.id)
-            case .people:
-                isLoading = people.isEmpty
-                people = try await session.classrooms.people(classroomId: classroom.id)
-            }
-        } catch let error as APIError {
-            loadError = error.errorDescription
-        } catch {
-            loadError = error.localizedDescription
-        }
-        isLoading = false
-    }
-
-    @MainActor
-    private func loadBoard() async {
-        do {
-            board = try await session.classrooms.rankings(classroomId: classroom.id, kind: boardKind)
-        } catch {
-            // A board that will not load must not take the whole Overview with it — the
-            // class details above it are still worth showing.
-            board = nil
-        }
-        isLoading = false
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .contentShape(Rectangle())
     }
 }
 
-struct RankingRowView: View {
-    let row: RankingRow
-    let hideScores: Bool
+/// "Join a class" — the site's dialog, as a sheet.
+///
+/// The code is the only way back into a class a student was removed from, so a wrong one
+/// fails loudly with the server's own sentence.
+struct JoinClassSheet: View {
+    let onJoined: (Classroom) -> Void
+
+    @Environment(Session.self) private var session
+    @Environment(\.dismiss) private var dismiss
+    @State private var code = ""
+    @State private var isJoining = false
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    private var trimmed: String { code.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text(ScoreText.string(row.rank))
-                .font(.system(size: 13, weight: .heavy).monospacedDigit())
-                .frame(width: 28, alignment: .trailing)
-                .foregroundStyle(row.isMe ? Theme.accent : Theme.textSecondary)
-
-            Text(row.name)
-                .font(.system(size: 14, weight: row.isMe ? .heavy : .semibold))
-                .lineLimit(1)
-
-            Spacer()
-
-            if let change = row.rankChange, change != 0 {
-                Image(systemName: change > 0 ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(change > 0 ? Theme.success : Theme.textLabel)
-            }
-
-            if hideScores {
-                EmptyView()
-            } else if let score = row.score {
-                Text(ScoreText.string(score))
-                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Join a class").font(.system(size: 20, weight: .heavy))
+                Text("Enter the code your teacher gave you.")
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(Theme.textSecondary)
-            } else if !row.hasResult {
-                // Not "0" and not blank: they simply have not sat one yet.
-                Text("—").font(.system(size: 14)).foregroundStyle(Theme.textLabel)
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Class code")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textLabel)
+                TextField("", text: $code, prompt: Text(verbatim: "e.g. 7QX2KP"))
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 17, weight: .bold, design: .monospaced))
+                    .focused($focused)
+                    .submitLabel(.join)
+                    .onSubmit(join)
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.card))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                            .stroke(error == nil ? Theme.separator : Theme.danger, lineWidth: 1)
+                    )
+                if let error {
+                    Text(error).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.danger)
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button("Cancel") { dismiss() }
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                Button(action: join) {
+                    if isJoining { ProgressView().tint(.white).frame(maxWidth: .infinity) }
+                    else { Text("Join class").frame(maxWidth: .infinity) }
+                }
+                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .disabled(trimmed.isEmpty || isJoining)
             }
         }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 12)
-        .frame(maxWidth: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(row.isMe ? Theme.accentSoft : Theme.background)
-        )
+        .padding(20)
+        .background(Theme.background)
+        .onAppear { focused = true }
     }
-}
 
-struct PersonRow: View {
-    let person: ClassroomMember
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Avatar(url: person.photoURL, name: person.name)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(person.name).font(.subheadline)
-                Text(person.roleLabel).font(.caption).foregroundStyle(.secondary)
+    @MainActor
+    private func join() {
+        guard !trimmed.isEmpty, !isJoining else { return }
+        isJoining = true
+        error = nil
+        let code = trimmed.uppercased()
+        Task {
+            defer { isJoining = false }
+            do {
+                let room = try await session.classrooms.join(code: code)
+                onJoined(room)
+                dismiss()
+            } catch let failure as APIError {
+                error = failure.errorDescription
+            } catch let failure {
+                error = failure.localizedDescription
             }
         }
-        .cardStyle(padding: 13)
-    }
-}
-
-struct MaterialRow: View {
-    let material: ClassroomMaterial
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(material.title).font(.subheadline.weight(.medium))
-            if let description = material.description, !description.isEmpty {
-                Text(description).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            HStack(spacing: 8) {
-                if let name = material.fileName, !name.isEmpty {
-                    Text(name).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                }
-                if let size = material.fileSize, size > 0 {
-                    Text(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                if let raw = material.fileURL, let url = URL(string: raw) {
-                    // Opened in Safari rather than downloaded in-app: these are the
-                    // teacher's own files in every format a teacher uses, and Safari
-                    // already knows how to show all of them.
-                    Link(destination: url) {
-                        Label("Open", systemImage: "arrow.up.right.square")
-                            .font(.caption.weight(.medium))
-                    }
-                }
-            }
-        }
-        .cardStyle(padding: 14)
     }
 }
 
@@ -515,5 +292,35 @@ struct Avatar: View {
     private var shortInitials: String {
         let letters = name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }
         return letters.isEmpty ? "?" : letters.joined().uppercased()
+    }
+}
+
+/// A load that failed, in the site's two lines: what could not be loaded, and what to do.
+/// Never an empty state — "nothing here" is only for a successful empty answer.
+struct ClassroomErrorState: View {
+    let title: String
+    let message: String
+    let retry: @MainActor () async -> Void
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.warning)
+            Text(title)
+                .font(.system(size: 16, weight: .bold))
+                .multilineTextAlignment(.center)
+            Text(message)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again") { Task { await retry() } }
+                .buttonStyle(SecondaryButtonStyle())
+                .padding(.top, 4)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 26)
+        .padding(.horizontal, 16)
     }
 }

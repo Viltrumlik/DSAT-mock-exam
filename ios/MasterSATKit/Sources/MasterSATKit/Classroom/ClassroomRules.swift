@@ -139,6 +139,62 @@ public enum ClassroomSubjectFilter: String, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Materials
+
+/// What kind of file a class material is, read from its name — the web's `materialMeta`.
+public struct MaterialKind: Equatable, Sendable {
+    /// The filter a material falls under on the Materials tab.
+    public enum Category: String, CaseIterable, Sendable {
+        case document = "Document"
+        case slides = "Slides"
+        case audio = "Audio"
+    }
+
+    /// The family its icon and colour come from.
+    public enum Family: Sendable { case pdf, text, sheet, image, slides, audio, other }
+
+    /// "PDF", "DOCX" … or "FILE" when the name has no extension.
+    public let label: String
+    public let category: Category
+    public let family: Family
+
+    public init(fileName: String?) {
+        let ext = Self.extensionOf(fileName)
+        label = ext.isEmpty ? "FILE" : ext.uppercased()
+        switch ext {
+        case "ppt", "pptx", "key", "odp": (category, family) = (.slides, .slides)
+        case "mp3", "m4a", "wav", "aac", "ogg": (category, family) = (.audio, .audio)
+        case "pdf": (category, family) = (.document, .pdf)
+        case "doc", "docx", "rtf", "txt": (category, family) = (.document, .text)
+        case "xls", "xlsx", "csv": (category, family) = (.document, .sheet)
+        case "png", "jpg", "jpeg": (category, family) = (.document, .image)
+        default: (category, family) = (.document, .other)
+        }
+    }
+
+    /// Lower-case extension of a file name or URL, without the dot; query and fragment ignored.
+    static func extensionOf(_ nameOrURL: String?) -> String {
+        guard let nameOrURL, !nameOrURL.isEmpty else { return "" }
+        let clean = nameOrURL.split(whereSeparator: { $0 == "?" || $0 == "#" }).first.map(String.init) ?? nameOrURL
+        let base = clean.split(separator: "/").last.map(String.init) ?? clean
+        guard let dot = base.lastIndex(of: ".") else { return "" }
+        return String(base[base.index(after: dot)...]).lowercased()
+    }
+}
+
+extension ClassroomMaterial {
+    public var kind: MaterialKind { MaterialKind(fileName: fileName ?? fileURL) }
+
+    /// "2.4 MB · Jun 3" — size and date, whichever the server could give.
+    public func metaLine(locale: Locale = .autoupdatingCurrent, timeZone: TimeZone = .current) -> String {
+        var parts: [String] = []
+        if let fileSize, fileSize > 0 { parts.append(SubmissionLimits.megabytes(fileSize)) }
+        let date = HomeworkWording.shortDate(createdAt, locale: locale, timeZone: timeZone)
+        if date != "—" { parts.append(date) }
+        return parts.joined(separator: " · ")
+    }
+}
+
 // MARK: - Classwork
 
 /// A student's outcome for one piece of classwork.
