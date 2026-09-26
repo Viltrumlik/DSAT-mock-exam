@@ -42,6 +42,10 @@ struct VocabStudyView: View {
                     // not go on as if it could. The server's own sentence says why — "That
                     // homework is not assigned to you for this set." among them.
                     startFailed(startError)
+                } else if !runner.isStarted {
+                    // No card is dealt until the server has opened the run. Dealing first
+                    // would let a student answer cards that a failed start then throws away.
+                    dealing
                 } else if let outcome {
                     ModeOutcomeView(
                         mode: mode,
@@ -87,6 +91,19 @@ struct VocabStudyView: View {
             MatchingView(runner: runner, set: set, onExit: exit, onFinish: finish)
         case .speed:
             SpeedView(runner: runner, set: set, onExit: exit, onFinish: finish)
+        }
+    }
+
+    /// Opening the run — inside the same frame, so the way out is there from the first frame.
+    private var dealing: some View {
+        StudyShell(title: mode.title, subtitle: set.title, tone: mode.tone, onExit: onClose) {
+            VStack(spacing: 12) {
+                ProgressView().controlSize(.large)
+                Text("Dealing your words…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 

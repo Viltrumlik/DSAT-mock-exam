@@ -64,11 +64,16 @@ final class AssessmentBoardModel {
     }
 }
 
-/// What a card can do, handed down from the page that owns the runner and the review.
+/// What a card can do, handed down from the page that owns the runner.
+///
+/// Reviews are not in here: a finished card opens its review with a plain `NavigationLink`.
+/// The board is three pages deep in one stack, and an item-bound destination of the same
+/// type declared on every level is not something to trust the stack to resolve.
 struct AssessmentCardActions {
     let startingId: Int?
     let open: @MainActor (AssessmentBoardEntry) -> Void
-    let review: @MainActor (AssessmentBoardEntry) -> Void
+    /// Reload the board — after a retry started from a review.
+    let reload: @MainActor () -> Void
 }
 
 /// One step of "My assessments › English › Algebra". The last one is where the student is.
@@ -90,12 +95,6 @@ private struct AssessmentStartRefusal: Identifiable {
     let stale: Bool
 }
 
-/// A finished card's review, with the homework it belongs to so the review can offer a retry.
-private struct AssessmentReviewTarget: Hashable {
-    let attemptId: Int
-    let homeworkId: Int
-}
-
 // MARK: - The page every level shares
 
 /// The board's frame: the headline, the search that spans everything, the breadcrumb, and
@@ -110,7 +109,6 @@ struct AssessmentBoardScaffold<Content: View>: View {
     @Environment(Session.self) private var session
     @State private var query = ""
     @State private var runnerAttemptId: Int?
-    @State private var reviewTarget: AssessmentReviewTarget?
     @State private var refusal: AssessmentStartRefusal?
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -132,13 +130,6 @@ struct AssessmentBoardScaffold<Content: View>: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if loadsOnAppear { await model.load(session.student) } }
-        .navigationDestination(item: $reviewTarget) { target in
-            AssessmentReviewView(
-                attemptId: target.attemptId,
-                homeworkId: target.homeworkId,
-                onRetryClosed: { Task { await model.load(session.student) } }
-            )
-        }
         .fullScreenCover(item: $runnerAttemptId) { id in
             AssessmentRunnerView(attemptId: id) {
                 runnerAttemptId = nil
@@ -192,11 +183,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
         AssessmentCardActions(
             startingId: model.startingId,
             open: { entry in open(entry) },
-            review: { entry in
-                if let attemptId = entry.progress?.attemptId {
-                    reviewTarget = AssessmentReviewTarget(attemptId: attemptId, homeworkId: entry.link.homeworkId)
-                }
-            }
+            reload: { Task { await model.load(session.student) } }
         )
     }
 
@@ -297,7 +284,7 @@ struct AssessmentTodoSection: View {
                         entry: entry,
                         isStarting: actions.startingId == entry.id,
                         onOpen: { actions.open(entry) },
-                        onReview: { actions.review(entry) }
+                        onRetryClosed: actions.reload
                     )
                 }
                 if entries.count > AssessmentBoard.todoPreview {
@@ -610,7 +597,7 @@ struct AssessmentColumns: View {
                         entry: entry,
                         isStarting: actions.startingId == entry.id,
                         onOpen: { actions.open(entry) },
-                        onReview: { actions.review(entry) }
+                        onRetryClosed: actions.reload
                     )
                 }
             }
@@ -632,7 +619,8 @@ struct AssessmentCard: View {
     let entry: AssessmentBoardEntry
     let isStarting: Bool
     let onOpen: @MainActor () -> Void
-    let onReview: @MainActor () -> Void
+    /// Handed to the review, which calls it when a retry's runner closes.
+    let onRetryClosed: @MainActor () -> Void
 
     private var state: AssessmentCardState { entry.state }
     private var progress: AssessmentProgress? { entry.progress }
@@ -802,8 +790,14 @@ struct AssessmentCard: View {
     private var action: some View {
         switch state.column {
         case .done:
-            if progress?.attemptId != nil {
-                Button(action: onReview) {
+            if let attemptId = progress?.attemptId {
+                NavigationLink {
+                    AssessmentReviewView(
+                        attemptId: attemptId,
+                        homeworkId: entry.link.homeworkId,
+                        onRetryClosed: onRetryClosed
+                    )
+                } label: {
                     Label(state == .submitted ? "View" : "Review", systemImage: "checkmark.circle")
                         .frame(maxWidth: .infinity)
                 }
