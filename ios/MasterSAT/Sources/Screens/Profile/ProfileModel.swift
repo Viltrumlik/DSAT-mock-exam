@@ -74,18 +74,23 @@ final class ProfileModel {
     /// badges. Pull to refresh reloads the lot.
     func appeared(_ session: Session) async {
         if hasAppeared {
+            async let identity: Void = session.refreshUser()
             async let details: Void = loadAccount(session)
             async let wallet: Void = loadRewards(session)
             async let work: Void = loadHomework(session)
             async let badges: Void = loadCounts(session)
-            _ = await (details, wallet, work, badges)
+            _ = await (identity, details, wallet, work, badges)
         } else {
             hasAppeared = true
             await refreshAll(session)
         }
     }
 
+    /// Also re-reads the session's own copy of the account: the goal and the date on this page
+    /// are read from it, and Home saves them without touching it — so a goal changed on Home
+    /// would otherwise show here as the old one.
     func refreshAll(_ session: Session) async {
+        async let identity: Void = session.refreshUser()
         async let details: Void = loadAccount(session)
         async let signIn: Void = loadTelegramSignIn(session)
         async let wallet: Void = loadRewards(session)
@@ -95,7 +100,7 @@ final class ProfileModel {
         async let rooms: Void = loadClasses(session, refreshing: true)
         async let timetable: Void = loadScheduleIfOpened(session)
         async let badges: Void = loadCounts(session)
-        _ = await (details, signIn, wallet, work, results, dates, rooms, timetable, badges)
+        _ = await (identity, details, signIn, wallet, work, results, dates, rooms, timetable, badges)
     }
 
     func loadAccount(_ session: Session) async {
