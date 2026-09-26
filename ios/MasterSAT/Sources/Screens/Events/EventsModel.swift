@@ -40,6 +40,10 @@ final class EventsModel {
     /// Both lists, side by side. Each keeps what it last showed if a later re-read fails:
     /// the page never trades a real list for an error because a refresh blinked.
     func load() async {
+        // A retry after a failure shows the placeholders again, so "Try again" visibly does
+        // something; a list already on screen stays put while it is re-read.
+        if upcomingState == .failed { upcomingState = .loading }
+        if mineState == .failed { mineState = .loading }
         let api = self.api
         async let upcomingResult = api.upcoming()
         async let mineResult = api.mine()
