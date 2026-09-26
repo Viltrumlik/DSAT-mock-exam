@@ -135,6 +135,17 @@ import Testing
         #expect(homework.offersFileUpload == false)
     }
 
+    @Test("A past-paper homework from the list is not a hand-in, even before its detail arrives")
+    func listRowWithPaperOffersNoUpload() throws {
+        // `my-assignments` sends `contents` but none of the paper fields.
+        let row = try listing([
+            "id": 1, "content_type": "pastpaper",
+            "contents": [["kind": "PASTPAPER", "title": "June 2025", "item_count": 98]],
+        ])
+        #expect(row.hasLaunchableContent)
+        #expect(!row.offersFileUpload)
+    }
+
     @Test("A quiz and a word set are not papers, and nothing is listed for a plain hand-in")
     func noPapers() throws {
         #expect(try listing(["id": 1, "assessment_homeworks": [["homework_id": 2]]]).computerPapers.isEmpty)

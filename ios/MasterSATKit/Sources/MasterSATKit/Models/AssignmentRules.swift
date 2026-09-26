@@ -84,8 +84,13 @@ extension AssignmentListing {
     }
 
     /// Anything the student opens and works through, rather than hands in.
+    ///
+    /// `contents` counts too: it is the only sign of a past paper or a mock on a
+    /// `my-assignments` row, which carries none of the paper fields — without it a past-paper
+    /// homework looked like a hand-in until the detail arrived.
     public var hasLaunchableContent: Bool {
         !assessmentHomeworks.isEmpty || !vocabHomeworks.isEmpty || !practiceBundleTests.isEmpty
+            || !contents.isEmpty
             || mockExamId != nil || !allPracticePackIds.isEmpty
             || practiceTestId != nil || !practiceTestIds.isEmpty || moduleId != nil
     }
