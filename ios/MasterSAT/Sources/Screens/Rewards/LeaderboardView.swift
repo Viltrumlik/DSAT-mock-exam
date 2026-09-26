@@ -994,12 +994,15 @@ private struct LeaderboardStepShine: View {
 
     var body: some View {
         GeometryReader { geometry in
+            // Plain numbers into the animator: its content closure is @Sendable, and the
+            // proxy itself is not.
             let band = geometry.size.width * 0.26
+            let height = geometry.size.height
             LinearGradient(colors: [.clear, Color.white.opacity(0.6), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: band, height: geometry.size.height * 1.4)
+                .frame(width: band, height: height * 1.4)
                 .rotationEffect(.degrees(12))
                 .keyframeAnimator(initialValue: -2.2, repeating: true) { content, position in
-                    content.offset(x: band * position, y: -geometry.size.height * 0.2)
+                    content.offset(x: band * position, y: -height * 0.2)
                 } keyframes: { _ in
                     KeyframeTrack {
                         LinearKeyframe(-2.2, duration: delay)
