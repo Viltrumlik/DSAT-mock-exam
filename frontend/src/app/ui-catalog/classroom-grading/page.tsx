@@ -12,7 +12,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Gradebook } from "@/features/classroom/pages/Gradebook";
 import type { ClassroomWithRole } from "@/features/classroom/types";
 
@@ -101,7 +101,13 @@ export default function Page() {
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
       <QueryClientProvider client={qc}>
-        <Gradebook classroom={CLASSROOM} />
+        {/* The tab reads `?assignment=` through `useSearchParams`, which needs a boundary in the
+            app router: without one `next build` refuses to prerender this route and EXITS 1 —
+            the whole production build, brought down by a preview page. The real route at
+            `(teacher)/teacher/classrooms/[classId]` wraps its workspace for the same reason. */}
+        <Suspense fallback={<div style={{ minHeight: 240 }} />}>
+          <Gradebook classroom={CLASSROOM} />
+        </Suspense>
       </QueryClientProvider>
     </div>
   );
