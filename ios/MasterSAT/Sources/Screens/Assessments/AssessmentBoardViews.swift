@@ -90,6 +90,12 @@ private struct AssessmentStartRefusal: Identifiable {
     let stale: Bool
 }
 
+/// A finished card's review, with the homework it belongs to so the review can offer a retry.
+private struct AssessmentReviewTarget: Hashable {
+    let attemptId: Int
+    let homeworkId: Int
+}
+
 // MARK: - The page every level shares
 
 /// The board's frame: the headline, the search that spans everything, the breadcrumb, and
@@ -104,7 +110,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
     @Environment(Session.self) private var session
     @State private var query = ""
     @State private var runnerAttemptId: Int?
-    @State private var reviewAttemptId: Int?
+    @State private var reviewTarget: AssessmentReviewTarget?
     @State private var refusal: AssessmentStartRefusal?
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -126,8 +132,12 @@ struct AssessmentBoardScaffold<Content: View>: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if loadsOnAppear { await model.load(session.student) } }
-        .navigationDestination(item: $reviewAttemptId) { id in
-            AssessmentReviewView(attemptId: id)
+        .navigationDestination(item: $reviewTarget) { target in
+            AssessmentReviewView(
+                attemptId: target.attemptId,
+                homeworkId: target.homeworkId,
+                onRetryClosed: { Task { await model.load(session.student) } }
+            )
         }
         .fullScreenCover(item: $runnerAttemptId) { id in
             AssessmentRunnerView(attemptId: id) {
@@ -183,7 +193,9 @@ struct AssessmentBoardScaffold<Content: View>: View {
             startingId: model.startingId,
             open: { entry in open(entry) },
             review: { entry in
-                if let attemptId = entry.progress?.attemptId { reviewAttemptId = attemptId }
+                if let attemptId = entry.progress?.attemptId {
+                    reviewTarget = AssessmentReviewTarget(attemptId: attemptId, homeworkId: entry.link.homeworkId)
+                }
             }
         )
     }
