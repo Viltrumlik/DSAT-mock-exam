@@ -57,8 +57,8 @@ final class DiagnosticsCenter: NSObject, @unchecked Sendable {
                 signature: DiagnosticSignature.server(status: status, path: path),
                 message: "The server answered \(status) to \(DiagnosticSignature.normalise(path))."
             )
-        case .upgradeRequired:
-            // Not a fault — the release policy doing its job.
+        case .upgradeRequired, .serverReached:
+            // Not faults — the release policy doing its job, and a request that got through.
             return
         }
         Task {

@@ -230,8 +230,14 @@ import Testing
     private final class Events: @unchecked Sendable {
         private let lock = NSLock()
         private var _events: [APIClientEvent] = []
+        private var _reached = 0
         private var _signOuts = 0
-        func append(_ e: APIClientEvent) { lock.lock(); _events.append(e); lock.unlock() }
+        /// Faults only; `.serverReached` accompanies every response and is counted apart.
+        func append(_ e: APIClientEvent) {
+            lock.lock(); defer { lock.unlock() }
+            if case .serverReached = e { _reached += 1 } else { _events.append(e) }
+        }
+        var reached: Int { lock.lock(); defer { lock.unlock() }; return _reached }
         func signOut() { lock.lock(); _signOuts += 1; lock.unlock() }
         var events: [APIClientEvent] { lock.lock(); defer { lock.unlock() }; return _events }
         var signOuts: Int { lock.lock(); defer { lock.unlock() }; return _signOuts }
@@ -268,6 +274,20 @@ import Testing
             Issue.record("unexpected \(error)")
         }
         #expect(events.events.count == 1)
+    }
+
+    @Test("Any answer from the server says the phone is online; a dropped connection does not")
+    func serverReached() async throws {
+        let (client, _, events) = makeClient()
+        server.handler = { _ in .json(["ok": true]) }
+        _ = try await client.send(.get("/users/me/"))
+        server.handler = { _ in .json(["detail": "boom"], status: 500) }
+        _ = try? await client.send(.get("/users/me/"))
+        #expect(events.reached == 2)
+
+        server.handler = { _ in StubResponse(error: URLError(.notConnectedToInternet)) }
+        _ = try? await client.send(.get("/users/me/"))
+        #expect(events.reached == 2)
     }
 
     @Test("A deploy-time 503 reads as 'wait', and is retryable")

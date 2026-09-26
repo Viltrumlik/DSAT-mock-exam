@@ -33,6 +33,16 @@ final class Connectivity {
         }
         monitor.start(queue: DispatchQueue(label: "uz.mastersat.connectivity"))
     }
+
+    /// The server just answered, so the phone is online whatever the path monitor last said.
+    /// The monitor can report no route while requests go through (the simulator does after
+    /// the Mac changes networks), and a banner saying "offline" over a page that is loading
+    /// fine teaches the student to ignore it.
+    func noteServerReached() {
+        guard !isOnline else { return }
+        isOnline = true
+        onReconnect?()
+    }
 }
 
 /// A thin strip at the top of the screen while offline.

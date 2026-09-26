@@ -101,9 +101,14 @@ final class Session {
         }
         let diagnostics = self.diagnostics
         events.handler = { [weak self] event in
-            diagnostics.record(event)
-            if case .upgradeRequired(let error) = event {
+            switch event {
+            case .serverReached:
+                Task { @MainActor in self?.connectivity.noteServerReached() }
+            case .upgradeRequired(let error):
+                diagnostics.record(event)
                 Task { @MainActor in self?.releaseGate.noteRefusal(error) }
+            default:
+                diagnostics.record(event)
             }
         }
         connectivity.onReconnect = { [weak self] in

@@ -102,6 +102,7 @@ public actor APIClient {
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport(underlying: "Response was not HTTP")
         }
+        onEvent(.serverReached)
 
         if (200..<300).contains(http.statusCode) { return data }
 
@@ -359,6 +360,9 @@ public enum APIClientEvent: Sendable {
     case decodingFailed(path: String, detail: String)
     /// A 5xx other than the deploy-time 502/503/504.
     case serverError(status: Int, path: String)
+    /// The server answered — any status. Proof the phone is online, whatever the network
+    /// path monitor last said: it can report no route while requests are going through.
+    case serverReached
 }
 
 /// Decodable stand-in for endpoints with no meaningful body.
