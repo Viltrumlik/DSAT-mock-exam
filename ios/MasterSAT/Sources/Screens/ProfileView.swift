@@ -256,7 +256,10 @@ struct ProfileIdentity {
         name = full.isEmpty ? (handle.isEmpty ? user.displayName : handle) : full
         username = handle
         role = ProfileWording.roleLabel(account?.role ?? user.role)
-        photoURL = (account?.profileImageURL ?? user.profileImageURL).flatMap { $0.isEmpty ? nil : $0 }
+        // Once `/users/me/` has answered, its "no photo" is an answer too — a photo just
+        // removed must not come back from the session's older copy.
+        let photo = account.map { $0.profileImageURL } ?? user.profileImageURL
+        photoURL = photo.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
         email = (account?.realEmail ?? user.email).trimmingCharacters(in: .whitespacesAndNewlines)
         emailVerified = account?.emailVerified ?? user.emailVerified ?? false
         phone = account.map { $0.phoneNumber.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -311,7 +314,7 @@ private struct ProfileHeroCard: View {
                 }
             }
 
-            RewardsFlowLayout(spacing: 8) {
+            ProfileFlowLayout(spacing: 8) {
                 if identity.emailConfirmed {
                     ProfileChip(text: identity.email, icon: "envelope.fill", tone: ProfileTone.emerald)
                 } else {

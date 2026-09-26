@@ -438,7 +438,7 @@ struct ProfileOverviewTab: View {
                 }
             }
             if !done.isEmpty {
-                RewardsFlowLayout(spacing: 12) {
+                ProfileFlowLayout(spacing: 12) {
                     ForEach(done) { item in
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark")
@@ -520,7 +520,7 @@ struct ProfileOverviewTab: View {
             title: "Your profile is all set",
             description: "Everything that makes it useful is filled in."
         ) {
-            RewardsFlowLayout(spacing: 8) {
+            ProfileFlowLayout(spacing: 8) {
                 ForEach(items) { item in
                     ProfileChip(text: item.doneLabel, icon: "checkmark", tone: ProfileTone.emerald)
                 }

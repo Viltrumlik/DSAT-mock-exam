@@ -52,21 +52,26 @@ struct ProfilePanel<Actions: View, Content: View>: View {
     let tone: Color
     let title: String
     var description: String?
+    var hasActions = true
     @ViewBuilder var actions: () -> Actions
     @ViewBuilder var content: () -> Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 12) {
-                    heading
-                    Spacer(minLength: 8)
-                    actions()
+            if hasActions {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 12) {
+                        heading
+                        Spacer(minLength: 8)
+                        actions()
+                    }
+                    VStack(alignment: .leading, spacing: 12) {
+                        heading
+                        HStack(spacing: 8) { actions() }
+                    }
                 }
-                VStack(alignment: .leading, spacing: 12) {
-                    heading
-                    HStack(spacing: 8) { actions() }
-                }
+            } else {
+                heading
             }
             content()
         }
@@ -94,7 +99,68 @@ struct ProfilePanel<Actions: View, Content: View>: View {
 
 extension ProfilePanel where Actions == EmptyView {
     init(icon: String, tone: Color, title: String, description: String? = nil, @ViewBuilder content: @escaping () -> Content) {
-        self.init(icon: icon, tone: tone, title: title, description: description, actions: { EmptyView() }, content: content)
+        self.init(
+            icon: icon, tone: tone, title: title, description: description, hasActions: false,
+            actions: { EmptyView() }, content: content
+        )
+    }
+}
+
+/// Chips and buttons that wrap onto the next line. Like `RewardsFlowLayout`, except that an
+/// item wider than the whole line is given the line and left to truncate — a long email
+/// address in the hero must shorten, not run off the card.
+struct ProfileFlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let rows = arrange(subviews, in: width)
+        let height = rows.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(0, rows.count - 1))
+        return CGSize(width: proposal.width ?? rows.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in arrange(subviews, in: bounds.width) {
+            var x = bounds.minX
+            for item in row.items {
+                subviews[item.index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(item.size))
+                x += item.size.width + spacing
+            }
+            y += row.height + spacing
+        }
+    }
+
+    private struct Item {
+        let index: Int
+        let size: CGSize
+    }
+
+    private struct Row {
+        var items: [Item] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+    }
+
+    private func arrange(_ subviews: Subviews, in width: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var row = Row()
+        for index in subviews.indices {
+            var size = subviews[index].sizeThatFits(.unspecified)
+            if size.width > width {
+                size = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+                size.width = min(size.width, width)
+            }
+            if !row.items.isEmpty, row.width + spacing + size.width > width {
+                rows.append(row)
+                row = Row()
+            }
+            row.width += (row.items.isEmpty ? 0 : spacing) + size.width
+            row.height = max(row.height, size.height)
+            row.items.append(Item(index: index, size: size))
+        }
+        if !row.items.isEmpty { rows.append(row) }
+        return rows
     }
 }
 

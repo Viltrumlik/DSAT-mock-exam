@@ -115,7 +115,7 @@ private struct ProfileClassCard: View {
                 fact("person.2", ProfileClasses.studentsLine(room))
             }
 
-            RewardsFlowLayout(spacing: 8) {
+            ProfileFlowLayout(spacing: 8) {
                 NavigationLink {
                     ClassroomDetailView(classroom: room)
                 } label: {
