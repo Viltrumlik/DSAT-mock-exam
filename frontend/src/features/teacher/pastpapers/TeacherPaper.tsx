@@ -74,8 +74,8 @@ export function TeacherPaper({ paperId }: { paperId: number }) {
   // Before anything the query can say, because a paperId that is not a number disables the
   // query — and a disabled react-query v5 query sits at status "pending" for ever. Without
   // this, /teacher/pastpapers/abc drew the loading skeleton and never stopped: a dead end
-  // painted as work in progress. HomeworkGradingAssignmentView makes the same check for the
-  // same reason, and says so in one line.
+  // painted as work in progress. (This used to point at HomeworkGradingAssignmentView as the
+  // precedent; that screen was retired on this branch, so the guard now stands on its own.)
   if (!Number.isFinite(paperId) || paperId <= 0) {
     return (
       <TeacherPage title="Past paper" actions={BACK_TO_LIBRARY}>

@@ -44,6 +44,16 @@ const nextConfig: NextConfig = {
         destination: "/teacher/grading",
         permanent: false,
       },
+      {
+        // The Students page shipped on main and was retired here; a class is now opened from
+        // the classrooms list instead. Every link inside the app was rewired, so this catches
+        // only what the app cannot reach: a bookmark, a tab left open since yesterday, a link
+        // in someone's message. Without it those land on Next's bare 404 — no nav, no way
+        // back — which is a worse answer than the page they were looking for having moved.
+        source: "/teacher/students",
+        destination: "/teacher/classrooms",
+        permanent: false,
+      },
     ];
   },
 

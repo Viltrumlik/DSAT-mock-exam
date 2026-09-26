@@ -2051,9 +2051,10 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
         # archived row with an Edit that could not load and a Delete that deleted nothing.
         include_archived = self.action != "list" or str(self.request.query_params.get("include_archived", "")).lower() in ("1", "true")
         staff_qs = qs if include_archived else qs.exclude(status=Assignment.STATUS_ARCHIVED)
-        # How many of the class's students have turned each homework in, for the grading hub's
-        # "N missing" and "All in": SUBMITTED or REVIEWED, which is what the grading page lists as
-        # submitted, from the ACTIVE students the class row's `student_count` counts. It is not
+        # How many of the class's students have turned each homework in — today the classroom's
+        # Assignments tab ("N / M submitted"); originally the grading hub's "N missing" and
+        # "All in", which this branch retired. SUBMITTED or REVIEWED, from the ACTIVE students
+        # the class row's `student_count` counts. It is not
         # `submissions_count`, which counts every row: a draft, work returned for revision, and the
         # work of a student who has left the class or joined its teaching team.
         active_students = classroom.memberships.filter(
