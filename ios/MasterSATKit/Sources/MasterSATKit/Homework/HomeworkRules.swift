@@ -97,6 +97,14 @@ public struct ComputerPaper: Equatable, Sendable, Identifiable {
     public let mode: Mode
     /// Sat before this homework was set and not since: it reads "Start again".
     public let retake: Bool
+    /// A past-paper section's own sitting — the finished one on a "Review" row.
+    public let attemptId: Int?
+
+    /// A finished past-paper section has a certificate the phone can show; a mock's or a
+    /// pack's row does not name one sitting, and the server refuses mock sections anyway.
+    public var certificateAttemptId: Int? {
+        kind == .pastPaper && mode == .review ? attemptId : nil
+    }
 
     /// The web's button words, shown here as a chip: "Review" · "Resume" · "Start again" · "Start".
     public var stateLabel: String {
@@ -107,13 +115,14 @@ public struct ComputerPaper: Equatable, Sendable, Identifiable {
         }
     }
 
-    public init(id: String, kind: Kind, name: String, subject: String?, mode: Mode, retake: Bool) {
+    public init(id: String, kind: Kind, name: String, subject: String?, mode: Mode, retake: Bool, attemptId: Int? = nil) {
         self.id = id
         self.kind = kind
         self.name = name
         self.subject = subject
         self.mode = mode
         self.retake = retake
+        self.attemptId = attemptId
     }
 
     static func mode(_ state: String) -> Mode {
@@ -176,7 +185,8 @@ extension AssignmentListing {
                     name: multi && subject != "—" ? "\(base) · \(subject)" : base,
                     subject: subject == "—" ? nil : subject,
                     mode: mode,
-                    retake: mode == .start && section.retake
+                    retake: mode == .start && section.retake,
+                    attemptId: section.attemptId
                 ))
             }
         }

@@ -109,7 +109,7 @@ struct CertificatePDFSheet: View {
             return Failure(message: "The PDF couldn't be produced right now. Your result is safe.", retryable: true)
         case .forbidden(let detail, _)?:
             return Failure(message: detail.isEmpty ? "This certificate is not available." : detail, retryable: false)
-        case .http(404, _)?, .decoding?:
+        case .decoding?:
             return Failure(message: "This certificate is not available.", retryable: false)
         case .http(let status, let detail)?:
             if status >= 500 {
@@ -120,6 +120,36 @@ struct CertificatePDFSheet: View {
             return Failure(message: apiError.errorDescription ?? "Could not open this file.", retryable: apiError.isRetryable)
         case nil:
             return Failure(message: error.localizedDescription, retryable: true)
+        }
+    }
+}
+
+/// A midterm certificate by its code — for a `/certificate/<code>` link, where there is no
+/// `download_url` to hand.
+struct MidtermCertificateSheet: View {
+    let code: String
+    var title: String = ""
+
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        CertificatePDFSheet(title: "Certificate", fileName: title.isEmpty ? "Certificate \(code)" : "Certificate — \(title)") {
+            try await CertificateAPI(client: session.client).midtermCertificate(code: code)
+        }
+    }
+}
+
+/// A past paper's certificate for one finished sitting. The server issues it on the first
+/// download if it was never issued, so the first open may take a moment longer.
+struct PastPaperCertificateSheet: View {
+    let attemptId: Int
+    var title: String = ""
+
+    @Environment(Session.self) private var session
+
+    var body: some View {
+        CertificatePDFSheet(title: "Certificate", fileName: title.isEmpty ? "Certificate" : "Certificate — \(title)") {
+            try await CertificateAPI(client: session.client).pastPaperCertificate(attemptId: attemptId)
         }
     }
 }

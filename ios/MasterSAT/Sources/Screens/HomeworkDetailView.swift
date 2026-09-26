@@ -836,8 +836,11 @@ struct TaskRowLabel: View {
 
 /// A past paper, mock or practice pack — named, with where the student stands on it, and
 /// deliberately not a button: these are sat on a computer, never started from the phone.
+/// A finished past-paper section offers its certificate, which is worth having anywhere.
 struct ComputerPaperRow: View {
     let paper: ComputerPaper
+
+    @State private var showingCertificate = false
 
     private var tone: Chip.Tone {
         switch paper.mode {
@@ -848,23 +851,36 @@ struct ComputerPaperRow: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            IconTile(systemName: paper.mode == .review ? "checkmark" : "doc.text", tone: Theme.info, size: 44)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(paper.name)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                Text([paper.kind.rawValue, paper.subject].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                IconTile(systemName: paper.mode == .review ? "checkmark" : "doc.text", tone: Theme.info, size: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(paper.name)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Text([paper.kind.rawValue, paper.subject].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+                Chip(text: paper.stateLabel, tone: tone)
             }
-            Spacer(minLength: 0)
-            Chip(text: paper.stateLabel, tone: tone)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Sat on a computer, not in the app")
+
+            if let attemptId = paper.certificateAttemptId {
+                Button { showingCertificate = true } label: {
+                    Label("Certificate", systemImage: "rosette")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .sheet(isPresented: $showingCertificate) {
+                    PastPaperCertificateSheet(attemptId: attemptId, title: paper.name)
+                }
+            }
         }
         .cardStyle(padding: 13)
-        .accessibilityElement(children: .combine)
-        .accessibilityHint("Sat on a computer, not in the app")
     }
 }
 

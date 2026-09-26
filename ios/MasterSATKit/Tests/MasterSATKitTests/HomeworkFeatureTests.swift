@@ -75,6 +75,8 @@ import Testing
         #expect(rows.map(\.name) == ["June 2025 · Reading & Writing", "June 2025 · Math"])
         #expect(rows.map(\.stateLabel) == ["Review", "Start again"])
         #expect(rows.allSatisfy { $0.kind == .pastPaper })
+        // Only the finished section has a certificate to show.
+        #expect(rows.map(\.certificateAttemptId) == [5, nil])
     }
 
     @Test("A single section keeps its plain name; a missing name falls back to the collection")
@@ -102,6 +104,7 @@ import Testing
         let row = try #require(finished.computerPapers.first)
         #expect(finished.computerPapers.count == 1)
         #expect(row.kind == .mock)
+        #expect(row.certificateAttemptId == nil)
         #expect(row.name == "October Mock")
         #expect(row.stateLabel == "Review")
         #expect(row.subject == "Reading & Writing · Math")

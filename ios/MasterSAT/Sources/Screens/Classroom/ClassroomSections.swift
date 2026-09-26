@@ -317,7 +317,8 @@ struct ClassroomAssignmentsSection: View {
                 retry: retry
             ) { rows in
                 VStack(spacing: 10) {
-                    ForEach(rows.sorted { ($0.dueAt ?? "9999") > ($1.dueAt ?? "9999") }) { row in
+                    // The server's order, as the student's homework list has it.
+                    ForEach(rows) { row in
                         NavigationLink {
                             HomeworkDetailView(assignment: row)
                         } label: {
