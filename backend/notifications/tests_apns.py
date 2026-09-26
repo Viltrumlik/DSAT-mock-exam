@@ -117,15 +117,31 @@ class SendTests(TestCase):
         self.assertTrue(post.call_args.args[0].startswith("https://api.sandbox.push.apple.com/"))
 
     def test_a_dead_token_is_marked_and_not_retried(self, _transport):
-        for status, reason in ((410, "Unregistered"), (400, "BadDeviceToken")):
+        # BadDeviceToken is tried on the other host first (see the next test); refused on both,
+        # it is as dead as an Unregistered one.
+        for status, reason, calls in ((410, "Unregistered", 1), (400, "BadDeviceToken", 2)):
             ApnsDevice.objects.filter(pk=self.device.pk).update(failed_at=None, failure_reason="")
             self.device.refresh_from_db()
             with mock.patch.object(apns, "_post", return_value=(status, reason)) as post:
                 self.assertFalse(apns.send_to_device(self.device, {"aps": {}}))
-            self.assertEqual(post.call_count, 1)
+            self.assertEqual(post.call_count, calls)
             self.device.refresh_from_db()
             self.assertIsNotNone(self.device.failed_at)
             self.assertEqual(self.device.failure_reason, reason)
+            self.assertEqual(self.device.environment, "production")
+
+    def test_a_token_from_the_other_environment_is_delivered_and_remembered(self, _transport):
+        # A TestFlight build that declared "sandbox": the sandbox host calls the token bad, the
+        # production host takes it — and the next push goes straight to production.
+        self.device.environment = ApnsDevice.ENV_SANDBOX
+        self.device.save()
+        with mock.patch.object(apns, "_post", side_effect=[(400, "BadDeviceToken"), (200, "")]) as post:
+            self.assertTrue(apns.send_to_device(self.device, {"aps": {}}))
+        hosts = [c.args[0].split("/3/")[0] for c in post.call_args_list]
+        self.assertEqual(hosts, [apns.SANDBOX_HOST, apns.PRODUCTION_HOST])
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.environment, ApnsDevice.ENV_PRODUCTION)
+        self.assertIsNone(self.device.failed_at)
 
     def test_an_expired_provider_token_is_resigned_once(self, _transport):
         with mock.patch.object(apns, "_post", side_effect=[(403, "ExpiredProviderToken"), (200, "")]) as post:

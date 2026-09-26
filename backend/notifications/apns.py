@@ -151,36 +151,54 @@ def send_to_device(device, payload: dict) -> bool:
     row is stamped `failed_at` and the caller is not asked to retry. An expired provider token
     is re-signed and the send tried once more. Anything else is logged and dropped: APNs
     stores and forwards what it accepts, and re-sending on our side only duplicates banners.
+
+    `BadDeviceToken` is also what APNs answers when a token is sent to the wrong host — a
+    debug build's token belongs to the sandbox, a TestFlight or App Store build's to
+    production — so the other host is tried once before the token is called dead, and the
+    environment that worked is remembered.
     """
     if not is_configured():
         return False
 
-    host = SANDBOX_HOST if device.environment == device.ENV_SANDBOX else PRODUCTION_HOST
-    url = f"{host}/3/device/{device.token}"
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    environment = device.environment
+    force_token = re_signed = tried_other_host = False
 
-    for attempt in range(2):
+    for _ in range(3):
+        host = SANDBOX_HOST if environment == device.ENV_SANDBOX else PRODUCTION_HOST
         headers = {
-            "authorization": f"bearer {_provider_token(force=attempt > 0)}",
+            "authorization": f"bearer {_provider_token(force=force_token)}",
             "apns-topic": topic(),
             "apns-push-type": "alert",
             "apns-priority": "10",
             # A day: news older than that (a homework due yesterday) is noise, not news.
             "apns-expiration": str(int(time.time()) + 24 * 3600),
         }
+        force_token = False
         try:
-            status, reason = _post(url, headers, body)
+            status, reason = _post(f"{host}/3/device/{device.token}", headers, body)
         except Exception:
             logger.warning("apns_send_error device=%s", device.pk, exc_info=True)
             return False
 
         if status == 200:
+            fields = []
+            if environment != device.environment:
+                device.environment = environment
+                fields.append("environment")
             if device.failed_at:
                 device.failed_at = None
                 device.failure_reason = ""
-                device.save(update_fields=["failed_at", "failure_reason", "last_seen_at"])
+                fields += ["failed_at", "failure_reason"]
+            if fields:
+                device.save(update_fields=[*fields, "last_seen_at"])
             return True
-        if status == 403 and reason in ("ExpiredProviderToken", "InvalidProviderToken") and attempt == 0:
+        if status == 403 and reason in ("ExpiredProviderToken", "InvalidProviderToken") and not re_signed:
+            re_signed = force_token = True
+            continue
+        if reason == "BadDeviceToken" and not tried_other_host:
+            tried_other_host = True
+            environment = device.ENV_PRODUCTION if environment == device.ENV_SANDBOX else device.ENV_SANDBOX
             continue
         if status == 410 or reason in DEAD_TOKEN_REASONS:
             device.failed_at = timezone.now()
