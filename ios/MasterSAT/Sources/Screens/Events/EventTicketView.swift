@@ -119,14 +119,21 @@ struct EventTicketView: View {
             saveState = .failed("MasterSAT isn't allowed to add photos. Turn it on in Settings, or use Share.")
             return
         }
-        let data = ticket.data
         do {
-            try await PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
-            }
+            try await Self.addToPhotos(ticket.data)
             saveState = .saved
         } catch {
             saveState = .failed("Couldn't save the ticket. Try again, or use Share.")
+        }
+    }
+
+    /// Photos runs the change block on its own queue. A block written inside the view is
+    /// main-actor isolated, and Swift 6 traps the moment Photos calls it off the main thread —
+    /// "Save to Photos" crashed the app on the first tap after "Allow". Built in a nonisolated
+    /// function, the block carries no isolation.
+    private nonisolated static func addToPhotos(_ data: Data) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
         }
     }
 
