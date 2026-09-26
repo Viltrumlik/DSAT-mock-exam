@@ -123,7 +123,7 @@ import Testing
                 "words": [
                     ["id": 100, "word": "abate", "definition": "to lessen",
                      "part_of_speech": "verb", "example": "The storm abated.",
-                     "synonyms": ["subside", "diminish"], "status": "learning"],
+                     "synonyms": ["subside", "diminish"], "status": "mastered"],
                     ["id": 101, "word": "cogent", "definition": "convincing", "status": "new"],
                 ],
             ])
@@ -132,7 +132,7 @@ import Testing
         let set = try await makeAPI().vocabularySet(id: 11)
 
         #expect(set.words.count == 2)
-        #expect(set.words[0].status == .learning)
+        #expect(set.words[0].status == .mastered)
         #expect(set.words[0].synonyms == ["subside", "diminish"])
         #expect(set.words[1].status == .new)
     }

@@ -27,10 +27,11 @@ struct AssessmentRunnerView: View {
     /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
     @AppStorage("assessmentZoom") private var zoom: Double = 1.0
 
-    /// Desmos is offered on maths assessments only — the same rule the platform applies
-    /// everywhere else. A calculator on a grammar set is not a tool, it is a distraction.
+    /// Desmos is offered on Middle and Senior maths sets only — the web runner's rule, read
+    /// from the set's raw subject and level. A Junior or Foundation set is meant to be worked
+    /// by hand, and a calculator on a grammar set is not a tool, it is a distraction.
     private var offersCalculator: Bool {
-        (runner?.bundle?.set?.subject ?? "").uppercased().contains("MATH")
+        runner?.bundle?.set?.offersCalculator ?? false
     }
 
     var body: some View {

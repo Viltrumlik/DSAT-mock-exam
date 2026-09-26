@@ -6,6 +6,10 @@ import Foundation
 /// whether a submitted-but-ungraded attempt counts as finished lives with grading.
 public struct AssessmentProgress: Decodable, Sendable, Equatable {
     public let state: String
+    /// `graded` / `submitted` / `in_progress` / `not_started` (or an attempt's own status).
+    /// The board reads its columns from this, as the web does — `state` folds "submitted"
+    /// and "graded" together and cannot tell a mark from a wait.
+    public let workflowStatus: String?
     public let attemptId: Int?
     public let graded: Bool?
     public let percent: Int?
@@ -20,6 +24,7 @@ public struct AssessmentProgress: Decodable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case state, graded, percent
+        case workflowStatus = "workflow_status"
         case attemptId = "attempt_id"
         case correctCount = "correct_count"
         case totalQuestions = "total_questions"
@@ -31,6 +36,7 @@ public struct AssessmentProgress: Decodable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "not_started"
+        workflowStatus = (try? c.decodeIfPresent(String.self, forKey: .workflowStatus)) ?? nil
         attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
         graded = try? c.decodeIfPresent(Bool.self, forKey: .graded)
         percent = try? c.decodeIfPresent(Int.self, forKey: .percent)
