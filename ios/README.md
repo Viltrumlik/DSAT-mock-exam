@@ -22,7 +22,7 @@ What it does host is the daily loop: what was set, working through it, and learn
 | **Learn** | Classroom, Homework, Assessments, Midterms, Roadmap, My Progress, Live quiz (while it is switched on), Services (support hours, SAT registration) |
 | **Words** | The word bank, the student's own sets, assigned sets |
 | **Rewards** | Leaderboard, Points (and turning them into coins), Shop |
-| **Profile** | Account, Surveys, Events, notification settings, sign out |
+| **Profile** | The web's `/profile`: a hero, then Overview (XP, strikes, points, homework turned in; the goal and latest results; homework to do; "Finish your profile"; payments — coming soon), Classes, and Settings (account, notifications, sign-in & password, devices, About); Surveys, Events and sign out under the tabs |
 
 Midterm **results** still land here even though the paper was not sat here — a score is
 worth checking anywhere. An unreleased one says so rather than showing a blank, because a
@@ -95,7 +95,7 @@ builds and runs its tests with the command-line toolchain alone:
 cd ios/MasterSATKit && swift test
 ```
 
-595 tests, well under a second. This is the part that must never regress, so it is also the
+628 tests, well under a second. This is the part that must never regress, so it is also the
 part that stays verifiable from a terminal, in CI, with no simulator.
 
 `MasterSAT` is the SwiftUI layer on top. It needs Xcode, because an iOS `.app` cannot be
@@ -451,7 +451,7 @@ Catch-up, 2026-09-25/26 — against a local backend on Postgres, iPhone 17 Pro s
 
 | Component | Status |
 | --- | --- |
-| `MasterSATKit` — build + tests | ✅ 595 tests |
+| `MasterSATKit` — build + tests | ✅ 628 tests |
 | Backend `mobile` (policy, 426 gate, diagnostics) / `notifications` (APNs) / `livequiz` / `users` | ✅ 33 / 91 / 87 / 183 tests |
 | Update gate — 426 → "Time to update" → policy lowered → "Check again" | ✅ driven |
 | Rewards — hub, leaderboard, convert 40 points → 4 coins, buy a 2-coin item | ✅ driven; one transaction, one order, stock 5 → 4 |
@@ -466,6 +466,7 @@ Catch-up, 2026-09-25/26 — against a local backend on Postgres, iPhone 17 Pro s
 | Settings — hub, devices (this phone found among three sessions) | ✅ driven |
 | Vocabulary — hub, section, set, Flashcards with the 5-second hold, "Game mastered · 1/4" | ✅ driven; one graded session, credit on all six words |
 | Live quiz — Home card, code, countdown, answer (+105), standings, final screen | ✅ driven against uvicorn with a scripted teacher; found the timer bug fixed in PR #238 |
+| Profile — hero, four tiles, checklist, payments, Classes tab with classmates | ✅ driven; a goal set from the checklist showed on Home and in the database |
 | Push end to end | ❌ needs a paid account and an APNs key |
 
 Earlier:

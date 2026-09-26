@@ -2,8 +2,8 @@ import SwiftUI
 import MasterSATKit
 
 /// The profile's Settings tab — the web's section menu (`SettingsTab.tsx`), each row opening
-/// its page. The same rows, hints and pages as `AccountSettingsView`, which is where the rest
-/// of the app reaches them.
+/// its page (`Screens/Account/`). It is the one way into them; an earlier standalone Settings
+/// page with the same rows was removed so the two could not drift apart.
 ///
 /// Two of the web's six sections are not rows here, on purpose: **Study goal** is set from
 /// Overview's "Your goal" (the same sheet and date list Home uses), and **Appearance** follows
