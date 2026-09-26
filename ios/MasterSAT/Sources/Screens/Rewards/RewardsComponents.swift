@@ -334,6 +334,12 @@ enum RewardsPalette {
     static let bronze = Medal(solid: Color(rewardsHex: 0xe0851a), top: Color(rewardsHex: 0xf4b15f), bottom: Color(rewardsHex: 0xe0851a))
     static let crown = Color(rewardsHex: 0xf5c542)
 
+    /// Brand-blue TEXT on a card — the web's `text-primary dark:text-primary-hover`. On the
+    /// near-black dark surface the brand blue falls under 4.5:1; its hover shade clears it.
+    static let accentText = Color(uiColor: UIColor { traits in
+        UIColor(rewardsHex: traits.userInterfaceStyle == .dark ? 0x5b8def : 0x2a68c0)
+    })
+
     /// A medal follows the rank the server gave — never the row's position.
     static func medal(forRank rank: Int) -> Medal? {
         switch rank {
