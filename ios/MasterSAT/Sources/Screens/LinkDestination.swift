@@ -53,10 +53,12 @@ struct LinkDestinationSheet: View {
         case .roadmapDelivery(let id): RoadmapReadingView(deliveryId: id)
         case .progress: MyProgressView()
         case .assessments: AssessmentsListView()
+        // The pages read their titles from what they load; the link carries only the id.
+        case .vocabularySet(let id): VocabSetView(setId: id, title: "")
+        case .vocabularySection(let id): VocabSectionView(sectionId: id, title: "")
         // Tabs and web-only pages never reach a sheet — RootTabView handles them — but a
         // switch over a public enum has to say something for them.
-        case .home, .vocabulary, .vocabularySection, .vocabularySet, .profile,
-             .certificate, .liveQuiz, .unknown:
+        case .home, .vocabulary, .profile, .certificate, .liveQuiz, .unknown:
             ContentUnavailableView("Nothing to open", systemImage: "link")
         }
     }
@@ -67,7 +69,7 @@ extension AppLink {
     var tab: RootTab? {
         switch self {
         case .home: return .home
-        case .vocabulary, .vocabularySection, .vocabularySet: return .words
+        case .vocabulary: return .words
         case .profile: return .profile
         default: return nil
         }

@@ -157,11 +157,10 @@ struct LearnHubView: View {
         }.count
     }
 
+    /// The board's own "To do" — the same rule the Assessments page opens on, so the badge
+    /// and the page can never disagree.
     private var openAssessments: Int {
-        assignments
-            .flatMap(\.assessmentHomeworks)
-            .filter { ($0.progress?.state ?? "not_started") != "completed" }
-            .count
+        AssessmentBoard(assignments: assignments).todo().count
     }
 
     var body: some View {

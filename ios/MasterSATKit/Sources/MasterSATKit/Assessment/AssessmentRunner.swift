@@ -206,7 +206,7 @@ public final class AssessmentRunner {
         await flush()
         // Best effort: the pause endpoint stops the clock, but a failure here costs the
         // student some counted time, not their answers, so it never surfaces as an error.
-        try? await api.pause(attemptId: attemptId)
+        _ = try? await api.pause(attemptId: attemptId)
     }
 
     public func resume() async {
