@@ -28,6 +28,9 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
     /// The viewer's membership role. Nil once they have been removed — the list still
     /// returns the row, so the app must not assume a row means access.
     public let myRole: String?
+    /// How long one lesson lasts, in hours (the server's default is 2). Nil when not sent.
+    /// The profile reads it to tell a lesson that is still on from one that is over.
+    public let lessonHours: Int?
 
     public var isStudent: Bool { (myRole ?? "").uppercased() == "STUDENT" }
 
@@ -50,6 +53,7 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
         case branchName = "branch_name"
         case regionName = "region_name"
         case myRole = "my_role"
+        case lessonHours = "lesson_hours"
     }
 
     private enum TeacherKeys: String, CodingKey {
@@ -78,6 +82,13 @@ public struct Classroom: Decodable, Sendable, Equatable, Identifiable {
         branchName = try? c.decodeIfPresent(String.self, forKey: .branchName)
         regionName = try? c.decodeIfPresent(String.self, forKey: .regionName)
         myRole = try? c.decodeIfPresent(String.self, forKey: .myRole)
+        // A PositiveIntegerField, but read a "2" or a 1.5 too rather than losing the class.
+        let wholeHours: Int? = try? c.decodeIfPresent(Int.self, forKey: .lessonHours)
+        let fractionalHours: Double? = try? c.decodeIfPresent(Double.self, forKey: .lessonHours)
+        let typedHours: String? = try? c.decodeIfPresent(String.self, forKey: .lessonHours)
+        lessonHours = wholeHours
+            ?? fractionalHours.map { Int($0.rounded()) }
+            ?? typedHours.flatMap { Int($0.trimmingCharacters(in: .whitespaces)) }
 
         // The teacher arrives as a nested object whose name may be pre-composed or split.
         if let t = try? c.nestedContainer(keyedBy: TeacherKeys.self, forKey: .teacherDetails) {
@@ -116,6 +127,8 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
     /// The person's ACCOUNT role (`teacher`, `support_teacher`, `admin`, `super_admin`, …),
     /// which is what the teaching team is titled by.
     public let accountRole: String?
+    /// The handle under a classmate's name on the profile ("@madina"). Nil when blank.
+    public let username: String?
 
     /// Staff, in the roles the classroom actually stores. Legacy `ADMIN`/`CO_TEACHER`
     /// still appear on older classrooms, so match them too rather than only the new names.
@@ -167,6 +180,8 @@ public struct ClassroomMember: Decodable, Sendable, Equatable, Identifiable {
         name = [full.isEmpty ? nil : full, username, email]
             .compactMap { $0 }
             .first { !$0.isEmpty } ?? "Student"
+        let handle = (username ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        self.username = handle.isEmpty ? nil : handle
     }
 }
 
