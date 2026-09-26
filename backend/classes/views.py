@@ -3190,10 +3190,25 @@ class AssignmentViewSet(_ClassroomMemberGateMixin, ModelViewSet):
                     )
         qs = (
             Submission.objects.filter(assignment=assignment)
-            .select_related("student", "attempt", "attempt__practice_test", "review", "review__teacher")
+            # ``assignment`` is here for ``composed_grade``: the serializer asks every row's
+            # homework whether the teacher's mark carries a share of the grade. Without it
+            # that question cost one query per student — on every homework, including the
+            # overwhelming majority that never opted in and answer null. Twenty students
+            # across a twelve-homework gradebook was 240 queries for a homework this view
+            # is already holding in its hand.
+            .select_related(
+                "assignment", "student", "attempt", "attempt__practice_test", "review", "review__teacher"
+            )
             .prefetch_related("files")
         )
-        return Response(SubmissionSerializer(qs, many=True, context={"request": request}).data)
+        rows = list(qs)
+        # One Assignment object for the whole list, not one per row. Everything the
+        # composition reads off the homework — its share, its deadline, its attachments —
+        # is the same for every student on it, so anything Django caches on the instance is
+        # worked out once instead of per student.
+        for row in rows:
+            row.assignment = assignment
+        return Response(SubmissionSerializer(rows, many=True, context={"request": request}).data)
 
 
 class SubmissionAdminViewSet(ReadOnlyModelViewSet):

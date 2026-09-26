@@ -1351,7 +1351,12 @@ class SubmissionSerializer(serializers.ModelSerializer):
 
         Null when no manual share was asked for, which is every homework set before that
         question existed — those still read their grade off ``review``. Computed only for
-        the homework that opted in, so a class list of ordinary homework costs nothing."""
+        the homework that opted in, so a class list of ordinary homework costs nothing.
+
+        That last sentence holds only while the caller's queryset SELECTS THE ASSIGNMENT.
+        Asking a homework whether it opted in means reading it, and a list that has not
+        joined it pays one query per row to be told "no" — which is what the grading list
+        did until ``classes.tests_perf_n_plus_one_submissions_list`` pinned it."""
         from .grade_composition import composed_grade_payload
 
         return composed_grade_payload(obj)
