@@ -158,6 +158,13 @@ export function describeManualShare(composed: ComposedGrade | null | undefined):
  */
 export function nextStudentIn(ids: readonly number[], current: number): number | null {
   const i = ids.indexOf(current);
+  // The `i < 0` arm is a student who is no longer in the filtered list — grading them is what
+  // drops them out of "Needs grading", and the walk has to carry on from the top of what is
+  // left rather than dead-ending on the row they just finished.
+  //
+  // It is arithmetically the same as `ids[i + 1]`, because `indexOf` misses with -1 and
+  // -1 + 1 is 0. Kept spelled out anyway: the coincidence is not the reason, and the next
+  // reader who reaches for `: null` — the obvious-looking tidy-up — breaks the walk in silence.
   return (i >= 0 ? ids[i + 1] : ids[0]) ?? null;
 }
 

@@ -143,11 +143,17 @@ async function type(selector: string, value: string) {
   });
 }
 
-async function mount({ work = submissions(), role = "OWNER" }: { work?: unknown[] | "fails"; role?: string } = {}) {
+async function mount({
+  work = submissions(),
+  role = "OWNER",
+  // Read afresh on every request, so a test can change what the class list says between one
+  // read and the next — which is exactly what saving a grade does.
+  grades = () => GRADES as object,
+}: { work?: unknown[] | "fails"; role?: string; grades?: () => object } = {}) {
   window.history.replaceState(null, "", `${PAGE}?tab=grading&assignment=102`);
   get.mockImplementation(async (url: string) => {
     if (url === "/classes/34/gradebook/") return { data: OVERVIEW };
-    if (url === "/classes/34/gradebook/assignments/102/") return { data: GRADES };
+    if (url === "/classes/34/gradebook/assignments/102/") return { data: grades() };
     throw new Error(`unexpected GET ${url}`);
   });
   listSubmissions.mockImplementation(async () => {
@@ -425,6 +431,80 @@ describe("Grading tab — what the teacher's mark is worth", () => {
     // The form a teacher has always had, unchanged.
     expect(buttons("Save grade")).toHaveLength(1);
     expect(buttons("Return for revision")).toHaveLength(1);
+  });
+});
+
+describe("Grading tab — a review that carries no weight", () => {
+  it("says the mark will not move the grade, instead of reporting one as given", async () => {
+    // A share of 0: the teacher is asked to review, and the number is the engines'. Nothing
+    // in this file reached that branch before, and the branch below it — the ordinary split
+    // — would paint a green "Marked" pill and write "With your mark, the homework stands at
+    // 75%" on a review where `manual_percent` is null and nobody has marked anything.
+    await mount({
+      work: submissions({
+        501: {
+          composed_grade: {
+            state: "final", percent: 75, is_final: true,
+            automatic_percent: 75, manual_percent: null,
+            manual_weight_percent: 0, automatic_weight_percent: 100,
+          },
+        },
+      }),
+    });
+    await waitForText("Aziza Karimova");
+
+    await click(openStudent("Aziza Karimova"));
+    await waitForText("This grade is worked out automatically.");
+
+    expect(host.textContent).toContain("Your review reaches the student, and it does not change the number.");
+    expect(host.textContent).toContain("The homework stands at 75%.");
+    // Neither of the two things the general branch would say on this same payload.
+    expect(host.textContent).not.toContain("Marked");
+    expect(host.textContent).not.toContain("With your mark");
+    // The teacher can still review — it is the WEIGHT that is zero, not the job.
+    expect(buttons("Save grade")).toHaveLength(1);
+  });
+});
+
+describe("Grading tab — the walk out of a filter the student just left", () => {
+  it("keeps Next student working when saving drops them out of the view", async () => {
+    // The state the code is written for and nothing reached: a teacher works through "Needs
+    // grading", saves a mark, and the student they are looking at is no longer in that list.
+    // `chosen` is read from the WHOLE class, so their work stays on screen — but the walk is
+    // taken over the FILTERED list, where they are now absent.
+    const GRADED = {
+      ...GRADES,
+      roster: GRADES.roster.map((r) => (r.student_id === 7 ? { ...r, status: "GRADED", grade: "88" } : r)),
+      counts: { ...GRADES.counts, graded: 1, needs_grading: 1, submitted: 1 },
+    };
+    let saved = false;
+    gradeSubmission.mockImplementation(async () => { saved = true; return { data: {} }; });
+
+    await mount({ grades: () => (saved ? GRADED : GRADES) });
+    await waitForText("Aziza Karimova");
+
+    await click(buttons("Needs grading 2")[0]);
+    await click(openStudent("Aziza Karimova"));
+    await waitForText("essay-draft.pdf");
+    // Under the filter she was opened from, she is the first of two.
+    expect(host.textContent).toContain("1 of 2 in this view");
+
+    await type('input[type="number"]', "88");
+    await click(buttons("Save grade")[0]);
+    for (let t = 0; t < 40 && host.textContent?.includes("1 of 2 in this view"); t++) await tick();
+
+    // Her work is still open — that is the promise the whole-class read exists to keep.
+    expect(host.textContent).toContain("Aziza Karimova");
+    // And the counter stops claiming a position she no longer holds. "0 of 1" would be a lie
+    // in both halves; "1 of 1" would point at somebody else.
+    expect(host.textContent).toContain("1 in this view");
+    expect(host.textContent).not.toContain("of 1 in this view");
+
+    // The walk carries on from the top of what is left, rather than dead-ending.
+    const next = buttons("Next student")[0] as HTMLButtonElement;
+    expect(next.disabled).toBe(false);
+    await click(next);
+    await waitForText("Bekzod Rahimov");
   });
 });
 

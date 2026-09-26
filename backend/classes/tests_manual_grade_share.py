@@ -196,6 +196,72 @@ class DefaultLeavesEverythingAloneTests(ManualShareFixture):
         self.assertIsNone(row["composed_grade"])
 
 
+class WhatTheMarkWasOutOfTests(ManualShareFixture):
+    """The denominator `_manual_mark_percent` divides the teacher's mark by.
+
+    Every other test in this module leaves both ceilings null, so the settings fallback of
+    100 is taken every time and ``100 * grade / ceiling`` is only ever exercised at a ratio
+    of one. A mark of 50 then reads as 50% whether the scaling works or not: replace the
+    whole expression with ``float(review.grade)`` and the suite stays green.
+
+    These four run it at ratios that are not one, so the arithmetic and the precedence are
+    both pinned. They also say which ceiling wins, because two of them can be set at once
+    and only the row's own answers what THIS mark was typed against.
+    """
+
+    def test_the_row_says_what_the_mark_was_out_of(self):
+        self._sit_all()
+        self._set_share(20)
+        # 15 out of 20 is 75%, not 15%.
+        self._mark(15, max_score=20)
+
+        composed = self._compose()
+        self.assertAlmostEqual(composed.manual_percent, 75.0)
+        self.assertAlmostEqual(composed.percent, 95.0)  # 100 x 0.8 + 75 x 0.2
+
+    def test_the_homework_answers_when_the_row_does_not(self):
+        self.assignment.max_score = 25
+        self.assignment.save(update_fields=["max_score"])
+        self._sit_all()
+        self._set_share(20)
+        self._mark(20)  # no max_score on the review
+
+        composed = self._compose()
+        self.assertAlmostEqual(composed.manual_percent, 80.0)  # 20 of 25
+        self.assertAlmostEqual(composed.percent, 96.0)  # 100 x 0.8 + 80 x 0.2
+
+    def test_the_row_wins_over_the_homework(self):
+        """A homework's ceiling can be edited after a mark was typed against the old one.
+
+        The review carries the scale the teacher actually used, so it decides — otherwise
+        editing `max_score` would silently restate every mark already given.
+        """
+        self.assignment.max_score = 25
+        self.assignment.save(update_fields=["max_score"])
+        self._sit_all()
+        self._set_share(20)
+        self._mark(15, max_score=20)
+
+        composed = self._compose()
+        self.assertAlmostEqual(composed.manual_percent, 75.0)  # 15 of 20, not 15 of 25
+
+    def test_a_ceiling_of_zero_falls_back_rather_than_dividing_by_it(self):
+        """Weights and ceilings are data, and data can be wrong.
+
+        Zero here is the difference between the configured 0-100 range being read and a
+        ZeroDivisionError reaching a teacher mid-grading.
+        """
+        self.assignment.max_score = 0
+        self.assignment.save(update_fields=["max_score"])
+        self._sit_all()
+        self._set_share(20)
+        self._mark(40, max_score=0)
+
+        composed = self._compose()
+        self.assertAlmostEqual(composed.manual_percent, 40.0)  # the settings range, 0-100
+        self.assertAlmostEqual(composed.percent, 88.0)
+
+
 class TheOwnersExampleTests(ManualShareFixture):
     def test_a_twenty_percent_share_over_four_assessments(self):
         """The learning center's own worked example.
