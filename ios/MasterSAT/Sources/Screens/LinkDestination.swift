@@ -53,12 +53,15 @@ struct LinkDestinationSheet: View {
         case .roadmapDelivery(let id): RoadmapReadingView(deliveryId: id)
         case .progress: MyProgressView()
         case .assessments: AssessmentsListView()
+        // No join by room id exists on the server: the join screen lists the rooms running in
+        // the student's classes and takes the code.
+        case .liveQuiz: LiveQuizJoinView()
         // The pages read their titles from what they load; the link carries only the id.
         case .vocabularySet(let id): VocabSetView(setId: id, title: "")
         case .vocabularySection(let id): VocabSectionView(sectionId: id, title: "")
         // Tabs and web-only pages never reach a sheet — RootTabView handles them — but a
         // switch over a public enum has to say something for them.
-        case .home, .vocabulary, .profile, .certificate, .liveQuiz, .unknown:
+        case .home, .vocabulary, .profile, .certificate, .unknown:
             ContentUnavailableView("Nothing to open", systemImage: "link")
         }
     }
@@ -79,7 +82,7 @@ extension AppLink {
     /// our own host (`webURL` refuses anything else).
     var opensOnTheWeb: Bool {
         switch self {
-        case .liveQuiz, .unknown: return true
+        case .unknown: return true
         default: return false
         }
     }

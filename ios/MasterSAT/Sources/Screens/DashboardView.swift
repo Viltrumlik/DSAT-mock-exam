@@ -84,6 +84,8 @@ struct DashboardView: View {
                     // where the web puts it. Nothing posted, no space taken.
                     StoriesRail(refreshID: refreshTick)
 
+                    LiveQuizRunningCard(refreshID: refreshTick)
+
                     if session.releaseGate.showsNudge {
                         UpdateNudgeCard(config: session.releaseGate.config) {
                             withAnimation { session.releaseGate.dismissNudge() }

@@ -141,13 +141,16 @@ struct LearnHubView: View {
     /// first tab, and the homework never opened. With every destination declared here, at
     /// the root of the stack, a push is only ever a value appended to the path.
     enum Route: Hashable {
-        case classrooms, homework, assessments, midterms, roadmap, progress, services
+        case classrooms, homework, assessments, midterms, roadmap, progress, services, liveQuiz
     }
 
     @Environment(Session.self) private var session
     @State private var assignments: [AssignmentListing] = []
     @State private var classroomCount: Int?
     @State private var midtermResults: Int?
+    /// Rooms running in the student's classes — nil while live quizzes are switched off (or
+    /// the answer could not be had), which also hides the card.
+    @State private var liveRooms: [LiveQuizSummary]?
 
     /// The same rule as the homework list's "To do" tab — handed-in work is not waiting on
     /// the student, so it is not counted as open here either.
@@ -217,6 +220,20 @@ struct LearnHubView: View {
                         tone: Theme.success,
                         route: Route.progress
                     )
+                    // The web keeps Live quiz out of its sidebar — a permanent entry is a dead
+                    // link on every day nobody runs one; students arrive by the projected code.
+                    // A phone has no address bar for that code, so the card is here, but only
+                    // while the feature is switched on.
+                    if let liveRooms {
+                        HubCard(
+                            title: "Live quiz",
+                            subtitle: "Join your class's quiz with the code on the board",
+                            icon: "dot.radiowaves.left.and.right",
+                            tone: Theme.warning,
+                            count: liveRooms.count,
+                            route: Route.liveQuiz
+                        )
+                    }
                     HubCard(
                         title: "Services",
                         subtitle: "Support hours with a teacher, and registering for the SAT",
@@ -242,6 +259,7 @@ struct LearnHubView: View {
                 case .roadmap: RoadmapView()
                 case .progress: MyProgressView()
                 case .services: ServicesView()
+                case .liveQuiz: LiveQuizJoinView()
                 }
             }
             .navigationDestination(for: AssignmentListing.self) { assignment in
@@ -257,6 +275,8 @@ struct LearnHubView: View {
         assignments = (try? await session.student.assignments()) ?? []
         classroomCount = (try? await session.classrooms.classrooms())?.count
         midtermResults = (try? await session.student.midterms())?.filter(\.submitted).count
+        liveRooms = (try? await LiveQuizAPI(client: session.client).mine())?
+            .filter { $0.status != .finished && $0.status != .terminated }
     }
 }
 
