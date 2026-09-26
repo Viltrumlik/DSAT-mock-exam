@@ -44,10 +44,12 @@ control → target scores → SAT countdown → lesson calendar → next lesson 
 The calendar's colour precedence (highlight beats a test, a test beats a class, a class
 beats today) is copied deliberately; reordering it silently hides a day's real state.
 
-`/assessments` is three columns on the web. Three columns do not fit a phone, so the
-columns become tabs and their counts move onto the tab bar — the same information, the same
-order, one column at a time. The card anatomy is unchanged: subject-coloured top edge, icon
-tile, solid subject badge, title, class · subject, a body per state, one full-width action.
+`/assessments` narrows the web's way: a To-do strip first, then subjects, then the domains
+inside a subject, then that domain's board, with search across everything. The card anatomy is
+the web's: subject-coloured top edge, icon tile, solid subject badge, title, class · subject,
+question count and time estimate, a body per state, one full-width action. A passed deadline
+is an amber "Catch up" chip, and a refused start is an alert on the card — never the whole
+board turning into an error.
 
 Sign in and register are the site's own `/login` and `/register`, kept in
 `Sources/Screens/Auth/`. The web puts a brand panel beside the form and hides it below
@@ -237,9 +239,10 @@ sheet and stays blank.
 screen kept awake, one thing on screen at a time, and type sized for a phone held at arm's
 length. All four study modes ship, each with the site's own rules:
 
-- **Flashcards** flip, and the missed pile comes back as the *next round* — with a
-  checkpoint between rounds showing what stuck and what did not — rather than being
-  slipped back into one endless queue.
+- **Flashcards** flip, and each answer holds the card for five seconds with the definition
+  showing ("Nice — sit with the definition for a beat"), as the web does. "Still learning"
+  (not "Wrong") sends a card to the *next round* — with a checkpoint between rounds showing
+  what stuck — rather than slipping it back into one endless queue.
 - **Matching** deals six pairs a round, and the clock runs across the whole set, so the
   score is how fast and how cleanly, not how many.
 - **Speed** is sixty seconds and two options, with the clock repeated on the prompt card:
@@ -253,7 +256,12 @@ letter masking, the spelling comparison — are in the kit and tested. A distrac
 a word that *means* the same thing, because that is a second correct answer rather than a
 wrong one.
 
-All four end on one screen: a gradient hero, three stats, and the same two ways out.
+All four end on one screen: a gradient hero, three stats, the mastery line ("Game mastered ·
+1/4") and the same two ways out. Mastery is **per game**: a set is mastered when all four
+games have been played with every word right, which is what the four-colour bar on every set
+card shows. A set opened from a homework sends its `assignment_id`, so the run counts for that
+homework; the grading call goes out exactly once, and "Retry save" appears if it did not land.
+Sections and games carry the web's colour identity (`Screens/Vocabulary/VocabPalette.swift`).
 
 **Leaving the foreground flushes.** Backgrounding is the phone's version of closing the
 tab, and iOS can kill a backgrounded app without warning. A half-finished vocabulary run
