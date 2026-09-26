@@ -360,7 +360,9 @@ struct HomeworkDetailView: View {
 
                 ForEach(a.vocabHomeworks) { link in
                     NavigationLink {
-                        VocabSetView(setId: link.setId, title: link.setTitle)
+                        // Bound to THIS homework, so the runs are credited to it rather than
+                        // to the server's guess — a set can sit on two homeworks at once.
+                        VocabSetView(setId: link.setId, title: link.setTitle, assignmentId: a.id)
                     } label: {
                         TaskRowLabel(
                             title: link.setTitle,
