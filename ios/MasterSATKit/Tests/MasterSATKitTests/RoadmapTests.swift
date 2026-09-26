@@ -495,6 +495,9 @@ private func decode<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
         // Whitespace-only lines, runs of blank lines, CRLF — all just separators.
         #expect(RoadmapText.paragraphs("A\n   \nB\n\n\n\nC") == ["A", "B", "C"])
         #expect(RoadmapText.paragraphs("A\r\n\r\nB") == ["A", "B"])
+        #expect(RoadmapText.paragraphs("A\r\nstill A\r\n\r\nB") == ["A\r\nstill A", "B"])
+        // Tabs and spaces between words are the passage's own; only line feeds break it.
+        #expect(RoadmapText.paragraphs("Tab\there  and\n\t\nnext") == ["Tab\there  and", "next"])
         #expect(RoadmapText.paragraphs("  \n\n  ").isEmpty)
         #expect(RoadmapText.paragraphs("").isEmpty)
     }

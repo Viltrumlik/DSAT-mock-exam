@@ -248,26 +248,37 @@ public enum RoadmapText {
     /// Blank lines separate paragraphs and nothing else is interpreted — exactly the web's
     /// `body.split(/\n\s*\n/).map(trim).filter(Boolean)`. A single line break stays inside
     /// its paragraph.
+    ///
+    /// Since every piece is trimmed afterwards, that regex comes down to one rule: a run of
+    /// whitespace holding two or more line feeds is a paragraph break. Scanned by Unicode
+    /// scalar, not by `Character` — Swift folds `\r\n` into ONE character, which is not equal
+    /// to `"\n"`, and a Windows-typed passage would come out as a single paragraph.
     public static func paragraphs(_ body: String) -> [String] {
-        let ns = body as NSString
         var parts: [String] = []
-        var start = 0
-        for match in blankLine.matches(in: body, range: NSRange(location: 0, length: ns.length)) {
-            parts.append(ns.substring(with: NSRange(location: start, length: match.range.location - start)))
-            start = match.range.location + match.range.length
+        var current = String.UnicodeScalarView()
+        var pending = String.UnicodeScalarView()
+        var lineFeeds = 0
+        for scalar in body.unicodeScalars {
+            if scalar.properties.isWhitespace {
+                pending.append(scalar)
+                if scalar == "\n" { lineFeeds += 1 }
+                continue
+            }
+            if lineFeeds >= 2 {
+                parts.append(String(current))
+                current = String.UnicodeScalarView()
+            } else {
+                current.append(contentsOf: pending)
+            }
+            pending = String.UnicodeScalarView()
+            lineFeeds = 0
+            current.append(scalar)
         }
-        parts.append(ns.substring(from: start))
+        parts.append(String(current))
         return parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
     }
-
-    // Built once and only ever matched against — matching is safe across threads; mutating a
-    // regex is what would not be, and nothing does.
-    nonisolated(unsafe) private static let blankLine: NSRegularExpression = {
-        // swiftlint:disable:next force_try
-        try! NSRegularExpression(pattern: "\\n\\s*\\n")
-    }()
 }
 
 /// Where a reading's video plays.
