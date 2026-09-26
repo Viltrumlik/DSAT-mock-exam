@@ -542,4 +542,39 @@ describe("a load that fails", () => {
     expect(text()).not.toContain("Nothing waiting to be checked");
     expect(buttons().some((b) => (b.textContent ?? "").includes("Try again"))).toBe(true);
   });
+
+  it("gives the server's own reason when it gave one, not a reassurance about something else", async () => {
+    // A 403 names the class the teacher may not grade in. Replacing that with "no grade was
+    // lost" answers a question nobody asked and leaves them with nothing to act on or to ask
+    // about. Carried over from the screen this one replaced, which did show it.
+    const reason = "You are not on the teaching team for this class.";
+    teacherToday.mockRejectedValue({ response: { status: 403, data: { detail: reason } } });
+    await mount();
+
+    expect(text()).toContain(reason);
+    expect(text()).not.toContain("this is only the page failing to read what is waiting");
+  });
+
+  it("keeps the generic line when the failure gave no reason at all", async () => {
+    // A dropped connection and an HTML error page both arrive with no `detail`. The page must
+    // still say a grade was not lost rather than leaving the panel bare.
+    teacherToday.mockRejectedValue(new Error("Network Error"));
+    await mount();
+
+    expect(text()).toContain("No grade was lost");
+  });
+});
+
+describe("a queue that really is empty", () => {
+  it("says nothing is waiting — the calm answer, not the failed one", async () => {
+    // The failure tests above only assert this string is ABSENT. Nothing proved it appears
+    // when every request answered and there is genuinely no work, which is the other half of
+    // "a failure is never drawn as an empty state": the empty state has to still exist.
+    teacherToday.mockResolvedValue({ ...TODAY, grading_queue: [] });
+    await mount();
+
+    expect(text()).toContain("Nothing waiting");
+    expect(text()).not.toContain("didn't load");
+    expect(buttons().some((b) => (b.textContent ?? "").includes("Try again"))).toBe(false);
+  });
 });

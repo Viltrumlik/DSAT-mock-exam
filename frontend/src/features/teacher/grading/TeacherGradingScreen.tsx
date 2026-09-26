@@ -221,7 +221,10 @@ function QueuePane({ screen }: { screen: Screen }) {
         ) : screen.queueFailed ? (
           <ErrorState
             title="The queue didn't load"
-            detail="No grade was lost — this is only the page failing to read what is waiting."
+            // The server's reason first when it gave one: a 403 names the class the teacher
+            // may not grade in, and a teacher told only "no grade was lost" has no idea why
+            // their queue is empty or who to ask.
+            detail={screen.queueReason ?? "No grade was lost — this is only the page failing to read what is waiting."}
             onRetry={screen.retryQueue}
           />
         ) : screen.queue.length === 0 ? (
@@ -409,7 +412,7 @@ function WorkPane({
       <Card title="The work">
         <ErrorState
           title="The queue didn't load, so there is nothing to open"
-          detail="No grade was lost. Try the queue again."
+          detail={screen.queueReason ?? "No grade was lost. Try the queue again."}
           onRetry={screen.retryQueue}
         />
       </Card>
@@ -431,7 +434,7 @@ function WorkPane({
       <Card title={screen.homeworkTitle || "The work"} subtitle={screen.className || undefined}>
         <ErrorState
           title="This homework's work didn't load"
-          detail="Nothing was lost — the page could not read what was turned in."
+          detail={screen.workReason ?? "Nothing was lost — the page could not read what was turned in."}
           onRetry={screen.retryWork}
         />
       </Card>

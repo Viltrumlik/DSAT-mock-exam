@@ -363,6 +363,11 @@ export function useGradingScreen(initial: Selection) {
     totalWaiting,
     queueLoading: today.isPending,
     queueFailed: today.isError,
+    // The server's own words when it gave any — a 403 says WHICH class the teacher may not
+    // grade in, and "this is only the page failing to read what is waiting" replaces that with
+    // a reassurance about the wrong thing. Null when the failure had no reason to give (a
+    // dropped connection, an HTML error page), and the generic line stands.
+    queueReason: detailOf(today.error),
     retryQueue: () => void today.refetch(),
     // the open homework
     selection: sel,
@@ -373,6 +378,7 @@ export function useGradingScreen(initial: Selection) {
     current,
     workLoading: detail.isPending && sel.assignmentId != null,
     workFailed: detail.isError,
+    workReason: detailOf(detail.error),
     retryWork: () => void detail.refetch(),
     // acting on it
     saving,
