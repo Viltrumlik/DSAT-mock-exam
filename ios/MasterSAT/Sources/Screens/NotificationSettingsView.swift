@@ -3,9 +3,15 @@ import MasterSATKit
 
 /// What the phone is allowed to interrupt you for.
 ///
-/// Three switches, not one: a student who wants to know about a midterm may not want a
-/// nudge about every reading set, and collapsing that into a single "notifications" toggle
-/// makes the only way to silence one thing silencing all of it.
+/// Two kinds of switch, kept apart because they are two different things:
+///
+/// - **Notifications** — the server's own, the same switches as the web's Settings: which
+///   inbox sections reach you at all, and whether the important ones buzz this phone. Saved to
+///   the account, so they follow the student to the browser.
+/// - **Reminders on this phone** — the three local ones, scheduled here from dates the app
+///   already has. Three switches, not one: a student who wants to know about a midterm may not
+///   want a nudge about every reading set, and collapsing that into a single toggle makes the
+///   only way to silence one thing silencing all of it.
 struct NotificationSettingsView: View {
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var scenePhase
@@ -27,10 +33,12 @@ struct NotificationSettingsView: View {
 
                 permissionCard
 
+                NotificationPreferencesCard()
+
                 VStack(alignment: .leading, spacing: 10) {
                     CardHeading(
                         icon: "slider.horizontal.3",
-                        title: "What to be told about",
+                        title: "Reminders on this phone",
                         subtitle: "Each one can be switched off on its own.",
                         tone: Theme.accent
                     )

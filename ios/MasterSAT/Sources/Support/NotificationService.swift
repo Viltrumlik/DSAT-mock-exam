@@ -3,18 +3,19 @@ import SwiftUI
 import UserNotifications
 import MasterSATKit
 
-/// Reminders on the device.
+/// Reminders on the device, and the bell's count.
 ///
-/// **These are local notifications, not push.** There is no push transport on this platform
-/// — the backend has no device-token store and no APNs sender — so nothing here depends on
-/// the server reaching the phone. The app schedules against dates it already fetched: a
-/// homework's due date, a midterm's opening time. That covers the two things worth being
-/// interrupted for, works offline, and costs no infrastructure.
+/// **The reminders are local notifications, not push.** They are scheduled against dates the
+/// app already fetched — a homework's due date, a midterm's opening time — so they work
+/// offline and on a build that cannot receive push at all.
 ///
-/// What it cannot do is tell a student something they could not have known when the app was
-/// last open. A published score is the case in point: `announceResults` fires the moment the
-/// app next runs and notices, which is honest but not instant. Real push is the fix, and it
-/// is a server project before it is a client one.
+/// Push is separate (`PushRegistrar`): the server's own notifications — a grade, new homework
+/// — reach a phone signed for it. Both kinds are tapped through the same delegate
+/// (`NotificationCenterDelegate`) and routed by the same `link` (`NotificationRouter`).
+///
+/// This object also holds the unread count of the server inbox, because it is app-wide state
+/// tied to the signed-in student: the bell, the inbox and the app icon's badge all read it, and
+/// signing out has to wipe it along with the reminders.
 @MainActor
 @Observable
 final class NotificationService {
@@ -33,9 +34,14 @@ final class NotificationService {
     /// "notifications are on" and "something is scheduled" are different facts.
     private(set) var pendingCount = 0
 
+    /// Unread in the server inbox — the bell's number. Written by every summary, list and
+    /// mark-read answer (`applyUnread`), so the bell, the inbox and the app icon never disagree.
+    private(set) var unreadTotal = 0
+    /// Unread per section; a missing key means none.
+    private(set) var unreadByCategory: [String: Int] = [:]
+
     private let centre = UNUserNotificationCenter.current()
     private let defaults: UserDefaults
-    private let presenter = ForegroundPresenter()
 
     private enum Key {
         static let kinds = "notifications.enabledKinds"
@@ -46,7 +52,35 @@ final class NotificationService {
         self.defaults = defaults
         // Set before anything can arrive: without a delegate, a notification that fires
         // while the app is open is swallowed, and the "your score is ready" one always does.
-        centre.delegate = presenter
+        // The same shared object `AppDelegate` sets at launch — see `NotificationCenterDelegate`.
+        centre.delegate = NotificationCenterDelegate.shared
+    }
+
+    // MARK: - The bell's count
+
+    /// Take the server's counts as the truth, and put the total on the app icon.
+    func applyUnread(_ summary: NotificationSummary) {
+        unreadTotal = summary.total
+        unreadByCategory = summary.byCategory
+        setAppBadge(summary.total)
+    }
+
+    /// One row was just read here. Counted down at once so the dot and the badge move with the
+    /// tap; the server's answer to the mark-read call then corrects it either way.
+    func noteRead(category: String) {
+        let code = category.uppercased()
+        if let count = unreadByCategory[code] {
+            unreadByCategory[code] = count > 1 ? count - 1 : nil
+        }
+        unreadTotal = max(0, unreadTotal - 1)
+        setAppBadge(unreadTotal)
+    }
+
+    /// The app icon's badge is the inbox's unread total — the same number the server puts in
+    /// each push. iOS refuses it without badge permission, which is fine: then there is no badge.
+    private func setAppBadge(_ count: Int) {
+        let centre = self.centre
+        Task { try? await centre.setBadgeCount(max(0, count)) }
     }
 
     // MARK: - Which reminders the student wants
@@ -76,6 +110,7 @@ final class NotificationService {
 
     func refreshPermission() async {
         let settings = await centre.notificationSettings()
+        let before = permission
         permission = switch settings.authorizationStatus {
         case .notDetermined: .notAsked
         case .denied: .denied
@@ -83,6 +118,10 @@ final class NotificationService {
         @unknown default: .unknown
         }
         pendingCount = await centre.pendingNotificationRequests().count
+        // Turned on — here, or in Settings while the app was away. Push can register now.
+        if permission == .granted, before != .granted {
+            await PushRegistrar.shared.permissionChanged()
+        }
     }
 
     /// Ask iOS. Only ever call this from a deliberate tap — the system asks once per install
@@ -148,13 +187,18 @@ final class NotificationService {
         defaults.set(Array(announced).sorted(), forKey: Key.announced)
     }
 
-    /// Wipe the schedule and the record of what has been announced. Called on sign-out —
-    /// the next person to use this phone must not be told about someone else's midterm.
+    /// Wipe the schedule, the record of what has been announced, the bell's count and the
+    /// badge. Called on sign-out — the next person to use this phone must not be told about
+    /// someone else's midterm, or see their unread count on the icon.
     func clearEverything() {
         centre.removeAllPendingNotificationRequests()
         centre.removeAllDeliveredNotifications()
         defaults.removeObject(forKey: Key.announced)
         pendingCount = 0
+        unreadTotal = 0
+        unreadByCategory = [:]
+        setAppBadge(0)
+        NotificationRouter.shared.clear()
     }
 
     private func request(for reminder: StudentReminder, trigger: UNNotificationTrigger) -> UNNotificationRequest {
@@ -162,21 +206,8 @@ final class NotificationService {
         content.title = reminder.title
         content.body = reminder.body
         content.sound = .default
-        content.userInfo = ["kind": reminder.kind.rawValue]
+        // `link` is the key a push carries too, so a tap on either is routed the same way.
+        content.userInfo = ["kind": reminder.kind.rawValue, "link": reminder.link]
         return UNNotificationRequest(identifier: reminder.id, content: content, trigger: trigger)
-    }
-}
-
-/// Shows a notification that arrives while the app is open.
-///
-/// Without this iOS drops foreground notifications entirely, and the "your score is ready"
-/// reminder — which fires a second after the app itself spots the score — would never once
-/// be seen.
-private final class ForegroundPresenter: NSObject, UNUserNotificationCenterDelegate {
-    func userNotificationCenter(
-        _ center: UNUserNotificationCenter,
-        willPresent notification: UNNotification
-    ) async -> UNNotificationPresentationOptions {
-        [.banner, .sound]
     }
 }

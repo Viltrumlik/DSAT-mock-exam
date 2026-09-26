@@ -22,13 +22,17 @@ public struct StudentReminder: Sendable, Equatable, Identifiable {
     public let title: String
     public let body: String
     public let fireAt: Date
+    /// Where tapping it goes, as a site path — the same form a server notification's
+    /// `link_url` takes, so one parser (`AppLink`) routes both. Empty means "open the app".
+    public let link: String
 
-    public init(id: String, kind: Kind, title: String, body: String, fireAt: Date) {
+    public init(id: String, kind: Kind, title: String, body: String, fireAt: Date, link: String = "") {
         self.id = id
         self.kind = kind
         self.title = title
         self.body = body
         self.fireAt = fireAt
+        self.link = link
     }
 }
 
@@ -72,7 +76,8 @@ public enum ReminderPlan {
                         kind: .homework,
                         title: leadTitle(lead, subject: "Homework", calendar: calendar, fireAt: fireAt, target: due),
                         body: bodyLine(assignment.title, detail: assignment.classroomName),
-                        fireAt: fireAt
+                        fireAt: fireAt,
+                        link: homeworkLink(assignment)
                     ))
                 }
             }
@@ -90,7 +95,8 @@ public enum ReminderPlan {
                         kind: .midterm,
                         title: leadTitle(lead, subject: "Midterm", calendar: calendar, fireAt: fireAt, target: opens),
                         body: bodyLine(midterm.title, detail: midterm.subject.isEmpty ? nil : midterm.subject.humanised),
-                        fireAt: fireAt
+                        fireAt: fireAt,
+                        link: AppLink.midterms.path
                     ))
                 }
             }
@@ -123,7 +129,8 @@ public enum ReminderPlan {
                     title: "Your midterm score is ready",
                     body: bodyLine(midterm.title, detail: "Tap to see which skills to work on"),
                     // Immediately: this is news, and there is nothing to count down to.
-                    fireAt: Date()
+                    fireAt: Date(),
+                    link: AppLink.midtermResult(attemptId: attemptId).path
                 )
             }
             .sorted { $0.id < $1.id }
@@ -152,6 +159,13 @@ public enum ReminderPlan {
         }
         let hours = max(1, Int((lead / 3600).rounded()))
         return hours == 1 ? "\(subject) in an hour" : "\(subject) in \(hours) hours"
+    }
+
+    /// The homework's own page when its class is known — the path a HOMEWORK_ASSIGNED
+    /// notification uses — and the class list when it is not.
+    static func homeworkLink(_ assignment: AssignmentListing) -> String {
+        guard let classroomId = assignment.classroomId, classroomId > 0 else { return AppLink.classes.path }
+        return AppLink.homework(classroomId: classroomId, assignmentId: assignment.id).path
     }
 
     private static func bodyLine(_ title: String, detail: String?) -> String {
