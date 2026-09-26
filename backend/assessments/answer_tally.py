@@ -293,9 +293,22 @@ def _held_back_cells(counts: list) -> set:
     do not account for. So whenever anything is held back, at least two cells are — the next
     smallest comes with it, a zero included — and the reader is left with a sum across two or
     more options that cannot be split back into who picked what.
+
+    The companion is brought in EVERY time, not only when a single cell is small. With
+    ``MIN_CELL`` at 2, "below the floor and not zero" is exactly one student, so a hidden set
+    made only of in-band cells hides nothing at all: the rule itself — published as
+    ``min_cell`` and restated in the note beside it — tells the reader that each of those
+    cells is a 1. Two options on one student each used to be held back as a pair and disclosed
+    both, which is precisely the single-student attribution the floor exists to prevent. At
+    least one cell from OUTSIDE the band has to travel with them, so that the hidden sum can
+    be split more than one way.
+
+    When every cell is in the band — every option picked exactly once — there is no companion
+    to bring, and the set is already every index: the whole row goes, rather than a guarantee
+    being claimed that cannot be kept.
     """
     small = {index for index, count in enumerate(counts) if 0 < count < MIN_CELL}
-    if not small or len(small) >= 2:
+    if not small:
         return small
     for index in sorted(range(len(counts)), key=lambda i: (counts[i], i)):
         if index not in small:

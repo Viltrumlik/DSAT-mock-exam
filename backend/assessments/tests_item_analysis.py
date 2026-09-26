@@ -754,6 +754,35 @@ class WhichWrongAnswerTests(TestCase):
         self.assertEqual(options["B"]["count"], 9)
         self.assertIn("held back", tally["note"])
 
+    def test_two_single_student_options_are_not_disclosed_by_the_rule_itself(self):
+        """Two cells of one each used to be held back as a pair — and that hid nothing.
+
+        ``MIN_CELL`` is 2, so "held back, and not zero" means exactly one student. The block
+        publishes that floor as ``min_cell`` and restates it in its note, so a reader who saw
+        two nulls and nothing else knew both were ones: the single-student attribution the
+        floor exists to prevent, arrived at from the rule rather than from the numbers.
+        """
+        # Eight on the key, one on C, one on D. Nobody picked A.
+        students = [_student(f"pair{i}@example.com") for i in range(10)]
+        for i, student in enumerate(students):
+            pick = "C" if i == 0 else "D" if i == 1 else "B"
+            self.fx.sit_with_answers(student, {self.mcq: (pick, pick == "B")})
+
+        tally = self._tally()
+        self.assertEqual(tally["state"], "data")
+        self.assertEqual(tally["responses"], 10)
+        hidden = [o["key"] for o in tally["options"] if o["count"] is None]
+        # A third cell comes along, so the hidden sum splits more than one way.
+        self.assertGreaterEqual(len(hidden), 3, f"only {hidden} held back — both are readable as 1")
+        visible = [o["count"] for o in tally["options"] if o["count"] is not None]
+        hidden_total = 10 - sum(visible)
+        self.assertGreater(
+            len(hidden),
+            hidden_total,
+            "more students hidden than cells hiding them — every hidden cell is pinned again",
+        )
+        self.assertIn("held back", tally["note"])
+
     def test_a_question_nobody_answered_says_no_data_rather_than_zeros(self):
         # Every student sat the homework; none of them reached this question, so it has no
         # answer rows at all. A column of zeros would read as a class that picked nothing.
