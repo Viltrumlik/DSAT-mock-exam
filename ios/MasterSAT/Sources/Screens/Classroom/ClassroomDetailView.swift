@@ -272,9 +272,6 @@ struct ClassroomLoad<Value> {
     var isLoading = false
     var hasLoaded = false
 
-    /// Nothing to show yet: the first load has not come back.
-    var isFirstLoad: Bool { value == nil && error == nil }
-
     static func message(for error: Error) -> String {
         if let failure = error as? APIError { return failure.errorDescription ?? "Something went wrong." }
         return error.localizedDescription
