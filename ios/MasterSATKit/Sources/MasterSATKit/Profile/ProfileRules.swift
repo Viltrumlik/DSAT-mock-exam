@@ -442,6 +442,17 @@ public enum ProfileGoal {
         targetScore == nil ? "Set a goal" : "Change goal"
     }
 
+    /// The section targets the goal sheet opens on — Home's rule, so the two ways into the one
+    /// sheet can never start it in different places: the stored sections, else the total split
+    /// with English to the nearest ten and Math the rest, else nothing (the sheet then starts
+    /// at its own default).
+    public static func sectionTargets(total: Int?, english: Int?, math: Int?) -> (english: Int?, math: Int?) {
+        if let english, let math { return (english, math) }
+        guard let total else { return (english, math) }
+        let split = english ?? Int((Double(total) / 20).rounded()) * 10
+        return (split, math ?? total - split)
+    }
+
     /// The line under the target score.
     public static func sectionsLine(total: Int?, english: Int?, math: Int?) -> String {
         if let english, let math { return "English \(english) · Math \(math)" }

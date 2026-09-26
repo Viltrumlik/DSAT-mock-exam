@@ -436,6 +436,18 @@ enum ProfileFixtures {
         #expect(ProfileGoal.actionTitle(targetScore: nil) == "Set a goal")
         #expect(ProfileGoal.actionTitle(targetScore: 1400) == "Change goal")
     }
+
+    @Test("The goal sheet starts where Home starts it: the sections, else the total split")
+    func sheetStart() {
+        let stored = ProfileGoal.sectionTargets(total: 1400, english: 690, math: 710)
+        #expect(stored.english == 690 && stored.math == 710)
+        let split = ProfileGoal.sectionTargets(total: 1450, english: nil, math: nil)
+        #expect(split.english == 730 && split.math == 720)
+        let half = ProfileGoal.sectionTargets(total: 1400, english: 650, math: nil)
+        #expect(half.english == 650 && half.math == 750)
+        let none = ProfileGoal.sectionTargets(total: nil, english: nil, math: nil)
+        #expect(none.english == nil && none.math == nil)
+    }
 }
 
 // MARK: - The request
