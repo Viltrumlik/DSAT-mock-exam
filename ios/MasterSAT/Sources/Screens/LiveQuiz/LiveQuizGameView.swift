@@ -389,6 +389,8 @@ private struct LiveQuizQuestionPanel: View {
     @ViewBuilder private func footer(game: LiveQuizGame, canSubmit: Bool, outOfTime: Bool) -> some View {
         let answer = game.currentAnswer
         let counted = answer?.state == .accepted
+        // A pick that would say something new: not the answer that already counted.
+        let sendable = model.draft.map(game.isChange) ?? false
         // The web hides the button once the answer is locked; it stays while the answer can
         // still be changed, and while it is on its way (with a spinner).
         if !(counted && !game.config.allowAnswerChange) {
@@ -401,7 +403,7 @@ private struct LiveQuizQuestionPanel: View {
                 }
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
-            .disabled(model.draft == nil || !canSubmit)
+            .disabled(!sendable || !canSubmit)
             .sensoryFeedback(.impact(weight: .medium), trigger: model.isSending) { _, sending in sending }
         }
 

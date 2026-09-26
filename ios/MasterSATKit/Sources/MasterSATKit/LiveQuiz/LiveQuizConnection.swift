@@ -243,9 +243,12 @@ public actor LiveQuizConnection {
             do {
                 request = try await client.liveQuizSocketRequest(sessionId: sessionId)
             } catch APIError.notAuthenticated {
+                // Stopped while this was in flight: that is how it ends, whatever failed.
+                if mode == .stopped { continue }
                 finish(.signedOut)
                 return
             } catch {
+                if mode == .stopped { continue }
                 // No address to connect to — a configuration fault, not something a retry or
                 // a new token can change.
                 finish(.refused(status: 0))
@@ -309,6 +312,9 @@ public actor LiveQuizConnection {
                     try await client.refreshTokens()
                     refreshed = true
                 } catch {
+                    // Stopped while the refresh was in flight: end as stopped, not as a
+                    // sign-out the owner never has to hear about.
+                    if mode == .stopped { continue }
                     if APIClient.refreshFailureEndsSession(error) {
                         finish(.signedOut)
                         return

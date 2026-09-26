@@ -186,6 +186,9 @@ import Testing
         game.apply(.answerResult(LiveQuizAnswerResult(questionId: 7, isCorrect: true, pointsAwarded: 145)), receivedAt: t0.addingTimeInterval(1.1))
         #expect(!game.isLocked && game.canSubmit(at: t0.addingTimeInterval(2)))
 
+        // The same option again would only re-time it, and cost the speed bonus.
+        #expect(!game.isChange("A") && game.isChange("C"))
+        #expect(game.submit("A", at: t0.addingTimeInterval(2)) == nil)
         #expect(game.submit("C", at: t0.addingTimeInterval(2)) == .submitAnswer(questionId: 7, answer: "C"))
         game.apply(.error(code: "too_late", detail: ""), receivedAt: t0.addingTimeInterval(2.1))
         #expect(game.currentAnswer == LiveQuizMyAnswer(choice: "A", state: .accepted, isCorrect: true, pointsAwarded: 145))

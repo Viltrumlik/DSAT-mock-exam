@@ -219,6 +219,14 @@ public struct LiveQuizGame: Sendable, Equatable {
         }
     }
 
+    /// Whether sending `choiceId` would say something new. Re-sending the answer that
+    /// already counted would only re-time it — the server scores the later time — so it is
+    /// not sent.
+    public func isChange(_ choiceId: String) -> Bool {
+        guard let answer = currentAnswer, answer.state == .accepted, let held = answer.choice else { return true }
+        return held != choiceId
+    }
+
     public func canSubmit(at now: Date) -> Bool {
         guard phase == .question, question != nil, !isLocked else { return false }
         if let deadline, now >= deadline.addingTimeInterval(Self.lateAnswerGrace) { return false }
@@ -293,6 +301,7 @@ public struct LiveQuizGame: Sendable, Equatable {
     public mutating func submit(_ choiceId: String, at now: Date) -> LiveQuizClientMessage? {
         guard canSubmit(at: now), let question else { return nil }
         guard let choice = question.choices.first(where: { $0.id == choiceId }) else { return nil }
+        guard isChange(choice.id) else { return nil }
         if let existing = answers[question.id], existing.state == .accepted {
             replaced[question.id] = existing
         }

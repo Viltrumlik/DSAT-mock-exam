@@ -106,6 +106,42 @@ final class FakeLiveQuizSocketFactory: LiveQuizSocketFactory, @unchecked Sendabl
     var sockets: [FakeLiveQuizSocket] { lock.withLock { made } }
 }
 
+/// Rejects every request (401), 0.3 s late — without holding the loading thread. CFNetwork
+/// runs every custom protocol in the process on one thread, so sleeping in `startLoading`
+/// would stall every other suite's stub for as long.
+final class LiveQuizLateRejectionProtocol: URLProtocol, @unchecked Sendable {
+    final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        var value: Int { lock.withLock { count } }
+        func increment() { lock.withLock { count += 1 } }
+    }
+
+    private struct Delivery: @unchecked Sendable {
+        let protocolInstance: URLProtocol
+        let client: (any URLProtocolClient)?
+        let url: URL
+    }
+
+    static let started = Counter()
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.started.increment()
+        let delivery = Delivery(protocolInstance: self, client: client, url: request.url!)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+            let response = HTTPURLResponse(url: delivery.url, statusCode: 401, httpVersion: "HTTP/1.1", headerFields: nil)!
+            delivery.client?.urlProtocol(delivery.protocolInstance, didReceive: response, cacheStoragePolicy: .notAllowed)
+            delivery.client?.urlProtocol(delivery.protocolInstance, didLoad: Data(#"{"detail": "Token is invalid or expired"}"#.utf8))
+            delivery.client?.urlProtocolDidFinishLoading(delivery.protocolInstance)
+        }
+    }
+
+    override func stopLoading() {}
+}
+
 actor LiveQuizEventLog {
     private(set) var events: [LiveQuizConnectionEvent] = []
 
@@ -252,6 +288,28 @@ actor LiveQuizEventLog {
         #expect(await eventually { await log.ended != nil })
         #expect(await log.ended == .signedOut)
         #expect(factory.sockets.count == 1)
+    }
+
+    @Test("Stopped while a refresh is in flight: it ends as stopped, even when the refresh then fails")
+    func stopDuringRefresh() async {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [LiveQuizLateRejectionProtocol.self]
+        let slowClient = APIClient(
+            config: APIConfig(baseURL: URL(string: "https://mastersat.uz")!, clientIdentifier: "ios/test"),
+            storage: InMemoryTokenStorage(TokenPair(access: "A", refresh: "R")),
+            session: URLSession(configuration: configuration)
+        )
+        let before = LiveQuizLateRejectionProtocol.started.value
+        let factory = FakeLiveQuizSocketFactory([.refuse(403)])
+        let connection = LiveQuizConnection(sessionId: 12, client: slowClient, factory: factory, policy: fast)
+        let (log, task) = record(connection)
+        defer { task.cancel() }
+
+        await connection.start()
+        #expect(await eventually { LiveQuizLateRejectionProtocol.started.value > before })
+        await connection.stop()
+        #expect(await eventually { await log.ended != nil })
+        #expect(await log.ended == .stopped)
     }
 
     @Test("Offline during the refresh is not a sign-out: back off and try the socket again")
