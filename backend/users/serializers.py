@@ -1,5 +1,6 @@
 from drf_spectacular.utils import extend_schema_field, extend_schema_serializer
 from rest_framework import serializers
+from rest_framework.utils.field_mapping import get_unique_error_message
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.conf import settings
 from django.utils import timezone
@@ -28,6 +29,21 @@ from users.name_utils import (
 from classes.models import ClassroomMembership
 
 from .models import ExamDateOption, SecurityAuditEvent, User
+
+
+def _refuse_taken_username(value, instance) -> None:
+    """A username is one name whatever its case — the database says so
+    (``users_username_ci_unique`` on ``Lower(username)``). The field's own unique check is
+    case-sensitive, so "Sam" sailed past it while "sam" existed and the save then died on
+    the constraint as a 500. Refused here with the field's own message, so a case-only clash
+    reads exactly like an exact one."""
+    if not value:
+        return
+    clash = User.objects.filter(username__iexact=value)
+    if instance is not None and instance.pk:
+        clash = clash.exclude(pk=instance.pk)
+    if clash.exists():
+        raise serializers.ValidationError(get_unique_error_message(User._meta.get_field("username")))
 
 
 def _sync_global_user_access(user: User) -> None:
@@ -162,6 +178,7 @@ class UserMeSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         if value is not None and value != "" and len(value.strip()) < 3:
             raise serializers.ValidationError("Username must be at least 3 characters.")
+        _refuse_taken_username(value, self.instance)
         return value
 
     def validate_first_name(self, value):
@@ -390,6 +407,7 @@ class UserSerializer(serializers.ModelSerializer):
             return None
         if value is not None and len(value.strip()) < 3:
             raise serializers.ValidationError("Username must be at least 3 characters.")
+        _refuse_taken_username(value, self.instance)
         return value
 
     def validate_first_name(self, value):
