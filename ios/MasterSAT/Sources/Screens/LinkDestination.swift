@@ -18,13 +18,18 @@ struct LinkDestinationSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            destination
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button("Done") { dismiss() }
+        if case .certificate(let code) = link {
+            // Brings its own stack, Done and Share; nesting it in another stack would double them.
+            MidtermCertificateSheet(code: code)
+        } else {
+            NavigationStack {
+                destination
+                    .toolbar {
+                        ToolbarItem(placement: .topBarLeading) {
+                            Button("Done") { dismiss() }
+                        }
                     }
-                }
+            }
         }
     }
 
@@ -32,9 +37,10 @@ struct LinkDestinationSheet: View {
         switch link {
         case .classes: ClassesListView()
         case .classroom(let id): LearnMoreClassroomView(classroomId: id)
-        case .homework(_, let assignmentId): HomeworkLinkView(assignmentId: assignmentId)
+        case .homework(let classroomId, let assignmentId):
+            HomeworkDetailView(classroomId: classroomId, assignmentId: assignmentId)
         case .midterms, .examReview: MidtermsView()
-        case .midtermResult(let attemptId): MidtermReportView(attemptId: attemptId, title: "Midterm result")
+        case .midtermResult(let attemptId): MidtermReportView(attemptId: attemptId)
         case .support: SupportBookingView()
         case .services: ServicesView()
         case .events: EventsView()
@@ -71,45 +77,8 @@ extension AppLink {
     /// our own host (`webURL` refuses anything else).
     var opensOnTheWeb: Bool {
         switch self {
-        case .certificate, .liveQuiz, .unknown: return true
+        case .liveQuiz, .unknown: return true
         default: return false
-        }
-    }
-}
-
-/// A homework by id, as `HomeworkDetailView` needs it: the student's OWN row from their list,
-/// which carries the classroom and their progress (the detail endpoint carries neither).
-private struct HomeworkLinkView: View {
-    let assignmentId: Int
-
-    @Environment(Session.self) private var session
-    @State private var assignment: AssignmentListing?
-    @State private var loadError: String?
-
-    var body: some View {
-        Group {
-            if let assignment {
-                HomeworkDetailView(assignment: assignment)
-            } else if let loadError {
-                ScrollView {
-                    LearnMoreErrorCard(title: "That homework didn't open", message: loadError) { await load() }
-                        .padding(16)
-                }
-            } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
-        }
-        .background(Theme.background)
-        .task { if assignment == nil { await load() } }
-    }
-
-    @MainActor
-    private func load() async {
-        loadError = nil
-        do {
-            assignment = try await RoadmapHomework.listing(assignmentId: assignmentId, student: session.student)
-        } catch {
-            loadError = error.localizedDescription
         }
     }
 }
