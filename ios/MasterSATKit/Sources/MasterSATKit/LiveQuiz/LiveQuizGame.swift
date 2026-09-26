@@ -454,6 +454,10 @@ public struct LiveQuizGame: Sendable, Equatable {
                     receiptDeadline = nil
                 }
                 question = open
+            } else if let held = question, held.index != snapshot.currentIndex {
+                // The room is on a question this phone does not have; never show the old one
+                // under the new one's clock.
+                question = nil
             }
             // The snapshot's deadline is the authority — a pause may have moved it.
             serverEndsAt = snapshot.endsAt

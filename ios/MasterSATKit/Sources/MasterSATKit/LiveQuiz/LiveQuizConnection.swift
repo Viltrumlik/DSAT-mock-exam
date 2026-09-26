@@ -242,8 +242,13 @@ public actor LiveQuizConnection {
             let request: URLRequest
             do {
                 request = try await client.liveQuizSocketRequest(sessionId: sessionId)
-            } catch {
+            } catch APIError.notAuthenticated {
                 finish(.signedOut)
+                return
+            } catch {
+                // No address to connect to — a configuration fault, not something a retry or
+                // a new token can change.
+                finish(.refused(status: 0))
                 return
             }
             // Stopped or suspended while the request was being built.

@@ -334,6 +334,14 @@ import Testing
         #expect(fresh.phase == .waitingForNext)
     }
 
+    @Test("A room on a question this phone does not have never shows the old one")
+    func staleQuestionDropped() {
+        var game = playing()
+        game.apply(.resumed(snapshot(.questionActive, endsAt: t0.addingTimeInterval(60), currentIndex: 1)), receivedAt: t0.addingTimeInterval(30))
+        #expect(game.question == nil)
+        #expect(game.phase == .waitingForNext)
+    }
+
     @Test("Reconnecting into a question never seen clears the last one's warning and notice")
     func reconnectIntoNewQuestion() {
         var game = playing()
