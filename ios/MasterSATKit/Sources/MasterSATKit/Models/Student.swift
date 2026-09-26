@@ -343,12 +343,19 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
     public let subject: String
     public let durationMinutes: Int?
     public let questionCount: Int?
+    /// A finished row reports the scale IT was sat on; an unsat one the midterm's current
+    /// scale. A sitting keeps its own scale and pass mark even if the paper changes later.
     public let scoreCeiling: Double?
+    /// `SCALE_100` or `SCALE_800`, on the same terms as `scoreCeiling`.
+    public let scoringScale: String?
     /// "classroom" or "standalone". Classroom results are publish-gated.
     public let flavor: String?
     public let attemptId: Int?
     public let state: String
     public let submitted: Bool
+    /// The teacher granted a re-sit of a paper this student already finished. It goes back to
+    /// "Available" — sat in the centre like any other sitting.
+    public let resitOpen: Bool
     public let isOpen: Bool
     public let isBeforeStart: Bool
     /// Inside the window, but the teacher has not generated the room's access code yet.
@@ -361,16 +368,8 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
 
     public var id: Int { midtermId }
 
+    /// A sitting begun and not handed in — resumable in the centre, even past the deadline.
     public var inProgress: Bool { attemptId != nil && !submitted && state != "NOT_STARTED" }
-
-    /// Why the student cannot begin, in their own terms. Nil when they can.
-    public var blockedReason: String? {
-        if submitted { return nil }
-        if isBeforeStart { return "Opens later" }
-        if awaitingCode { return "Waiting for your teacher to start it" }
-        if !isOpen { return "Closed" }
-        return nil
-    }
 
     private enum CodingKeys: String, CodingKey {
         case title, subject, flavor, state, submitted, score, certificate, deadline
@@ -378,6 +377,8 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
         case durationMinutes = "duration_minutes"
         case questionCount = "question_count"
         case scoreCeiling = "score_ceiling"
+        case scoringScale = "scoring_scale"
+        case resitOpen = "resit_open"
         case attemptId = "attempt_id"
         case isOpen = "is_open"
         case isBeforeStart = "is_before_start"
@@ -394,10 +395,12 @@ public struct MidtermListing: Decodable, Sendable, Equatable, Identifiable {
         durationMinutes = try? c.decodeIfPresent(Int.self, forKey: .durationMinutes)
         questionCount = try? c.decodeIfPresent(Int.self, forKey: .questionCount)
         scoreCeiling = try? c.decodeIfPresent(Double.self, forKey: .scoreCeiling)
+        scoringScale = try? c.decodeIfPresent(String.self, forKey: .scoringScale)
         flavor = try? c.decodeIfPresent(String.self, forKey: .flavor)
         attemptId = try? c.decodeIfPresent(Int.self, forKey: .attemptId)
         state = (try? c.decodeIfPresent(String.self, forKey: .state)) as? String ?? "NOT_STARTED"
         submitted = (try? c.decodeIfPresent(Bool.self, forKey: .submitted)) as? Bool ?? false
+        resitOpen = (try? c.decodeIfPresent(Bool.self, forKey: .resitOpen)) as? Bool ?? false
         isOpen = (try? c.decodeIfPresent(Bool.self, forKey: .isOpen)) as? Bool ?? true
         isBeforeStart = (try? c.decodeIfPresent(Bool.self, forKey: .isBeforeStart)) as? Bool ?? false
         awaitingCode = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingCode)) as? Bool ?? false

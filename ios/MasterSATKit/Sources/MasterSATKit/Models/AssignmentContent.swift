@@ -159,8 +159,8 @@ public struct AssignmentContentItem: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        kind = ((try? c.decodeIfPresent(String.self, forKey: .kind)) as? String ?? "").uppercased()
-        title = ((try? c.decodeIfPresent(String.self, forKey: .title)) as? String ?? "")
+        kind = (((try? c.decodeIfPresent(String.self, forKey: .kind)) ?? nil) ?? "").uppercased()
+        title = (((try? c.decodeIfPresent(String.self, forKey: .title)) ?? nil) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         itemCount = try? c.decodeIfPresent(Int.self, forKey: .itemCount)
         homeworkId = try? c.decodeIfPresent(Int.self, forKey: .homeworkId)

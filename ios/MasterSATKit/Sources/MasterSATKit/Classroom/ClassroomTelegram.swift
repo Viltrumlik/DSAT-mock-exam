@@ -67,20 +67,18 @@ public struct TelegramGroupState: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        managed = (try? c.decodeIfPresent(Bool.self, forKey: .managed)) as? Bool ?? false
-        groupURL = ((try? c.decodeIfPresent(String.self, forKey: .groupURL)) as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        telegramLinked = (try? c.decodeIfPresent(Bool.self, forKey: .telegramLinked)) as? Bool ?? false
-        status = (try? c.decodeIfPresent(String.self, forKey: .status)) as? String ?? "NONE"
-        removedReason = (try? c.decodeIfPresent(String.self, forKey: .removedReason)) as? String ?? ""
-        eligible = (try? c.decodeIfPresent(Bool.self, forKey: .eligible)) as? Bool ?? false
-        reason = (try? c.decodeIfPresent(String.self, forKey: .reason)) as? String ?? ""
-        message = (try? c.decodeIfPresent(String.self, forKey: .message)) as? String ?? ""
-        inviteLink = ((try? c.decodeIfPresent(String.self, forKey: .inviteLink)) as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        managed = c.value(.managed, default: false)
+        groupURL = c.value(.groupURL, default: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        telegramLinked = c.value(.telegramLinked, default: false)
+        status = c.value(.status, default: "NONE")
+        removedReason = c.value(.removedReason, default: "")
+        eligible = c.value(.eligible, default: false)
+        reason = c.value(.reason, default: "")
+        message = c.value(.message, default: "")
+        inviteLink = c.value(.inviteLink, default: "").trimmingCharacters(in: .whitespacesAndNewlines)
         inviteExpiresAt = try? c.decodeIfPresent(String.self, forKey: .inviteExpiresAt)
-        rules = (try? c.decodeIfPresent([String].self, forKey: .rules)) as? [String] ?? []
-        inviteTTLMinutes = (try? c.decodeIfPresent(Int.self, forKey: .inviteTTLMinutes)) as? Int ?? 30
+        rules = c.value(.rules, default: [String]())
+        inviteTTLMinutes = c.value(.inviteTTLMinutes, default: 30)
         alreadyMember = try? c.decodeIfPresent(Bool.self, forKey: .alreadyMember)
     }
 }
@@ -150,4 +148,11 @@ private struct BotLinkReply: Decodable, Sendable {
     let botLink: String?
 
     private enum CodingKeys: String, CodingKey { case botLink = "bot_link" }
+}
+
+private extension KeyedDecodingContainer {
+    /// The value under `key`, or `fallback` when it is absent, null or the wrong type.
+    func value<T: Decodable>(_ key: Key, default fallback: T) -> T {
+        ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
+    }
 }

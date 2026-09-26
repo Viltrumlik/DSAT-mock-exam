@@ -5,30 +5,45 @@ import MasterSATKit
 ///
 /// The app does not host the paper. A midterm is sat on a laptop, in a room, under
 /// supervision, and putting a Start button here would be an invitation to sit one on a bus.
-/// What the phone is good for is the three things around it: **when**, **what you scored**,
-/// and **which skills to work on** — so those are the only three things this screen has.
+/// What the phone is good for is the things around it: **when**, **what you scored**, and
+/// **which skills to work on**. The list is sorted exactly as the site sorts it — Available
+/// now, Scheduled, Closed, Past attempts — so a paper is in the same place on both.
 struct MidtermsView: View {
+    enum Filter: Hashable { case all, available, scheduled, past }
+
     @Environment(Session.self) private var session
 
     @State private var midterms: [MidtermListing] = []
     @State private var loadError: String?
     @State private var isLoading = true
+    @State private var hasLoaded = false
+    @State private var filter: Filter = .all
 
-    /// Scheduled, not yet sat. Sorted by when they open, so the next one is first — with
-    /// the undated ones last rather than sorting as the distant past.
-    private var upcoming: [MidtermListing] {
-        midterms
-            .filter { !$0.submitted }
-            .sorted { ($0.availableAt ?? "9999") < ($1.availableAt ?? "9999") }
+    private func rows(_ bucket: MidtermBucket) -> [MidtermListing] {
+        let matching = midterms.filter { $0.bucket == bucket }
+        switch bucket {
+        case .scheduled:
+            // Soonest first; a room waiting on its teacher has no date and goes last.
+            return matching.sorted { ($0.availableAt ?? "9999") < ($1.availableAt ?? "9999") }
+        default:
+            return matching // The server's order: by title.
+        }
     }
 
-    private var sat: [MidtermListing] {
-        midterms.filter(\.submitted).sorted { $0.title < $1.title }
+    private func shows(_ bucket: MidtermBucket) -> Bool {
+        switch filter {
+        case .all: return true
+        case .available: return bucket == .available
+        case .scheduled: return bucket == .scheduled
+        // "Closed" is a past state, so it is listed with the past, as the site does.
+        case .past: return bucket == .past || bucket == .closed
+        }
     }
 
-    /// The one to count down to: the soonest paper that has a date still ahead of us.
+    /// The one to count down to: the soonest paper whose window is still ahead.
     private var next: (midterm: MidtermListing, opensAt: Date)? {
-        upcoming
+        rows(.scheduled)
+            .filter { !$0.awaitingCode }
             .compactMap { midterm -> (MidtermListing, Date)? in
                 guard let raw = midterm.availableAt,
                       let date = JSONCoding.parseServerDate(raw),
@@ -40,61 +55,69 @@ struct MidtermsView: View {
     }
 
     private var published: Int {
-        sat.filter { $0.resultsVisible && $0.score != nil }.count
+        midterms.filter { $0.bucket == .past && $0.releasedScore != nil }.count
+    }
+
+    private var tabs: [PillTabs<Filter>.Item] {
+        [
+            .init(tab: .all, title: "All", icon: "square.stack"),
+            .init(tab: .available, title: "Available now", icon: "dot.radiowaves.left.and.right", count: countOrNil(.available)),
+            .init(tab: .scheduled, title: "Scheduled", icon: "clock", count: countOrNil(.scheduled)),
+            .init(tab: .past, title: "Past", icon: "checkmark.seal", count: countOrNil(.past)),
+        ]
+    }
+
+    private func countOrNil(_ bucket: MidtermBucket) -> Int? {
+        let n = rows(bucket).count
+        return n > 0 ? n : nil
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 HeroHeader(
-                    eyebrow: "Midterms",
+                    eyebrow: "Midterm",
                     eyebrowIcon: "calendar.badge.clock",
-                    title: "Your midterms",
-                    blurb: "Papers are sat in the centre. Here you can see when the next one is and how the last one went.",
+                    title: "Midterm",
+                    blurb: "Papers are sat in the centre. Here you can see when the next one opens and how the last one went.",
                     tiles: [
-                        HeroTile("Coming up", icon: "clock", value: upcoming.count),
-                        HeroTile("Sat", icon: "checkmark.seal", value: sat.count),
+                        HeroTile("Available now", icon: "dot.radiowaves.left.and.right", value: rows(.available).count),
+                        HeroTile("Scheduled", icon: "clock", value: rows(.scheduled).count),
+                        HeroTile("Sat", icon: "checkmark.seal", value: rows(.past).count),
                         HeroTile("Scores out", icon: "chart.bar.fill", value: published),
                     ]
-                ) { EmptyView() }
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+                )
 
-                if let loadError {
+                if isLoading && !hasLoaded {
+                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                } else if let loadError, midterms.isEmpty {
+                    // A failed load is never "no midterms yet".
                     RetryNotice(message: loadError) { await load() }
-                }
-
-                if let next {
-                    MidtermCountdownCard(midterm: next.midterm, opensAt: next.opensAt)
-                }
-
-                if !upcoming.isEmpty {
-                    VStack(alignment: .leading, spacing: 10) {
-                        DotHeading(title: "Coming up", count: upcoming.count, tone: Theme.amber)
-                        ForEach(upcoming) { UpcomingMidtermRow(midterm: $0) }
+                } else if midterms.isEmpty {
+                    DashedEmpty(
+                        title: "No midterms assigned yet.",
+                        hint: "When your teacher sets one, you'll see here when it opens."
+                    )
+                } else {
+                    if let loadError {
+                        Label("Could not refresh just now — this is the last list we had. \(loadError)", systemImage: "exclamationmark.triangle")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
                     }
-                }
 
-                VStack(alignment: .leading, spacing: 10) {
-                    DotHeading(title: "Your results", count: sat.count, tone: Theme.success)
-                    if sat.isEmpty && !isLoading {
-                        DashedEmpty(
-                            title: "No midterms sat yet",
-                            hint: "Your score and a breakdown of the skills to work on will appear here."
-                        )
-                    }
-                    ForEach(sat) { midterm in
-                        NavigationLink {
-                            MidtermReportView(attemptId: midterm.attemptId ?? 0, title: midterm.title)
-                        } label: {
-                            SatMidtermRow(midterm: midterm)
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(midterm.attemptId == nil)
-                    }
-                }
+                    PillTabs(items: tabs, selection: $filter)
 
-                if isLoading && midterms.isEmpty {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
+                    if filter == .all || filter == .scheduled, let next {
+                        MidtermCountdownCard(midterm: next.midterm, opensAt: next.opensAt)
+                    }
+
+                    let visible = MidtermBucket.allCases.filter { shows($0) && !rows($0).isEmpty }
+                    if visible.isEmpty {
+                        DashedEmpty(title: emptyTitle)
+                    }
+                    ForEach(visible, id: \.self) { bucket in
+                        section(bucket)
+                    }
                 }
             }
             .padding(16)
@@ -106,11 +129,58 @@ struct MidtermsView: View {
         .task { await load() }
     }
 
+    private var emptyTitle: String {
+        switch filter {
+        case .all: return "No midterms assigned yet."
+        case .available: return "Nothing to sit right now."
+        case .scheduled: return "Nothing scheduled."
+        case .past: return "No past attempts yet."
+        }
+    }
+
+    private func tone(_ bucket: MidtermBucket) -> Color {
+        switch bucket {
+        case .available: return Theme.accent
+        case .scheduled: return Theme.textLabel
+        case .closed: return Theme.warning
+        case .past: return Theme.success
+        }
+    }
+
+    @ViewBuilder
+    private func section(_ bucket: MidtermBucket) -> some View {
+        let items = rows(bucket)
+        VStack(alignment: .leading, spacing: 10) {
+            DotHeading(title: bucket.title, count: items.count, tone: tone(bucket))
+            ForEach(items) { midterm in
+                if bucket == .past, let attemptId = midterm.attemptId {
+                    NavigationLink {
+                        MidtermReportView(attemptId: attemptId, title: midterm.title)
+                    } label: {
+                        MidtermRow(midterm: midterm, onOpened: reloadSoon)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    MidtermRow(midterm: midterm, onOpened: reloadSoon)
+                }
+            }
+        }
+    }
+
+    /// A scheduled row whose countdown just reached zero asks for a fresh list: whether it
+    /// is now open is the server's call (the teacher may not have started the room yet).
+    private func reloadSoon() {
+        Task { await load() }
+    }
+
     @MainActor
     private func load() async {
         loadError = nil
         isLoading = true
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            hasLoaded = true
+        }
         do {
             midterms = try await session.student.midterms()
             // Opening this screen is also the moment to notice a score that went out while
@@ -221,85 +291,153 @@ enum Countdown {
     static func shortDate(_ date: Date) -> String {
         date.formatted(.dateTime.day().month(.abbreviated).hour().minute())
     }
+
+    /// "Aug 6" — the "Opens …" date.
+    static func dayDate(_ date: Date) -> String {
+        date.formatted(.dateTime.month(.abbreviated).day())
+    }
 }
 
 // MARK: - Rows
 
-private struct UpcomingMidtermRow: View {
+/// One midterm, in the site's row anatomy: the paper, its badge, a meta line, and on the
+/// right what it is waiting on — never a Start button.
+private struct MidtermRow: View {
     let midterm: MidtermListing
+    /// Called once when a scheduled row's countdown reaches zero.
+    let onOpened: () -> Void
 
-    private var opensAt: Date? {
-        midterm.availableAt.flatMap(JSONCoding.parseServerDate)
-    }
+    private var bucket: MidtermBucket { midterm.bucket }
 
-    var body: some View {
-        HStack(spacing: 12) {
-            IconTile(systemName: "doc.text", tone: Theme.amber, size: 42)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(midterm.title)
-                    .font(.system(size: 15, weight: .bold))
-                    .multilineTextAlignment(.leading)
-                // Short form here, full form on the countdown card above: the row shares its
-                // line with a status chip, and the long date wrapped straight into it.
-                Text([midterm.subject.isEmpty ? nil : midterm.subject.humanisedSubject,
-                      opensAt.map(Countdown.shortDate)]
-                    .compactMap { $0 }
-                    .joined(separator: " · "))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
-            Spacer(minLength: 0)
-            // The states are kept distinct because they need different words: the window has
-            // not opened, the teacher has not released the room's code, or it has closed.
-            if let reason = midterm.blockedReason {
-                Chip(text: reason, tone: reason == "Closed" ? .neutral : .warning)
-            } else if midterm.isOpen {
-                Chip(text: "Open now", icon: "dot.radiowaves.left.and.right", tone: .success)
-            }
+    private var badgeTone: Chip.Tone {
+        switch bucket {
+        case .available: return midterm.resitOpen ? .warning : .accent
+        case .scheduled: return .neutral
+        case .closed: return .warning
+        case .past: return .success
         }
-        .cardStyle()
     }
-}
-
-private struct SatMidtermRow: View {
-    let midterm: MidtermListing
 
     var body: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(midterm.title)
-                    .font(.system(size: 15, weight: .bold))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                if !midterm.subject.isEmpty {
-                    Text(midterm.subject.humanisedSubject)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                IconTile(systemName: "doc.text", tone: bucket == .past ? Theme.success : Theme.accent, size: 40)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(midterm.title)
+                        .font(.system(size: 15, weight: .heavy))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                    Chip(text: midterm.badge, tone: badgeTone)
+                    if !midterm.metaLine.isEmpty {
+                        Text(midterm.metaLine)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                 }
+                Spacer(minLength: 0)
+                if bucket == .past { pastTrailing }
             }
-            Spacer(minLength: 0)
-            if midterm.resultsVisible, let score = midterm.score {
+            status
+        }
+        .cardStyle(padding: 14)
+    }
+
+    // MARK: Past
+
+    @ViewBuilder
+    private var pastTrailing: some View {
+        HStack(spacing: 8) {
+            if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .font(.system(size: 24, weight: .heavy).monospacedDigit())
-                        .tracking(-0.6)
+                        .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                        .tracking(-0.5)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
-                        Text("of \(ScoreText.string(ceiling))")
-                            .font(.system(size: 11, weight: .medium))
+                        Text("/\(ScoreText.string(ceiling))")
+                            .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+            }
+            if midterm.attemptId != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textLabel)
+            }
+        }
+    }
+
+    // MARK: What it is waiting on
+
+    @ViewBuilder
+    private var status: some View {
+        switch bucket {
+        case .available:
+            StatusLine(
+                icon: "building.columns",
+                text: midterm.resitOpen
+                    ? "Re-sit available — sit it at the centre."
+                    : midterm.inProgress
+                        ? "In progress — carry on at the centre."
+                        : "Open now — sit it at the centre."
+            )
+        case .scheduled:
+            if midterm.awaitingCode {
+                StatusLine(icon: "lock", text: "Waiting for teacher", detail: "your teacher hasn’t started this yet")
+            } else if let opens = midterm.availableAt.flatMap(JSONCoding.parseServerDate) {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let left = MidtermWording.startsIn(opens, now: context.date) {
+                        StatusLine(icon: "lock", text: "Opens \(Countdown.dayDate(opens))", detail: "starts in \(left)")
+                    } else {
+                        // The moment has come, but whether it is open is the server's call.
+                        StatusLine(icon: "hourglass", text: "Starting…")
+                            .task { onOpened() }
+                    }
+                }
+            } else {
+                StatusLine(icon: "lock", text: "Scheduled")
+            }
+        case .closed:
+            StatusLine(
+                icon: "lock",
+                text: "Deadline passed",
+                detail: midterm.deadline.flatMap(JSONCoding.parseServerDate).map { "closed \(Countdown.shortDate($0))" }
+            )
+        case .past:
+            if midterm.releasedScore != nil {
+                HStack(spacing: 8) {
+                    StatusLine(icon: "chart.bar.fill", text: "View result")
+                    if midterm.certificate?.available == true {
+                        Chip(text: "Certificate", icon: "rosette", tone: .success)
                     }
                 }
             } else {
                 // Named, never left blank — a blank score reads as a zero.
-                Chip(text: "Not released", icon: "hourglass", tone: .warning)
+                StatusLine(icon: "hourglass", text: "Awaiting results")
             }
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Theme.textLabel)
         }
-        .cardStyle()
+    }
+}
+
+private struct StatusLine: View {
+    let icon: String
+    let text: String
+    var detail: String?
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Text(text).font(.system(size: 13, weight: .bold))
+            if let detail {
+                Text("· \(detail)")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textLabel)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+            }
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Theme.textSecondary)
     }
 }
