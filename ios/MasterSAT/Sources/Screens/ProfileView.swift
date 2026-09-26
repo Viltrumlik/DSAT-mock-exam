@@ -69,6 +69,13 @@ struct ProfileView: View {
                     ) {
                         EventsView()
                     }
+                    ProfileLinkRow(
+                        icon: "gearshape",
+                        title: "Settings",
+                        subtitle: "Account, sign-in & password, devices, about the app"
+                    ) {
+                        AccountSettingsView()
+                    }
 
                     VStack(alignment: .leading, spacing: 0) {
                         DetailRow(label: "Email", value: user.email)

@@ -27,6 +27,11 @@ struct RootView: View {
         case .signedIn(let user):
             if user.isFrozen {
                 FrozenAccountView()
+            } else if user.mustCompleteProfile {
+                // The web's gate, on the server's word (`profile_complete` + `missing_fields`):
+                // name, username and a confirmed email before anything else. It lifts itself —
+                // finishing refreshes the user, which moves `phase` on.
+                CompleteProfileView(user: user, onDone: {})
             } else {
                 RootTabView(user: user)
             }
