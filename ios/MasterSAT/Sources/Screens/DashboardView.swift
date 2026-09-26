@@ -30,6 +30,9 @@ struct DashboardView: View {
     @State private var savingExamDate = false
     @State private var openedAssignmentId: Int?
     @State private var promptDismissed = false
+    /// Bumped by pull-to-refresh, so the pieces that load themselves (stories, the survey
+    /// card, the chip row) reload with the rest of the page.
+    @State private var refreshTick = 0
 
     private var current: CurrentUser { profile ?? user }
 
@@ -77,11 +80,19 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     header
 
+                    // The learning center's noticeboard, above everything the student owns —
+                    // where the web puts it. Nothing posted, no space taken.
+                    StoriesRail(refreshID: refreshTick)
+
                     if session.releaseGate.showsNudge {
                         UpdateNudgeCard(config: session.releaseGate.config) {
                             withAnimation { session.releaseGate.dismissNudge() }
                         }
                     }
+
+                    // The web asks with a pop-up at sign-in; on the phone it is a card that is
+                    // here only while a survey is waiting.
+                    SurveysWaitingCard(refreshID: refreshTick)
 
                     TargetScoresCard(
                         overall: current.targetScore,
@@ -95,6 +106,8 @@ struct DashboardView: View {
                         saving: savingExamDate,
                         onSelect: { date in Task { await saveExamDate(date) } }
                     )
+
+                    HomePulse(refreshID: refreshTick)
 
                     if let loadError {
                         RetryNotice(message: loadError) { await load() }
@@ -134,7 +147,10 @@ struct DashboardView: View {
             .navigationTitle("Home")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable { await load() }
+            .refreshable {
+                refreshTick += 1
+                await load()
+            }
             .onAppear { Task { await load() } }
             .onChange(of: viewYear) { Task { await loadSchedule() } }
             .onChange(of: viewMonth) { Task { await loadSchedule() } }
@@ -158,6 +174,7 @@ struct DashboardView: View {
     private var topBar: some View {
         HStack(spacing: 8) {
             Spacer(minLength: 0)
+            HomeEventsButton()
             NavigationLink { PointsView() } label: { RewardsPointsPill() }
                 .buttonStyle(.plain)
         }

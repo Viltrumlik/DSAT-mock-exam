@@ -102,7 +102,7 @@ struct LearnHubView: View {
     /// first tab, and the homework never opened. With every destination declared here, at
     /// the root of the stack, a push is only ever a value appended to the path.
     enum Route: Hashable {
-        case classrooms, homework, assessments, midterms, services
+        case classrooms, homework, assessments, midterms, roadmap, progress, services
     }
 
     @Environment(Session.self) private var session
@@ -166,6 +166,20 @@ struct LearnHubView: View {
                         route: Route.midterms
                     )
                     HubCard(
+                        title: "Roadmap",
+                        subtitle: "Your level, lesson by lesson, and what comes next",
+                        icon: "map.fill",
+                        tone: Theme.accentDeep,
+                        route: Route.roadmap
+                    )
+                    HubCard(
+                        title: "My Progress",
+                        subtitle: "How you're doing, beside your group",
+                        icon: "chart.line.uptrend.xyaxis",
+                        tone: Theme.success,
+                        route: Route.progress
+                    )
+                    HubCard(
                         title: "Services",
                         subtitle: "Support hours with a teacher, and registering for the SAT",
                         icon: "lifepreserver",
@@ -187,6 +201,8 @@ struct LearnHubView: View {
                 case .homework: HomeworkListView()
                 case .assessments: AssessmentsListView()
                 case .midterms: MidtermsView()
+                case .roadmap: RoadmapView()
+                case .progress: MyProgressView()
                 case .services: ServicesView()
                 }
             }
