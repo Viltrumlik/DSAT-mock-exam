@@ -602,6 +602,24 @@ public enum LiveQuizDenial: Sendable, Equatable {
         }
     }
 
+    /// What an ended connection already says without asking REST. Nil for a refused
+    /// handshake (ask `diagnose`) and for a connection this side stopped.
+    public init?(end: LiveQuizConnectionEnd) {
+        switch end {
+        case .stopped, .refused:
+            return nil
+        case .signedOut:
+            self = .signedOut
+        case .closed(let code, let wasOpen):
+            // On an open socket, 4403 follows `removed_from_session` and means exactly that.
+            if code == 4403, wasOpen {
+                self = .removed
+            } else {
+                self = LiveQuizDenial(closeCode: code) ?? .unknown
+            }
+        }
+    }
+
     /// The server's own close codes, for a server that manages to deliver one.
     public init?(closeCode: Int) {
         switch closeCode {

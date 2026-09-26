@@ -439,6 +439,16 @@ import Testing
         #expect(LiveQuizDenial(closeCode: 1000) == nil)
     }
 
+    @Test("What an ended connection says on its own, and what it leaves to REST")
+    func fromEnd() {
+        #expect(LiveQuizDenial(end: .closed(code: 4403, wasOpen: true)) == .removed)
+        #expect(LiveQuizDenial(end: .closed(code: 4403, wasOpen: false)) == .noPlace)
+        #expect(LiveQuizDenial(end: .closed(code: 4999, wasOpen: true)) == .unknown)
+        #expect(LiveQuizDenial(end: .signedOut) == .signedOut)
+        #expect(LiveQuizDenial(end: .refused(status: 403)) == nil)
+        #expect(LiveQuizDenial(end: .stopped) == nil)
+    }
+
     // MARK: - The real frames, end to end
 
     @Test("A whole question from the server's own text frames")
