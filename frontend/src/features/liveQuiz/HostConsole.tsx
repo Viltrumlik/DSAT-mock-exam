@@ -44,12 +44,11 @@ export function HostConsole() {
     shuffle_questions: false,
   });
 
-  const rows = useMemo(() => {
-    const raw = classrooms.data as unknown;
-    if (Array.isArray(raw)) return raw as Array<{ id: number; name: string }>;
-    const results = (raw as { results?: unknown })?.results;
-    return Array.isArray(results) ? (results as Array<{ id: number; name: string }>) : [];
-  }, [classrooms.data]);
+  // `classesApi.list()` has already flattened whatever the server sent — a bare array or
+  // DRF's `{ results }` — into one envelope, so `items` is the only shape there is. Read it
+  // as itself: casting to `unknown` first, as this once did, throws away the type that keeps
+  // the two ends agreeing, and the list came back empty however many classes a teacher had.
+  const rows = useMemo(() => classrooms.data?.items ?? [], [classrooms.data]);
 
   const sessions = useQuery({
     queryKey: ["livequiz", "sessions"],
