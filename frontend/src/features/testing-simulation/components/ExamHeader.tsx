@@ -22,6 +22,8 @@ interface ExamHeaderProps {
   onTogglePause: () => void;
   saveExitAllowed: boolean;
   onSaveAndExit: () => void;
+  /** False on a proctored paper, where leaving fullscreen is an offence (see MoreMenu). */
+  fullscreenExitAllowed?: boolean;
   onReportProblem?: () => void;
 }
 
@@ -56,6 +58,7 @@ export function ExamHeader({
   onTogglePause,
   saveExitAllowed,
   onSaveAndExit,
+  fullscreenExitAllowed,
   onReportProblem,
 }: ExamHeaderProps) {
   return (
@@ -122,6 +125,7 @@ export function ExamHeader({
           onTogglePause={onTogglePause}
           saveExitAllowed={saveExitAllowed}
           onSaveAndExit={onSaveAndExit}
+          fullscreenExitAllowed={fullscreenExitAllowed}
         />
       </div>
     </header>

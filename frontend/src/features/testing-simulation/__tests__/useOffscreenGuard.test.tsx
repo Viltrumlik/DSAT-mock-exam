@@ -413,6 +413,80 @@ describe("useOffscreenGuard — report exactly what the student did", () => {
     h.unmount();
   });
 
+  // ── what the browser saw, sent as evidence ──────────────────────────────────
+  // The server keeps this per offence. It decides nothing, but without it the count could
+  // not tell an Esc from a tab switch, nor three absences from one that ran out its grace.
+
+  const evidenceOf = (call: number) => report.mock.calls[call][2];
+
+  it("reports a hidden page as `hidden`", async () => {
+    const h = await arm(mount());
+    await leave(); // hidden AND blurred, as a real alt-tab is — hidden is the stronger fact
+    expect(evidenceOf(0)).toEqual({ reason: "hidden", continuing: false });
+    h.unmount();
+  });
+
+  it("reports an Esc out of fullscreen as `fullscreen`", async () => {
+    fsElement = document.documentElement;
+    const h = await arm(mount());
+    await act(async () => {
+      fsElement = null;
+      document.dispatchEvent(new Event("fullscreenchange"));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(evidenceOf(0)).toEqual({ reason: "fullscreen", continuing: false });
+    h.unmount();
+  });
+
+  it("reports focus in another window as `blur`", async () => {
+    const h = await arm(mount());
+    await act(async () => {
+      focused = false;
+      window.dispatchEvent(new Event("blur"));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(evidenceOf(0)).toEqual({ reason: "blur", continuing: false });
+    h.unmount();
+  });
+
+  it("marks the offence an absence earns by outlasting its grace as `continuing`", async () => {
+    // One absence that simply never ended: the pattern behind most forfeits on prod, where
+    // strikes 2 and 3 land ~3.1s apart. Only `continuing` separates it from three leaves.
+    const h = await arm(mount());
+    await leave();
+    report.mockResolvedValue({ violations: 2, grace_seconds: 3, terminated: false, limit: 3 });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    expect(evidenceOf(0).continuing).toBe(false);
+    expect(evidenceOf(1)).toEqual({ reason: "hidden", continuing: true });
+    h.unmount();
+  });
+
+  it("does not mark a NEW absence as continuing", async () => {
+    const h = await arm(mount());
+    await leave();
+    await comeBack();
+    report.mockResolvedValue({ violations: 2, grace_seconds: 3, terminated: false, limit: 3 });
+    await leave();
+    expect(report).toHaveBeenCalledTimes(2);
+    expect(evidenceOf(1).continuing).toBe(false);
+    h.unmount();
+  });
+
+  it("re-sends a failed report with the account it was first sent with", async () => {
+    // Same key, same offence: a lost reply must not turn a fresh absence into a continuing one.
+    report.mockRejectedValue(new Error("offline"));
+    const h = await arm(mount());
+    await leave();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3500);
+    });
+    expect(report.mock.calls[1][1]).toBe(report.mock.calls[0][1]);
+    expect(evidenceOf(1).continuing).toBe(false);
+    h.unmount();
+  });
+
   it("clears the mirrored warning the moment they return from a failed report", async () => {
     // Failing to reach the server must not be worse for the student than reaching it.
     report.mockRejectedValue(new Error("offline"));

@@ -55,6 +55,32 @@ _ACTIVE_STATES = (STATE_ACTIVE, STATE_MODULE_2_ACTIVE)
 # while throwing that same request's answers away.
 LATE_ANSWER_GRACE_SECONDS = MODULE_BREAK_GRACE_SECONDS
 
+# What the browser saw when it reported an off-screen offence: the page went hidden (another
+# tab, minimised, screen locked), fullscreen was exited, or focus moved to another window.
+_OFFSCREEN_REASONS = frozenset({"hidden", "fullscreen", "blur"})
+
+
+def _offscreen_evidence(request) -> dict:
+    """The client's account of an offence, kept for the audit row and nothing else.
+
+    It never touches the count, the grace or the forfeit — a client can claim anything here.
+    It exists because the offence count alone could not tell a student who pressed Esc from
+    one whose tab was hidden, nor three separate absences from one absence that ran out its
+    grace twice (`continuing`), and answering that took week-old gunicorn logs.
+    """
+    try:
+        data = request.data
+    except Exception:  # an unreadable body must never stop the offence being counted
+        data = None
+    if not isinstance(data, dict):
+        data = {}
+    reason = data.get("reason")
+    return {
+        "reason": reason if reason in _OFFSCREEN_REASONS else "",
+        "continuing": data.get("continuing") is True,
+    }
+
+
 _REASON_DETAIL = {
     "midterm_unpublished": "This midterm is not available yet.",
     "midterm_completed": "You have already completed this midterm.",
@@ -314,6 +340,10 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
 
         Idempotent per browser event via the standard idempotency key, so a retried
         report cannot burn two of the student's three chances.
+
+        The body may say what the browser saw (``reason``: hidden / fullscreen / blur) and
+        whether this is the same absence outlasting its grace (``continuing``). Both are
+        written to the engine audit as evidence and decide nothing.
         """
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
         if attempt.current_state not in _ACTIVE_STATES:
@@ -328,6 +358,8 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
                 }
             )
 
+        evidence = _offscreen_evidence(request)
+
         def compute():
             terminated = False
             with transaction.atomic():
@@ -338,6 +370,17 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
                     count = int(locked.offscreen_violations or 0) + 1
                     MidtermAttempt.objects.filter(pk=locked.pk).update(offscreen_violations=count)
                     locked.offscreen_violations = count
+                    # One row per COUNTED offence, inside compute so a replayed key can't add a
+                    # second. Written before submit_final so the log reads offence, then submit.
+                    locked._log(
+                        "offscreen",
+                        from_state=locked.current_state,
+                        detail={
+                            **evidence,
+                            "violations": count,
+                            "terminated": count >= OFFSCREEN_VIOLATION_LIMIT,
+                        },
+                    )
                     if count >= OFFSCREEN_VIOLATION_LIMIT:
                         # Third strike ends the WHOLE sitting immediately, from either module
                         # — never an advance to module 2. submit_final goes straight to SCORING.
