@@ -5,6 +5,7 @@ from .views import (
     JoinView,
     MyLiveSessionsView,
     SessionDetailView,
+    SessionJoinByIdView,
     SessionListCreateView,
     SessionResultsView,
     SessionTerminateView,
@@ -17,6 +18,11 @@ urlpatterns = [
     path("options/", HostOptionsView.as_view(), name="livequiz-options"),
     path("sessions/", SessionListCreateView.as_view(), name="livequiz-sessions"),
     path("sessions/<int:pk>/", SessionDetailView.as_view(), name="livequiz-session-detail"),
+    path(
+        "sessions/<int:pk>/join/",
+        SessionJoinByIdView.as_view(),
+        name="livequiz-session-join",
+    ),
     path(
         "sessions/<int:pk>/terminate/",
         SessionTerminateView.as_view(),
