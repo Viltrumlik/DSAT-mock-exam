@@ -175,6 +175,19 @@ export const liveQuizApi = {
     return data;
   },
 
+  /** Take a place in a room reached by id — from `mine()`, a bookmark, or a refresh.
+   *
+   *  `mine()` strips the code out of every row, so the code cannot be the way in from there.
+   *  The roster is the guard on both routes, and this reply carries no code either. Asking
+   *  twice is safe: the server hands back the place you already had. */
+  async joinSession(id: number): Promise<{
+    session: LiveSession;
+    participant: { id: number; display_name: string; score: number };
+  }> {
+    const { data } = await api.post(`/livequiz/sessions/${id}/join/`, {});
+    return data;
+  },
+
   async mine(): Promise<LiveSession[]> {
     const { data } = await api.get("/livequiz/mine/");
     return (data?.results ?? []) as LiveSession[];

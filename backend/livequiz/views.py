@@ -196,6 +196,46 @@ class JoinView(APIView):
         )
 
 
+class SessionJoinByIdView(APIView):
+    """Take a place in a room you can already see.
+
+    ``mine/`` lists the games running in a student's own classes and strips the code out of
+    every row, so the code cannot be the way in from there — and without a place the socket
+    refuses the handshake, which the student reads as "trying to reconnect", for ever.
+
+    Letting them in by id gives nothing away: the roster is the guard on both routes, because
+    ``join_session`` refuses anybody who is not on it, and this reply never carries the code
+    either.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        _require_enabled()
+        session = (
+            LiveQuizSession.objects.select_related("classroom", "vocab_set").filter(pk=pk).first()
+        )
+        if session is None:
+            raise NotFound("No such live quiz.", code="not_found")
+
+        participant = services.join_session(session=session, user=request.user)
+
+        summary = _summary(session)
+        # Same reasoning as `mine/`: a student who was never told the code has no need of it,
+        # and a code they can read is a code they can pass to somebody outside the class.
+        summary.pop("join_code", None)
+        return Response(
+            {
+                "session": summary,
+                "participant": {
+                    "id": participant.id,
+                    "display_name": participant.display_name,
+                    "score": participant.score,
+                },
+            }
+        )
+
+
 class MyLiveSessionsView(APIView):
     """Games running right now in the classes I am in — so a student need not type a code."""
 
