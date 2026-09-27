@@ -291,7 +291,13 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         self._timer = asyncio.create_task(self._run_timer(seconds))
 
     def _cancel_timer(self) -> None:
-        if self._timer is not None and not self._timer.done():
+        # Never the task that is running this: the timer ends its own question, and
+        # `_end_question` starts by cancelling the timer. A task that cancels itself is torn
+        # down at its next await — which was the database write closing the question — so
+        # the question closed and nobody was told: no `question_ended`, no standings, no
+        # auto-advance, every phone left at 0 s until the teacher pressed Skip.
+        current = asyncio.current_task()
+        if self._timer is not None and self._timer is not current and not self._timer.done():
             self._timer.cancel()
         self._timer = None
 
