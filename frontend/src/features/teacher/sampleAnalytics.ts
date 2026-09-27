@@ -6,8 +6,10 @@ function student(id: number, name: string, classId: number, className: string, r
   if (assessmentLow != null) { reasons.push(`Average ${assessmentLow}%`); level = "at-risk"; }
   if (inactiveDays != null && inactiveDays >= 14) { reasons.push(`Inactive ${inactiveDays}d`); level = "at-risk"; }
   else if (inactiveDays != null && inactiveDays >= 7) { reasons.push(`Inactive ${inactiveDays}d`); if (level === "on-track") level = "watch"; }
-  if (overdueCount >= 2) { reasons.push(`${overdueCount} missing`); level = "at-risk"; }
-  else if (overdueCount === 1) { reasons.push("1 missing"); if (level === "on-track") level = "watch"; }
+  // Mirrors computeRisk() in useTeacherAnalytics.ts — if the wording drifts here the ?preview
+  // screens disagree with the live ones.
+  if (overdueCount >= 2) { reasons.push(`${overdueCount} not turned in`); level = "at-risk"; }
+  else if (overdueCount === 1) { reasons.push("1 not turned in"); if (level === "on-track") level = "watch"; }
   return { id, name, classId, className, reviewAvg, completionPct, practiceAverage, assessmentLow, inactiveDays, overdueCount, riskLevel: level, riskReasons: reasons };
 }
 function assignment(id: number, title: string, classId: number, className: string, completionPct: number, submitted: number, total: number, isAssessment: boolean, isOverdue: boolean, groupMean: number | null): AssignmentRecord {
@@ -50,9 +52,9 @@ export const SAMPLE_TEACHER_ANALYTICS: TeacherAnalyticsModel = {
     { label: "Apr 26", score: 1290 }, { label: "May 14", score: 1320 }, { label: "Jun 1", score: 1360 },
   ],
   recommendations: [
-    { id: "atrisk", title: "Check in with 2 at-risk students", detail: "Low averages, missing work, or inactivity.", href: "/teacher/students" },
+    { id: "atrisk", title: "Check in with 2 at-risk students", detail: "Low averages, work not turned in, or inactivity.", href: "/teacher/classrooms" },
     { id: "completion", title: "Boost completion on “Full mock 3”", detail: "41% turned in · Mock cohort", href: "/teacher/homework" },
     { id: "review", title: "Review “Full mock 3” as a class", detail: "Group mean below the class average.", href: "/teacher/gradebook" },
-    { id: "inactive", title: "Re-engage 3 inactive students", detail: "No activity in 7+ days.", href: "/teacher/students" },
+    { id: "inactive", title: "Re-engage 3 inactive students", detail: "No activity in 7+ days.", href: "/teacher/classrooms" },
   ],
 };

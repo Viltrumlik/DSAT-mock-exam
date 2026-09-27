@@ -1,4 +1,4 @@
-import { StandaloneMidtermsList } from "@/features/midterm/StandaloneMidterms";
+import { StandaloneMidtermsList } from "@/features/midterm/standalone";
 
 export default function TeacherMidtermsPage() {
   return <StandaloneMidtermsList />;

@@ -147,7 +147,11 @@ class HomeworkHandsInOnlyANewSittingTests(RetakeFixture):
         )
 
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json(), {})
+        # Nothing of a submission in the body, and no row behind it. The body is no longer
+        # bare: it carries ``composed_grade`` (null here — this homework has no manual
+        # share), so the check is on what a submission WOULD have put there.
+        self.assertNotIn("id", r.json())
+        self.assertIsNone(r.json().get("composed_grade"))
         self.assertIsNone(self._submission(homework))
 
     def test_a_sitting_without_a_finish_time_is_judged_by_when_it_was_started(self):

@@ -440,6 +440,17 @@ class MidtermV2PanelView(_ClassroomScopedView):
             # another scale and are counted here converted.
             "score_ceiling": basis["score_ceiling"],
             "mixed_scales": basis["mixed_scales"],
+            # The line this room is judged at — ONE number for the sitting, on the same scale
+            # as `score_ceiling` and every row's `score_on_scale`, never a field per student.
+            # It comes from `summary_basis` rather than `midterm.effective_pass_mark`, so it
+            # is the mark these papers were actually pinned to: a teacher who edits the pass
+            # mark after the room has sat it does not retroactively move the line under them
+            # (see MidtermAttempt.pass_mark and the midterm-edit incident).
+            #
+            # None where nothing judges this paper — a pre-midterm is a diagnostic, scored but
+            # never passed or failed. A reader must treat that as "no line to draw", NEVER as
+            # zero: zero would mark the whole class as having cleared it.
+            "pass_mark": basis["pass_mark"],
         }
         return Response({
             "midterm": _midterm_brief(midterm),

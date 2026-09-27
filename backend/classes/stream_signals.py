@@ -30,7 +30,7 @@ def _ensure_stream_post(post: ClassPost) -> None:
 
 
 def _ensure_stream_assignment(assignment: Assignment) -> None:
-    item, _ = ClassroomStreamItem.objects.update_or_create(
+    item, created = ClassroomStreamItem.objects.update_or_create(
         stream_type=ClassroomStreamItem.TYPE_ASSIGNMENT,
         related_id=assignment.pk,
         defaults={
@@ -38,6 +38,11 @@ def _ensure_stream_assignment(assignment: Assignment) -> None:
             "actor_id": assignment.created_by_id,
         },
     )
+    # The feed entry is announced once, when it first appears. Publishing is several saves
+    # (and re-publishing an archived homework is another), and every one of them would
+    # otherwise ring the class again about work they were told about days ago.
+    if not created:
+        return
     emit_to_classroom_members(
         classroom_id=assignment.classroom_id,
         event_type="stream.updated",
@@ -87,8 +92,13 @@ def stream_on_post_save(sender, instance: ClassPost, created, **kwargs):
 
 @receiver(post_save, sender=Assignment)
 def stream_on_assignment_save(sender, instance: Assignment, created, **kwargs):
-    if created:
-        _ensure_stream_assignment(instance)
+    # A draft is the teacher's own workbench — the class list already refuses to show one to
+    # a student, so it must not reach the stream either. The feed entry belongs to the moment
+    # the work is published, not the moment it was started; `_ensure_stream_assignment` keys
+    # on the assignment, so publishing twice still leaves exactly one entry.
+    if instance.status != Assignment.STATUS_PUBLISHED:
+        return
+    _ensure_stream_assignment(instance)
 
 
 @receiver(post_save, sender=Submission)

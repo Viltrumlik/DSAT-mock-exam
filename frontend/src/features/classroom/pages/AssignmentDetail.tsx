@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,14 +12,20 @@ import VideoPlayer from "@/components/VideoPlayer";
 import { normalizeApiError } from "@/lib/apiError";
 import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui";
 import { useClassroom } from "../hooks";
-import { capabilitiesFor } from "../capabilities";
+import { capabilitiesFor, type Capabilities } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
 import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, launcherLabel, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { HomeworkQuestionStatistics } from "@/features/questionAnalysis/HomeworkQuestionStatistics";
+import { MostMissed } from "@/features/teacher/mistakes";
 import { spawnRipple } from "../ui/ripple";
 import { examsStudentApi } from "@/features/examsStudent/api";
 import { SubmissionStatusPill } from "./statusPill";
 import { materialMeta, formatBytes } from "./materialMeta";
+import {
+  acceptAttribute, checkSubmissionBatch, fileExtension, fileIdentity, fileTypeList,
+  resolveSubmissionLimits, sizeLabel,
+} from "../submissionLimits";
+import { describeManualShare, type ManualShare } from "../submissionsApi";
 import { Download } from "lucide-react";
 
 /** Short, friendly date — "Jun 30" — matching the design's meta tiles. */
@@ -69,13 +75,13 @@ export function AssignmentDetailPage({ classId, assignmentId, basePath }: { clas
         <ArrowLeft className="h-4 w-4" /> Back to class
       </Link>
       {caps.isStaff
-        ? <TeacherView base={base} assignment={a.data} />
+        ? <TeacherView base={base} assignment={a.data} caps={caps} />
         : <StudentView classId={classId} base={base} assignment={a.data} />}
     </div>
   );
 }
 
-function TeacherView({ base, assignment }: { base: string; assignment: AssignmentDetail }) {
+function TeacherView({ base, assignment, caps }: { base: string; assignment: AssignmentDetail; caps: Capabilities }) {
   const router = useRouter();
   const kind = assignmentKind(assignment);
   // What there is to analyse: assessment sets, past papers, both, or — for an essay, a video
@@ -127,10 +133,26 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
           )}
         </Card>
       )}
+      {/* What the class got wrong most, worst first, and a pop-up to read any of those
+          questions in full and work it — the owner asked for this inside the homework, where a
+          teacher already is, rather than on a console page they never open. It leads the
+          statistics below it: the ranked five are the work, the breakdowns are the reference.
+
+          Gated on the CAPABILITY, not on this branch. `AssignmentDetail` is the same page on
+          the student route and the teacher route, and a row here carries a question prompt
+          while the pop-up behind it carries the recorded answer key. Reading the capability
+          means a future refactor that moves this render cannot quietly open it to a class. */}
+      {caps.canViewClassAnalytics && scope.hasAny && (
+        <MostMissed
+          assignmentId={assignment.id}
+          hasAssessments={scope.hasAssessments}
+          hasPastPapers={scope.hasPastPapers}
+        />
+      )}
       {/* Staff only, and only from this branch. The flagged cards carry question prompts,
           recorded answer keys and exactly which questions the class fell over — none of which
           a student may read, least of all one who can still hand this homework in. */}
-      {scope.hasAny && (
+      {caps.canViewClassAnalytics && scope.hasAny && (
         <HomeworkQuestionStatistics
           assignmentId={assignment.id}
           hasAssessments={scope.hasAssessments}
@@ -143,6 +165,106 @@ function TeacherView({ base, assignment }: { base: string; assignment: Assignmen
   );
 }
 
+const pct = (n: number) => `${+n.toFixed(2)}%`;
+
+/**
+ * The number in the student's Feedback pill.
+ *
+ * On homework where the teacher's mark carries only a share of the grade, `review.grade` is that
+ * mark and nothing more: with a 20% share, a teacher's 50 sits inside a grade the server composed
+ * as 90. Drawing the mark here printed a bare "50" — no denominator, no share, and a different
+ * number from the one the teacher's own screens were served. So once a share exists, the raw mark
+ * never stands in for the grade again; the whole number, or an honest word about why there isn't
+ * one yet, takes its place. The arithmetic is the server's and is never redone here.
+ */
+function gradePill(
+  review: NonNullable<MySubmission["review"]>,
+  share: ManualShare | null,
+  tone: "success" | "warning",
+) {
+  if (share) {
+    if (share.unavailable) return <Pill tone="warning">Total unavailable</Pill>;
+    if (share.awaiting) return <Pill tone="warning">Waiting on your teacher&apos;s mark</Pill>;
+    if (share.percent != null) return <Pill tone={tone}>{pct(share.percent)}</Pill>;
+    // No composed number and nothing owed: the share is 0 AND nothing on the homework is graded
+    // automatically, so the composition has nothing to add up. The mark below is the only number
+    // there is, and it is what this page showed before the share existed — dropping the pill
+    // here would blank the score under a line that says the score is shown above.
+  }
+  if (review.grade == null) return undefined;
+  return (
+    <Pill tone={tone}>
+      {review.grade}{review.max_score ? `/${review.max_score}` : ""}
+      {review.is_auto ? " · Auto" : ""}
+    </Pill>
+  );
+}
+
+/** Where the student's grade came from, said under the pill that shows it. */
+function GradeBreakdown({ share }: { share: ManualShare }) {
+  if (share.unavailable) {
+    return (
+      <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+        Your teacher&apos;s mark is saved and it counts. It is only the single number adding it to the
+        automatically graded part that could not be worked out here — ask your teacher for the total.
+      </p>
+    );
+  }
+  // A review that carries no weight is worth saying out loud: the student is looking at a mark
+  // and a grade that will not move with it, and silence here reads as the mark having counted.
+  if (share.manualWeight === 0) {
+    return (
+      <p className="mt-2 text-xs text-muted-foreground">
+        This grade is worked out automatically. Your teacher&apos;s comments are theirs, and they do
+        not change the number.
+      </p>
+    );
+  }
+  // A share of 100 has no split to explain — the pill above is wholly the teacher's mark.
+  if (share.automaticWeight === 0) return null;
+  // The mark comes from the composition, never from `review.grade`: on a review the platform
+  // wrote itself that key holds the automatic score, and printing it here would credit the
+  // teacher with a number they never typed.
+  const mark = share.manualPercent != null ? ` Your teacher marked it ${pct(share.manualPercent)}.` : "";
+  return (
+    <p className="mt-2 text-xs text-muted-foreground">
+      Your teacher&apos;s mark is worth {share.manualWeight}% of this grade; the other{" "}
+      {share.automaticWeight}% is graded automatically
+      {share.automaticPercent != null ? ` and stands at ${pct(share.automaticPercent)}` : ""}.
+      {mark}
+    </p>
+  );
+}
+
+/**
+ * The part of the grade that is already decided, before the teacher has marked anything.
+ *
+ * Vocabulary mastered on Monday settles the automatic side immediately; the upload slot may not
+ * be used until Friday. The server composes and serves that number with no submission row at all
+ * — this is the screen that finally shows it, instead of leaving the student to guess.
+ */
+function SettledSoFar({ share, soFar, automatic }: { share: ManualShare; soFar: number; automatic: number }) {
+  return (
+    <Card>
+      <CardHeader
+        title="Part of this grade is already decided"
+        // `soFar` is the WHOLE grade as it stands — the automatic side already weighted — which
+        // is the same number, off the same field, that the teacher's own screen calls "so far".
+        // The automatic side's own percent belongs in the sentence below, where it is labelled:
+        // shown up here it reads as the grade, and on an 80/20 split a student saw 95% beside
+        // "can only go up" and then finished on 90.
+        actions={<Pill tone="info">{pct(soFar)} so far</Pill>}
+      />
+      <p className="mt-2 text-sm text-muted-foreground">
+        The automatically graded {share.automaticWeight}% of this homework is settled at{" "}
+        {pct(automatic)}, which puts the whole grade at {pct(soFar)} so far. The remaining{" "}
+        {share.manualWeight}% is your teacher&apos;s mark, and they are still checking your work —
+        this grade can only go up.
+      </p>
+    </Card>
+  );
+}
+
 function StudentView({ classId, base, assignment }: { classId: number; base: string; assignment: AssignmentDetail }) {
   const router = useRouter();
   const sub = useMySubmission(classId, assignment.id);
@@ -150,6 +272,10 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
   const my = sub.data ?? null;
   const status = my?.workflow_status ?? my?.status ?? null;
   const done = status === "REVIEWED";
+  // Null on nearly every homework — only one that gives the teacher's mark a share of the grade
+  // composes at all. `my` itself can be a response with no submission in it, carrying this key
+  // and nothing else, so it is read off `my` rather than off the review.
+  const share = describeManualShare(my?.composed_grade);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [startingId, setStartingId] = useState<number | null>(null);
 
@@ -377,7 +503,14 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
 
       {/* File upload panel */}
       {uploadOpen && canUpload && (
-        <UploadPanel classId={classId} assignmentId={assignment.id} my={my} onClose={() => setUploadOpen(false)} />
+        <UploadPanel
+          classId={classId}
+          assignmentId={assignment.id}
+          my={my}
+          // What this submission may carry, as the server reports it on the assignment.
+          limits={assignment.submission_limits}
+          onClose={() => setUploadOpen(false)}
+        />
       )}
 
       {/* Teacher materials — links + attachments. (Instructions render as numbered
@@ -447,22 +580,24 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
           <Card>
             <CardHeader
               title={status === "RETURNED" ? "Revision requested" : "Feedback"}
-              actions={my.review.grade != null ? (
-                <Pill tone={status === "RETURNED" ? "warning" : "success"}>
-                  {my.review.grade}{my.review.max_score ? `/${my.review.max_score}` : ""}
-                  {my.review.is_auto ? " · Auto" : ""}
-                </Pill>
-              ) : undefined}
+              actions={gradePill(my.review, share, status === "RETURNED" ? "warning" : "success")}
             />
             {status === "RETURNED" && my.return_note && (
               <p className="mt-2 rounded-lg bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">{my.return_note}</p>
             )}
+            {share && <GradeBreakdown share={share} />}
             {my.review.feedback ? (
               <p className="mt-2 whitespace-pre-wrap text-sm text-muted-foreground">{my.review.feedback}</p>
             ) : status === "REVIEWED" && (
               <p className="mt-2 text-sm text-muted-foreground">No written feedback — your score is shown above.</p>
             )}
           </Card>
+        ) : share && share.awaiting && !share.unavailable && share.automaticWeight > 0
+            && share.automaticPercent != null && share.percent != null ? (
+          // `automaticWeight > 0` is load-bearing: where the teacher's mark is the whole grade,
+          // an automatic score can still be recorded and it carries nothing. Calling that number
+          // "already decided" would promise a student a part of their grade that does not exist.
+          <SettledSoFar share={share} soFar={share.percent} automatic={share.automaticPercent} />
         ) : null}
       </div>
 
@@ -497,17 +632,58 @@ function resolveAction(kind: AssignmentKind, status: MySubmission["workflow_stat
   return { label: `Start ${KIND_LABEL[kind]}`, icon: Play, mode: "start" };
 }
 
-function UploadPanel({ classId, assignmentId, my, onClose }: {
-  classId: number; assignmentId: number; my: MySubmission | null; onClose: () => void;
+function UploadPanel({ classId, assignmentId, my, limits: served, onClose }: {
+  classId: number; assignmentId: number; my: MySubmission | null;
+  limits?: AssignmentDetail["submission_limits"]; onClose: () => void;
 }) {
   const submit = useSubmitHomework(classId, assignmentId);
   const [files, setFiles] = useState<File[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const limits = useMemo(() => resolveSubmissionLimits(served), [served]);
+  // Files already on this submission hold slots against the count: a resubmit adds to what is
+  // there rather than replacing it, and the server counts attached plus arriving. The batch total
+  // is the queued files alone — what is already stored does not travel again.
+  const attached = my?.files?.length ?? 0;
+  const check = useMemo(() => checkSubmissionBatch(files, attached, limits), [files, attached, limits]);
+
+  /**
+   * A second pick ADDS to the queue.
+   *
+   * An operating-system picker only reaches into one folder at a time, so "four images and six
+   * PDFs" is naturally two trips. Replacing the list on the second trip threw the first four away
+   * without a word, and the student found out when their teacher did.
+   */
+  function addPicked(picked: FileList | null) {
+    setErr(null);
+    const incoming = Array.from(picked ?? []);
+    if (incoming.length === 0) return;
+    setFiles((current) => {
+      const seen = new Set(current.map(fileIdentity));
+      const added: File[] = [];
+      for (const f of incoming) {
+        const id = fileIdentity(f);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        added.push(f);
+      }
+      return added.length > 0 ? [...current, ...added] : current;
+    });
+  }
+
+  function removeAt(index: number) {
+    setErr(null);
+    setFiles((current) => current.filter((_, i) => i !== index));
+  }
+
   async function send() {
     setErr(null);
-    if (files.length === 0) return setErr("Choose at least one file.");
+    if (files.length === 0) return setErr("Choose at least one file to turn in.");
+    // Stop here rather than at the end of the upload: the server applies these same limits, but
+    // only once every byte has already gone over the wire — and the proxy in front of it answers
+    // an oversized body with an HTML page no student can read.
+    if (check.problem) return setErr(check.problem);
     const fd = new FormData();
     fd.append("submit", "true");
     if (typeof my?.revision === "number") fd.append("expected_revision", String(my.revision));
@@ -528,16 +704,95 @@ function UploadPanel({ classId, assignmentId, my, onClose }: {
       <CardHeader title="Upload your work" actions={<Button variant="ghost" size="sm" icon={X} onClick={onClose}>Cancel</Button>} />
       {err && <p className="mt-2 text-sm text-rose-500">{err}</p>}
       <div className="mt-3 space-y-3">
-        <input ref={inputRef} type="file" multiple className="hidden"
-          onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          // A hint to the file dialog, which usually offers "All files" anyway — the real check
+          // is `checkSubmissionBatch`, because the server refuses the whole batch on one bad file.
+          accept={acceptAttribute(limits)}
+          className="hidden"
+          onChange={(e) => {
+            addPicked(e.target.files);
+            // Clearing the input lets the same file fire `change` again, so a file removed by
+            // mistake can be picked straight back.
+            e.target.value = "";
+          }}
+        />
         <button onClick={() => inputRef.current?.click()}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border py-6 text-sm text-muted-foreground hover:bg-surface-2">
-          <Upload className="h-4 w-4" /> Choose files
+          <Upload className="h-4 w-4" /> {files.length > 0 ? "Add more files" : "Choose files"}
         </button>
+        <p className="text-xs text-muted-foreground">
+          Pick from one folder then another — everything you choose is kept. Up to{" "}
+          {limits.maxFiles} files in a submission, {sizeLabel(limits.maxFileBytes)} per file,
+          {" "}{sizeLabel(limits.maxBatchBytes)} in one upload.
+          {attached > 0 && (
+            ` ${attached} ${attached === 1 ? "file is" : "files are"} already turned in and will stay.`
+          )}
+        </p>
+        <p className="text-xs text-muted-foreground">Files that work: {fileTypeList(limits)}.</p>
         {files.length > 0 && (
-          <ul className="space-y-1 text-sm text-foreground">
-            {files.map((f, i) => <li key={i} className="flex items-center gap-2"><FileText className="h-4 w-4 text-muted-foreground" /> {f.name}</li>)}
+          <ul className="space-y-2">
+            {files.map((f, i) => {
+              const meta = materialMeta(f.name);
+              const Icon = meta.Icon;
+              const over = check.tooBig.includes(f);
+              const wrongKind = check.disallowed.includes(f);
+              // Either one loses the whole batch at the server, so both read the same here: this
+              // is the file to swap out before pressing Submit.
+              const flagged = over || wrongKind;
+              return (
+                <li
+                  key={fileIdentity(f)}
+                  className={cn(
+                    "flex items-center gap-3 rounded-xl border px-3 py-2.5",
+                    flagged
+                      ? "border-amber-200 bg-amber-50 dark:border-amber-500/30 dark:bg-amber-500/15"
+                      : "border-border",
+                  )}
+                >
+                  <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", meta.iconWrap)}>
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-semibold text-foreground">{f.name}</span>
+                    <span className={cn(
+                      "block text-[11px]",
+                      flagged ? "text-amber-700 dark:text-amber-200" : "text-muted-foreground",
+                    )}>
+                      <span className={cn("rounded px-1 py-0.5 text-[9px] font-bold", meta.badge)}>{meta.label}</span>
+                      <span className="ml-1.5">{sizeLabel(f.size)}</span>
+                      {wrongKind && (
+                        <span className="ml-1.5">· {fileExtension(f.name) || "this kind"} isn’t taken here</span>
+                      )}
+                      {over && <span className="ml-1.5">· over {sizeLabel(limits.maxFileBytes)}</span>}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeAt(i)}
+                    aria-label={`Remove ${f.name}`}
+                    className="cr-press inline-flex shrink-0 items-center justify-center rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
+        )}
+        {files.length > 0 && (
+          <p className="text-xs font-medium text-muted-foreground">
+            {files.length} {files.length === 1 ? "file" : "files"} ready ·{" "}
+            {sizeLabel(check.totalBytes)} of {sizeLabel(limits.maxBatchBytes)}
+            {attached > 0 && ` · ${check.totalFiles} of ${limits.maxFiles} files in all`}
+          </p>
+        )}
+        {check.problem && (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/15 dark:text-amber-200">
+            {check.problem}
+          </p>
         )}
         <Button block loading={submit.isPending} disabled={files.length === 0} onClick={send}>Submit homework</Button>
       </div>

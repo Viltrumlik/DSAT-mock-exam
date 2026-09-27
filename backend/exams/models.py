@@ -1526,9 +1526,78 @@ class TestAttempt(TimestampedModel):
         if n == 0:
             self.refresh_from_db()
             if self.is_completed:
+                # Somebody else finished this attempt. They emitted; emitting again here would
+                # be a second telling of one event, so this path stays silent by design.
                 return
             raise TransitionConflict("complete_test concurrent state drift")
         self.refresh_from_db()
+        self._announce_completion()
+
+    def _announce_completion(self) -> None:
+        """Send the ``post_save`` the conditional UPDATE above could not.
+
+        **This is the line that connects a finished paper to the rest of the platform.** Three
+        receivers wait on a finished ``TestAttempt`` and every one of them was dormant:
+
+        * ``classes.pastpaper_signals``  — mints the certificate
+        * ``classes.homework_attempt_signals`` — hands the homework in (the class Submission)
+        * ``rewards.hooks._on_test_attempt_saved`` — settles the points and XP
+
+        Each of them hangs off the model save rather than off this method, deliberately and for
+        a good reason (their own docstrings: the write paths are plural). What nobody noticed is
+        that the *finishing* write is not a save at all. ``conditional_attempt_update`` is a
+        queryset ``UPDATE`` — it is the concurrency guard, it compares state and version in the
+        WHERE clause, and it must stay one — and a queryset update sends no signal. So on
+        2026-09-18 prod held 976 finished pastpapers, 0 certificates, 0 handed-in homework rows
+        and 0 points. The fix is not to turn the guard into a ``save()``; it is to say out loud
+        the thing the guard cannot.
+
+        **Exactly once, and only on the transition.** It is called on the one path where the
+        UPDATE reported ``n == 1`` — i.e. this call, and no other, moved the row from SCORING to
+        COMPLETED. A refused guard returns above without reaching here, and a second
+        ``complete_test`` on an already-finished attempt returns at the top of the method, so a
+        re-run cannot pay twice. (The receivers are idempotent as well — the certificate upserts
+        on the attempt, the submission on assignment+student, the award on its idempotency key —
+        but that is the belt, and this is the braces.)
+
+        **Never raises into the finish.** A student's paper is finished the moment the UPDATE
+        lands; a certificate that cannot be drawn or a reward rule that is missing must not undo
+        that. Same discipline the receivers already keep individually
+        (``pastpaper_certificate.maybe_issue``, ``rewards.hooks``) — and here it is ``send_robust``
+        that provides it, which is why there is no ``try`` wrapped round this: it returns the
+        failures instead of raising them, and returning them is what lets each one be logged by
+        name rather than collapsed into one line.
+
+        **``send_robust``, and that is the whole point of this line.** ``Signal.send`` stops at
+        the first receiver that raises, and the dispatch order here is fixed and knowable:
+        ``classes`` precedes ``rewards`` in ``INSTALLED_APPS``, and ``classes.apps.ready``
+        imports ``homework_attempt_signals`` before ``pastpaper_signals``. So the receiver that
+        runs first is ``classroom_homework_sync_on_test_attempt_save`` — the one with no
+        try/except of its own around the work before the per-assignment loop (the membership
+        query, the ``User`` lookup, ``assignment_target_practice_test_ids``). Under ``send``, a
+        student with a deleted class row or a malformed ``practice_test_ids`` would take the
+        certificate and the points down with the sync, and an outer ``except`` here would log
+        one line naming none of them. ``send_robust`` runs all three regardless and hands back
+        the (receiver, exception) pairs, so a failure costs exactly its own receiver and the log
+        says which.
+        """
+        results = post_save.send_robust(
+            sender=TestAttempt,
+            instance=self,
+            created=False,
+            raw=False,
+            using=self._state.db,
+            update_fields=None,
+        )
+        for receiver, response in results:
+            if isinstance(response, Exception):
+                logger.error(
+                    "complete_test: completion receiver %s.%s failed for attempt %s",
+                    getattr(receiver, "__module__", "?"),
+                    getattr(receiver, "__qualname__", repr(receiver)),
+                    self.pk,
+                    exc_info=response,
+                )
 
     def get_module_results(self):
         """

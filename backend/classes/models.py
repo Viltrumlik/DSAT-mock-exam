@@ -5,7 +5,7 @@ import string
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, MaxValueValidator, MinValueValidator
 from django.db import models
 from django.db.models import Q
 from django.db.models.signals import post_save
@@ -443,6 +443,26 @@ class Assignment(models.Model):
         null=True,
         blank=True,
         help_text="Points this work is graded out of; required to normalize teacher grades for Academic ranking.",
+    )
+    # How much of this homework's grade the teacher awards BY HAND, as a share of the whole.
+    # It is a WEIGHT, never a mark: the mark itself is SubmissionReview.grade. 20 means the
+    # teacher's mark is a fifth of the grade and the auto-graded parts carry the other four
+    # fifths.
+    #
+    # NULL means no manual component was asked for — every homework set before this field
+    # existed, and the default for every homework set without ticking the box, so none of
+    # them change. 0 and 100 are both legal and both mean something: 100 hands the whole
+    # grade to the teacher, 0 asks for a review that carries no weight.
+    #
+    # The arithmetic lives in classes.grade_composition and nowhere else.
+    manual_grade_weight_percent = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0), MaxValueValidator(100)],
+        help_text=(
+            "Percent of the grade the teacher marks by hand (0-100). "
+            "Blank = the grade comes entirely from the auto-graded parts."
+        ),
     )
 
     # Default PUBLISHED so existing rows + the current quick-create flow stay visible.

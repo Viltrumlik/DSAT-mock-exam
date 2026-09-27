@@ -100,6 +100,7 @@ from .views_midterm_v2 import (
     MidtermV2StartCodeView,
 )
 from .views_roster import MemberManageView, ClassroomRosterView
+from .views_teacher import TeacherTodayView
 from .views_media import AssignmentVideoUploadUrlView
 from .views_roadmap import RoadmapReadingView, StudentPeerProgressView, StudentProgressView, StudentRoadmapView
 
@@ -141,6 +142,10 @@ urlpatterns = [
     ),
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
+    # The teacher Dashboard's "today". Up here with the other literal collection segments,
+    # ABOVE the router include: the classroom detail route matches <pk> as `[^/.]+`, not as
+    # an int, so "teacher" left below it would be read as a classroom id.
+    path("teacher/today/", TeacherTodayView.as_view(), name="teacher-today"),
     path("<int:classroom_pk>/telegram/", ClassroomTelegramView.as_view(), name="class-telegram"),
     path("<int:classroom_pk>/telegram/join/", ClassroomTelegramJoinView.as_view(), name="class-telegram-join"),
     path("<int:classroom_pk>/telegram/bot-link/", ClassroomTelegramBotLinkView.as_view(), name="class-telegram-bot-link"),

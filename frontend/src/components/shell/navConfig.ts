@@ -141,15 +141,21 @@ export const supportTeacherNavSection: NavSection = {
 /**
  * Teacher information architecture (see docs/UI_REBUILD_IA.md §5).
  *
- * Six pages — Analytics, Materials, Students, Homework, Grading, Gradebook — are marked
- * `hiddenInSidebar` rather than deleted. The school wants them off the teacher's sidebar,
- * but the routes, their inbound links from classroom pages, and every endpoint behind them
- * are still live and still used by ops and admin. Hiding is therefore the whole change:
- * deleting the routes would 404 links that other roles follow, and the work would have to
- * be undone to bring any of the six back.
+ * Four pages — Analytics, Materials, Homework, Gradebook — are marked `hiddenInSidebar`
+ * rather than deleted. The learning center wants them off the teacher's sidebar, but the
+ * routes, their inbound links from classroom pages, and every endpoint behind them are still
+ * live and still used by ops and admin. Hiding is therefore the whole change: deleting the
+ * routes would 404 links that other roles follow, and the work would have to be undone to
+ * bring any of the four back.
  *
- * The whole `teacher-grading` section vanishes with its three items, because the sidebar
- * drops a section once nothing visible is left in it (see AppShell's `filteredNav`).
+ * Students was a fifth until the owner said it was not needed, and that one really was
+ * deleted — page, route and entry. The at-risk rows on Analytics that used to lead there now
+ * lead into each student's own classroom, which is the difference between removing a page and
+ * hiding one: hiding leaves the links working, deleting means finding them all.
+ *
+ * Grading was the sixth until it was brought back, which is also what keeps the
+ * `teacher-grading` section on screen — the sidebar drops a section once nothing visible is
+ * left in it (see AppShell's `filteredNav`), and with Grading hidden nothing was.
  */
 export const teacherNav: NavSection[] = [
   {
@@ -168,15 +174,21 @@ export const teacherNav: NavSection[] = [
       { href: "/teacher/assessments", label: "Assessments", icon: ClipboardCheck },
       { href: "/teacher/midterms", label: "Midterms", icon: Timer },
       // Run an invigilated full mock: let students in with the admin's code, press Start.
-      { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay, isNew: true },
+      // No `isNew` here any more: the badge had been on Mock sittings long enough that it
+      // stopped meaning new and started meaning decoration. Live quiz below keeps its own,
+      // because it genuinely is.
+      { href: "/teacher/mock-sessions", label: "Mock sittings", icon: CirclePlay },
       // Appended, like Mock sittings before it: one leaf, no group touched, nothing renamed.
       { href: "/teacher/live", label: "Live quiz", icon: Radio, isNew: true },
       { href: "/teacher/materials", label: "Materials", icon: FolderOpen, hiddenInSidebar: true },
-      { href: "/teacher/students", label: "Students", icon: Users, hiddenInSidebar: true },
       // Appended, never slotted in. The school has restored this sidebar's shape once
       // already, so this adds ONE leaf at the end of the section and touches nothing else:
       // no label renamed, no href re-routed, no item unhidden or reordered.
-      { href: "/teacher/question-analysis", label: "Question analysis", icon: ScanSearch, isNew: true },
+      { href: "/teacher/question-analysis", label: "Question analysis", icon: ScanSearch },
+      // Appended under the same rule as the leaf above it. The library itself is not new —
+      // `/pastpapers` has always existed — but it lives on the student host, and teacher.*
+      // bounces every path outside /teacher, so a teacher could not reach it from anywhere.
+      { href: "/teacher/pastpapers", label: "Past papers", icon: BookOpen },
     ],
   },
   {
@@ -184,7 +196,9 @@ export const teacherNav: NavSection[] = [
     section: "Grading",
     items: [
       { href: "/teacher/homework", label: "Homework", icon: ClipboardList, hiddenInSidebar: true },
-      { href: "/teacher/grading", label: "Grading", icon: ClipboardPen, hiddenInSidebar: true },
+      // Unhidden: manual grading is a teacher's daily work, and reaching it only from the
+      // dashboard's button meant leaving whatever page they were on to find it.
+      { href: "/teacher/grading", label: "Grading", icon: ClipboardPen },
       { href: "/teacher/gradebook", label: "Gradebook", icon: Table2, hiddenInSidebar: true },
     ],
   },

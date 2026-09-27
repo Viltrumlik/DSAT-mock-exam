@@ -4,8 +4,10 @@ import { coalesceRuns } from "../coalesceRuns";
 /**
  * coalesceRuns — one run of a task at a time, and at most one more asked for behind it.
  *
- * The homework grading hub refreshes through it on every realtime event, so a batch of events costs one
- * reload and one after it rather than a reload each. See `components/homework/__tests__/homeworkGradingHubRefreshes.test.tsx`.
+ * It had one consumer, the homework grading hub, which refreshed through it on every realtime event so a
+ * batch of events cost one reload and one after it rather than a reload each. That hub was retired when the
+ * panel settled on a single grading screen, and NOTHING calls this now — the module and these tests are kept
+ * because the behaviour is subtle and worth having ready, not because something depends on them.
  */
 
 /** A task whose every run waits until the test ends it. */

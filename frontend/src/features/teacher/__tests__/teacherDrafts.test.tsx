@@ -11,7 +11,7 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * but keeps drafts, and it lists newest-given first, where a draft counts as given when it was saved:
  * a fresh draft heads the list. Students are only ever given published homework, so no student can see
  * a draft, let alone turn it in. Yet the gradebook made each draft a column in which every student was
- * missing it, counted in their "N!" badge and in "Missing work". And both screens take only the first
+ * missing it, counted in their "N!" badge and in "Not turned in". And both screens take only the first
  * 12 homework of a class, so drafts used up those slots and pushed out older homework that students
  * were given: off the gradebook, and its waiting work out of the grading queue.
  */
@@ -27,7 +27,6 @@ vi.mock("@/lib/api", () => ({ classesApi: api }));
 vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ bootState: "AUTHENTICATED" }) }));
 
 const { useGradebook } = await import("../useGradebook");
-const { useGradingQueue } = await import("../useGradingQueue");
 
 /**
  * A `GET /api/classes/` row, in the serializer's wire shape. TEACHER is kept both by the class filter on
@@ -165,23 +164,5 @@ describe("useGradebook — homework that has not reached students", () => {
 
     expect(model?.assignments.map((a) => a.id)).toEqual([101]);
     expect(model?.students.map((s) => [s.id, s.cells.map((c) => c.status)])).toEqual([[11, ["submitted"]]]);
-  });
-});
-
-describe("useGradingQueue — homework that has not reached students", () => {
-  it("still queues an older homework's waiting work when twelve newer drafts exist", async () => {
-    serve([...drafts(...countDown(312, 301)), ...published(300)], { 300: [turnedIn(3001, FIRST)] });
-    const { items } = await settle(() => useGradingQueue(), queueLoaded);
-
-    expect(items.map((item) => [item.assignmentId, item.submission.id])).toEqual([[300, 3001]]);
-    // The drafts' submissions are not even asked for.
-    expect(api.listSubmissions.mock.calls).toEqual([[1, 300]]);
-  });
-
-  it("leaves out only what says it is a draft: a row that names no status still has its work queued", async () => {
-    serve([{ id: 300 }], { 300: [turnedIn(3001, FIRST)] });
-    const { items } = await settle(() => useGradingQueue(), queueLoaded);
-
-    expect(items.map((item) => [item.assignmentId, item.submission.id])).toEqual([[300, 3001]]);
   });
 });

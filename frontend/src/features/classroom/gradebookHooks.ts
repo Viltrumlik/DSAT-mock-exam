@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { gradebookApi } from "./gradebookApi";
+import { submittedWorkKey } from "./submissionsHooks";
 
 const enabledId = (id: number) => Number.isFinite(id) && id > 0;
 const keys = {
@@ -28,6 +29,10 @@ export function useGradebookAssignment(classId: number, assignmentId: number | n
 function invalidate(qc: ReturnType<typeof useQueryClient>, classId: number, assignmentId: number) {
   qc.invalidateQueries({ queryKey: keys.assignment(classId, assignmentId) });
   qc.invalidateQueries({ queryKey: keys.overview(classId) });
+  // The work the mark was entered on, when a teacher has it open: its `composed_grade` is the
+  // server's arithmetic over the mark that has just landed, and re-deriving that here to save a
+  // round trip is exactly how the number would come to disagree with the student's.
+  qc.invalidateQueries({ queryKey: submittedWorkKey(classId, assignmentId) });
 }
 
 export function useGradeSubmission(classId: number, assignmentId: number) {

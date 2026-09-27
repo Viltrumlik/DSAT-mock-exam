@@ -147,12 +147,17 @@ function Podium({ rows, scoreOf }: { rows: RankingRow[]; scoreOf: (r: RankingRow
   };
   return (
     <div className="grid grid-cols-3 items-end gap-3 sm:gap-4">
-      {order.map((r) => {
+      {/* Two of these three can now carry the same rank — equal XP shares a number, so a
+          board can open on two joint winners and no second place. That reads correctly: both
+          stand tall, both wear gold. What it breaks is identity, which is why the slot index
+          is in the key: rank and name together stopped being unique the moment ties did, and
+          two students in one class can share a first name. */}
+      {order.map((r, slot) => {
         const m = RANK[r.rank] ?? RANK[3];
         const first = r.rank === 1;
         const score = scoreOf(r);
         return (
-          <div key={`${r.rank}-${r.name}`}
+          <div key={`${slot}-${r.rank}-${r.name}`}
             className="relative flex flex-col items-center rounded-[18px] px-3 pb-[18px] text-center"
             style={{
               paddingTop: first ? 34 : 22,
