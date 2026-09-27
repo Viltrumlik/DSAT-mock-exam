@@ -105,6 +105,54 @@ def send_push_for_notifications(notification_ids: list[int]) -> dict:
     return {"sent": sent, "notifications": len(notifications)}
 
 
+@shared_task(name="notifications.send_apns_for_notifications")
+def send_apns_for_notifications(notification_ids: list[int]) -> dict:
+    """The iOS half of the fan-out: every live APNs device of every recipient.
+
+    A separate task from the Web Push one on purpose, with NO automatic retry. The web task
+    retries its whole batch on any exception; APNs, once it has accepted a push, stores and
+    forwards it itself — a retry from our side would only put a second banner on the phone.
+    The badge is each recipient's unread count, read once for the whole batch.
+    """
+    from django.db.models import Count
+
+    from . import apns
+    from .models import ApnsDevice, Notification
+
+    ids = [int(pk) for pk in (notification_ids or ()) if pk]
+    if not ids:
+        return {"sent": 0, "skipped": "empty"}
+    if not apns.is_configured():
+        return {"sent": 0, "skipped": "not configured"}
+
+    notifications = list(Notification.objects.filter(pk__in=ids))
+    if not notifications:
+        return {"sent": 0, "skipped": "gone"}
+    recipients = {n.recipient_id for n in notifications}
+
+    devices: dict[int, list] = {}
+    for device in ApnsDevice.objects.filter(user_id__in=recipients, failed_at__isnull=True):
+        devices.setdefault(device.user_id, []).append(device)
+    if not devices:
+        return {"sent": 0, "skipped": "no devices"}
+
+    unread = {
+        row["recipient_id"]: row["n"]
+        for row in Notification.objects.filter(recipient_id__in=devices.keys(), read_at__isnull=True)
+        .values("recipient_id")
+        .annotate(n=Count("id"))
+    }
+
+    sent = 0
+    for notification in notifications:
+        targets = devices.get(notification.recipient_id)
+        if not targets:
+            continue
+        payload = apns.payload_for(notification, badge=unread.get(notification.recipient_id, 0))
+        sent += sum(1 for device in targets if apns.send_to_device(device, payload))
+    return {"sent": sent, "notifications": len(notifications)}
+
+
 @shared_task(name="notifications.prune_push_subscriptions")
 def prune_push_subscriptions(older_than_days: int = 30) -> dict:
     from .services import prune_failed_subscriptions

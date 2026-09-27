@@ -63,4 +63,5 @@ urlpatterns = [
     path('api/events/', include('events.urls')),
     path('api/livequiz/', include('livequiz.urls')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/mobile/', include('mobile.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -123,7 +123,7 @@ import Testing
                 "words": [
                     ["id": 100, "word": "abate", "definition": "to lessen",
                      "part_of_speech": "verb", "example": "The storm abated.",
-                     "synonyms": ["subside", "diminish"], "status": "learning"],
+                     "synonyms": ["subside", "diminish"], "status": "mastered"],
                     ["id": 101, "word": "cogent", "definition": "convincing", "status": "new"],
                 ],
             ])
@@ -132,7 +132,7 @@ import Testing
         let set = try await makeAPI().vocabularySet(id: 11)
 
         #expect(set.words.count == 2)
-        #expect(set.words[0].status == .learning)
+        #expect(set.words[0].status == .mastered)
         #expect(set.words[0].synonyms == ["subside", "diminish"])
         #expect(set.words[1].status == .new)
     }
@@ -213,7 +213,7 @@ import Testing
             ])
         }
 
-        let submission = try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7)
+        let submission = try #require(try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7))
 
         #expect(submission.revision == 3)
         #expect(submission.hasBeenSubmitted)
@@ -229,10 +229,35 @@ import Testing
                    "return_note": "Please redo question 3.", "returned_at": "2026-08-03T11:00:00Z"])
         }
 
-        let submission = try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7)
+        let submission = try #require(try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7))
 
         #expect(submission.isReturned)
         #expect(submission.returnNote == "Please redo question 3.")
+    }
+
+    @Test("Nothing handed in yet is nil, not an error")
+    func emptySubmissionIsNil() async throws {
+        // The server answers 200 {} — not a 404 — and that empty object used to fail to
+        // decode, so every homework without a submission opened to an error screen.
+        server.handler = { _ in .json([:]) }
+        let submission = try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7)
+        #expect(submission == nil)
+    }
+
+    @Test("The teacher's mark decodes from DRF's string decimals")
+    func reviewDecodes() async throws {
+        server.handler = { _ in
+            .json(["id": 5, "revision": 2, "files": [],
+                   "review": ["grade": "7.50", "max_score": "10.00", "feedback": "Good work.",
+                              "reviewed_at": "2026-09-20T09:00:00Z"]])
+        }
+        let submission = try #require(try await makeAPI().mySubmission(classroomId: 2, assignmentId: 7))
+        let review = try #require(submission.review)
+        #expect(review.grade == 7.5)
+        #expect(review.maxScore == 10)
+        #expect(review.scoreText == "7.5 / 10")
+        #expect(review.feedback == "Good work.")
+        #expect(SubmissionReview(grade: 8, maxScore: nil, feedback: nil, reviewedAt: nil).scoreText == "8")
     }
 
     @Test("Submitting sends the files, their tokens and the revision it read")

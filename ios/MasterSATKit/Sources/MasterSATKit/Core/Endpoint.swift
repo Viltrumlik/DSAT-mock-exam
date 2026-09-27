@@ -21,6 +21,11 @@ public struct Endpoint: Sendable {
     public var idempotencyKey: String?
     /// Skip the Authorization header entirely (login, refresh).
     public var isUnauthenticated: Bool
+    /// On an unauthenticated endpoint: still attach the access token if one is held, but
+    /// never refresh, retry or sign out over it. For requests that must work signed in
+    /// or out — the app's config, a crash report — where a stale token is no reason to
+    /// end the student's session.
+    public var attachesTokenIfAvailable: Bool
     /// Overrides the default `application/json` when the body is not JSON.
     public var contentType: String?
 
@@ -31,6 +36,7 @@ public struct Endpoint: Sendable {
         body: Data? = nil,
         idempotencyKey: String? = nil,
         isUnauthenticated: Bool = false,
+        attachesTokenIfAvailable: Bool = false,
         contentType: String? = nil
     ) {
         self.path = path
@@ -39,6 +45,7 @@ public struct Endpoint: Sendable {
         self.body = body
         self.idempotencyKey = idempotencyKey
         self.isUnauthenticated = isUnauthenticated
+        self.attachesTokenIfAvailable = attachesTokenIfAvailable
         self.contentType = contentType
     }
 

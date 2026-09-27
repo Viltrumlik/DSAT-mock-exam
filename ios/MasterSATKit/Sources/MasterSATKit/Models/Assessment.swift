@@ -116,8 +116,11 @@ public struct AssessmentSetInfo: Decodable, Sendable, Equatable, Identifiable {
     public let subject: String
     public let category: String?
     public let description: String?
+    /// `foundation` / `junior` / `middle` / `senior`, or blank on a legacy set. Only the
+    /// runner's bundle sends it; it decides whether the set offers Desmos.
+    public let level: String?
 
-    private enum CodingKeys: String, CodingKey { case id, title, subject, category, description }
+    private enum CodingKeys: String, CodingKey { case id, title, subject, category, description, level }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -126,7 +129,11 @@ public struct AssessmentSetInfo: Decodable, Sendable, Equatable, Identifiable {
         subject = (try? c.decodeIfPresent(String.self, forKey: .subject)) as? String ?? ""
         category = try? c.decodeIfPresent(String.self, forKey: .category)
         description = try? c.decodeIfPresent(String.self, forKey: .description)
+        level = (try? c.decodeIfPresent(String.self, forKey: .level)) ?? nil
     }
+
+    /// Desmos is offered on Middle and Senior maths sets only — see `AssessmentTools`.
+    public var offersCalculator: Bool { AssessmentTools.offersCalculator(subject: subject, level: level) }
 }
 
 public struct AssessmentAnswer: Decodable, Sendable, Equatable, Identifiable {

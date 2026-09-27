@@ -30,43 +30,13 @@ enum StudyMode: String, CaseIterable, Identifiable {
 
     /// The site's own blurbs, verbatim — a student who read them on the set page should
     /// find the same promise waiting inside the mode.
-    var subtitle: String {
-        switch self {
-        case .flashcard: return "Flip each card and mark what you knew. Missed words come back."
-        case .matching: return "Pair every word with its definition. The clock runs the whole way."
-        case .speed: return "Sixty seconds. Pick the right meaning as fast as you can."
-        case .test: return "Multiple choice, true/false and spelling — every word, once."
-        }
-    }
+    var subtitle: String { VocabPalette.gameBlurb(kitMode) }
 
-    var icon: String {
-        switch self {
-        case .flashcard: return "rectangle.on.rectangle"
-        case .matching: return "square.grid.2x2"
-        case .speed: return "bolt.fill"
-        case .test: return "checkmark.circle"
-        }
-    }
+    var icon: String { VocabPalette.gameGlyph(kitMode) }
 
-    /// Each mode keeps the accent the web gives it, so the mode a student picked is the
-    /// mode they land in — and the header pill inside carries that colour too.
-    var tone: Color {
-        switch self {
-        case .flashcard: return Theme.accent
-        case .matching: return Theme.info
-        case .speed: return Theme.amber
-        case .test: return Theme.success
-        }
-    }
-
-    /// The smallest set the mode is worth running on.
-    var minimumWords: Int {
-        switch self {
-        case .flashcard: return 1
-        case .matching: return 2
-        case .speed, .test: return 4
-        }
-    }
+    /// Each mode keeps the colour the web gives it — the one its quarter of every set's bar
+    /// is painted in — so the mode a student picked is the mode they land in.
+    var tone: Color { VocabPalette.game(kitMode).solid }
 }
 
 /// The shell every study mode runs inside — the site's `ModeFrame`.
@@ -194,7 +164,8 @@ struct ModeStat: Identifiable {
 /// The end-of-round screen every mode lands on — the web's `ModeOutcome`.
 ///
 /// One screen for all four, because a student finishing Speed and a student finishing
-/// Matching are in the same place: they want to know how it went and whether to go again.
+/// Matching are in the same place: they want to know how it went and whether to go again —
+/// and, now that a game is mastered by one clean run, whether this was that run.
 struct ModeOutcomeView: View {
     let mode: StudyMode
     let title: String
@@ -205,10 +176,21 @@ struct ModeOutcomeView: View {
     var errorText: String?
     let isSaving: Bool
     var restartLabel = "Study again"
+    /// A clean sweep from the mode's own point of view. Mastering the game or the set
+    /// celebrates too, even when this round was not the clean one that did it.
+    var celebrate = false
     let onRestart: @MainActor () -> Void
     let onExit: @MainActor () -> Void
+    /// Sends the grading call again after it failed; the answers were kept.
+    var onRetrySave: (@MainActor () -> Void)?
     /// Extra content between the stats and the actions — the test's review list.
     var extra: AnyView?
+
+    @State private var trophyPopped = false
+
+    private var partying: Bool {
+        celebrate || summary?.modeMastered == true || summary?.mastery.isMastered == true
+    }
 
     var body: some View {
         ScrollView {
@@ -233,6 +215,16 @@ struct ModeOutcomeView: View {
             .padding(18)
         }
         .background(Theme.background)
+        .overlay {
+            if partying { VocabCelebration() }
+        }
+        .onAppear {
+            guard partying else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.5).delay(0.15)) { trophyPopped = true }
+        }
+        .onChange(of: partying) { _, now in
+            if now { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { trophyPopped = true } }
+        }
     }
 
     private var hero: some View {
@@ -244,6 +236,8 @@ struct ModeOutcomeView: View {
                     Image(systemName: "trophy.fill")
                         .font(.system(size: 28))
                         .foregroundStyle(.white)
+                        .scaleEffect(trophyPopped ? 1.12 : 1)
+                        .rotationEffect(.degrees(trophyPopped ? -8 : 0))
                 )
             Text(title)
                 .font(.system(size: 27, weight: .heavy))
@@ -322,12 +316,33 @@ struct ModeOutcomeView: View {
         } else if let errorText {
             // Named rather than swallowed: a run that did not save is a run the student
             // will otherwise think they banked.
-            Text(errorText)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.danger)
-                .multilineTextAlignment(.center)
-        } else if summary?.setCompleted == true {
-            Chip(text: "Set complete", icon: "sparkles", tone: .success)
+            VStack(spacing: 8) {
+                Text(errorText)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.danger)
+                    .multilineTextAlignment(.center)
+                if let onRetrySave {
+                    Button(action: onRetrySave) {
+                        Label("Retry save", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                }
+            }
+        } else if let summary {
+            let tally = "\(ScoreText.string(summary.mastery.masteredModes))/\(ScoreText.string(summary.mastery.totalModes))"
+            if summary.mastery.isMastered {
+                Chip(text: "Set mastered — all four games", icon: "sparkles", tone: .success)
+            } else if summary.modeMastered {
+                Chip(text: "Game mastered · \(tally)", icon: "sparkles", tone: .success)
+            } else {
+                // Not mastered is not a failure, and it is not silence either: the student
+                // should leave knowing exactly what the clean run they need looks like.
+                let so = Text(verbatim: tally).fontWeight(.bold).foregroundStyle(Color.primary)
+                Text("Every word right in one round masters this game — \(so) so far.")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
         }
     }
 

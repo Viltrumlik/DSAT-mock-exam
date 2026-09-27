@@ -31,6 +31,16 @@ public enum APIError: Error, Sendable {
     /// into a link to sign in rather than a dead end.
     case validation(detail: String, code: String?, fields: [String: [String]])
 
+    /// 426. This build is older than the server's minimum and must be updated before the
+    /// API will talk to it. Distinct from every other failure because no retry, refresh or
+    /// re-sign-in can fix it — only the App Store can.
+    case upgradeRequired(detail: String, minimumVersion: String?, updateURL: String?)
+
+    /// 502/503/504 — the server is being deployed or is briefly down. What a student sees
+    /// during a release, so it must read as "wait a minute", never as a broken app, and
+    /// it is always worth retrying.
+    case unavailable(status: Int)
+
     /// Any other non-2xx, with whatever `detail` the API supplied.
     case http(status: Int, detail: String)
 
@@ -56,6 +66,10 @@ extension APIError: LocalizedError {
             return detail.isEmpty ? "This was updated somewhere else." : detail
         case .validation(let detail, _, _):
             return detail.isEmpty ? "Please check the details you entered." : detail
+        case .upgradeRequired(let detail, _, _):
+            return detail.isEmpty ? "This version of the app is no longer supported. Please update it." : detail
+        case .unavailable:
+            return "MasterSAT is updating right now. Please try again in a minute."
         case .http(let status, let detail):
             return detail.isEmpty ? "Request failed (\(status))." : detail
         case .decoding(let context, let underlying):
@@ -69,11 +83,11 @@ extension APIError: LocalizedError {
     /// decoding failure must not be retried forever.
     public var isRetryable: Bool {
         switch self {
-        case .transport:
+        case .transport, .unavailable:
             return true
         case .http(let status, _):
             return status >= 500 || status == 429
-        case .unauthorized, .forbidden, .conflict, .validation, .decoding, .notAuthenticated:
+        case .unauthorized, .forbidden, .conflict, .validation, .decoding, .notAuthenticated, .upgradeRequired:
             return false
         }
     }

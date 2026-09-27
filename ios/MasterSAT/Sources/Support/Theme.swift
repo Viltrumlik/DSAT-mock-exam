@@ -6,12 +6,14 @@ import SwiftUI
 /// see one product, and "close enough" blue reads as a different app. Every colour has a
 /// dark counterpart because the web ships one and iOS switches without asking.
 enum Theme {
-    /// Brand blue. `#2a68c0` in light, `#4b5ce6` in dark — the web lightens it there
-    /// because the deep blue disappears against a dark surface.
-    static let accent = dynamic(light: 0x2a68c0, dark: 0x4b5ce6)
-    static let accentHover = dynamic(light: 0x21539e, dark: 0x6e7cf2)
+    /// Brand blue. `#2a68c0` in light, `#3170d6` in dark — the web lifts it there because
+    /// the deep blue disappears against a dark surface, but it stays the SAME blue. Dark mode
+    /// used to switch to an indigo (`#4b5ce6`); the site dropped that, and a student moving
+    /// between the two at night should not see two brands.
+    static let accent = dynamic(light: 0x2a68c0, dark: 0x3170d6)
+    static let accentHover = dynamic(light: 0x21539e, dark: 0x5b8def)
     static let accentSoft = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
-        ? UIColor(red: 0.294, green: 0.361, blue: 0.902, alpha: 0.18)
+        ? UIColor(red: 0.192, green: 0.439, blue: 0.839, alpha: 0.18)
         : UIColor(red: 0.165, green: 0.408, blue: 0.753, alpha: 0.10) })
 
     /// `--dz-indigo-deep` — the countdown panel's own background. It is NOT `accentHover`:

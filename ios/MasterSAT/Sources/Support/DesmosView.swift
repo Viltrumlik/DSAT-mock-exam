@@ -65,7 +65,7 @@ struct DesmosView: UIViewRepresentable {
             self.onFail = onFail
         }
 
-        nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // The page always loads; what can fail is the CDN script behind it. Ask the
             // page whether the calculator actually mounted, so "no signal" shows a
             // message instead of a permanently blank rectangle.
@@ -75,7 +75,7 @@ struct DesmosView: UIViewRepresentable {
             }
         }
 
-        nonisolated func webView(
+        func webView(
             _ webView: WKWebView,
             didFail navigation: WKNavigation!,
             withError error: Error

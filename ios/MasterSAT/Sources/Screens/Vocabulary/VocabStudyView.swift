@@ -10,21 +10,26 @@ struct StudyOutcome {
     var description: String?
     let stats: [ModeStat]
     var restartLabel = "Study again"
+    /// A clean sweep by the mode's own measure — confetti, as the web fires it.
+    var celebrate = false
     /// Extra content between the stats and the actions. Only the test uses it.
     var extra: AnyView?
 }
 
 /// A study run in any of the four modes.
+///
+/// `assignmentId` is the homework the set page was opened from; the run is opened bound to
+/// it, so the homework — not the server's guess — gets the credit.
 struct VocabStudyView: View {
     let mode: StudyMode
     let set: VocabSetDetail
+    var assignmentId: Int?
     let onClose: @MainActor () -> Void
 
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var scenePhase
     @State private var runner: VocabStudyRunner?
     @State private var outcome: StudyOutcome?
-    @State private var isSaving = false
     /// Bumped to replay the mode. Every mode holds its deck in `@State`, so a fresh
     /// identity is what re-deals it — resetting fields one by one would forget one.
     @State private var runKey = 0
@@ -32,18 +37,29 @@ struct VocabStudyView: View {
     var body: some View {
         Group {
             if let runner {
-                if let outcome {
+                if let startError = runner.startError, !runner.isStarted {
+                    // Nothing played without a session can be credited, so the round does
+                    // not go on as if it could. The server's own sentence says why — "That
+                    // homework is not assigned to you for this set." among them.
+                    startFailed(startError)
+                } else if !runner.isStarted {
+                    // No card is dealt until the server has opened the run. Dealing first
+                    // would let a student answer cards that a failed start then throws away.
+                    dealing
+                } else if let outcome {
                     ModeOutcomeView(
                         mode: mode,
                         title: outcome.title,
                         description: outcome.description,
                         stats: outcome.stats,
                         summary: runner.summary,
-                        errorText: runner.lastError?.errorDescription,
-                        isSaving: isSaving,
+                        errorText: runner.saveError?.errorDescription,
+                        isSaving: runner.isCompleting || (runner.completionRequested && !runner.isFinished && runner.saveError == nil),
                         restartLabel: outcome.restartLabel,
+                        celebrate: outcome.celebrate,
                         onRestart: { Task { await restart() } },
-                        onExit: onClose,
+                        onExit: exit,
+                        onRetrySave: { Task { await runner.complete() } },
                         extra: outcome.extra
                     )
                 } else {
@@ -78,15 +94,58 @@ struct VocabStudyView: View {
         }
     }
 
+    /// Opening the run — inside the same frame, so the way out is there from the first frame.
+    private var dealing: some View {
+        StudyShell(title: mode.title, subtitle: set.title, tone: mode.tone, onExit: onClose) {
+            VStack(spacing: 12) {
+                ProgressView().controlSize(.large)
+                Text("Dealing your words…")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The web's `ModeStartError`, inside the same frame so the way out never disappears.
+    private func startFailed(_ error: APIError) -> some View {
+        StudyShell(title: mode.title, subtitle: set.title, tone: mode.tone, onExit: onClose) {
+            ScrollView {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 26))
+                        .foregroundStyle(Theme.warning)
+                        .frame(width: 56, height: 56)
+                        .background(Circle().fill(Theme.warningSoft))
+                    Text("Couldn't start this round")
+                        .font(.system(size: 18, weight: .heavy))
+                    Text(error.errorDescription ?? "Something went wrong on our end.")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 10) {
+                        Button { Task { await restart() } } label: {
+                            Label("Try again", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(PrimaryButtonStyle(tone: mode.tone, fullWidth: true))
+                        Button("Back to vocabulary", action: onClose)
+                            .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(24)
+                .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
     @MainActor
     private func finish(_ result: StudyOutcome) {
         outcome = result
-        isSaving = true
-        Task {
-            // The finishing call — this is what marks the set complete.
-            await runner?.flush(isPartial: false)
-            isSaving = false
-        }
+        // The grading call — what marks the set complete and can master this game. A latch:
+        // the flashcards already sent it at the final verdict, and this only waits for it.
+        Task { await runner?.complete() }
     }
 
     @MainActor
@@ -96,6 +155,7 @@ struct VocabStudyView: View {
             mode: mode.kitMode,
             words: VocabGames.shuffle(set.words),
             setId: set.id,
+            assignmentId: assignmentId,
             api: session.student
         )
         runner = created
@@ -104,9 +164,15 @@ struct VocabStudyView: View {
 
     @MainActor
     private func restart() async {
+        let previous = runner
         outcome = nil
         runner = nil
         runKey += 1
+        // Whatever the last run still holds — a grading call that failed, answers not yet
+        // sent — goes out before the run is let go, rather than vanishing with it.
+        if let previous, previous.isStarted, !previous.isFinished {
+            Task { await previous.flush(isPartial: true) }
+        }
         await begin()
     }
 
@@ -126,7 +192,12 @@ struct VocabStudyView: View {
 /// Rounds rather than one long queue: a card answered wrong comes back in the NEXT round,
 /// not three cards later, so a student sees the pile shrink instead of a queue that will
 /// not end. Every verdict from every round is reported — a word answered wrong then right
-/// records both, and the streak model sees the real history.
+/// records both, and the progress model sees the real history.
+///
+/// A verdict does not deal the next card. It starts a five-second hold with the definition
+/// face up: the pause is study time a student was skipping, and it is also what stops the
+/// mode being cleared by mashing one button. Everything but flipping is locked until the
+/// next card is dealt.
 struct FlashcardView: View {
     @Bindable var runner: VocabStudyRunner
     let set: VocabSetDetail
@@ -134,6 +205,15 @@ struct FlashcardView: View {
     let onFinish: @MainActor (StudyOutcome) -> Void
 
     private enum Phase { case study, checkpoint }
+
+    /// The hold after a verdict — long enough that the definition is actually read.
+    static let holdSeconds = 5
+
+    /// Non-nil only while a graded card is being held.
+    private struct Hold: Equatable {
+        let correct: Bool
+        var secondsLeft: Int
+    }
 
     @State private var deck: [VocabWord] = []
     @State private var index = 0
@@ -143,6 +223,11 @@ struct FlashcardView: View {
     @State private var reviewed = 0
     @State private var correct = 0
     @State private var phase: Phase = .study
+    @State private var hold: Hold?
+    @State private var holdTask: Task<Void, Never>?
+    /// The throttle itself. Separate from `hold` because two taps can land before the view
+    /// re-renders with the buttons disabled.
+    @State private var locked = false
 
     private var current: VocabWord? { index < deck.count ? deck[index] : nil }
 
@@ -150,10 +235,10 @@ struct FlashcardView: View {
         StudyShell(
             title: "Flashcards",
             subtitle: set.title,
-            tone: Theme.accent,
-            progress: deck.isEmpty ? 0 : Double(index) / Double(deck.count),
+            tone: StudyMode.flashcard.tone,
+            progress: phase == .study && !deck.isEmpty ? Double(index) / Double(deck.count) : nil,
             trailing: phase == .study
-                ? AnyView(StudyPill(text: "\(index + 1) / \(deck.count)", tone: Theme.accent))
+                ? AnyView(StudyPill(text: "\(index + 1) / \(deck.count)", tone: StudyMode.flashcard.tone))
                 : nil,
             onExit: onExit
         ) {
@@ -163,42 +248,56 @@ struct FlashcardView: View {
             }
         }
         .task { if deck.isEmpty { deck = set.words } }
+        // The mode is left by a button, not a navigation, so nothing else would stop the
+        // hold: without this it keeps counting and deals a card in a screen that is gone.
+        .onDisappear { holdTask?.cancel() }
     }
 
     @ViewBuilder
     private var study: some View {
-        VStack(spacing: 14) {
-            if round > 1 {
-                Chip(text: "Round \(ScoreText.string(round)) · still learning",
-                     icon: "arrow.counterclockwise", tone: .warning)
-            }
+        ScrollView {
+            VStack(spacing: 14) {
+                if round > 1 {
+                    Chip(text: "Round \(ScoreText.string(round)) · still learning",
+                         icon: "arrow.counterclockwise", tone: .warning)
+                }
 
-            if let word = current {
-                FlipCard(word: word, flipped: flipped) {
-                    withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped.toggle() }
+                if let word = current {
+                    // Flipping stays live during the hold — the pause is a pause, not a freeze.
+                    FlipCard(word: word, flipped: flipped) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped.toggle() }
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                if let hold {
+                    FlashcardHoldStrip(correct: hold.correct, secondsLeft: hold.secondsLeft, total: Self.holdSeconds)
+                        .padding(.horizontal, 16)
+                } else {
+                    Text("Tap the card to flip it.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(minHeight: 20)
+                }
+
+                HStack(spacing: 12) {
+                    verdict("Still learning", icon: "arrow.counterclockwise", tone: Theme.warning, isCorrect: false)
+                    verdict("Correct", icon: "checkmark", tone: Theme.success, isCorrect: true)
                 }
                 .padding(.horizontal, 16)
+                .padding(.bottom, 16)
             }
-
-            Text("Tap the card to flip it.")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-
-            HStack(spacing: 12) {
-                verdict("Wrong", icon: "xmark", tone: Theme.danger) { answer(false) }
-                verdict("Correct", icon: "checkmark", tone: Theme.success) { answer(true) }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 16)
+            .padding(.top, 12)
         }
-        .padding(.top, 12)
     }
 
-    private func verdict(_ label: String, icon: String, tone: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
+    private func verdict(_ label: String, icon: String, tone: Color, isCorrect: Bool) -> some View {
+        let chosen = hold?.correct == isCorrect
+        let held = hold != nil
+        return Button { answer(isCorrect) } label: {
             HStack(spacing: 9) {
                 Image(systemName: icon).font(.system(size: 17, weight: .bold))
-                Text(label).font(.system(size: 16, weight: .heavy))
+                Text(label).font(.system(size: 16, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(tone)
             .frame(maxWidth: .infinity, minHeight: 60)
@@ -207,11 +306,15 @@ struct FlashcardView: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(tone.opacity(0.28), lineWidth: 2)
+                    .stroke(tone.opacity(chosen ? 0.9 : 0.28), lineWidth: 2)
             )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .disabled(held)
+        // The verdict just given stays readable; the other one recedes for the hold.
+        .opacity(held && !chosen ? 0.4 : 1)
+        .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
     /// Between rounds: a progress moment, not a results table.
@@ -233,7 +336,7 @@ struct FlashcardView: View {
                         HStack(spacing: 2) {
                             Rectangle().fill(Theme.success)
                                 .frame(width: max(0, geometry.size.width * cleared))
-                            Rectangle().fill(Theme.amber)
+                            Rectangle().fill(Theme.warning)
                         }
                     }
                     .frame(height: 10)
@@ -246,7 +349,7 @@ struct FlashcardView: View {
 
                 reviewColumn("You know these", words: learned, tone: Theme.success, icon: "sparkles",
                              emptyText: "Nothing landed this round — that's what the next one is for.")
-                reviewColumn("Keep practising these", words: missed, tone: Theme.amber,
+                reviewColumn("Keep practising these", words: missed, tone: Theme.warning,
                              icon: "arrow.counterclockwise", emptyText: nil)
 
                 Button {
@@ -294,13 +397,42 @@ struct FlashcardView: View {
 
     @MainActor
     private func answer(_ isCorrect: Bool) {
-        guard let word = current else { return }
-        // Reported here, not at the end: a student who quits after 20 of 25 cards keeps
-        // those 20 verdicts.
+        guard !locked, hold == nil, let word = current else { return }
+        locked = true
+        // Reported here, not when the hold ends: a student who walks out mid-pause — or
+        // after 20 of 25 cards — keeps every verdict they actually gave.
         runner.record(wordId: word.id, correct: isCorrect)
         reviewed += 1
         if isCorrect { correct += 1 } else { missed.append(word) }
+
+        // Graded here too, and not after the hold: the hold opens five seconds after the
+        // FINAL card in which leaving would bank the run as unfinished, and an unfinished
+        // run can never master the game. The student has finished the set by now.
+        if index + 1 >= deck.count && missed.isEmpty {
+            Task { await runner.complete() }
+        }
+
+        // The hold is meant to teach, so the answer has to be on screen for it.
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped = true }
+        hold = Hold(correct: isCorrect, secondsLeft: Self.holdSeconds)
+        holdTask?.cancel()
+        holdTask = Task { @MainActor in
+            for left in stride(from: Self.holdSeconds - 1, through: 0, by: -1) {
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                if left > 0 { hold?.secondsLeft = left }
+            }
+            advance()
+        }
+    }
+
+    /// End the hold and deal the next card — or close the round.
+    @MainActor
+    private func advance() {
+        holdTask = nil
+        hold = nil
         flipped = false
+        locked = false
 
         if index + 1 < deck.count {
             index += 1
@@ -318,7 +450,8 @@ struct FlashcardView: View {
                         value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: reviewed)))%",
                         tone: .success
                     ),
-                ]
+                ],
+                celebrate: correct == reviewed
             ))
         } else {
             phase = .checkpoint
@@ -332,6 +465,53 @@ struct FlashcardView: View {
         flipped = false
         round += 1
         phase = .study
+    }
+}
+
+/// The hold between a verdict and the next card. On its own, two greyed-out buttons would
+/// just look broken — this names what happens next and shows the time draining away.
+private struct FlashcardHoldStrip: View {
+    let correct: Bool
+    let secondsLeft: Int
+    let total: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .fill(correct ? Theme.successSoft : Theme.warningSoft)
+                .frame(width: 36, height: 36)
+                .overlay(
+                    Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(correct ? Theme.success : Theme.warning)
+                )
+            VStack(alignment: .leading, spacing: 8) {
+                Text(correct
+                     ? "Nice — sit with the definition for a beat."
+                     : "Read it through — you'll see this one again.")
+                    .font(.system(size: 13, weight: .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Theme.surface2)
+                        Capsule()
+                            .fill(Theme.accent)
+                            .frame(width: geometry.size.width * CGFloat(secondsLeft) / CGFloat(max(total, 1)))
+                            .animation(.linear(duration: 1), value: secondsLeft)
+                    }
+                }
+                .frame(height: 6)
+            }
+            StudyPill(text: "\(secondsLeft)s", icon: "timer", tone: Theme.accent)
+                .accessibilityHidden(true)
+        }
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Theme.separator.opacity(0.6), lineWidth: 0.5)
+        )
+        .accessibilityElement(children: .combine)
     }
 }
 

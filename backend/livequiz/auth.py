@@ -43,16 +43,37 @@ def _user_from_access_token(raw: str):
     return user
 
 
-class JWTCookieAuthMiddleware(BaseMiddleware):
-    """Put ``scope["user"]`` in place from the ``lms_access`` cookie.
+def _bearer_from_headers(scope) -> str:
+    """The access token from an ``Authorization: Bearer …`` handshake header, or ""."""
+    for name, value in scope.get("headers") or ():
+        if name.lower() == b"authorization":
+            try:
+                text = value.decode("latin-1").strip()
+            except Exception:
+                return ""
+            if text[:7].lower() == "bearer ":
+                return text[7:].strip()
+    return ""
 
-    Sits where ``AuthMiddlewareStack`` would, but reads the JWT cookie rather than a Django
-    session, because that is how this platform authenticates a browser.
+
+class JWTCookieAuthMiddleware(BaseMiddleware):
+    """Put ``scope["user"]`` in place from the ``lms_access`` cookie — or, for the iOS app,
+    from an ``Authorization: Bearer`` handshake header.
+
+    Sits where ``AuthMiddlewareStack`` would, but reads the JWT rather than a Django session,
+    because that is how this platform authenticates.
+
+    The header is safe to accept where a cookie needs the origin check: a web page can make a
+    browser attach its cookies to a cross-site WebSocket handshake, but it cannot make it send
+    an ``Authorization`` header at all. The native app holds its token pair instead of cookies
+    (and must never store the cookie — a stored ``lms_access`` would switch its REST calls into
+    CSRF-enforced mode), so without this it could not play. The cookie still wins when both
+    are present, which keeps a browser's behaviour exactly as it was.
     """
 
     async def __call__(self, scope, receive, send):
         scope = dict(scope)
-        raw = (scope.get("cookies") or {}).get(ACCESS_COOKIE)
+        raw = (scope.get("cookies") or {}).get(ACCESS_COOKIE) or _bearer_from_headers(scope)
         user = await _user_from_access_token(raw) if raw else None
         scope["user"] = user or AnonymousUser()
         return await super().__call__(scope, receive, send)

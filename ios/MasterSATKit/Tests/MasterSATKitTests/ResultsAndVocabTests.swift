@@ -77,10 +77,10 @@ import Testing
 
     @Test("A set's own words have no section, and that is not an error")
     func setWordsHaveNoSection() throws {
-        let data = Data(#"{"id":1,"word":"abate","definition":"to lessen","status":"learning"}"#.utf8)
+        let data = Data(#"{"id":1,"word":"abate","definition":"to lessen","status":"mastered"}"#.utf8)
         let word = try JSONCoding.decoder.decode(VocabWord.self, from: data)
 
         #expect(word.sectionTitle == nil)
-        #expect(word.status == .learning)
+        #expect(word.status == .mastered)
     }
 }

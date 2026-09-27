@@ -124,9 +124,26 @@ public struct StudentAPI: Sendable {
         _ = try await client.send(.delete("/vocabulary/my-sets/\(id)/"))
     }
 
-    public func startVocabularySession(setId: Int, mode: VocabStudyMode) async throws -> VocabSession {
-        try await client.send(
-            try .post("/vocabulary/sessions/", json: SessionStartRequest(setId: setId, mode: mode.rawValue)),
+    /// Open a study run.
+    ///
+    /// `assignmentId` is the homework the student launched this run from. Without it the
+    /// server GUESSES — the newest live assignment carrying the set — and a set that sits on
+    /// two homeworks banks every run against one of them. Self-study (the bank, the
+    /// student's own sets) sends none. A claimed id that is not one of the student's live
+    /// homeworks for this set is refused with a 400 rather than guessed around.
+    public func startVocabularySession(
+        setId: Int,
+        mode: VocabStudyMode,
+        assignmentId: Int? = nil
+    ) async throws -> VocabSession {
+        // The serializer is `IntegerField(min_value=1)`: a junk id is a 400 that would kill
+        // the whole round, so it is dropped here and costs the student only the binding.
+        let bound = assignmentId.flatMap { $0 > 0 ? $0 : nil }
+        return try await client.send(
+            try .post(
+                "/vocabulary/sessions/",
+                json: SessionStartRequest(setId: setId, mode: mode.rawValue, assignmentId: bound)
+            ),
             as: VocabSession.self
         )
     }
@@ -156,10 +173,23 @@ public struct StudentAPI: Sendable {
 
     // MARK: - Homework submission
 
-    public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission {
+    /// The student's submission, or `nil` when nothing has been handed in yet.
+    public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission? {
         try await client.send(
             .get("/classes/\(classroomId)/assignments/\(assignmentId)/my-submission/"),
-            as: Submission.self
+            as: MaybeSubmission.self
+        ).submission
+    }
+
+    /// One assignment, whole.
+    ///
+    /// `my-assignments` is batched for the list and never carries the instructions, the
+    /// attachments, the links, the lesson video or whether an upload is expected — the detail
+    /// screen reads those from here, the same serializer the web's page uses.
+    public func assignment(classroomId: Int, id: Int) async throws -> AssignmentListing {
+        try await client.send(
+            .get("/classes/\(classroomId)/assignments/\(id)/"),
+            as: AssignmentListing.self
         )
     }
 
@@ -221,10 +251,20 @@ private struct CustomSetRequest: Encodable, Sendable {
 private struct SessionStartRequest: Encodable, Sendable {
     let setId: Int
     let mode: String
+    /// Omitted, not null, when absent — exactly what a client that predates the field sent.
+    let assignmentId: Int?
 
     private enum CodingKeys: String, CodingKey {
         case mode
         case setId = "set_id"
+        case assignmentId = "assignment_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(setId, forKey: .setId)
+        try c.encode(mode, forKey: .mode)
+        try c.encodeIfPresent(assignmentId, forKey: .assignmentId)
     }
 }
 

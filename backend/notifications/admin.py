@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Notification, NotificationPreference, PushSubscription
+from .models import ApnsDevice, Notification, NotificationPreference, PushSubscription
 
 
 @admin.register(Notification)
@@ -37,3 +37,15 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 class NotificationPreferenceAdmin(admin.ModelAdmin):
     list_display = ("user", "push_enabled", "updated_at")
     search_fields = ("user__email",)
+
+
+@admin.register(ApnsDevice)
+class ApnsDeviceAdmin(admin.ModelAdmin):
+    list_display = ("id", "user", "environment", "app_version", "failed_at", "failure_reason", "last_seen_at")
+    list_filter = ("environment", "failed_at")
+    search_fields = ("user__email", "token")
+    readonly_fields = [f.name for f in ApnsDevice._meta.fields]
+
+    def has_add_permission(self, request):
+        # A token is minted by Apple for one app on one phone. One typed in here reaches nobody.
+        return False

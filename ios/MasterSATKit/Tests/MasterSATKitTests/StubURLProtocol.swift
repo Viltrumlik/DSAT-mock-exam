@@ -4,11 +4,18 @@ struct StubResponse: @unchecked Sendable {
     var status: Int
     var body: Data
     var headers: [String: String]
+    /// Set to fail the request before any response — a dropped connection, not an answer.
+    var error: URLError?
 
     init(status: Int = 200, body: Data = Data("{}".utf8), headers: [String: String] = [:]) {
         self.status = status
         self.body = body
         self.headers = headers
+    }
+
+    init(error: URLError) {
+        self.init()
+        self.error = error
     }
 
     static func json(_ object: Any, status: Int = 200) -> StubResponse {
@@ -113,6 +120,10 @@ final class StubURLProtocol: URLProtocol {
         let server = StubRegistry.server(for: request.value(forHTTPHeaderField: StubServer.idHeader))
         server?.record(recorded)
         let stub = server?.handler(recorded) ?? StubResponse(status: 500, body: Data("{}".utf8))
+        if let error = stub.error {
+            client?.urlProtocol(self, didFailWithError: error)
+            return
+        }
 
         let response = HTTPURLResponse(
             url: request.url!,

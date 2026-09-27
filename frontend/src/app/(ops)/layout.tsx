@@ -24,6 +24,7 @@ import {
   Timer,
   CirclePlay,
   Images,
+  Smartphone,
 } from "lucide-react";
 
 /**
@@ -143,6 +144,15 @@ const OPS_NAV = [
     label: "Exam dates",
     icon: CalendarClock,
     exact: false,
+  },
+  {
+    // The iOS app: which builds may still be used, and what is crashing on phones. Super
+    // admins only — raising the minimum version stops every older app at an update screen.
+    href: "/ops/mobile",
+    label: "Mobile app",
+    icon: Smartphone,
+    exact: false,
+    superAdminOnly: true,
   },
 ] as const;
 

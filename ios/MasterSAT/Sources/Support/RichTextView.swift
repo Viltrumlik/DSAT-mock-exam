@@ -112,7 +112,7 @@ struct RichTextView: UIViewRepresentable {
             self.onHeight = onHeight
         }
 
-        nonisolated func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             // KaTeX lays out with its own fonts, so the honest height is only known once
             // those have loaded. `document.fonts.ready` is exactly that promise; without
             // waiting the first measurement comes back short and a long formula is clipped.
@@ -133,10 +133,10 @@ struct RichTextView: UIViewRepresentable {
         /// Only the initial load is allowed. A link inside authored content must never take
         /// a student out of an exam — and after `ContentText.prepare` there are no links
         /// left to click anyway.
-        nonisolated func webView(
+        func webView(
             _ webView: WKWebView,
             decidePolicyFor navigationAction: WKNavigationAction,
-            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+            decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
         ) {
             decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
         }

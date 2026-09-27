@@ -23,6 +23,12 @@ targets:
       # path, and a flattened resource copy would break every glyph.
       - path: Resources/katex
         type: folder
+      # The privacy manifest App Store Connect checks on upload. Named explicitly as a
+      # resource: XcodeGen does not know the .xcprivacy type and would otherwise guess.
+      - path: Resources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+      - path: Resources/MasterSAT.entitlements
+        buildPhase: none
     dependencies:
       - package: MasterSATKit
     # No `info:` key on purpose. That key tells XcodeGen to GENERATE a plist at the given
@@ -31,8 +37,21 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: uz.mastersat.app
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        # What the backend's release policy compares against (X-MasterSAT-Client). Raise
+        # MARKETING_VERSION for a release; raise CURRENT_PROJECT_VERSION for EVERY upload —
+        # App Store Connect refuses a build number it has already seen for that version.
+        MARKETING_VERSION: "1.1.0"
+        CURRENT_PROJECT_VERSION: "2"
+        # Push notifications — OFF until the learning center has a paid Apple Developer
+        # account. A free "Personal Team" cannot sign the aps-environment entitlement at all,
+        # so with it on the build fails to sign. Turn on with MASTERSAT_PUSH: YES here, or
+        # `xcodebuild … MASTERSAT_PUSH=YES`; the server half stays inert until APNS_* is set
+        # (backend/notifications/apns.py). Info.plist carries the switch to the app, which
+        # asks for a device token only when it is on.
+        MASTERSAT_PUSH: "NO"
+        MASTERSAT_ENTITLEMENTS_YES: Resources/MasterSAT.entitlements
+        MASTERSAT_ENTITLEMENTS_NO: ""
+        CODE_SIGN_ENTITLEMENTS: $(MASTERSAT_ENTITLEMENTS_$(MASTERSAT_PUSH))
         SWIFT_VERSION: "6.0"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Resources/Info.plist
