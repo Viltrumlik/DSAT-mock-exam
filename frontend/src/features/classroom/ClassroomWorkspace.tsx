@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { Suspense, lazy, useState, useCallback } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LoadingState, ErrorState } from "./ui";
 import { ClassroomShell } from "./shell/ClassroomShell";
@@ -18,6 +18,17 @@ import { Materials } from "./pages/Materials";
 import { Midterms } from "./pages/Midterms";
 import { Results } from "./pages/Results";
 import { Attendance } from "./pages/Attendance";
+/**
+ * Split off, and loaded when a STAFF viewer opens a classroom rather than when this file does.
+ *
+ * This file is the shared workspace: the student site mounts it too, and a static import would
+ * put the whole teacher kit (`features/teacher/ui`, the overview, its hooks) in the chunk every
+ * student's browser downloads to look at a class — code that can never run for them, because
+ * the branch below is on `caps.isStaff`. Same reason the mistakes slice lazies its pop-up.
+ */
+const TeacherClassroomOverview = lazy(() =>
+  import("@/features/teacher/classroomOverview").then((m) => ({ default: m.TeacherClassroomOverview })),
+);
 
 // The `?tab=` guard lives in shell/tabs.ts next to the ids it narrows. It used to be a
 // second hardcoded copy of the list here, which drifted out of step with the union.
@@ -69,8 +80,20 @@ export function ClassroomWorkspace({
 
   return (
     <ClassroomShell classroom={classroom} active={current} onTabChange={onTabChange} backHref={backHref} backLabel={backLabel}>
-      {/* Overview now hosts the class rankings. */}
-      {current === "overview" && <Rankings classroom={classroom} />}
+      {/* Overview answers a different question for each of the two people who open it. A
+          teacher gets what needs them today; everyone else gets the class rankings, exactly as
+          before. The branch is on CAPABILITIES, never on the route: this component is mounted
+          by both hosts, and the student site's `consumer` rewrite (above) is what makes
+          `caps.isStaff` airtight where `pathname` would not be. */}
+      {current === "overview" && (caps.isStaff
+        ? (
+          // The fallback is the shell's own spinner, not the teacher kit's — the kit is in the
+          // chunk that has not arrived yet.
+          <Suspense fallback={<LoadingState label="Opening the overview…" />}>
+            <TeacherClassroomOverview classroom={classroom} onOpenTab={onTabChange} />
+          </Suspense>
+        )
+        : <Rankings classroom={classroom} />)}
       {current === "lessons" && caps.isStaff && <Lessons classroom={classroom} />}
       {/* Every member, students included. Mirrors the tab's own gate — the third of the
           three places a tab is gated, without which the tab renders an empty shell. */}

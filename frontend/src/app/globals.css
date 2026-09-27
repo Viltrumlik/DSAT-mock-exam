@@ -1028,6 +1028,14 @@ mark.ts-annot {
   /* green-700 — clears WCAG AA (~4.9:1) for small text on the light --dz-card. */
   --dz-success: #15803d;
   --dz-success-soft: rgba(21, 128, 61, 0.12);
+  /* red-700 — the danger tone, added for the teacher panel's kit (features/teacher/ui). This
+     scope carried amber and green but no red, and a teacher panel needs one: a request that
+     failed, a destructive confirm, and the pass/fail reading the teachers asked to see in
+     green and red. Additive only — no existing rule and no student page reads these three. */
+  --dz-danger: #b91c1c;
+  --dz-danger-soft: rgba(185, 28, 28, 0.12);
+  /* The wash behind a quiet chip or a loading placeholder. */
+  --dz-neutral-soft: rgba(100, 116, 139, 0.12);
   font-family: var(--font-plus-jakarta), 'Plus Jakarta Sans', system-ui, sans-serif;
 }
 .dark .dzboard {
@@ -1045,6 +1053,10 @@ mark.ts-annot {
   /* green-400 — high contrast for small text on the dark --dz-card. */
   --dz-success: #4ade80;
   --dz-success-soft: rgba(74, 222, 128, 0.16);
+  /* red-400 — the danger tone on the dark card, matching the light block above. */
+  --dz-danger: #f87171;
+  --dz-danger-soft: rgba(248, 113, 113, 0.16);
+  --dz-neutral-soft: rgba(148, 163, 184, 0.16);
 }
 
 @keyframes dz-pulseRing { 0% { box-shadow: 0 0 0 0 rgba(42,104,192,.35) } 70% { box-shadow: 0 0 0 10px rgba(42,104,192,0) } 100% { box-shadow: 0 0 0 0 rgba(42,104,192,0) } }

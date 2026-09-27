@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
+from unittest import mock
 
 from asgiref.sync import async_to_sync
 from asgiref.testing import ApplicationCommunicator
@@ -291,6 +292,30 @@ class LiveQuizSocketTests(TransactionTestCase):
         participant.refresh_from_db()
         self.assertEqual(participant.correct_count, 1)
         self.assertGreater(participant.score, 0)
+
+    def test_a_question_that_runs_out_of_time_is_announced(self):
+        # The timer closes its own question. It used to cancel ITSELF on the way in, so the
+        # database said the question was over while nobody was told: no question_ended, and
+        # every phone sat at 0 s until the teacher pressed Skip.
+        services.join_session(session=self.session, user=self.student)
+        self.session.questions.update(time_limit_seconds=1)
+
+        async def run():
+            host = self._communicator(self.teacher)
+            await host.connect()
+            await host.receive_json_from()  # session_state
+            await host.send_json_to({"type": const.CMD_START_GAME})
+            await await_frame(host, const.EV_QUESTION_STARTED)
+            # Nobody answers and nobody presses anything: only the clock can end it.
+            ended = await await_frame(host, const.EV_QUESTION_ENDED)
+            self.assertIn("correct_answer", ended["data"])
+            await host.disconnect()
+
+        with mock.patch.object(const, "COUNTDOWN_SECONDS", 0):
+            async_to_sync(run)()
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.status, const.STATUS_QUESTION_RESULTS)
 
     def test_a_late_answer_is_refused_over_the_socket(self):
         services.join_session(session=self.session, user=self.student)

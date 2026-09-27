@@ -16,6 +16,7 @@ from classes.models import Classroom, ClassroomMembership
 from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
 from midterms.models import Midterm, MidtermOutcome
+from midterms.outcomes import default_pass_mark
 from midterms.tests_api import make_published_midterm, force_expire
 
 User = get_user_model()
@@ -403,3 +404,117 @@ class RetakeClassroomAssignTests(TestCase):
         self.assertEqual(
             set(u.id for u in _recipients(sched)), {self.failer.id, self.absentee.id}
         )
+
+
+class MidtermPanelPassMarkTests(TestCase):
+    """``stats.pass_mark`` — the single line the teacher panel reads the room against.
+
+    The teacher's ask was "who passes the midterms will be in the green line and who doesn't
+    the red one", and the whole of that reading rests on this one number. Three properties it
+    has to keep, each tested below:
+
+    It is one number for the sitting, not one per student — a pass mark is a property of the
+    paper, and a field per row would invite a per-student query for a value that cannot vary.
+
+    It is the mark these papers were PINNED to, resolved through ``outcomes.summary_basis``
+    rather than read fresh off the midterm, so a teacher who edits the pass mark next month
+    does not retroactively move the line under a room that has already sat it.
+
+    It is ``None``, never 0, wherever nothing judges the paper. A pre-midterm is a diagnostic:
+    scored, certificated, never passed or failed. Zero would mark the entire class as having
+    cleared a line that does not exist.
+    """
+
+    def setUp(self):
+        self.teacher = User.objects.create(username="pm-teach", email="pm-teach@x.io", is_staff=True)
+        self.student = User.objects.create(username="pm-s1", email="pm-s1@x.io")
+        self.room = make_classroom(self.teacher)
+        enroll(self.room, self.student)
+        self.mt = make_published_midterm(scale=Midterm.SCALE_100, n=4, correct="a")
+        self.tc = APIClient()
+        self.tc.force_authenticate(self.teacher)
+
+    def _assign(self):
+        r = self.tc.post(
+            f"/api/classes/{self.room.id}/midterms-v2/assign/",
+            {"midterm_id": self.mt.id, "starts_at": open_window()},
+            format="json",
+        )
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _take(self, student, correct_n):
+        """Sit the paper end to end, so the attempt pins its own scale and pass mark."""
+        sched = MidtermSchedule.objects.get(classroom=self.room, midterm=self.mt)
+        if not sched.access_code:
+            sched.generate_access_code()
+            sched.save(update_fields=["access_code", "access_code_set_at"])
+        c = APIClient()
+        c.force_authenticate(student)
+        qids = [str(q.id) for q in self.mt.questions()]
+        aid = c.post("/api/midterms/attempts/", {"midterm": self.mt.id}, format="json").json()["id"]
+        c.post(f"/api/midterms/attempts/{aid}/verify_code/", {"code": sched.access_code}, format="json")
+        c.post(f"/api/midterms/attempts/{aid}/start/", {}, format="json")
+        force_expire(aid)
+        c.post(
+            f"/api/midterms/attempts/{aid}/submit_module/",
+            {"answers": {qids[i]: ("a" if i < correct_n else "b") for i in range(4)}},
+            format="json",
+        )
+
+    def _panel(self):
+        r = self.tc.get(f"/api/classes/{self.room.id}/midterms-v2/{self.mt.id}/panel/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_the_line_is_drawn_before_anyone_has_sat_the_paper(self):
+        # The teacher opens the panel the moment they assign it. No attempts exist to take a
+        # pinned mark from, so the midterm's own is what the line is drawn at.
+        self.mt.pass_mark = 70
+        self.mt.save(update_fields=["pass_mark"])
+        self._assign()
+
+        panel = self._panel()
+        self.assertEqual(panel["stats"]["pass_mark"], 70)
+        # One number for the room, on the same scale as everything else in `stats` — never a
+        # field per row, which is what would cost a query per student.
+        self.assertEqual(panel["stats"]["score_ceiling"], 100)
+        for row in panel["students"]:
+            self.assertNotIn("pass_mark", row)
+
+    def test_an_unmarked_midterm_falls_back_to_the_one_default_in_the_codebase(self):
+        # No pass mark authored. The answer must come from `outcomes.default_pass_mark`
+        # (50% of the questions, 50 on this scale) rather than a second copy of that rule.
+        self.assertIsNone(self.mt.pass_mark)
+        self._assign()
+
+        self.assertEqual(self._panel()["stats"]["pass_mark"], default_pass_mark(Midterm.SCALE_100))
+
+    def test_a_pre_midterm_is_scored_but_never_judged(self):
+        # A diagnostic. It has scores, an average and certificates, and no line at all — the
+        # reader is expected to draw nothing, not to read the missing mark as zero.
+        self.mt.midterm_type = Midterm.TYPE_PRE_MIDTERM
+        self.mt.pass_mark = None
+        self.mt.save(update_fields=["midterm_type", "pass_mark"])
+        self._assign()
+        self._take(self.student, 4)
+
+        panel = self._panel()
+        self.assertIsNone(panel["stats"]["pass_mark"])
+        self.assertEqual(panel["stats"]["completed"], 1)
+        self.assertEqual(panel["stats"]["highest"], 100)  # scored, just not judged
+
+    def test_editing_the_pass_mark_leaves_a_room_that_already_sat_it_alone(self):
+        # The hazard this endpoint is written against. A sitting pins the mark it is judged
+        # at when it starts; raising the midterm's pass mark afterwards must not turn a green
+        # row red a month later. `summary_basis` takes the pinned mark, not the current one.
+        self.mt.pass_mark = 50
+        self.mt.save(update_fields=["pass_mark"])
+        self._assign()
+        self._take(self.student, 3)  # 75 / 100 — a pass at 50, a fail at 90
+
+        self.mt.pass_mark = 90
+        self.mt.save(update_fields=["pass_mark"])
+
+        panel = self._panel()
+        self.assertEqual(panel["stats"]["pass_mark"], 50)
+        self.assertEqual(panel["students"][0]["score"], 75)

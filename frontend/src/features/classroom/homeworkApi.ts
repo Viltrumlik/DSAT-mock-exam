@@ -1,4 +1,7 @@
 import api, { classesApi } from "@/lib/api";
+// The composed grade is one shape across this app, declared once beside the read that first
+// carried it. A second copy of the interface here would drift from the server's payload.
+import type { ComposedGrade } from "./submissionsApi";
 
 export type SubmissionWorkflow = "DRAFT" | "SUBMITTED" | "RETURNED" | "REVIEWED" | null;
 
@@ -34,6 +37,18 @@ export interface AssignmentDetail {
     /** Present once the student has studied it; absent on the teacher payload. */
     state?: ContentState;
   }[] | null;
+  /**
+   * What a file submission may carry: count, per-file bytes, batch bytes, allowed extensions.
+   * All four are settings ops can change, and the batch figure is further capped by what the
+   * proxy will pass, so the upload panel reads them from here instead of keeping its own copy.
+   * Absent on a backend older than that field — see `resolveSubmissionLimits`.
+   */
+  submission_limits?: {
+    max_files_per_submission?: number | null;
+    max_file_bytes?: number | null;
+    max_batch_bytes?: number | null;
+    allowed_extensions?: string[] | null;
+  } | null;
   external_url?: string | null;
   external_urls?: string[] | null;
   /** Each link's optional name, index-aligned with `external_urls`. Blank = show the link. */
@@ -91,6 +106,17 @@ export interface MySubmission {
     is_auto?: boolean;
     review_context?: string;
   } | null;
+  /**
+   * The whole grade on homework whose teacher's mark carries a share of it — the same key, from
+   * the same arithmetic, that every teacher screen is served. `review.grade` is only the teacher's
+   * own half of it, and a student shown that half alone was shown a different number from the one
+   * their teacher was looking at.
+   *
+   * Present and null on homework with no manual share, which is nearly all of it. On a homework
+   * the student has not handed in, the response carries THIS KEY AND NOTHING ELSE: the
+   * automatically graded part can already be settled before anything is uploaded.
+   */
+  composed_grade?: ComposedGrade | null;
 }
 
 export const homeworkApi = {

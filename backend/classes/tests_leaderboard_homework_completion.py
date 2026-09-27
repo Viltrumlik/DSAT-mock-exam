@@ -2,9 +2,10 @@
 turned in.
 
 ``GET /api/classes/<pk>/leaderboard/`` sends each student's ``homework_completion_rate_pct`` in
-``homework_grade_leaderboard.rows``. The teacher portal shows it as the student's "Completion" on
-/teacher/students, and a student under 40% is flagged "watch" ("N% turned in") there and on
-/teacher/analytics.
+``homework_grade_leaderboard.rows``. The teacher portal showed it as the student's "Completion" on
+the Students page, and a student under 40% is flagged "watch" ("N% turned in"). That page
+(``/teacher/students``) was retired in the teacher rebuild; the figure still reaches a teacher
+through /teacher/analytics and the classroom's own overview, so what it counts still matters.
 
 It was the student's non-draft submissions in the class ÷ every assignment in the class:
 - assessment homework is turned in as an ``AssessmentAttempt``, not a ``Submission``, so it never

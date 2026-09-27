@@ -6,9 +6,11 @@ stayed on the board: in ``students``, in ``homework_grade_leaderboard.rows``, an
 computed over them. That is the class size, each practice test's headcount, completion rate and
 group mean, both class averages, and the graded-work bar a student has to clear to get a rank.
 
-The teacher portal takes its student list from this response (``useTeacherAnalytics``), so
-/teacher/students listed students who had left the class as the teacher's students, and scored
-them.
+The teacher portal takes its student list from this response (``useTeacherAnalytics``), so the
+Students page listed students who had left the class as the teacher's students, and scored them.
+That page (``/teacher/students``) was retired in the teacher rebuild and its rows now live under
+the classroom; the same response still feeds ``useTeacherAnalytics``, so the filter below is what
+keeps a departed student off the teacher's screens.
 
 An INVITED student has not joined the class yet. The classroom's student count, the gradebook,
 class analytics, the class rankings and the homework emails count ACTIVE students only, and the

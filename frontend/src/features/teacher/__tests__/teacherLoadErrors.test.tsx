@@ -11,12 +11,12 @@ import { parseAssignmentList, parseClassroomList } from "@/lib/criticalApiContra
  * failure was drawn as data:
  * - the class list → "No classes yet";
  * - a class's people or homework → "No students yet", or a gradebook with no columns;
- * - one homework's submissions → every student "missing" it, in their "N!" badge and in "Missing work";
+ * - one homework's submissions → every student "missing" it, in their "N!" badge and in "Not turned in";
  * - any of the queue's requests → a queue without that work, and "All caught up" when none came back.
  *
  * A load that fails is its own state: the page says what did not load and offers "Try again", which runs
  * that load again. A load that only partly came back has failed too. A class's gradebook is not drawn
- * from some of its homework, because its averages, trends and "Missing work" are taken over all of it.
+ * from some of its homework, because its averages, trends and "Not turned in" are taken over all of it.
  * The queue is not listed from some of its requests, because it would stop short of work that is waiting.
  */
 
@@ -32,9 +32,7 @@ vi.mock("@/lib/api", () => ({ classesApi: api }));
 vi.mock("@/hooks/useMe", () => ({ useMe: () => ({ bootState: "AUTHENTICATED" }) }));
 
 const { useGradebook } = await import("../useGradebook");
-const { useGradingQueue } = await import("../useGradingQueue");
 const { TeacherGradebook } = await import("../TeacherGradebook");
-const { TeacherGrading } = await import("../TeacherGrading");
 
 /**
  * `GET /api/classes/` rows in the serializer's wire shape. TEACHER is kept both by the class filter on
@@ -239,7 +237,7 @@ describe("useGradebook — a request that failed is not a gradebook", () => {
     );
     expect(missing).toEqual([]);
     expect(read().model?.missingCount ?? 0).toBe(0);
-    // None of the class is drawn: its averages, trends and "Missing work" are taken over all of its homework.
+    // None of the class is drawn: its averages, trends and "Not turned in" are taken over all of its homework.
     expect(read().model).toBeNull();
     expect(read().matrixError).toEqual({ detail: null });
   });
@@ -384,7 +382,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(text()).not.toContain("No students yet");
     expect(chartCard("How is the class distributed?")).not.toContain("No graded work yet");
     expect(stat("Students")).toBe("—");
-    expect(stat("Missing work")).toBe("—");
+    expect(stat("Not turned in")).toBe("—");
     expect(text()).toContain("Couldn’t load the gradebook for Algebra 2");
     expect(text()).toContain("Grades and submissions are unchanged — only this view failed to load.");
     // The other class is still one click away.
@@ -395,7 +393,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
 
     expect(text()).not.toContain("Couldn’t load");
     expect(stat("Students")).toBe("2");
-    expect(stat("Missing work")).toBe("0");
+    expect(stat("Not turned in")).toBe("0");
   });
 
   it("while Try again waits on the class, its gradebook's place is loading — not 'No students yet'", async () => {
@@ -416,14 +414,14 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     expect(stat("Students")).toBe("2");
   });
 
-  it("one homework's submissions not loading puts no '!' on anyone and no number in 'Missing work'", async () => {
+  it("one homework's submissions not loading puts no '!' on anyone and no number in “Not turned in”", async () => {
     let failing = true;
     failWhere(api.listSubmissions, (_classId, assignmentId) => failing && assignmentId === 102, networkError);
     await mount(<TeacherGradebook />);
     await until(pageSettled);
 
     expect(text()).not.toMatch(/\d!/);
-    expect(stat("Missing work")).toBe("—");
+    expect(stat("Not turned in")).toBe("—");
     expect(text()).toContain("Couldn’t load the gradebook for Algebra 2");
 
     failing = false;
@@ -431,7 +429,7 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(text()).not.toMatch(/\d!/);
-    expect(stat("Missing work")).toBe("0");
+    expect(stat("Not turned in")).toBe("0");
     expect(host.querySelectorAll("tbody tr")).toHaveLength(2);
   });
 
@@ -450,149 +448,6 @@ describe("TeacherGradebook — what the teacher sees when a load fails", () => {
     await until(pageSettled);
 
     expect(chartCard("How is the class distributed?")).toContain("No graded work yet");
-    expect(stat("Missing work")).toBe("0");
-  });
-});
-
-describe("useGradingQueue — a request that failed is not an empty queue", () => {
-  it("a class list that did not load is an error, not a queue with nothing in it", async () => {
-    api.list.mockRejectedValue(networkError());
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("error");
-    expect(read().items).toEqual([]);
-    expect(read().error).toEqual({ detail: null });
-    expect(api.listAssignments).not.toHaveBeenCalled();
-  });
-
-  it("one class's homework not loading is an error, not a queue without that class", async () => {
-    failWhere(api.listAssignments, (classId) => classId === 2, () => httpError(500));
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("error");
-    expect(read().items).toEqual([]);
-    expect(read().error).toEqual({ detail: null });
-  });
-
-  it("one homework's submissions not loading is an error, not a queue without that work", async () => {
-    failWhere(api.listSubmissions, (_classId, assignmentId) => assignmentId === 102, networkError);
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("error");
-    expect(read().items).toEqual([]);
-  });
-
-  it("no submissions loading is an error, never a finished queue with nothing to grade", async () => {
-    api.listSubmissions.mockRejectedValue(httpError(500));
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("error");
-    expect(read().items).toEqual([]);
-    expect(read().error).toEqual({ detail: null });
-  });
-
-  it("keeps the server's reason when it gave one", async () => {
-    api.listAssignments.mockRejectedValue(httpError(403, FORBIDDEN));
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("error");
-    expect(read().error).toEqual({ detail: FORBIDDEN.detail });
-  });
-
-  it("tries again, and lists the waiting work once it loads", async () => {
-    api.listSubmissions.mockRejectedValueOnce(networkError());
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-    expect(read().status).toBe("error");
-
-    await act(async () => read().retry());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("ready");
-    expect(read().error).toBeNull();
-    expect(read().items.map((item) => item.submission.id).sort()).toEqual([10111, 10112, 10211, 10212, 20121]);
-  });
-
-  it("still reads a queue with nothing waiting as one", async () => {
-    api.listSubmissions.mockResolvedValue([]);
-    const read = await mountHook(() => useGradingQueue());
-    await until(() => settled(read()));
-
-    expect(read().status).toBe("ready");
-    expect(read().error ?? null).toBeNull();
-    expect(read().items).toEqual([]);
-  });
-});
-
-describe("TeacherGrading — what the teacher sees when a load fails", () => {
-  it("no submissions loading says so, with Try again — never 'All caught up'", async () => {
-    let failing = true;
-    failWhere(api.listSubmissions, () => failing, () => httpError(500));
-    await mount(<TeacherGrading />);
-    await until(pageSettled);
-
-    expect(text()).not.toContain("All caught up");
-    expect(text()).not.toContain("awaiting a grade");
-    expect(text()).toContain("Couldn’t load the submissions waiting to be graded");
-    expect(text()).toContain("Submissions and grades are unchanged — only this page failed to load.");
-    expect(text()).not.toContain("doctype");
-    expect(buttons()).toContain("Try again");
-
-    failing = false;
-    await act(async () => button("Try again").click());
-    await until(pageSettled);
-
-    expect(text()).not.toContain("Couldn’t load");
-    expect(text()).toContain("5 awaiting a grade");
-  });
-
-  it("while Try again waits, the page is loading — not 'All caught up'", async () => {
-    const release = failThenHold(api.list, () => httpError(502));
-    await mount(<TeacherGrading />);
-    await until(pageSettled);
-
-    await act(async () => button("Try again").click());
-    await until(() => api.list.mock.calls.length === 2);
-    await until(() => true);
-
-    expect(pageSettled()).toBe(false);
-    expect(text()).not.toContain("All caught up");
-    expect(text()).not.toContain("Couldn’t load");
-
-    await act(async () => release());
-    await until(pageSettled);
-    expect(text()).toContain("5 awaiting a grade");
-  });
-
-  it("one class's homework not loading says so — not a shorter queue", async () => {
-    failWhere(api.listAssignments, (classId) => classId === 2, networkError);
-    await mount(<TeacherGrading />);
-    await until(pageSettled);
-
-    expect(text()).not.toContain("awaiting a grade");
-    expect(text()).toContain("Couldn’t load the submissions waiting to be graded");
-  });
-
-  it("shows the server's reason when it gave one", async () => {
-    api.list.mockRejectedValue(httpError(403, FORBIDDEN));
-    await mount(<TeacherGrading />);
-    await until(pageSettled);
-
-    expect(text()).toContain(FORBIDDEN.detail);
-    expect(text()).not.toContain("only this page failed to load");
-  });
-
-  it("still says 'All caught up' when every request answered and nothing is waiting", async () => {
-    api.listSubmissions.mockResolvedValue([]);
-    await mount(<TeacherGrading />);
-    await until(pageSettled);
-
-    expect(text()).toContain("All caught up");
-    expect(text()).toContain("0 awaiting a grade");
+    expect(stat("Not turned in")).toBe("0");
   });
 });

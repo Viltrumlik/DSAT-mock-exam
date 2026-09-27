@@ -164,8 +164,12 @@ export function Assignments({ classroom }: { classroom: ClassroomWithRole }) {
       {showArchived && staff && (
         <div className="space-y-2">
           <p className="text-sm font-bold text-foreground">Archived</p>
+          {/* Same four branches as the list above. "Nothing archived" is an answer about the class;
+              a request that failed is not, and archived homework is never lost by one. */}
           {archived.isLoading ? (
             <LoadingState label="Loading…" />
+          ) : archived.isError ? (
+            <ErrorState title="Could not load the archived homework." onRetry={() => archived.refetch()} />
           ) : archivedRows.length === 0 ? (
             <EmptyState icon={Archive} title="Nothing archived" />
           ) : (

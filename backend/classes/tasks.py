@@ -91,6 +91,71 @@ def recompute_classroom_rankings(classroom_id: int | None = None) -> dict:
     return stats
 
 
+@shared_task(name="classes.tasks.open_todays_attendance_registers")
+def open_todays_attendance_registers() -> dict:
+    """Open today's register for every active class whose lesson has started.
+
+    ``attendance_auto.ensure_sessions`` was written for exactly this, and its management
+    command has said "run it from cron" since the day it landed — but nothing ever scheduled
+    it, and the name appeared nowhere else. So in practice the register was materialised by
+    the *read* path: it came into existence because a teacher opened the Attendance tab,
+    which is the one moment they did not need it to. This task is the other half.
+
+    **Today only, deliberately.** ``ensure_sessions`` defaults to a one-day backfill, which
+    is right for the read path — a teacher opening the page just after midnight should still
+    see the register whose grace period is closing. A sweep that runs all day has nothing to
+    backfill: yesterday's register was opened by yesterday's sweep. And ``attendance_window``
+    shuts a register two hours after its lesson ends, so anything this task minted for an
+    earlier date would be a draft nobody below global admin could ever write in — noise
+    stacked on top of the one register that can actually be marked.
+
+    Archived classes do not meet, so they get no register, and a class whose ``lesson_days``
+    cannot be read has no lesson day to open one on — it is counted, not guessed at, and its
+    teacher keeps the manual escape hatch the sessions endpoint exposes.
+
+    **The disposal rule is membership, not archiving.** A class with no ACTIVE STUDENT is a
+    course that finished and was never switched off, and there is nobody in the room to mark.
+    Left in the sweep it would mint one more empty draft every lesson day for ever, and the
+    Attendance tab orders by ``-date`` — so that class's tab fills from the top with registers
+    nobody can write in, burying the ones that can be. Archiving is still the right switch;
+    this only stops the ones nobody remembered to throw. The read path is untouched: the
+    moment a teacher opens the tab, ``ensure_sessions`` materialises what is due.
+
+    One bad classroom must not stop the sweep, so a failure is logged and counted rather than
+    raised. The count goes *into the summary line*: a sweep that quietly opened nothing
+    because forty classrooms all threw looks exactly like a sweep that had nothing to do. For
+    the same reason the line carries ``scanned``: without it ``{'opened': 0}`` reads the same
+    on a quiet Sunday as it does when the outer queryset came back empty.
+    """
+    from . import attendance_auto
+    from .models import Classroom, ClassroomMembership
+
+    scanned = opened = failed = no_schedule = 0
+    sweepable = (
+        Classroom.objects.filter(
+            is_active=True,
+            memberships__role=ClassroomMembership.ROLE_STUDENT,
+            memberships__status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        .distinct()
+        .order_by("id")
+    )
+    for classroom in sweepable.iterator():
+        scanned += 1
+        try:
+            if not attendance_auto.schedule_is_usable(classroom):
+                no_schedule += 1
+                continue
+            opened += len(attendance_auto.ensure_sessions(classroom, backfill_days=0))
+        except Exception:
+            failed += 1
+            logger.exception("attendance register open failed classroom=%s", classroom.pk)
+
+    stats = {"scanned": scanned, "opened": opened, "failed": failed, "no_schedule": no_schedule}
+    logger.info("open_todays_attendance_registers %s", stats)
+    return stats
+
+
 # ── Class Telegram groups ────────────────────────────────────────────────────
 
 

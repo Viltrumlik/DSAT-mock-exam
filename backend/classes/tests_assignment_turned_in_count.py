@@ -9,6 +9,11 @@ and outlives the membership of a student who leaves the class, so all three read
 ``turned_in_count`` counts what the grading page lists as submitted, SUBMITTED or REVIEWED, and only
 for the class's ACTIVE students. Those are the students the class row's ``student_count`` counts, so
 the hub can subtract one from the other. ``submissions_count`` keeps its meaning.
+
+The hub itself is gone — the teacher rebuild retired ``/teacher/homework/grading``. The field is
+not: the classroom's Assignments tab draws "N / M submitted" from it
+(``frontend/src/features/classroom/pages/Assignments.tsx``). The paragraphs above are kept because
+they are why the count is shaped the way it is, not because that screen still exists.
 """
 
 from __future__ import annotations

@@ -90,8 +90,10 @@ function computeRisk(s: Omit<StudentRecord, "riskLevel" | "riskReasons">): { lev
   if (s.assessmentLow != null) { reasons.push(`Average ${s.assessmentLow}%`); atRisk = true; }
   if (s.inactiveDays != null && s.inactiveDays >= 14) { reasons.push(`Inactive ${s.inactiveDays}d`); atRisk = true; }
   else if (s.inactiveDays != null && s.inactiveDays >= 7) { reasons.push(`Inactive ${s.inactiveDays}d`); watch = true; }
-  if (s.overdueCount >= 2) { reasons.push(`${s.overdueCount} missing`); atRisk = true; }
-  else if (s.overdueCount === 1) { reasons.push("1 missing"); watch = true; }
+  // Display string only — `overdueCount` is the wire field and keeps its name. The same fact is
+  // labelled "Not turned in" on the students drawer and the gradebook, so it reads the same here.
+  if (s.overdueCount >= 2) { reasons.push(`${s.overdueCount} not turned in`); atRisk = true; }
+  else if (s.overdueCount === 1) { reasons.push("1 not turned in"); watch = true; }
   if (s.reviewAvg != null && s.reviewAvg < 60) { reasons.push(`Grade avg ${s.reviewAvg}%`); atRisk = true; }
   else if (s.reviewAvg != null && s.reviewAvg < 70) { reasons.push(`Grade avg ${s.reviewAvg}%`); watch = true; }
   if (s.completionPct != null && s.completionPct < 40) { reasons.push(`${s.completionPct}% turned in`); watch = true; }
@@ -214,17 +216,31 @@ export function useTeacherAnalytics(previewModel?: TeacherAnalyticsModel): Teach
         });
       }
 
-      const atRiskCount = students.filter((s) => s.riskLevel === "at-risk").length;
+      /**
+       * Where a recommendation about SOME students should lead, now that the panel-wide
+       * Students page is gone. When every one of them sits in the same class there is a right
+       * answer and we give it; when they are spread across classes there is not, and the class
+       * list is the honest next step rather than a classroom picked arbitrarily. A row that led
+       * somewhere wrong would be worse than one that asks the teacher to choose.
+       */
+      const whereTheyAre = (rows: { classId: number }[]) => {
+        const ids = new Set(rows.map((r) => r.classId));
+        return ids.size === 1 ? `/teacher/classrooms/${[...ids][0]}` : "/teacher/classrooms";
+      };
+
+      const atRiskStudents = students.filter((s) => s.riskLevel === "at-risk");
+      const inactiveStudents = students.filter((s) => s.inactiveDays != null && s.inactiveDays >= 7);
+      const atRiskCount = atRiskStudents.length;
       const watchCount = students.filter((s) => s.riskLevel === "watch").length;
 
       const recommendations: { id: string; title: string; detail: string; href: string }[] = [];
-      if (atRiskCount > 0) recommendations.push({ id: "atrisk", title: `Check in with ${atRiskCount} at-risk ${atRiskCount === 1 ? "student" : "students"}`, detail: "Low averages, missing work, or inactivity.", href: "/teacher/students" });
+      if (atRiskCount > 0) recommendations.push({ id: "atrisk", title: `Check in with ${atRiskCount} at-risk ${atRiskCount === 1 ? "student" : "students"}`, detail: "Low averages, work not turned in, or inactivity.", href: whereTheyAre(atRiskStudents) });
       const worstAssignment = [...assignments].sort((a, b) => a.completionPct - b.completionPct)[0];
       if (worstAssignment && worstAssignment.completionPct < 60) recommendations.push({ id: "completion", title: `Boost completion on “${worstAssignment.title}”`, detail: `${worstAssignment.completionPct}% turned in · ${worstAssignment.className}`, href: "/teacher/homework" });
       const challenging = assignments.find((a) => a.effectiveness === "challenging");
       if (challenging) recommendations.push({ id: "review", title: `Review “${challenging.title}” as a class`, detail: "Group mean below the class average.", href: "/teacher/gradebook" });
-      const inactiveCount = students.filter((s) => s.inactiveDays != null && s.inactiveDays >= 7).length;
-      if (inactiveCount > 0) recommendations.push({ id: "inactive", title: `Re-engage ${inactiveCount} inactive ${inactiveCount === 1 ? "student" : "students"}`, detail: "No activity in 7+ days.", href: "/teacher/students" });
+      const inactiveCount = inactiveStudents.length;
+      if (inactiveCount > 0) recommendations.push({ id: "inactive", title: `Re-engage ${inactiveCount} inactive ${inactiveCount === 1 ? "student" : "students"}`, detail: "No activity in 7+ days.", href: whereTheyAre(inactiveStudents) });
 
       setModel({
         classCount: managed.length,
