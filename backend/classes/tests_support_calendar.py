@@ -12,13 +12,17 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
+from access import constants as C
 from classes import support as support_service
 from classes.models_support import SupportAvailability, SupportBooking
 
 from .tests_support_booking import SupportFixture
+
+User = get_user_model()
 
 
 def _hours(entry, day_index=0):
@@ -494,6 +498,38 @@ class CalendarApiTests(SupportFixture):
         self.assertEqual(len(body["teachers"]), 1)
         self.assertEqual(body["teachers"][0]["id"], self.support.id)
         self.assertEqual(len(body["teachers"][0]["days"][0]["hours"]), 10)
+
+    def test_each_teacher_on_the_calendar_says_which_subject_they_cover(self):
+        # A student with a Math and an English support teacher has to be able to tell them
+        # apart before booking — the name alone does not say who to bring quadratics to.
+        self.client.force_authenticate(self.student)
+        body = self.client.get("/api/classes/support/calendar/").json()
+        self.assertEqual(body["teachers"][0]["subject"], C.DOMAIN_MATH)
+
+        User.objects.filter(pk=self.support.pk).update(subject=C.DOMAIN_BOTH)
+        body = self.client.get("/api/classes/support/calendar/").json()
+        self.assertEqual(body["teachers"][0]["subject"], C.DOMAIN_BOTH)
+
+    def test_a_teacher_with_no_recognised_subject_is_sent_as_none(self):
+        User.objects.filter(pk=self.support.pk).update(subject=None)
+        self.client.force_authenticate(self.student)
+        body = self.client.get("/api/classes/support/calendar/").json()
+        self.assertIsNone(body["teachers"][0]["subject"])
+
+    def test_a_booking_names_the_subject_of_the_teacher_it_is_with(self):
+        self.client.force_authenticate(self.student)
+        hour = support_service._hour_start(self.tomorrow, 11)
+        r = self.client.post("/api/classes/support/bookings/", {
+            "support_teacher_id": self.support.id,
+            "starts_at": hour.isoformat(),
+        }, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.json()["slot"]["support_teacher_subject"], C.DOMAIN_MATH)
+
+        mine = self.client.get("/api/classes/support/bookings/").json()["bookings"]
+        self.assertEqual(
+            {b["slot"]["support_teacher_subject"] for b in mine}, {C.DOMAIN_MATH}
+        )
 
     def test_a_student_books_an_hour_by_naming_it(self):
         self.client.force_authenticate(self.student)

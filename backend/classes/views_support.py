@@ -60,11 +60,24 @@ def _is_admin(user) -> bool:
     )
 
 
+def _teacher_subject(user) -> str | None:
+    """What a support teacher covers — ``math``, ``english`` or ``both`` — or None.
+
+    Sent to the student so they can tell which teacher to bring a question to: two names on
+    the calendar with nothing beside them leaves a student booking the English teacher for
+    help with quadratics. Only the stored ``ALL_STAFF_SUBJECTS`` values are passed through;
+    anything else is reported as unknown rather than shown to a student as a subject.
+    """
+    raw = (getattr(user, "subject", None) or "").strip().lower()
+    return raw if raw in acc_const.ALL_STAFF_SUBJECTS else None
+
+
 def _slot_json(slot: SupportAvailability, *, include_seats=True) -> dict:
     data = {
         "id": slot.id,
         "support_teacher_id": slot.support_teacher_id,
         "support_teacher": _display_name(slot.support_teacher),
+        "support_teacher_subject": _teacher_subject(slot.support_teacher),
         "starts_at": slot.starts_at,
         "ends_at": slot.ends_at,
         "capacity": slot.capacity,
@@ -144,6 +157,7 @@ class SupportCalendarView(APIView):
                     "id": entry["teacher"].id,
                     "name": _display_name(entry["teacher"]),
                     "photo_url": profile_image_url(entry["teacher"], request),
+                    "subject": _teacher_subject(entry["teacher"]),
                     "classrooms": [
                         {"id": c.id, "name": c.name} for c in entry["classrooms"]
                     ],
