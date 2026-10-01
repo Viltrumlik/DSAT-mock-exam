@@ -891,10 +891,15 @@ export type AssignmentOptions = {
     }[];
 };
 
+/** What a support teacher covers. Null when the account carries no subject; absent only
+ *  against a server that predates it. */
+export type SupportSubject = "math" | "english" | "both";
+
 export interface SupportSlot {
     id: number;
     support_teacher_id: number;
     support_teacher: string;
+    support_teacher_subject?: SupportSubject | null;
     starts_at: string;
     ends_at: string;
     capacity: number;
@@ -929,6 +934,7 @@ export interface SupportCalendarTeacher {
     id: number;
     name: string;
     photo_url: string | null;
+    subject?: SupportSubject | null;
     classrooms: { id: number; name: string }[];
     days: { date: string; hours: SupportHour[] }[];
 }
