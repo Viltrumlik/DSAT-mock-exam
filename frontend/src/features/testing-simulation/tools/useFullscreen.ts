@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 
+import { isDesktopShell } from "@/lib/desktop/bridge";
+
 import { markSelfFullscreenTransition } from "./fullscreenIntent";
 
 /**
@@ -39,6 +41,7 @@ export function useFullscreen(target?: () => Element | null) {
   }, []);
 
   const enter = useCallback(async () => {
+    if (isDesktopShell()) return; // the app's window already is (see `supported`)
     if (fullscreenElement()) return; // already fullscreen — never double-request
     const el = (target?.() ?? document.documentElement) as FsEl;
     const req = el.requestFullscreen ?? el.webkitRequestFullscreen;
@@ -71,8 +74,12 @@ export function useFullscreen(target?: () => Element | null) {
     else void enter();
   }, [enter, exit]);
 
+  // In the Windows app the window itself is full screen and topmost; a page-level full screen
+  // on top of it would only add an Esc that "leaves" — and the off-screen rule would charge a
+  // student for pressing it.
   const supported =
     typeof document !== "undefined" &&
+    !isDesktopShell() &&
     Boolean(document.documentElement.requestFullscreen || (document.documentElement as FsEl).webkitRequestFullscreen);
 
   return { isFullscreen, enter, exit, toggle, supported };
