@@ -20,6 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from config.reliability import idempotency_key_from_request
+from desktop import lockdown as desktop_lockdown
 
 from .access import (
     can_start_midterm,
@@ -196,7 +197,11 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         return MidtermAttempt.objects.filter(student=self.request.user).select_related("midterm")
 
     def _snapshot(self, attempt) -> Response:
-        return Response(MidtermAttemptSerializer(attempt).data)
+        data = MidtermAttemptSerializer(attempt).data
+        # Tells the runner, before it offers Start, that this sitting belongs to the Windows
+        # app — so a browser shows "open it in the app" rather than a Start that will 403.
+        data["desktop_required"] = desktop_lockdown.applies_to(attempt)
+        return Response(data)
 
     def _conflict(self, attempt) -> Response:
         return Response(
@@ -246,13 +251,32 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
 
     def retrieve(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt, reading=True)
+        if refused is not None:
+            return refused
         return self._snapshot(attempt)
 
     @action(detail=True, methods=["get"])
     def status(self, request, pk=None):
         # Read-only snapshot for timer resume / polling. Never mutates.
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt, reading=True)
+        if refused is not None:
+            return refused
         return self._snapshot(attempt)
+
+    # ── Windows app lockdown (desktop/lockdown.py) ───────────────────────────────────────
+    @action(detail=True, methods=["post"], url_path="desktop_challenge")
+    def desktop_challenge(self, request, pk=None):
+        """A one-time nonce the locked-down app signs to prove it holds this sitting."""
+        attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        return desktop_lockdown.issue_challenge(attempt)
+
+    @action(detail=True, methods=["post"], url_path="desktop_session")
+    def desktop_session(self, request, pk=None):
+        """Trade the app's signed proof for this sitting's session token (replacing any older)."""
+        attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        return desktop_lockdown.open_session(attempt, request.data)
 
     @action(detail=True, methods=["post"], url_path="verify_code")
     def verify_code(self, request, pk=None):
@@ -280,6 +304,9 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"])
     def start(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt)
+        if refused is not None:
+            return refused
         # Access-code gate: if the classroom requires a code, it must have been
         # verified first (see verify_code). Resuming an already-started attempt is
         # unaffected (only NOT_STARTED transitions actually begin the timer).
@@ -316,6 +343,9 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
         report cannot burn two of the student's three chances.
         """
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt)
+        if refused is not None:
+            return refused
         if attempt.current_state not in _ACTIVE_STATES:
             # Nothing to police once the paper is in. Report the current tally so a late
             # event from a closing tab is a harmless no-op rather than an error.
@@ -368,6 +398,9 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="submit_module")
     def submit_module(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt)
+        if refused is not None:
+            return refused
         # A midterm can't be submitted early — it may only end when its timer runs
         # out (the deadline is authoritative, enforced here regardless of client).
         # Checked before the idempotency wrapper so the 403 is never cached and a
@@ -454,6 +487,9 @@ class MidtermAttemptViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="save_attempt")
     def save_attempt(self, request, pk=None):
         attempt = get_object_or_404(self.get_queryset(), pk=pk)
+        refused = desktop_lockdown.refusal(request, attempt)
+        if refused is not None:
+            return refused
         answers = request.data.get("answers") or {}
         flagged = request.data.get("flagged")
         expected = _expected_version(request)

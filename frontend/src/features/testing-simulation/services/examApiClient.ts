@@ -11,6 +11,7 @@
  * `/midterms/attempts` (the separated midterm). The default export stays pastpaper.
  */
 import api, { getCachedCsrfToken } from "@/lib/api";
+import { asDesktopBlocked, desktopBlockReason, lockdownHeaders } from "@/lib/desktop/lockdownSession";
 import { type Attempt, parseAttempt } from "../types";
 
 interface MutationOptions {
@@ -21,8 +22,22 @@ interface MutationOptions {
   moduleId?: number;
 }
 
-function idemHeaders(key?: string): Record<string, string> | undefined {
-  return key ? { "Idempotency-Key": key } : undefined;
+/**
+ * Every request about an attempt carries the Windows app's lockdown token when the app has
+ * bound the sitting (`lib/desktop/lockdownSession`) — a midterm the server only answers from
+ * the locked-down window. Everywhere else the token is absent and this adds nothing.
+ */
+function headersFor(attemptId: number, idempotencyKey?: string): Record<string, string> {
+  return { ...lockdownHeaders(attemptId), ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) };
+}
+
+/** Rethrow the server's "take this in the app" refusal as a `DesktopBlockedError`. */
+async function guarded<T>(request: Promise<T>): Promise<T> {
+  try {
+    return await request;
+  } catch (e) {
+    throw asDesktopBlocked(e);
+  }
 }
 
 function withVersion(body: Record<string, unknown>, version?: number): Record<string, unknown> {
@@ -35,18 +50,23 @@ export function createExamApi(base: string) {
   return {
     /** Canonical poll endpoint; falls back to the legacy retrieve route. */
     async getStatus(attemptId: number): Promise<Attempt> {
+      const headers = headersFor(attemptId);
       try {
-        const r = await api.get(`${base}/${attemptId}/status/`);
+        const r = await api.get(`${base}/${attemptId}/status/`, { headers });
         return parseAttempt(r.data, "GET status");
-      } catch {
-        const r = await api.get(`${base}/${attemptId}/`);
+      } catch (e) {
+        // The legacy route would only be refused for the same reason — say it once.
+        if (desktopBlockReason(e)) throw asDesktopBlocked(e);
+        const r = await guarded(api.get(`${base}/${attemptId}/`, { headers }));
         return parseAttempt(r.data, "GET attempt");
       }
     },
 
     /** Transition NOT_STARTED → active. Idempotent via key. */
     async start(attemptId: number, idempotencyKey?: string): Promise<Attempt> {
-      const r = await api.post(`${base}/${attemptId}/start/`, {}, { headers: idemHeaders(idempotencyKey) });
+      const r = await guarded(
+        api.post(`${base}/${attemptId}/start/`, {}, { headers: headersFor(attemptId, idempotencyKey) }),
+      );
       return parseAttempt(r.data, "POST start");
     },
 
@@ -69,7 +89,11 @@ export function createExamApi(base: string) {
           method: "POST",
           credentials: "include",
           keepalive: true,
-          headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "X-CSRFToken": token } : {}),
+            ...lockdownHeaders(attemptId),
+          },
           body: "{}",
         });
       } catch {
@@ -86,10 +110,12 @@ export function createExamApi(base: string) {
     ): Promise<Attempt> {
       const body: Record<string, unknown> = { answers, flagged };
       if (opts.moduleId != null) body.module_id = opts.moduleId;
-      const r = await api.post(
-        `${base}/${attemptId}/submit_module/`,
-        withVersion(body, opts.expectedVersionNumber),
-        { headers: idemHeaders(opts.idempotencyKey) },
+      const r = await guarded(
+        api.post(
+          `${base}/${attemptId}/submit_module/`,
+          withVersion(body, opts.expectedVersionNumber),
+          { headers: headersFor(attemptId, opts.idempotencyKey) },
+        ),
       );
       return parseAttempt(r.data, "POST submit_module");
     },
@@ -118,7 +144,11 @@ export function createExamApi(base: string) {
           method: "POST",
           credentials: "include",
           keepalive: true,
-          headers: { "Content-Type": "application/json", ...(token ? { "X-CSRFToken": token } : {}) },
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "X-CSRFToken": token } : {}),
+            ...lockdownHeaders(attemptId),
+          },
           // `background: true` tells the server this flush comes from a leaving/hidden tab,
           // so it may persist the answers but must NOT advance a midterm into its next
           // timed module — that clock would start while nobody is watching the screen.
@@ -141,10 +171,8 @@ export function createExamApi(base: string) {
       attemptId: number,
       idempotencyKey: string,
     ): Promise<{ violations?: number; limit?: number; grace_seconds?: number; terminated?: boolean; attempt?: unknown }> {
-      const r = await api.post(
-        `${base}/${attemptId}/offscreen/`,
-        {},
-        { headers: idemHeaders(idempotencyKey) },
+      const r = await guarded(
+        api.post(`${base}/${attemptId}/offscreen/`, {}, { headers: headersFor(attemptId, idempotencyKey) }),
       );
       return r.data ?? {};
     },
@@ -156,10 +184,12 @@ export function createExamApi(base: string) {
       flagged: number[],
       opts: MutationOptions = {},
     ): Promise<Attempt> {
-      const r = await api.post(
-        `${base}/${attemptId}/save_attempt/`,
-        withVersion({ answers, flagged }, opts.expectedVersionNumber),
-        { headers: idemHeaders(opts.idempotencyKey) },
+      const r = await guarded(
+        api.post(
+          `${base}/${attemptId}/save_attempt/`,
+          withVersion({ answers, flagged }, opts.expectedVersionNumber),
+          { headers: headersFor(attemptId, opts.idempotencyKey) },
+        ),
       );
       return parseAttempt(r.data, "POST save_attempt");
     },

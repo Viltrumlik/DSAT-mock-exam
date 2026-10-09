@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileText, ArrowRight, Download, Lock } from "lucide-react";
 import { classesApi } from "@/lib/api";
 import { midtermApi, subjectLabel, type MidtermRow } from "@/lib/midtermApi";
+import { bucketMidterms } from "@/lib/midtermBuckets";
 import { downloadBlob } from "@/lib/download";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
@@ -218,17 +219,8 @@ export default function MidtermList() {
   const refetch = () => qc.invalidateQueries({ queryKey: ["midterm", "mine"] });
 
   const midterms = useMemo(() => data ?? [], [data]);
-  // A started-but-unfinished attempt is always resumable (even past the deadline), so it
-  // belongs in "Available"; a not-started midterm past its deadline is "Missed".
-  const resumable = (m: MidtermRow) => !m.submitted && m.attempt_id != null && m.state !== "NOT_STARTED";
-  // A granted re-sit lifts the once-only rule for a paper they already finished — it belongs in
-  // "Available" (the actionable place), NOT in "Past" where it would only show the old mark they
-  // are about to replace. It out-ranks the schedule/deadline buckets (the backend exempts a
-  // re-sit from the class window), so a re-sittable midterm never reads as scheduled or missed.
-  const available = midterms.filter((m) => m.resit_open || (!m.submitted && (resumable(m) || m.is_open)));
-  const scheduled = midterms.filter((m) => !m.resit_open && !m.submitted && !m.is_open && !resumable(m) && (m.is_before_start || m.awaiting_code));
-  const missed = midterms.filter((m) => !m.resit_open && !m.submitted && !m.is_open && !resumable(m) && !m.is_before_start && !m.awaiting_code);
-  const past = midterms.filter((m) => m.submitted && !m.resit_open);
+  // The bucket rules live in lib/midtermBuckets, shared with the Windows app's home screen.
+  const { available, scheduled, missed, past } = bucketMidterms(midterms);
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "all", label: "All" }, { id: "available", label: "Available now" },

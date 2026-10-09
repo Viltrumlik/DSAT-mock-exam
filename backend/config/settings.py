@@ -186,6 +186,7 @@ INSTALLED_APPS = [
     'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
     'mobile.apps.MobileConfig',
+    'desktop.apps.DesktopConfig',
 ]
 
 MIDDLEWARE = [
@@ -256,6 +257,19 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Live Quiz. Off unless explicitly switched on, and only the literal "true" counts — the
 # same idiom as the REALTIME_* flags, so a stray "1" does not quietly enable it.
 LIVE_QUIZ_ENABLED = os.getenv("LIVE_QUIZ_ENABLED", "False").lower() == "true"
+
+# Windows exam app (desktop/). While on, a midterm can only be STARTED from the app's
+# locked-down window, and a sitting the app has opened answers only to that window — Chrome or a
+# second laptop gets a 403 instead of the questions. Students with a browser exemption are
+# outside it. Off is the rollback lever: it releases every sitting at once. Same "only the
+# literal true" idiom as the flag above.
+MIDTERM_DESKTOP_REQUIRED = os.getenv("MIDTERM_DESKTOP_REQUIRED", "False").lower() == "true"
+# The keys app builds sign their lockdown proof with: "key_id:hexsecret,key_id2:hexsecret".
+# Every key still listed is accepted, so a release that rotates the key keeps older builds
+# working until the old key is removed here. See desktop/proof.py.
+from desktop.proof import parse_keys as _parse_desktop_keys  # noqa: E402
+
+DESKTOP_PROOF_KEYS = _parse_desktop_keys(os.getenv("DESKTOP_PROOF_KEYS", ""))
 
 
 # ─── Database ─────────────────────────────────────────────────────────────────
@@ -883,6 +897,9 @@ REST_FRAMEWORK = {
         # iOS crash/error reports (mobile.views.DiagnosticsUploadView), per client address. A
         # class behind one school NAT uploads together after a bad build, hence the headroom.
         'mobile_diagnostics': os.getenv('MOBILE_DIAGNOSTICS_THROTTLE', '240/hour'),
+        # Windows app "Sign in with browser" code exchange, per client address. A whole class
+        # signs in at once from behind one school NAT, hence the headroom.
+        'desktop_auth': os.getenv('DESKTOP_AUTH_THROTTLE', '300/hour'),
         # Student-submitted question error reports (per user).
         'question_report': os.getenv('QUESTION_REPORT_THROTTLE', '20/hour'),
         # Tighter limit when a classroom is under mitigation (auto after abuse spike).

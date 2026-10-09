@@ -56,6 +56,18 @@ import { ATTEMPT_STATE } from "../types";
 import { useExamTools, ExamToolsLayer, MultiTabOverlay, useKeyboardShortcuts } from "../tools";
 import { useMultiTabGuard } from "../tools/useMultiTabGuard";
 
+import { DESKTOP_HOME, desktopDonePath } from "@/lib/desktop/routes";
+import { useBattery } from "@/lib/desktop/useBattery";
+import { useDesktopLockdown } from "../hooks/useDesktopLockdown";
+import { isTerminal } from "../state/attemptMerge";
+import { LowBatteryBanner } from "../components/DesktopBattery";
+import {
+  AppUpdateRequiredScreen,
+  DesktopPrecheckScreen,
+  OpenInAppScreen,
+  SessionMovedScreen,
+} from "../components/DesktopScreens";
+
 /** Reflects browser connectivity so the runner can surface an offline state. */
 function useOnlineStatus(): boolean {
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine);
@@ -108,7 +120,7 @@ export function ExamRunnerPage() {
   const multiTab = useMultiTabGuard(attemptId);
   const online = useOnlineStatus();
 
-  const { attempt, loading, error, clock, applyAttempt, reload, start } = useExamAttempt({
+  const { attempt, loading, error, clock, applyAttempt, reload, start, blocked } = useExamAttempt({
     attemptId,
     assertCriticalAuth,
     pollingEnabled: !multiTab.blocked,
@@ -137,6 +149,16 @@ export function ExamRunnerPage() {
   // publishes on the attempt — so a copied link cannot drop the rule the way a query param
   // could. Solo practice is never proctored.
   const proctored = isProctored(attempt);
+
+  // ── The MasterSAT app for Windows ───────────────────────────────────────────
+  // In the app a midterm is sat with the machine locked down (useDesktopLockdown); in a
+  // browser nothing here does anything, except to say so when the server will only take the
+  // sitting from the app. The lockdown is released the moment the paper is in.
+  const lockdown = useDesktopLockdown({ attemptId, enabled: isMidterm, finished: isTerminal(attempt) });
+  const inShell = lockdown.inShell;
+  const battery = useBattery();
+  // The pre-check stands between "the student is ready" and Start, for a midterm in the app.
+  const [precheckOpen, setPrecheckOpen] = useState(false);
 
   // ── SAT-experience tools (isolated from the engine) ─────────────────────────
   const tools = useExamTools({
@@ -287,6 +309,28 @@ export function ExamRunnerPage() {
     }
   }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
 
+  // "The student is ready to begin." In the app a midterm goes through the pre-check first —
+  // AFTER the access code, so nobody waits for a late teacher on a locked machine.
+  const beginSitting = useCallback(async () => {
+    if (lockdown.active && !lockdown.bound) {
+      setPrecheckOpen(true);
+      return;
+    }
+    await handleStart();
+  }, [lockdown.active, lockdown.bound, handleStart]);
+
+  // The pre-check's button: lock the machine, bind the sitting to this window, then either
+  // begin (a fresh paper) or reload the one that refused to talk to an unbound window.
+  const continueFromPrecheck = useCallback(async () => {
+    await lockdown.lockAndBind();
+    setPrecheckOpen(false);
+    if (blocked) {
+      reload();
+      return;
+    }
+    if (attempt?.current_state === ATTEMPT_STATE.NOT_STARTED) await handleStart();
+  }, [lockdown, blocked, reload, attempt?.current_state, handleStart]);
+
   // Midterm access-code gate (classroom flavor). The rules screen comes FIRST and the code
   // is asked for only after it, so we probe up front — an empty code succeeds only when no
   // code is required — and the rules screen can then tell the student whether they need one
@@ -321,27 +365,29 @@ export function ExamRunnerPage() {
   const handleMidtermProceed = useCallback(async () => {
     if (!attempt) return;
     if (midtermCodeVerified || requiresCode === false) {
-      await handleStart();
+      await beginSitting();
       return;
     }
     if (requiresCode === true) {
       setCodeGateOpen(true);
       return;
     }
+    let verified = false;
     try {
       await midtermApi.verifyCode(attempt.id, ""); // the probe hasn't landed yet — ask now
-      await handleStart();
+      verified = true;
     } catch {
       setCodeGateOpen(true);
     }
-  }, [attempt, handleStart, midtermCodeVerified, requiresCode]);
+    if (verified) await beginSitting();
+  }, [attempt, beginSitting, midtermCodeVerified, requiresCode]);
   const verifyThenStart = useCallback(
     async (code: string) => {
       if (!attempt) return;
       await midtermApi.verifyCode(attempt.id, code); // throws on an incorrect code
-      await handleStart();
+      await beginSitting();
     },
-    [attempt, handleStart],
+    [attempt, beginSitting],
   );
 
   // Close the Check Your Work page whenever the module changes (after a submit
@@ -447,8 +493,15 @@ export function ExamRunnerPage() {
   // A forfeited paper still has a result to show, and it is not the same page for both
   // exams — a mock's lives under /mock-exam.
   const goToTerminalResult = useCallback(
-    () => router.push(isMockSrc ? `/mock-exam/result/${attemptId}` : `/midterm/result/${attemptId}`),
-    [router, attemptId, isMockSrc],
+    () =>
+      router.push(
+        isMockSrc
+          ? `/mock-exam/result/${attemptId}`
+          : inShell
+            ? desktopDonePath("midterm", attemptId)
+            : `/midterm/result/${attemptId}`,
+      ),
+    [router, attemptId, isMockSrc, inShell],
   );
   // Hold the terminal screen long enough to be read, then move on. The button on it does
   // the same thing immediately; the completion-routing effect stands down while it shows.
@@ -631,16 +684,18 @@ export function ExamRunnerPage() {
     }
     // Midterms route to their own result page: standalone shows the score + certificate
     // immediately; a classroom midterm shows "awaiting release" until the teacher publishes.
+    // In the app both papers end on its own "You're all finished!" page instead — the site's
+    // result pages live in the student shell, which the app does not show.
     if (isMidterm) {
-      router.push(`/midterm/result/${attemptId}`);
+      router.push(inShell ? desktopDonePath("midterm", attemptId) : `/midterm/result/${attemptId}`);
       return;
     }
     if (isMockSrc) {
       router.push(`/mock-exam/result/${attemptId}`);
       return;
     }
-    router.push(`/review/${attemptId}`);
-  }, [attempt, mockFlow, search, router, attemptId, isMidterm, isMockSrc, offscreen.terminated]);
+    router.push(inShell ? desktopDonePath("pastpaper", attemptId) : `/review/${attemptId}`);
+  }, [attempt, mockFlow, search, router, attemptId, isMidterm, isMockSrc, offscreen.terminated, inShell]);
 
   // ── Resizable split divider ─────────────────────────────────────────────────
   const mainRef = useRef<HTMLDivElement | null>(null);
@@ -721,9 +776,9 @@ export function ExamRunnerPage() {
       // The save genuinely failed. The local draft still holds the work (the
       // autosave never clears it), so resuming on this device recovers it.
     } finally {
-      router.push("/");
+      router.push(inShell ? DESKTOP_HOME : "/");
     }
-  }, [mockFlow, attemptId, applyAttempt, router, engineApi]);
+  }, [mockFlow, attemptId, applyAttempt, router, engineApi, inShell]);
 
   // Keep the off-fullscreen kick action current without restarting the countdown
   // when handleSaveAndExit's identity changes (e.g. on autosave).
@@ -816,6 +871,42 @@ export function ExamRunnerPage() {
   // this screen only explains it before the redirect (see the terminal-screen effect).
   if (offscreen.terminated) {
     return <OffscreenTerminatedScreen onContinue={goToTerminalResult} />;
+  }
+
+  // ── The Windows app: the sitting belongs to a locked-down window ──────────────
+  const goDesktopHome = () => router.push(DESKTOP_HOME);
+  if (blocked === "desktop_session_replaced") {
+    return inShell ? (
+      <SessionMovedScreen onHome={goDesktopHome} />
+    ) : (
+      <OpenInAppScreen attemptId={attemptId} reason={blocked} />
+    );
+  }
+  if (blocked === "desktop_update_required" && inShell) {
+    return <AppUpdateRequiredScreen onHome={goDesktopHome} />;
+  }
+  if (lockdown.active) {
+    const running =
+      attempt?.current_state === ATTEMPT_STATE.MODULE_1_ACTIVE ||
+      attempt?.current_state === ATTEMPT_STATE.MODULE_2_ACTIVE;
+    // A midterm in the app is never on screen unlocked: a fresh one passes the pre-check
+    // before Start, and one that is already running (the app was reopened, or the server
+    // refused this unbound window) passes it again before the paper comes back.
+    if (precheckOpen || (!lockdown.bound && (blocked !== null || running))) {
+      return (
+        <DesktopPrecheckScreen
+          resume={!precheckOpen}
+          onContinue={continueFromPrecheck}
+          onBack={precheckOpen ? () => setPrecheckOpen(false) : goDesktopHome}
+        />
+      );
+    }
+  } else if (
+    !inShell &&
+    (blocked !== null ||
+      (isMidterm && attempt?.desktop_required && attempt.current_state === ATTEMPT_STATE.NOT_STARTED))
+  ) {
+    return <OpenInAppScreen attemptId={attemptId} reason={blocked} />;
   }
 
   if (error) {
@@ -1007,9 +1098,10 @@ export function ExamRunnerPage() {
         saveExitAllowed={!isMidterm}
         onSaveAndExit={handleSaveAndExit}
         onReportProblem={currentQuestion ? () => setReportOpen(true) : undefined}
-
+        battery={battery}
       />
       <SatColorRule />
+      <LowBatteryBanner battery={battery} />
       </div>
 
       <ReportProblemModal

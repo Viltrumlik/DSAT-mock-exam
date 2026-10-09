@@ -8,6 +8,8 @@ import {
   offscreenChancesLeft,
 } from "@/lib/midtermRules";
 
+import { SHELL_AWAY_EVENT, shellReportsAway } from "@/lib/desktop/bridge";
+
 import { selfFullscreenSettling } from "../tools/fullscreenIntent";
 import { type Attempt, InvalidAttemptPayloadError, parseAttempt } from "../types";
 
@@ -211,9 +213,12 @@ export function useOffscreenGuard({
     // `hasFocus()` rather than a raw blur flag: focus moving into an in-page tool (the
     // calculator, a dialog) blurs the window in some browsers but keeps focus in the
     // document, and that is not the student leaving.
+    // `shellReportsAway()`: the Windows app's own word for an absence the page never hears
+    // about — a second monitor plugged in, a blocked program starting. Always false in a browser.
     const isAway = () =>
       document.hidden ||
       !document.hasFocus() ||
+      shellReportsAway() ||
       (fullscreenLost() && selfFullscreenSettling() === 0);
 
     const startCountdown = (seconds: number) => {
@@ -364,6 +369,7 @@ export function useOffscreenGuard({
     document.addEventListener("webkitfullscreenchange", evaluate as EventListener);
     window.addEventListener("blur", evaluate);
     window.addEventListener("focus", evaluate);
+    window.addEventListener(SHELL_AWAY_EVENT, evaluate);
     return () => {
       cancelled = true;
       if (confirmTimer) clearTimeout(confirmTimer);
@@ -378,6 +384,7 @@ export function useOffscreenGuard({
       document.removeEventListener("webkitfullscreenchange", evaluate as EventListener);
       window.removeEventListener("blur", evaluate);
       window.removeEventListener("focus", evaluate);
+      window.removeEventListener(SHELL_AWAY_EVENT, evaluate);
     };
   }, [armed, terminated, attemptId, stopCountdown]);
 

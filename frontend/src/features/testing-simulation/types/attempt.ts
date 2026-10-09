@@ -133,6 +133,10 @@ export const attemptSchema = z
 
     score: z.number().nullable().optional(),
     completed_modules: z.array(z.number()).optional(),
+
+    // Midterms only: this sitting must be taken in the MasterSAT app for Windows (the server
+    // refuses a browser's Start). Absent on every other backend.
+    desktop_required: z.boolean().optional(),
   })
   .passthrough();
 export type Attempt = z.infer<typeof attemptSchema>;

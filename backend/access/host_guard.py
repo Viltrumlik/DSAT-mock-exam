@@ -195,6 +195,10 @@ class SubdomainAPIGuardMiddleware:
             # console (/ops/mobile). The app itself calls the apex, which needs no entry.
             if path.startswith("/api/mobile/"):
                 return self.get_response(request)
+            # Windows exam app: the desk grants and revokes browser exemptions. The app's own
+            # sign-in endpoints are on the apex only.
+            if path.startswith("/api/desktop/exemptions/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.
@@ -297,6 +301,10 @@ class SubdomainAPIGuardMiddleware:
             # Live quiz: the teacher portal is where a game is created and hosted. Without
             # this the host page 403s and renders as an empty list rather than an error.
             if path.startswith("/api/livequiz/"):
+                return self.get_response(request)
+            # Windows exam app: a teacher lets a student without a Windows laptop sit midterms
+            # in the browser (and takes it back) from the portal's midterm page.
+            if path.startswith("/api/desktop/exemptions/"):
                 return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(

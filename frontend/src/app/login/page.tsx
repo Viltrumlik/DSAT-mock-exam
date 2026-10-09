@@ -43,10 +43,17 @@ function classifyLoginError(err: unknown): { message: string; retryable: boolean
     return { message: detail || "Sign-in failed. Please try again.", retryable: true };
 }
 
+// The one page that may send a student here and expect them back: the Windows app's "Sign in
+// with browser" hand-off. An allowlist, not "any relative path", so `next` can never be used
+// to bounce someone off to a page of an attacker's choosing.
+const RETURNABLE_NEXT = /^\/desktop\/link(\?[A-Za-z0-9_=&%.~-]*)?$/;
+
 function getRedirectTarget(): string {
     const host = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
     if (host.startsWith("admin.")) return "/ops";
     if (host.startsWith("questions.")) return "/builder";
+    const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
+    if (next && RETURNABLE_NEXT.test(next)) return next;
     return "/";
 }
 

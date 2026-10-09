@@ -26,6 +26,11 @@ _CLIENT_RE = re.compile(r"^\s*(?P<platform>[A-Za-z]+)/(?P<version>[0-9][0-9.]*)"
 _LEADING_RE = re.compile(r"^[0-9.]*")
 
 PLATFORM_IOS = "ios"
+#: The Windows exam app (`desktop/`). It never sends `X-MasterSAT-Client` — its pages are the
+#: website's, signed in with the website's cookies, and that header would switch login to the
+#: native token flow — so the middleware gate never sees it. Its minimum is enforced where it
+#: matters instead: `desktop.lockdown` refuses a lockdown proof from an older build.
+PLATFORM_WINDOWS = "windows"
 
 
 def parse_version(raw: object) -> Version | None:

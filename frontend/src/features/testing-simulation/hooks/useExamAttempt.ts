@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { type DesktopBlockReason, DesktopBlockedError } from "@/lib/desktop/lockdownSession";
 import { type Attempt, ATTEMPT_STATE, InvalidAttemptPayloadError } from "../types";
 import { type ExamApi, examApi } from "../services/examApiClient";
 import { isScoring, mergeAttempt } from "../state/attemptMerge";
@@ -34,6 +35,12 @@ export interface UseExamAttemptResult {
   setError: (msg: string | null) => void;
   /** Transition NOT_STARTED → MODULE_1_ACTIVE on demand (Welcome screen Start). */
   start: () => Promise<void>;
+  /**
+   * The server will only talk about this sitting to the Windows app's locked-down window
+   * (or a newer one replaced this window). Not an error: the runner answers it with the
+   * app's pre-check, or — in a browser — with "open it in the app". Cleared by `reload`.
+   */
+  blocked: DesktopBlockReason | null;
 }
 
 /**
@@ -47,6 +54,7 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [blocked, setBlocked] = useState<DesktopBlockReason | null>(null);
   const [reloadNonce, setReloadNonce] = useState(0);
 
   const attemptRef = useRef<Attempt | null>(null);
@@ -62,6 +70,7 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
 
   const reload = useCallback(() => {
     setError(null);
+    setBlocked(null);
     setLoading(true);
     setAttempt(null);
     setReloadNonce((n) => n + 1);
@@ -76,6 +85,10 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
       const snap = await api.start(attemptId, startKey(attemptId));
       applyAttempt(snap);
     } catch (e) {
+      if (e instanceof DesktopBlockedError) {
+        setBlocked(e.reason);
+        return;
+      }
       if (e instanceof InvalidAttemptPayloadError) console.error(e);
     }
     try {
@@ -116,6 +129,10 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
         }
       } catch (e) {
         if (cancelled) return;
+        if (e instanceof DesktopBlockedError) {
+          setBlocked(e.reason);
+          return;
+        }
         if (e instanceof InvalidAttemptPayloadError) console.error(e);
         setError("Could not load the exam. Please click Retry.");
       } finally {
@@ -151,6 +168,12 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
         }
         delay = baseDelay;
       } catch (e) {
+        if (e instanceof DesktopBlockedError) {
+          // Another window took the sitting over (or the app lost its binding). Polling on
+          // would only collect more refusals; the runner takes it from here.
+          if (!cancelled) setBlocked(e.reason);
+          return;
+        }
         if (e instanceof InvalidAttemptPayloadError) console.error(e);
         delay = Math.min(30_000, Math.floor(delay * 1.6)); // back off on failure
       }
@@ -165,5 +188,5 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [attempt?.current_state, attemptId, pollingEnabled]);
 
-  return { attempt, loading, error, clock, applyAttempt, reload, setError, start };
+  return { attempt, loading, error, clock, applyAttempt, reload, setError, start, blocked };
 }

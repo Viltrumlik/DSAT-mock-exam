@@ -1,0 +1,70 @@
+[package]
+name = "mastersat-desktop"
+version = "0.1.0"
+description = "MasterSAT exam app for Windows"
+authors = ["MasterSAT"]
+edition = "2021"
+rust-version = "1.77"
+
+# The proof lives in its own member crate so its shared vectors can be tested without Tauri or
+# the Linux GUI stack (`cargo test -p mastersat-proof`). The root package is a member implicitly.
+[workspace]
+members = ["crates/proof"]
+
+# A plain binary crate. This shell is Windows-only (midterms are sat on school laptops), so there
+# is no mobile entry point and no library split — `main.rs` is the whole program.
+
+[build-dependencies]
+# AppManifest::commands (build.rs) lands the per-command ACL permissions this app relies on to
+# keep the native lockdown callable from mastersat.uz alone. Needs tauri-build 2.x.
+# Default features (incl. config-json, which reads tauri.conf.json) stay on.
+tauri-build = "2"
+
+[dependencies]
+# >= 2.11.1 is a hard floor, not a preference: before it a remote origin could invoke custom
+# commands with no capability at all, and is_local_url() misclassified remote URLs as trusted
+# local origins on Windows (CVE-2026-42184). This app's entire premise — "another site opened
+# in the window cannot drive the lockdown" — depends on the fixed ACL. Do not relax this.
+# Default features (incl. the `wry` webview runtime) stay on.
+tauri = "2.11.1"
+tauri-plugin-deep-link = "2"
+# The deep-link feature forwards a second launch's mastersat:// URL into the already-running
+# window instead of starting a second copy.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# The lockdown proof — byte-for-byte the same arithmetic as backend/desktop/proof.py, in its own
+# Tauri-free crate so the shared vectors test fast on any host.
+mastersat-proof = { path = "crates/proof" }
+# base64 for the PKCE verifier, rand to generate it.
+base64 = "0.22"
+rand = "0.8"
+
+# Open the student's own browser for "Sign in with browser" and for external links.
+open = "5"
+
+[target.'cfg(windows)'.dependencies]
+# Everything the shell can do that a web page cannot: count monitors, see a Remote Desktop
+# session, read the battery, close a blocked program, swallow Alt+Tab/Win, keep the machine awake,
+# hide the window from screen capture. All isolated in lockdown.rs behind #[cfg(windows)].
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Power",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_Graphics_Gdi",
+] }
+winreg = "0.52"
+
+[profile.release]
+# A single-file installer is friendlier to download over a school connection, and nothing here
+# is CPU-bound, so trade build time for size.
+panic = "abort"
+strip = true
+lto = true
+opt-level = "s"

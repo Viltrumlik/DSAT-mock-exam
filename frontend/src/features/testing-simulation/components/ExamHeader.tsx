@@ -1,5 +1,7 @@
 "use client";
 import { Calculator, ChevronDown, PenLine } from "lucide-react";
+import type { BatteryStatus } from "@/lib/desktop/bridge";
+import { BatteryIndicator } from "./DesktopBattery";
 import { Timer } from "./Timer";
 import { MoreMenu } from "../tools/MoreMenu";
 import type { ExamTools } from "../tools/useExamTools";
@@ -23,6 +25,8 @@ interface ExamHeaderProps {
   saveExitAllowed: boolean;
   onSaveAndExit: () => void;
   onReportProblem?: () => void;
+  /** The laptop's battery, in the Windows app only (null everywhere else). */
+  battery?: BatteryStatus | null;
 }
 
 function ToolButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -57,6 +61,7 @@ export function ExamHeader({
   saveExitAllowed,
   onSaveAndExit,
   onReportProblem,
+  battery = null,
 }: ExamHeaderProps) {
   return (
     <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
@@ -107,6 +112,7 @@ export function ExamHeader({
           <PenLine className="h-[18px] w-[18px]" />
         </ToolButton>
         <MoreMenu
+          fullscreenAvailable={tools.fullscreen.supported}
           isFullscreen={tools.fullscreen.isFullscreen}
           onToggleFullscreen={tools.fullscreen.toggle}
           highlighterActive={tools.highlighterActive}
@@ -123,6 +129,7 @@ export function ExamHeader({
           saveExitAllowed={saveExitAllowed}
           onSaveAndExit={onSaveAndExit}
         />
+        <BatteryIndicator battery={battery} />
       </div>
     </header>
   );

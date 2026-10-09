@@ -3,6 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { Flag, Highlighter, Keyboard, LogOut, Maximize, Minimize, MoreVertical, Pause, Play, StickyNote, ZoomIn, ZoomOut } from "lucide-react";
 
 export interface MoreMenuProps {
+  /** False where the page cannot go full screen itself — e.g. the Windows app, whose window
+   *  already is. Defaults to true. */
+  fullscreenAvailable?: boolean;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
   highlighterActive: boolean;
@@ -68,7 +71,8 @@ export function MoreMenu(props: MoreMenuProps) {
       </button>
       {open && (
         <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-60 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl">
-          {item(props.isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />, props.isFullscreen ? "Exit full screen" : "Full screen", props.onToggleFullscreen)}
+          {props.fullscreenAvailable !== false &&
+            item(props.isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />, props.isFullscreen ? "Exit full screen" : "Full screen", props.onToggleFullscreen)}
           {item(<Highlighter className="h-4 w-4" />, props.highlighterActive ? "Highlighter: On" : "Highlighter: Off", props.onToggleHighlighter, props.highlighterActive)}
           {item(<StickyNote className="h-4 w-4" />, "Notes", props.onToggleNotes, props.notesOpen)}
           {props.onReportProblem && item(<Flag className="h-4 w-4" />, "Report a problem", props.onReportProblem)}

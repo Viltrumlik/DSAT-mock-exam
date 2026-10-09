@@ -1,0 +1,81 @@
+name: desktop app (Windows)
+
+# Builds the MasterSAT Windows exam app. The installer can only be produced on Windows, so that
+# job runs on windows-latest; a fast Linux job runs the shared proof vectors (proof.rs vs
+# backend/desktop/proof.py) on every change without waiting for the full build.
+#
+# The built installer is uploaded as a workflow artifact named `MasterSAT-Setup`. Releasing it is
+# a separate, deliberate step: download the artifact and publish it to the release's
+# downloads/desktop/MasterSAT-Setup.exe (the path frontend/src/lib/desktop/routes.ts points at).
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  proof-vectors:
+    name: proof vectors (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      # Only the proof crate — no Tauri, so no Node, no icons, and no GTK/WebKit system libs.
+      - name: cargo test -p mastersat-proof (shared vectors)
+        working-directory: desktop/src-tauri
+        run: cargo test -p mastersat-proof
+
+  build:
+    name: installer (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install CLI and generate icons
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run icons
+      - name: Build the installer
+        working-directory: desktop
+        env:
+          # A real release passes the production signing key here (repo secret, format key_id:hex);
+          # without it the build embeds the development key, which a production server rejects.
+          DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
+        run: npm run build
+      - name: Collect the installer as MasterSAT-Setup.exe
+        shell: pwsh
+        working-directory: desktop
+        run: |
+          $exe = Get-ChildItem -Recurse -Path src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          if (-not $exe) { Write-Error "no NSIS installer was produced"; exit 1 }
+          New-Item -ItemType Directory -Force -Path dist-installer | Out-Null
+          Copy-Item $exe.FullName dist-installer/MasterSAT-Setup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-Setup
+          path: desktop/dist-installer/MasterSAT-Setup.exe
+          if-no-files-found: error

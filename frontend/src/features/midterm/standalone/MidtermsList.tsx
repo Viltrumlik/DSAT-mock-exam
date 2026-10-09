@@ -22,7 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { BookOpen, ChevronRight, ClipboardCheck, FileText } from "lucide-react";
+import { BookOpen, ChevronRight, ClipboardCheck, FileText, Monitor } from "lucide-react";
 import {
   fetchStandaloneOverview,
   midtermApi,
@@ -44,8 +44,9 @@ import {
   type Column,
 } from "@/features/teacher/ui";
 import { Choice, ColumnHint, FilterBar, MidtermMeta, SearchBox, ShowingLine, StatRow, Tabs, Unknown } from "./shared";
+import { BrowserAccess, browserAccessApi } from "./BrowserAccess";
 
-type ListTab = "given" | "catalog";
+type ListTab = "given" | "catalog" | "browser";
 type GivenSort = "results" | "outstanding" | "students" | "title";
 type CatalogSubject = "all" | "READING_WRITING" | "MATH";
 
@@ -97,6 +98,9 @@ export function StandaloneMidtermsList() {
       }
     }
   }, [rows, qc]);
+
+  // Same key as the tab's own list, so the count and the list share one fetch.
+  const browserAccess = useQuery({ queryKey: ["desktop", "exemptions"], queryFn: browserAccessApi.list, staleTime: 30_000 });
 
   const [tab, setTab] = useState<ListTab>("given");
   const [givenQuery, setGivenQuery] = useState("");
@@ -252,10 +256,13 @@ export function StandaloneMidtermsList() {
         items={[
           { id: "given", label: "Given out", count: givenRows.length, icon: <ClipboardCheck size={14} aria-hidden /> },
           { id: "catalog", label: "All midterms", count: items.length, icon: <BookOpen size={14} aria-hidden /> },
+          { id: "browser", label: "Browser access", count: browserAccess.data?.length ?? 0, icon: <Monitor size={14} aria-hidden /> },
         ]}
       />
 
-      {tab === "given" ? (
+      {tab === "browser" ? (
+        <BrowserAccess />
+      ) : tab === "given" ? (
         <GivenOut
           rows={visibleGiven}
           total={givenRows.length}

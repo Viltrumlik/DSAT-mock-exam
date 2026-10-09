@@ -16,9 +16,9 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
-from .versioning import PLATFORM_IOS, parse_version
+from .versioning import PLATFORM_IOS, PLATFORM_WINDOWS, parse_version
 
-PLATFORM_CHOICES = [(PLATFORM_IOS, "iOS")]
+PLATFORM_CHOICES = [(PLATFORM_IOS, "iOS"), (PLATFORM_WINDOWS, "Windows")]
 
 
 class AppReleasePolicy(models.Model):

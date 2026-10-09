@@ -11,6 +11,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SHELL_AWAY_EVENT } from "@/lib/desktop/bridge";
+
 import { useOffscreenGuard, type OffscreenGuard } from "../hooks/useOffscreenGuard";
 import {
   markSelfFullscreenTransition,
@@ -428,6 +430,25 @@ describe("useOffscreenGuard — report exactly what the student did", () => {
     });
     expect(h.current.countdown).toBeNull();
     expect(report).toHaveBeenCalledTimes(1); // nothing escalates once they are back
+    h.unmount();
+  });
+
+  it("counts the Windows app's own away signal (a second monitor) as leaving, once", async () => {
+    const h = await arm(mount());
+    // The window keeps focus and stays visible — only the shell knows something is wrong.
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(SHELL_AWAY_EVENT, { detail: { away: true } }));
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(report).toHaveBeenCalledTimes(1);
+    expect(h.current.countdown).not.toBeNull();
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(SHELL_AWAY_EVENT, { detail: { away: false } }));
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(h.current.countdown).toBeNull();
+    expect(h.current.notice).not.toBeNull();
     h.unmount();
   });
 });
