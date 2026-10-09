@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MasterSAT</title>
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body {
+        display: flex; align-items: center; justify-content: center;
+        font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+        background: #ffffff; color: #0f172a;
+      }
+      .wrap { text-align: center; padding: 2rem; }
+      h1 { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 .5rem; }
+      p { color: #64748b; font-weight: 500; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <!--
+      This page is only ever shown when the app cannot reach https://mastersat.uz — the window
+      loads the live site directly (see tauri.conf.json → app.windows[0].url). Tauri still needs a
+      local `frontendDist`, so this is it: an honest "you're offline" screen, never the real app.
+    -->
+    <div class="wrap">
+      <h1>MasterSAT</h1>
+      <p>Can&rsquo;t reach the internet. Check your connection and reopen the app.</p>
+    </div>
+  </body>
+</html>
