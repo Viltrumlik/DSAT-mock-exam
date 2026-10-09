@@ -16,7 +16,10 @@
 //! the contract in `backend/desktop/proof.py`. Changing either side alone breaks a real exam.
 
 mod lockdown;
-mod proof;
+
+// The proof is its own crate (crates/proof) so its shared vectors can be tested without Tauri;
+// `proof::` here is that crate.
+use mastersat_proof as proof;
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

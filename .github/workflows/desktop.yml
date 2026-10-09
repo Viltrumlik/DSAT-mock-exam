@@ -37,19 +37,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
-      # `tauri icon` first: tauri-build / generate_context! embed the window icon at compile time,
-      # so the icons must exist before cargo touches the crate.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-      - name: Install CLI and generate icons
-        working-directory: desktop
-        run: |
-          npm ci
-          npm run icons
-      - name: cargo test (proof.rs shared vectors)
+      # Only the proof crate — no Tauri, so no Node, no icons, and no GTK/WebKit system libs.
+      - name: cargo test -p mastersat-proof (shared vectors)
         working-directory: desktop/src-tauri
-        run: cargo test --locked || cargo test
+        run: cargo test -p mastersat-proof
 
   build:
     name: installer (Windows)

@@ -1,0 +1,15 @@
+[package]
+name = "mastersat-proof"
+version = "0.1.0"
+description = "The MasterSAT lockdown proof — the Rust half of backend/desktop/proof.py."
+edition = "2021"
+rust-version = "1.77"
+
+# Deliberately tiny and Tauri-free: the shared proof vectors must compile and run anywhere
+# (`cargo test -p mastersat-proof`) without the GUI stack the app itself needs.
+
+[dependencies]
+hmac = "0.12"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"

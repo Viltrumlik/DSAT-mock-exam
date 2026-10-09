@@ -4,8 +4,8 @@
 //! PKCE challenge are identical, and the unit tests below run the *same* fixed vectors as
 //! `tests_desktop.ProofVectorTests` — if either half drifts, one of these tests goes red.
 //!
-//! Pure functions only: no Tauri, no Windows, no I/O. That keeps them trivially testable and lets
-//! them compile and run on any host (so `cargo test` is meaningful even off Windows).
+//! Its own crate on purpose: pure functions, no Tauri and no Windows, so the vectors compile and
+//! run anywhere (`cargo test -p mastersat-proof`) in seconds without the app's GUI stack.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use hmac::{Hmac, Mac};

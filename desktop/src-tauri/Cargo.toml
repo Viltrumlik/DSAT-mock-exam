@@ -6,6 +6,11 @@ authors = ["MasterSAT"]
 edition = "2021"
 rust-version = "1.77"
 
+# The proof lives in its own member crate so its shared vectors can be tested without Tauri or
+# the Linux GUI stack (`cargo test -p mastersat-proof`). The root package is a member implicitly.
+[workspace]
+members = ["crates/proof"]
+
 # A plain binary crate. This shell is Windows-only (midterms are sat on school laptops), so there
 # is no mobile entry point and no library split — `main.rs` is the whole program.
 
@@ -30,11 +35,10 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# The lockdown proof, byte-for-byte the same arithmetic as backend/desktop/proof.py. Cross-checked
-# against the shared vectors in proof.rs's own tests.
-hmac = "0.12"
-sha2 = "0.10"
-hex = "0.4"
+# The lockdown proof — byte-for-byte the same arithmetic as backend/desktop/proof.py, in its own
+# Tauri-free crate so the shared vectors test fast on any host.
+mastersat-proof = { path = "crates/proof" }
+# base64 for the PKCE verifier, rand to generate it.
 base64 = "0.22"
 rand = "0.8"
 
