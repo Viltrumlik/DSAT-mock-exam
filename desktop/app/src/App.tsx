@@ -5,9 +5,8 @@ import { YourTests } from "./screens/YourTests";
 import { Offline } from "./screens/Offline";
 import { useOnline } from "./lib/useOnline";
 import { Spinner } from "./components/ui/Spinner";
-import { ExamRunner } from "./exam/ExamRunner";
-import { mockAttempt } from "./exam/mock";
-import type { Attempt } from "./exam/types";
+import { ExamScreen } from "./exam/ExamScreen";
+import type { ExamSource } from "./exam/examApi";
 
 /**
  * The native app frame + router. The shell is bundled and always loads; connectivity gates only
@@ -21,16 +20,16 @@ import type { Attempt } from "./exam/types";
 function Root() {
   const online = useOnline();
   const { status } = useAuth();
-  const [runner, setRunner] = useState<Attempt | null>(null);
+  const [runner, setRunner] = useState<ExamSource | null>(null);
 
   if (status === "loading") return <BootSplash />;
   // The runner stays mounted through a brief connectivity blip — a dropped second must never
   // throw a student out of a test — so it is checked before the offline screen.
   if (status === "signedin" && runner) {
-    return <ExamRunner attempt={runner} onExit={() => setRunner(null)} />;
+    return <ExamScreen source={runner} onExit={() => setRunner(null)} />;
   }
   if (!online) return <Offline onRetry={() => window.location.reload()} />;
-  if (status === "signedin") return <YourTests onStart={(kind) => setRunner(mockAttempt(kind))} />;
+  if (status === "signedin") return <YourTests onStart={setRunner} />;
   return <SignIn />;
 }
 

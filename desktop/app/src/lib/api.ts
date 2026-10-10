@@ -159,6 +159,14 @@ async function request(path: string, method: string, body?: unknown, withAuth = 
   }
 }
 
+/** Low-level authed helpers for feature clients (e.g. the exam runner). */
+export function apiGet(path: string): Promise<any> {
+  return request(path, "GET");
+}
+export function apiPost(path: string, body?: unknown): Promise<any> {
+  return request(path, "POST", body);
+}
+
 // ───────────────────────────── auth ─────────────────────────────
 
 /** Redeem the browser's one-time code for a session. Stores the tokens on success. */

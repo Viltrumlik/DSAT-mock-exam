@@ -19,6 +19,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useAuth } from "@/lib/useAuth";
 import { useResource } from "@/lib/useResource";
 import { loadPastpapers, me, myMidterms } from "@/lib/api";
+import type { ExamSource } from "@/exam/examApi";
 import { native } from "@/lib/native";
 import {
   bucketMidterms,
@@ -47,7 +48,7 @@ import {
 const BRAND = "#2a68c0"; // primary — Reading & Writing / US accent
 const TEAL = "#0d9488"; // Mathematics / International accent
 
-export function YourTests({ onStart }: { onStart: (kind: "rw" | "math") => void }) {
+export function YourTests({ onStart }: { onStart: (source: ExamSource) => void }) {
   const { signOut } = useAuth();
   const profile = useResource(me);
   const version = useResource(() => native.appInfo());
@@ -125,7 +126,7 @@ export function YourTests({ onStart }: { onStart: (kind: "rw" | "math") => void 
                         key={`${m.midterm_id}-${g.kind}`}
                         m={m}
                         kind={g.kind}
-                        onStart={() => onStart(isRW(m.subject) ? "rw" : "math")}
+                        onStart={() => onStart({ base: "midterms", id: m.midterm_id, kind: isRW(m.subject) ? "rw" : "math" })}
                       />
                     ))}
                   </div>
@@ -156,7 +157,7 @@ export function YourTests({ onStart }: { onStart: (kind: "rw" | "math") => void 
                         onOpen={() =>
                           row.state.status === "completed"
                             ? comingSoon()
-                            : onStart(isRW(row.section.subject) ? "rw" : "math")
+                            : onStart({ base: "exams", id: row.section.id, kind: isRW(row.section.subject) ? "rw" : "math" })
                         }
                       />
                     ))}
