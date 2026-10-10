@@ -52,7 +52,7 @@ const CALENDAR: SupportCalendar = {
   days: 4, open_hour: 8, close_hour: 18, dates: [localDate(today), localDate(tomorrow)],
   allowance: { upcoming: 1, max_upcoming: 2, max_per_day: 1, taken_days: [], can_book: true },
   teachers: [{
-    id: 9, name: "Dilafruz Karimova", photo_url: null,
+    id: 9, name: "Dilafruz Karimova", photo_url: null, subject: "english",
     classrooms: [{ id: 34, name: "SAT English · Group 4" }],
     days: [
       { date: localDate(tomorrow), hours: [
@@ -72,6 +72,7 @@ function booking(id: number, status: SupportBooking["status"], rating: number | 
     rating, rating_comment: "", rated_at: null, teacher_note: "",
     slot: {
       id: 100 + id, support_teacher_id: 9, support_teacher: "Dilafruz Karimova",
+      support_teacher_subject: "english",
       starts_at: at(tomorrow, 15), ends_at: at(tomorrow, 16), capacity: 1, note: "", is_cancelled: false,
     },
   };
@@ -120,6 +121,32 @@ describe("SupportBookingPage", () => {
     expect(host.textContent).toContain("Fully booked");
     expect(host.textContent).toContain("Not available");
     expect(host.querySelectorAll('[aria-label^="Book "]')).toHaveLength(1);
+  });
+
+  it("names the subject each support teacher covers, on the calendar and on every session", async () => {
+    await render();
+
+    const subjects = Array.from(host.querySelectorAll("span")).filter(
+      (s) => s.textContent === "Subject: English",
+    );
+    // One on the teacher's week, one on each of the three sessions below it.
+    expect(subjects).toHaveLength(4);
+  });
+
+  it("calls a teacher who covers both subjects by both, and says nothing when there is none", async () => {
+    hooks.useSupportCalendar.mockReturnValue(loaded({
+      ...CALENDAR,
+      teachers: [
+        { ...CALENDAR.teachers[0], subject: "both" },
+        { ...CALENDAR.teachers[0], id: 10, name: "Bekzod Aliyev", subject: null },
+      ],
+    }));
+    hooks.useMySupportBookings.mockReturnValue(loaded([]));
+    await render();
+
+    expect(host.textContent).toContain("Math & English");
+    expect(host.textContent).toContain("Bekzod Aliyev");
+    expect(host.textContent?.match(/Subject: /g)).toHaveLength(1);
   });
 
   it("opens the confirm panel named after the picked hour, with the teacher's note", async () => {

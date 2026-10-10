@@ -39,6 +39,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 
 import { HeroPage, Skeleton } from "@/components/ui";
+import { supportSubjectLabel } from "@/features/support/SupportSubject";
 import { useMySupportBookings } from "@/features/support/supportHooks";
 import { cn } from "@/lib/cn";
 
@@ -184,6 +185,7 @@ export function ServicesPage() {
 
   const nextHour = nextSupportHour(bookings.data);
   const nextDate = earliestExamDate(dates.data);
+  const nextSubject = supportSubjectLabel(nextHour?.slot.support_teacher_subject);
 
   // A failed request makes no claim either way: "Nothing booked yet" is only said once the
   // bookings have actually loaded, and a missing date list is not "none on offer".
@@ -194,7 +196,11 @@ export function ServicesPage() {
       tone="emerald"
       icon={CalendarClock}
       label="Your next hour"
-      sub={nextHour ? `with ${nextHour.slot.support_teacher}` : undefined}
+      sub={
+        nextHour
+          ? `with ${nextHour.slot.support_teacher}${nextSubject ? ` · ${nextSubject}` : ""}`
+          : undefined
+      }
     >
       {nextHour ? supportHourLabel(nextHour.slot.starts_at) : "Nothing booked yet"}
     </Fact>
