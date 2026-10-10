@@ -12,6 +12,7 @@
     "allow-lockdown-prove",
     "allow-lockdown-exit",
     "allow-lockdown-heartbeat",
+    "allow-lockdown-away-now",
     "allow-battery-status",
     "allow-auth-begin",
     "allow-auth-take-verifier",

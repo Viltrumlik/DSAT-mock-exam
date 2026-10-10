@@ -17,7 +17,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError, isTransient } from "@/lib/api";
+import { ApiError, isTransient, NetworkError } from "@/lib/api";
 import { isRunning, isTerminal, makeExamApi, parseAttempt, type ExamApi, type ExamSource } from "./examApi";
 import { asDesktopBlocked, desktopBlockReason, type DesktopBlockReason } from "./lockdown/session";
 import type { Attempt, OffscreenReport } from "./types";
@@ -50,8 +50,12 @@ export interface ExamAttempt {
   connection: Connection;
   submitting: boolean;
   save: (answers: Record<string, string>, flagged: number[]) => void;
-  submit: (answers: Record<string, string>, flagged: number[]) => Promise<void>;
+  /** `moduleId`: the module these answers belong to (defaults to the live one). */
+  submit: (answers: Record<string, string>, flagged: number[], moduleId?: number) => Promise<void>;
   start: () => Promise<void>;
+  /** Past papers: freeze the server clock / start it again. */
+  pause: () => Promise<void>;
+  resume: () => Promise<void>;
   /** Re-read the snapshot (after a re-bind). Throws on failure. */
   reload: () => Promise<void>;
   /** Retry the first load after an error screen. */
@@ -207,7 +211,11 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
 
   const flushSave = useCallback(async () => {
     let conflicts = 0;
-    while (latest.current && alive.current) {
+    let afterClose = 0;
+    while (latest.current) {
+      // The screen closed (Save & Exit) with answers still pending: they are still the student's
+      // work, so they get a few more tries — bounded, so a closed screen never keeps writing.
+      if (!alive.current && ++afterClose > 3) return;
       const p = latest.current;
       const cur = attemptRef.current;
       if (!cur || !isRunning(cur)) {
@@ -222,6 +230,12 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
         succeeded();
       } catch (e) {
         if (e instanceof ApiError && e.status === 409 && e.body?.attempt && conflicts < 3) {
+          // From a closed screen, a conflict means something newer has written since: never
+          // overwrite it with what this screen last held.
+          if (!alive.current) {
+            latest.current = null;
+            return;
+          }
           conflicts += 1;
           apply(parseAttempt(e.body.attempt)); // adopt the server's version, then go again
           continue;
@@ -251,22 +265,39 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
   );
 
   // ── submit ──────────────────────────────────────────────────────────────────
+  // After this many failures the SERVER answered (not lost replies), stop, re-read, and let the
+  // caller decide — the site caps its retries the same way.
+  const MAX_SERVER_RETRIES = 8;
   const submit = useCallback(
-    async (answers: Record<string, string>, flagged: number[]) => {
+    async (answers: Record<string, string>, flagged: number[], forModule?: number) => {
       const first = attemptRef.current;
       if (!first || !isRunning(first)) return;
-      const moduleId = moduleIdOf(first);
-      latest.current = null; // the submit carries the answers
+      const moduleId = forModule ?? moduleIdOf(first);
+      if (moduleId === moduleIdOf(first)) latest.current = null; // the submit carries the answers
       if (alive.current) setSubmitting(true);
       try {
         await run(async () => {
           let refusals = 0;
           let conflicts = 0;
+          let serverRetries = 0;
           while (alive.current) {
             const cur = attemptRef.current;
-            if (!cur || !isRunning(cur) || moduleIdOf(cur) !== moduleId) return; // already moved on
+            if (!cur || !isRunning(cur)) return;
+            if (moduleIdOf(cur) !== moduleId) {
+              // The module moved on before this landed. A past paper's server banks a stale
+              // submit's answers and no-ops the transition, so send it once; a midterm refuses ANY
+              // submit before the new module's deadline, so there is nothing to send.
+              if (source.base === "exams") {
+                try {
+                  apply(await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId, 0));
+                } catch {
+                  /* best effort: the live module's own work is unaffected */
+                }
+              }
+              return;
+            }
             try {
-              const next = await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId);
+              const next = await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId, serverRetries);
               apply(next);
               succeeded();
               return;
@@ -277,7 +308,19 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
                 continue;
               }
               if (noteBlocked(e)) throw asDesktopBlocked(e);
+              if (e instanceof NetworkError) {
+                // The reply may simply have been lost: resend under the SAME key (replay is right).
+                await transientFailure();
+                continue;
+              }
               if (isTransient(e)) {
+                // The server answered with a failure and cached it under that key: a fresh key next
+                // time, or every retry would get the cached failure back forever.
+                serverRetries += 1;
+                if (serverRetries > MAX_SERVER_RETRIES) {
+                  await api.getStatus(cur.id).then(apply).catch(() => {});
+                  throw e;
+                }
                 await transientFailure();
                 continue;
               }
@@ -294,8 +337,20 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
         if (alive.current) setSubmitting(false);
       }
     },
-    [api, apply, noteBlocked, run, succeeded, transientFailure],
+    [api, apply, noteBlocked, run, source.base, succeeded, transientFailure],
   );
+
+  // ── pause (past papers) ─────────────────────────────────────────────────────
+  const pause = useCallback(async () => {
+    const id = idRef.current;
+    if (id == null) return;
+    apply(await api.pause(id));
+  }, [api, apply]);
+  const resume = useCallback(async () => {
+    const id = idRef.current;
+    if (id == null) return;
+    apply(await api.resumePause(id));
+  }, [api, apply]);
 
   // ── start ───────────────────────────────────────────────────────────────────
   const start = useCallback(async () => {
@@ -381,6 +436,8 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
     save,
     submit,
     start,
+    pause,
+    resume,
     reload,
     retryLoad: () => void load(),
     applyAttempt: apply,

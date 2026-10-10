@@ -112,12 +112,18 @@ export function useLockdown(attemptId: number | null): Lockdown {
       } catch {
         return;
       }
-      if (cancelled || still !== false || recovering) return;
+      // `lockedRef` too, not just `cancelled`: a release() that landed between this beat and the
+      // effect cleanup must never be undone by a re-lock.
+      if (cancelled || !lockedRef.current || still !== false || recovering) return;
       // The watchdog let go. Lock again at once; this needs no network.
       recovering = true;
       try {
         const report = await native.lockdownEnter();
-        if (cancelled) return;
+        if (cancelled || !lockedRef.current) {
+          // Released while the re-lock was in flight: undo it rather than hold the student.
+          if (report.ok) void native.lockdownExit().catch(() => {});
+          return;
+        }
         if (!report.ok) {
           lockedRef.current = false;
           setLocked(false);

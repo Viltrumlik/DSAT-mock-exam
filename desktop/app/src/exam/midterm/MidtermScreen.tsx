@@ -12,10 +12,10 @@
  *
  * Importer: App.tsx.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Spinner } from "@/components/ui/Spinner";
-import { ApiError, displayName, me } from "@/lib/api";
+import { ApiError, displayName, ensureFreshSession, isTransient, me } from "@/lib/api";
 import { DEV_MOCK } from "@/lib/env";
 import { ExamRunner } from "../ExamRunner";
 import { Centered, DoneScreen } from "../ExamScreen";
@@ -46,6 +46,11 @@ type Step = "rules" | "code" | "precheck";
 /** How long the forfeit explanation stays before moving on by itself (the site's 6 s). */
 const FORFEIT_HOLD_MS = 6000;
 
+/** Before locking, make sure the session outlives a long midterm, so no refresh happens mid-paper. */
+const SESSION_RUNWAY_S = 2.5 * 3600;
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: () => void }) {
   const ex = useExamAttempt(source, { headers: lockdownHeaders, poll: true, retryEarlySubmit: true });
   const lock = useLockdown(ex.attemptId);
@@ -60,6 +65,9 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
   // The bind answered 426: this build is below the server's minimum. Its own screen, not a line of
   // red text under the checklist — the site's update screen was unreachable for exactly that reason.
   const [updateRequired, setUpdateRequired] = useState(false);
+  // A pre-check-driven lock + bind is in flight. The silent re-bind must not race it: it would swap
+  // the pre-check (and the error it is about to show) for a spinner.
+  const bindingRef = useRef(false);
 
   const a = ex.attempt;
   const id = ex.attemptId;
@@ -84,17 +92,29 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
 
   // Is an access code needed? Asked once, while the sitting hasn't begun. A 403 means yes; a blip
   // means "assume yes", so no classroom student is told to start without a code they'll be asked for.
+  // The answer is kept as a promise too: a student who continues before it lands waits for it,
+  // instead of being sent to a code screen they don't need.
+  const codeProbe = useRef<Promise<boolean> | null>(null);
+  const probeCode = useCallback((): Promise<boolean> => {
+    if (!codeProbe.current) {
+      codeProbe.current =
+        id == null
+          ? Promise.resolve(true)
+          : ex.api
+              .verifyCode(id, "")
+              .then((r) => r.requires_code)
+              .catch(() => true);
+      void codeProbe.current.then((needs) => setRequiresCode(needs));
+    }
+    return codeProbe.current;
+  }, [id, ex.api]);
   useEffect(() => {
-    if (id == null || a?.current_state !== "NOT_STARTED" || requiresCode !== null) return;
-    let cancelled = false;
-    ex.api
-      .verifyCode(id, "")
-      .then((r) => !cancelled && setRequiresCode(r.requires_code))
-      .catch(() => !cancelled && setRequiresCode(true));
-    return () => {
-      cancelled = true;
-    };
-  }, [id, a?.current_state, requiresCode, ex.api]);
+    if (id != null && a?.current_state === "NOT_STARTED") void probeCode();
+  }, [id, a?.current_state, probeCode]);
+  const proceedFromRules = async () => {
+    const needs = requiresCode ?? (await probeCode());
+    setStep(needs ? "code" : "precheck");
+  };
 
   // The paper is in — however it got there — so the machine is released.
   useEffect(() => {
@@ -119,8 +139,9 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
         .finally(() => setRebinding(false));
     };
     if (b === "desktop_required") {
-      // The server wants a token this window doesn't hold. Still locked → just fetch one.
-      if (lock.locked) silentRebind();
+      // The server wants a token this window doesn't hold, mid-paper, while still locked → just
+      // fetch one. Not on the resume path (no paper on screen yet): its pre-check binds itself.
+      if (lock.locked && running && !bindingRef.current) silentRebind();
     } else if (b === "desktop_session_replaced") {
       // Our OWN last bind may have landed unseen (its reply was lost): re-bind once rather than
       // tell the student the paper moved. Otherwise the newest session wins and we step aside.
@@ -150,6 +171,26 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
     return () => clearTimeout(t);
   }, [forfeited, forfeitSeen]);
 
+  // The paper was taken in: release at once, and if the forfeit reply carried no snapshot (a lost
+  // reply, then the server's "already in" answer), keep reading until the paper shows as in — the
+  // runner must never come back over a submitted paper.
+  useEffect(() => {
+    if (!forfeited) return;
+    release();
+    if (terminal) return;
+    let cancelled = false;
+    void (async () => {
+      while (!cancelled) {
+        await ex.reload().catch(() => {});
+        await sleep(2000);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [forfeited, terminal]);
+
   /**
    * A bind refusal that no amount of retrying fixes gets its own screen: 426 → update the app;
    * 409 not-live → the sitting already ended, so re-read it (it lands on the result).
@@ -157,6 +198,8 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
    */
   const bindOrRoute = async (requireBind: boolean): Promise<boolean> => {
     if (id == null) return false;
+    await ensureFreshSession(SESSION_RUNWAY_S);
+    bindingRef.current = true;
     try {
       await lock.lockAndBind(id, ex.api, { requireBind });
       return true;
@@ -172,6 +215,8 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
         return false;
       }
       throw e;
+    } finally {
+      bindingRef.current = false;
     }
   };
 
@@ -199,8 +244,18 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
     if (id == null) return;
     const requireBind = ex.blocked === "desktop_required" || a?.desktop_required === true;
     if (!(await bindOrRoute(requireBind))) return;
-    ex.clearBlocked();
-    await ex.reload();
+    // Read the snapshot FIRST (riding out a blip), and only then drop the refusal: clearing it before
+    // a read that fails left a locked student with no attempt on a misleading "not open" screen.
+    for (let i = 0; ; i++) {
+      try {
+        await ex.reload();
+        break;
+      } catch (e) {
+        if (!isTransient(e) || i >= 3) throw e; // the pre-check shows it; still locked, can retry
+        await sleep(800 * (i + 1));
+      }
+    }
+    ex.clearBlocked(); // flushes any answers held back while refused
   };
 
   const devPanel = DEV_MOCK && import.meta.env.DEV ? <DevLockdownPanel /> : null;
@@ -223,13 +278,16 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
     return screen(
       <LockErrorScreen
         title="This midterm couldn’t be opened"
-        body="Check your connection and try again. Nothing has started yet."
+        body="Check your connection and try again. Anything you’ve answered is saved."
         onRetry={ex.retryLoad}
         onHome={exit}
       />,
     );
   }
-  if (forfeited && !forfeitSeen) return screen(<OffscreenTerminatedScreen onContinue={() => setForfeitSeen(true)} />);
+  // The forfeit explanation stays until BOTH its moment has passed and the paper reads as in.
+  if (forfeited && (!forfeitSeen || !terminal)) {
+    return screen(<OffscreenTerminatedScreen onContinue={() => setForfeitSeen(true)} />);
+  }
   if (terminal && a) return screen(<DoneScreen attempt={a} onExit={exit} />);
   if (rebinding) {
     return screen(
@@ -284,7 +342,7 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
       <MidtermRulesScreen
         attempt={a}
         requiresCode={requiresCode !== false}
-        onProceed={() => setStep(requiresCode === false ? "precheck" : "code")}
+        onProceed={() => void proceedFromRules()}
       />,
     );
   }

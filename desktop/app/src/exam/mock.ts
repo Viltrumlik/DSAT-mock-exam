@@ -119,6 +119,8 @@ export interface MockEngine {
   save(answers: Record<string, string>, flagged: number[], headers: Record<string, string>): Promise<Attempt>;
   submitModule(answers: Record<string, string>, flagged: number[], moduleId: number, headers: Record<string, string>): Promise<Attempt>;
   offscreen(key: string, headers: Record<string, string>): Promise<OffscreenReport>;
+  pause(): Promise<Attempt>;
+  resumePause(): Promise<Attempt>;
   challenge(): Promise<{ nonce: string }>;
   openSession(body: { nonce: string } & LockdownProof): Promise<{ lockdown_session: string; required: boolean }>;
 }
@@ -150,16 +152,30 @@ export function createMockEngine(kind: "rw" | "math", opts: { midterm?: boolean 
   let requiredBound = false;
   let seq = 0;
   const offscreenReplies = new Map<string, OffscreenReport>();
+  // Past-paper pause, as the exams backend banks it: the paused window doesn't count.
+  let pausedAt: number | null = null;
+  let pausedMs = 0;
 
-  const moduleSeconds = () => (midterm && devLockdown.get().shortModule ? 20 : b.minutes * 60);
+  const moduleSeconds = () => (devLockdown.get().shortModule ? 20 : b.minutes * 60);
   const live = () => state === "NOT_STARTED" || state === "MODULE_1_ACTIVE" || state === "MODULE_2_ACTIVE";
   const active = () => state === "MODULE_1_ACTIVE" || state === "MODULE_2_ACTIVE";
-  const remaining = () => Math.max(0, Math.ceil(moduleSeconds() - (Date.now() - moduleStartedAt) / 1000));
+  const elapsedMs = () => Date.now() - moduleStartedAt - pausedMs - (pausedAt != null ? Date.now() - pausedAt : 0);
+  const remaining = () => Math.max(0, Math.ceil(moduleSeconds() - elapsedMs() / 1000));
   const applies = () => midterm && devLockdown.get().desktopRequired && live() && (state === "NOT_STARTED" || requiredBound);
 
   /** A dropped connection (dev panel), after a little realistic latency. */
   const net = async () => {
-    await new Promise((r) => setTimeout(r, 120));
+    // A hidden tab (a backgrounded dev window, an automation pane) throttles timers to seconds or
+    // minutes, which turns 120 ms of fake latency into a stalled "server". Yield without a timer then.
+    if (typeof document !== "undefined" && document.hidden) {
+      await new Promise<void>((r) => {
+        const c = new MessageChannel();
+        c.port1.onmessage = () => r();
+        c.port2.postMessage(0);
+      });
+    } else {
+      await new Promise((r) => setTimeout(r, 120));
+    }
     if (devLockdown.takeDrop()) throw new NetworkError("dev: connection dropped");
   };
 
@@ -226,7 +242,7 @@ export function createMockEngine(kind: "rw" | "math", opts: { midterm?: boolean 
       current_module_flagged_questions: running ? savedFlags : [],
       is_completed: completed,
       is_expired: running && remaining() <= 0,
-      is_paused: false,
+      is_paused: pausedAt != null,
       can_submit: running,
       score,
       ...(midterm
@@ -304,6 +320,8 @@ export function createMockEngine(kind: "rw" | "math", opts: { midterm?: boolean 
         module = 2;
         state = "MODULE_2_ACTIVE";
         moduleStartedAt = Date.now();
+        pausedAt = null; // a new module always begins running
+        pausedMs = 0;
         savedAnswers = {};
         savedFlags = [];
       } else {
@@ -335,6 +353,21 @@ export function createMockEngine(kind: "rw" | "math", opts: { midterm?: boolean 
       }
       offscreenReplies.set(key, reply);
       return reply;
+    },
+
+    async pause() {
+      await net();
+      if (active() && pausedAt == null) pausedAt = Date.now();
+      return snapshot();
+    },
+
+    async resumePause() {
+      await net();
+      if (pausedAt != null) {
+        pausedMs += Date.now() - pausedAt;
+        pausedAt = null;
+      }
+      return snapshot();
     },
 
     async challenge() {

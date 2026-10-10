@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
@@ -16,9 +16,41 @@ import type { Attempt } from "./types";
  * Importers: App.tsx; midterm/MidtermScreen.tsx (Centered, DoneScreen).
  */
 export function ExamScreen({ source, onExit }: { source: ExamSource; onExit: () => void }) {
-  // The pastpaper backend starts an attempt on create; autoStart only covers one that didn't.
-  const { attempt, status, submitting, save, submit } = useExamAttempt(source, { autoStart: true });
+  // A fresh past-paper attempt is NOT_STARTED after create (the server holds the timer), so it is
+  // started as soon as it loads.
+  const { attempt, status, submitting, save, submit, pause, resume } = useExamAttempt(source, { autoStart: true });
   const [studentName, setStudentName] = useState("");
+
+  // ── Pause (as the site): a real server pause that freezes the clock ──────────
+  const [paused, setPaused] = useState(false);
+  // Adopt the server's word once per attempt — a paper left with Save & Exit comes back paused.
+  const syncedPause = useRef<number | null>(null);
+  useEffect(() => {
+    if (!attempt || syncedPause.current === attempt.id) return;
+    syncedPause.current = attempt.id;
+    setPaused(attempt.is_paused);
+  }, [attempt]);
+  // A new module always begins running (the server clears a pause at the boundary).
+  const moduleId = attempt?.current_module_details?.id;
+  const prevModule = useRef(moduleId);
+  useEffect(() => {
+    if (prevModule.current !== undefined && moduleId !== prevModule.current) setPaused(false);
+    prevModule.current = moduleId;
+  }, [moduleId]);
+  const togglePause = async () => {
+    const next = !paused;
+    setPaused(next); // optimistic: the clock freezes at once
+    try {
+      await (next ? pause() : resume());
+    } catch {
+      setPaused(!next);
+    }
+  };
+  // Save & Exit freezes the server clock too, so coming back resumes with the time that was left.
+  const saveAndExit = async () => {
+    if (!paused) await pause().catch(() => {});
+    onExit();
+  };
   useEffect(() => {
     let alive = true;
     me()
@@ -63,7 +95,9 @@ export function ExamScreen({ source, onExit }: { source: ExamSource; onExit: () 
       submitting={submitting}
       onSave={save}
       onSubmit={submit}
-      onExit={onExit}
+      onExit={() => void saveAndExit()}
+      paused={paused}
+      onTogglePause={() => void togglePause()}
     />
   );
 }

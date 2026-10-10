@@ -54,12 +54,19 @@ export function ExamRunner({
   banner,
   inert = false,
   onTransitionChange,
+  paused = false,
+  onTogglePause,
 }: {
   attempt: Attempt;
   submitting: boolean;
   onSave: (answers: Record<string, string>, flagged: number[]) => void;
-  onSubmit: (answers: Record<string, string>, flagged: number[]) => Promise<void> | void;
+  /** `moduleId` is the module these answers belong to — the server no-ops a submit for a stale one. */
+  onSubmit: (answers: Record<string, string>, flagged: number[], moduleId: number) => Promise<void> | void;
   onExit: () => void;
+  /** Past papers: the clock is frozen (the server's pause, owned by the parent). */
+  paused?: boolean;
+  /** Past papers: Pause/Resume. Absent → no Pause pill (a midterm cannot be paused). */
+  onTogglePause?: () => void;
   mode?: "practice" | "midterm";
   /** The signed-in student, shown bottom-left as on the site. */
   studentName?: string;
@@ -75,10 +82,10 @@ export function ExamRunner({
   const isMidterm = mode === "midterm";
   const mod = attempt.current_module_details;
   const r = useRunner(attempt);
-  const remaining = useCountdown(attempt);
+  const countdown = useCountdown(attempt, paused);
+  const remaining = countdown.remaining;
 
   const [timerHidden, setTimerHidden] = useState(false);
-  const [paused, setPaused] = useState(false);
   const [eliminationMode, setEliminationMode] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [navOpen, setNavOpen] = useState(false);
@@ -124,15 +131,23 @@ export function ExamRunner({
     onTransitionChange?.(transitioning);
   }, [transitioning, onTransitionChange]);
 
-  // Time is up: the module submits itself, once per module. A midterm has no other way in — the
-  // server refuses an early hand-in — and on a past paper it is what the clock running out means.
+  // Time is up: the module submits itself. A midterm has no other way in — the server refuses an
+  // early hand-in — and on a past paper it is what the clock running out means. It acts only on
+  // the countdown OF THIS MODULE (never a stale 0 from the one before), never while paused, and
+  // carries this module's id. A failed attempt re-arms after a pause, so a definite refusal can't
+  // leave a locked student sitting on 0:00 with no way forward.
   const autoSubmitted = useRef<number | null>(null);
   useEffect(() => {
-    if (remaining > 0 || !mod || autoSubmitted.current === mod.id) return;
-    autoSubmitted.current = mod.id;
-    void Promise.resolve(onSubmit(answersOut(), flaggedOut())).catch(() => {});
+    if (!mod || paused || countdown.moduleId !== mod.id || remaining > 0 || autoSubmitted.current === mod.id) return;
+    const moduleId = mod.id;
+    autoSubmitted.current = moduleId;
+    void Promise.resolve(onSubmit(answersOut(), flaggedOut(), moduleId)).catch(() => {
+      setTimeout(() => {
+        if (autoSubmitted.current === moduleId) autoSubmitted.current = null;
+      }, 10_000);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining, mod?.id]);
+  }, [remaining, mod?.id, countdown.moduleId, paused]);
 
   // While the off-screen warning covers the paper, nothing under it may take a click or a key.
   const rootRef = useRef<HTMLDivElement>(null);
@@ -187,7 +202,13 @@ export function ExamRunner({
   const q = mod.questions[index];
   const isLastModule = mod.module_order >= (attempt.practice_test_details.modules?.length ?? 2);
   const subjectLabel = isMath ? "Mathematics" : "Reading & Writing";
-  const submit = () => void Promise.resolve(onSubmit(answersOut(), flaggedOut())).catch(() => {});
+  const submit = () => void Promise.resolve(onSubmit(answersOut(), flaggedOut(), mod.id)).catch(() => {});
+  // Save & Exit flushes what is on screen first: the debounced autosave would otherwise be cleared
+  // by the unmount and take the last change with it.
+  const saveAndExit = () => {
+    onSave(answersOut(), flaggedOut());
+    onExit();
+  };
   const warning = remaining <= 300;
   const moduleTitle = `Section ${isMath ? 2 : 1}, Module ${mod.module_order}: ${isMath ? "Math" : "Reading and Writing"}`;
 
@@ -213,9 +234,9 @@ export function ExamRunner({
             hidden={timerHidden}
             warning={warning}
             paused={paused}
-            canPause={!isMidterm}
+            canPause={!isMidterm && !!onTogglePause}
             onToggleHidden={() => setTimerHidden((v) => !v)}
-            onTogglePause={() => setPaused((v) => !v)}
+            onTogglePause={() => onTogglePause?.()}
           />
         </div>
 
@@ -237,7 +258,7 @@ export function ExamRunner({
               onClose={() => setMoreOpen(false)}
               onZoomIn={zoomIn}
               onZoomOut={zoomOut}
-              onSaveExit={isMidterm ? undefined : onExit}
+              onSaveExit={isMidterm ? undefined : saveAndExit}
             />
           ) : null}
         </div>

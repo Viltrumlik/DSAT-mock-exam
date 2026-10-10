@@ -244,7 +244,9 @@ export function PrecheckScreen({
       </button>
       {onBack ? (
         <div className="mt-4 text-center">
-          <button type="button" onClick={onBack} className={linkButton}>
+          {/* Not while locking: Back mid-"Locking…" let the start land behind the student, or the
+              lock engage after they had left. */}
+          <button type="button" onClick={onBack} disabled={busy} className={`${linkButton} disabled:opacity-40`}>
             <ArrowLeft className="h-4 w-4" /> Back
           </button>
         </div>

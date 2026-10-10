@@ -13,22 +13,59 @@ function initialRemaining(a: Attempt): number {
   return moduleLimitSeconds(a);
 }
 
-/** A countdown anchored to a fixed deadline, re-anchored only when the module id changes. */
-export function useCountdown(attempt: Attempt): number {
+/** Monotonic milliseconds: a wall-clock step (a Windows time sync) must not move the deadline. */
+const monoNow = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+
+export interface Countdown {
+  remaining: number;
+  /** The module this countdown is counting for — compare before acting on `remaining`. */
+  moduleId: number;
+}
+
+/**
+ * The module's countdown. Three rules, each a bug it once had:
+ *   - it belongs to ITS module: a module change re-anchors synchronously, during the render that
+ *     shows the new module — an effect-based reset left one render carrying the old module's 0,
+ *     and the 0:00 auto-submit fired again on module 2 with module 1's answers;
+ *   - it runs on the monotonic clock, so a laptop's clock jumping forward can't end a module early;
+ *   - a newer snapshot re-anchors it only DOWNWARD (the server says less time is left), because a
+ *     replayed reply can carry an old, larger remaining_seconds.
+ * While `paused` it freezes, and resumes from where it stopped.
+ */
+export function useCountdown(attempt: Attempt, paused = false): Countdown {
   const moduleId = attempt.current_module_details?.id ?? 0;
-  const deadlineRef = useRef<number>(Date.now() + initialRemaining(attempt) * 1000);
-  const [remaining, setRemaining] = useState<number>(() => initialRemaining(attempt));
+  const anchor = useRef<{ moduleId: number; deadline: number } | null>(null);
+  const frozen = useRef<number | null>(null);
+  const wasPaused = useRef(false);
+
+  if (!anchor.current || anchor.current.moduleId !== moduleId) {
+    anchor.current = { moduleId, deadline: monoNow() + initialRemaining(attempt) * 1000 };
+    frozen.current = null;
+    wasPaused.current = false;
+  }
+  if (paused && !wasPaused.current) {
+    frozen.current = Math.max(0, anchor.current.deadline - monoNow());
+  } else if (!paused && wasPaused.current && frozen.current != null) {
+    anchor.current.deadline = monoNow() + frozen.current;
+    frozen.current = null;
+  }
+  wasPaused.current = paused;
 
   useEffect(() => {
-    deadlineRef.current = Date.now() + initialRemaining(attempt) * 1000;
-    const tick = () => setRemaining(Math.max(0, Math.round((deadlineRef.current - Date.now()) / 1000)));
-    tick();
-    const t = setInterval(tick, 500);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleId]);
+    const a = anchor.current;
+    if (!a || a.moduleId !== moduleId || attempt.is_paused || typeof attempt.remaining_seconds !== "number") return;
+    const implied = monoNow() + Math.max(0, attempt.remaining_seconds) * 1000;
+    if (implied < a.deadline - 2000) a.deadline = implied;
+  }, [attempt, moduleId]);
 
-  return remaining;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const ms = frozen.current ?? anchor.current.deadline - monoNow();
+  return { remaining: Math.max(0, Math.round(ms / 1000)), moduleId };
 }
 
 function seedAnswers(a: Attempt): Record<number, string> {

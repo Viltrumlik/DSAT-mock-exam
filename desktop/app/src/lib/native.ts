@@ -65,6 +65,20 @@ if (typeof window !== "undefined") {
   });
 }
 
+/**
+ * Forget a stale "away" — OBSERVABLY. The shell resets its own away state on enter, exit and a
+ * watchdog release without dispatching anything, and the off-screen guard only re-evaluates on an
+ * event; a silent reset left it latched on "away" until it forfeited a student who was sitting at
+ * the paper. So a reset that actually changes the flag announces the return like the shell would.
+ */
+function clearShellAway(): void {
+  if (!shellAway) return;
+  shellAway = false;
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(SHELL_AWAY_EVENT, { detail: { away: false } }));
+  }
+}
+
 async function core() {
   return import("@tauri-apps/api/core");
 }
@@ -158,7 +172,7 @@ export const native = {
    * `ok:false` and NOTHING is locked. Goes fullscreen + always-on-top on success.
    */
   async lockdownEnter(): Promise<PrecheckReport> {
-    shellAway = false; // the shell resets its away state on enter without saying so
+    clearShellAway(); // the shell resets its away state on enter without saying so
     if (!IS_TAURI) return devLockdown.enter();
     const { invoke } = await core();
     return invoke<PrecheckReport>("lockdown_enter");
@@ -177,7 +191,7 @@ export const native = {
 
   /** Release everything. Safe to call when nothing is locked. */
   async lockdownExit(): Promise<void> {
-    shellAway = false;
+    clearShellAway();
     if (!IS_TAURI) {
       devLockdown.exit();
       return;
@@ -210,8 +224,22 @@ export const native = {
     return shellAway;
   },
 
-  /** Forget a stale away report — the shell resets its own on enter/exit/watchdog silently. */
+  /** Forget a stale away report (observably — see clearShellAway). */
   resetShellAway(): void {
-    shellAway = false;
+    clearShellAway();
+  },
+
+  /**
+   * Ask the shell whether the student is away RIGHT NOW and adopt the answer. Its watcher samples
+   * once a second and speaks only on a change, so on a return the cached flag can be up to a second
+   * stale — enough to charge a student who came back in time. Dev: there is no live source, so the
+   * panel's last word stands.
+   */
+  async syncShellAway(): Promise<void> {
+    if (!IS_TAURI) return;
+    const { invoke } = await core();
+    const now = await invoke<boolean>("lockdown_away_now");
+    if (now) shellAway = true;
+    else clearShellAway();
   },
 };

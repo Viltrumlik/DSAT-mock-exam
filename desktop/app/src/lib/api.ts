@@ -67,6 +67,8 @@ export const tokens = {
     } catch {
       /* ignore */
     }
+    // Whoever signs in next is a different student until proven otherwise (a shared laptop).
+    meCache = null;
   },
   has(): boolean {
     return !!this.refresh();
@@ -81,7 +83,6 @@ export function onAuthLost(cb: () => void) {
 
 export function signOut() {
   tokens.clear();
-  meCache = null;
 }
 
 // ───────────────────────────── transport ─────────────────────────────
@@ -245,6 +246,36 @@ export async function exchange(code: string, verifier: string): Promise<void> {
     throw new ApiError(0, "Sign-in didn't return a session. Please try again.");
   }
   tokens.set(data.access, data.refresh);
+  meCache = null; // a new sign-in may be a different student
+}
+
+/** Seconds until the stored access token expires (from its JWT `exp`), or null if unreadable. */
+function accessSecondsLeft(): number | null {
+  const a = tokens.access();
+  if (!a) return null;
+  try {
+    const payload = JSON.parse(atob(a.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return typeof payload.exp === "number" ? payload.exp - Date.now() / 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh now if the access token would expire within `minSeconds` — called before a midterm locks
+ * the machine, so a refresh is not needed mid-sitting at all. A refresh whose reply is lost has
+ * already rotated the token on the server, and the retry is then a definite 401 that signs the
+ * student out; doing it up front, unlocked, keeps that out of the exam. Never throws.
+ */
+export async function ensureFreshSession(minSeconds: number): Promise<void> {
+  if (DEV_MOCK) return;
+  const left = accessSecondsLeft();
+  if (left !== null && left > minSeconds) return;
+  try {
+    await refreshOnce();
+  } catch {
+    /* a failed refresh here changes nothing: the normal 401 path still applies */
+  }
 }
 
 /**

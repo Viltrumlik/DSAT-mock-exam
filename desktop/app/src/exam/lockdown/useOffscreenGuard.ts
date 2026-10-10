@@ -222,6 +222,14 @@ export function useOffscreenGuard({
         stopCountdown();
         return;
       }
+      // Ask the shell for its LIVE state before charging again: its watcher can be up to a second
+      // behind a student who just clicked back, and that second must not cost them a strike.
+      await native.syncShellAway().catch(() => {});
+      if (cancelled) return;
+      if (!isAway()) {
+        evaluate(); // they are back — closes the absence and says what it cost
+        return;
+      }
       // Rotate the key only if the server confirmed the last one.
       if (!reportFailedRef.current) eventKeyRef.current = null;
       await report();
@@ -255,18 +263,46 @@ export function useOffscreenGuard({
       );
     };
 
-    document.addEventListener("visibilitychange", evaluate);
+    // A page-level return (focus, visible again): evaluate now, then again once the shell's LIVE
+    // state is in — so a stale shell "away" can't outvote a student who is plainly back.
+    const onReturnSignal = () => {
+      evaluate();
+      void native
+        .syncShellAway()
+        .catch(() => {})
+        .then(() => {
+          if (!cancelled) evaluate();
+        });
+    };
+
+    // Arming settles the bookkeeping to reality. A previous arm can have been torn down mid-absence
+    // (a module transition, a covering screen) with `awayRef` still latched: if the student is back,
+    // the absence is closed; if still away, its grace restarts so it escalates as it should. Without
+    // this, a continuing absence was never escalated and the NEXT leave was never reported.
+    if (awayRef.current) {
+      if (!isAway()) {
+        awayRef.current = false;
+        eventKeyRef.current = null;
+        absenceRef.current += 1;
+      } else {
+        startCountdown(graceRef.current);
+      }
+    } else {
+      evaluate();
+    }
+
+    document.addEventListener("visibilitychange", onReturnSignal);
     window.addEventListener("blur", evaluate);
-    window.addEventListener("focus", evaluate);
+    window.addEventListener("focus", onReturnSignal);
     window.addEventListener(SHELL_AWAY_EVENT, evaluate);
     return () => {
       cancelled = true;
       if (confirmTimer) clearTimeout(confirmTimer);
       // The tick interval would otherwise outlive this effect and freeze the overlay at 0.
       stopCountdown();
-      document.removeEventListener("visibilitychange", evaluate);
+      document.removeEventListener("visibilitychange", onReturnSignal);
       window.removeEventListener("blur", evaluate);
-      window.removeEventListener("focus", evaluate);
+      window.removeEventListener("focus", onReturnSignal);
       window.removeEventListener(SHELL_AWAY_EVENT, evaluate);
     };
   }, [armed, terminated, attemptId, stopCountdown]);

@@ -21,7 +21,7 @@
  * verify_code, desktop_challenge and desktop_session never carry it.
  */
 import { DEV_MOCK } from "@/lib/env";
-import { apiGet, apiPost } from "@/lib/api";
+import { apiGet, apiPost, NetworkError } from "@/lib/api";
 import type { LockdownProof } from "@/lib/native";
 import { createMockEngine } from "./mock";
 import type { Attempt, AttemptState, ActiveModule, ExamQuestion, OffscreenReport, PracticeTestDetails } from "./types";
@@ -51,7 +51,18 @@ export interface ExamApi {
   /** Throws ApiError 403 for a wrong code. `verifyCode(id, "")` is the site's "is a code needed?" probe. */
   verifyCode(id: number, code: string): Promise<{ ok: boolean; requires_code: boolean }>;
   save(id: number, answers: Record<string, string>, flagged: number[], version: number, moduleId: number): Promise<Attempt>;
-  submitModule(id: number, answers: Record<string, string>, flagged: number[], version: number, moduleId: number): Promise<Attempt>;
+  /** `retry` > 0 after the server answered (a 5xx): a fresh key, so a cached failure is never replayed. */
+  submitModule(
+    id: number,
+    answers: Record<string, string>,
+    flagged: number[],
+    version: number,
+    moduleId: number,
+    retry?: number,
+  ): Promise<Attempt>;
+  /** Past papers: freeze the server's clock / start it again. */
+  pause(id: number): Promise<Attempt>;
+  resumePause(id: number): Promise<Attempt>;
   offscreen(id: number, idempotencyKey: string): Promise<OffscreenReport>;
   challenge(id: number): Promise<{ nonce: string }>;
   openSession(id: number, body: { nonce: string } & LockdownProof): Promise<LockdownSessionGrant>;
@@ -66,17 +77,38 @@ export function randomSegment(): string {
  * One start key per attempt for this run of the app (sessionStorage, like the site's
  * `ts.idem.start.{id}`), so a retried start after a lost reply replays instead of re-starting.
  */
+const startSlot = (id: number) => `ts.idem.start.${id}`;
 function startKey(id: number): string {
-  const slot = `ts.idem.start.${id}`;
   try {
-    const existing = sessionStorage.getItem(slot);
+    const existing = sessionStorage.getItem(startSlot(id));
     if (existing) return existing;
     const k = `start.${id}.${randomSegment()}`;
-    sessionStorage.setItem(slot, k);
+    sessionStorage.setItem(startSlot(id), k);
     return k;
   } catch {
     return `start.${id}.${randomSegment()}`;
   }
+}
+/** The server ANSWERED (it didn't just go missing): its reply is cached under the key, so a
+ *  refused start must not be retried under it — that would replay the refusal forever. */
+function dropStartKey(id: number): void {
+  try {
+    sessionStorage.removeItem(startSlot(id));
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * A short, stable fingerprint of a save's payload. The save key must identify the PAYLOAD, not just
+ * the version: the server replays a key's stored reply without reading the body, so a newer set of
+ * answers sent under an older save's key got the older reply back and was silently dropped.
+ */
+function payloadTag(answers: Record<string, string>, flagged: number[]): string {
+  const s = JSON.stringify([Object.keys(answers).sort().map((k) => [k, answers[k]]), [...flagged].sort((a, b) => a - b)]);
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
 }
 
 export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): ExamApi {
@@ -95,6 +127,8 @@ export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): Exam
       verifyCode: (_id, code) => engine.verifyCode(code),
       save: (id, a, f) => engine.save(a, f, extra(id)),
       submitModule: (id, a, f, _v, moduleId) => engine.submitModule(a, f, moduleId, extra(id)),
+      pause: () => engine.pause(),
+      resumePause: () => engine.resumePause(),
       offscreen: (id, key) => engine.offscreen(key, extra(id)),
       challenge: () => engine.challenge(),
       openSession: (_id, body) => engine.openSession(body),
@@ -109,7 +143,14 @@ export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): Exam
       return Number(d?.id);
     },
     getStatus: async (id) => parseAttempt(await apiGet(`${base}/${id}/status/`, { headers: extra(id) })),
-    start: async (id) => parseAttempt(await apiPost(`${base}/${id}/start/`, {}, { headers: extra(id, startKey(id)) })),
+    start: async (id) => {
+      try {
+        return parseAttempt(await apiPost(`${base}/${id}/start/`, {}, { headers: extra(id, startKey(id)) }));
+      } catch (e) {
+        if (!(e instanceof NetworkError)) dropStartKey(id); // only a lost reply may reuse the key
+        throw e;
+      }
+    },
     verifyCode: async (id, code) => {
       const d = await apiPost(`${base}/${id}/verify_code/`, { code });
       return { ok: d?.ok === true, requires_code: d?.requires_code === true };
@@ -119,19 +160,23 @@ export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): Exam
         await apiPost(
           `${base}/${id}/save_attempt/`,
           { answers, flagged, expected_version_number: version },
-          { headers: extra(id, `save.${id}.${moduleId}.v${version}`) },
+          { headers: extra(id, `save.${id}.${moduleId}.v${version}.${payloadTag(answers, flagged)}`) },
         ),
       ),
-    submitModule: async (id, answers, flagged, version, moduleId) =>
+    submitModule: async (id, answers, flagged, version, moduleId, retry = 0) =>
       parseAttempt(
         await apiPost(
           `${base}/${id}/submit_module/`,
           // module_id lets the server turn a stale/retried submit into a no-op instead of
           // finalising the NEXT module with this one's answers.
           { answers, flagged, expected_version_number: version, module_id: moduleId },
-          { headers: extra(id, `submit.${id}.${moduleId}.v${version}`) },
+          // Same key for a resend after a LOST reply (replay is what we want); a fresh one after the
+          // server answered with a failure, which it caches — the site does the same (`.r{n}`).
+          { headers: extra(id, `submit.${id}.${moduleId}.v${version}${retry > 0 ? `.r${retry}` : ""}`) },
         ),
       ),
+    pause: async (id) => parseAttempt(await apiPost(`${base}/${id}/pause/`, {})),
+    resumePause: async (id) => parseAttempt(await apiPost(`${base}/${id}/resume_pause/`, {})),
     offscreen: async (id, key) => (await apiPost(`${base}/${id}/offscreen/`, {}, { headers: extra(id, key) })) ?? {},
     challenge: async (id) => {
       const d = await apiPost(`${base}/${id}/desktop_challenge/`, {});

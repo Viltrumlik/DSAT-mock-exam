@@ -145,3 +145,8 @@ export const devLockdown = {
     return true;
   },
 };
+
+// Dev only: reachable from the console (and a test script) on any screen, not just under the panel.
+if (import.meta.env.DEV && typeof window !== "undefined") {
+  (window as unknown as { __devLockdown: typeof devLockdown }).__devLockdown = devLockdown;
+}

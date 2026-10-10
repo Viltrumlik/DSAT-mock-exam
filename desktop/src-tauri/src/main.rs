@@ -219,6 +219,16 @@ fn lockdown_heartbeat(state: State<AppState>) -> bool {
     }
 }
 
+/// Is the student away RIGHT NOW (foreground not ours, or a second screen)? The away watcher only
+/// samples once a second and speaks only on a change, so a student who clicks back in the last
+/// second of a grace window would otherwise be charged for the watcher's lag. The page asks this
+/// on every return and before it escalates. Always false while not locked.
+#[tauri::command]
+fn lockdown_away_now(state: State<AppState>) -> bool {
+    let active = state.shared.lock().map(|s| s.active).unwrap_or(false);
+    active && (!lockdown::foreground_is_ours() || lockdown::monitor_count() > 1)
+}
+
 #[tauri::command]
 fn battery_status() -> Option<BatteryStatus> {
     lockdown::battery()
@@ -374,6 +384,7 @@ fn main() {
             lockdown_prove,
             lockdown_exit,
             lockdown_heartbeat,
+            lockdown_away_now,
             battery_status,
             auth_begin,
             auth_take_verifier,
