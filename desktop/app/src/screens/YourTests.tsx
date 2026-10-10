@@ -47,7 +47,7 @@ import {
 const BRAND = "#2a68c0"; // primary — Reading & Writing / US accent
 const TEAL = "#0d9488"; // Mathematics / International accent
 
-export function YourTests() {
+export function YourTests({ onStart }: { onStart: (kind: "rw" | "math") => void }) {
   const { signOut } = useAuth();
   const profile = useResource(me);
   const version = useResource(() => native.appInfo());
@@ -121,7 +121,12 @@ export function YourTests() {
                   <GroupLabel>{g.label}</GroupLabel>
                   <div className="flex flex-col gap-3">
                     {g.rows.map((m) => (
-                      <MidtermRowCard key={`${m.midterm_id}-${g.kind}`} m={m} kind={g.kind} onStart={comingSoon} />
+                      <MidtermRowCard
+                        key={`${m.midterm_id}-${g.kind}`}
+                        m={m}
+                        kind={g.kind}
+                        onStart={() => onStart(isRW(m.subject) ? "rw" : "math")}
+                      />
                     ))}
                   </div>
                 </div>
@@ -144,7 +149,16 @@ export function YourTests() {
                   <GroupLabel>{group.name}</GroupLabel>
                   <div className="grid grid-cols-[repeat(auto-fill,minmax(290px,1fr))] gap-4">
                     {group.items.map((row) => (
-                      <BookletCard key={row.section.id} section={row.section} state={row.state} onOpen={comingSoon} />
+                      <BookletCard
+                        key={row.section.id}
+                        section={row.section}
+                        state={row.state}
+                        onOpen={() =>
+                          row.state.status === "completed"
+                            ? comingSoon()
+                            : onStart(isRW(row.section.subject) ? "rw" : "math")
+                        }
+                      />
                     ))}
                   </div>
                 </div>
