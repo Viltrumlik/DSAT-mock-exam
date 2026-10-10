@@ -110,21 +110,23 @@ class AuthExchangeView(APIView):
         refresh = RefreshToken.for_user(user)
         access_str = str(refresh.access_token)
         refresh_str = str(refresh)
-        # The native app has no cookie jar on its local origin, so it reads the session from the
-        # body (exactly as /api/auth/refresh/ does for native clients). A browser caller gets
-        # {"ok": True} and the HttpOnly cookies, unchanged.
-        body = {"ok": True}
+        # The native app holds the pair itself and sends `Authorization: Bearer`, so it gets the
+        # tokens in the body and NO cookie — exactly as login and /api/auth/refresh/ treat native
+        # clients. Planting a cookie would be worse than useless: the app's HTTP client keeps a
+        # cookie jar, and a request that carries an auth cookie is no longer a native one, so every
+        # POST after sign-in would hit the browser CSRF rule. A browser caller gets {"ok": True}
+        # and the HttpOnly cookies, unchanged.
         if is_native_client(request):
-            body["access"] = access_str
-            body["refresh"] = refresh_str
-        resp = Response(body)
-        set_auth_cookies(
-            response=resp,
-            request=request,
-            access=access_str,
-            refresh=refresh_str,
-            remember_me=True,
-        )
+            resp = Response({"ok": True, "access": access_str, "refresh": refresh_str})
+        else:
+            resp = Response({"ok": True})
+            set_auth_cookies(
+                response=resp,
+                request=request,
+                access=access_str,
+                refresh=refresh_str,
+                remember_me=True,
+            )
         # Recorded like every other sign-in, so the laptop shows up in the student's session
         # list and "sign out everywhere" reaches it.
         try:
