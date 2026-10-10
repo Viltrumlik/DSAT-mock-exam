@@ -304,6 +304,19 @@ class SignInWithBrowserTests(TestCase):
         self.assertIn(REFRESH_COOKIE, res.cookies)
         self.assertNotIn("access", res.data)
 
+    def test_native_client_gets_the_tokens_in_the_body(self):
+        # The Windows app has no cookie jar on its local origin, so it declares itself with
+        # X-MasterSAT-Client and reads the session from the body instead of the cookies.
+        res = APIClient().post(
+            "/api/desktop/auth/exchange/",
+            {"code": self._code(), "verifier": self.VERIFIER},
+            format="json",
+            HTTP_X_MASTERSAT_CLIENT="desktop",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(res.data.get("access"))
+        self.assertTrue(res.data.get("refresh"))
+
     def test_a_code_works_once(self):
         code = self._code()
         self.assertEqual(self._exchange(code).status_code, 200)
