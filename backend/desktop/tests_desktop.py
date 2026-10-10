@@ -305,8 +305,8 @@ class SignInWithBrowserTests(TestCase):
         self.assertNotIn("access", res.data)
 
     def test_native_client_gets_the_tokens_in_the_body(self):
-        # The Windows app has no cookie jar on its local origin, so it declares itself with
-        # X-MasterSAT-Client and reads the session from the body instead of the cookies.
+        # The Windows app declares itself with X-MasterSAT-Client and reads the session from the
+        # body instead of the cookies.
         res = APIClient().post(
             "/api/desktop/auth/exchange/",
             {"code": self._code(), "verifier": self.VERIFIER},
@@ -316,6 +316,43 @@ class SignInWithBrowserTests(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         self.assertTrue(res.data.get("access"))
         self.assertTrue(res.data.get("refresh"))
+
+    def test_native_client_gets_no_auth_cookie(self):
+        # The app's HTTP client keeps a cookie jar. An auth cookie in it would make every later
+        # request a browser's in is_native_client's eyes, and each POST would then fail the CSRF
+        # origin check — so a native sign-in must plant none, exactly like login and refresh.
+        res = APIClient().post(
+            "/api/desktop/auth/exchange/",
+            {"code": self._code(), "verifier": self.VERIFIER},
+            format="json",
+            HTTP_X_MASTERSAT_CLIENT="desktop",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertNotIn(ACCESS_COOKIE, res.cookies)
+        self.assertNotIn(REFRESH_COOKIE, res.cookies)
+
+    def test_after_a_native_sign_in_a_post_passes_the_csrf_rule(self):
+        # End to end through the middleware, with ONE client that keeps response cookies the way
+        # the app's HTTP client does: the native exchange, then a refresh sent the way the app
+        # sends it (X-MasterSAT-Client, a foreign Origin, no CSRF token). With an auth cookie in
+        # the jar this is refused as "Bad origin."; without one it reaches the view.
+        client = APIClient(enforce_csrf_checks=True)
+        res = client.post(
+            "/api/desktop/auth/exchange/",
+            {"code": self._code(), "verifier": self.VERIFIER},
+            format="json",
+            HTTP_X_MASTERSAT_CLIENT="desktop",
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        refreshed = client.post(
+            "/api/auth/refresh/",
+            {"refresh": res.data["refresh"]},
+            format="json",
+            HTTP_X_MASTERSAT_CLIENT="desktop",
+            HTTP_ORIGIN="http://tauri.localhost",
+        )
+        self.assertEqual(refreshed.status_code, 200, refreshed.content)
+        self.assertTrue(refreshed.data.get("access"))
 
     def test_a_code_works_once(self):
         code = self._code()
