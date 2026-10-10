@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State, Url, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewWindow};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use lockdown::{BatteryStatus, PrecheckReport};
@@ -241,14 +241,12 @@ fn open_external(url: String) -> Result<(), String> {
 }
 
 // ───────────────────────────── deep links ─────────────────────────────
-// The installer registers the `mastersat://` scheme. Two shapes, both of which only ever move the
-// app's own window within mastersat.uz — never to another origin.
+// The installer registers the `mastersat://` scheme. One shape:
 //   mastersat://auth?code=…   the browser handing back a "Sign in with browser" code
-//   mastersat://open?path=…   a browser link asking the app to open a page of the site
-
-fn only_site_path(path: &str) -> bool {
-    path.starts_with('/') && !path.starts_with("//") && !path.contains('\\') && !path.contains("://")
-}
+//
+// The window is the app's OWN bundled UI, never a remote page, so the code is DELIVERED to it as
+// an event — the window is never navigated anywhere. The page (lib/useAuth.tsx) pairs the code
+// with the PKCE verifier it kept and redeems them for a session.
 
 fn handle_deep_link(app: &AppHandle, raw: &str) {
     let parsed = match Url::parse(raw) {
@@ -261,27 +259,11 @@ fn handle_deep_link(app: &AppHandle, raw: &str) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    match parsed.host_str().unwrap_or("") {
-        "auth" => {
-            if let Some((_, code)) = parsed.query_pairs().find(|(k, _)| k == "code") {
-                if let Ok(mut target) = Url::parse(&format!("{SITE}/desktop/login")) {
-                    target.query_pairs_mut().append_pair("code", &code);
-                    let _ = window.navigate(target);
-                    let _ = window.set_focus();
-                }
-            }
+    if parsed.host_str() == Some("auth") {
+        if let Some((_, code)) = parsed.query_pairs().find(|(k, _)| k == "code") {
+            let _ = window.emit("auth-code", code.into_owned());
+            let _ = window.set_focus();
         }
-        "open" => {
-            if let Some((_, path)) = parsed.query_pairs().find(|(k, _)| k == "path") {
-                if only_site_path(&path) {
-                    if let Ok(target) = Url::parse(&format!("{SITE}{path}")) {
-                        let _ = window.navigate(target);
-                        let _ = window.set_focus();
-                    }
-                }
-            }
-        }
-        _ => {}
     }
 }
 
@@ -304,6 +286,9 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
+        // The app talks to the server through this (a native request, so no browser CORS from the
+        // app's local origin). The capability scopes it to https://mastersat.uz/* alone.
+        .plugin(tauri_plugin_http::init())
         .manage(AppState::default())
         .setup(|app| {
             lockdown::init_keyboard_guard();

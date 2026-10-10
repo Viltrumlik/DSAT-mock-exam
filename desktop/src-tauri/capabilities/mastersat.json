@@ -15,6 +15,10 @@
     "allow-battery-status",
     "allow-auth-begin",
     "allow-auth-take-verifier",
-    "allow-open-external"
+    "allow-open-external",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://mastersat.uz/*" }]
+    }
   ]
 }

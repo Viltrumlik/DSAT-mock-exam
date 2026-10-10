@@ -31,6 +31,9 @@ tauri-plugin-deep-link = "2"
 # The deep-link feature forwards a second launch's mastersat:// URL into the already-running
 # window instead of starting a second copy.
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# The app's bundled UI reaches the API through this (a native HTTP request, so the app's local
+# origin is not subject to browser CORS). Scoped to https://mastersat.uz/* in capabilities/.
+tauri-plugin-http = "2"
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

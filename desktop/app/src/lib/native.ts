@@ -69,7 +69,8 @@ export const native = {
     let cancelled = false;
     void (async () => {
       const { listen } = await import("@tauri-apps/api/event");
-      const u = await listen<string>("mastersat://auth-code", (e) => cb(e.payload));
+      // Matches window.emit("auth-code", code) in desktop/src-tauri/src/main.rs.
+      const u = await listen<string>("auth-code", (e) => cb(e.payload));
       if (cancelled) u();
       else unlisten = u;
     })();
