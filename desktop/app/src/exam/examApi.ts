@@ -4,15 +4,27 @@
  * the in-memory mock engine so the whole loop is reviewable without a backend.
  *
  * Endpoints (all already on the server, chosen by `base`):
- *   POST {base}/              {practice_test|midterm}             → { id }
- *   GET  {base}/{id}/status/                                      → attempt
+ *   POST {base}/              {practice_test|midterm}                               → { id }
+ *   GET  {base}/{id}/status/                                                        → attempt
+ *   POST {base}/{id}/start/                         Idempotency-Key                 → attempt
  *   POST {base}/{id}/save_attempt/   { answers, flagged, expected_version_number }  → attempt
- *   POST {base}/{id}/submit_module/  { answers, flagged, expected_version_number }  → attempt
+ *   POST {base}/{id}/submit_module/  { answers, flagged, expected_version_number, module_id } → attempt
+ * Midterm only:
+ *   POST midterms/attempts/{id}/verify_code/        { code }                        → { ok, requires_code }
+ *   POST midterms/attempts/{id}/offscreen/          Idempotency-Key                 → OffscreenReport
+ *   POST midterms/attempts/{id}/desktop_challenge/  {}                              → { nonce, expires_in }
+ *   POST midterms/attempts/{id}/desktop_session/    { nonce, key_id, mac, app_version, precheck }
+ *                                                                                   → { lockdown_session, required }
+ *
+ * The lockdown header (X-Lockdown-Session) rides on status/start/save/submit/offscreen through
+ * `opts.headers`, looked up per call so a re-bind takes effect at once. As on the site, create,
+ * verify_code, desktop_challenge and desktop_session never carry it.
  */
 import { DEV_MOCK } from "@/lib/env";
 import { apiGet, apiPost } from "@/lib/api";
+import type { LockdownProof } from "@/lib/native";
 import { createMockEngine } from "./mock";
-import type { Attempt, AttemptState, ActiveModule, ExamQuestion, PracticeTestDetails } from "./types";
+import type { Attempt, AttemptState, ActiveModule, ExamQuestion, OffscreenReport, PracticeTestDetails } from "./types";
 
 export interface ExamSource {
   /** Which attempt family: pastpapers vs midterms. */
@@ -22,21 +34,70 @@ export interface ExamSource {
   kind: "rw" | "math";
 }
 
+export interface ExamApiOptions {
+  /** Headers for a request about this attempt — the lockdown session, when the app holds one. */
+  headers?: (attemptId: number) => Record<string, string>;
+}
+
+export interface LockdownSessionGrant {
+  lockdown_session: string;
+  required: boolean;
+}
+
 export interface ExamApi {
   createOrResume(): Promise<number>;
   getStatus(id: number): Promise<Attempt>;
-  save(id: number, answers: Record<string, string>, flagged: number[], version: number): Promise<Attempt>;
-  submitModule(id: number, answers: Record<string, string>, flagged: number[], version: number): Promise<Attempt>;
+  start(id: number): Promise<Attempt>;
+  /** Throws ApiError 403 for a wrong code. `verifyCode(id, "")` is the site's "is a code needed?" probe. */
+  verifyCode(id: number, code: string): Promise<{ ok: boolean; requires_code: boolean }>;
+  save(id: number, answers: Record<string, string>, flagged: number[], version: number, moduleId: number): Promise<Attempt>;
+  submitModule(id: number, answers: Record<string, string>, flagged: number[], version: number, moduleId: number): Promise<Attempt>;
+  offscreen(id: number, idempotencyKey: string): Promise<OffscreenReport>;
+  challenge(id: number): Promise<{ nonce: string }>;
+  openSession(id: number, body: { nonce: string } & LockdownProof): Promise<LockdownSessionGrant>;
 }
 
-export function makeExamApi(source: ExamSource): ExamApi {
+export function randomSegment(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * One start key per attempt for this run of the app (sessionStorage, like the site's
+ * `ts.idem.start.{id}`), so a retried start after a lost reply replays instead of re-starting.
+ */
+function startKey(id: number): string {
+  const slot = `ts.idem.start.${id}`;
+  try {
+    const existing = sessionStorage.getItem(slot);
+    if (existing) return existing;
+    const k = `start.${id}.${randomSegment()}`;
+    sessionStorage.setItem(slot, k);
+    return k;
+  } catch {
+    return `start.${id}.${randomSegment()}`;
+  }
+}
+
+export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): ExamApi {
+  const extra = (id: number, idem?: string): Record<string, string> => {
+    const h = { ...(opts.headers?.(id) ?? {}) };
+    if (idem) h["Idempotency-Key"] = idem;
+    return h;
+  };
+
   if (DEV_MOCK) {
-    const engine = createMockEngine(source.kind);
+    const engine = createMockEngine(source.kind, { midterm: source.base === "midterms" });
     return {
-      createOrResume: async () => source.id,
-      getStatus: async () => engine.getStatus(),
-      save: async (_id, a, f) => engine.save(a, f),
-      submitModule: async (_id, a, f) => engine.submitModule(a, f),
+      createOrResume: () => engine.createOrResume(),
+      getStatus: (id) => engine.getStatus(extra(id)),
+      start: (id) => engine.start(extra(id)),
+      verifyCode: (_id, code) => engine.verifyCode(code),
+      save: (id, a, f) => engine.save(a, f, extra(id)),
+      submitModule: (id, a, f, _v, moduleId) => engine.submitModule(a, f, moduleId, extra(id)),
+      offscreen: (id, key) => engine.offscreen(key, extra(id)),
+      challenge: () => engine.challenge(),
+      openSession: (_id, body) => engine.openSession(body),
     };
   }
 
@@ -47,11 +108,39 @@ export function makeExamApi(source: ExamSource): ExamApi {
       const d = await apiPost(`${base}/`, { [createField]: source.id });
       return Number(d?.id);
     },
-    getStatus: async (id) => parseAttempt(await apiGet(`${base}/${id}/status/`)),
-    save: async (id, answers, flagged, version) =>
-      parseAttempt(await apiPost(`${base}/${id}/save_attempt/`, { answers, flagged, expected_version_number: version })),
-    submitModule: async (id, answers, flagged, version) =>
-      parseAttempt(await apiPost(`${base}/${id}/submit_module/`, { answers, flagged, expected_version_number: version })),
+    getStatus: async (id) => parseAttempt(await apiGet(`${base}/${id}/status/`, { headers: extra(id) })),
+    start: async (id) => parseAttempt(await apiPost(`${base}/${id}/start/`, {}, { headers: extra(id, startKey(id)) })),
+    verifyCode: async (id, code) => {
+      const d = await apiPost(`${base}/${id}/verify_code/`, { code });
+      return { ok: d?.ok === true, requires_code: d?.requires_code === true };
+    },
+    save: async (id, answers, flagged, version, moduleId) =>
+      parseAttempt(
+        await apiPost(
+          `${base}/${id}/save_attempt/`,
+          { answers, flagged, expected_version_number: version },
+          { headers: extra(id, `save.${id}.${moduleId}.v${version}`) },
+        ),
+      ),
+    submitModule: async (id, answers, flagged, version, moduleId) =>
+      parseAttempt(
+        await apiPost(
+          `${base}/${id}/submit_module/`,
+          // module_id lets the server turn a stale/retried submit into a no-op instead of
+          // finalising the NEXT module with this one's answers.
+          { answers, flagged, expected_version_number: version, module_id: moduleId },
+          { headers: extra(id, `submit.${id}.${moduleId}.v${version}`) },
+        ),
+      ),
+    offscreen: async (id, key) => (await apiPost(`${base}/${id}/offscreen/`, {}, { headers: extra(id, key) })) ?? {},
+    challenge: async (id) => {
+      const d = await apiPost(`${base}/${id}/desktop_challenge/`, {});
+      return { nonce: String(d?.nonce ?? "") };
+    },
+    openSession: async (id, body) => {
+      const d = await apiPost(`${base}/${id}/desktop_session/`, body);
+      return { lockdown_session: String(d?.lockdown_session ?? ""), required: d?.required === true };
+    },
   };
 }
 
@@ -63,6 +152,8 @@ const r = (v: unknown): Record<string, unknown> => (v && typeof v === "object" ?
 const str = (v: unknown, d = ""): string => (typeof v === "string" ? v : d);
 const num = (v: unknown): number => (typeof v === "number" ? v : Number(v) || 0);
 const numOrNull = (v: unknown): number | null => (v == null ? null : typeof v === "number" ? v : Number(v) || null);
+const numOrUndef = (v: unknown): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
+const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const bool = (v: unknown): boolean => v === true;
 
 function parseQuestion(v: unknown): ExamQuestion {
@@ -104,6 +195,11 @@ function parseDetails(v: unknown): PracticeTestDetails {
           return { id: num(mo.id), module_order: num(mo.module_order) || 1, time_limit_minutes: num(mo.time_limit_minutes) };
         })
       : undefined,
+    mock_kind: typeof o.mock_kind === "string" ? o.mock_kind : undefined,
+    calculator_mode: strOrNull(o.calculator_mode),
+    scoring_scale: strOrNull(o.scoring_scale),
+    pass_mark: typeof o.pass_mark === "number" ? o.pass_mark : null,
+    midterm_type: strOrNull(o.midterm_type),
   };
 }
 
@@ -132,5 +228,20 @@ export function parseAttempt(data: unknown): Attempt {
     is_paused: bool(o.is_paused),
     can_submit: typeof o.can_submit === "boolean" ? o.can_submit : undefined,
     score: numOrNull(o.score),
+    desktop_required: typeof o.desktop_required === "boolean" ? o.desktop_required : undefined,
+    offscreen_violations: numOrUndef(o.offscreen_violations),
+    offscreen_limit: numOrUndef(o.offscreen_limit),
+    offscreen_grace_seconds: numOrUndef(o.offscreen_grace_seconds),
+    terminated_reason: typeof o.terminated_reason === "string" ? o.terminated_reason : undefined,
   };
+}
+
+/** The paper is in: the server is scoring it or has finished. */
+export function isTerminal(a: Attempt | null | undefined): boolean {
+  return !!a && (a.is_completed || a.current_state === "SCORING" || a.current_state === "COMPLETED");
+}
+
+/** A module is live and the clock is running. */
+export function isRunning(a: Attempt | null | undefined): boolean {
+  return !!a && !isTerminal(a) && (a.current_state === "MODULE_1_ACTIVE" || a.current_state === "MODULE_2_ACTIVE");
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Bookmark,
   Calculator,
@@ -25,6 +25,7 @@ import {
 import type { Attempt, ExamQuestion } from "./types";
 import { formatClock, isReadingWriting, isStudentResponse, parseOptions } from "./util";
 import { renderExamHtml, SafeHtml } from "./richText";
+import { SatColorRule } from "./SatColorRule";
 import { useCountdown, useRunner, type RunnerState } from "./useExamState";
 
 /**
@@ -32,22 +33,14 @@ import { useCountdown, useRunner, type RunnerState } from "./useExamState";
  * multi-colour rule, the Georgia serif reading surface, the number-block + grey-band question
  * header with the ABC answer eliminator, the draggable Reading & Writing split, and the anchored
  * question navigator. Logic (the server contract, timing, module state) is preserved; this is the
- * fresh UI over it. Autosave, submit, the review page and the midterm lockdown are the next slices.
+ * fresh UI over it.
+ *
+ * `mode="midterm"` is the site's midterm runner: no pause, no Save & Exit, no early hand-in (the
+ * review page says so), copying off, and the paper is inert while the off-screen warning covers it.
+ * Every mode submits a module by itself when its time runs out.
+ *
+ * Importers: exam/ExamScreen.tsx (past papers), exam/midterm/MidtermScreen.tsx.
  */
-
-/** The Bluebook multi-colour dashed rule — top and bottom edges, and under the question header. */
-function SatColorRule({ className = "" }: { className?: string }) {
-  return (
-    <div
-      aria-hidden
-      className={`h-[3px] w-full shrink-0 ${className}`}
-      style={{
-        background:
-          "repeating-linear-gradient(to right, #b91c1c 0, #b91c1c 48px, transparent 48px, transparent 54px, #ca8a04 54px, #ca8a04 102px, transparent 102px, transparent 108px, #15803d 108px, #15803d 156px, transparent 156px, transparent 162px, #0f172a 162px, #0f172a 210px, transparent 210px, transparent 216px)",
-      }}
-    />
-  );
-}
 
 export function ExamRunner({
   attempt,
@@ -55,13 +48,31 @@ export function ExamRunner({
   onSave,
   onSubmit,
   onExit,
+  mode = "practice",
+  studentName = "",
+  headerExtra,
+  banner,
+  inert = false,
+  onTransitionChange,
 }: {
   attempt: Attempt;
   submitting: boolean;
   onSave: (answers: Record<string, string>, flagged: number[]) => void;
-  onSubmit: (answers: Record<string, string>, flagged: number[]) => void;
+  onSubmit: (answers: Record<string, string>, flagged: number[]) => Promise<void> | void;
   onExit: () => void;
+  mode?: "practice" | "midterm";
+  /** The signed-in student, shown bottom-left as on the site. */
+  studentName?: string;
+  /** Extra header item, right of the tools (the battery reading). */
+  headerExtra?: ReactNode;
+  /** Strips under the header (low battery, reconnecting). */
+  banner?: ReactNode;
+  /** The off-screen warning covers the paper: nothing under it may take a click or a key. */
+  inert?: boolean;
+  /** The between-module interstitial is showing (the off-screen guard stands down for it). */
+  onTransitionChange?: (transitioning: boolean) => void;
 }) {
+  const isMidterm = mode === "midterm";
   const mod = attempt.current_module_details;
   const r = useRunner(attempt);
   const remaining = useCountdown(attempt);
@@ -109,6 +120,43 @@ export function ExamRunner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [moduleId]);
 
+  useEffect(() => {
+    onTransitionChange?.(transitioning);
+  }, [transitioning, onTransitionChange]);
+
+  // Time is up: the module submits itself, once per module. A midterm has no other way in — the
+  // server refuses an early hand-in — and on a past paper it is what the clock running out means.
+  const autoSubmitted = useRef<number | null>(null);
+  useEffect(() => {
+    if (remaining > 0 || !mod || autoSubmitted.current === mod.id) return;
+    autoSubmitted.current = mod.id;
+    void Promise.resolve(onSubmit(answersOut(), flaggedOut())).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [remaining, mod?.id]);
+
+  // While the off-screen warning covers the paper, nothing under it may take a click or a key.
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    if (inert) el.setAttribute("inert", "");
+    else el.removeAttribute("inert");
+  }, [inert]);
+
+  // A midterm's text stays on the screen: no copying it out, no context menu.
+  useEffect(() => {
+    if (!isMidterm) return;
+    const block = (e: Event) => e.preventDefault();
+    document.addEventListener("copy", block);
+    document.addEventListener("cut", block);
+    document.addEventListener("contextmenu", block);
+    return () => {
+      document.removeEventListener("copy", block);
+      document.removeEventListener("cut", block);
+      document.removeEventListener("contextmenu", block);
+    };
+  }, [isMidterm]);
+
   const bodyRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
   useEffect(() => {
@@ -139,7 +187,7 @@ export function ExamRunner({
   const q = mod.questions[index];
   const isLastModule = mod.module_order >= (attempt.practice_test_details.modules?.length ?? 2);
   const subjectLabel = isMath ? "Mathematics" : "Reading & Writing";
-  const submit = () => onSubmit(answersOut(), flaggedOut());
+  const submit = () => void Promise.resolve(onSubmit(answersOut(), flaggedOut())).catch(() => {});
   const warning = remaining <= 300;
   const moduleTitle = `Section ${isMath ? 2 : 1}, Module ${mod.module_order}: ${isMath ? "Math" : "Reading and Writing"}`;
 
@@ -147,7 +195,9 @@ export function ExamRunner({
   const zoomOut = () => setZoom((z) => Math.max(0.8, Math.round((z - 0.1) * 10) / 10));
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-white text-slate-900">
+    // `ts-runner`: the site's runner chrome face (the Bluebook sans stack); the passage, stem and
+    // choices opt back into Georgia themselves. Same class, same place as ExamRunnerPage.tsx.
+    <div ref={rootRef} className="ts-runner relative flex h-screen flex-col overflow-hidden bg-white text-slate-900">
       {/* ── Header ── */}
       <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
         <div className="flex flex-col items-start">
@@ -163,12 +213,14 @@ export function ExamRunner({
             hidden={timerHidden}
             warning={warning}
             paused={paused}
+            canPause={!isMidterm}
             onToggleHidden={() => setTimerHidden((v) => !v)}
             onTogglePause={() => setPaused((v) => !v)}
           />
         </div>
 
         <div className="relative flex items-center justify-end gap-6">
+          {headerExtra}
           {isMath ? (
             <ToolButton label="Calculator" onClick={() => {}}>
               <Calculator className="h-5 w-5" />
@@ -185,13 +237,14 @@ export function ExamRunner({
               onClose={() => setMoreOpen(false)}
               onZoomIn={zoomIn}
               onZoomOut={zoomOut}
-              onSaveExit={onExit}
+              onSaveExit={isMidterm ? undefined : onExit}
             />
           ) : null}
         </div>
       </header>
 
       <SatColorRule />
+      {banner}
 
       {/* ── Body ── */}
       <div ref={bodyRef} className="flex min-h-0 flex-1">
@@ -229,7 +282,7 @@ export function ExamRunner({
       {/* ── Footer ── */}
       <footer className="flex shrink-0 items-center justify-between bg-white px-6 py-3">
         <div className="flex flex-1 items-center">
-          <span className="truncate text-[15px] font-bold text-slate-700">Alisher Muhammadaliyev</span>
+          <span className="truncate text-[15px] font-bold text-slate-700">{studentName}</span>
         </div>
         <div className="flex flex-col items-center">
           <button
@@ -278,6 +331,7 @@ export function ExamRunner({
           r={r}
           isLastModule={isLastModule}
           submitting={submitting}
+          locked={isMidterm}
           onBack={() => setReviewOpen(false)}
           onJump={(i) => {
             r.goTo(i);
@@ -309,6 +363,7 @@ function Timer({
   hidden,
   warning,
   paused,
+  canPause,
   onToggleHidden,
   onTogglePause,
 }: {
@@ -316,6 +371,8 @@ function Timer({
   hidden: boolean;
   warning: boolean;
   paused: boolean;
+  /** A midterm's clock cannot be paused. */
+  canPause: boolean;
   onToggleHidden: () => void;
   onTogglePause: () => void;
 }) {
@@ -338,10 +395,12 @@ function Timer({
           {hidden ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
           {hidden ? "Show" : "Hide"}
         </button>
-        <button type="button" onClick={onTogglePause} className={PILL}>
-          {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
-          {paused ? "Resume" : "Pause"}
-        </button>
+        {canPause ? (
+          <button type="button" onClick={onTogglePause} className={PILL}>
+            {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            {paused ? "Resume" : "Pause"}
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -356,7 +415,8 @@ function MoreMenu({
   onClose: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  onSaveExit: () => void;
+  /** Absent for a midterm: it has no Save & Exit (the site's saveExitAllowed={!isMidterm}). */
+  onSaveExit?: () => void;
 }) {
   const item = "flex w-full items-center gap-3 px-4 py-2.5 text-left text-[15px] font-semibold text-slate-800 hover:bg-slate-50";
   return (
@@ -381,10 +441,14 @@ function MoreMenu({
         <button className={item} onClick={onClose}>
           <HelpCircle className="h-[18px] w-[18px] text-slate-500" /> Keyboard shortcuts
         </button>
-        <div className="my-1 h-px bg-slate-100" />
-        <button className={item} onClick={() => { onClose(); onSaveExit(); }}>
-          <LogOut className="h-[18px] w-[18px] text-slate-500" /> Save &amp; Exit
-        </button>
+        {onSaveExit ? (
+          <>
+            <div className="my-1 h-px bg-slate-100" />
+            <button className={item} onClick={() => { onClose(); onSaveExit(); }}>
+              <LogOut className="h-[18px] w-[18px] text-slate-500" /> Save &amp; Exit
+            </button>
+          </>
+        ) : null}
       </div>
     </>
   );
@@ -680,6 +744,7 @@ function CheckYourWork({
   r,
   isLastModule,
   submitting,
+  locked,
   onBack,
   onJump,
   onSubmit,
@@ -689,6 +754,8 @@ function CheckYourWork({
   r: RunnerState;
   isLastModule: boolean;
   submitting: boolean;
+  /** A midterm: no early hand-in — the module submits itself when time runs out. */
+  locked: boolean;
   onBack: () => void;
   onJump: (i: number) => void;
   onSubmit: () => void;
@@ -745,14 +812,22 @@ function CheckYourWork({
           Back to the module
         </button>
         <div className="flex flex-1 justify-end">
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={submitting}
-            className="rounded-full bg-[#253985] px-9 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#1d2d6b] disabled:opacity-50"
-          >
-            {submitting ? "Submitting…" : isLastModule ? "Submit" : "Next Module"}
-          </button>
+          {locked ? (
+            <p className="max-w-xs text-right text-[13px] font-semibold leading-snug text-slate-600">
+              {submitting
+                ? "Submitting…"
+                : "Keep reviewing your answers — you can't submit early. The midterm submits automatically when time runs out."}
+            </p>
+          ) : (
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={submitting}
+              className="rounded-full bg-[#253985] px-9 py-2.5 text-[15px] font-bold text-white transition-colors hover:bg-[#1d2d6b] disabled:opacity-50"
+            >
+              {submitting ? "Submitting…" : isLastModule ? "Submit" : "Next Module"}
+            </button>
+          )}
         </div>
       </footer>
     </div>

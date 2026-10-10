@@ -81,25 +81,57 @@ export function onAuthLost(cb: () => void) {
 
 export function signOut() {
   tokens.clear();
+  meCache = null;
 }
 
 // ───────────────────────────── transport ─────────────────────────────
 
+/** The server answered, and said no. `body` is its parsed JSON (refusal `reason`, a 409's `attempt`…). */
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public body: any = null,
   ) {
     super(message);
+    this.name = "ApiError";
   }
 }
 
-async function httpFetch(url: string, init: RequestInit): Promise<Response> {
-  if (IS_TAURI) {
-    const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
-    return tauriFetch(url, init);
+/** The request never got an answer — offline, DNS, a dropped connection. Always worth retrying. */
+export class NetworkError extends Error {
+  constructor(message = "No connection.") {
+    super(message);
+    this.name = "NetworkError";
   }
-  return fetch(url, init);
+}
+
+/**
+ * A failure that says nothing about the request itself — the network, a gateway, the server
+ * catching its breath. Retrying the same request is safe and is what a student mid-test needs;
+ * everything else (a 4xx the server meant) is a real answer.
+ */
+export function isTransient(e: unknown): boolean {
+  if (e instanceof NetworkError) return true;
+  if (e instanceof ApiError) return e.status === 0 || e.status === 408 || e.status === 429 || e.status >= 500;
+  return false;
+}
+
+export interface RequestOptions {
+  /** Extra headers for this one request (e.g. X-Lockdown-Session, Idempotency-Key). */
+  headers?: Record<string, string>;
+}
+
+async function httpFetch(url: string, init: RequestInit): Promise<Response> {
+  try {
+    if (IS_TAURI) {
+      const { fetch: tauriFetch } = await import("@tauri-apps/plugin-http");
+      return await tauriFetch(url, init);
+    }
+    return await fetch(url, init);
+  } catch (e) {
+    throw new NetworkError(e instanceof Error ? e.message : undefined);
+  }
 }
 
 function safeJson(text: string): any {
@@ -110,13 +142,20 @@ function safeJson(text: string): any {
   }
 }
 
-async function raw(path: string, method: string, body?: unknown, withAuth = true): Promise<any> {
+async function raw(
+  path: string,
+  method: string,
+  body?: unknown,
+  withAuth = true,
+  extra?: Record<string, string>,
+): Promise<any> {
   const headers: Record<string, string> = { [NATIVE_CLIENT_HEADER]: NATIVE_CLIENT_VALUE };
   if (body !== undefined) headers["Content-Type"] = "application/json";
   if (withAuth) {
     const a = tokens.access();
     if (a) headers["Authorization"] = `Bearer ${a}`;
   }
+  if (extra) Object.assign(headers, extra);
   const res = await httpFetch(`${API_BASE}${path}`, {
     method,
     headers,
@@ -126,45 +165,71 @@ async function raw(path: string, method: string, body?: unknown, withAuth = true
   const data = text ? safeJson(text) : null;
   if (!res.ok) {
     const detail = (data && (data.detail || data.message)) || `Request failed (${res.status}).`;
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, data);
   }
   return data;
 }
 
-async function tryRefresh(): Promise<boolean> {
+type RefreshOutcome = "ok" | "denied" | "unreachable";
+
+/**
+ * Trade the refresh token for a fresh pair. Only a DEFINITE no from the server (400/401: the
+ * token is expired, revoked or malformed) ends the session. A dropped connection or a 5xx says
+ * nothing about the session, so the tokens are kept — clearing them on a blip would sign a
+ * student out in the middle of a midterm and unmount the runner under them.
+ */
+async function tryRefresh(): Promise<RefreshOutcome> {
   const r = tokens.refresh();
-  if (!r) return false;
+  if (!r) return "denied";
   try {
     const data = await raw("/auth/refresh/", "POST", { refresh: r }, false);
     if (data?.access) {
       tokens.set(data.access, data.refresh ?? r);
-      return true;
+      return "ok";
     }
-  } catch {
-    /* fall through to clear */
+  } catch (e) {
+    if (isTransient(e)) return "unreachable";
+    if (!(e instanceof ApiError && (e.status === 400 || e.status === 401))) return "unreachable";
   }
   tokens.clear();
   authLost?.();
-  return false;
+  return "denied";
 }
 
-async function request(path: string, method: string, body?: unknown, withAuth = true): Promise<any> {
+// One refresh at a time: two requests that 401 together must not race two refreshes, because
+// refresh rotates the token and the loser would present a token the winner just retired.
+let refreshing: Promise<RefreshOutcome> | null = null;
+function refreshOnce(): Promise<RefreshOutcome> {
+  if (!refreshing) refreshing = tryRefresh().finally(() => (refreshing = null));
+  return refreshing;
+}
+
+async function request(
+  path: string,
+  method: string,
+  body?: unknown,
+  withAuth = true,
+  extra?: Record<string, string>,
+): Promise<any> {
   try {
-    return await raw(path, method, body, withAuth);
+    return await raw(path, method, body, withAuth, extra);
   } catch (e) {
     if (withAuth && e instanceof ApiError && e.status === 401 && tokens.refresh()) {
-      if (await tryRefresh()) return raw(path, method, body, withAuth);
+      const outcome = await refreshOnce();
+      if (outcome === "ok") return raw(path, method, body, withAuth, extra);
+      // Couldn't reach the server to refresh: report it as the blip it is, so callers retry.
+      if (outcome === "unreachable") throw new NetworkError("Couldn't refresh the session.");
     }
     throw e;
   }
 }
 
 /** Low-level authed helpers for feature clients (e.g. the exam runner). */
-export function apiGet(path: string): Promise<any> {
-  return request(path, "GET");
+export function apiGet(path: string, opts?: RequestOptions): Promise<any> {
+  return request(path, "GET", undefined, true, opts?.headers);
 }
-export function apiPost(path: string, body?: unknown): Promise<any> {
-  return request(path, "POST", body);
+export function apiPost(path: string, body?: unknown, opts?: RequestOptions): Promise<any> {
+  return request(path, "POST", body, true, opts?.headers);
 }
 
 // ───────────────────────────── auth ─────────────────────────────
@@ -182,17 +247,37 @@ export async function exchange(code: string, verifier: string): Promise<void> {
   tokens.set(data.access, data.refresh);
 }
 
-/** Do we already hold a usable session? (A warm access token, or a refresh that still works.) */
+/**
+ * Do we already hold a usable session? (A warm access token, or a refresh that still works.)
+ * Offline at launch with a refresh token in hand counts as yes — the offline screen is the
+ * right answer there, not the sign-in screen.
+ */
 export async function hasSession(): Promise<boolean> {
   if (DEV_MOCK) return tokens.has();
   if (tokens.access()) return true;
-  if (tokens.refresh()) return tryRefresh();
+  if (tokens.refresh()) return (await refreshOnce()) !== "denied";
   return false;
 }
 
-export async function me(): Promise<Me> {
-  if (DEV_MOCK) return { first_name: "Aziz", last_name: "" };
-  return (await request("/users/me/", "GET")) ?? {};
+// The profile changes rarely and several screens want the name, so one request serves them all.
+let meCache: Promise<Me> | null = null;
+
+export function me(): Promise<Me> {
+  if (DEV_MOCK) return Promise.resolve({ first_name: "Aziz", last_name: "Karimov" });
+  if (!meCache) {
+    meCache = request("/users/me/", "GET")
+      .then((d) => d ?? {})
+      .catch((e) => {
+        meCache = null; // a failed read is retried by the next caller, never cached
+        throw e;
+      });
+  }
+  return meCache;
+}
+
+/** "First Last" for the runner's footer, or "" until it loads. */
+export function displayName(m: Me | null | undefined): string {
+  return [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim();
 }
 
 // ───────────────────────────── tests ─────────────────────────────

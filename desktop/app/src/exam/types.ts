@@ -44,6 +44,14 @@ export interface PracticeTestDetails {
   total_question_count?: number;
   calculator_enabled?: boolean;
   modules?: { id: number; module_order: number; time_limit_minutes: number }[];
+  /** "MIDTERM" on a midterm snapshot (backend/midterms/serializers.py). */
+  mock_kind?: string;
+  calculator_mode?: string | null;
+  // Read forward-compatibly, as the site does; the midterm serializer does not send these yet,
+  // and the rules screen quotes a pass mark only when they arrive.
+  scoring_scale?: string | null;
+  pass_mark?: number | null;
+  midterm_type?: string | null;
 }
 
 export interface Attempt {
@@ -67,6 +75,24 @@ export interface Attempt {
   is_paused: boolean;
   can_submit?: boolean;
   score?: number | null;
+  // Midterm only. Whether this sitting must be taken locked down in the app (the server's
+  // MIDTERM_DESKTOP_REQUIRED, per sitting) — present on status/start/save snapshots.
+  desktop_required?: boolean;
+  // The off-screen rule's tally, on every midterm snapshot: the SERVER counts, the app renders.
+  offscreen_violations?: number;
+  offscreen_limit?: number;
+  offscreen_grace_seconds?: number;
+  /** "OFFSCREEN" once the rule took the paper in; "" otherwise. */
+  terminated_reason?: string;
+}
+
+/** What POST {base}/{id}/offscreen/ answers. `attempt` is absent once the paper is in. */
+export interface OffscreenReport {
+  violations?: number;
+  limit?: number;
+  grace_seconds?: number;
+  terminated?: boolean;
+  attempt?: unknown;
 }
 
 export interface ParsedOption {

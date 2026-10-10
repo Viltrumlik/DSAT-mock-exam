@@ -7,6 +7,7 @@ import { useOnline } from "./lib/useOnline";
 import { Spinner } from "./components/ui/Spinner";
 import { ExamScreen } from "./exam/ExamScreen";
 import type { ExamSource } from "./exam/examApi";
+import { MidtermScreen } from "./exam/midterm/MidtermScreen";
 
 /**
  * The native app frame + router. The shell is bundled and always loads; connectivity gates only
@@ -24,9 +25,14 @@ function Root() {
 
   if (status === "loading") return <BootSplash />;
   // The runner stays mounted through a brief connectivity blip — a dropped second must never
-  // throw a student out of a test — so it is checked before the offline screen.
+  // throw a student out of a test — so it is checked before the offline screen. A midterm is sat
+  // locked down (MidtermScreen); a past paper never is.
   if (status === "signedin" && runner) {
-    return <ExamScreen source={runner} onExit={() => setRunner(null)} />;
+    return runner.base === "midterms" ? (
+      <MidtermScreen source={runner} onExit={() => setRunner(null)} />
+    ) : (
+      <ExamScreen source={runner} onExit={() => setRunner(null)} />
+    );
   }
   if (!online) return <Offline onRetry={() => window.location.reload()} />;
   if (status === "signedin") return <YourTests onStart={setRunner} />;

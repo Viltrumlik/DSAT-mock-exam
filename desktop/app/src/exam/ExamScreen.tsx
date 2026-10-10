@@ -1,19 +1,33 @@
+import { useEffect, useState, type ReactNode } from "react";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
+import { displayName, me } from "@/lib/api";
 import { ExamRunner } from "./ExamRunner";
 import { useExamAttempt } from "./useExamAttempt";
 import type { ExamSource } from "./examApi";
 import type { Attempt } from "./types";
 
 /**
- * Owns the attempt data (load, autosave, submit) and picks the screen: loading, the runner while
- * a module is active, a "scoring/done" card once it's submitted, or an error with a way back.
- * Importer: App.tsx.
+ * A past paper: owns the attempt data (load, autosave, submit) and picks the screen — loading, the
+ * runner while a module is active, a "scoring/done" card once it's submitted, or an error with a
+ * way back. Past papers are never locked down; a midterm goes through midterm/MidtermScreen.
+ * Importers: App.tsx; midterm/MidtermScreen.tsx (Centered, DoneScreen).
  */
 export function ExamScreen({ source, onExit }: { source: ExamSource; onExit: () => void }) {
-  const { attempt, status, submitting, save, submit } = useExamAttempt(source);
+  // The pastpaper backend starts an attempt on create; autoStart only covers one that didn't.
+  const { attempt, status, submitting, save, submit } = useExamAttempt(source, { autoStart: true });
+  const [studentName, setStudentName] = useState("");
+  useEffect(() => {
+    let alive = true;
+    me()
+      .then((m) => alive && setStudentName(displayName(m)))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   if (status === "error") {
     return (
@@ -42,10 +56,19 @@ export function ExamScreen({ source, onExit }: { source: ExamSource; onExit: () 
     return <DoneScreen attempt={attempt} onExit={onExit} />;
   }
 
-  return <ExamRunner attempt={attempt} submitting={submitting} onSave={save} onSubmit={submit} onExit={onExit} />;
+  return (
+    <ExamRunner
+      attempt={attempt}
+      studentName={studentName}
+      submitting={submitting}
+      onSave={save}
+      onSubmit={submit}
+      onExit={onExit}
+    />
+  );
 }
 
-function Centered({ children }: { children: React.ReactNode }) {
+export function Centered({ children }: { children: ReactNode }) {
   return (
     <div className="ds-app flex min-h-screen flex-col items-center justify-center gap-4 bg-surface-2 px-6 text-center text-foreground">
       {children}
@@ -53,7 +76,7 @@ function Centered({ children }: { children: React.ReactNode }) {
   );
 }
 
-function DoneScreen({ attempt, onExit }: { attempt: Attempt; onExit: () => void }) {
+export function DoneScreen({ attempt, onExit }: { attempt: Attempt; onExit: () => void }) {
   const scoring = attempt.current_state === "SCORING" && !attempt.is_completed;
   return (
     <div className="ds-app flex min-h-screen flex-col items-center justify-center bg-surface-2 px-6 text-foreground">
