@@ -72,9 +72,17 @@ export interface ExamApi {
   openSession(id: number, body: { nonce: string } & LockdownProof): Promise<LockdownSessionGrant>;
 }
 
+/** A random token. Its TAIL is always random (callers may keep only the end of it). */
 export function randomSegment(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  // Untyped on purpose: the DOM types claim both methods always exist; the runtime may disagree.
+  const c = (typeof crypto !== "undefined" ? crypto : undefined) as
+    | { randomUUID?: () => string; getRandomValues?: (a: Uint8Array) => Uint8Array }
+    | undefined;
+  if (typeof c?.randomUUID === "function") return c.randomUUID();
+  if (typeof c?.getRandomValues === "function") {
+    return Array.from(c.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
 }
 
 /**

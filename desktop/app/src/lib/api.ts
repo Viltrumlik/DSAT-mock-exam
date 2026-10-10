@@ -120,6 +120,12 @@ export function isTransient(e: unknown): boolean {
 
 /** No request may take longer than this (see raw()). */
 const REQUEST_TIMEOUT_MS = 25_000;
+/**
+ * A refresh gets far longer: the server rotates the token inside the request, so abandoning a slow
+ * one throws away the only copy of the new pair and leaves the client holding a revoked token —
+ * which signs the student out on the next refresh. Better to wait for it.
+ */
+const REFRESH_TIMEOUT_MS = 120_000;
 
 export interface RequestOptions {
   /** Extra headers for this one request (e.g. X-Lockdown-Session, Idempotency-Key). */
@@ -152,6 +158,7 @@ async function raw(
   body?: unknown,
   withAuth = true,
   extra?: Record<string, string>,
+  timeoutMs = REQUEST_TIMEOUT_MS,
 ): Promise<any> {
   const headers: Record<string, string> = { [NATIVE_CLIENT_HEADER]: NATIVE_CLIENT_VALUE };
   if (body !== undefined) headers["Content-Type"] = "application/json";
@@ -163,20 +170,34 @@ async function raw(
   // Every request ends. The HTTP client has no timeout of its own, so a connection that silently
   // stalls (Wi-Fi dropped after the request was sent) would hang forever — on a midterm, behind a
   // "Locking…" button on a locked machine. Past the limit it is a network failure, and retried.
+  // The abort tells the HTTP plugin to drop the request; the race guarantees THIS promise ends on
+  // time even if the native side were slow to honour the cancel.
   const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      ctl.abort();
+      reject(new NetworkError("The request timed out."));
+    }, timeoutMs);
+  });
   let res: Response;
   let text: string;
   try {
-    res = await httpFetch(`${API_BASE}${path}`, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-      signal: ctl.signal,
-    });
-    text = await res.text().catch((e) => {
-      throw new NetworkError(e instanceof Error ? e.message : undefined);
-    });
+    res = await Promise.race([
+      httpFetch(`${API_BASE}${path}`, {
+        method,
+        headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+        signal: ctl.signal,
+      }),
+      deadline,
+    ]);
+    text = await Promise.race([
+      res.text().catch((e) => {
+        throw new NetworkError(e instanceof Error ? e.message : undefined);
+      }),
+      deadline,
+    ]);
   } finally {
     clearTimeout(timer);
   }
@@ -200,7 +221,7 @@ async function tryRefresh(): Promise<RefreshOutcome> {
   const r = tokens.refresh();
   if (!r) return "denied";
   try {
-    const data = await raw("/auth/refresh/", "POST", { refresh: r }, false);
+    const data = await raw("/auth/refresh/", "POST", { refresh: r }, false, undefined, REFRESH_TIMEOUT_MS);
     if (data?.access) {
       tokens.set(data.access, data.refresh ?? r);
       return "ok";
@@ -288,11 +309,9 @@ export async function ensureFreshSession(minSeconds: number): Promise<void> {
   if (DEV_MOCK) return;
   const left = accessSecondsLeft();
   if (left !== null && left > minSeconds) return;
-  try {
-    await refreshOnce();
-  } catch {
-    /* a failed refresh here changes nothing: the normal 401 path still applies */
-  }
+  // Wait a little for it, but never cancel it: a slow refresh still lands and stores the new pair
+  // (the student isn't held on "Locking…" for the full refresh budget meanwhile).
+  await Promise.race([refreshOnce().catch(() => {}), new Promise((r) => setTimeout(r, 15_000))]);
 }
 
 /**

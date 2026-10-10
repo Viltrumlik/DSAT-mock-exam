@@ -67,6 +67,8 @@ export interface ExamAttempt {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Past papers: after this many server-answered failures in a row, re-read and hand control back. */
+const PASTPAPER_SERVER_RETRIES = 6;
 const backoff = (n: number) => Math.min(30_000, 1000 * 2 ** Math.max(0, n - 1));
 const moduleIdOf = (a: Attempt) => a.current_module_details?.id ?? a.current_module ?? 0;
 
@@ -283,7 +285,7 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
           let serverRetries = 0;
           // Unique per submit call: a NEW call (a manual retry, the app reopened) never replays a
           // failure an earlier call left cached under its keys.
-          const callTag = randomSegment().slice(0, 8);
+          const callTag = randomSegment().replace(/-/g, "").slice(-10);
           while (alive.current) {
             const cur = attemptRef.current;
             if (!cur || !isRunning(cur)) return;
@@ -313,6 +315,17 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
                 // The server answered with a failure and cached it under that key: a fresh key next
                 // time, or every retry would get the cached failure back forever.
                 serverRetries += 1;
+                // A past paper has no poll and a Submit button, and the exams backend turns ANY
+                // error — deterministic ones included — into a 500. So after a run of them, re-read
+                // the attempt (it may already have moved on) and hand control back: the review page's
+                // Submit and the 0:00 re-arm start fresh calls. A midterm keeps going (its poll
+                // watches the paper, and it has no other way in).
+                if (source.base === "exams" && serverRetries % PASTPAPER_SERVER_RETRIES === 0) {
+                  await api.getStatus(cur.id).then(apply).catch(() => {});
+                  const now = attemptRef.current;
+                  if (!now || !isRunning(now) || moduleIdOf(now) !== moduleId) return;
+                  throw e;
+                }
                 await transientFailure();
                 continue;
               }
@@ -329,24 +342,26 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
         if (alive.current) setSubmitting(false);
       }
     },
-    [api, apply, noteBlocked, run, succeeded, transientFailure],
+    [api, apply, noteBlocked, run, source.base, succeeded, transientFailure],
   );
 
   // ── pause (past papers) ─────────────────────────────────────────────────────
-  // Each returns the server's snapshot, so the caller adopts its is_paused rather than guessing.
+  // Each resolves to the server's snapshot — but only if it is still the CURRENT one. A reply that
+  // apply() dropped as older (a module change overtook it) must not tell the caller the clock is
+  // frozen: that froze module 2's countdown while the server's module 2 clock ran on.
   const pause = useCallback(async () => {
     const id = idRef.current;
     if (id == null) return null;
     const snap = await api.pause(id);
     apply(snap);
-    return snap;
+    return attemptRef.current === snap ? snap : null;
   }, [api, apply]);
   const resume = useCallback(async () => {
     const id = idRef.current;
     if (id == null) return null;
     const snap = await api.resumePause(id);
     apply(snap);
-    return snap;
+    return attemptRef.current === snap ? snap : null;
   }, [api, apply]);
 
   // ── start ───────────────────────────────────────────────────────────────────
