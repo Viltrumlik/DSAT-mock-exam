@@ -6,6 +6,7 @@
  * Math is stashed out BEFORE sanitising (so `<`/`>` inside a formula survives) and KaTeX's own
  * trusted output is spliced back in AFTER — the sanitiser only ever sees authored prose.
  */
+import { type CSSProperties } from "react";
 import DOMPurify from "dompurify";
 import katex from "katex";
 
@@ -53,7 +54,17 @@ export function renderExamHtml(raw: string): string {
   return s.replace(/<span[^>]*data-math="(\d+)"[^>]*><\/span>/g, (_m, i) => math[Number(i)] ?? "");
 }
 
-export function SafeHtml({ html, className, block }: { html: string; className?: string; block?: boolean }) {
+export function SafeHtml({
+  html,
+  className,
+  block,
+  style,
+}: {
+  html: string;
+  className?: string;
+  block?: boolean;
+  style?: CSSProperties;
+}) {
   const Tag = block ? "div" : "span";
-  return <Tag className={className} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <Tag className={className} style={style} dangerouslySetInnerHTML={{ __html: html }} />;
 }
