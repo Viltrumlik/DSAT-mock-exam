@@ -31,6 +31,8 @@ export interface DevLockdownState {
   guardPaused: boolean;
   /** The next N requests fail as if the network dropped. */
   dropNext: number;
+  /** The next N requests are answered 503 by the server (a deploy, an overloaded moment). */
+  fail503Next: number;
   /** The next bind is refused with this reason. */
   bindFault: DevBindFault;
   /** The next lockdown-guarded request answers desktop_session_replaced. */
@@ -48,6 +50,7 @@ const state: DevLockdownState = {
   shortModule: false,
   guardPaused: false,
   dropNext: 0,
+  fail503Next: 0,
   bindFault: "none",
   replaceSession: false,
 };

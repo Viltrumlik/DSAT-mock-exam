@@ -159,6 +159,9 @@ export function PrecheckScreen({
     } catch (e) {
       if (e instanceof PrecheckFailedError) setReport(e.report);
       else setError(precheckErrorText(e));
+    } finally {
+      // Whatever happened, the student gets their buttons back (a continue that returned without
+      // leaving this screen — the sitting ended meanwhile — must not strand them on "Locking…").
       setBusy(false);
     }
   };

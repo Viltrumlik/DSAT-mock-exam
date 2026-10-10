@@ -50,6 +50,7 @@ export function useLockdown(attemptId: number | null): Lockdown {
   const [bound, setBound] = useState(false);
   const [lost, setLost] = useState(false);
   const lockedRef = useRef(false);
+  const mountedRef = useRef(true);
   const idRef = useRef(attemptId);
   idRef.current = attemptId;
 
@@ -67,6 +68,12 @@ export function useLockdown(attemptId: number | null): Lockdown {
     async (id: number, api: ExamApi, { requireBind }: { requireBind: boolean }) => {
       if (!lockedRef.current) {
         const report = await native.lockdownEnter();
+        if (!mountedRef.current) {
+          // The midterm screen went away while the lock was being taken (signed out, left): the
+          // unmount cleanup couldn't release a lock that didn't exist yet, so release it here.
+          if (report.ok) void native.lockdownExit().catch(() => {});
+          throw new Error("The midterm screen closed while locking.");
+        }
         if (!report.ok) throw new PrecheckFailedError(report);
         lockedRef.current = true;
         setLocked(true);
@@ -148,16 +155,17 @@ export function useLockdown(attemptId: number | null): Lockdown {
   }, [locked]);
 
   // Leaving the midterm — any way at all — releases the machine.
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    mountedRef.current = true; // StrictMode re-runs this after a simulated unmount
+    return () => {
+      mountedRef.current = false;
       if (idRef.current != null) clearLockdownSession(idRef.current);
       if (lockedRef.current) {
         lockedRef.current = false;
         void native.lockdownExit().catch(() => {});
       }
-    },
-    [],
-  );
+    };
+  }, []);
 
   return { locked, bound, lost, lockAndBind, rebind, release };
 }

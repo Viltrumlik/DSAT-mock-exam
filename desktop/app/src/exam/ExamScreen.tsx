@@ -37,18 +37,28 @@ export function ExamScreen({ source, onExit }: { source: ExamSource; onExit: () 
     if (prevModule.current !== undefined && moduleId !== prevModule.current) setPaused(false);
     prevModule.current = moduleId;
   }, [moduleId]);
+  // One toggle at a time (two crossing POSTs could leave the screen and the server disagreeing),
+  // and the server's reply has the last word on whether the clock is frozen.
+  const toggling = useRef(false);
   const togglePause = async () => {
+    if (toggling.current) return;
+    toggling.current = true;
     const next = !paused;
     setPaused(next); // optimistic: the clock freezes at once
     try {
-      await (next ? pause() : resume());
+      const snap = await (next ? pause() : resume());
+      if (snap) setPaused(snap.is_paused);
     } catch {
       setPaused(!next);
+    } finally {
+      toggling.current = false;
     }
   };
   // Save & Exit freezes the server clock too, so coming back resumes with the time that was left.
+  // Always sent (the server's pause is idempotent, and the local flag can be wrong), but the exit
+  // never waits on it for more than a moment.
   const saveAndExit = async () => {
-    if (!paused) await pause().catch(() => {});
+    await Promise.race([pause().catch(() => null), new Promise((r) => setTimeout(r, 1500))]);
     onExit();
   };
   useEffect(() => {

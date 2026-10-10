@@ -137,17 +137,22 @@ export function ExamRunner({
   // carries this module's id. A failed attempt re-arms after a pause, so a definite refusal can't
   // leave a locked student sitting on 0:00 with no way forward.
   const autoSubmitted = useRef<number | null>(null);
+  // Bumped to re-run the effect after a failed auto-submit: once the clock sits at 0 nothing else in
+  // its deps changes, so clearing the latch alone would never fire it again.
+  const [autoSubmitRetry, setAutoSubmitRetry] = useState(0);
   useEffect(() => {
     if (!mod || paused || countdown.moduleId !== mod.id || remaining > 0 || autoSubmitted.current === mod.id) return;
     const moduleId = mod.id;
     autoSubmitted.current = moduleId;
     void Promise.resolve(onSubmit(answersOut(), flaggedOut(), moduleId)).catch(() => {
       setTimeout(() => {
-        if (autoSubmitted.current === moduleId) autoSubmitted.current = null;
+        if (autoSubmitted.current !== moduleId) return;
+        autoSubmitted.current = null;
+        setAutoSubmitRetry((n) => n + 1);
       }, 10_000);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [remaining, mod?.id, countdown.moduleId, paused]);
+  }, [remaining, mod?.id, countdown.moduleId, paused, autoSubmitRetry]);
 
   // While the off-screen warning covers the paper, nothing under it may take a click or a key.
   const rootRef = useRef<HTMLDivElement>(null);

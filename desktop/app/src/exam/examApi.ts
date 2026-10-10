@@ -51,14 +51,18 @@ export interface ExamApi {
   /** Throws ApiError 403 for a wrong code. `verifyCode(id, "")` is the site's "is a code needed?" probe. */
   verifyCode(id: number, code: string): Promise<{ ok: boolean; requires_code: boolean }>;
   save(id: number, answers: Record<string, string>, flagged: number[], version: number, moduleId: number): Promise<Attempt>;
-  /** `retry` > 0 after the server answered (a 5xx): a fresh key, so a cached failure is never replayed. */
+  /**
+   * `keyTag` identifies this submit ATTEMPT: unique per submit call, plus `.r{n}` after each failure
+   * the server answered with (which it caches under the key). A resend after a lost reply keeps the
+   * tag (a replay is exactly right); nothing ever replays a cached failure.
+   */
   submitModule(
     id: number,
     answers: Record<string, string>,
     flagged: number[],
     version: number,
     moduleId: number,
-    retry?: number,
+    keyTag: string,
   ): Promise<Attempt>;
   /** Past papers: freeze the server's clock / start it again. */
   pause(id: number): Promise<Attempt>;
@@ -163,16 +167,14 @@ export function makeExamApi(source: ExamSource, opts: ExamApiOptions = {}): Exam
           { headers: extra(id, `save.${id}.${moduleId}.v${version}.${payloadTag(answers, flagged)}`) },
         ),
       ),
-    submitModule: async (id, answers, flagged, version, moduleId, retry = 0) =>
+    submitModule: async (id, answers, flagged, version, moduleId, keyTag) =>
       parseAttempt(
         await apiPost(
           `${base}/${id}/submit_module/`,
           // module_id lets the server turn a stale/retried submit into a no-op instead of
           // finalising the NEXT module with this one's answers.
           { answers, flagged, expected_version_number: version, module_id: moduleId },
-          // Same key for a resend after a LOST reply (replay is what we want); a fresh one after the
-          // server answered with a failure, which it caches — the site does the same (`.r{n}`).
-          { headers: extra(id, `submit.${id}.${moduleId}.v${version}${retry > 0 ? `.r${retry}` : ""}`) },
+          { headers: extra(id, `submit.${id}.${moduleId}.v${version}.${keyTag}`) },
         ),
       ),
     pause: async (id) => parseAttempt(await apiPost(`${base}/${id}/pause/`, {})),

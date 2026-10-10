@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, isTransient, NetworkError } from "@/lib/api";
-import { isRunning, isTerminal, makeExamApi, parseAttempt, type ExamApi, type ExamSource } from "./examApi";
+import { isRunning, isTerminal, makeExamApi, parseAttempt, randomSegment, type ExamApi, type ExamSource } from "./examApi";
 import { asDesktopBlocked, desktopBlockReason, type DesktopBlockReason } from "./lockdown/session";
 import type { Attempt, OffscreenReport } from "./types";
 
@@ -53,9 +53,9 @@ export interface ExamAttempt {
   /** `moduleId`: the module these answers belong to (defaults to the live one). */
   submit: (answers: Record<string, string>, flagged: number[], moduleId?: number) => Promise<void>;
   start: () => Promise<void>;
-  /** Past papers: freeze the server clock / start it again. */
-  pause: () => Promise<void>;
-  resume: () => Promise<void>;
+  /** Past papers: freeze the server clock / start it again. Resolves to the server's snapshot. */
+  pause: () => Promise<Attempt | null>;
+  resume: () => Promise<Attempt | null>;
   /** Re-read the snapshot (after a re-bind). Throws on failure. */
   reload: () => Promise<void>;
   /** Retry the first load after an error screen. */
@@ -265,9 +265,10 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
   );
 
   // ── submit ──────────────────────────────────────────────────────────────────
-  // After this many failures the SERVER answered (not lost replies), stop, re-read, and let the
-  // caller decide — the site caps its retries the same way.
-  const MAX_SERVER_RETRIES = 8;
+  // A module submit is retried for as long as the screen is up — never capped. A midterm has no
+  // submit button: a capped auto-submit that gave up during a 5xx window (a deploy's 503s, a class
+  // all handing in at once) left the student locked on 0:00 after the server came back. Repeats are
+  // harmless: module_id turns a submit for a module that already moved on into a server no-op.
   const submit = useCallback(
     async (answers: Record<string, string>, flagged: number[], forModule?: number) => {
       const first = attemptRef.current;
@@ -280,24 +281,19 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
           let refusals = 0;
           let conflicts = 0;
           let serverRetries = 0;
+          // Unique per submit call: a NEW call (a manual retry, the app reopened) never replays a
+          // failure an earlier call left cached under its keys.
+          const callTag = randomSegment().slice(0, 8);
           while (alive.current) {
             const cur = attemptRef.current;
             if (!cur || !isRunning(cur)) return;
-            if (moduleIdOf(cur) !== moduleId) {
-              // The module moved on before this landed. A past paper's server banks a stale
-              // submit's answers and no-ops the transition, so send it once; a midterm refuses ANY
-              // submit before the new module's deadline, so there is nothing to send.
-              if (source.base === "exams") {
-                try {
-                  apply(await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId, 0));
-                } catch {
-                  /* best effort: the live module's own work is unaffected */
-                }
-              }
-              return;
-            }
+            // The module moved on before this landed: nothing to send. Neither server would use it
+            // (the exams one returns the live attempt unchanged; the midterm one refuses any submit
+            // before the new module's deadline).
+            if (moduleIdOf(cur) !== moduleId) return;
+            const keyTag = serverRetries > 0 ? `${callTag}.r${serverRetries}` : callTag;
             try {
-              const next = await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId, serverRetries);
+              const next = await api.submitModule(cur.id, answers, flagged, cur.version_number, moduleId, keyTag);
               apply(next);
               succeeded();
               return;
@@ -317,10 +313,6 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
                 // The server answered with a failure and cached it under that key: a fresh key next
                 // time, or every retry would get the cached failure back forever.
                 serverRetries += 1;
-                if (serverRetries > MAX_SERVER_RETRIES) {
-                  await api.getStatus(cur.id).then(apply).catch(() => {});
-                  throw e;
-                }
                 await transientFailure();
                 continue;
               }
@@ -337,19 +329,24 @@ export function useExamAttempt(source: ExamSource, opts: UseExamAttemptOptions =
         if (alive.current) setSubmitting(false);
       }
     },
-    [api, apply, noteBlocked, run, source.base, succeeded, transientFailure],
+    [api, apply, noteBlocked, run, succeeded, transientFailure],
   );
 
   // ── pause (past papers) ─────────────────────────────────────────────────────
+  // Each returns the server's snapshot, so the caller adopts its is_paused rather than guessing.
   const pause = useCallback(async () => {
     const id = idRef.current;
-    if (id == null) return;
-    apply(await api.pause(id));
+    if (id == null) return null;
+    const snap = await api.pause(id);
+    apply(snap);
+    return snap;
   }, [api, apply]);
   const resume = useCallback(async () => {
     const id = idRef.current;
-    if (id == null) return;
-    apply(await api.resumePause(id));
+    if (id == null) return null;
+    const snap = await api.resumePause(id);
+    apply(snap);
+    return snap;
   }, [api, apply]);
 
   // ── start ───────────────────────────────────────────────────────────────────

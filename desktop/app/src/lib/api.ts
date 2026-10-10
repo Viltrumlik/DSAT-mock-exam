@@ -118,6 +118,9 @@ export function isTransient(e: unknown): boolean {
   return false;
 }
 
+/** No request may take longer than this (see raw()). */
+const REQUEST_TIMEOUT_MS = 25_000;
+
 export interface RequestOptions {
   /** Extra headers for this one request (e.g. X-Lockdown-Session, Idempotency-Key). */
   headers?: Record<string, string>;
@@ -157,12 +160,26 @@ async function raw(
     if (a) headers["Authorization"] = `Bearer ${a}`;
   }
   if (extra) Object.assign(headers, extra);
-  const res = await httpFetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-  const text = await res.text();
+  // Every request ends. The HTTP client has no timeout of its own, so a connection that silently
+  // stalls (Wi-Fi dropped after the request was sent) would hang forever — on a midterm, behind a
+  // "Locking…" button on a locked machine. Past the limit it is a network failure, and retried.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
+  let res: Response;
+  let text: string;
+  try {
+    res = await httpFetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: ctl.signal,
+    });
+    text = await res.text().catch((e) => {
+      throw new NetworkError(e instanceof Error ? e.message : undefined);
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   const data = text ? safeJson(text) : null;
   if (!res.ok) {
     const detail = (data && (data.detail || data.message)) || `Request failed (${res.status}).`;

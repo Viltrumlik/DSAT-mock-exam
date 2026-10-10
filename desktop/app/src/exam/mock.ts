@@ -177,6 +177,11 @@ export function createMockEngine(kind: "rw" | "math", opts: { midterm?: boolean 
       await new Promise((r) => setTimeout(r, 120));
     }
     if (devLockdown.takeDrop()) throw new NetworkError("dev: connection dropped");
+    const s = devLockdown.get();
+    if (s.fail503Next > 0) {
+      devLockdown.set({ fail503Next: s.fail503Next - 1 });
+      throw new ApiError(503, "Service unavailable (dev).", null);
+    }
   };
 
   /** backend/desktop/lockdown.py `refusal()`: the header must carry THIS sitting's current token. */

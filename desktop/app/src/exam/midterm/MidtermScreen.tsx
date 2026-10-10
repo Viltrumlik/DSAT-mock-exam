@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Spinner } from "@/components/ui/Spinner";
-import { ApiError, displayName, ensureFreshSession, isTransient, me } from "@/lib/api";
+import { ApiError, displayName, ensureFreshSession, isTransient, me, tokens } from "@/lib/api";
 import { DEV_MOCK } from "@/lib/env";
 import { ExamRunner } from "../ExamRunner";
 import { Centered, DoneScreen } from "../ExamScreen";
@@ -199,6 +199,9 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
   const bindOrRoute = async (requireBind: boolean): Promise<boolean> => {
     if (id == null) return false;
     await ensureFreshSession(SESSION_RUNWAY_S);
+    // That refresh may have found the session gone (signed out elsewhere): the app is on its way to
+    // the sign-in screen, and the machine must not lock on the way there.
+    if (!tokens.has()) return false;
     bindingRef.current = true;
     try {
       await lock.lockAndBind(id, ex.api, { requireBind });
