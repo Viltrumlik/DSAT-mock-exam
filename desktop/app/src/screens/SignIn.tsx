@@ -1,38 +1,18 @@
-import { useState } from "react";
-import { Globe, LogIn, Mail, Lock, Eye, EyeOff, LineChart, Sparkles, ShieldCheck } from "lucide-react";
+import { Globe, LineChart, Sparkles, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Input";
-import { Field } from "@/components/ui/Field";
 import { Alert } from "@/components/ui/Alert";
+import { useAuth } from "@/lib/useAuth";
 
 /**
- * The native app's sign-in. "Sign in with your browser" is the main way in (Google refuses
- * embedded web-views), with email + password alongside. Visual twin of the website's /login
- * so the app reads as one product. Auth wiring (PKCE + tokens) lands in a later phase; the
- * handlers here are placeholders so the screen is reviewable on its own.
+ * The native app's sign-in. Sign-in is handed to the student's real browser (Google refuses
+ * embedded web-views and Telegram's popup is unreliable there — see backend/desktop/views.py),
+ * so there is one way in: the browser opens, the student signs in however they like, and the app
+ * takes the hand-off from there. Visual twin of the website's /login so the app reads as one
+ * product. The flow is driven by useAuth (PKCE verifier in the shell, JWTs stored by the app).
  */
 export function SignIn() {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [waiting, setWaiting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const signInWithBrowser = () => {
-    setError(null);
-    setWaiting(true);
-    // TODO(phase 2): desktop.beginBrowserSignIn() via the Tauri bridge.
-  };
-
-  const signInWithPassword = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim() || !password || busy) return;
-    setBusy(true);
-    setError(null);
-    // TODO(phase 2): POST /api/auth → store tokens → enter app.
-    setTimeout(() => setBusy(false), 600);
-  };
+  const { status, error, signIn } = useAuth();
+  const connecting = status === "connecting";
 
   return (
     <div className="ds-app flex min-h-screen bg-background text-foreground">
@@ -72,7 +52,7 @@ export function SignIn() {
         <p className="relative text-xs opacity-70">© {new Date().getFullYear()} MasterSAT Center</p>
       </aside>
 
-      {/* Form panel */}
+      {/* Sign-in panel */}
       <main className="flex flex-1 items-center justify-center px-5 py-10">
         <div className="w-full max-w-md">
           <div className="mb-8 text-center lg:hidden">
@@ -90,62 +70,21 @@ export function SignIn() {
 
             <Button
               type="button"
-              onClick={signInWithBrowser}
+              onClick={signIn}
+              loading={connecting}
               fullWidth
               size="lg"
               leftIcon={<Globe />}
               className="!bg-[#2a68c0] hover:!bg-[#21539e]"
             >
-              Sign in with your browser
+              {connecting ? "Waiting for your browser…" : "Sign in with your browser"}
             </Button>
-            <p className="-mt-1 text-center text-xs font-medium text-muted-foreground">
-              {waiting
-                ? "Finish signing in in your browser, then come back."
-                : "Use Google, Telegram or your email — whatever you use on the website."}
+
+            <p className="-mt-1 text-center text-xs font-medium leading-relaxed text-muted-foreground">
+              {connecting
+                ? "Finish signing in in your browser, then come back — this screen updates on its own."
+                : "Your browser opens so you can sign in with Google, Telegram or your email — whatever you use on the website. The app takes it from there."}
             </p>
-
-            <div className="flex items-center gap-3 py-1">
-              <span className="h-px flex-1 bg-border" />
-              <span className="ds-overline">or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-
-            <form className="flex flex-col gap-4" onSubmit={signInWithPassword}>
-              <Field label="Email or username" htmlFor="email">
-                <Input
-                  id="email"
-                  type="text"
-                  placeholder="name@example.com or username"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={busy}
-                  autoComplete="username"
-                  leftIcon={<Mail className="h-4 w-4" />}
-                />
-              </Field>
-              <Field label="Password" htmlFor="password">
-                <Input
-                  id="password"
-                  type={showPw ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy}
-                  autoComplete="current-password"
-                  leftIcon={<Lock className="h-4 w-4" />}
-                  rightSlot={
-                    <button type="button" tabIndex={-1} aria-label={showPw ? "Hide password" : "Show password"}
-                      onClick={() => setShowPw((v) => !v)}
-                      className="ds-ring flex items-center justify-center rounded-md text-label-foreground hover:text-foreground">
-                      {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  }
-                />
-              </Field>
-              <Button type="submit" loading={busy} fullWidth size="lg" rightIcon={<LogIn />} variant="secondary">
-                Sign in
-              </Button>
-            </form>
           </div>
         </div>
       </main>
