@@ -33,7 +33,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from midterms.views_teacher import IsTeacherOrStaff, _display_name
-from users.auth_cookies import set_auth_cookies
+from users.auth_cookies import is_native_client, set_auth_cookies
 from users.models import RefreshSession
 from users.views import _console_refusal_for, _session_fingerprint
 
@@ -108,12 +108,21 @@ class AuthExchangeView(APIView):
             return denied
 
         refresh = RefreshToken.for_user(user)
-        resp = Response({"ok": True})
+        access_str = str(refresh.access_token)
+        refresh_str = str(refresh)
+        # The native app has no cookie jar on its local origin, so it reads the session from the
+        # body (exactly as /api/auth/refresh/ does for native clients). A browser caller gets
+        # {"ok": True} and the HttpOnly cookies, unchanged.
+        body = {"ok": True}
+        if is_native_client(request):
+            body["access"] = access_str
+            body["refresh"] = refresh_str
+        resp = Response(body)
         set_auth_cookies(
             response=resp,
             request=request,
-            access=str(refresh.access_token),
-            refresh=str(refresh),
+            access=access_str,
+            refresh=refresh_str,
             remember_me=True,
         )
         # Recorded like every other sign-in, so the laptop shows up in the student's session
