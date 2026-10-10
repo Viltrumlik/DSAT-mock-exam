@@ -43,6 +43,7 @@ import {
 import { CancelBookingDialog } from "./CancelBookingDialog";
 import { AddMemberDialog } from "./AddMemberDialog";
 import { SessionRating } from "./SessionRating";
+import { SupportSubjectPill } from "./SupportSubject";
 
 function fmtWhen(iso: string) {
   const d = new Date(iso);
@@ -336,9 +337,12 @@ export function SupportBookingPage() {
             {bookings.data?.map((b) => (
               <li key={b.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 sm:px-5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[14.5px] font-extrabold text-foreground">
-                    {b.slot.support_teacher}
-                  </p>
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-[14.5px] font-extrabold text-foreground">
+                      {b.slot.support_teacher}
+                    </p>
+                    <SupportSubjectPill subject={b.slot.support_teacher_subject} className="shrink-0" />
+                  </div>
                   <p className="text-[12.5px] font-semibold text-muted-foreground">
                     {fmtWhen(b.slot.starts_at)}
                     {b.classroom_name ? ` · ${b.classroom_name}` : ""}
@@ -471,7 +475,12 @@ function TeacherCalendar({
         <div className="flex min-w-0 items-center gap-3">
           <Avatar src={teacher.photo_url} name={teacher.name} size={44} />
           <div className="min-w-0">
-            <p className="truncate text-[16px] font-extrabold tracking-[-0.01em] text-foreground">{teacher.name}</p>
+            {/* The subject beside the name: with a Math and an English teacher on the page, it
+                is what tells a student which week to look at. */}
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-[16px] font-extrabold tracking-[-0.01em] text-foreground">{teacher.name}</p>
+              <SupportSubjectPill subject={teacher.subject} className="shrink-0" />
+            </div>
             <p className="truncate text-xs font-medium text-muted-foreground">
               Support teacher
               {teacher.classrooms.length

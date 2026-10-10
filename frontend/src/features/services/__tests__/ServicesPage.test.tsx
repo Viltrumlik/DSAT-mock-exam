@@ -52,6 +52,7 @@ function booking(
   startsInHours: number,
   teacher: string,
   withdrawn = false,
+  subject: "math" | "english" | "both" | null = null,
 ): SupportBooking {
   const starts = Date.now() + startsInHours * HOUR;
   return {
@@ -60,7 +61,7 @@ function booking(
     invited_by_id: null, invited_by: null, cancel_reason: "", cancelled_at: null,
     rating: null, rating_comment: "", rated_at: null, teacher_note: "",
     slot: {
-      id: 100 + id, support_teacher_id: 9, support_teacher: teacher,
+      id: 100 + id, support_teacher_id: 9, support_teacher: teacher, support_teacher_subject: subject,
       starts_at: new Date(starts).toISOString(), ends_at: new Date(starts + HOUR).toISOString(),
       capacity: 1, note: "", is_cancelled: withdrawn,
     },
@@ -118,6 +119,19 @@ describe("ServicesPage", () => {
     for (const other of ["Already held", "Later one", "Withdrawn hour", "Cancelled hour"]) {
       expect(host.textContent).not.toContain(other);
     }
+  });
+
+  it("says which subject the next hour's teacher covers", async () => {
+    useMySupportBookings.mockReturnValue(loaded([booking(1, "BOOKED", 26, "Dilafruz", false, "english")]));
+    await render();
+    expect(host.textContent).toContain("with Dilafruz · English");
+  });
+
+  it("names the teacher alone when the server sends no subject", async () => {
+    useMySupportBookings.mockReturnValue(loaded([booking(1, "BOOKED", 26, "Dilafruz")]));
+    await render();
+    expect(host.textContent).toContain("with Dilafruz");
+    expect(host.textContent).not.toContain("with Dilafruz ·");
   });
 
   it("says nothing is booked only once the bookings have loaded", async () => {
