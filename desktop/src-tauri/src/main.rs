@@ -6,13 +6,13 @@
 
 //! The MasterSAT exam app for Windows.
 //!
-//! A thin Tauri shell whose one window loads https://mastersat.uz/desktop — the website runs
-//! inside it exactly as it does in a browser, and `frontend/src/lib/desktop/bridge.ts` reaches
-//! these commands when, and only when, it is the MasterSAT site in this app (see
-//! `capabilities/mastersat.json`). Everything the page cannot do for itself lives here: the
-//! machine pre-check, the keyboard lock, the lockdown proof, battery, and "Sign in with browser".
+//! A Tauri shell around the app's OWN bundled UI (`desktop/app`, a Vite + React SPA loaded from
+//! inside the .exe — never a remote page). The UI reaches the server through tauri-plugin-http and
+//! these commands through `desktop/app/src/lib/native.ts` (see `capabilities/mastersat.json`).
+//! Everything the page cannot do for itself lives here: the machine pre-check, the keyboard lock,
+//! the lockdown proof, battery, and "Sign in with browser".
 //!
-//! The command names and payloads below ARE the contract in bridge.ts; the proof arithmetic is
+//! The command names and payloads below ARE the contract in native.ts; the proof arithmetic is
 //! the contract in `backend/desktop/proof.py`. Changing either side alone breaks a real exam.
 
 mod lockdown;
@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State, Url, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, State, Url, WebviewWindow};
 use tauri_plugin_deep_link::DeepLinkExt;
 
 use lockdown::{BatteryStatus, PrecheckReport};
@@ -40,7 +40,8 @@ struct AppInfo {
     version: String,
 }
 
-/// What `lockdown_prove` hands back; the web side forwards it to `desktop_session` unchanged.
+/// What `lockdown_prove` hands back. The page sends `desktop_session` the body `{ nonce, ...proof }`
+/// — the nonce is NOT in here, so it must be added alongside these fields.
 #[derive(Debug, Clone, Serialize)]
 struct LockdownProof {
     key_id: String,
@@ -202,12 +203,19 @@ fn lockdown_exit(window: WebviewWindow, state: State<AppState>) {
     let _ = window.set_always_on_top(false);
 }
 
+/// "The exam page is alive." Returns whether the machine is STILL locked: `false` means the
+/// watchdog already released it (the page stalled > 10 s), which the page cannot otherwise see —
+/// so it can lock again instead of carrying on with an unlocked paper.
 #[tauri::command]
-fn lockdown_heartbeat(state: State<AppState>) {
-    if let Ok(mut s) = state.shared.lock() {
-        if s.active {
-            s.last_heartbeat = Instant::now();
+fn lockdown_heartbeat(state: State<AppState>) -> bool {
+    match state.shared.lock() {
+        Ok(mut s) => {
+            if s.active {
+                s.last_heartbeat = Instant::now();
+            }
+            s.active
         }
+        Err(_) => false,
     }
 }
 
@@ -241,14 +249,12 @@ fn open_external(url: String) -> Result<(), String> {
 }
 
 // ───────────────────────────── deep links ─────────────────────────────
-// The installer registers the `mastersat://` scheme. Two shapes, both of which only ever move the
-// app's own window within mastersat.uz — never to another origin.
+// The installer registers the `mastersat://` scheme. One shape:
 //   mastersat://auth?code=…   the browser handing back a "Sign in with browser" code
-//   mastersat://open?path=…   a browser link asking the app to open a page of the site
-
-fn only_site_path(path: &str) -> bool {
-    path.starts_with('/') && !path.starts_with("//") && !path.contains('\\') && !path.contains("://")
-}
+//
+// The window is the app's OWN bundled UI, never a remote page, so the code is DELIVERED to it as
+// an event — the window is never navigated anywhere. The page (lib/useAuth.tsx) pairs the code
+// with the PKCE verifier it kept and redeems them for a session.
 
 fn handle_deep_link(app: &AppHandle, raw: &str) {
     let parsed = match Url::parse(raw) {
@@ -261,27 +267,11 @@ fn handle_deep_link(app: &AppHandle, raw: &str) {
     let Some(window) = app.get_webview_window("main") else {
         return;
     };
-    match parsed.host_str().unwrap_or("") {
-        "auth" => {
-            if let Some((_, code)) = parsed.query_pairs().find(|(k, _)| k == "code") {
-                if let Ok(mut target) = Url::parse(&format!("{SITE}/desktop/login")) {
-                    target.query_pairs_mut().append_pair("code", &code);
-                    let _ = window.navigate(target);
-                    let _ = window.set_focus();
-                }
-            }
+    if parsed.host_str() == Some("auth") {
+        if let Some((_, code)) = parsed.query_pairs().find(|(k, _)| k == "code") {
+            let _ = window.emit("auth-code", code.into_owned());
+            let _ = window.set_focus();
         }
-        "open" => {
-            if let Some((_, path)) = parsed.query_pairs().find(|(k, _)| k == "path") {
-                if only_site_path(&path) {
-                    if let Ok(target) = Url::parse(&format!("{SITE}{path}")) {
-                        let _ = window.navigate(target);
-                        let _ = window.set_focus();
-                    }
-                }
-            }
-        }
-        _ => {}
     }
 }
 
@@ -304,6 +294,9 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_deep_link::init())
+        // The app talks to the server through this (a native request, so no browser CORS from the
+        // app's local origin). The capability scopes it to https://mastersat.uz/* alone.
+        .plugin(tauri_plugin_http::init())
         .manage(AppState::default())
         .setup(|app| {
             lockdown::init_keyboard_guard();
