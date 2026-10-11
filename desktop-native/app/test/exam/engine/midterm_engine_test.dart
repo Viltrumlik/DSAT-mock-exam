@@ -331,7 +331,11 @@ void main() {
         expect(queued, hasLength(3));
         h.api.offline = false;
         h.elapse(const Duration(seconds: 40));
-        expect(h.api.stateOf(M14.attempt), AttemptState.scoring);
+        // The server counted the queued strikes and ended the sitting (the engine then polls the
+        // result, which may already have moved SCORING on to COMPLETED).
+        expect(h.api.stateOf(M14.attempt), isIn([AttemptState.scoring, AttemptState.completed]));
+        expect(h.run(() => h.store.unsentOffscreenEvents(M14.attempt)), isEmpty);
+        expect(h.keysOf('midtermOffscreen').toSet(), hasLength(3), reason: 'three events, three keys, never merged');
         e.dispose();
       });
     });
