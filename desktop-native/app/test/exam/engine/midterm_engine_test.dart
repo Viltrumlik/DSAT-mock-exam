@@ -447,6 +447,39 @@ void main() {
       }, fileDb: true);
     });
 
+    test('a forfeit tallied offline survives a kill: the reopen never shows the paper again', () {
+      withHarness((h) {
+        var e = sitting(h);
+        h.elapse(const Duration(seconds: 2));
+        h.api.offline = true;
+        for (var i = 0; i < 3; i++) {
+          h.native.away = true;
+          h.elapse(const Duration(seconds: 1));
+          h.native.away = false;
+          h.elapse(const Duration(seconds: 1));
+        }
+        expect(e.doneReason, ExamDoneReason.terminated);
+        expect(h.api.stateOf(M14.attempt), AttemptState.module1Active, reason: 'the server has not heard yet');
+        h.flush();
+        h.kill(e);
+        h.native.lockExit();
+        h.api.offline = false;
+        e = h.midterm();
+        final p = h.run(() => e.prepare());
+        expect(p.attempt.state, AttemptState.module1Active);
+        h.run(e.lockAndBind);
+        h.run(e.openPaper);
+        expect(e.phase, ExamPhase.done, reason: 'the strikes on this computer still count');
+        expect(e.doneReason, ExamDoneReason.terminated);
+        expect(h.native.locked, isFalse);
+        h.elapse(const Duration(seconds: 10));
+        expect(h.api.stateOf(M14.attempt), isIn([AttemptState.scoring, AttemptState.completed]));
+        expect(h.keysOf('midtermOffscreen').toSet(), hasLength(3));
+        expect(e.result.value?.state, AttemptState.completed);
+        e.dispose();
+      }, fileDb: true);
+    });
+
     test('low battery is unplugged at or below 25 %', () {
       expect(isLowBattery(const BatteryStatus(percent: 25, charging: false, hasBattery: true)), isTrue);
       expect(isLowBattery(const BatteryStatus(percent: 26, charging: false, hasBattery: true)), isFalse);

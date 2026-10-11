@@ -350,6 +350,12 @@ class MidtermEngine extends ExamEngine {
       _finishedOnServer(a);
       return;
     }
+    if (guard.terminated) {
+      // Strikes this computer tallied (offline, then the app died) still count: they are in
+      // the outbox, now sending with the fresh token. The paper never comes back.
+      if (phaseValue != ExamPhase.done) _terminate(serverConfirmed: false);
+      return;
+    }
     final live = a.module?.id;
     if (live == null || content[live]?.questions == null) {
       throw const ApiError(status: 502, body: ApiErrorBody(code: 'no_content', detail: 'The live module was missing.'));
@@ -391,6 +397,8 @@ class MidtermEngine extends ExamEngine {
 
   /// Make [module] live from server timing [a] — synchronously re-anchoring its clock.
   void _enter(AttemptLite a, int module, Duration sent, Duration received) {
+    // A sitting that ended here (a local forfeit) is never reopened by a late reply.
+    if (disposed || phaseValue == ExamPhase.done || guard.terminated) return;
     _submitTimer?.cancel();
     _submitTimer = null;
     _submitPendingModule = null;
@@ -580,6 +588,8 @@ class MidtermEngine extends ExamEngine {
       _finishedOnServer(a);
       return;
     }
+    // Ended here already (a forfeit the server has not confirmed yet): nothing to follow.
+    if (phaseValue == ExamPhase.done) return;
     final serverModule = a.module?.id;
     final live = liveModuleId;
     if (serverModule != null && serverModule != live && _orderOf(serverModule) > _orderOf(live)) {
