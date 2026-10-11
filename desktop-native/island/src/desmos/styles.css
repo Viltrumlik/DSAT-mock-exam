@@ -1,0 +1,18 @@
+/* desmos.html styles: Tailwind 4.2.1 for the website's loading overlay classes
+ * (DesmosCalculator.tsx), plus the page frame. Desmos brings its own CSS. */
+@import "tailwindcss" source(none);
+
+@source "../desmos";
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #ffffff;
+  overscroll-behavior: none;
+}
+html {
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}

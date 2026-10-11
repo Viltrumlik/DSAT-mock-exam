@@ -25,7 +25,7 @@ export function PassagePane(question: IslandQuestion, media: MediaStore): Passag
     "div",
     { className: "prose prose-slate max-w-none leading-relaxed text-slate-900", attrs: { id: "ts-passage" } },
     figure,
-    safeHtml(examHtml(question.question_text), { className: "mathjax-process font-[Georgia] font-medium leading-relaxed" }),
+    safeHtml(examHtml(question.question_text), { className: "mathjax-process font-[Georgia] font-medium leading-relaxed", media }),
   );
   const el = h("div", { className: "min-w-0 overflow-y-auto p-10" }, container);
   return {

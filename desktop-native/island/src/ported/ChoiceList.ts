@@ -94,7 +94,7 @@ export function ChoiceList(question: IslandQuestion, media: MediaStore, handlers
   const rows: Row[] = options.map(({ key, text, image }) => {
     const letter = h("span", { className: `${LETTER} ${LETTER_IDLE}` }, key);
     const img = optionImage(question, key, image, media, `Option ${key}`);
-    const content = img ?? safeHtml(examHtml(text), { className: "mathjax-process w-full" });
+    const content = img ?? safeHtml(examHtml(text), { className: "mathjax-process w-full", media });
     const textSpan = h("span", { className: "ml-4 w-full text-left font-[Georgia] text-[16px] leading-snug text-slate-900" }, content);
     const button = h(
       "button",

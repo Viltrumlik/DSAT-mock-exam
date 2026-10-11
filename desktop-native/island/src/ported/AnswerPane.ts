@@ -137,8 +137,8 @@ export function AnswerPane(question: IslandQuestion, isMath: boolean, media: Med
 
   // ── Highlightable question content (prompt for RW, stem for math) ────────
   const stemClass = "mathjax-process mb-8 font-[Georgia] font-medium leading-relaxed text-slate-900";
-  const prompt = question.question_prompt && !isSpr ? safeHtml(examHtml(question.question_prompt), { className: stemClass }) : null;
-  const stem = isMath ? safeHtml(examHtml(question.question_text), { className: stemClass }) : null;
+  const prompt = question.question_prompt && !isSpr ? safeHtml(examHtml(question.question_prompt), { className: stemClass, media }) : null;
+  const stem = isMath ? safeHtml(examHtml(question.question_text), { className: stemClass, media }) : null;
   const questionContainer = h("div", { attrs: { id: "ts-question" } }, prompt, stem);
 
   // ── Answer area ───────────────────────────────────────────────────────────
@@ -201,7 +201,7 @@ export function AnswerPane(question: IslandQuestion, isMath: boolean, media: Med
           "div",
           { className: "mt-8 bg-primary/5 p-6 rounded-2xl border border-primary/15" },
           h("h4", { className: "text-[10px] font-bold text-primary uppercase tracking-widest mb-3" }, "Explanation"),
-          safeHtml(examHtml(explanationRaw), { className: "leading-relaxed max-w-full overflow-x-auto text-foreground font-[Georgia] leading-relaxed text-sm" }),
+          safeHtml(examHtml(explanationRaw), { className: "leading-relaxed max-w-full overflow-x-auto text-foreground font-[Georgia] leading-relaxed text-sm", media }),
         ),
       );
     }
