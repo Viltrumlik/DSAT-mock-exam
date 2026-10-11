@@ -3,10 +3,11 @@
 // (a second IslandHost of kind desmos). While Desmos loads, a white veil with a spinner; if it
 // cannot load (offline, script error, timeout) the native scientific calculator takes over.
 //
-// Scientific-only papers (junior/foundation Math midterms) hide the tabs. With
-// [nativeScientificOnly] (the default for this app) they get the native scientific calculator
-// straight away and never create the Desmos island; set it false to use Desmos's Scientific
-// calculator instead, as the website does.
+// Scientific-only papers (junior Math midterms) hide the tabs. With [nativeScientificOnly] (the
+// default for this app) they get the native scientific calculator straight away and never
+// create the Desmos island; set it false to use Desmos's Scientific calculator instead, as the
+// website does. A paper with no calculator at all (Foundation Math since 2026-10-11, worked by
+// hand) never mounts this panel: the runner gates it on `calculatorAllowed`.
 import 'package:flutter/widgets.dart';
 
 import '../../runner/icons/lucide_glyphs.dart';

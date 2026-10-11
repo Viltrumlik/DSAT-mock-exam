@@ -400,6 +400,13 @@ void main() {
     await s.tapText('Back to my tests');
     expect(s.exits, 1);
     expect(s.awake, ['keepAwake true', 'keepAwake false']);
+    // The host has not unmounted the flow yet and the engine moves on (a retry lands): the
+    // student has left, so nothing asks for the display again.
+    s.rig.api.offline = false;
+    await s.controller.load();
+    await s.settle();
+    expect(s.controller.keepScreenAwake, isTrue);
+    expect(s.awake, ['keepAwake true', 'keepAwake false']);
     await s.done();
     expect(s.awake, ['keepAwake true', 'keepAwake false']);
   });

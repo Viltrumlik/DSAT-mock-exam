@@ -360,6 +360,9 @@ class _MidtermFlowState extends State<MidtermFlow> {
   /// What this flow last asked `ms_keep_awake` for.
   bool _awake = false;
 
+  /// The student left (Back to my tests): never ask again, whatever the engine says next.
+  bool _exited = false;
+
   @override
   void initState() {
     super.initState();
@@ -393,7 +396,7 @@ class _MidtermFlowState extends State<MidtermFlow> {
   /// native library remembers the request and re-asserts it after a lock release (lock.rs:
   /// `release_on_window_thread`, for both Lock exit and the watchdog), and turning it off while
   /// locked leaves the lock's own flags in place — so one call per change is enough here.
-  void _syncAwake() => _setAwake(c.keepScreenAwake);
+  void _syncAwake() => _setAwake(!_exited && c.keepScreenAwake);
 
   void _setAwake(bool on) {
     if (on == _awake) return;
@@ -413,6 +416,7 @@ class _MidtermFlowState extends State<MidtermFlow> {
 
   void _exit() {
     c.release();
+    _exited = true;
     _setAwake(false);
     widget.onExit();
   }
