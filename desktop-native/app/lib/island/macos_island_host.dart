@@ -36,9 +36,7 @@ import 'texture_island_host.dart';
 @immutable
 class IslandSource {
   const IslandSource.folder(String this.folder, {this.isProbe = false}) : url = null;
-  const IslandSource.url(Uri this.url)
-      : folder = null,
-        isProbe = false;
+  const IslandSource.url(Uri this.url) : folder = null, isProbe = false;
 
   /// A folder holding content.html / desmos.html (served over loopback HTTP).
   final String? folder;
@@ -253,32 +251,36 @@ class WkIslandWebview implements IslandWebview {
     } else {
       _base = source.url;
     }
-    final controller = WebViewController(onPermissionRequest: (request) {
-      _blocked.add(WebviewBlockedEvent('permission', request.types.map((t) => t.name).join(',')));
-      unawaited(request.deny());
-    });
+    final controller = WebViewController(
+      onPermissionRequest: (request) {
+        _blocked.add(WebviewBlockedEvent('permission', request.types.map((t) => t.name).join(',')));
+        unawaited(request.deny());
+      },
+    );
     await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
     await controller.setBackgroundColor(const Color(0xFFFFFFFF));
     await controller.addJavaScriptChannel('ms', onMessageReceived: (m) => _messages.add(m.message));
-    await controller.setNavigationDelegate(NavigationDelegate(
-      onNavigationRequest: (request) {
-        final base = _base;
-        if (base != null && isSameIslandOrigin(request.url, base)) return NavigationDecision.navigate;
-        _blocked.add(WebviewBlockedEvent(request.isMainFrame ? 'navigation' : 'frame', request.url));
-        return NavigationDecision.prevent;
-      },
-      onWebResourceError: (error) {
-        if (error.errorType == WebResourceErrorType.webContentProcessTerminated) {
-          _failures.add(WebviewProcessFailure(WebviewProcessFailedKind.renderProcessExited.index, -1, 0));
-        } else if (error.isForMainFrame ?? true) {
-          _loadErrors.add('load error ${error.errorCode}: ${error.description}');
-        }
-      },
-      onHttpError: (error) {
-        final code = error.response?.statusCode;
-        if (code != null) _loadErrors.add('HTTP $code for ${error.request?.uri}');
-      },
-    ));
+    await controller.setNavigationDelegate(
+      NavigationDelegate(
+        onNavigationRequest: (request) {
+          final base = _base;
+          if (base != null && isSameIslandOrigin(request.url, base)) return NavigationDecision.navigate;
+          _blocked.add(WebviewBlockedEvent(request.isMainFrame ? 'navigation' : 'frame', request.url));
+          return NavigationDecision.prevent;
+        },
+        onWebResourceError: (error) {
+          if (error.errorType == WebResourceErrorType.webContentProcessTerminated) {
+            _failures.add(WebviewProcessFailure(WebviewProcessFailedKind.renderProcessExited.index, -1, 0));
+          } else if (error.isForMainFrame ?? true) {
+            _loadErrors.add('load error ${error.errorCode}: ${error.description}');
+          }
+        },
+        onHttpError: (error) {
+          final code = error.response?.statusCode;
+          if (code != null) _loadErrors.add('HTTP $code for ${error.request?.uri}');
+        },
+      ),
+    );
     _controller = controller;
   }
 
@@ -397,15 +399,15 @@ class _UnavailableIslandHost extends IslandHost {
 
   @override
   Widget build(BuildContext context) => ColoredBox(
-        color: const Color(0xFFF8FAFC),
-        child: Center(
-          child: Text(
-            'No island build: $reason',
-            textDirection: TextDirection.ltr,
-            style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-          ),
-        ),
-      );
+    color: const Color(0xFFF8FAFC),
+    child: Center(
+      child: Text(
+        'No island build: $reason',
+        textDirection: TextDirection.ltr,
+        style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+      ),
+    ),
+  );
 
   @override
   Future<void> focus() async {}
@@ -427,5 +429,6 @@ class _UnavailableIslandHost extends IslandHost {
 }
 
 /// JSON helper for diagnostics.
-String describeIslandSource(IslandSource? source) =>
-    jsonEncode(source == null ? null : {'folder': source.folder, 'url': source.url?.toString(), 'probe': source.isProbe});
+String describeIslandSource(IslandSource? source) => jsonEncode(
+  source == null ? null : {'folder': source.folder, 'url': source.url?.toString(), 'probe': source.isProbe},
+);

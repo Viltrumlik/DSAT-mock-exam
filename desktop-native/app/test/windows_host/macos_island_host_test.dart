@@ -14,11 +14,7 @@ import 'package:path/path.dart' as p;
 void main() {
   group('resolveDevIslandSource', () {
     const root = '/repo/desktop-native';
-    final files = <String>{
-      '$root/VERSION',
-      '$root/app/pubspec.yaml',
-      '$root/packaging/s0-probe/content.html',
-    };
+    final files = <String>{'$root/VERSION', '$root/app/pubspec.yaml', '$root/packaging/s0-probe/content.html'};
     bool exists(String path) => files.contains(p.normalize(path));
 
     test('MS_ISLAND_URL wins when it is a loopback dev server', () {
@@ -79,7 +75,12 @@ void main() {
 
     test('null when nothing is there', () {
       expect(
-        resolveDevIslandSource(environment: const {}, workingDirectory: '/', executable: '/x', fileExists: (_) => false),
+        resolveDevIslandSource(
+          environment: const {},
+          workingDirectory: '/',
+          executable: '/x',
+          fileExists: (_) => false,
+        ),
         isNull,
       );
     });
@@ -87,12 +88,21 @@ void main() {
 
   test('island URLs map onto the dev origin; other hosts are refused', () {
     final base = Uri.parse('http://127.0.0.1:4000/');
-    expect(mapIslandUrl('https://island.mastersat.example/content.html', base).toString(),
-        'http://127.0.0.1:4000/content.html');
-    expect(mapIslandUrl('https://island.mastersat.example/desmos.html?x=1', base).toString(),
-        'http://127.0.0.1:4000/desmos.html?x=1');
-    expect(mapIslandUrl('https://island.mastersat.example/content.html', Uri.parse('http://localhost:5317/island/')).toString(),
-        'http://localhost:5317/island/content.html');
+    expect(
+      mapIslandUrl('https://island.mastersat.example/content.html', base).toString(),
+      'http://127.0.0.1:4000/content.html',
+    );
+    expect(
+      mapIslandUrl('https://island.mastersat.example/desmos.html?x=1', base).toString(),
+      'http://127.0.0.1:4000/desmos.html?x=1',
+    );
+    expect(
+      mapIslandUrl(
+        'https://island.mastersat.example/content.html',
+        Uri.parse('http://localhost:5317/island/'),
+      ).toString(),
+      'http://localhost:5317/island/content.html',
+    );
     expect(() => mapIslandUrl('https://example.com/content.html', base), throwsArgumentError);
   });
 
@@ -174,7 +184,11 @@ void main() {
       expect(islandHostModeFor(platform: TargetPlatform.macOS, environment: const {}), IslandHostMode.macosDev);
       expect(islandHostModeFor(platform: TargetPlatform.linux, environment: const {}), IslandHostMode.fake);
       expect(
-        islandHostModeFor(platform: TargetPlatform.windows, environment: {'MS_ISLAND_HOST': 'fake'}, releaseMode: false),
+        islandHostModeFor(
+          platform: TargetPlatform.windows,
+          environment: {'MS_ISLAND_HOST': 'fake'},
+          releaseMode: false,
+        ),
         IslandHostMode.fake,
       );
       expect(

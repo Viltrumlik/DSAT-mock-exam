@@ -34,6 +34,7 @@ class FakeIslandWebview implements IslandWebview {
     if (messages.isClosed) return; // a disposed web view says nothing
     messages.add(json is String ? json : jsonEncode(json));
   }
+
   void sayReady() => say({'v': 1, 't': 'ready', 'build': 'test', 'protocol': 1});
 
   List<String> get postedTypes => [for (final j in postedJson) (jsonDecode(j) as Map)['t'] as String];
@@ -179,14 +180,16 @@ void main() {
     final host = TextureIslandHost(IslandKind.content, webviewFactory: factoryOf());
     host.post(_init);
     await host.open();
-    host.post(const QuestionShowMessage(
-      qid: 7,
-      index: 0,
-      total: 3,
-      eliminated: [],
-      flagged: false,
-      annotations: IslandAnnotationSet(passage: [], question: [], choices: []),
-    ));
+    host.post(
+      const QuestionShowMessage(
+        qid: 7,
+        index: 0,
+        total: 3,
+        eliminated: [],
+        flagged: false,
+        annotations: IslandAnnotationSet(passage: [], question: [], choices: []),
+      ),
+    );
     expect(made.single.postedJson, isEmpty);
     expect(host.queuedMessages, 2);
     made.single.sayReady();
@@ -286,12 +289,7 @@ void main() {
 
   test('crash loops stop after maxRecoveries within the window', () async {
     var clock = DateTime(2026, 10, 11, 9);
-    final host = TextureIslandHost(
-      IslandKind.content,
-      webviewFactory: factoryOf(),
-      maxRecoveries: 2,
-      now: () => clock,
-    );
+    final host = TextureIslandHost(IslandKind.content, webviewFactory: factoryOf(), maxRecoveries: 2, now: () => clock);
     await host.open();
     for (var i = 0; i < 3; i++) {
       made.last.failures.add(WebviewProcessFailure(WebviewProcessFailedKind.browserProcessExited.index, 0, 0));
@@ -407,7 +405,12 @@ void main() {
 
   testWidgets('build shows the web view on the page background; nothing before open', (tester) async {
     final host = TextureIslandHost(IslandKind.content, webviewFactory: factoryOf());
-    await tester.pumpWidget(Directionality(textDirection: TextDirection.ltr, child: Builder(builder: host.build)));
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: Builder(builder: host.build),
+      ),
+    );
     expect(find.byKey(const ValueKey('fake-webview')), findsNothing);
     await tester.runAsync(host.open);
     await tester.pump();

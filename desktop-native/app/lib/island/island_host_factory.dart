@@ -68,10 +68,10 @@ IslandHostFactory islandHostFactory({
       final source = macosSource ?? resolveDevIslandSource(environment: env);
       if (source == null) {
         return (kind) => MacosIslandHost.unavailable(
-              kind,
-              'build the island (cd desktop-native/island && npm ci && npm run build) '
-              'or set MS_ISLAND_DIR / MS_ISLAND_URL',
-            );
+          kind,
+          'build the island (cd desktop-native/island && npm ci && npm run build) '
+          'or set MS_ISLAND_DIR / MS_ISLAND_URL',
+        );
       }
       return (kind) => MacosIslandHost(kind, source: source);
     case IslandHostMode.fake:

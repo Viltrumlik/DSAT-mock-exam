@@ -86,11 +86,8 @@ class MsWebview2IslandWebview implements IslandWebview {
   Future<void> initialize() => controller.initialize();
 
   @override
-  Future<void> mapIslandFolder(String folder) => controller.addVirtualHostNameMapping(
-        islandVirtualHost,
-        folder,
-        WebviewHostResourceAccessKind.denyCors,
-      );
+  Future<void> mapIslandFolder(String folder) =>
+      controller.addVirtualHostNameMapping(islandVirtualHost, folder, WebviewHostResourceAccessKind.denyCors);
 
   @override
   Future<void> setAllowedResourceHosts(List<String> hosts) => controller.setAllowedResourceHosts(hosts);
@@ -379,13 +376,13 @@ class WebviewIslandHost extends IslandHost {
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<IslandWebview?>(
-        valueListenable: _webview,
-        builder: (context, webview, _) => ColoredBox(
-          // The page background, so a recreated island never flashes another colour.
-          color: const Color(0xFFFFFFFF),
-          child: webview == null ? const SizedBox.expand() : webview.build(context),
-        ),
-      );
+    valueListenable: _webview,
+    builder: (context, webview, _) => ColoredBox(
+      // The page background, so a recreated island never flashes another colour.
+      color: const Color(0xFFFFFFFF),
+      child: webview == null ? const SizedBox.expand() : webview.build(context),
+    ),
+  );
 
   @override
   Future<void> focus() async => _webview.value?.focus();
