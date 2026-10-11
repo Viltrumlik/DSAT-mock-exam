@@ -75,6 +75,9 @@ export function SprInput(initial: string, onChange: (value: string) => void): Sp
       if (next === lastGood) return;
       lastGood = next;
       setShown(next);
+      // React re-renders SprInput with defaultValue={value}: the attribute follows the answer
+      // (the live value is the property and is never touched while typing).
+      input.defaultValue = next;
       onChange(next);
     } else {
       // Reject non-grid-in characters: restore the last valid value.
@@ -112,6 +115,7 @@ export function SprInput(initial: string, onChange: (value: string) => void): Sp
       if (next === lastGood) return;
       lastGood = next;
       setShown(next);
+      input.defaultValue = next;
       if (input.value !== next) input.value = next;
     },
     setLocked(on: boolean) {

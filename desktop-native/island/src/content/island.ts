@@ -1,6 +1,9 @@
 // The content island (architecture.md §2.4): the question card between the header's and the
 // footer's colour rules, rendered with the website's own code, driven entirely by native
-// messages (protocol/schema.json, island/src/protocol.ts).
+// messages (protocol/schema.json, island/src/protocol.ts). The card region's behaviour —
+// the <main> frame, `.ts-annotating`, the divider drag clamped to 28–72 %, the SPR directions
+// column state, the eliminate-deselects rule — is ported from
+// frontend/src/features/testing-simulation/pages/ExamRunnerPage.tsx and hooks/useAnswers.ts.
 //
 //   native → island   init · module.load · media.put · question.show · state.patch ·
 //                     view.set · annot.apply · selection.get · focus.release
