@@ -175,8 +175,10 @@ jobs:
           Add-Content -Path $hosts -Value $lines -Encoding ascii
           ipconfig /flushdns | Out-Null
           foreach ($n in $names) {
-            $a = @([System.Net.Dns]::GetHostAddresses($n) | ForEach-Object IPAddressToString)
-            Write-Host "$n -> $($a -join ', ')"
+            # Windows answers "no data" for a 0.0.0.0 entry: the name has no usable address.
+            try { $a = @([System.Net.Dns]::GetHostAddresses($n) | ForEach-Object IPAddressToString) }
+            catch { $a = @() }
+            Write-Host "$n -> $(if ($a) { $a -join ', ' } else { 'no address' })"
             if (@($a | Where-Object { $_ -notin '0.0.0.0', '::' }).Count -gt 0) { throw "$n still resolves to a real address" }
           }
 
