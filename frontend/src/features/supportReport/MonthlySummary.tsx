@@ -62,15 +62,17 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
         }
         detail={`${formatShare(attendedCount(t), settledCount(t))} settled either way`}
       />
+      {/* Late rides in this tile's detail rather than as a seventh tile: the grid is laid
+          out for six, and a seventh would strand the amber "Not settled yet" call to action
+          on a row of its own. The table below has its own "Came late" column. */}
       <StatTile
         label="Sessions held"
         value={t.held}
-        detail={`out of ${plural(t.bookings, "booking")}`}
-      />
-      <StatTile
-        label="Came late"
-        value={t.late ?? 0}
-        detail="Attended, earned no XP"
+        detail={
+          t.late
+            ? `out of ${plural(t.bookings, "booking")} · ${t.late} more came late`
+            : `out of ${plural(t.bookings, "booking")}`
+        }
       />
       <StatTile
         label="Students who came"
@@ -168,9 +170,11 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
         <Num
           value={row.students_helped}
           title={
-            row.students_helped === row.held
+            // Against everyone who ATTENDED — held or late — since `students_helped` counts
+            // both; comparing with `held` alone would claim a repeat visit that never was.
+            row.students_helped === attendedCount(row)
               ? "Distinct students who attended."
-              : `Distinct students who attended — ${plural(row.held, "session")} between them, so somebody came more than once.`
+              : `Distinct students who attended — ${plural(attendedCount(row), "session")} between them, so somebody came more than once.`
           }
         />
       ),

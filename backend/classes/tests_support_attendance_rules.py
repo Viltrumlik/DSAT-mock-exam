@@ -13,7 +13,7 @@ the database in the past: ``book()`` rightly refuses a slot that has started.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -46,6 +46,12 @@ class AttendanceFixture(TestCase):
             patcher = mock.patch(task)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # The rule counts misses recorded from its release day on; these tests record theirs
+        # "now", whatever day the suite runs, so the start is put safely in the past.
+        # RuleStartTests below moves it back to today to test the cut-off itself.
+        patcher = mock.patch.object(support_service, "NO_SHOW_RULE_START", date(2000, 1, 1))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.client = APIClient()
         self.admin = User.objects.create_user("ar_admin@t.com", "secret123", role=C.ROLE_ADMIN)
         self.support = User.objects.create_user(
@@ -363,6 +369,56 @@ class NoShowWarningAndPauseTests(AttendanceFixture):
         with self.assertRaises(ValidationError) as caught:
             support_service.invite_member(later_seat, self.mate, actor=self.student)
         self.assertIn("paused", "; ".join(caught.exception.messages))
+
+
+class RuleStartAndStaleMissTests(AttendanceFixture):
+    """What the release itself must not do: pause anyone for misses recorded before the rule
+    existed, or warn about a session recorded weeks late."""
+
+    def test_misses_recorded_before_the_rule_do_not_count(self):
+        with mock.patch.object(support_service, "NO_SHOW_RULE_START", self.today):
+            for offset in (-4, -2):
+                SupportBooking.objects.filter(pk=self.seat(self.student, offset).pk).update(
+                    status=SupportBooking.STATUS_NO_SHOW,
+                    settled_at=timezone.now() - timedelta(days=2),  # before the rule
+                )
+            self.assertIsNone(support_service.booking_pause_for(self.student))
+            self.assertIsNone(support_service.no_show_warning_for(self.student))
+
+            # A miss recorded under the rule is the student's FIRST, so it warns.
+            self.miss(self.student, -1)
+            self.assertIsNone(support_service.booking_pause_for(self.student))
+            self.assertIn("Warning", self.told(self.student)[-1].title)
+
+    def test_a_miss_recorded_weeks_late_sends_no_warning(self):
+        """Clearing August's backlog must not buzz phones about sessions long gone."""
+        self.miss(self.student, -20)
+        self.assertEqual(self.told(self.student), [])
+        self.assertIsNone(support_service.no_show_warning_for(self.student))
+
+    def test_a_paused_students_days_off_still_read_off(self):
+        """Installed app builds know "off" and not "paused"; a teacher's day off must not
+        turn into a "Full" day for a paused student there."""
+        from classes.models_support import SupportWorkingHours
+
+        off_day = self.day(1)
+        for weekday in range(7):
+            SupportWorkingHours.objects.create(
+                support_teacher=self.support, weekday=weekday,
+                is_working=weekday != off_day.weekday(), start_hour=8, end_hour=18,
+            )
+        self.miss(self.student, -3)
+        self.miss(self.student, -1)
+
+        entry = next(
+            e for e in support_service.open_calendar_for(self.student)
+            if e["teacher"].pk == self.support.pk
+        )
+        states = {
+            day["date"]: {h["state"] for h in day["hours"]} for day in entry["days"]
+        }
+        self.assertEqual(states[off_day], {"off"})
+        self.assertIn("paused", states[self.day(2)])
 
 
 # ── 3. The limit leak ─────────────────────────────────────────────────────────

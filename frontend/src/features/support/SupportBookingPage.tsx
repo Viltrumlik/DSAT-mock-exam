@@ -270,7 +270,7 @@ export function SupportBookingPage() {
               {allowance.paused_missed && allowance.paused_missed.length === 2
                 ? ` (${fmtDate(allowance.paused_missed[0])} and ${fmtDate(allowance.paused_missed[1])})`
                 : ""}
-              . Sessions you had booked in that week were cancelled.
+              . Any sessions you had booked in that week were cancelled.
             </p>
           </div>
         </div>
@@ -440,7 +440,9 @@ export function SupportBookingPage() {
                   <Pill tone={STATUS_STYLE[b.status].tone}>
                     {STATUS_STYLE[b.status].label}
                   </Pill>
-                  {b.status === "BOOKED" && (
+                  {/* Not while booking is paused: the server refuses a paused student's
+                      invitation, and the dialog would only fill with names to be turned down. */}
+                  {b.status === "BOOKED" && !allowance?.paused_until && (
                     <button type="button" className={rowAction("primary")} onClick={() => setInviting(b)}>
                       <UserPlus className="h-3.5 w-3.5" aria-hidden />
                       Add a member

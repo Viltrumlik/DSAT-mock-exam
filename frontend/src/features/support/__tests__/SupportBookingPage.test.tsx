@@ -246,6 +246,17 @@ describe("SupportBookingPage — attended late, the no-show pause, started sessi
     expect(host.textContent).toContain("support booking pauses for a week");
   });
 
+  it("offers no Add a member while booking is paused — the server refuses the invitation", async () => {
+    hooks.useSupportCalendar.mockReturnValue(loaded({
+      ...CALENDAR,
+      allowance: { ...CALENDAR.allowance!, paused_from: localDate(today), paused_until: localDate(tomorrow) },
+    }));
+    hooks.useMySupportBookings.mockReturnValue(loaded([booking(6, "BOOKED")]));
+    await render();
+
+    expect(buttonNamed("Add a member")).toBeUndefined();
+  });
+
   it("offers no Cancel once a session has started — the server refuses it", async () => {
     const started = booking(5, "BOOKED");
     started.slot = { ...started.slot, starts_at: new Date(Date.now() - 20 * 60_000).toISOString() };

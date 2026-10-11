@@ -100,6 +100,15 @@ MAX_BOOKINGS_PER_DAY = 1
 NO_SHOW_WINDOW_DAYS = 7
 NO_SHOW_PAUSE_DAYS = 7
 
+#: The rule counts only misses RECORDED from this local date on — the day it went live.
+#: NO_SHOW existed long before the rule did, so without a start a student whose two older
+#: misses happened to fall within a week would be paused the moment the release landed:
+#: never warned, never told, and with the sessions inside their week left standing (those
+#: are cancelled only when a teacher records the second miss). A miss is "under the rule"
+#: when its ``settled_at`` is on or after this date. Move it to the release day if the
+#: release goes out later.
+NO_SHOW_RULE_START = datetime(2026, 10, 12).date()
+
 
 def _no_show_dates_by_student(student_ids, *, now) -> dict[int, list]:
     """``{student_id: [local dates of self-booked, started NO_SHOW sessions]}``, oldest first.
@@ -124,6 +133,8 @@ def _no_show_dates_by_student(student_ids, *, now) -> dict[int, list]:
         invited_by__isnull=True,
         availability__starts_at__gte=since,
         availability__starts_at__lte=now,
+        # Recorded under the rule, not before it existed — see NO_SHOW_RULE_START.
+        settled_at__gte=_hour_start(NO_SHOW_RULE_START, 0),
     ).values_list("student_id", "availability__starts_at"):
         out.setdefault(int(student_id), []).append(timezone.localdate(starts_at))
     for dates in out.values():
@@ -761,11 +772,16 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
                     state = "past"
                 elif paused:
                     # Two missed sessions within a week (NO_SHOW_WINDOW_DAYS). Above every
-                    # other reason because it is the one that applies to every hour: a grid
-                    # of "full" and "he's not in" would hide that nothing here is bookable
-                    # for this student. "mine" still outranks it — though the pause cancels
-                    # the sessions inside its week, one booked for after it stands.
-                    state = "paused"
+                    # other reason because it applies to every working hour: a grid of
+                    # "full" and "withdrawn" would hide that nothing here is bookable for
+                    # this student. "mine" still outranks it — though the pause cancels the
+                    # sessions inside its week, one booked for after it stands.
+                    #
+                    # Except an hour the teacher never works: that stays "off". The pause
+                    # did not take it away, and app builds already installed know only
+                    # "off" — a paused student's Sunday would otherwise read "Full" there
+                    # instead of "Not working". The web grid drops off-hours either way.
+                    state = "off" if not working else "paused"
                 elif day in taken_days:
                     # One session a day (MAX_BOOKINGS_PER_DAY). Ranked above the teacher-side
                     # states on purpose: the student cannot book ANY hour that day, and a day
@@ -1315,6 +1331,16 @@ def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = ""
     if status not in SupportBooking.SETTLED_STATUSES:
         raise ValidationError("A session is settled as attended, attended late, or not attended.")
     now = now or timezone.now()
+    # The STUDENT first, then the booking — the same student lock every seat claim takes
+    # (`_assert_may_take_seat`). Without it a booking made while the second miss is being
+    # recorded could land inside the paused week and survive the cancellation, and two
+    # teachers recording a student's two misses at the same moment would each see only one
+    # and each send a "first" warning. Student-before-booking is the one order: nothing
+    # takes a booking lock and then the student's, so the two cannot deadlock.
+    student_id = SupportBooking.objects.values_list("student_id", flat=True).get(pk=booking.pk)
+    get_user_model().objects.select_for_update().filter(pk=student_id).values_list(
+        "pk", flat=True
+    ).first()
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
     if booking.status == SupportBooking.STATUS_CANCELLED:
         raise ValidationError("That booking was cancelled.")
@@ -1359,13 +1385,24 @@ def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = ""
                 transaction.on_commit(
                     lambda: _announce_pause(settled, pause_after, cancelled)
                 )
-            elif pause_after is None:
+            elif pause_after is None and _is_live_warning(settled, now=now):
+                # Only a miss inside the live window is a warning. Clearing the backlog —
+                # August's unsettled hours, recorded weeks late — must not buzz a phone
+                # about a session that can no longer pair with anything.
                 transaction.on_commit(lambda: _announce_no_show_warning(settled))
         elif pause_before is not None and pause_after is None:
             transaction.on_commit(lambda: _announce_pause_lifted(settled))
     if status == SupportBooking.STATUS_LATE and previous != SupportBooking.STATUS_LATE:
         transaction.on_commit(lambda: _announce_late(settled))
     return booking
+
+
+def _is_live_warning(booking, *, now) -> bool:
+    """Is this miss the one the student is now warned about? (See ``no_show_warning_for``.)"""
+    warning = no_show_warning_for(booking.student, now=now)
+    return warning is not None and warning["missed"] == timezone.localdate(
+        booking.availability.starts_at
+    )
 
 
 def _cancel_inside_pause(student, pause, *, now) -> list[SupportBooking]:

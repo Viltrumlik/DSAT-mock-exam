@@ -24,7 +24,7 @@
  * rating, and an error surface for each request that can fail.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock, CalendarOff, Check, Clock, Info, Moon, Star, UserPlus, UserX,
 } from "lucide-react";
@@ -78,6 +78,15 @@ export function SupportTeacherPage() {
    * count and "waiting" three lines below it. Deliberately not memoised: it has to move.
    */
   const now = Date.now();
+  // …and a tick so it moves on its own. A teacher who opens the diary at 13:55 and leaves it
+  // open must see "Came late" and "Did not attend" appear when the 14:00 hour starts, and a
+  // finished hour turn into "Waiting for you" — nothing else here re-renders on the clock,
+  // and with only "They came" on screen a late student would be paid.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   // Memoised only so the empty fallback is the SAME array between renders — every derived
   // list below depends on `now`, which changes each render, so nothing else here can be.
   const rows = useMemo(() => diary.data ?? [], [diary.data]);

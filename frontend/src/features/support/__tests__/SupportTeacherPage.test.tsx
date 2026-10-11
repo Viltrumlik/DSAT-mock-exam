@@ -479,6 +479,28 @@ describe("the diary", () => {
     expect(buttonNamed("Did not attend")).toBeUndefined();
   });
 
+  it("shows the late and not-attended buttons when the hour starts, without a reload", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const startsSoon = booking({
+        id: 51, student: "Laylo", slot: { starts_at: new Date(Date.now() + 10_000).toISOString() } as never,
+      });
+      hooks.useSupportDiary.mockReturnValue(loaded([startsSoon]));
+      await render();
+      await showEverything();
+      expect(buttonNamed("Came late")).toBeUndefined();
+
+      await act(async () => {
+        vi.advanceTimersByTime(31_000);
+      });
+
+      expect(buttonNamed("Came late")).toBeTruthy();
+      expect(buttonNamed("Did not attend")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("names a late session as attended late, among the recorded ones", async () => {
     hooks.useSupportDiary.mockReturnValue(
       loaded([{ ...DIARY[3], id: 41, status: "LATE", student: "Kamola" }]),
