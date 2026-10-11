@@ -112,6 +112,13 @@ class RunnerTools extends ChangeNotifier {
     calculatorOpen = !calculatorOpen;
   });
 
+  /// The paper stopped allowing a calculator while it was open (ExamToolsLayer.tsx: the open
+  /// flag must not outlive the rule — the header button that would close it is gone).
+  void closeCalculator() => _set(() {
+    calculatorEnlarged = false;
+    calculatorOpen = false;
+  });
+
   void toggleCalculatorEnlarge() => _set(() => calculatorEnlarged = !calculatorEnlarged);
   void setCalculatorTab(CalculatorTab tab) => _set(() => calculatorTab = tab);
   void toggleReference() => _set(() => referenceOpen = !referenceOpen);

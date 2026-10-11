@@ -112,6 +112,17 @@ class ContentIslandBridge {
     _sub = host.events.listen(_onEvent);
     session.addListener(_sync);
     extraView?.addListener(refresh);
+    // A host the integrator opened early (or one a previous runner used) may have said `ready`
+    // before this bridge listened: replay as if it said it now.
+    if (host.state == IslandHostState.ready) {
+      scheduleMicrotask(() {
+        if (_attached && !_ready && host.state == IslandHostState.ready) {
+          _reset();
+          _ready = true;
+          _replay();
+        }
+      });
+    }
   }
 
   /// Re-evaluates visibility and the view fields (call after [hideIsland] or

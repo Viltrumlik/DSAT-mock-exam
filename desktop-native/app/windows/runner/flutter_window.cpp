@@ -140,6 +140,29 @@ void FlutterWindow::SetUpChannels() {
       [this](const flutter::MethodCall<flutter::EncodableValue>& call,
              std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
                  result) {
+        if (call.method_name() == "setFullscreen") {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          bool on = false;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("on"));
+            on = it != args->end() && std::holds_alternative<bool>(it->second) &&
+                 std::get<bool>(it->second);
+          }
+          bool applied = true;
+          if (on && !fullscreen_) {
+            applied = window_fullscreen::Enter(GetHandle(), &fullscreen_saved_);
+            fullscreen_ = applied;
+          } else if (!on && fullscreen_) {
+            applied = window_fullscreen::Exit(GetHandle(), fullscreen_saved_);
+            if (applied) {
+              fullscreen_ = false;
+              fullscreen_saved_ = window_fullscreen::Saved{};
+            }
+          }
+          result->Success(flutter::EncodableValue(applied));
+          return;
+        }
         if (call.method_name() != "restorePlacement") {
           result->NotImplemented();
           return;

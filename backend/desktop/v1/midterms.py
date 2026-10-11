@@ -265,6 +265,15 @@ class MidtermPrepareView(MidtermView):
                     "offscreen_limit": OFFSCREEN_VIOLATION_LIMIT,
                     "offscreen_grace_seconds": OFFSCREEN_GRACE_SECONDS,
                     "late_grace_seconds": LATE_ANSWER_GRACE_SECONDS,
+                    # The rules screen's pass-mark and retake lines (the website's
+                    # MidtermRulesScreen `scoringScale` / `passMark` / `isRetake`). Read from
+                    # the SITTING, so a resumed sitting quotes the scale and mark it was pinned
+                    # to at start, not whatever the midterm says now; before start they are the
+                    # midterm's own. `pass_mark` is null when the sitting is not judged
+                    # pass/fail (a pre-midterm), so the app never quotes a mark nobody applies.
+                    "scoring_scale": fresh.scoring_scale,
+                    "pass_mark": fresh.pass_mark,
+                    "is_retake": midterm.midterm_type == Midterm.TYPE_RETAKE,
                 },
             }
         )

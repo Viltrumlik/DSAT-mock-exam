@@ -10,6 +10,7 @@
 //     battery: batteryReading,                    // NativeBridge.battery(), polled
 //     inert: lockdownScreenShowing,               // shortcuts off under another screen
 //     overlay: offscreenWarning,                  // drawn over the runner (midterms)
+//     banner: reconnectingBanner,                 // a strip under the header (not modal)
 //     onExit: (exit) => router.leaveRunner(exit), // submitted / terminated / Save & Exit
 //   )
 //

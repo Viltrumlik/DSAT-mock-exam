@@ -103,8 +103,10 @@ void main() {
     nav.pop();
     await _settle(tester);
 
+    // The real runner now (the integrator wired the launcher); its own tour, with the island,
+    // is integration_test/wired_app_tour_test.dart.
     unawaited(openExam(ctx(), PastpaperExamRequest(paper: services.home.home!.pastpapers.first, action: PaperAction.start)));
-    await shot('exam_placeholder');
+    await shot('exam_runner');
     nav.pop();
     await _settle(tester);
 

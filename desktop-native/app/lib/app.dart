@@ -7,6 +7,7 @@
 //                the integrator wires [AppServices.examLauncher] to the real runner
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show AppExitResponse;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -29,6 +30,9 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/controls.dart';
 import 'core/theme/toast.dart';
 import 'core/theme/tokens.dart';
+import 'exam/engine/media_cache.dart' show MediaFetcher;
+import 'exam/launch/exam_runtime_host.dart';
+import 'exam/launch/island_guard.dart' show IslandDiagnostics;
 import 'features/home/home_controller.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/update_card.dart';
@@ -144,7 +148,8 @@ Future<void> openExam(BuildContext context, ExamRequest request) async {
   }
 }
 
-/// The stand-in until the integrator wires the real runner.
+/// The stand-in when no runner is wired (tests of the screens around the exam). The app wires
+/// the real one (lib/exam/launch/exam_launcher.dart) in main.dart.
 Future<ExamOutcome?> placeholderExamLauncher(BuildContext context, ExamRequest request) =>
     Navigator.of(context).push<ExamOutcome>(instantRoute((_) => ExamPlaceholderScreen(request: request)));
 
@@ -204,14 +209,23 @@ class AppServices {
     ExamLauncher? examLauncher,
     Future<void> Function(String text)? copyToClipboard,
     this.openExternal,
+    this.exams,
+    this.fetchMedia,
+    this.islandDiagnostics,
   })  : examLauncher = examLauncher ?? placeholderExamLauncher,
         copyToClipboard = copyToClipboard ?? _copy {
     home.onStoreOpened = (store) {
       library.attach(store.settings);
       unawaited(windowPlacement?.attach(store.settings));
+      // The student is known: their exam database, outbox and unsent counter.
+      final exams = this.exams;
+      if (exams != null) {
+        unawaited(exams.openFor(store.userId).then<void>((_) {}, onError: (Object e) => log.add('exam', 'runtime open failed: $e')));
+      }
     };
     home.onUpdateRequired = (e) => updates.required.value = e;
     auth.addListener(_onAuthChanged);
+    home.addListener(_onHomeChanged);
     _lastStatus = auth.status;
   }
 
@@ -243,8 +257,19 @@ class AppServices {
   /// Opens a website link in the browser (update fallback). Null in tests = no-op.
   final Future<bool> Function(Uri url)? openExternal;
 
+  /// The signed-in student's exam runtime (engines, outbox). Null when the exam layer is not
+  /// wired (tests of the screens around the exam).
+  final ExamRuntimeHost? exams;
+
+  /// Downloads a signed image URL through the app's one HTTP client (the review screen).
+  final MediaFetcher? fetchMedia;
+
+  /// What "Copy diagnostics" says about the question islands.
+  final IslandDiagnostics? islandDiagnostics;
+
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
   AuthStatus? _lastStatus;
+  bool _wasOffline = false;
 
   static Future<void> _copy(String text) => Clipboard.setData(ClipboardData(text: text));
 
@@ -262,7 +287,17 @@ class AppServices {
       windowPlacement?.detach();
       library.reset();
       unawaited(home.reset());
+      // After the sittings' screens are gone (their engines disposed), close the runtime.
+      unawaited(exams?.close());
     }
+  }
+
+  /// Home answered again after being offline: send what waits now (exam-engine's
+  /// connectivityHint), instead of at the next backoff step.
+  void _onHomeChanged() {
+    final offline = home.offline;
+    if (_wasOffline && !offline) unawaited(exams?.connectivityRestored());
+    _wasOffline = offline;
   }
 
   /// Settings → "Delete data on this computer". Blocked while unsent work remains. Removes
@@ -271,6 +306,11 @@ class AppServices {
     final unsent = await unsentWork.check();
     if (!unsent.isEmpty) return unsent;
     final userId = home.store?.userId ?? auth.session?.userId;
+    final exams = this.exams;
+    if (exams != null) {
+      await exams.close();
+      if (userId != null) await ExamRuntimeHost.removeFiles(Directory(paths.root), userId);
+    }
     await home.reset();
     if (userId != null) await UserStore.removeFiles(paths, userId);
     await UserStore.removeSharedCaches(paths);
@@ -304,6 +344,7 @@ class AppServices {
       serverClockOffset: serverClock.observed ? serverClock.offset : null,
       events: log.events,
       now: clock.now(),
+      islands: await islandDiagnostics?.snapshot(),
     ));
   }
 
@@ -317,6 +358,8 @@ class AppServices {
 
   void dispose() {
     auth.removeListener(_onAuthChanged);
+    home.removeListener(_onHomeChanged);
+    exams?.dispose();
     windowPlacement?.dispose();
     links?.dispose();
     updates.dispose();
@@ -374,11 +417,22 @@ class _MasterSatAppState extends State<MasterSatApp> {
   @override
   void initState() {
     super.initState();
-    // The window coming back to the front refreshes Home (one conditional request).
-    _lifecycle = AppLifecycleListener(onResume: () {
-      final s = widget.services;
-      if (s.auth.isSignedIn) unawaited(s.home.refresh());
-    });
+    // The window coming back to the front refreshes Home (one conditional request). Closing
+    // the window (or Windows shutting down) gives an open sitting one last sync first; the
+    // journal is already on disk, so nothing waits long (architecture §4.1).
+    final exams = widget.services.exams;
+    _lifecycle = AppLifecycleListener(
+      onResume: () {
+        final s = widget.services;
+        if (s.auth.isSignedIn) unawaited(s.home.refresh());
+      },
+      onExitRequested: exams == null
+          ? null
+          : () async {
+              await exams.closeGracefully();
+              return AppExitResponse.exit;
+            },
+    );
   }
 
   @override

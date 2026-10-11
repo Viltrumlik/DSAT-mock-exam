@@ -1,7 +1,8 @@
 // The midterm rules — the FIRST thing a student sees (the access code is asked for only after
 // this screen). Ported from the website's MidtermRulesScreen.tsx and 0.1.0's copy of it: same
 // copy, same layout, no Back (as on the website). Every rule stated is one the platform
-// enforces; the off-screen numbers come from the server's `rules` block.
+// enforces; the off-screen numbers, the calculator rule, the pass mark and the retake line all
+// come from the server's `rules` block.
 import 'package:flutter/widgets.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -18,7 +19,7 @@ class MidtermRulesScreen extends StatelessWidget {
     required this.onProceed,
     this.scoringScale,
     this.passMark,
-    this.isRetake = false,
+    this.isRetake,
   });
 
   final MidtermRules rules;
@@ -28,16 +29,24 @@ class MidtermRulesScreen extends StatelessWidget {
   final bool requiresCode;
   final VoidCallback onProceed;
 
-  /// `SCALE_100` / `SCALE_800` when known; the pass mark is quoted only then.
+  /// Overrides for [MidtermRules.scoringScale], [MidtermRules.passMark] and
+  /// [MidtermRules.isRetake]; null (the default) reads the server's `rules`.
   final String? scoringScale;
   final int? passMark;
-  final bool isRetake;
+  final bool? isRetake;
 
   @override
   Widget build(BuildContext context) {
     final subject = subjectLabelFor(rules.subject);
     final minutes = rules.durationsMin.fold<int>(0, (s, m) => s + m);
-    final passLabel = scoringScale == null ? null : midtermPassMarkLabel(scoringScale, passMark);
+    final scale = scoringScale ?? rules.scoringScale;
+    final mark = passMark ?? rules.passMark;
+    final retake = isRetake ?? rules.isRetake;
+    // Quote a pass mark ONLY when the scale is known (the website's rule: the two scales don't
+    // share a floor, so a guess would put a number in front of the student that the server
+    // would then disagree with) — and only when the sitting has one: the server resolves the
+    // scale default itself, so a null mark means the sitting is not judged (a pre-midterm).
+    final passLabel = scale == null || mark == null ? null : midtermPassMarkLabel(scale, mark);
     final grace = rules.offscreenGraceSeconds > 0 ? rules.offscreenGraceSeconds : midtermOffscreenGraceSeconds;
     final limit = rules.offscreenLimit > 0 ? rules.offscreenLimit : midtermOffscreenViolationLimit;
 
@@ -56,6 +65,12 @@ class MidtermRulesScreen extends StatelessWidget {
         ),
     ];
     final prohibited = [
+      // A Math paper with no calculator (Foundation since 2026-10-11, the learning center's
+      // request: it is worked by hand) says so FIRST, rather than only leaving the calculator
+      // out of Allowed — a student who has had Desmos on every other Math paper reads a missing
+      // line as an oversight and goes looking for the button. R&W gets no calculator line.
+      if (rules.isMath && rules.calculator == null)
+        const _Rule(LucideIcons.calculator, MidtermCopy.prohibitedCalculatorByHand),
       const _Rule(LucideIcons.monitorX, MidtermCopy.prohibitedApps),
       const _Rule(LucideIcons.bookX, MidtermCopy.prohibitedNotes),
       const _Rule(LucideIcons.smartphone, MidtermCopy.prohibitedDevices),
@@ -202,7 +217,7 @@ class MidtermRulesScreen extends StatelessWidget {
                         border: MidtermColors.slate200,
                         fill: MidtermColors.slate50,
                         text: MidtermColors.slate700,
-                        spans: isRetake
+                        spans: retake
                             ? const [
                                 TextSpan(text: MidtermCopy.retakeLead),
                                 TextSpan(text: MidtermCopy.retakeStrong, style: TextStyle(fontWeight: FontWeight.w700)),

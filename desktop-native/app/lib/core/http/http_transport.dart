@@ -93,6 +93,9 @@ class HttpTransport implements Transport {
     });
 
     () async {
+      // The first proxy lookup for a host runs off the UI isolate (see ProxyResolver.prepare).
+      await _proxy?.prepare(r.url);
+      if (timedOut) return;
       final req = await client.openUrl(r.method, r.url);
       open = req;
       if (timedOut) {

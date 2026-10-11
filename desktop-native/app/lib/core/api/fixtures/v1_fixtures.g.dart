@@ -1523,7 +1523,10 @@ const Map<String, String> v1FixtureFiles = {
     "calculator": "graphing",
     "offscreen_limit": 3,
     "offscreen_grace_seconds": 3,
-    "late_grace_seconds": 300
+    "late_grace_seconds": 300,
+    "scoring_scale": "SCALE_800",
+    "pass_mark": 500,
+    "is_retake": false
   }
 }
 ''',
@@ -1575,7 +1578,10 @@ const Map<String, String> v1FixtureFiles = {
     "calculator": "graphing",
     "offscreen_limit": 3,
     "offscreen_grace_seconds": 3,
-    "late_grace_seconds": 300
+    "late_grace_seconds": 300,
+    "scoring_scale": "SCALE_800",
+    "pass_mark": 500,
+    "is_retake": false
   }
 }
 ''',
