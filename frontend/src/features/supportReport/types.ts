@@ -22,7 +22,7 @@ export type MonthKey = string;
 export type IsoDateTime = string;
 
 /** `SupportBooking.status` on the wire. **Never rendered raw** — see `./format`. */
-export type SupportStatus = "BOOKED" | "HELD" | "NO_SHOW" | "CANCELLED";
+export type SupportStatus = "BOOKED" | "HELD" | "LATE" | "NO_SHOW" | "CANCELLED";
 
 /**
  * The pseudo-status the history accepts alongside the four real ones.
@@ -57,6 +57,9 @@ export type SupportCounts = {
   bookings: number;
   /** Settled HELD: the student came. **The only outcome the reward hook pays for.** */
   held: number;
+  /** Settled LATE (2026-10-11): attended, but late — counts as attended, pays nothing.
+   *  Optional only so a payload from an older server still renders. */
+  late?: number;
   /** Settled NO_SHOW: the seat was taken and nobody turned up. */
   no_show: number;
   /** Called off before the hour, so the seat went back to the calendar. */

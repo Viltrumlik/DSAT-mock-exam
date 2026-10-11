@@ -17,7 +17,12 @@ import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQu
 import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
-import { levelsForSubject, levelLabel } from "@/lib/levels";
+import {
+  levelsForSubject,
+  levelLabel,
+  reconcileSecondaryLevel,
+  secondaryLevelOptions,
+} from "@/lib/levels";
 import { AssessmentQuestionEditorFields } from "@/features/assessments/components/AssessmentQuestionEditorFields";
 import type {
   AssessmentQuestion,
@@ -679,7 +684,16 @@ export default function BuilderSetEditorContainer() {
     try {
       await upsertSet.mutateAsync({
         id: view.id,
-        payload: { title: view.title, category: view.category, description: view.description, source: view.source ?? "", level: view.level ?? "" },
+        // A WHITELIST: a field left out here is silently never saved. secondary_level is
+        // the optional second cohort (2026-10-11, the school's request); "" clears it.
+        payload: {
+          title: view.title,
+          category: view.category,
+          description: view.description,
+          source: view.source ?? "",
+          level: view.level ?? "",
+          secondary_level: view.secondary_level ?? "",
+        },
       });
       toast.push({ tone: "success", message: "Set metadata saved." });
     } catch (e) {
@@ -1056,11 +1070,36 @@ export default function BuilderSetEditorContainer() {
                   <select
                     className={INPUT}
                     value={String(view.level || "")}
-                    onChange={(e) => patchSetTracked({ level: e.target.value })}
+                    onChange={(e) => {
+                      const level = e.target.value;
+                      // Blanking the primary, or moving it onto the second level, clears
+                      // the second level in the same undo step — the server rejects
+                      // either pair, and this way the save just works.
+                      patchSetTracked({
+                        level,
+                        secondary_level: reconcileSecondaryLevel(view.subject, level, view.secondary_level),
+                      });
+                    }}
                     disabled={upsertSet.isPending || versionOutdated}
                   >
                     <option value="">None</option>
                     {levelsForSubject(view.subject).map((l) => (
+                      <option key={l} value={l}>{levelLabel(l)}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  {/* Optional second level (2026-10-11, the school's request): the set is
+                      also shown to this cohort. Needs a primary first. */}
+                  <p className={cn(LABEL, "mb-1.5")}>Second level (optional)</p>
+                  <select
+                    className={cn(INPUT, "disabled:cursor-not-allowed disabled:opacity-50")}
+                    value={String(view.secondary_level || "")}
+                    onChange={(e) => patchSetTracked({ secondary_level: e.target.value })}
+                    disabled={upsertSet.isPending || versionOutdated || !view.level}
+                  >
+                    <option value="">None</option>
+                    {secondaryLevelOptions(view.subject, view.level).map((l) => (
                       <option key={l} value={l}>{levelLabel(l)}</option>
                     ))}
                   </select>

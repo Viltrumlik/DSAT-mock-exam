@@ -193,6 +193,19 @@ the one graphic in this message is built out of two stacked table cells.
     <tr>
       <td colspan="2" style="padding:0 0 8px;font-size:11px;font-weight:800;letter-spacing:0.09em;color:#c02626;">⛔&nbsp; NOT ALLOWED</td>
     </tr>
+    {% comment %}
+      A Math paper with no calculator (Foundation since 2026-10-11, the school's request) is
+      worked by hand, and says so here rather than only dropping the ALLOWED calculator row.
+      calculator_by_hand is never true for R&W — see classes.mail_midterm.build_context.
+    {% endcomment %}
+    {% if calculator_by_hand %}
+    <tr>
+      <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🧮</td>
+      <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">
+        <strong class="ms-ink" style="font-weight:700;color:#0f1729;">Any calculator,</strong> built-in or physical — this paper is worked out by hand, on your scratch paper.
+      </td>
+    </tr>
+    {% endif %}
     <tr>
       <td width="26" style="width:26px;padding:0 0 8px;vertical-align:top;font-size:16px;line-height:1.5;">🖥️</td>
       <td class="ms-mute" style="padding:0 0 8px;font-size:14px;font-weight:500;line-height:1.55;color:#64748b;">

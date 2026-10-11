@@ -23,6 +23,7 @@ import { useMemo, useState } from "react";
 import { Check } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
 import { Button, Card, CardHeader, EmptyState, ErrorState, Input, LoadingState, Pill } from "../ui";
+import { ClassworkXpPicker } from "./ClassworkXpPicker";
 import { normalizeRole } from "../capabilities";
 import { useClassMembers } from "../hooks";
 import { useAssignClasswork, useAwardClasswork, useLessonClasswork } from "../classworkHooks";
@@ -39,28 +40,38 @@ function AwardRow({
   lessonId,
   student,
   existing,
+  minPoints,
   maxPoints,
 }: {
   classId: number;
   lessonId: number;
   student: Member;
-  /** Undefined until a teacher records something; `points: 0` is a real recorded award. */
+  /** Undefined until a teacher records something; `points: 0` is a legacy recorded award. */
   existing?: ClassworkAward;
+  minPoints: number;
   maxPoints: number;
 }) {
   // One mutation per row, so a failure on one student never greys out the rest of the class.
   const award = useAwardClasswork(classId, lessonId);
-  const [points, setPoints] = useState(existing ? String(existing.points) : "");
+  // A legacy award outside the 1–5 scale selects nothing; the pill still says what it is.
+  const [points, setPoints] = useState<number | null>(
+    existing && existing.points >= minPoints && existing.points <= maxPoints
+      ? existing.points
+      : null,
+  );
   const [note, setNote] = useState(existing?.note ?? "");
 
   const name = fullName(student.user);
-  const value = Number(points.trim());
-  const valid =
-    points.trim() !== "" && Number.isInteger(value) && value >= 0 && value <= maxPoints;
+  const valid = points != null && points >= minPoints && points <= maxPoints;
   const submit = () => {
     if (!valid) return;
-    award.mutate({ student_id: student.user.id, points: value, note: note.trim() });
+    award.mutate({ student_id: student.user.id, points, note: note.trim() });
   };
+
+  // XP above the points means a downward correction left XP standing (the engine never
+  // lowers XP for doing worse). Shown, because otherwise "1 XP" on the pill hides 5 XP on
+  // the leaderboard; the Classwork tab's Give XP dialog is where it is taken back.
+  const xpLeft = existing && existing.xp > existing.points ? existing.xp : null;
 
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-2 py-3">
@@ -70,24 +81,17 @@ function AwardRow({
         <Pill tone="success">
           <Check className="mr-1 h-3 w-3" aria-hidden />
           {existing.points > 0 ? `${existing.points} XP` : "Recorded"}
+          {xpLeft != null && ` · ${xpLeft} XP counted`}
         </Pill>
       )}
-      {/* Width on a WRAPPER, not on the Input: `cn` is a plain string join here, not
-          tailwind-merge, so the Input's own leading `w-full` beats a `w-20` passed through
-          `className` and the field goes full-width, wrapping the row. */}
-      <span className="w-20 shrink-0">
-        <Input
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={maxPoints}
-          value={points}
-          onChange={(e) => setPoints(e.target.value)}
-          aria-label={`XP for ${name}`}
-          placeholder="0"
-          className="h-9 px-2 text-center"
-        />
-      </span>
+      <ClassworkXpPicker
+        value={points}
+        onChange={setPoints}
+        min={minPoints}
+        max={maxPoints}
+        label={`XP for ${name}`}
+        disabled={award.isPending}
+      />
       <Button
         size="sm"
         variant={existing ? "secondary" : "primary"}
@@ -212,14 +216,15 @@ export function ClassworkTeacherPanel({
                 lessonId={lessonId}
                 student={m}
                 existing={awardFor.get(m.user.id)}
+                minPoints={data.min_points ?? 1}
                 maxPoints={data.max_points}
               />
             ))}
           </ul>
           <p className="mt-3 text-xs text-muted-foreground">
-            Up to {data.max_points} XP per student. Giving again replaces the number — a
-            student is paid once for a lesson, not once per press. XP adds the same number of
-            spendable points.
+            {data.min_points ?? 1} to {data.max_points} XP per student. Giving again replaces
+            the number — a student is paid once for a lesson, not once per press. XP adds the
+            same number of spendable points.
           </p>
         </>
       )}

@@ -16,7 +16,10 @@ interface ExamHeaderProps {
   onToggleDirections: () => void;
   /** Reference sheet is SAT Math-only. */
   mathTools: boolean;
-  /** Calculator: Math-only; midterms only at middle/senior level (server-decided). */
+  /**
+   * Calculator: Math-only; midterms at middle/senior (full) or junior (Scientific), never at
+   * foundation — worked by hand since 2026-10-11. Server-decided (selectors.calculatorAllowed).
+   */
   showCalculator: boolean;
   tools: ExamTools;
   pauseAllowed: boolean;

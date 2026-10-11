@@ -21,45 +21,57 @@
 import { useEffect, useState } from "react";
 import { Check, RotateCcw, Sparkles } from "lucide-react";
 import { normalizeApiError } from "@/lib/apiError";
-import { Button, Dialog, EmptyState, ErrorState, Input, LoadingState, Pill } from "../ui";
+import { Button, Dialog, EmptyState, ErrorState, LoadingState, Pill } from "../ui";
 import { useClassworkAwards, useGiveClassworkXp, useWithdrawClassworkXp } from "../classworkHooks";
 import type { ClassworkAwardStudent } from "../classworkAwardsApi";
+import { ClassworkXpPicker } from "./ClassworkXpPicker";
+
+/** The school's scale when an old server sends no bounds (it always does today). */
+const DEFAULT_MIN_XP = 1;
+const DEFAULT_MAX_XP = 5;
+
+/** A recorded award the picker can show — a legacy value outside the scale selects nothing. */
+function onScale(points: number, min: number, max: number): number | null {
+  return Number.isInteger(points) && points >= min && points <= max ? points : null;
+}
 
 /** One student, what they already have, and the two things a teacher can do about it. */
 function StudentRow({
   classId,
   assignmentId,
   student,
+  minPoints,
   maxPoints,
   canAward,
 }: {
   classId: number;
   assignmentId: number;
   student: ClassworkAwardStudent;
+  minPoints: number;
   maxPoints: number;
   canAward: boolean;
 }) {
   const give = useGiveClassworkXp(classId, assignmentId);
   const withdraw = useWithdrawClassworkXp(classId, assignmentId);
-  const [xp, setXp] = useState(student.awarded ? String(student.points) : "");
+  const recorded = student.awarded ? onScale(student.points, minPoints, maxPoints) : null;
+  const [xp, setXp] = useState<number | null>(recorded);
 
   // Follow the server after a write — the mutation writes the refreshed panel straight into
-  // the cache, and a field still holding the old keystrokes would quietly re-send them on
-  // the next press. Keyed on what actually changed, so it never fights a teacher mid-type.
+  // the cache, and a picker still holding the old choice would quietly re-send it on the
+  // next press. Keyed on what actually changed, so it never fights a teacher mid-choice.
   useEffect(() => {
-    setXp(student.awarded ? String(student.points) : "");
-  }, [student.awarded, student.points]);
+    setXp(recorded);
+  }, [recorded]);
 
-  const value = Number(xp.trim());
-  const valid = xp.trim() !== "" && Number.isInteger(value) && value >= 0 && value <= maxPoints;
+  const valid = xp != null && xp >= minPoints && xp <= maxPoints;
   const busy = give.isPending || withdraw.isPending;
   const submit = () => {
-    if (valid && canAward) give.mutate({ student_id: student.student_id, points: value });
+    if (valid && canAward) give.mutate({ student_id: student.student_id, points: xp });
   };
 
   // Is there anything left to take back? Points and XP move apart the moment a teacher
-  // corrects an award DOWNWARDS: the engine never lowers XP for doing worse, so 15 revised
-  // to 0 leaves 0 points and 15 XP standing. Both have to be tested, or the offer to undo
+  // corrects an award DOWNWARDS: the engine never lowers XP for doing worse, so 5 revised
+  // to 1 leaves 1 point and 5 XP standing. Both have to be tested, or the offer to undo
   // disappears exactly when the leftover XP most needs clearing.
   const holdsSomething = student.points > 0 || student.xp > 0;
 
@@ -69,15 +81,16 @@ function StudentRow({
         <p className="truncate text-sm font-semibold text-foreground">{student.name}</p>
         {student.awarded && (
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {student.points > 0
-              ? `${student.points} XP given`
-              : student.xp > 0
-                // The trap this line exists to expose. Typing 0 over a mis-award looks like
-                // an undo and is not one — the XP stays on the leaderboard until somebody
-                // takes the award back. Nothing else on the platform says so.
-                ? `0 XP — but ${student.xp} XP is still counted. Take it back to clear it.`
-                // A recorded 0 is a teacher who looked and decided — never "nothing yet",
-                // and never dressed up as XP the student lost.
+            {student.xp > student.points
+              // The trap this line exists to expose. Picking a smaller number over a
+              // mis-award looks like an undo and is not one — the XP stays on the
+              // leaderboard until somebody takes the award back. Nothing else on the
+              // platform says so.
+              ? `${student.points} XP now — but ${student.xp} XP is still counted. Take it back to clear it.`
+              : student.points > 0
+                ? `${student.points} XP given`
+                // A recorded 0 (written before the 1–5 scale) is a teacher who looked and
+                // decided — never "nothing yet", and never dressed up as XP the student lost.
                 : "Marked — no XP this time"}
           </p>
         )}
@@ -93,33 +106,20 @@ function StudentRow({
           <span className="text-xs text-muted-foreground">Not marked</span>
         )
       ) : (
-        // A fixed three-slot strip — field · button · undo — so every row's columns line
+        // A fixed three-slot strip — scale · button · undo — so every row's columns line
         // up down the list. Reserving the undo slot even when there is nothing to take
         // back is the point: without it, rows shift sideways by 32px depending on whether
         // a student has been marked, and a teacher scanning twenty names reads that as
         // noise.
         <div className="flex shrink-0 items-center gap-2">
-          {/* The width lives on a WRAPPER, not on the Input.
-              `cn` in this codebase is a plain string join, not tailwind-merge, and the
-              Input's own base class list starts with `w-full` — so a `w-[68px]` passed
-              through `className` loses to it and the field silently goes full-width,
-              wrapping every row onto three lines. Sizing the parent makes `w-full` mean
-              68px. */}
-          <span className="w-[68px] shrink-0">
-            <Input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={maxPoints}
-              value={xp}
-              onChange={(e) => setXp(e.target.value)}
-              onFocus={(e) => e.currentTarget.select()}
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              aria-label={`XP for ${student.name}`}
-              placeholder="0"
-              className="h-9 px-2 text-center"
-            />
-          </span>
+          <ClassworkXpPicker
+            value={xp}
+            onChange={setXp}
+            min={minPoints}
+            max={maxPoints}
+            label={`XP for ${student.name}`}
+            disabled={busy}
+          />
           <span className="w-[86px] shrink-0">
             <Button
               size="sm"
@@ -132,9 +132,9 @@ function StudentRow({
             </Button>
           </span>
           {holdsSomething ? (
-            // Its own action, not "type 0". The reward engine never lowers XP for doing
-            // worse, so correcting 20 down to 0 leaves 20 XP on the board for ever; this is
-            // the only thing that clears it.
+            // Its own action, not "pick a smaller number". The reward engine never lowers
+            // XP for doing worse, so correcting 5 down to 1 leaves 5 XP on the board for
+            // ever; this is the only thing that clears it.
             <button
               type="button"
               disabled={busy}
@@ -179,7 +179,8 @@ export function ClassworkAwardDialog({
   // Not fetched until the dialog is actually opened: a class list of twenty classworks
   // would otherwise fire twenty roster requests the teacher never asked for.
   const { data, isLoading, isError, refetch } = useClassworkAwards(classId, assignmentId, open);
-  const max = data?.max_points ?? 20;
+  const min = data?.min_points ?? DEFAULT_MIN_XP;
+  const max = data?.max_points ?? DEFAULT_MAX_XP;
 
   return (
     <Dialog
@@ -218,7 +219,7 @@ export function ClassworkAwardDialog({
         <>
           <p className="text-sm text-muted-foreground">
             {data.can_award
-              ? `Up to ${max} XP for each student. Giving again replaces the number — a student is paid once for a classwork, not once per press.`
+              ? `${min} to ${max} XP for each student. Giving again replaces the number — a student is paid once for a classwork, not once per press.`
               : "The class teacher gives classwork XP. This is what has been given so far."}
           </p>
           {/* The dialog locks body scroll and sets no height of its own, so a class of
@@ -231,6 +232,7 @@ export function ClassworkAwardDialog({
                 classId={classId}
                 assignmentId={assignmentId}
                 student={s}
+                minPoints={min}
                 maxPoints={max}
                 canAward={data.can_award}
               />

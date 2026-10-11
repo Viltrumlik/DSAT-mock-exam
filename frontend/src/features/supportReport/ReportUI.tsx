@@ -162,6 +162,7 @@ export function Num({
 
 const TONE_CLASS: Record<StatusTone, string> = {
   held: "border-success/25 bg-success-soft text-success-foreground",
+  late: "border-warning/25 bg-warning-soft text-warning-foreground",
   missed: "border-danger/25 bg-danger-soft text-danger-foreground",
   cancelled: "border-border bg-surface-2 text-muted-foreground",
   unsettled: "border-warning/30 bg-warning-soft text-warning-foreground",

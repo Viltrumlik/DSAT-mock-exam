@@ -81,11 +81,14 @@ export function isProctored(attempt: Attempt | null): boolean {
  * Whether the runner may offer the Desmos calculator.
  *
  * Math-only everywhere. Pastpapers/mocks follow the SAT (Math module = calculator).
- * Midterms used to be blanket-denied; they are now level-gated — a tagged Math midterm
- * offers it (junior/foundation the Scientific calculator only, see
- * `calculatorScientificOnly`). The decision is made SERVER-side (`calculator_enabled` on
+ * Midterms used to be blanket-denied; they are now level-gated — a Math midterm at
+ * middle/senior offers the full calculator, junior the Scientific one only (see
+ * `calculatorScientificOnly`), and foundation none: since 2026-10-11 (the school's request)
+ * Foundation is worked by hand. The decision is made SERVER-side (`calculator_enabled` on
  * the midterm's practice_test_details) rather than re-derived here, so the rule lives in
- * one place and the subject-casing difference can't bite.
+ * one place and the subject-casing difference can't bite. Every calculator surface — the
+ * header button, the floating Desmos (ExamToolsLayer), the layout reserve and the
+ * Directions wording — must read THIS, not `isMath`.
  */
 export function calculatorAllowed(attempt: Attempt | null): boolean {
   if (!isMath(attempt)) return false;
@@ -94,8 +97,9 @@ export function calculatorAllowed(attempt: Attempt | null): boolean {
 }
 
 /**
- * Whether the calculator is Desmos's Scientific one alone — no Graphing tab. Junior and
- * foundation Math midterms, decided server-side (`calculator_mode`) like the gate above.
+ * Whether the calculator is Desmos's Scientific one alone — no Graphing tab. Junior Math
+ * midterms only (foundation has no calculator at all), decided server-side
+ * (`calculator_mode`) like the gate above.
  */
 export function calculatorScientificOnly(attempt: Attempt | null): boolean {
   return (

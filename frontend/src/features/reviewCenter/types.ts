@@ -27,6 +27,8 @@ export type ReviewCatalogItem = {
   /** Platform ("MATH"/"READING_WRITING") or domain ("math"/"english"); rendered leniently. */
   subject?: string | null;
   level?: string | null;
+  /** Assessment sets only: the optional second level (2026-10-11, the school's request). */
+  secondaryLevel?: string | null;
   /** Secondary line (category, collection, form type, scale…). */
   meta?: string;
   questionCount?: number | null;

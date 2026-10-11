@@ -1214,8 +1214,10 @@ class ClassroomViewSet(ModelViewSet):
         # Level-scope the picker: a Middle class only sees Middle assessment sets.
         # An untagged classroom (blank level) keeps seeing every level; untagged sets
         # are excluded from a leveled class until an author tags them.
+        # Either of the set's levels counts (2026-10-11, the school's request: a set can
+        # carry an optional second level) — a Junior+Middle set is offered to both.
         if classroom.level:
-            aset_qs = aset_qs.filter(level=classroom.level)
+            aset_qs = aset_qs.filter(AssessmentSet.level_q(classroom.level))
         assessment_sets = []
         for aset in aset_qs.order_by("-created_at"):
             assessment_sets.append({
@@ -1224,6 +1226,7 @@ class ClassroomViewSet(ModelViewSet):
                 "subject": aset.subject,
                 "source": aset.source or "",
                 "level": aset.level or "",
+                "secondary_level": aset.secondary_level or "",
                 "category": aset.category or "",
                 "description": aset.description or "",
                 "question_count": aset.questions.filter(is_active=True).count(),

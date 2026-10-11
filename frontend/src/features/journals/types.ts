@@ -222,6 +222,11 @@ export type ContentOptions = {
     subject: string;
     source?: string;
     level?: string;
+    /**
+     * Optional second level (2026-10-11). The server already offers a set whose EITHER level
+     * is the journal's, and its write guard keeps it — so no client-side level filter here.
+     */
+    secondary_level?: string;
     category: string;
     description: string;
     question_count: number;

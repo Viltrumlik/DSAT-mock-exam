@@ -106,7 +106,11 @@ class SupportGroupNoShowTests(TestCase):
         return int(award.points) if award else 0
 
     def settle(self, booking, status):
-        return support_service.settle(booking, status, actor=self.support)
+        # Recorded after the hour: since 2026-10-11 a session cannot be marked not attended
+        # (or late) before it has begun, and this suite's slot is three days out.
+        return support_service.settle(
+            booking, status, actor=self.support, now=booking.availability.ends_at
+        )
 
     def assert_holds(self, booking, amount, *, who: str):
         award = self.award_for(booking)

@@ -170,7 +170,11 @@ def _resolve_assessment(question_id: int) -> Optional[ResolvedTarget]:
     subject = aset.get_subject_display() if aset else ""
     # A blank level is legacy/untagged, not an error — those sets show in every classroom.
     # Report it as blank rather than inventing a default.
-    level = (aset.get_level_display() if (aset and aset.level) else "") or ""
+    # A set with an optional second level (2026-10-11, the school's request) names both
+    # cohorts, primary first — "Junior / Middle". The longest pair ("Foundation / Senior",
+    # 19 chars) fits the 32-char snapshot column.
+    level_labels = dict(aset.LEVEL_CHOICES) if aset else {}
+    level = " / ".join(level_labels.get(lv, lv) for lv in aset.levels) if aset else ""
     return ResolvedTarget(
         QuestionErrorReport.RESOURCE_ASSESSMENT,
         aq.assessment_set_id,

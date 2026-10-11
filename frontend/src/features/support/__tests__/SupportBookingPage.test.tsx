@@ -190,3 +190,79 @@ describe("SupportBookingPage", () => {
     expect(dialog?.classList.contains("ds-app")).toBe(true);
   });
 });
+
+/* ── the school's attendance rules (2026-10-11) ─────────────────────────────────────── */
+
+describe("SupportBookingPage — attended late, the no-show pause, started sessions", () => {
+  it("renders a late session — it used to crash the page — says why there is no XP, and offers a rating", async () => {
+    hooks.useMySupportBookings.mockReturnValue(loaded([booking(4, "LATE")]));
+    await render();
+
+    expect(host.textContent).toContain("Attended late");
+    expect(host.textContent).toContain("You came late, so this session earns no XP");
+    expect(host.textContent).toContain("It still counts as attended");
+    // Attended, so it may be rated like a held session.
+    expect(buttonNamed("Rate this session")).toBeTruthy();
+  });
+
+  it("says booking is paused, until when and why — and not that sessions are booked", async () => {
+    const paused = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5);
+    hooks.useSupportCalendar.mockReturnValue(loaded({
+      ...CALENDAR,
+      allowance: {
+        ...CALENDAR.allowance!,
+        upcoming: 0,
+        paused_from: localDate(today),
+        paused_until: localDate(paused),
+        paused_missed: [localDate(today), localDate(today)],
+      },
+      teachers: [{
+        ...CALENDAR.teachers[0],
+        days: [{ date: localDate(tomorrow), hours: [hour(tomorrow, 14, "paused")] }],
+      }],
+    }));
+    await render();
+
+    expect(host.textContent).toContain("Support booking is paused");
+    expect(host.textContent).toContain("you can book again from");
+    expect(host.textContent).toContain("Booking paused");
+    expect(host.textContent).not.toContain("booked already");
+    expect(host.querySelectorAll('[aria-label^="Book "]')).toHaveLength(0);
+  });
+
+  it("warns after a first booked session the student didn't come to", async () => {
+    const until = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 6);
+    hooks.useSupportCalendar.mockReturnValue(loaded({
+      ...CALENDAR,
+      allowance: {
+        ...CALENDAR.allowance!,
+        warning_missed: localDate(today),
+        warning_until: localDate(until),
+      },
+    }));
+    await render();
+
+    expect(host.textContent).toContain("Warning: you didn't come to your booked session");
+    expect(host.textContent).toContain("support booking pauses for a week");
+  });
+
+  it("offers no Add a member while booking is paused — the server refuses the invitation", async () => {
+    hooks.useSupportCalendar.mockReturnValue(loaded({
+      ...CALENDAR,
+      allowance: { ...CALENDAR.allowance!, paused_from: localDate(today), paused_until: localDate(tomorrow) },
+    }));
+    hooks.useMySupportBookings.mockReturnValue(loaded([booking(6, "BOOKED")]));
+    await render();
+
+    expect(buttonNamed("Add a member")).toBeUndefined();
+  });
+
+  it("offers no Cancel once a session has started — the server refuses it", async () => {
+    const started = booking(5, "BOOKED");
+    started.slot = { ...started.slot, starts_at: new Date(Date.now() - 20 * 60_000).toISOString() };
+    hooks.useMySupportBookings.mockReturnValue(loaded([started]));
+    await render();
+
+    expect(buttonNamed("Cancel")).toBeUndefined();
+  });
+});

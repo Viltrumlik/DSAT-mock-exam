@@ -11,6 +11,7 @@ import {
   monthLabel,
   personName,
   plural,
+  attendedCount,
   settledCount,
   teacherSubline,
 } from "./format";
@@ -59,12 +60,19 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
             className="text-2xl font-extrabold"
           />
         }
-        detail={`${formatShare(t.held, settledCount(t))} settled either way`}
+        detail={`${formatShare(attendedCount(t), settledCount(t))} settled either way`}
       />
+      {/* Late rides in this tile's detail rather than as a seventh tile: the grid is laid
+          out for six, and a seventh would strand the amber "Not settled yet" call to action
+          on a row of its own. The table below has its own "Came late" column. */}
       <StatTile
         label="Sessions held"
         value={t.held}
-        detail={`out of ${plural(t.bookings, "booking")}`}
+        detail={
+          t.late
+            ? `out of ${plural(t.bookings, "booking")} · ${t.late} more came late`
+            : `out of ${plural(t.bookings, "booking")}`
+        }
       />
       <StatTile
         label="Students who came"
@@ -127,7 +135,7 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
         <RateCell
           rate={row.attendance_rate}
           reason={attendanceReason(row)}
-          detail={formatShare(row.held, settledCount(row))}
+          detail={formatShare(attendedCount(row), settledCount(row))}
         />
       ),
     },
@@ -144,6 +152,17 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
       ),
     },
     {
+      key: "late",
+      header: "Came late",
+      align: "right",
+      cell: (row) => (
+        <Num
+          value={row.late ?? 0}
+          title="Attended, but late (2026-10-11): counts as attended and pays nothing."
+        />
+      ),
+    },
+    {
       key: "students",
       header: "Students",
       align: "right",
@@ -151,9 +170,11 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
         <Num
           value={row.students_helped}
           title={
-            row.students_helped === row.held
+            // Against everyone who ATTENDED — held or late — since `students_helped` counts
+            // both; comparing with `held` alone would claim a repeat visit that never was.
+            row.students_helped === attendedCount(row)
               ? "Distinct students who attended."
-              : `Distinct students who attended — ${plural(row.held, "session")} between them, so somebody came more than once.`
+              : `Distinct students who attended — ${plural(attendedCount(row), "session")} between them, so somebody came more than once.`
           }
         />
       ),
@@ -258,11 +279,14 @@ export function MonthlySummary({
                     <RateCell
                       rate={total.attendance_rate}
                       reason={attendanceReason(total)}
-                      detail={formatShare(total.held, settledCount(total))}
+                      detail={formatShare(attendedCount(total), settledCount(total))}
                     />
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Num value={total.held} className="font-bold" />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Num value={total.late ?? 0} />
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Num
@@ -286,7 +310,7 @@ export function MonthlySummary({
             <div className="space-y-2 border-t border-border px-5 py-4">
               <Note>
                 Attendance is {formatRate(total.attendance_rate)} for the learning center:{" "}
-                {formatShare(total.held, settledCount(total))} settled either way, pooled across
+                {formatShare(attendedCount(total), settledCount(total))} settled either way, pooled across
                 every teacher rather than averaged over them. Cancelled hours are in neither
                 half — the seat went back to the calendar — and unsettled ones are in neither
                 either, which is why clearing the backlog can move this number in both
