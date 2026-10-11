@@ -340,7 +340,15 @@ fn seal_and_open_round_trip_through_the_c_abi() {
     // The data key lives in MASTERSAT_DATA_DIR/key.bin, created once.
     let dir = std::path::PathBuf::from(std::env::var_os("MASTERSAT_DATA_DIR").unwrap());
     let key = std::fs::read(dir.join("key.bin")).unwrap();
-    assert_eq!(key.len(), 32, "dev hosts store the raw key (Windows: a DPAPI blob)");
+    #[cfg(not(windows))]
+    assert_eq!(key.len(), 32, "dev hosts store the raw key");
+    // Windows wraps it in a DPAPI blob (tests/windows.rs opens it); never the raw 32 bytes.
+    #[cfg(windows)]
+    assert!(
+        key.len() > 32,
+        "Windows stores key.bin as a DPAPI blob, got {} bytes",
+        key.len()
+    );
 
     // Argument errors.
     let mut out = null_mut();

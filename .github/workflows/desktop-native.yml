@@ -92,14 +92,19 @@ jobs:
 
       # Debug build: embeds the development key, which the FFI test's proof vector expects.
       # DESKTOP_PROOF_KEY is deliberately NOT in this step's environment.
-      - name: cargo test (mastersat-native; builds the dylib the FFI test loads)
+      - name: cargo test + the debug dylib the FFI test loads
         working-directory: desktop-native/native
-        run: cargo test --locked
+        run: |
+          cargo test --locked --no-fail-fast
+          # `cargo test` links the tests against the rlib; only `cargo build` writes the cdylib.
+          cargo build --locked -p mastersat-native
+          ls -l target/debug/libmastersat_native.dylib
 
       - name: flutter analyze + test (app)
         working-directory: desktop-native/app
         env:
           # The FFI bridge test must run against the dylib built above, never skip.
+          MASTERSAT_NATIVE_LIB: ${{ github.workspace }}/desktop-native/native/target/debug/libmastersat_native.dylib
           MASTERSAT_NATIVE_REQUIRE: "1"
         run: |
           flutter --version
@@ -216,9 +221,15 @@ jobs:
       # Debug, development key (DESKTOP_PROOF_KEY is deliberately NOT in this environment):
       # tests/windows.rs and the Windows path of tests/c_abi.rs; target\debug\mastersat_native.dll
       # is what the Dart FFI test loads below.
-      - name: cargo test (Windows)
+      - name: cargo test (Windows) + the debug DLL the FFI test loads
         working-directory: desktop-native/native
-        run: cargo test --locked
+        run: |
+          cargo test --locked --no-fail-fast
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # `cargo test` links the tests against the rlib; only `cargo build` writes the cdylib.
+          cargo build --locked -p mastersat-native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item target/debug/mastersat_native.dll | Format-Table Name, Length -AutoSize | Out-String | Write-Host
 
       # The DLL that ships. A release build embeds DESKTOP_PROOF_KEY (key_id:hex) at compile
       # time; WITHOUT it a release build has NO key at all (ms_prove answers MS_ERR_NO_KEY) —
