@@ -169,7 +169,7 @@
     {
       "path": "frontend/src/features/testing-simulation/pages/ExamRunnerPage.tsx",
       "use": "ported",
-      "blob": "a10f50ef667f79a674676d88f003281fe64ee0c5",
+      "blob": "4469e087bbe8b78d8868f2eb3401f91b39c57f26",
       "island": [
         "src/content/card.ts",
         "src/content/island.ts"
@@ -196,7 +196,7 @@
     {
       "path": "frontend/src/features/testing-simulation/tools/calculator/DesmosCalculator.tsx",
       "use": "ported",
-      "blob": "8496944aeaea8ee9cd8a42f169536cb17fc0bf7d",
+      "blob": "90f418ce06564feea607dcfb24992feb24ab44b8",
       "island": [
         "src/desmos/island.ts"
       ],

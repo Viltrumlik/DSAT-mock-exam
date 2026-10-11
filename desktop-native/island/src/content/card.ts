@@ -119,7 +119,10 @@ export class QuestionCard {
       answer: this.state.answer,
       eliminated: this.state.eliminated,
       // Single-pane only, and never on a grid-in (the directions column already takes the
-      // left side; Desmos floats over it) — ExamRunnerPage's calcReserve rule.
+      // left side; Desmos floats over it) — ExamRunnerPage's calcReserve rule. The rest of that
+      // rule (`calculatorAllowed(attempt) && tools.calculatorOpen`, 2026-10-11: a Foundation
+      // Math midterm has no calculator) is native's: calcReservePx is 0 unless the paper allows
+      // a calculator AND it is open (exam_runner_screen.dart calcReserveFor).
       calcReserve: !this.twoPane && !this.isSpr ? view.calcReservePx : 0,
       locked: view.inputLocked,
       review: this.state.review,
