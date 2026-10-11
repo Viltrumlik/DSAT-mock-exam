@@ -14,8 +14,10 @@ from .models import (
 
 @admin.register(AssessmentSet)
 class AssessmentSetAdmin(admin.ModelAdmin):
-    list_display = ("id", "subject", "category", "title", "is_active", "created_at")
-    list_filter = ("subject", "is_active", "created_at")
+    list_display = (
+        "id", "subject", "level", "secondary_level", "category", "title", "is_active", "created_at",
+    )
+    list_filter = ("subject", "level", "secondary_level", "is_active", "created_at")
     search_fields = ("title", "category", "description")
 
 
