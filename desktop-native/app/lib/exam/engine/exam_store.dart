@@ -86,6 +86,7 @@ class AttemptRecord {
     this.paused = false,
     this.terminalAt,
     this.test,
+    this.moduleMeta = const [],
     this.updatedWallMs = 0,
   });
 
@@ -110,6 +111,10 @@ class AttemptRecord {
 
   /// Past papers only (sealed in the row).
   final TestInfo? test;
+
+  /// Module metadata (id, order, time limit, hash, deferred) WITHOUT questions, so a reopen
+  /// can rebuild the modules from the content cache with no network.
+  final List<ModuleContent> moduleMeta;
   final int updatedWallMs;
 
   bool get finished => terminalAt != null;
@@ -264,6 +269,7 @@ class ExamStore {
       paused INTEGER NOT NULL DEFAULT 0,
       terminal_at INTEGER,
       test BLOB,
+      module_meta TEXT NOT NULL DEFAULT '[]',
       updated_wall_ms INTEGER NOT NULL DEFAULT 0)''',
     'CREATE INDEX attempt_by_ref ON attempt(kind, ref_id)',
     '''CREATE TABLE journal(
@@ -371,10 +377,11 @@ class ExamStore {
     await _insert(
       '''INSERT INTO attempt(id, kind, ref_id, server_state, server_version, module_ids, active_module_id,
            local_phase, content_hashes, acked_seq, remaining_ms_at_tick, tick_wall_ms, paused, terminal_at, test,
-           updated_wall_ms)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           module_meta, updated_wall_ms)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, ref_id = excluded.ref_id,
            module_ids = excluded.module_ids, test = COALESCE(excluded.test, attempt.test),
+           module_meta = CASE WHEN excluded.module_meta = '[]' THEN attempt.module_meta ELSE excluded.module_meta END,
            updated_wall_ms = excluded.updated_wall_ms''',
       [
         r.id,
@@ -392,6 +399,7 @@ class ExamStore {
         r.paused,
         r.terminalAt,
         r.test == null ? null : _seal(jsonEncode(r.test!.toJson())),
+        jsonEncode([for (final m in r.moduleMeta) _metaJson(m)]),
         r.updatedWallMs,
       ],
     );
@@ -415,9 +423,26 @@ class ExamStore {
       paused: row.read<int>('paused') != 0,
       terminalAt: row.readNullable<int>('terminal_at'),
       test: testBlob == null ? null : TestInfo.fromJson(JsonReader.of(jsonDecode(_unseal(testBlob)))),
+      moduleMeta: [
+        for (final m in jsonDecode(row.read<String>('module_meta')) as List) ModuleContent.fromJson(JsonReader.of(m)),
+      ],
       updatedWallMs: row.read<int>('updated_wall_ms'),
     );
   }
+
+  static Map<String, Object?> _metaJson(ModuleContent m) => {
+        'id': m.id,
+        'order': m.order,
+        'time_limit_minutes': m.timeLimitMinutes,
+        'question_count': m.questionCount,
+        'content_hash': m.contentHash,
+        'unchanged': false,
+        'deferred': m.deferred,
+        'questions': null,
+      };
+
+  Future<void> setModuleMeta(int id, List<ModuleContent> meta) => _update(
+      'UPDATE attempt SET module_meta = ? WHERE id = ?', [jsonEncode([for (final m in meta) _metaJson(m)]), id]);
 
   Future<AttemptRecord?> loadAttempt(int id) async {
     final rows = await _select('SELECT * FROM attempt WHERE id = ?', [id]);
@@ -558,6 +583,13 @@ class ExamStore {
           _journalFrom(r),
       ];
 
+  /// Modules this computer has handed in (journal `submit` rows).
+  Future<Set<int>> handedInModules(int attemptId) async => {
+        for (final r in await _select(
+            "SELECT DISTINCT module_id FROM journal WHERE attempt_id = ? AND op = 'submit'", [attemptId]))
+          r.read<int>('module_id'),
+      };
+
   Future<List<JournalEntry>> journal(int attemptId) async => [
         for (final r in await _select('SELECT * FROM journal WHERE attempt_id = ? ORDER BY seq', [attemptId]))
           _journalFrom(r),
@@ -658,6 +690,12 @@ class ExamStore {
     ];
   }
 
+  /// Off-screen event ids queued but not yet acknowledged (restored into the guard's tally).
+  Future<List<String>> unsentOffscreenEvents(int attemptId) async => [
+        for (final i in await outbox(attemptId, states: const {OutboxState.pending, OutboxState.inflight}))
+          if (i.kind == OutboxKind.offscreen) (i.payload['event_id'] as String?) ?? i.idemKey,
+      ];
+
   Future<OutboxItem?> outboxItem(int id) async {
     final rows = await _select('SELECT * FROM outbox WHERE id = ?', [id]);
     return rows.isEmpty ? null : _outboxFrom(rows.single);
@@ -672,6 +710,14 @@ class ExamStore {
     );
     return rows.single.read<int>('c');
   }
+
+  /// Attempts (id, kind) that still have unsent outbox items, finished or not.
+  Future<List<(int, AttemptKind)>> attemptsWithUnsent() async => [
+        for (final r in await _select(
+            "SELECT DISTINCT attempt_id, attempt_kind FROM outbox WHERE state IN ('pending','inflight','parked') "
+            'ORDER BY attempt_id'))
+          (r.read<int>('attempt_id'), AttemptKind.fromWire(r.read<String>('attempt_kind'))),
+      ];
 
   /// Every attempt with something left to send (sign-out guard, Home overlay).
   Future<int> unsentTotal() async {

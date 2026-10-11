@@ -93,6 +93,9 @@ class OutboxSender {
   /// Midterms: the in-memory `X-Lockdown-Session` token (null → the request is held).
   String? Function()? lockdownToken;
 
+  /// Midterms whose server does not require the app: an empty token is sent as none.
+  bool lockdownOptional = false;
+
   OutboxListener? listener;
 
   bool _stopped = false;
@@ -101,6 +104,9 @@ class OutboxSender {
   final Map<OutboxLane, bool> _again = {};
   final Map<OutboxLane, Timer?> _timers = {};
   final Map<OutboxLane, Completer<void>?> _idle = {};
+
+  /// Store failures seen while sending (diagnostics).
+  final List<Object> storeErrors = [];
 
   bool get held => _held;
   bool get stopped => _stopped;
@@ -191,6 +197,14 @@ class OutboxSender {
         }
         await _sendOne(item);
       }
+    } on Object catch (e) {
+      // The store refused (closed during shutdown, disk full). A stopped sender belongs to a
+      // closing process; otherwise try again later — nothing is lost, the item is still queued.
+      if (!_stopped) {
+        _timers[lane]?.cancel();
+        _timers[lane] = Timer(backoff.last, () => unawaited(_pump(lane)));
+        storeErrors.add(e);
+      }
     } finally {
       _running[lane] = false;
       final c = _idle.remove(lane);
@@ -227,7 +241,11 @@ class OutboxSender {
 
   String _token() {
     final t = lockdownToken?.call();
-    if (t == null || t.isEmpty) throw _noToken();
+    if (t == null || t.isEmpty) {
+      // A sitting the server does not police (MIDTERM_DESKTOP_REQUIRED off): send no token.
+      if (lockdownOptional) return '';
+      throw _noToken();
+    }
     return t;
   }
 
@@ -355,10 +373,9 @@ class OutboxHub {
   /// wait for their sitting to be re-bound (the lockdown token is memory-only).
   Future<int> drainUnfinished() async {
     var started = 0;
-    for (final a in await store.unfinishedAttempts()) {
-      if (a.kind != AttemptKind.pastpaper) continue;
-      if (await store.unsentCount(a.id) == 0) continue;
-      senderFor(a.id, a.kind).kick();
+    for (final (id, kind) in await store.attemptsWithUnsent()) {
+      if (kind != AttemptKind.pastpaper) continue;
+      senderFor(id, kind).kick();
       started++;
     }
     return started;

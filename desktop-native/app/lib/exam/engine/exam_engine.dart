@@ -258,6 +258,9 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
   @override
   Stream<ExamNotice> get notices => _notices.stream;
 
+  /// Exam/urgent outbox items not yet acknowledged by the server.
+  int get unsentItems => _unsent;
+
   /// Problems the runner (or the screen around it) must show; null when all is well.
   ValueListenable<EngineProblem?> get problem => _problem;
 
@@ -340,9 +343,9 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
     return e;
   }
 
-  /// Journal row + extra store work in ONE transaction (module hand-in).
-  JournalEntry recordWith(JournalOp op, Future<void> Function() also, {int? moduleId}) {
-    final e = _entry(op, moduleId: moduleId);
+  /// Journal row + extra store work in ONE transaction (module hand-in, off-screen event).
+  JournalEntry recordWith(JournalOp op, Future<void> Function() also, {int? moduleId, String? value}) {
+    final e = _entry(op, moduleId: moduleId, value: value);
     write(() => store.transaction(() async {
           await store.record(e);
           await also();
@@ -552,20 +555,25 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
     }
   }
 
+  /// The next response about this module re-anchors its countdown in BOTH directions (set on
+  /// a module change, so the server's word on the new module's clock is taken — design §1.8).
+  int? forceAnchorModule;
+
   /// Adopt a server snapshot: forward-only by version; re-anchors the live module's countdown.
-  void adoptLite(AttemptLite a, Duration sent, Duration received, AnchorRule rule) {
+  ///
+  /// The clock is touched only when the snapshot is about the live module, and only when the
+  /// server's paused flag matches the local one — pausing and resuming are decided by the
+  /// pause/resume replies alone ([adoptPauseReply]), never by a sync that crossed them.
+  /// Returns false when the snapshot was older than the one already held.
+  bool adoptLite(AttemptLite a, Duration sent, Duration received, AnchorRule rule) {
     final prev = lastAttempt;
-    if (prev != null && a.id == prev.id && a.version < prev.version && !a.state.isFinished) return;
+    if (prev != null && a.id == prev.id && a.version < prev.version && !a.state.isFinished) return false;
     lastAttempt = a;
     final c = moduleClock;
-    if (c == null || a.module?.id != c.moduleId || c.moduleId != liveModuleId) return;
-    final r = forceNextAnchor ? AnchorRule.force : rule;
-    if (r == AnchorRule.force && a.timing.paused != c.frozen) {
-      // A forced status read never pauses/unpauses by itself; pause has its own path.
-      if (!a.timing.paused) forceNextAnchor = false;
-      if (a.timing.paused) return;
-    }
-    forceNextAnchor = false;
+    if (c == null || a.module?.id != c.moduleId || c.moduleId != liveModuleId) return true;
+    if (a.timing.paused != c.frozen) return true;
+    final forced = forceNextAnchor || forceAnchorModule == c.moduleId;
+    final r = forced ? AnchorRule.force : rule;
     final moved = c.anchor(
       timing: a.timing,
       sent: sent,
@@ -574,12 +582,42 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
       midterm: kind == ExamKind.midterm,
       submitMargin: timings.midtermSubmitMargin,
     );
+    if (forced && a.timing.remainingMs != null) {
+      forceNextAnchor = false;
+      if (forceAnchorModule == c.moduleId) forceAnchorModule = null;
+    }
     if (moved) {
       armDeadline();
       onTick();
     } else if (kind == ExamKind.midterm) {
       onClockAnchored(c);
     }
+    return true;
+  }
+
+  /// A pause/resume reply: adopt its paused state and time left — but only for the live module.
+  void adoptPauseReply(AttemptLite a, Duration sent, Duration received) {
+    final prev = lastAttempt;
+    if (prev != null && a.id == prev.id && a.version < prev.version && !a.state.isFinished) return;
+    lastAttempt = a;
+    final c = moduleClock;
+    if (c == null || a.module?.id != c.moduleId || c.moduleId != liveModuleId) return;
+    final ms = a.timing.remainingMs;
+    if (a.timing.paused) {
+      if (ms != null) {
+        c.setFrozen(Duration(milliseconds: ms));
+      } else {
+        c.freeze(mono);
+      }
+      pausedFlag = true;
+    } else {
+      if (c.frozen) c.unfreeze(mono, remaining: ms == null ? null : Duration(milliseconds: ms));
+      c.anchor(timing: a.timing, sent: sent, received: received, rule: AnchorRule.force);
+      pausedFlag = false;
+    }
+    armDeadline();
+    onTick();
+    changed();
   }
 
   // ---- connectivity -----------------------------------------------------------------------

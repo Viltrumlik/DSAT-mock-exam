@@ -8,21 +8,29 @@
 // `timeChanged` (so a time change is never mistaken for sleep).
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 enum PowerEvent { resumed, suspending, timeChanged }
 
 class PowerEvents {
   PowerEvents({MethodChannel? channel}) : _channel = channel ?? const MethodChannel(channelName) {
-    _channel.setMethodCallHandler(_onCall);
+    _channel!.setMethodCallHandler(_onCall);
   }
+
+  /// No platform channel (tests, tools): events come only from [debugEmit].
+  PowerEvents.detached() : _channel = null;
 
   static const channelName = 'mastersat/power';
 
-  final MethodChannel _channel;
+  final MethodChannel? _channel;
   final StreamController<PowerEvent> _events = StreamController.broadcast();
 
   Stream<PowerEvent> get events => _events.stream;
+
+  /// Exposed for channel tests; the platform calls it through the MethodChannel.
+  @visibleForTesting
+  Future<Object?> handleCall(MethodCall call) => _onCall(call);
 
   Future<Object?> _onCall(MethodCall call) async {
     final e = switch (call.method) {
@@ -40,7 +48,7 @@ class PowerEvents {
   void debugEmit(PowerEvent e) => _events.add(e);
 
   Future<void> dispose() async {
-    _channel.setMethodCallHandler(null);
+    _channel?.setMethodCallHandler(null);
     await _events.close();
   }
 }
