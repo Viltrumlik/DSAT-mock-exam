@@ -82,6 +82,31 @@ class Shell {
   }
 
   Future<void> done() => rig.dispose(tester);
+
+  /// The `ms_keep_awake` requests the flow made, in order.
+  List<String> get awake => [
+        for (final c in rig.native.calls)
+          if (c.startsWith('keepAwake')) c,
+      ];
+
+  /// Run the live module to 50 ms past its deadline and let the hand-in land.
+  Future<void> runOutModule() async {
+    final e = controller.engine;
+    await tester.pump(e.moduleClock!.remainingAt(e.mono) + const Duration(milliseconds: 50));
+    await tester.pump();
+    await settle(const Duration(milliseconds: 400));
+  }
+}
+
+/// A bridge whose `ms_keep_awake` fails (an odd machine): the wake lock is best-effort.
+class _KeepAwakeFails extends ScriptedNativeBridge {
+  int attempts = 0;
+
+  @override
+  void keepAwake(bool on) {
+    attempts++;
+    throw const NativeBridgeException(NativeStatus.errOs, 'ms_keep_awake', 'refused');
+  }
 }
 
 void main() {
@@ -304,5 +329,127 @@ void main() {
     expect(find.textContaining('Reconnecting…'), findsNothing);
     expect(s.controller.engine.phase, ExamPhase.running);
     await s.done();
+  });
+
+  // ---- screen wake lock (2026-10-11, the learning center's request) ----------------------------
+  // useScreenWakeLock(isMidterm && !isTerminal(attempt)) on the website, MidtermScreen.tsx in
+  // 0.1.0: a display that sleeps and locks reads as leaving the paper, so the display stays
+  // awake for the WHOLE midterm — rules, code, pre-check and the paper — until it is in.
+
+  testWidgets('wake lock: on from the rules through the paper, off once it is handed in', (tester) async {
+    final s = Shell(tester);
+    await s.mount();
+    expect(find.text("I'm ready — continue"), findsOneWidget);
+    expect(s.awake, ['keepAwake true'], reason: 'the rules screen already keeps the display on');
+    await s.throughRulesAndCode();
+    expect(s.awake, ['keepAwake true'], reason: 'code and pre-check: still on, asked once');
+    await s.tapText('Lock and start');
+    await s.settle(const Duration(milliseconds: 200));
+    expect(find.text('RUNNER module ${M14.m1}'), findsOneWidget);
+    expect(s.awake, ['keepAwake true'], reason: 'the lock does not toggle it');
+
+    await s.runOutModule();
+    expect(find.text('RUNNER module ${M14.m2}'), findsOneWidget);
+    expect(s.awake, ['keepAwake true'], reason: 'between modules: still on');
+
+    await s.runOutModule();
+    await s.settle(const Duration(seconds: 1));
+    expect(find.text("You're all finished!"), findsOneWidget);
+    expect(s.rig.native.locked, isFalse);
+    expect(s.awake, ['keepAwake true', 'keepAwake false'], reason: 'the paper is in: the display may sleep');
+    expect(s.rig.native.keptAwake, isFalse);
+
+    await s.tapText('Back to my tests');
+    expect(s.exits, 1);
+    await s.done();
+    expect(s.awake, ['keepAwake true', 'keepAwake false'], reason: 'nothing more to undo');
+  });
+
+  testWidgets('wake lock: a forfeit lets go at once, before the explanation moves on', (tester) async {
+    final s = Shell(tester);
+    await s.start();
+    await tester.pump(const Duration(seconds: 2));
+    s.rig.native.away = true;
+    for (var i = 0; i < 40; i++) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    expect(find.text('Your exam was submitted'), findsOneWidget);
+    expect(s.awake, ['keepAwake true', 'keepAwake false']);
+    s.rig.native.away = false;
+    await s.done();
+  });
+
+  testWidgets('wake lock: leaving mid-paper (the flow goes away) lets go', (tester) async {
+    final s = Shell(tester);
+    await s.start();
+    expect(s.awake, ['keepAwake true']);
+    await tester.pumpWidget(const SizedBox());
+    expect(s.awake, ['keepAwake true', 'keepAwake false']);
+    await s.done();
+  });
+
+  testWidgets('wake lock: Back to my tests from an error screen lets go', (tester) async {
+    final s = Shell(tester);
+    s.rig.api.offline = true;
+    await s.mount();
+    expect(find.text('This midterm couldn’t be opened'), findsOneWidget);
+    expect(s.awake, ['keepAwake true'], reason: 'the midterm has started: the student is still in it');
+    await s.tapText('Back to my tests');
+    expect(s.exits, 1);
+    expect(s.awake, ['keepAwake true', 'keepAwake false']);
+    await s.done();
+    expect(s.awake, ['keepAwake true', 'keepAwake false']);
+  });
+
+  testWidgets('wake lock: a lost lock and the re-lock leave it to the native library', (tester) async {
+    // lock.rs remembers the request and re-asserts it after every release (Lock exit and the
+    // watchdog alike), so the flow asks once and never has to ask again.
+    final s = Shell(tester);
+    await s.start();
+    s.rig.native
+      ..watchdogReleased = true
+      ..failLockEnter = true;
+    await tester.pump(const Duration(milliseconds: 3100));
+    await s.settle();
+    expect(find.text('Resume your midterm'), findsOneWidget);
+    s.rig.native.failLockEnter = false;
+    await s.tapText('Lock and resume');
+    expect(find.text('RUNNER module ${M14.m1}'), findsOneWidget);
+    expect(s.awake, ['keepAwake true']);
+    expect(s.controller.keepScreenAwake, isTrue);
+    await s.done();
+  });
+
+  testWidgets('wake lock: reopening the app mid-sitting asks again for the new window', (tester) async {
+    final s = Shell(tester);
+    await s.start();
+    await tester.pumpWidget(const SizedBox());
+    s.controller.dispose();
+    s.rig.native.lockExit();
+    s.rig.native.calls.clear();
+    await s.mount();
+    expect(find.text('Resume your midterm'), findsOneWidget);
+    expect(s.awake, ['keepAwake true']);
+    await s.done();
+  });
+
+  testWidgets('wake lock: a machine that refuses it still sits the midterm', (tester) async {
+    final rig = FlowRig(tester);
+    final native = _KeepAwakeFails();
+    final controller = rig.controller();
+    await pumpHost(
+      tester,
+      MidtermFlow(controller: controller, native: native, runnerBuilder: fakeRunner, onExit: () {}),
+    );
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(tester.takeException(), isNull);
+    expect(native.attempts, 1);
+    expect(find.text("I'm ready — continue"), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    expect(tester.takeException(), isNull);
+    expect(native.attempts, 2, reason: 'it still tries to let go');
+    await rig.dispose(tester);
   });
 }

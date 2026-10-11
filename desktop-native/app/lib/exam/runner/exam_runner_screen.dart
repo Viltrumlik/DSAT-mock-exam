@@ -307,11 +307,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       tools.closeTransient();
       tools.closeHelp();
     }
-    if (tools.calculatorOpen && !session.calculatorAllowed) {
-      // The paper stopped allowing a calculator (the rule arrived with the sitting, after the
-      // panel was opened): the open flag must not outlive the rule (ExamToolsLayer.tsx).
-      tools.closeCalculator();
-    }
+    _enforceCalculatorRule();
     if (session.phase != ExamPhase.running) {
       // Check Your Work / transition / end replace the frame: drop what floated over it.
       if (tools.moreOpen || tools.navigatorOpen || tools.directionsOpen || tools.toolbar != null) {
@@ -354,8 +350,17 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     }
   }
 
+  /// The calculator is a RULE, not a tool (ExamToolsLayer.tsx, 2026-10-11): on a paper that
+  /// offers none — a Foundation Math midterm is worked by hand — an open flag must not outlive
+  /// the rule. It can arrive after the panel was opened (the sitting's own rules replace the
+  /// prepared ones at open), and the header button that would close it is gone by then.
+  void _enforceCalculatorRule() {
+    if (tools.calculatorOpen && !session.calculatorAllowed) tools.closeCalculator();
+  }
+
   void _onTools() {
     if (!mounted) return;
+    _enforceCalculatorRule();
     // The Desmos island is created on the first Calculator click, and only on a paper that
     // allows a calculator (architecture §2.4).
     if (tools.calculatorOpen && session.calculatorAllowed && _desmos == null) {

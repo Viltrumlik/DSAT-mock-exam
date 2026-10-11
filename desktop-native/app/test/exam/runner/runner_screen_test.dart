@@ -15,6 +15,7 @@ import 'package:mastersat_app/exam/runner/welcome_screen.dart';
 import 'package:mastersat_app/exam/session_contract.dart';
 import 'package:mastersat_app/exam/tokens/bluebook_tokens.dart';
 import 'package:mastersat_app/exam/tools/calculator/scientific_calculator.dart';
+import 'package:mastersat_app/exam/tools/directions_overlay.dart';
 import 'package:mastersat_app/island/island_host.dart';
 import 'package:mastersat_app/island/protocol.dart';
 
@@ -827,6 +828,71 @@ void main() {
       expect(find.text('Graphing'), findsNothing);
       expect(find.byType(ScientificCalculator), findsOneWidget);
       expect(h.desmosHosts, isEmpty);
+    });
+
+    // 2026-10-11: Foundation Math midterms have no calculator (worked by hand). Every
+    // calculator surface reads the RULE (`calculatorAllowed`), never "is Math".
+    testWidgets('a Math paper with no calculator: no button, no Desmos, no reserve, by-hand directions', (
+      tester,
+    ) async {
+      final h = await RunnerHarness.pump(tester, session: byHandMidterm());
+      expect(h.session.test.isMath, isTrue);
+      expect(h.session.calculatorAllowed, isFalse);
+      expect(find.text('Calculator'), findsNothing);
+      // Even an open flag set behind the button's back never mounts Desmos nor squeezes the
+      // question — and it does not survive.
+      h.state.tools.toggleCalculator();
+      await tester.pump();
+      await tester.pump();
+      expect(h.state.tools.calculatorOpen, isFalse, reason: 'the open flag does not outlive the rule');
+      expect(find.byKey(const ValueKey('panel.calculator')), findsNothing);
+      expect(h.desmosHosts, isEmpty, reason: 'no Desmos island on a paper without a calculator');
+      expect(h.state.desmos, isNull);
+      expect(h.content.postedOf<InitMessage>().every((m) => m.calcReservePx == 0), isTrue);
+      expect(h.content.postedOf<ViewSetMessage>().where((m) => (m.calcReservePx ?? 0) > 0), isEmpty);
+      await h.tap(find.text('Directions'));
+      expect(
+        find.text(
+          'The questions in this section address a number of important math skills. '
+          'A calculator is not available on this paper — work these questions by hand.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Use of a calculator is permitted'), findsNothing);
+    });
+
+    testWidgets('a Math paper with a calculator: the directions promise one', (tester) async {
+      final h = await math(tester);
+      await h.tap(find.text('Directions'));
+      expect(find.text(directionsMathP1(calculatorAllowed: true)), findsOneWidget);
+      expect(find.textContaining('not available'), findsNothing);
+    });
+
+    testWidgets('the rule turning off closes an open calculator: panel, island, reserve and flag', (tester) async {
+      final session = RuleChangingSession();
+      final h = await RunnerHarness.pump(tester, session: session);
+      await h.tap(find.text('Calculator'));
+      await tester.pump();
+      final desmos = h.desmosHosts.single;
+      expect(desmos.visible, isTrue);
+      expect(h.content.postedOf<ViewSetMessage>().last.calcReservePx, 500);
+
+      session.allowed = false;
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Calculator'), findsNothing);
+      expect(find.byKey(const ValueKey('panel.calculator')), findsNothing);
+      expect(desmos.visible, isFalse);
+      expect(h.content.postedOf<ViewSetMessage>().last.calcReservePx, 0);
+      expect(h.state.tools.calculatorOpen, isFalse);
+
+      // The rule coming back does not re-open it: the student opens it again themselves.
+      session.allowed = true;
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('Calculator'), findsOneWidget);
+      expect(find.byKey(const ValueKey('panel.calculator')), findsNothing);
+      expect(h.content.postedOf<ViewSetMessage>().last.calcReservePx, 0);
     });
 
     testWidgets('no calculator reserve on a grid-in question', (tester) async {
