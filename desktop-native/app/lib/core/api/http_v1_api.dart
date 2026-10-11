@@ -20,24 +20,44 @@ import '../http/http_transport.dart';
 import '../models/models.dart';
 import 'v1_api.dart';
 
+/// What [AccessTokenSource.recoverFromUnauthorized] managed.
+enum RecoverOutcome {
+  /// A different, fresh access token is available: resend the request.
+  retry,
+
+  /// The refresh could not reach the server (or it failed transiently): the session is kept,
+  /// and the caller gets a transient [NetworkError] to retry later.
+  unreachable,
+
+  /// The server definitely refused the refresh token: the session is over.
+  denied,
+}
+
 /// Supplies the access token and recovers from a 401 (implemented by AuthController).
 abstract class AccessTokenSource {
   /// The current access token, or null when signed out.
   String? get accessToken;
 
-  /// Called after a 401 on a request sent with [usedAccess]. Returns true when a different,
-  /// fresh access token is now available (refreshed here, or already refreshed meanwhile).
-  Future<bool> recoverFromUnauthorized(String? usedAccess);
+  /// Called after a 401 on a request sent with [usedAccess]. Refreshes at most once for any
+  /// number of concurrent callers (a second refresh would present a token the first retired).
+  Future<RecoverOutcome> recoverFromUnauthorized(String? usedAccess);
 }
 
 class HttpV1Api implements V1Api {
-  HttpV1Api({required this.transport, required this.config, this.tokens});
+  HttpV1Api({required this.transport, required this.config, this.tokens, this.onUpdateRequired, this.onServerNow});
 
   final Transport transport;
   final ApiConfig config;
 
   /// Set after construction (AuthController itself calls [authRefresh] on this object).
   AccessTokenSource? tokens;
+
+  /// Told about every [UpdateRequired] (any endpoint can answer 426), so the app can show the
+  /// blocking update card wherever the student is.
+  void Function(UpdateRequired)? onUpdateRequired;
+
+  /// Told the server's `Date` header of every answer (feeds [ServerClock] for Home labels).
+  void Function(DateTime serverNow)? onServerNow;
 
   // ------------------------------------------------------------------------------------------
   // Plumbing
@@ -92,15 +112,38 @@ class HttpV1Api implements V1Api {
 
     final source = auth ? tokens : null;
     final used = source?.accessToken;
-    var resp = await transport.send(build(used));
-    if (resp.status == 401 && source != null) {
-      if (await source.recoverFromUnauthorized(used)) {
-        resp = await transport.send(build(source.accessToken));
+    var resp = await _deliver(build(used));
+    if (resp.status == 401 && source != null && used != null) {
+      // The 401 came from the auth layer, before any view ran, so resending the identical
+      // request (same Idempotency-Key) after a refresh is safe.
+      switch (await source.recoverFromUnauthorized(used)) {
+        case RecoverOutcome.retry:
+          resp = await _deliver(build(source.accessToken));
+        case RecoverOutcome.unreachable:
+          throw const NetworkError('Could not refresh the session.');
+        case RecoverOutcome.denied:
+          break; // the 401 below ends the call; AuthController has signed out
       }
     }
     final s = resp.status;
     if ((s >= 200 && s < 300) || okStatuses.contains(s)) return resp;
-    throw _errorFor(resp);
+    final error = _errorFor(resp);
+    if (error is UpdateRequired) onUpdateRequired?.call(error);
+    throw error;
+  }
+
+  Future<TransportResponse> _deliver(TransportRequest request) async {
+    final resp = await transport.send(request);
+    final date = resp.header('date');
+    final sink = onServerNow;
+    if (date != null && sink != null) {
+      try {
+        sink(HttpDateParser.parse(date));
+      } on FormatException {
+        // An unparsable Date header is ignored.
+      }
+    }
+    return resp;
   }
 
   ApiException _errorFor(TransportResponse resp) {
