@@ -198,11 +198,10 @@ fn release_on_window_thread(r: Release, wait: bool) {
 /// `ms_lock_exit`: safe when not locked.
 pub fn exit() {
     let r = take_release(&mut state());
-    if r.hwnd == 0 && !cfg!(windows) {
-        return; // nothing to undo on a dev host that never initialised
-    }
-    if cfg!(windows) && r.hwnd == 0 {
-        return; // ms_init never ran: nothing was engaged
+    if r.hwnd == 0 {
+        // ms_init never ran (Windows: nothing was engaged), or a dev host, which has no window
+        // and whose lockdown.rs release is a no-op.
+        return;
     }
     release_on_window_thread(r, true);
 }
