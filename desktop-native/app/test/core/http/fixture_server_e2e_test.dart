@@ -14,6 +14,9 @@ import 'package:mastersat_app/core/models/models.dart';
 import 'package:mastersat_app/core/store/unsent_work.dart';
 import 'package:mastersat_app/native/fake_native_bridge.dart';
 
+// The server is its own package (it depends on this app), so it is imported by path; its
+// package: imports resolve against this app's package config.
+// ignore: avoid_relative_lib_imports
 import '../../../../tool/fixture_server/lib/fixture_server.dart';
 
 void main() {
