@@ -324,6 +324,7 @@ class AssessmentSetSerializer(serializers.ModelSerializer):
             "subject",
             "source",
             "level",
+            "secondary_level",
             "category",
             "title",
             "description",
@@ -372,6 +373,17 @@ class AssessmentSetRunnerSerializer(serializers.ModelSerializer):
     """
 
     questions = AssessmentQuestionRunnerSerializer(many=True, read_only=True)
+    # ``level`` here is the level THIS student's cohort sits the set at, not the raw
+    # primary level (2026-10-11, the school's request: a set can carry a second level).
+    # Every runner decides Desmos from this one field — web runner, iOS
+    # ``AssessmentTools.offersCalculator``, already-installed iOS builds included — and
+    # Desmos differs by level (Middle/Senior get it, Foundation/Junior work by hand). So
+    # a Junior+Middle set must say "middle" to a Middle class and "junior" to a Junior
+    # class. Resolving it HERE keeps every installed client correct without an update.
+    # The view passes context["classroom_level"]; without it (no classroom) this is the
+    # primary level, exactly what the field said before a second level existed.
+    # ``secondary_level`` stays raw, for display only.
+    level = serializers.SerializerMethodField()
 
     class Meta:
         model = AssessmentSet
@@ -380,6 +392,7 @@ class AssessmentSetRunnerSerializer(serializers.ModelSerializer):
             "subject",
             "source",
             "level",
+            "secondary_level",
             "category",
             "title",
             "description",
@@ -388,6 +401,9 @@ class AssessmentSetRunnerSerializer(serializers.ModelSerializer):
             "updated_at",
             "questions",
         ]
+
+    def get_level(self, obj) -> str:
+        return obj.effective_level_for(self.context.get("classroom_level"))
 
 
 @extend_schema_serializer(component_name="AssessmentSetAdmin")
@@ -407,6 +423,7 @@ class AssessmentSetAdminSerializer(serializers.ModelSerializer):
             "subject",
             "source",
             "level",
+            "secondary_level",
             "category",
             "title",
             "description",
@@ -427,6 +444,7 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
             "subject",
             "source",
             "level",
+            "secondary_level",
             "category",
             "title",
             "description",
@@ -439,6 +457,9 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
         subject = attrs.get("subject") or getattr(self.instance, "subject", None)
         source = attrs.get("source", getattr(self.instance, "source", ""))
         level = attrs.get("level", getattr(self.instance, "level", ""))
+        secondary = attrs.get(
+            "secondary_level", getattr(self.instance, "secondary_level", "") or ""
+        )
         creating = self.instance is None
         if creating and not source:
             raise serializers.ValidationError(
@@ -457,6 +478,41 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
             if level not in allowed_levels:
                 raise serializers.ValidationError(
                     {"level": f"'{level}' is not a valid level for {subject} sets."}
+                )
+        # Optional second level (2026-10-11, the school's request): the set is shown to
+        # BOTH cohorts. Checked against the EFFECTIVE values, so a PATCH that touches only
+        # the primary level or the subject is still checked against the second level
+        # already stored — a stored secondary is never left contradicting the set.
+        # This one validator covers create (POST), the editor (PATCH) and CSV create.
+        if secondary:
+            if not level:
+                # Either a second level was sent without a primary, or the primary is
+                # being cleared while a second level is stored. Not silently dropped:
+                # the author should see that the set is still tagged for that cohort.
+                raise serializers.ValidationError(
+                    {
+                        "secondary_level": (
+                            "A second level needs a primary level. Choose the primary "
+                            "level first, or clear the second level."
+                        )
+                    }
+                )
+            if secondary not in AssessmentSet.allowed_levels_for_subject(subject):
+                # English has no Foundation; a subject PATCH can also strand a stored one.
+                raise serializers.ValidationError(
+                    {
+                        "secondary_level": (
+                            f"'{secondary}' is not a valid level for {subject} sets."
+                        )
+                    }
+                )
+            if secondary == level:
+                raise serializers.ValidationError(
+                    {
+                        "secondary_level": (
+                            "The second level must differ from the primary level."
+                        )
+                    }
                 )
         return attrs
 

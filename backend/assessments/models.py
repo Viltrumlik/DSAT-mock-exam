@@ -86,6 +86,22 @@ class AssessmentSet(models.Model):
     level = models.CharField(
         max_length=16, choices=LEVEL_CHOICES, blank=True, default="", db_index=True
     )
+    # OPTIONAL second level (2026-10-11, the school's request): one set can be shown to
+    # two cohorts at once — e.g. a Junior set that also suits Middle. Blank = the set
+    # belongs to its primary ``level`` only (every set before this date). It never stands
+    # alone: a secondary needs a primary, must fit the subject (English has no Foundation)
+    # and must differ from the primary — enforced in the admin write serializer.
+    #
+    # Every level filter on sets must accept EITHER level — use ``level_q`` rather than
+    # ``filter(level=...)``, or the set silently vanishes from its second cohort.
+    #
+    # Deliberately NO db_index: on Postgres an indexed CharField also gets a ``_like``
+    # varchar_pattern_ops index, and that pair is the double-create trap a migration hit
+    # before. The filters this column serves always also hit the indexed ``level`` /
+    # ``subject`` / ``is_active`` columns, and the table is small.
+    secondary_level = models.CharField(
+        max_length=16, choices=LEVEL_CHOICES, blank=True, default=""
+    )
     category = models.CharField(max_length=255, db_index=True, blank=True, default="")
     title = models.CharField(max_length=200, db_index=True)
     description = models.TextField(blank=True, default="")
@@ -124,6 +140,38 @@ class AssessmentSet(models.Model):
     def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:
         """Level keys valid for the given subject (empty for unknown subjects)."""
         return cls.ALLOWED_LEVELS_BY_SUBJECT.get(subject, ())
+
+    @property
+    def levels(self) -> tuple[str, ...]:
+        """The cohorts this set is for: primary first, then the optional secondary.
+
+        Empty for a legacy/untagged set (blank ``level``) — which, by the long-standing
+        rule, shows in every UNTAGGED classroom and is hidden from a leveled one.
+        """
+        return tuple(lv for lv in (self.level, self.secondary_level) if lv)
+
+    @classmethod
+    def level_q(cls, level: str) -> models.Q:
+        """Queryset filter: sets visible to cohort ``level`` — primary OR secondary.
+
+        The one way to level-scope a set queryset (classroom picker, journal picker,
+        journal write guard). ``filter(level=...)`` alone drops every set whose SECOND
+        level is the one being asked for.
+        """
+        return models.Q(level=level) | models.Q(secondary_level=level)
+
+    def effective_level_for(self, cohort_level: str | None) -> str:
+        """The level a given cohort sits this set AT.
+
+        A Middle classroom doing a Junior+Middle set sits it as Middle, so it gets what
+        Middle gets (Desmos — the runners decide the calculator from this). A cohort that
+        is not one of the set's levels (untagged classroom, or a set re-tagged after it
+        was assigned) falls back to the primary level — exactly what the runner got
+        before a second level existed.
+        """
+        if cohort_level and cohort_level in self.levels:
+            return cohort_level
+        return self.level or ""
 
 
 class AssessmentQuestion(models.Model):
