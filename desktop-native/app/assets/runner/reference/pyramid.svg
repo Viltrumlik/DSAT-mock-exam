@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (pyramid); labels drawn natively -->
+  <path d="M48 16 L20 60 L60 72 L88 50 Z"/>
+  <path d="M48 16 L60 72" stroke-dasharray="3 3"/>
+  <path d="M48 16 L20 60 M48 16 L88 50"/>
+</svg>

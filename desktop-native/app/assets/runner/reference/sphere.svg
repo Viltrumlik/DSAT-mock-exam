@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (sphere); labels drawn natively -->
+  <circle cx="48" cy="44" r="28"/>
+  <ellipse cx="48" cy="44" rx="28" ry="9" stroke-dasharray="3 3"/>
+  <line x1="48" y1="44" x2="74" y2="40"/>
+</svg>

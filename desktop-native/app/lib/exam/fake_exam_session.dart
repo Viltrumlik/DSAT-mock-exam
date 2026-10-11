@@ -20,10 +20,10 @@ class FakeExamSession extends ExamSession {
     bool online = true,
     this.tick = true,
     this.transitionDelay = const Duration(milliseconds: 300),
-  })  : _bundle = bundle,
-        // ignore: prefer_initializing_formals
-        _online = online,
-        _phase = initialPhase {
+  }) : _bundle = bundle,
+       // ignore: prefer_initializing_formals
+       _online = online,
+       _phase = initialPhase {
     kind = bundle.attempt.kind == AttemptKind.midterm ? ExamKind.midterm : ExamKind.pastpaper;
     _modules = [
       for (final m in bundle.modules)

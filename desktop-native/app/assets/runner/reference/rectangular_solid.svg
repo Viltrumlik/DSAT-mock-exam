@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (rectangular_solid); labels drawn natively -->
+  <path d="M20 40 L60 40 L60 74 L20 74 Z"/>
+  <path d="M20 40 L34 26 L74 26 L60 40"/>
+  <path d="M60 40 L74 26 L74 60 L60 74"/>
+</svg>

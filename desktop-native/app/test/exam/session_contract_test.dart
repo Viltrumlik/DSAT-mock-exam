@@ -7,14 +7,34 @@ import 'package:mastersat_app/exam/session_contract.dart';
 
 void main() {
   test('header titles follow the website moduleLabel rule', () {
-    expect(examModuleTitle(kind: ExamKind.pastpaper, subject: 'READING_WRITING', testTitle: '', moduleOrder: 1, moduleCount: 2),
-        'Section 1, Module 1: Reading and Writing');
-    expect(examModuleTitle(kind: ExamKind.pastpaper, subject: 'MATH', testTitle: 'x', moduleOrder: 2, moduleCount: 2),
-        'Section 2, Module 2: Math');
-    expect(examModuleTitle(kind: ExamKind.midterm, subject: 'MATH', testTitle: 'October Midterm · Math', moduleOrder: 2, moduleCount: 2),
-        'October Midterm · Math — Module 2');
-    expect(examModuleTitle(kind: ExamKind.midterm, subject: 'MATH', testTitle: ' ', moduleOrder: 1, moduleCount: 1),
-        'Math Midterm');
+    expect(
+      examModuleTitle(
+        kind: ExamKind.pastpaper,
+        subject: 'READING_WRITING',
+        testTitle: '',
+        moduleOrder: 1,
+        moduleCount: 2,
+      ),
+      'Section 1, Module 1: Reading and Writing',
+    );
+    expect(
+      examModuleTitle(kind: ExamKind.pastpaper, subject: 'MATH', testTitle: 'x', moduleOrder: 2, moduleCount: 2),
+      'Section 2, Module 2: Math',
+    );
+    expect(
+      examModuleTitle(
+        kind: ExamKind.midterm,
+        subject: 'MATH',
+        testTitle: 'October Midterm · Math',
+        moduleOrder: 2,
+        moduleCount: 2,
+      ),
+      'October Midterm · Math — Module 2',
+    );
+    expect(
+      examModuleTitle(kind: ExamKind.midterm, subject: 'MATH', testTitle: ' ', moduleOrder: 1, moduleCount: 1),
+      'Math Midterm',
+    );
   });
 
   test('grid-in input rule matches SprInput.tsx', () {
@@ -176,15 +196,18 @@ void main() {
     expect(s.highlighterOn, isTrue);
     s.setNotes('check Q4');
     expect(s.notes, 'check Q4');
-    s.recordAnnotations(1001, AnnotationContainer.question,
-        const [Annotation(start: 0, end: 4, kind: AnnotationKind.highlight, color: HighlightColor.blue)]);
+    s.recordAnnotations(1001, AnnotationContainer.question, const [
+      Annotation(start: 0, end: 4, kind: AnnotationKind.highlight, color: HighlightColor.blue),
+    ]);
     expect(s.annotationsFor(1001)[AnnotationContainer.question]!.single.color, HighlightColor.blue);
     final keys = s.moduleMediaKeys.toList();
     expect(keys, contains('question_images/math/2025-10-us-a/m1-q4-graph.png'));
     final blob = await s.media(keys.first);
     expect(blob!.bytes.sublist(1, 4), 'PNG'.codeUnits);
-    expect(await s.reportProblem(questionId: 1001, category: ReportCategory.typoUnclear, message: 'x'),
-        ReportOutcome.sent);
+    expect(
+      await s.reportProblem(questionId: 1001, category: ReportCategory.typoUnclear, message: 'x'),
+      ReportOutcome.sent,
+    );
     expect(s.log, containsAll(['toggleHighlighter', 'setNotes', 'reportProblem 1001 typo_unclear']));
     s.dispose();
   });

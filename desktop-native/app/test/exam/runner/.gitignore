@@ -1,0 +1,2 @@
+# flutter_test writes golden diffs here when a golden fails.
+failures/
