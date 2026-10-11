@@ -249,7 +249,11 @@ jobs:
             Write-Host "S1 harness build carries the island preview from $preview"
           }
           flutter build windows --release -t lib/island/s1_harness.dart --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            # flutter hides MSBuild's reason; the install step prints it.
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
           $dest = Join-Path $env:RUNNER_TEMP 's1-harness'
           Copy-Item -Recurse build/windows/x64/runner/Release $dest
           "dir=$dest" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
@@ -258,7 +262,10 @@ jobs:
         working-directory: desktop-native/app
         run: |
           flutter build windows --release --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE -ne 0) {
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
           $bundle = 'build/windows/x64/runner/Release'
           Get-ChildItem $bundle | Format-Table Name, Length -AutoSize | Out-String | Write-Host
           if (-not (Test-Path "$bundle/MasterSAT.exe")) { Write-Error "MasterSAT.exe was not built"; exit 1 }

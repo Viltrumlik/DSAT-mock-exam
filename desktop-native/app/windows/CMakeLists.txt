@@ -79,8 +79,11 @@ if(NOT MS_LINK_NATIVE MATCHES "^(AUTO|ON|OFF)$")
 endif()
 set(MS_NATIVE_LIB "")
 if(NOT MS_LINK_NATIVE STREQUAL "OFF")
+  # Environment paths arrive with backslashes; CMake needs forward slashes
+  # (a backslash in install() code is an escape sequence).
+  file(TO_CMAKE_PATH "$ENV{MS_NATIVE_LIB_DIR}" _ms_native_env_dir)
   set(_ms_native_candidates
-    "$ENV{MS_NATIVE_LIB_DIR}"
+    "${_ms_native_env_dir}"
     "${MS_DESKTOP_NATIVE_DIR}/native/target/x86_64-pc-windows-msvc/release"
     "${MS_DESKTOP_NATIVE_DIR}/native/target/release")
   foreach(_dir IN LISTS _ms_native_candidates)
@@ -150,7 +153,7 @@ endif()
 #                  only, never a release.
 set(MS_ISLAND_DIR "${MS_DESKTOP_NATIVE_DIR}/island/build/island")
 if(DEFINED ENV{MS_ISLAND_DIR})
-  set(MS_ISLAND_DIR "$ENV{MS_ISLAND_DIR}")
+  file(TO_CMAKE_PATH "$ENV{MS_ISLAND_DIR}" MS_ISLAND_DIR)
 endif()
 set(INSTALL_BUNDLE_ISLAND_DIR "${INSTALL_BUNDLE_DATA_DIR}/island")
 install(CODE "
