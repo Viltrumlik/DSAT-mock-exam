@@ -184,4 +184,26 @@ void main() {
     expect(find.byType(SettingsScreen), findsOneWidget);
     await h.dispose(tester);
   });
+
+  testWidgets('a finished sitting opens its result straight away (past paper and midterm)', (tester) async {
+    final h = await AppHarness.start();
+    await h.pump(tester);
+    h.outcome = (r) => switch (r) {
+          PastpaperExamRequest() => const ExamOutcome(kind: AttemptKind.pastpaper, attemptId: 8801, finished: true),
+          MidtermExamRequest() => const ExamOutcome(kind: AttemptKind.midterm, attemptId: 4410, finished: true),
+          _ => null,
+        };
+    await tester.tap(find.text('Start re-sit'));
+    await settleApp(tester);
+    expect(find.text('MIDTERM RESULT'), findsOneWidget, reason: 'the finished attempt opens its result');
+    h.services.navigatorKey.currentState!.pop();
+    await settleApp(tester);
+
+    final start = find.text('Start').last;
+    await tester.ensureVisible(start);
+    await tester.tap(start);
+    await settleApp(tester);
+    expect(find.text('+50 since your last sitting'), findsOneWidget);
+    await h.dispose(tester);
+  });
 }

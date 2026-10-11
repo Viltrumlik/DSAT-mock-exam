@@ -133,7 +133,13 @@ Future<void> openExam(BuildContext context, ExamRequest request) async {
     case AttemptKind.pastpaper:
       await openPastpaperResult(context, attemptId: id);
     case AttemptKind.midterm:
-      final row = services.home.home?.midterms.where((m) => m.attemptId == id).firstOrNull;
+      // Home may not know the attempt yet (it was created during this sitting): fall back to
+      // the row the student started from, with the attempt filled in.
+      final known = services.home.home?.midterms.where((m) => m.attemptId == id).firstOrNull;
+      final started = request is MidtermExamRequest
+          ? MidtermRow.fromJson(JsonReader.of({...request.midterm.toJson(), 'attempt_id': id}))
+          : null;
+      final row = known ?? started;
       if (row != null) await openMidtermResult(context, row: row);
   }
 }
