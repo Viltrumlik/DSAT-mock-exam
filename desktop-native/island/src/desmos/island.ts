@@ -67,8 +67,16 @@ export function scriptLoader(doc: Document, key: string): () => Promise<DesmosFa
       const script = doc.createElement("script");
       script.src = desmosScriptUrl(key);
       script.async = true;
-      script.onload = () => resolve(g());
-      script.onerror = () => resolve(null);
+      const done = (factory: DesmosFactory | null) => {
+        // A failed load is forgotten (script removed), so the next attempt really retries.
+        if (!factory) {
+          pending = null;
+          script.remove();
+        }
+        resolve(factory);
+      };
+      script.onload = () => done(g());
+      script.onerror = () => done(null);
       doc.head.appendChild(script);
     });
     return pending;
@@ -213,7 +221,12 @@ export class DesmosIsland {
       await this.setMode(mode);
       return;
     }
-    if (this.status === "failed") this.status = "idle";
+    if (this.status === "failed") {
+      // Try again (the student may be back online). `loading` must be dropped HERE: a load
+      // that fails synchronously (offline) settles before init stores its promise.
+      this.status = "idle";
+      this.loading = null;
+    }
     if (!this.loading) this.loading = this.load();
     await this.loading;
   }
@@ -264,7 +277,6 @@ export class DesmosIsland {
 
   private fail(reason: FailReason): void {
     this.status = "failed";
-    this.loading = null;
     this.overlay.hidden = true;
     this.send({ t: "desmos.failed", reason });
   }
