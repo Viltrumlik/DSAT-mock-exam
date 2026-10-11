@@ -113,12 +113,16 @@ class NativeClientAuthTests(TestCase):
         self.assertTrue(r.data.get("access"))
 
     def test_spent_refresh_token_is_rejected(self):
-        """Rotation must still be one-shot for native clients — no replay."""
+        """Rotation must still be one-shot for native clients — no replay.
+
+        The one re-presentation a lost reply is allowed (test_refresh_rotation_grace) hands
+        back the same successor; past that, the spent token is refused."""
         first = self._login(**_NATIVE).data["refresh"]
-        self.client.post(
-            "/api/auth/refresh/", data={"refresh": first}, content_type="application/json",
-            HTTP_HOST=_HOST, **_NATIVE,
-        )
+        for _ in range(2):  # the rotation, then the lost-reply grace
+            self.client.post(
+                "/api/auth/refresh/", data={"refresh": first}, content_type="application/json",
+                HTTP_HOST=_HOST, **_NATIVE,
+            )
 
         replay = self.client.post(
             "/api/auth/refresh/", data={"refresh": first}, content_type="application/json",

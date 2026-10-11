@@ -19,6 +19,7 @@ def security_metrics_prometheus() -> str:
     counter("refresh_fail", "Refresh failures (invalid/revoked/session missing).")
     counter("logout_revoke_fail", "Logout revoke failures.")
     counter("refresh_rotations", "Successful refresh rotations.")
+    counter("refresh_reuse_grace", "Native refreshes whose lost reply was re-issued within the grace window.")
     counter("suspicious_session_churn", "Suspicious session churn events.")
     counter("security_churn_alerts", "Churn risk threshold alerts (deduped).")
     counter("security_auto_revoke", "Auto session revoke on extreme churn.")
