@@ -485,6 +485,7 @@ class LockdownTests(MidtermCase):
         base = f"/api/midterms/attempts/{attempt_id}"
         res = site.post(f"{base}/desktop_challenge/", {}, format="json", HTTP_X_MASTERSAT_CLIENT=APP_HEADER)
         self.assertEqual(res.status_code, 200, res.content)
+        assert_shape(self, res.json(), fixture("midterm_challenge.response"))
         nonce = res.json()["nonce"]
         proof = {
             "nonce": nonce, "key_id": KEY_ID, "app_version": "0.2.0", "precheck": PRECHECK,

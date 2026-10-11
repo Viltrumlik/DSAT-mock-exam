@@ -67,6 +67,22 @@ class ContractCoverageTests(SimpleTestCase):
             seen.add(match.url_name)
         self.assertGreaterEqual(len(seen), 15)
 
+    def test_every_response_fixture_is_asserted_by_some_test(self):
+        """A fixture nobody checks is a contract nobody keeps: each v1 response and error
+        fixture (and the handshake the app performs) is named in an assertion here."""
+        from pathlib import Path
+
+        source = "".join(p.read_text(encoding="utf-8") for p in Path(__file__).parent.glob("test_*.py"))
+        missing = []
+        for row in manifest()["fixtures"]:
+            if row["kind"] == "request":
+                continue
+            name = row["file"][: -len(".json")]
+            in_scope = row["path"].startswith("/api/desktop/v1/") or name.startswith(("error.", "midterm_session"))
+            if in_scope and f'"{name}"' not in source:
+                missing.append(row["file"])
+        self.assertEqual(missing, [])
+
     def test_content_hash_matches_the_contract_rule_for_every_fixture_module(self):
         """The server's hash is the generator's (and the app's ``contentHashOf``): recompute it
         over every module the fixtures ship and compare with the hash they carry."""
@@ -145,6 +161,19 @@ class AuthAndEnvelopeTests(V1TestCase):
         for method, path in V1_ROUTES:
             res = getattr(AppClient(None), method)(path)
             self.assertEqual(res.status_code, 401, f"{method} {path}")
+
+    def test_an_expired_bearer_token_is_drfs_token_not_valid_401(self):
+        """The app refreshes once on exactly this body, then retries."""
+        from datetime import timedelta
+
+        token = RefreshToken.for_user(make_student()).access_token
+        token.set_exp(lifetime=-timedelta(seconds=1))
+        res = APIClient().get(
+            "/api/desktop/v1/home", HTTP_AUTHORIZATION=f"Bearer {token}", HTTP_X_MASTERSAT_CLIENT=APP_HEADER
+        )
+        self.assertEqual(res.status_code, 401, res.content)
+        assert_shape(self, res.json(), fixture("error.401"))
+        self.assertEqual(res.json()["code"], "token_not_valid")
 
     def test_unknown_v1_path_is_a_json_404(self):
         res = AppClient(make_student()).get("pastpapers/attempts/1/nonsense")
