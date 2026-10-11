@@ -298,6 +298,32 @@ class ReopenedPapersTests(RetakeFixture):
         # Control: the same history on an active member is reopened.
         self.assertEqual(len(self._reopened()), 1)
 
+    def test_the_released_windows_app_reads_the_same_list_under_results(self):
+        """Windows app 0.1.0 reads ``.results`` (it shipped expecting the list-page key); the
+        website reads ``.items``. Both must carry the identical list, or the app never shows
+        "Assigned again" — the bug this key exists to repair."""
+        self._sitting(days_ago=30)
+        homework = self._homework(days_ago=1)
+
+        r = self._as(self.student).get(
+            "/api/classes/pastpapers/reopened/", HTTP_X_MASTERSAT_CLIENT="desktop"
+        )
+
+        self.assertEqual(r.status_code, 200, r.content)
+        body = r.json()
+        self.assertEqual(set(body), {"items", "results"})
+        self.assertEqual(body["results"], body["items"])
+        (item,) = body["results"]
+        self.assertEqual(
+            (item["practice_test_id"], item["assignment_id"]), (self.section.pk, homework.pk)
+        )
+
+    def test_nothing_set_again_is_an_empty_list_under_both_keys(self):
+        r = self._as(self.student).get("/api/classes/pastpapers/reopened/")
+
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json(), {"items": [], "results": []})
+
 
 class HistoryAndCertificateTests(RetakeFixture):
     def setUp(self):
