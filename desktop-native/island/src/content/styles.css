@@ -1,0 +1,71 @@
+/* content.html styles.
+ *
+ * 1. Tailwind 4.2.1 (the website's version), scanning ONLY the island's own sources — the
+ *    ported components carry the website's class strings verbatim, so the same utilities come
+ *    out with the same values.
+ * 2. runner.generated.css: the website's globals.css rules the runner depends on, verbatim.
+ * 3. Island hardening (below): no browser habits. Nothing here changes how the card looks.
+ *
+ * katex.min.css is imported after this file by main.ts, the website's order (layout.tsx).
+ */
+@import "tailwindcss" source(none);
+@import "./runner.generated.css";
+
+@source "../ported";
+@source "../content";
+
+/* ── Island additions ───────────────────────────────────────────────────────────────────── */
+
+/* The page IS the card region: no page scroll, white from the first frame (the host's
+   DefaultBackgroundColor is the same white, so there is never a flash). */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #ffffff;
+  overscroll-behavior: none;
+}
+
+/* Nothing is selectable except the three highlightable regions and the SPR input. */
+html {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+#ts-passage,
+#ts-question,
+#ts-choices,
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* No hand cursor anywhere (the website shows one on marks). */
+mark.ts-annot,
+a,
+a * {
+  cursor: default;
+}
+/* While annotating, marks keep the text cursor of the region around them. */
+.ts-annotating mark.ts-annot {
+  cursor: text;
+}
+
+img {
+  -webkit-user-drag: none;
+}
+
+/* One off-screen layout pass per module (content/island.ts warmUp). */
+[data-island="prerender"] {
+  position: fixed;
+  top: 0;
+  left: -200vw;
+  width: 100vw;
+  height: 100vh;
+  visibility: hidden;
+  pointer-events: none;
+  overflow: hidden;
+}

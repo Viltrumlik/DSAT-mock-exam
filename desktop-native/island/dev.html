@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Island harness</title>
+    <!-- Dev only (npm run dev → /dev.html). Not part of the build: vite.config.ts builds
+         content.html and desmos.html only. The islands run in <iframe>s and talk to the fake
+         native below through the "parent" transport (src/transport.ts). -->
+    <script type="module" src="./src/dev/harness.ts"></script>
+  </head>
+  <body>
+    <header class="bar" id="bar"></header>
+    <main class="stage" id="stage">
+      <iframe id="content" title="content island"></iframe>
+      <div id="toolbar" class="native-toolbar" hidden></div>
+      <section id="desmos-panel" class="desmos-panel" hidden>
+        <div class="desmos-head" id="desmos-head"></div>
+        <iframe id="desmos" title="desmos island"></iframe>
+      </section>
+    </main>
+    <footer class="status" id="status"></footer>
+    <aside class="log" id="log"></aside>
+  </body>
+</html>

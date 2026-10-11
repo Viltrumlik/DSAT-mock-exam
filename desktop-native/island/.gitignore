@@ -1,0 +1,5 @@
+# island: build output, deps and visual-test artifacts never go in git.
+node_modules/
+build/
+test-artifacts/
+*.tsbuildinfo
