@@ -1,0 +1,62 @@
+[package]
+name = "mastersat-native"
+# The DLL's own version (ms_version). The APP version signed into every proof is not this — it is
+# desktop-native/VERSION, handed in by the runner through ms_init. They move together.
+version = "0.2.0"
+description = "mastersat_native.dll — the C ABI of desktop-native/native/include/mastersat_native.h."
+edition = "2021"
+rust-version = "1.77"
+publish = false
+
+[lib]
+name = "mastersat_native"
+# cdylib: mastersat_native.dll (Windows; the runner links its import library) and
+# libmastersat_native.dylib (macOS development). rlib: so `cargo test` can call the exported
+# functions directly, through the same C ABI.
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Velopack (install/update/uninstall hooks in ms_startup, and ms_update_*) is ON by default so a
+# release build can never ship without its updater by forgetting a flag. `--no-default-features`
+# builds without it: ms_startup only returns MS_OK and ms_update_* answer MS_ERR_UNSUPPORTED.
+default = ["updates"]
+updates = ["dep:velopack"]
+# Embed the development proof key even in a release build that has no DESKTOP_PROOF_KEY (a local
+# release-mode build for testing against a dev server). Debug builds always embed it. Never for an
+# installer: a production server rejects the development key.
+dev-key = []
+
+[dependencies]
+# Shared by path with the 0.1.x Tauri shell (architecture §5): one lockdown, one proof.
+mastersat-lockdown = { path = "../../../../desktop/src-tauri/crates/lockdown" }
+mastersat-proof = { path = "../../../../desktop/src-tauri/crates/proof" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+aes-gcm = "0.10"
+getrandom = "0.2"
+base64 = "0.22"
+hex = "0.4"
+url = "2"
+velopack = { version = "1.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+# The same windows-rs version as crates/lockdown, so both speak one set of Win32 types.
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_Networking_WinHttp",
+  "Win32_Security",
+  "Win32_Security_Cryptography",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Memory",
+  "Win32_System_Power",
+  "Win32_System_Threading",
+  "Win32_UI_WindowsAndMessaging",
+] }
+winreg = "0.52"
+
+[dev-dependencies]
+# Independent implementations for the C-ABI tests (the crate itself signs through mastersat-proof).
+hmac = "0.12"
+sha2 = "0.10"
