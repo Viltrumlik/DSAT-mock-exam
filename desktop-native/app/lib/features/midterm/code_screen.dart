@@ -69,7 +69,10 @@ class _MidtermCodeScreenState extends State<MidtermCodeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // EditableText does not inherit DefaultTextStyle: the family is set here.
     final style = MidtermText.size(30, weight: FontWeight.w700, color: MidtermColors.slate900).copyWith(
+      fontFamily: midtermFontFamily,
+      fontFamilyFallback: midtermFontFallback,
       letterSpacing: 30 * 0.5,
       fontFeatures: const [FontFeature.tabularFigures()],
     );
