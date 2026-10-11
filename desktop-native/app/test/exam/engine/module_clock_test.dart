@@ -52,6 +52,28 @@ void main() {
       expect(c.deadline, const Duration(seconds: 911));
     });
 
+    test('a forced anchor ignores a small UPWARD move (round-trip noise), adopts a real one', () {
+      final c = ModuleClock(moduleId: 1, now: Duration.zero, remaining: const Duration(minutes: 10));
+      // The server started the module 3 s later than this computer did: no tick up.
+      expect(
+        c.anchor(timing: _t(600000), sent: const Duration(seconds: 3), received: const Duration(seconds: 3), rule: AnchorRule.force),
+        isFalse,
+      );
+      expect(c.deadline, const Duration(minutes: 10));
+      // An offline module 2: the server only started it 4 minutes later — adopted.
+      expect(
+        c.anchor(timing: _t(600000), sent: const Duration(minutes: 4), received: const Duration(minutes: 4), rule: AnchorRule.force),
+        isTrue,
+      );
+      expect(c.deadline, const Duration(minutes: 14));
+      // Downward is always adopted, however small.
+      expect(
+        c.anchor(timing: _t(599000), sent: const Duration(minutes: 4), received: const Duration(minutes: 4), rule: AnchorRule.force),
+        isTrue,
+      );
+      expect(c.deadline, const Duration(minutes: 13, seconds: 59));
+    });
+
     test('midterm submitAt = t_recv + remaining + 750 ms, with no round-trip subtraction', () {
       final c = ModuleClock(moduleId: 1, now: Duration.zero, remaining: const Duration(minutes: 10));
       c.anchor(

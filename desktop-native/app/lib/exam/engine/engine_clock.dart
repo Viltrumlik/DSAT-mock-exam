@@ -98,6 +98,12 @@ class ModuleClock {
   ///
   /// `deadline_mono = t_recv − rtt/2 + remaining_ms` (design §1.8). Midterms also refresh
   /// [submitAt] from every response, whatever [rule] decides about the display.
+  ///
+  /// A forced anchor takes the server's word downward always, and upward only beyond
+  /// [forceUpTolerance]: a module the client started at the click while the server started it
+  /// when the hand-in landed differs by the round trip (plus any queueing), and showing the
+  /// student a countdown that ticks UP by a second or two is exactly the glitch 0.1.0's review
+  /// banned. A real gap (an offline module, sleep, a reopen) is far larger and is adopted.
   bool anchor({
     required Timing timing,
     required Duration sent,
@@ -105,6 +111,7 @@ class ModuleClock {
     required AnchorRule rule,
     bool midterm = false,
     Duration submitMargin = const Duration(milliseconds: 750),
+    Duration forceUpTolerance = const Duration(seconds: 5),
   }) {
     final ms = timing.remainingMs;
     if (ms == null) return false;
@@ -125,6 +132,7 @@ class ModuleClock {
     final candidate = received - Duration(microseconds: rtt.inMicroseconds ~/ 2) + remaining;
     switch (rule) {
       case AnchorRule.force:
+        if (candidate > _deadline && candidate - _deadline <= forceUpTolerance) return false;
         final moved = candidate != _deadline;
         _deadline = candidate;
         return moved;

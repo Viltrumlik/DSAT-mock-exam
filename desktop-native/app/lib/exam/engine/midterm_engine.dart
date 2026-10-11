@@ -389,6 +389,7 @@ class MidtermEngine extends ExamEngine {
       rule: AnchorRule.force,
       midterm: true,
       submitMargin: timings.midtermSubmitMargin,
+      forceUpTolerance: forceUpTolerance,
     );
     phaseValue = ExamPhase.running;
     transitionValue = null;

@@ -528,6 +528,10 @@ class PastpaperEngine extends ExamEngine {
     if (moduleId != liveModuleId || _handedIn.contains(moduleId)) return;
     _handedIn.add(moduleId);
     _cancelSyncTimers();
+    // A pause/resume still on the wire was about the module just handed in: its reply must not
+    // freeze (or unfreeze) the next module (0.1.0 review). The next module starts running.
+    _pauseSerial++;
+    pausedFlag = false;
     final id = attemptIdValue;
     final item = submitItem(moduleId);
     final next = _nextModuleAfter(moduleId);
@@ -767,9 +771,13 @@ class PastpaperEngine extends ExamEngine {
       // Only the LATEST pause/resume reply is adopted, and only about the live module: an
       // older reply (a module change overtook it) must not freeze module 2's countdown while
       // the server's module-2 clock runs on (0.1.0 review).
-      if (serial != _pauseSerial) return pausedFlag;
+      if (serial != _pauseSerial) {
+        _undoStrayPause(env.attempt);
+        return pausedFlag;
+      }
       if (env.attempt.module?.id != module || module != liveModuleId) {
         _adoptServer(env.attempt, sent, mono);
+        _undoStrayPause(env.attempt);
         return false;
       }
       adoptPauseReply(env.attempt, sent, mono);
@@ -792,6 +800,15 @@ class PastpaperEngine extends ExamEngine {
       changed();
       return false;
     }
+  }
+
+  /// A pause reply that is no longer wanted (the student resumed, or the module changed) but
+  /// says the server paused the module now on screen: un-pause the server so the two clocks
+  /// do not drift apart. The local clock never stopped.
+  void _undoStrayPause(AttemptLite a) {
+    if (disposed || pausedFlag || !a.timing.paused) return;
+    if (a.module?.id == null || a.module?.id != liveModuleId) return;
+    unawaited(_sendResume());
   }
 
   @override

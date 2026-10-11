@@ -555,6 +555,11 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
     }
   }
 
+  /// A forced anchor ignores an upward move this small (round-trip noise, never shown as a tick
+  /// up). Midterms keep it to 1 s: their display decides when input locks.
+  Duration get forceUpTolerance =>
+      kind == ExamKind.midterm ? const Duration(seconds: 1) : const Duration(seconds: 5);
+
   /// The next response about this module re-anchors its countdown in BOTH directions (set on
   /// a module change, so the server's word on the new module's clock is taken — design §1.8).
   int? forceAnchorModule;
@@ -581,6 +586,7 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
       rule: r,
       midterm: kind == ExamKind.midterm,
       submitMargin: timings.midtermSubmitMargin,
+      forceUpTolerance: forceUpTolerance,
     );
     if (forced && a.timing.remainingMs != null) {
       forceNextAnchor = false;
