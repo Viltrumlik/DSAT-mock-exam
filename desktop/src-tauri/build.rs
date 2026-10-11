@@ -13,6 +13,7 @@ fn main() {
                 "lockdown_prove",
                 "lockdown_exit",
                 "lockdown_heartbeat",
+                "lockdown_away_now",
                 "battery_status",
                 "auth_begin",
                 "auth_take_verifier",

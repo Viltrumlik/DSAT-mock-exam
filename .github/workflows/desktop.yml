@@ -59,6 +59,11 @@ jobs:
         run: |
           npm ci
           npm run icons
+      - name: Build the native frontend (desktop/app)
+        working-directory: desktop/app
+        run: |
+          npm ci
+          npm run build
       - name: Build the installer
         working-directory: desktop
         env:

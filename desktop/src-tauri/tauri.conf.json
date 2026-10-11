@@ -4,18 +4,19 @@
   "version": "0.1.0",
   "identifier": "uz.mastersat.desktop",
   "build": {
-    "frontendDist": "../dist"
+    "frontendDist": "../app/dist",
+    "devUrl": "http://localhost:5190",
+    "beforeDevCommand": "npm --prefix app run dev"
   },
   "app": {
     "windows": [
       {
         "label": "main",
         "title": "MasterSAT",
-        "url": "https://mastersat.uz/desktop",
         "width": 1280,
-        "height": 800,
-        "minWidth": 1024,
-        "minHeight": 700,
+        "height": 820,
+        "minWidth": 880,
+        "minHeight": 640,
         "resizable": true,
         "center": true,
         "fullscreen": false,
