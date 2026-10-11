@@ -206,6 +206,43 @@ describe("useScreenWakeLock — keep a midterm's display awake, best-effort", ()
     expect(late.release).toHaveBeenCalledTimes(1);
   });
 
+  it("releases a lock whose request was still in flight when the paper went in (deactivation)", async () => {
+    let resolve!: (s: FakeSentinel) => void;
+    request.mockImplementationOnce(
+      () =>
+        new Promise<FakeSentinel>((r) => {
+          resolve = r;
+        }),
+    );
+    const h = renderLock(true);
+    expect(request).toHaveBeenCalledTimes(1);
+    h.rerender(false);
+
+    const late = new FakeSentinel();
+    await act(async () => {
+      resolve(late);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(late.release).toHaveBeenCalledTimes(1);
+    // Nothing asks again for a paper that is in.
+    await setVisible(false);
+    await setVisible(true);
+    await flush();
+    expect(request).toHaveBeenCalledTimes(1);
+    h.unmount();
+  });
+
+  it("a release that throws synchronously does not reach React's cleanup", async () => {
+    const h = renderLock(true);
+    await flush();
+    sentinels[0].release.mockImplementationOnce(() => {
+      throw new Error("odd embedder");
+    });
+    expect(() => h.unmount()).not.toThrow();
+    expect(sentinels[0].release).toHaveBeenCalledTimes(1);
+  });
+
   it("asks again when the page came back while a request was in flight and it lost the race", async () => {
     let resolve!: (s: FakeSentinel) => void;
     request.mockImplementationOnce(

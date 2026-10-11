@@ -35,6 +35,20 @@ import { useEffect } from "react";
  *
  * Importer: pages/ExamRunnerPage.tsx (midterms only, until the paper is in).
  */
+
+/**
+ * Let a sentinel go without anything reaching the exam. `release()` returns a promise, but
+ * the effect cleanup that calls it runs inside React's commit, so an embedder that throws
+ * synchronously instead would take the runner down with it — both shapes are swallowed.
+ */
+function releaseQuietly(sentinel: WakeLockSentinel): void {
+  try {
+    void sentinel.release().catch(() => {});
+  } catch {
+    // Best-effort, like everything here: the lock is a convenience.
+  }
+}
+
 export function useScreenWakeLock(active: boolean): void {
   useEffect(() => {
     if (!active) return;
@@ -76,7 +90,7 @@ export function useScreenWakeLock(active: boolean): void {
         (sentinel) => {
           if (disposed) {
             // Deactivated or unmounted while asking — never keep a lock nobody owns.
-            sentinel.release().catch(() => {});
+            releaseQuietly(sentinel);
             pending = false;
             return;
           }
@@ -108,7 +122,7 @@ export function useScreenWakeLock(active: boolean): void {
       document.removeEventListener("visibilitychange", onVisibility);
       const sentinel = held;
       held = null;
-      if (sentinel && !sentinel.released) sentinel.release().catch(() => {});
+      if (sentinel && !sentinel.released) releaseQuietly(sentinel);
     };
   }, [active]);
 }
