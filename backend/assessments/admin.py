@@ -14,6 +14,9 @@ from .models import (
 
 @admin.register(AssessmentSet)
 class AssessmentSetAdmin(admin.ModelAdmin):
+    # The change form edits ``secondary_level`` too. It never goes through the API
+    # serializer: its second-level rules come from ``AssessmentSet.clean()``, the same
+    # ``secondary_level_problem`` the API uses, with the CHECK constraint underneath.
     list_display = (
         "id", "subject", "level", "secondary_level", "category", "title", "is_active", "created_at",
     )

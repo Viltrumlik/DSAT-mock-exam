@@ -15,4 +15,8 @@ class Migration(migrations.Migration):
             name='secondary_level',
             field=models.CharField(blank=True, choices=[('foundation', 'Foundation'), ('junior', 'Junior'), ('middle', 'Middle'), ('senior', 'Senior')], db_default='', default='', max_length=16),
         ),
+        migrations.AddConstraint(
+            model_name='assessmentset',
+            constraint=models.CheckConstraint(condition=models.Q(('secondary_level', ''), models.Q(models.Q(('level', ''), _negated=True), models.Q(('secondary_level', models.F('level')), _negated=True)), _connector='OR'), name='assessment_sets_secondary_level_valid', violation_error_message='A second level needs a primary level, and must differ from it.'),
+        ),
     ]

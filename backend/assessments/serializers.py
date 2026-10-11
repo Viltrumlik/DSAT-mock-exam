@@ -484,36 +484,11 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
         # the primary level or the subject is still checked against the second level
         # already stored — a stored secondary is never left contradicting the set.
         # This one validator covers create (POST), the editor (PATCH) and CSV create.
-        if secondary:
-            if not level:
-                # Either a second level was sent without a primary, or the primary is
-                # being cleared while a second level is stored. Not silently dropped:
-                # the author should see that the set is still tagged for that cohort.
-                raise serializers.ValidationError(
-                    {
-                        "secondary_level": (
-                            "A second level needs a primary level. Choose the primary "
-                            "level first, or clear the second level."
-                        )
-                    }
-                )
-            if secondary not in AssessmentSet.allowed_levels_for_subject(subject):
-                # English has no Foundation; a subject PATCH can also strand a stored one.
-                raise serializers.ValidationError(
-                    {
-                        "secondary_level": (
-                            f"'{secondary}' is not a valid level for {subject} sets."
-                        )
-                    }
-                )
-            if secondary == level:
-                raise serializers.ValidationError(
-                    {
-                        "secondary_level": (
-                            "The second level must differ from the primary level."
-                        )
-                    }
-                )
+        # The rules themselves live on the model (``secondary_level_problem``) because
+        # the Django admin's change form must enforce them too, through ``clean()``.
+        problem = AssessmentSet.secondary_level_problem(subject, level, secondary)
+        if problem:
+            raise serializers.ValidationError({"secondary_level": problem})
         return attrs
 
 

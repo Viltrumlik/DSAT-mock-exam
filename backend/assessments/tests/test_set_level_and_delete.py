@@ -2,8 +2,12 @@
 endpoint (blocks published/assigned sets with 409 instead of 500)."""
 from __future__ import annotations
 
+import importlib
+
+from django.contrib import admin as django_admin
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.db import IntegrityError, migrations, transaction
+from django.test import RequestFactory, SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
@@ -229,6 +233,157 @@ class SecondaryLevelEndpointTests(TestCase):
         self.assertIn("secondary_level", resp.json())
         aset.refresh_from_db()
         self.assertEqual((aset.level, aset.secondary_level), ("junior", "middle"))
+
+
+class SecondaryLevelAdminFormTests(TestCase):
+    """The Django admin's change form never goes through the API serializer, only through
+    the model's ``clean()``. It must refuse the same pairs the API refuses, with the error
+    on the second-level field. A bad pair saved there would make every later builder
+    "Save metadata" on that set a 400 that the editor cannot clear."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser("sec_lvl_staff@test.com", "secret123")
+
+    def _form(self, instance=None, **over):
+        request = RequestFactory().get("/django-admin/")
+        request.user = self.staff
+        # The admin's OWN form class, built the way the change view builds it.
+        form_class = django_admin.site._registry[AssessmentSet].get_form(request, instance)
+        data = {
+            "subject": "math", "source": AssessmentSet.SOURCE_MATHBOOK,
+            "level": "junior", "secondary_level": "", "category": "Algebra",
+            "title": "Staff edit", "description": "", "is_active": "on",
+            "review_status": AssessmentSet.STATUS_DRAFT, "created_by": str(self.staff.pk),
+        }
+        data.update(over)
+        return form_class(data=data, instance=instance)
+
+    def _assert_refused(self, form, subject, level, secondary):
+        self.assertFalse(form.is_valid())
+        # Exactly the API's message, once. The DB CHECK constraint is not reported a
+        # second time as a non-field error.
+        self.assertEqual(
+            form.errors["secondary_level"],
+            [AssessmentSet.secondary_level_problem(subject, level, secondary)],
+        )
+        self.assertNotIn("__all__", form.errors)
+
+    def test_admin_refuses_second_level_without_primary(self):
+        self._assert_refused(
+            self._form(level="", secondary_level="middle"), "math", "", "middle"
+        )
+
+    def test_admin_refuses_second_level_equal_to_primary(self):
+        self._assert_refused(
+            self._form(level="middle", secondary_level="middle"), "math", "middle", "middle"
+        )
+
+    def test_admin_refuses_english_foundation_second_level(self):
+        self._assert_refused(
+            self._form(
+                subject="english", source=AssessmentSet.SOURCE_SATOPLAM,
+                level="junior", secondary_level="foundation",
+            ),
+            "english", "junior", "foundation",
+        )
+
+    def test_admin_change_form_clearing_primary_under_stored_second_level_refused(self):
+        stored = AssessmentSet.objects.create(
+            subject="math", category="Algebra", title="Dual",
+            source=AssessmentSet.SOURCE_MATHBOOK, level="junior", secondary_level="middle",
+            created_by=self.staff,
+        )
+        self._assert_refused(
+            self._form(stored, level="", secondary_level="middle"), "math", "", "middle"
+        )
+        stored.refresh_from_db()
+        self.assertEqual(stored.levels, ("junior", "middle"))
+
+    def test_admin_saves_a_valid_pair(self):
+        form = self._form(level="junior", secondary_level="middle")
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.save().levels, ("junior", "middle"))
+
+    def test_admin_still_saves_a_legacy_untagged_set(self):
+        form = self._form(level="", secondary_level="")
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.save().levels, ())
+
+    def test_admin_and_api_give_the_same_message(self):
+        # One rule, two doors: the messages cannot drift apart.
+        for level, secondary in (("", "middle"), ("middle", "middle")):
+            api = AssessmentSetAdminWriteSerializer(
+                data={
+                    "subject": "math", "title": "Set", "category": "Algebra",
+                    "source": AssessmentSet.SOURCE_MATHBOOK,
+                    "level": level, "secondary_level": secondary,
+                }
+            )
+            self.assertFalse(api.is_valid())
+            form = self._form(level=level, secondary_level=secondary)
+            self.assertFalse(form.is_valid())
+            self.assertEqual(
+                [str(m) for m in api.errors["secondary_level"]],
+                form.errors["secondary_level"],
+            )
+
+
+class SecondaryLevelDbConstraintTests(TestCase):
+    """The CHECK constraint under both validators. It catches writers that skip
+    validation entirely: ``.update()``, shell scripts, a future import."""
+
+    def setUp(self):
+        self.author = User.objects.create_user("sec_lvl_db@test.com", "secret123")
+
+    def _create(self, **over):
+        fields = {
+            "subject": "math", "category": "Algebra", "title": "Row",
+            "source": AssessmentSet.SOURCE_MATHBOOK, "created_by": self.author,
+        }
+        fields.update(over)
+        return AssessmentSet.objects.create(**fields)
+
+    def test_db_refuses_second_level_without_primary(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._create(level="", secondary_level="middle")
+
+    def test_db_refuses_second_level_equal_to_primary(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            self._create(level="middle", secondary_level="middle")
+
+    def test_db_refuses_an_update_that_breaks_a_stored_pair(self):
+        dual = self._create(level="junior", secondary_level="middle")
+        qs = AssessmentSet.objects.filter(pk=dual.pk)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            qs.update(level="middle")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            qs.update(level="")
+        dual.refresh_from_db()
+        self.assertEqual(dual.levels, ("junior", "middle"))
+
+    def test_db_accepts_valid_pairs_and_single_or_no_level(self):
+        self._create(title="Dual", level="junior", secondary_level="middle")
+        self._create(title="Single", level="senior")
+        self._create(title="Untagged")
+        self.assertEqual(AssessmentSet.objects.count(), 3)
+
+
+class SecondaryLevelMigrationShapeTests(SimpleTestCase):
+    """The suite builds tables from the models, never from migrations, so a CHECK
+    constraint missing from 0031 would pass every test and still never reach prod."""
+
+    def test_0031_adds_the_model_constraint_after_the_column(self):
+        mod = importlib.import_module(
+            "assessments.migrations.0031_assessmentset_secondary_level"
+        )
+        ops = mod.Migration.operations
+        kinds = [type(op) for op in ops]
+        self.assertEqual(kinds, [migrations.AddField, migrations.AddConstraint])
+        (model_constraint,) = [
+            c for c in AssessmentSet._meta.constraints
+            if c.name == "assessment_sets_secondary_level_valid"
+        ]
+        self.assertEqual(ops[1].constraint, model_constraint)
 
 
 class LevelHelpersTests(TestCase):

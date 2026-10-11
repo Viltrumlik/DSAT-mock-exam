@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -90,7 +91,15 @@ class AssessmentSet(models.Model):
     # two cohorts at once — e.g. a Junior set that also suits Middle. Blank = the set
     # belongs to its primary ``level`` only (every set before this date). It never stands
     # alone: a secondary needs a primary, must fit the subject (English has no Foundation)
-    # and must differ from the primary — enforced in the admin write serializer.
+    # and must differ from the primary. The rules live in ONE place,
+    # ``secondary_level_problem``, which both the API write serializer and ``clean()`` call.
+    # ``clean()`` covers the Django admin change form, which never goes through the
+    # serializer. Below both, the CHECK constraint in Meta refuses the two structural
+    # breaks (no primary; same as the primary) from ANY writer: shell scripts,
+    # ``.update()``, a future import. Such a row is not harmless. The builder's metadata
+    # save re-sends both levels, so every later save of that set, even a title-only
+    # edit, would be a 400 on ``secondary_level`` that the editor cannot clear (its
+    # second-level select is disabled with no primary, and never lists the primary).
     #
     # Every level filter on sets must accept EITHER level — use ``level_q`` rather than
     # ``filter(level=...)``, or the set silently vanishes from its second cohort.
@@ -134,9 +143,68 @@ class AssessmentSet(models.Model):
         indexes = [
             models.Index(fields=["subject", "category", "is_active"]),
         ]
+        constraints = [
+            # The second level never stands alone and never repeats the primary
+            # (2026-10-11, the school's request). Only the subject-INDEPENDENT rules
+            # live here. "Fits the subject" depends on ALLOWED_LEVELS_BY_SUBJECT, a Python
+            # table that would drift from a copy frozen into SQL, so that rule is checked
+            # by ``secondary_level_problem`` alone. Every row before this date has
+            # ``secondary_level = ''``, so adding the constraint fails no existing row.
+            models.CheckConstraint(
+                condition=models.Q(secondary_level="")
+                | (~models.Q(level="") & ~models.Q(secondary_level=models.F("level"))),
+                name="assessment_sets_secondary_level_valid",
+                violation_error_message=(
+                    "A second level needs a primary level, and must differ from it."
+                ),
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.subject}:{self.title}"
+
+    @classmethod
+    def secondary_level_problem(
+        cls, subject: str | None, level: str | None, secondary: str | None
+    ) -> str | None:
+        """Why this second level is not allowed on a set, or None when it is.
+
+        This is the ONE statement of the second-level rules (2026-10-11, the school's
+        request). ``AssessmentSetAdminWriteSerializer.validate`` (the API: create, the
+        builder's PATCH, CSV create) and ``clean()`` (the Django admin change form) both
+        call it with the EFFECTIVE values, so the two paths cannot drift apart.
+
+        The values are effective, not just the ones a request sent. Take a stored Junior
+        + Middle set whose primary is moved to Middle, or cleared. The stored second
+        level is then out of line, and that is refused rather than silently dropped. The
+        set is still shown to that cohort, so the author should see it.
+        """
+        if not secondary:
+            return None
+        if not level:
+            return (
+                "A second level needs a primary level. Choose the primary "
+                "level first, or clear the second level."
+            )
+        if secondary not in cls.allowed_levels_for_subject(subject or ""):
+            # English has no Foundation; a subject change can also strand a stored one.
+            return f"'{secondary}' is not a valid level for {subject} sets."
+        if secondary == level:
+            return "The second level must differ from the primary level."
+        return None
+
+    def clean(self) -> None:
+        # The Django admin's change form is a plain ModelForm: it never sees the API
+        # serializer, only ``full_clean()`` → here. Without this, staff could save there
+        # exactly the pair the API refuses. The error is keyed on the field, so the admin
+        # shows it beside the second-level select. Nothing else in the codebase calls
+        # ``full_clean()`` on a set.
+        super().clean()
+        problem = self.secondary_level_problem(
+            self.subject, self.level or "", self.secondary_level or ""
+        )
+        if problem:
+            raise ValidationError({"secondary_level": problem})
 
     @classmethod
     def allowed_sources_for_subject(cls, subject: str) -> tuple[str, ...]:
