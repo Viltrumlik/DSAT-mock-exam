@@ -274,6 +274,20 @@ void main() {
     await s.done();
   });
 
+  testWidgets('a write the server refuses for good is said plainly above the paper', (tester) async {
+    final s = Shell(tester);
+    await s.start();
+    s.rig.api.failNext(const ApiError(status: 400, body: ApiErrorBody(code: 'invalid', detail: 'bad payload')));
+    await tester.pump(const Duration(seconds: 16)); // the heartbeat sync is refused
+    await s.settle();
+    expect(
+      find.text("The server couldn't accept part of your work. Ask your teacher — it's saved on this computer."),
+      findsOneWidget,
+    );
+    expect(find.text('RUNNER module ${M14.m1}'), findsOneWidget, reason: 'the student keeps working');
+    await s.done();
+  });
+
   testWidgets('offline mid-paper: the reconnecting banner; low battery: the battery banner', (tester) async {
     final s = Shell(tester);
     await s.start();

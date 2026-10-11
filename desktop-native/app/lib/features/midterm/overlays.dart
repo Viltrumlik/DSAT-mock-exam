@@ -392,3 +392,39 @@ class ReconnectingBanner extends StatelessWidget {
     );
   }
 }
+
+/// NATIVE: something the server refused for good, said plainly (the work stays on this
+/// computer; the teacher can help). Not dismissable: it stays true until the sitting ends.
+class ProblemBanner extends StatelessWidget {
+  const ProblemBanner({super.key, required this.text});
+  final String? text;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = text;
+    if (t == null) return const SizedBox.shrink();
+    return MidtermTheme(
+      child: Semantics(
+        liveRegion: true,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          decoration: const BoxDecoration(
+            color: MidtermColors.red50,
+            border: Border(bottom: BorderSide(color: MidtermColors.red200)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(LucideIcons.triangleAlert, size: 16, color: MidtermColors.red700),
+              const SizedBox(width: 12),
+              Flexible(
+                child: Text(t, style: MidtermText.size(14, weight: FontWeight.w600, color: MidtermColors.red800)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

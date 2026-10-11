@@ -17,6 +17,7 @@ import 'package:flutter/widgets.dart';
 
 import '../../core/api/v1_api.dart';
 import '../../core/models/models.dart';
+import '../../exam/engine/exam_engine.dart' show EngineProblemKind;
 import '../../exam/engine/midterm_engine.dart';
 import '../../exam/session_contract.dart';
 import '../../native/native_bridge.dart';
@@ -449,6 +450,13 @@ class _MidtermFlowState extends State<MidtermFlow> {
     }
   }
 
+  /// Problems with their own screen (update required) are not repeated as a banner.
+  static String? _problemText(MidtermEngine e) {
+    final p = e.problem.value;
+    if (p == null || p.kind == EngineProblemKind.updateRequired) return null;
+    return p.message;
+  }
+
   Widget _running(BuildContext context) {
     final e = c.engine;
     final off = e.offscreen.value;
@@ -463,7 +471,11 @@ class _MidtermFlowState extends State<MidtermFlow> {
         banner: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [ReconnectingBanner(show: !e.online), LowBatteryBanner(battery: battery)],
+          children: [
+            ProblemBanner(text: _problemText(e)),
+            ReconnectingBanner(show: !e.online),
+            LowBatteryBanner(battery: battery),
+          ],
         ),
       ),
     );
