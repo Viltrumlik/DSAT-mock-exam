@@ -170,12 +170,20 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     }
   }
 
-  /// Listens to `mastersat://` links (and handles the one the app was launched with).
+  /// Listens to `mastersat://` links, and handles the ones that arrived before (the link the
+  /// app was launched with first). A sign-in link also brings the window to the front.
   Future<void> attachLinks(LaunchLinks links) async {
     await _linkSub?.cancel();
-    _linkSub = links.links.listen(handleLink);
-    final initial = await links.initialLink();
-    if (initial != null) await handleLink(initial);
+    Future<void> onLink(String raw) async {
+      if (signInCodeFrom(raw) == null) return;
+      unawaited(links.focusWindow());
+      await handleLink(raw);
+    }
+
+    _linkSub = links.links.listen((raw) => unawaited(onLink(raw)));
+    for (final raw in await links.takePending()) {
+      await onLink(raw);
+    }
   }
 
   // ------------------------------------------------------------------------------------------

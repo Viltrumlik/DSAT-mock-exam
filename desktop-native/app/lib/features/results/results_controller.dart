@@ -1,7 +1,6 @@
 // Results screens' data: `GET …/result`, polled while the attempt is still SCORING (the server
 // says when to ask again with `poll_after_ms`), with an offline state whose Retry asks again.
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/foundation.dart';
@@ -91,7 +90,7 @@ extension on Duration {
 }
 
 class PastpaperResultController extends _ResultController<PastpaperResult> {
-  PastpaperResultController({required V1Api api, required this.attemptId, super.minPoll, super.maxPoll}) : _api = api;
+  PastpaperResultController({required this._api, required this.attemptId, super.minPoll, super.maxPoll});
 
   final V1Api _api;
   final int attemptId;
@@ -107,7 +106,7 @@ class PastpaperResultController extends _ResultController<PastpaperResult> {
 }
 
 class MidtermResultController extends _ResultController<MidtermResult> {
-  MidtermResultController({required V1Api api, required this.attemptId, super.minPoll, super.maxPoll}) : _api = api;
+  MidtermResultController({required this._api, required this.attemptId, super.minPoll, super.maxPoll});
 
   final V1Api _api;
   final int attemptId;
@@ -141,9 +140,7 @@ typedef FileWriter = Future<void> Function(String path, Uint8List bytes);
 /// Downloads a PDF (report, certificate, error report) to a path the student picks with the
 /// native Save dialog (file_selector). The dialog comes first, then the download.
 class DocumentSaver {
-  DocumentSaver({SaveLocationPicker? pick, required FileWriter write})
-      : _pick = pick ?? _pickWithFileSelector,
-        _write = write;
+  DocumentSaver({SaveLocationPicker? pick, required this._write}) : _pick = pick ?? _pickWithFileSelector;
 
   final SaveLocationPicker _pick;
   final FileWriter _write;

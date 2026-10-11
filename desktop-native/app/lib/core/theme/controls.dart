@@ -400,8 +400,10 @@ class SegmentedFilter<T> extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label, style: AppText.filterLabel),
-        const SizedBox(width: 10),
+        if (label.isNotEmpty) ...[
+          Text(label, style: AppText.filterLabel),
+          const SizedBox(width: 10),
+        ],
         Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(

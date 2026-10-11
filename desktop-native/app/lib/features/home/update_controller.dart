@@ -18,15 +18,12 @@ enum UpdatePhase { idle, checking, upToDate, downloading, ready, failed }
 
 class UpdateController extends ChangeNotifier {
   UpdateController({
-    required NativeBridge native,
-    required ApiConfig config,
-    required UpdateChannel Function() channel,
-    EventLog? log,
+    required this._native,
+    required this._config,
+    required this._channel,
+    this._log,
     this.period = const Duration(hours: 6),
-  })  : _native = native,
-        _config = config,
-        _channel = channel,
-        _log = log;
+  });
 
   final NativeBridge _native;
   final ApiConfig _config;

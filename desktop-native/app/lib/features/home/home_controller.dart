@@ -29,19 +29,14 @@ enum HomeProblem {
 
 class HomeController extends ChangeNotifier {
   HomeController({
-    required V1Api api,
-    required AuthController auth,
-    required StoreOpener openStore,
-    Clock clock = const SystemClock(),
-    ServerClock? serverClock,
-    EventLog? log,
+    required this._api,
+    required this._auth,
+    required this._openStore,
+    this._clock = const SystemClock(),
+    this._serverClock,
+    this._log,
     this.pollInterval = const Duration(seconds: 30),
-  })  : _api = api,
-        _auth = auth,
-        _openStore = openStore,
-        _clock = clock,
-        _serverClock = serverClock,
-        _log = log;
+  });
 
   final V1Api _api;
   final AuthController _auth;
@@ -52,6 +47,8 @@ class HomeController extends ChangeNotifier {
   final Duration pollInterval;
 
   UserStore? _store;
+  Future<void>? _opening;
+  int? _openingFor;
   HomeResponse? _home;
   String? _etag;
   DateTime? _fetchedAt;
@@ -101,12 +98,26 @@ class HomeController extends ChangeNotifier {
     await _ensureStore(userId);
   }
 
-  Future<void> _ensureStore(int userId) async {
-    if (_store?.userId == userId) return;
+  /// Opens [userId]'s store once: concurrent callers (start() racing loadCached(), or the first
+  /// `home` naming the student) share one open.
+  Future<void> _ensureStore(int userId) {
+    if (_store?.userId == userId) return Future.value();
+    final pending = _opening;
+    if (pending != null && _openingFor == userId) return pending;
+    _openingFor = userId;
+    return _opening = _openStoreFor(userId).whenComplete(() {
+      if (_openingFor == userId) {
+        _opening = null;
+        _openingFor = null;
+      }
+    });
+  }
+
+  Future<void> _openStoreFor(int userId) async {
+    final gen = _generation;
     final previous = _store;
     _store = null;
     await previous?.close();
-    final gen = _generation;
     final store = await _openStore(userId);
     if (gen != _generation || _disposed) {
       await store.close();
@@ -205,6 +216,8 @@ class HomeController extends ChangeNotifier {
   /// Forgets everything in memory and closes the student's database.
   Future<void> reset() async {
     _generation++;
+    _opening = null;
+    _openingFor = null;
     _pollTimer?.cancel();
     _pollTimer = null;
     _home = null;

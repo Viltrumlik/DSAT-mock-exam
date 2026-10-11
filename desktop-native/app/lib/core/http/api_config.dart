@@ -9,6 +9,10 @@ import 'package:flutter/foundation.dart';
 
 import '../api/v1_api.dart';
 
+/// This build's version: `--dart-define=MASTERSAT_APP_VERSION=…`, which the packaging sets from
+/// desktop-native/VERSION. The default is kept equal to that file (a test checks it).
+const String appVersion = String.fromEnvironment('MASTERSAT_APP_VERSION', defaultValue: '0.2.0');
+
 /// The production origin.
 final Uri productionOrigin = Uri.parse('https://mastersat.uz');
 

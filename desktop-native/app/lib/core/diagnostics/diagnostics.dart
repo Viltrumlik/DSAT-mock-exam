@@ -24,7 +24,7 @@ class LogEvent {
 
 /// A bounded in-memory log of recent events.
 class EventLog {
-  EventLog({this.capacity = 50, Clock clock = const SystemClock()}) : _clock = clock;
+  EventLog({this.capacity = 50, this._clock = const SystemClock()});
 
   final int capacity;
   final Clock _clock;

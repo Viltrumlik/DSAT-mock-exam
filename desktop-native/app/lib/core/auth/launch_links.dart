@@ -1,12 +1,17 @@
 // `mastersat://` links arriving from the browser (architecture §6 "Single instance and deep
-// links"). The Windows runner (windows-host) owns the native half:
+// links"). The Windows runner (windows-host, runner/flutter_window.h) owns the native half:
 //
 //   MethodChannel('mastersat/launch')
-//     native → Dart  'link'            argument: String — a URL handed to a running instance
-//                                       (WM_COPYDATA from a second launch)
-//     Dart → native  'getInitialLink'  returns String? — the URL this process was started with
+//     native → Dart  'open'         {'url': String}  a link handed to the running instance (a
+//                                                    second launch's WM_COPYDATA), once Dart
+//                                                    has called takePending
+//                    'activate'     null             a second launch without a link
+//     Dart → native  'takePending'  → List<String>   links that arrived before Dart listened —
+//                                                    including the one this process was started
+//                                                    with; marks Dart as listening
+//                    'focusWindow'  → bool           restore + bring the window to the front
 //
-// Only `mastersat://auth?code=…` is accepted (everything else is ignored).
+// Only `mastersat://auth?code=…` is acted on (everything else is ignored).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -37,31 +42,56 @@ class LaunchLinks {
 
   final MethodChannel _channel;
   final StreamController<String> _links = StreamController<String>.broadcast();
+  final StreamController<void> _activations = StreamController<void>.broadcast();
 
   /// Raw URLs as they arrive.
   Stream<String> get links => _links.stream;
 
+  /// A second launch with no link (the student opened the app again from the Start menu).
+  Stream<void> get activations => _activations.stream;
+
   Future<Object?> _handle(MethodCall call) async {
-    if (call.method == 'link' && call.arguments is String) {
-      _links.add(call.arguments as String);
+    switch (call.method) {
+      case 'open':
+        final args = call.arguments;
+        final url = args is Map ? args['url'] : args;
+        if (url is String) _links.add(url);
+      case 'link': // a bare String argument (older runner builds)
+        if (call.arguments is String) _links.add(call.arguments as String);
+      case 'activate':
+        _activations.add(null);
     }
     return null;
   }
 
-  /// The URL the app was launched with, if any (a sign-in link that cold-started it).
-  Future<String?> initialLink() async {
+  /// The links that arrived before the app listened (the one it was launched with first).
+  /// Calling this tells the runner Dart is listening; later links come through [links].
+  Future<List<String>> takePending() async {
     try {
-      return await _channel.invokeMethod<String>('getInitialLink');
+      final list = await _channel.invokeListMethod<Object?>('takePending');
+      return [for (final v in list ?? const <Object?>[]) if (v is String) v];
     } on MissingPluginException {
-      return null; // no native half (tests, the macOS dev runner)
+      return const []; // no native half (tests, the macOS dev runner)
     } on PlatformException catch (e) {
-      debugPrint('mastersat/launch getInitialLink failed: ${e.message}');
-      return null;
+      debugPrint('mastersat/launch takePending failed: ${e.message}');
+      return const [];
+    }
+  }
+
+  /// Brings the window to the front (after the browser hands a sign-in back).
+  Future<void> focusWindow() async {
+    try {
+      await _channel.invokeMethod<Object?>('focusWindow');
+    } on MissingPluginException {
+      // No native half.
+    } on PlatformException catch (e) {
+      debugPrint('mastersat/launch focusWindow failed: ${e.message}');
     }
   }
 
   void dispose() {
     _channel.setMethodCallHandler(null);
-    _links.close();
+    unawaited(_links.close());
+    unawaited(_activations.close());
   }
 }
