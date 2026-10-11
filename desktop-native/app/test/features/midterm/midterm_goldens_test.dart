@@ -3,7 +3,6 @@
 // Recorded on macOS: `flutter test --update-goldens test/features/midterm/midterm_goldens_test.dart`.
 import 'dart:io';
 
-import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/core/models/models.dart';
