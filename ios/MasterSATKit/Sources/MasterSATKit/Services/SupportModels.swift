@@ -38,6 +38,12 @@ public struct SupportHour: Decodable, Sendable, Equatable, Identifiable {
         /// the STUDENT rather than the teacher, which is why the server ranks it above the
         /// teacher-side ones.
         case dayTaken = "day_taken"
+        /// The student's support booking is paused: two booked sessions they didn't come to
+        /// within a week (the school's rule, 2026-10-11). Every WORKING hour with every
+        /// teacher reads this, and `SupportAllowance.pausedUntil` says until when. Their own
+        /// hour still reads `mine`, a started one `past`, and an hour the teacher never
+        /// works stays `off`.
+        case paused
         /// A state this build does not know yet. Never bookable.
         case unknown
 
@@ -193,15 +199,46 @@ public struct SupportAllowance: Decodable, Sendable, Equatable {
     /// `YYYY-MM-DD` dates inside the calendar window the student already has a session on.
     public let takenDays: [String]
     /// The standing question only — "may this student book at all right now". The per-day
-    /// limit is not folded in; `day_taken` hours carry that.
+    /// limit is not folded in; `day_taken` hours carry that. Nor is the no-show pause: the
+    /// server keeps it out on purpose, so older builds never read a pause as "you have
+    /// sessions booked already". Read `pausedUntil` for that.
     public let canBook: Bool
+    /// The no-show pause (2026-10-11), as `YYYY-MM-DD` Tashkent dates. `pausedUntil` is the
+    /// first day the student may book again. Nil when nothing is paused — and against a
+    /// server from before the rule, which never sends these keys.
+    public let pausedFrom: String?
+    public let pausedUntil: String?
+    /// The two missed sessions' dates that started the pause; empty when there is none.
+    public let pausedMissed: [String]
+    /// A first miss and its deadline: missing another booked session dated before
+    /// `warningUntil` pauses booking for a week. Nil when there is no warning running.
+    public let warningMissed: String?
+    public let warningUntil: String?
 
-    public init(upcoming: Int, maxUpcoming: Int = 2, maxPerDay: Int = 1, takenDays: [String] = [], canBook: Bool) {
+    public var isPaused: Bool { pausedUntil != nil }
+
+    public init(
+        upcoming: Int,
+        maxUpcoming: Int = 2,
+        maxPerDay: Int = 1,
+        takenDays: [String] = [],
+        canBook: Bool,
+        pausedFrom: String? = nil,
+        pausedUntil: String? = nil,
+        pausedMissed: [String] = [],
+        warningMissed: String? = nil,
+        warningUntil: String? = nil
+    ) {
         self.upcoming = upcoming
         self.maxUpcoming = maxUpcoming
         self.maxPerDay = maxPerDay
         self.takenDays = takenDays
         self.canBook = canBook
+        self.pausedFrom = pausedFrom
+        self.pausedUntil = pausedUntil
+        self.pausedMissed = pausedMissed
+        self.warningMissed = warningMissed
+        self.warningUntil = warningUntil
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -210,6 +247,11 @@ public struct SupportAllowance: Decodable, Sendable, Equatable {
         case maxPerDay = "max_per_day"
         case takenDays = "taken_days"
         case canBook = "can_book"
+        case pausedFrom = "paused_from"
+        case pausedUntil = "paused_until"
+        case pausedMissed = "paused_missed"
+        case warningMissed = "warning_missed"
+        case warningUntil = "warning_until"
     }
 
     public init(from decoder: Decoder) throws {
@@ -220,6 +262,17 @@ public struct SupportAllowance: Decodable, Sendable, Equatable {
         takenDays = (try? c.decodeIfPresent([String].self, forKey: .takenDays)) ?? []
         // Absent means "the server did not say" — do not invent a refusal the server will not make.
         canBook = (try? c.decodeIfPresent(Bool.self, forKey: .canBook)) ?? true
+        // Each on its own `try?`: a pause or warning this build cannot read is no pause or
+        // warning shown, never a calendar that fails to load.
+        func day(_ key: CodingKeys) -> String? {
+            let value = try? c.decodeIfPresent(String.self, forKey: key)
+            return (value?.isEmpty ?? true) ? nil : value
+        }
+        pausedFrom = day(.pausedFrom)
+        pausedUntil = day(.pausedUntil)
+        pausedMissed = (try? c.decodeIfPresent([String].self, forKey: .pausedMissed)) ?? []
+        warningMissed = day(.warningMissed)
+        warningUntil = day(.warningUntil)
     }
 }
 
@@ -281,6 +334,8 @@ public struct SupportSlot: Decodable, Sendable, Equatable, Identifiable {
     public let isCancelled: Bool
     public let seatsLeft: Int?
 
+    public var startDate: Date? { JSONCoding.parseServerDate(startsAt) }
+
     public init(
         id: Int,
         supportTeacherId: Int = 0,
@@ -331,8 +386,11 @@ public struct SupportSlot: Decodable, Sendable, Equatable, Identifiable {
 public struct SupportBooking: Decodable, Sendable, Equatable, Identifiable {
     public enum Status: String, Sendable, Equatable {
         case booked = "BOOKED"
-        /// The teacher marked it attended — this is what pays the points.
+        /// The teacher marked it attended, on time — this is what pays the points.
         case held = "HELD"
+        /// Attended, but late (the school's rule, 2026-10-11): it counts as attended and may
+        /// be rated, but earns no points.
+        case late = "LATE"
         case noShow = "NO_SHOW"
         case cancelled = "CANCELLED"
         case unknown

@@ -97,6 +97,13 @@ public enum ServicesTime {
         return fullFormatter.string(from: date)
     }
 
+    /// "Tue, Oct 20" for a server calendar date — the no-show banners' dates, which can be a
+    /// week out, so no "Today". The raw string if it does not parse, as the web does.
+    public static func dayWhen(_ key: String) -> String {
+        guard let date = date(fromDay: key) else { return key }
+        return dayFormatter.string(from: date)
+    }
+
     /// The day strip's label for a calendar date.
     public static func dayLabel(day key: String, now: Date = Date()) -> DayLabel {
         guard let date = date(fromDay: key) else { return DayLabel(title: key, sub: "") }
@@ -126,6 +133,7 @@ public enum ServicesTime {
     // need no `nonisolated(unsafe)` (the compiler warns that it is unnecessary).
     private static let clockFormatter = formatter("HH:mm")
     private static let fullFormatter = formatter("EEE, MMM d, HH:mm")
+    private static let dayFormatter = formatter("EEE, MMM d")
     private static let monthDayFormatter = formatter("MMM d")
     private static let weekdayFormatter = formatter("EEE")
     static let longDayFormatter = formatter("MMMM d")

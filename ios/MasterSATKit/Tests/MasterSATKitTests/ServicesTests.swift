@@ -178,6 +178,94 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(calendar.openHour == 8 && calendar.closeHour == 18)
     }
 
+    @Test("A paused calendar decodes: every working hour paused, the allowance carrying the pause")
+    func pausedCalendarDecodes() async throws {
+        server.handler = { _ in
+            .json([
+                "days": 4,
+                "allowance": [
+                    "upcoming": 0, "max_upcoming": 2, "max_per_day": 1, "taken_days": [], "can_book": true,
+                    "paused_from": "2026-10-13", "paused_until": "2026-10-20",
+                    "paused_missed": ["2026-10-09", "2026-10-13"],
+                    "warning_missed": NSNull(), "warning_until": NSNull(),
+                ],
+                "teachers": [[
+                    "id": 9, "name": "Dilafruz Karimova",
+                    "days": [[
+                        "date": "2026-10-14",
+                        "hours": [
+                            hourJSON("2026-10-14T08:00:00+05:00", state: "past"),
+                            hourJSON("2026-10-14T09:00:00+05:00", state: "paused"),
+                            hourJSON("2026-10-14T10:00:00+05:00", state: "PAUSED"),
+                            hourJSON("2026-10-14T11:00:00+05:00", state: "off"),
+                        ],
+                    ]],
+                ]],
+            ])
+        }
+        let calendar = try await api().calendar()
+        let allowance = try #require(calendar.allowance)
+        #expect(allowance.isPaused)
+        // The server keeps the pause out of can_book on purpose; the pause fields carry it.
+        #expect(allowance.canBook)
+        #expect(allowance.pausedFrom == "2026-10-13")
+        #expect(allowance.pausedUntil == "2026-10-20")
+        #expect(allowance.pausedMissed == ["2026-10-09", "2026-10-13"])
+        #expect(allowance.warningMissed == nil)
+        #expect(allowance.warningUntil == nil)
+        let day = try #require(calendar.teachers.first?.days.first)
+        #expect(day.hours.map(\.state) == [.past, .paused, .paused, .off])
+        #expect(SupportSchedule.summary(for: day) == .paused)
+    }
+
+    @Test("A warning decodes on its own; a server from before the rule sends neither")
+    func warningAndOlderAllowanceDecode() async throws {
+        server.handler = { _ in
+            .json(["teachers": [], "allowance": [
+                "upcoming": 1, "can_book": true,
+                "paused_from": NSNull(), "paused_until": NSNull(), "paused_missed": [],
+                "warning_missed": "2026-10-12", "warning_until": "2026-10-19",
+            ]])
+        }
+        let warnedCalendar = try await api().calendar()
+        let warned = try #require(warnedCalendar.allowance)
+        #expect(!warned.isPaused)
+        #expect(warned.pausedFrom == nil)
+        #expect(warned.pausedMissed.isEmpty)
+        #expect(warned.warningMissed == "2026-10-12")
+        #expect(warned.warningUntil == "2026-10-19")
+
+        server.handler = { _ in .json(["teachers": [], "allowance": ["upcoming": 1, "max_upcoming": 2, "can_book": true]]) }
+        let olderCalendar = try await api().calendar()
+        let older = try #require(olderCalendar.allowance)
+        #expect(older.upcoming == 1)
+        #expect(!older.isPaused)
+        #expect(older.pausedFrom == nil && older.pausedUntil == nil && older.pausedMissed.isEmpty)
+        #expect(older.warningMissed == nil && older.warningUntil == nil)
+    }
+
+    @Test("A pause field this build cannot read is no pause — never a calendar that fails")
+    func malformedPauseFieldsAreLenient() async throws {
+        server.handler = { _ in
+            .json(["teachers": [], "allowance": [
+                "upcoming": 2, "max_upcoming": 2, "can_book": false,
+                "paused_from": "", "paused_until": 20261020, "paused_missed": "2026-10-09",
+                "warning_missed": ["2026-10-12"], "warning_until": "",
+            ]])
+        }
+        let calendar = try await api().calendar()
+        let allowance = try #require(calendar.allowance)
+        // The fields it can read still arrive.
+        #expect(allowance.upcoming == 2)
+        #expect(!allowance.canBook)
+        #expect(allowance.pausedFrom == nil)
+        #expect(allowance.pausedUntil == nil)
+        #expect(!allowance.isPaused)
+        #expect(allowance.pausedMissed.isEmpty)
+        #expect(allowance.warningMissed == nil)
+        #expect(allowance.warningUntil == nil)
+    }
+
     @Test("A malformed teacher fails the calendar loudly instead of reading as 'no teacher'")
     func malformedCalendarThrows() async {
         server.handler = { _ in .json(["teachers": [["name": "No id"]]]) }
@@ -200,11 +288,16 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
                 ]),
                 bookingJSON(id: 4, status: "no_show"),
                 bookingJSON(id: 5, status: "EXPIRED"),
+                // Attended late (2026-10-11): its own status, rated like an attended one.
+                bookingJSON(id: 6, status: "LATE", extra: ["rating": 3, "settled_at": "2026-09-26T05:20:00Z"]),
+                bookingJSON(id: 7, status: "late"),
             ]])
         }
         let list = try await api().bookings()
         #expect(server.requests.first?.url?.absoluteString == "https://mastersat.uz/api/classes/support/bookings/")
-        #expect(list.map(\.status) == [.held, .booked, .cancelled, .noShow, .unknown])
+        #expect(list.map(\.status) == [.held, .booked, .cancelled, .noShow, .unknown, .late, .late])
+        #expect(list[5].statusRaw == "LATE")
+        #expect(list[5].rating == 3)
         #expect(list[0].rating == 4)
         #expect(list[0].ratingComment == "Clear")
         #expect(list[0].teacherNote == "We covered transitions.")
@@ -404,6 +497,21 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(SupportSchedule.summary(for: day("2026-09-25", [.past, .full])).label == "Full")
     }
 
+    @Test("A paused student's day reads Paused, never Full — but their own hour still says Booked")
+    func pausedDaySummaries() {
+        #expect(SupportSchedule.summary(for: day("2026-10-14", [.paused, .paused, .off])) == .paused)
+        #expect(SupportSchedule.summary(for: day("2026-10-14", [.paused, .paused])).label == "Paused")
+        // Today, part gone: the hours left are paused, not taken.
+        #expect(SupportSchedule.summary(for: day("2026-10-13", [.past, .past, .paused])).label == "Paused")
+        // A session booked for after the pause stands, and the strip says so.
+        #expect(SupportSchedule.summary(for: day("2026-10-21", [.paused, .mine, .paused])) == .booked)
+        // The pause leaves an unworked day unworked, and a run-out day over.
+        #expect(SupportSchedule.summary(for: day("2026-10-18", [.off, .off])) == .notWorking)
+        #expect(SupportSchedule.summary(for: day("2026-10-13", [.past, .past, .off])) == .dayOver)
+        // Drawn with their reason, like every other hour the student can't take.
+        #expect(SupportSchedule.visibleHours(day("2026-10-14", [.off, .paused])).map(\.state) == [.paused])
+    }
+
     @Test("A part-time teacher's finished day is over, not full")
     func partTimeDayOver() {
         // The web counted the unworked afternoon too and said "Full" all afternoon.
@@ -453,7 +561,10 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(cell(.off).caption == "Not working")
         #expect(cell(.dayTaken).caption == "You have a session today")
         #expect(cell(.unknown).caption == "Not available")
-        for state: SupportHour.State in [.mine, .full, .closed, .past, .off, .dayTaken, .unknown] {
+        #expect(cell(.paused).caption == "Booking paused")
+        #expect(cell(.paused).kind == .unavailable)
+        #expect(cell(.paused).accessibilityLabel == "15:00, Booking paused")
+        for state: SupportHour.State in [.mine, .full, .closed, .past, .off, .dayTaken, .paused, .unknown] {
             #expect(!cell(state).isBookable)
         }
     }
@@ -495,6 +606,41 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(full?.message == "Attend one — or cancel it if you can't make it — and you can book another.")
         let one = SupportSchedule.limitBanner(SupportAllowance(upcoming: 1, maxUpcoming: 1, canBook: false))
         #expect(one?.title == "You have 1 session booked already")
+        // Paused: the pause is the reason nothing is bookable, and only its banner says so.
+        let pausedAtLimit = SupportAllowance(upcoming: 2, maxUpcoming: 2, canBook: false, pausedUntil: "2026-10-20")
+        #expect(SupportSchedule.limitBanner(pausedAtLimit) == nil)
+    }
+
+    @Test("The no-show banners: a pause with its dates, or a warning with its deadline")
+    func noShowBanners() throws {
+        #expect(SupportSchedule.noShowBanner(nil) == nil)
+        #expect(SupportSchedule.noShowBanner(SupportAllowance(upcoming: 0, canBook: true)) == nil)
+
+        let paused = try #require(SupportSchedule.noShowBanner(SupportAllowance(
+            upcoming: 0, canBook: true,
+            pausedFrom: "2026-10-13", pausedUntil: "2026-10-20", pausedMissed: ["2026-10-09", "2026-10-13"]
+        )))
+        #expect(paused.kind == .paused)
+        #expect(paused.title == "Support booking is paused — you can book again from Tue, Oct 20")
+        #expect(paused.message == "You didn't come to two booked sessions within a week (Fri, Oct 9 and Tue, Oct 13). Any sessions you had booked in that week were cancelled.")
+
+        // Without the two dates the sentence still stands, minus the brackets.
+        let bare = SupportSchedule.noShowBanner(SupportAllowance(upcoming: 0, canBook: true, pausedUntil: "2026-10-20"))
+        #expect(bare?.message == "You didn't come to two booked sessions within a week. Any sessions you had booked in that week were cancelled.")
+
+        let warning = try #require(SupportSchedule.noShowBanner(SupportAllowance(
+            upcoming: 1, canBook: true, warningMissed: "2026-10-12", warningUntil: "2026-10-19"
+        )))
+        #expect(warning.kind == .warning)
+        #expect(warning.title == "Warning: you didn't come to your booked session on Mon, Oct 12")
+        #expect(warning.message == "If it happens again before Mon, Oct 19, support booking pauses for a week. Can't make it? Cancel before the session starts.")
+
+        // The pause outranks the warning, should a server ever send both.
+        let both = SupportSchedule.noShowBanner(SupportAllowance(
+            upcoming: 0, canBook: true, pausedUntil: "2026-10-20",
+            warningMissed: "2026-10-12", warningUntil: "2026-10-19"
+        ))
+        #expect(both?.kind == .paused)
     }
 
     @Test("Session statuses read as growth, never as failure")
@@ -504,8 +650,10 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         }
         #expect(label(.booked) == "Booked")
         #expect(label(.held) == "Attended")
+        #expect(label(.late) == "Attended late")
         #expect(label(.noShow) == "Missed")
         #expect(label(.cancelled) == "Cancelled")
+        #expect(SupportSchedule.lateNote.hasPrefix("You came late, so this session earns no XP."))
     }
 
     @Test("A cancellation needs a reason; 'Something else' needs words, capped at 280")
@@ -529,9 +677,63 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
     }
 }
 
+// MARK: - What a session row offers
+
+@Suite struct SupportSessionRulesTests {
+    let now = at("2026-10-14T12:00:00+05:00")
+
+    @Test("An attended session can be rated, late or not; nothing else can")
+    func rating() {
+        func canRate(_ status: SupportBooking.Status) -> Bool {
+            SupportSchedule.canRate(booking(1, status, starts: "2026-10-13T10:00:00+05:00", ends: "2026-10-13T11:00:00+05:00"))
+        }
+        #expect(canRate(.held))
+        #expect(canRate(.late))
+        for status: SupportBooking.Status in [.booked, .noShow, .cancelled, .unknown] {
+            #expect(!canRate(status))
+        }
+    }
+
+    @Test("Cancel goes the moment the hour begins — the server refuses it after that")
+    func cancelling() {
+        let ahead = booking(1, .booked, starts: "2026-10-14T15:00:00+05:00", ends: "2026-10-14T16:00:00+05:00")
+        let underWay = booking(2, .booked, starts: "2026-10-14T11:30:00+05:00", ends: "2026-10-14T12:30:00+05:00")
+        let startingNow = booking(3, .booked, starts: "2026-10-14T12:00:00+05:00", ends: "2026-10-14T13:00:00+05:00")
+        #expect(SupportSchedule.canCancel(ahead, now: now))
+        #expect(!SupportSchedule.canCancel(underWay, now: now))
+        #expect(!SupportSchedule.canCancel(startingNow, now: now))
+        // A UTC start is the same instant: 07:30Z is 12:30 in Tashkent, still ahead.
+        let utc = booking(4, .booked, starts: "2026-10-14T07:30:00Z", ends: "2026-10-14T08:30:00Z")
+        #expect(SupportSchedule.canCancel(utc, now: now))
+        // Only a BOOKED session is cancellable at all.
+        let attended = booking(5, .held, starts: "2026-10-15T09:00:00+05:00", ends: "2026-10-15T10:00:00+05:00")
+        #expect(!SupportSchedule.canCancel(attended, now: now))
+        // A start this build cannot read keeps the button; the server stays the judge.
+        #expect(SupportSchedule.canCancel(booking(6, .booked, starts: "soon", ends: "later"), now: now))
+    }
+
+    @Test("No one is added while booking is paused")
+    func inviting() {
+        let session = booking(1, .booked, starts: "2026-10-21T10:00:00+05:00", ends: "2026-10-21T11:00:00+05:00")
+        #expect(SupportSchedule.canInvite(session, allowance: nil))
+        #expect(SupportSchedule.canInvite(session, allowance: SupportAllowance(upcoming: 1, canBook: true)))
+        #expect(!SupportSchedule.canInvite(session, allowance: SupportAllowance(upcoming: 1, canBook: true, pausedUntil: "2026-10-20")))
+        let late = booking(2, .late, starts: "2026-10-13T10:00:00+05:00", ends: "2026-10-13T11:00:00+05:00")
+        #expect(!SupportSchedule.canInvite(late, allowance: nil))
+    }
+}
+
 // MARK: - Tashkent time
 
 @Suite struct ServicesTimeTests {
+
+    @Test("A banner's date reads 'Tue, Oct 20', on the desk's calendar")
+    func dayWhen() {
+        #expect(ServicesTime.dayWhen("2026-10-20") == "Tue, Oct 20")
+        #expect(ServicesTime.dayWhen("2026-10-09") == "Fri, Oct 9")
+        #expect(ServicesTime.dayWhen("junk") == "junk")
+        #expect(ServicesTime.dayWhen("2026-02-31") == "2026-02-31")
+    }
 
     @Test("Today and tomorrow earn their names; after that, weekday and date")
     func hourLabels() {

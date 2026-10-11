@@ -27,8 +27,18 @@ struct SupportBookingView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 hero
+                // The no-show rule, said on the page as well as in the bell, which can be muted.
+                // A pause outranks the session limit — it is the reason nothing below is
+                // bookable — so the limit banner stands down while one runs.
+                if let noShow = SupportSchedule.noShowBanner(model.calendar.value?.allowance) {
+                    allowanceBanner(
+                        icon: noShow.kind == .paused ? "calendar.badge.clock" : "info.circle",
+                        title: noShow.title,
+                        message: noShow.message
+                    )
+                }
                 if let banner = SupportSchedule.limitBanner(model.calendar.value?.allowance) {
-                    limitBanner(title: banner.title, message: banner.message)
+                    allowanceBanner(icon: "calendar.badge.clock", title: banner.title, message: banner.message)
                 }
                 calendarSection
                 sessionsSection
@@ -92,7 +102,7 @@ struct SupportBookingView: View {
             eyebrow: "Support",
             eyebrowIcon: "lifepreserver",
             title: "Book a support session",
-            blurb: "Pick an hour with a support teacher from one of your classes — one session a day. Attending one earns you points.",
+            blurb: "Pick an hour with a support teacher from one of your classes — one session a day. Arriving on time earns you points.",
             tiles: [
                 HeroTile(
                     "Open hours",
@@ -111,9 +121,11 @@ struct SupportBookingView: View {
         )
     }
 
-    private func limitBanner(title: String, message: String) -> some View {
+    /// What the allowance says before an hour is picked: booking paused, a no-show warning,
+    /// or the session limit reached.
+    private func allowanceBanner(icon: String, title: String, message: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "calendar.badge.clock")
+            Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.warning)
             VStack(alignment: .leading, spacing: 4) {
@@ -248,6 +260,7 @@ struct SupportBookingView: View {
                         if index > 0 { Divider() }
                         SupportSessionRow(
                             booking: booking,
+                            allowance: model.calendar.value?.allowance,
                             onInvite: { inviting = booking },
                             onCancel: { cancelling = booking },
                             onRate: { rating = booking }
@@ -555,14 +568,21 @@ private struct SupportHourCellView: View {
 
 private struct SupportSessionRow: View {
     let booking: SupportBooking
+    /// The calendar's, for the no-show pause; nil until the calendar loads.
+    let allowance: SupportAllowance?
     let onInvite: () -> Void
     let onCancel: () -> Void
     let onRate: () -> Void
+
+    /// The hour has begun since the row appeared; see the `.task` below.
+    @State private var hourBegan = false
 
     private var statusTone: Chip.Tone {
         switch booking.status {
         case .booked: return .info
         case .held: return .success
+        // Attended, but no points — the note under it says why.
+        case .late: return .warning
         case .noShow: return .warning
         case .cancelled, .unknown: return .neutral
         }
@@ -614,6 +634,27 @@ private struct SupportSessionRow: View {
                     .foregroundStyle(Theme.textSecondary)
             }
 
+            // Why there is no XP — the school asked that the student be told, and the bell can
+            // be muted. A warning well, not the teacher note's green one.
+            if booking.status == .late {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.warning)
+                        .padding(.top, 1)
+                        .accessibilityHidden(true)
+                    Text(SupportSchedule.lateNote)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.warningSoft)
+                )
+            }
+
             if booking.status == .cancelled, !booking.cancelReason.isEmpty {
                 Text("Cancelled — \(booking.cancelReason)")
                     .font(.system(size: 12, weight: .medium))
@@ -621,39 +662,48 @@ private struct SupportSessionRow: View {
             }
 
             if booking.status == .booked {
-                HStack(spacing: 8) {
-                    Button(action: onInvite) {
-                        Label("Add a member", systemImage: "person.badge.plus")
-                            .font(.system(size: 12.5, weight: .bold))
-                            .foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(Theme.accent.opacity(0.1)))
-                            .contentShape(Capsule())
+                let canInvite = SupportSchedule.canInvite(booking, allowance: allowance)
+                let canCancel = !hourBegan && SupportSchedule.canCancel(booking)
+                if canInvite || canCancel {
+                    HStack(spacing: 8) {
+                        if canInvite {
+                            Button(action: onInvite) {
+                                Label("Add a member", systemImage: "person.badge.plus")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .foregroundStyle(Theme.accent)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(Capsule().fill(Theme.accent.opacity(0.1)))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if canCancel {
+                            Button(action: onCancel) {
+                                Label("Cancel", systemImage: "xmark")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 7)
+                                    .background(Capsule().fill(Theme.surface2))
+                                    .contentShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Cancel this session")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    Button(action: onCancel) {
-                        Label("Cancel", systemImage: "xmark")
-                            .font(.system(size: 12.5, weight: .bold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 7)
-                            .background(Capsule().fill(Theme.surface2))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Cancel this session")
+                    .padding(.top, 2)
                 }
-                .padding(.top, 2)
             }
 
             // Only a session that happened can be rated — there is nothing to judge about one
-            // that was cancelled, missed, or is still to come.
-            if booking.status == .held {
+            // that was cancelled, missed, or is still to come. A late arrival still sat
+            // through it, so it may be rated too.
+            if SupportSchedule.canRate(booking) {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 16))
-                        .foregroundStyle(Theme.success)
+                        .foregroundStyle(booking.status == .late ? Theme.warning : Theme.success)
                         .accessibilityHidden(true)
                     ratingControl
                 }
@@ -661,6 +711,18 @@ private struct SupportSessionRow: View {
             }
         }
         .padding(.vertical, 12)
+        // Cancel goes the moment the hour begins, when the server starts refusing it — not at
+        // the next refresh, which may be minutes away. Flipping state is what redraws the row.
+        // (A TimelineView on an explicit schedule of just the start date did not redraw at it
+        // on the iOS 26 simulator.)
+        .task(id: booking.slot.startsAt) {
+            guard booking.status == .booked, let start = booking.slot.startDate else { return }
+            hourBegan = start <= Date()
+            guard !hourBegan else { return }
+            try? await Task.sleep(for: .seconds(start.timeIntervalSinceNow))
+            guard !Task.isCancelled else { return }
+            hourBegan = true
+        }
     }
 
     /// Already rated: the stars, tappable to change — a misclick is not permanent. Not yet: an
