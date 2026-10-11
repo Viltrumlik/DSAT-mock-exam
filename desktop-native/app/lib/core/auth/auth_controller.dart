@@ -332,7 +332,7 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     final updated = s.copyWith(userId: student.id, displayName: student.fullName);
     _session = updated;
     await _store.write(updated);
-    notifyListeners();
+    _notify();
   }
 
   // ------------------------------------------------------------------------------------------
@@ -364,7 +364,7 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
       await _store.write(next);
       _refreshBackoff = const Duration(seconds: 30);
       _scheduleRefresh();
-      notifyListeners();
+      _notify();
       return RecoverOutcome.retry;
     } on ApiError catch (e) {
       if (e.status == 400 || e.status == 401) {
@@ -442,6 +442,11 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
 
   void _set(AuthStatus s) {
     _status = s;
+    _notify();
+  }
+
+  /// A refresh or an exchange can land after the app has torn this down: say nothing then.
+  void _notify() {
     if (!_disposed) notifyListeners();
   }
 

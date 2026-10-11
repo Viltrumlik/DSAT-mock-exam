@@ -37,6 +37,7 @@ class UpdateController extends ChangeNotifier {
   String? _error;
   Timer? _timer;
   Future<void>? _running;
+  bool _disposed = false;
 
   /// A 426 seen on any request (the blocking card shows while set).
   final ValueNotifier<UpdateRequired?> required = ValueNotifier<UpdateRequired?>(null);
@@ -75,7 +76,7 @@ class UpdateController extends ChangeNotifier {
       _set(UpdatePhase.downloading);
       await _native.updateDownload(onProgress: (p) {
         _percent = p.clamp(0, 100);
-        notifyListeners();
+        _notify();
       });
       _set(UpdatePhase.ready);
     } on NativeBridgeException catch (e) {
@@ -110,11 +111,16 @@ class UpdateController extends ChangeNotifier {
 
   void _set(UpdatePhase p) {
     _phase = p;
-    notifyListeners();
+    _notify();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     _timer?.cancel();
     required.dispose();
     super.dispose();
