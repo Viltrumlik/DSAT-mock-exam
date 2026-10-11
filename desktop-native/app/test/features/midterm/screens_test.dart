@@ -47,6 +47,7 @@ void main() {
       expect(find.text('44'), findsOneWidget);
       expect(find.text(MidtermCopy.requiredCode), findsOneWidget);
       expect(find.text(MidtermCopy.allowedCalculator), findsOneWidget);
+      expect(find.text(MidtermCopy.prohibitedCalculatorByHand), findsNothing, reason: 'this paper has Desmos');
       expect(
         find.text('Leaving full screen or switching to another window. You get 3 seconds to come back, and only 2 '
             'warnings — the third time, your paper is submitted immediately.'),
@@ -65,7 +66,7 @@ void main() {
       expect(proceeded, 2);
     });
 
-    testWidgets('no code needed → no code rule; scientific calculator; a known scale quotes the pass mark',
+    testWidgets('no code needed → no code rule; scientific calculator; the prepared scale quotes the pass mark',
         (tester) async {
       const rules = MidtermRules(
         title: 'Junior Midterm',
@@ -77,25 +78,63 @@ void main() {
         offscreenLimit: 3,
         offscreenGraceSeconds: 3,
         lateGraceSeconds: 300,
+        scoringScale: 'SCALE_800',
+        passMark: 500,
       );
-      await pumpHost(
-          tester,
-          MidtermRulesScreen(
-            rules: rules,
-            requiresCode: false,
-            onProceed: () {},
-            scoringScale: 'SCALE_800',
-          ),
+      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: false, onProceed: () {}),
           size: const Size(1280, 1200));
       expect(find.text(MidtermCopy.requiredCode), findsNothing);
       expect(find.text(MidtermCopy.allowedScientific), findsOneWidget);
+      expect(find.text(MidtermCopy.prohibitedCalculatorByHand), findsNothing, reason: 'junior has Desmos Scientific');
       expect(find.text('40 min'), findsOneWidget);
       expect(find.textContaining('+'), findsNothing, reason: 'one module, no split');
+      expect(find.text('TO PASS'), findsOneWidget);
       expect(find.text('500 out of 800'), findsOneWidget);
       expect(find.textContaining('You need 500 out of 800 to pass.', findRichText: true), findsOneWidget);
     });
 
-    testWidgets('a retake says so; Reading and Writing has no calculator rule', (tester) async {
+    testWidgets("the midterm's own pass mark, on a 100 scale", (tester) async {
+      const rules = MidtermRules(
+        title: 'Midterm',
+        subject: 'MATH',
+        questionCount: 22,
+        moduleCount: 1,
+        durationsMin: [40],
+        calculator: CalculatorMode.graphing,
+        offscreenLimit: 3,
+        offscreenGraceSeconds: 3,
+        lateGraceSeconds: 300,
+        scoringScale: 'SCALE_100',
+        passMark: 60,
+      );
+      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}),
+          size: const Size(1280, 1200));
+      expect(find.text('60 out of 100'), findsOneWidget);
+      expect(find.textContaining('You need 60 out of 100 to pass.', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('a pre-midterm (no pass mark) quotes none even though its scale is known', (tester) async {
+      const rules = MidtermRules(
+        title: 'Pre-midterm',
+        subject: 'MATH',
+        questionCount: 22,
+        moduleCount: 1,
+        durationsMin: [40],
+        calculator: CalculatorMode.graphing,
+        offscreenLimit: 3,
+        offscreenGraceSeconds: 3,
+        lateGraceSeconds: 300,
+        scoringScale: 'SCALE_800',
+      );
+      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}),
+          size: const Size(1280, 1200));
+      expect(find.text('TO PASS'), findsNothing);
+      expect(find.textContaining('out of', findRichText: true), findsNothing);
+      expect(find.textContaining("You need to reach this midterm's pass mark.", findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('a retake says so (from the prepared rules); Reading and Writing has no calculator rule',
+        (tester) async {
       const rules = MidtermRules(
         title: 'R&W Retake',
         subject: 'READING_WRITING',
@@ -105,12 +144,67 @@ void main() {
         offscreenLimit: 3,
         offscreenGraceSeconds: 3,
         lateGraceSeconds: 300,
+        scoringScale: 'SCALE_100',
+        passMark: 50,
+        isRetake: true,
       );
-      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}, isRetake: true),
+      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}),
           size: const Size(1280, 1200));
       expect(find.text('Read the rules below, then continue to start your Reading and Writing midterm.'), findsOneWidget);
       expect(find.text(MidtermCopy.allowedCalculator), findsNothing);
+      expect(find.text(MidtermCopy.allowedScientific), findsNothing);
+      // R&W has never had a calculator: it is told nothing about one, not "by hand".
+      expect(find.text(MidtermCopy.prohibitedCalculatorByHand), findsNothing);
       expect(find.textContaining('there is no retake of a retake', findRichText: true), findsOneWidget);
+      expect(find.textContaining('You need', findRichText: true), findsNothing, reason: 'a retake says retake');
+    });
+
+    testWidgets('the constructor overrides win over the prepared rules', (tester) async {
+      await pumpHost(
+          tester,
+          MidtermRulesScreen(
+            rules: _rules,
+            requiresCode: true,
+            onProceed: () {},
+            scoringScale: 'SCALE_100',
+            passMark: 70,
+          ),
+          size: const Size(1280, 1200));
+      expect(find.text('70 out of 100'), findsOneWidget);
+      await pumpHost(
+          tester,
+          MidtermRulesScreen(rules: _rules, requiresCode: true, onProceed: () {}, isRetake: true),
+          size: const Size(1280, 1200));
+      expect(find.textContaining('there is no retake of a retake', findRichText: true), findsOneWidget);
+    });
+
+    testWidgets('Foundation Math has no calculator: "by hand", FIRST under Prohibited, nothing under Allowed',
+        (tester) async {
+      const rules = MidtermRules(
+        title: 'Foundation Midterm · Math',
+        subject: 'MATH',
+        questionCount: 22,
+        moduleCount: 1,
+        durationsMin: [40],
+        offscreenLimit: 3,
+        offscreenGraceSeconds: 3,
+        lateGraceSeconds: 300,
+      );
+      await pumpHost(tester, MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}),
+          size: const Size(1280, 1200));
+      expect(MidtermCopy.prohibitedCalculatorByHand,
+          'Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper.');
+      expect(find.text(MidtermCopy.prohibitedCalculatorByHand), findsOneWidget);
+      expect(find.text(MidtermCopy.allowedCalculator), findsNothing);
+      expect(find.text(MidtermCopy.allowedScientific), findsNothing);
+      // First under Prohibited: above "Other apps…", and drawn with the calculator icon.
+      final byHand = tester.getTopLeft(find.text(MidtermCopy.prohibitedCalculatorByHand));
+      final apps = tester.getTopLeft(find.text(MidtermCopy.prohibitedApps));
+      expect(byHand.dy, lessThan(apps.dy));
+      expect((byHand.dx - apps.dx).abs(), lessThan(1), reason: 'same column');
+      final calculatorIcons = find.byWidgetPredicate((w) => w is Icon && w.icon == LucideIcons.calculator);
+      expect(calculatorIcons, findsOneWidget);
+      expect(tester.getTopLeft(calculatorIcons).dy, lessThan(apps.dy));
     });
 
     testWidgets('narrow windows stack the columns and still scroll to the button', (tester) async {

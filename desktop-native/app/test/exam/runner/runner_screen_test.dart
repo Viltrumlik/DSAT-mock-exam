@@ -963,11 +963,11 @@ void main() {
   });
 
   test('pure helpers', () {
-    expect(calcReserveFor(isMath: true, calculatorOpen: true, enlarged: false, isGridIn: false), 500);
-    expect(calcReserveFor(isMath: true, calculatorOpen: true, enlarged: true, isGridIn: false), 760);
-    expect(calcReserveFor(isMath: true, calculatorOpen: true, enlarged: true, isGridIn: true), 0);
-    expect(calcReserveFor(isMath: false, calculatorOpen: true, enlarged: false, isGridIn: false), 0);
-    expect(calcReserveFor(isMath: true, calculatorOpen: false, enlarged: false, isGridIn: false), 0);
+    expect(calcReserveFor(calculatorAllowed: true, calculatorOpen: true, enlarged: false, isGridIn: false), 500);
+    expect(calcReserveFor(calculatorAllowed: true, calculatorOpen: true, enlarged: true, isGridIn: false), 760);
+    expect(calcReserveFor(calculatorAllowed: true, calculatorOpen: true, enlarged: true, isGridIn: true), 0);
+    expect(calcReserveFor(calculatorAllowed: false, calculatorOpen: true, enlarged: false, isGridIn: false), 0);
+    expect(calcReserveFor(calculatorAllowed: true, calculatorOpen: false, enlarged: false, isGridIn: false), 0);
     expect(zoomStep(1.0, 1), 1.1);
     expect(zoomStep(1.6, 1), 1.6);
     expect(zoomStep(0.8, -1), 0.8);

@@ -497,14 +497,49 @@ void main() {
       setWindowSize(tester, const Size(1366, 768));
       var closed = 0;
       await tester.pumpWidget(
-        host(DirectionsOverlay(anchorBottom: 80, widthFraction: 0.6, isMath: false, onClose: () => closed++)),
+        host(
+          DirectionsOverlay(
+            anchorBottom: 80,
+            widthFraction: 0.6,
+            isMath: false,
+            calculatorAllowed: false,
+            onClose: () => closed++,
+          ),
+        ),
       );
       final r = tester.getRect(find.byKey(const ValueKey('directions.card')));
       expect(r, Rect.fromLTRB(0, 86, 1366 * 0.6 + 44, 768 - 150));
       expect(find.text(directionsRwP2), findsOneWidget);
+      // R&W says nothing about calculators, whatever the rule.
+      expect(find.textContaining('calculator'), findsNothing);
       await tester.tap(find.byKey(const ValueKey('directions.close')));
       expect(closed, 1);
     });
+
+    // DirectionsOverlay.tsx:40-45 (2026-10-11): the calculator sentence follows the paper's rule.
+    for (final allowed in [true, false]) {
+      testWidgets('Math directions with the calculator ${allowed ? 'allowed' : 'not available'}', (tester) async {
+        setWindowSize(tester, const Size(1366, 768));
+        await tester.pumpWidget(
+          host(
+            DirectionsOverlay(
+              anchorBottom: 80,
+              widthFraction: 0.5,
+              isMath: true,
+              calculatorAllowed: allowed,
+              onClose: () {},
+            ),
+          ),
+        );
+        final expected = allowed
+            ? 'The questions in this section address a number of important math skills. '
+                  'Use of a calculator is permitted for all questions.'
+            : 'The questions in this section address a number of important math skills. '
+                  'A calculator is not available on this paper — work these questions by hand.';
+        expect(find.text(expected), findsOneWidget);
+        expect(find.textContaining(allowed ? 'not available' : 'is permitted'), findsNothing);
+      });
+    }
 
     testWidgets('help lists the shortcut table', (tester) async {
       setWindowSize(tester, const Size(1366, 768));
