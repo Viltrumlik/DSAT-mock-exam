@@ -142,7 +142,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final policy = home.home?.app;
     out.add(ListenableBuilder(
       listenable: updates,
-      builder: (context, _) => UpdateBanner(updates: updates, policy: policy),
+      builder: (context, _) => UpdateBanner(
+        updates: updates,
+        policy: policy,
+        openWebsite: (url) {
+          final open = _services.openExternal;
+          if (open != null) unawaited(open(url));
+        },
+      ),
     ));
 
     if (home.home != null && home.offline) {
@@ -213,10 +220,13 @@ class _Skeleton extends StatelessWidget {
 
 /// "A new version is ready — Restart to update" (Home only, never in a test).
 class UpdateBanner extends StatelessWidget {
-  const UpdateBanner({super.key, required this.updates, this.policy});
+  const UpdateBanner({super.key, required this.updates, this.policy, this.openWebsite});
 
   final UpdateController updates;
   final AppPolicy? policy;
+
+  /// Opens the installer page when the in-app updater has nothing (the feed lags the policy).
+  final void Function(Uri url)? openWebsite;
 
   @override
   Widget build(BuildContext context) {
@@ -239,14 +249,24 @@ class UpdateBanner extends StatelessWidget {
     final p = policy;
     if (p != null && p.update == AppUpdate.available) {
       final downloading = updates.phase == UpdatePhase.downloading;
+      // The in-app updater found nothing (or failed): the website's installer is the way.
+      final viaWebsite = (updates.phase == UpdatePhase.upToDate || updates.phase == UpdatePhase.failed) &&
+          p.updateUrl.trim().isNotEmpty &&
+          openWebsite != null;
       return NoticeBanner(
         tone: NoticeTone.info,
         icon: LucideIcons.download,
         title: p.message.trim().isNotEmpty ? p.message.trim() : 'A new version of MasterSAT is available',
-        message: downloading ? 'Downloading the update… ${updates.percent}%' : 'It downloads in the background while you work.',
-        actionLabel: downloading ? null : 'Update now',
+        message: downloading
+            ? 'Downloading the update… ${updates.percent}%'
+            : viaWebsite
+                ? 'Get the new version from the MasterSAT website.'
+                : 'It downloads in the background while you work.',
+        actionLabel: downloading ? null : (viaWebsite ? 'Download from the website' : 'Update now'),
         actionBusy: updates.phase == UpdatePhase.checking,
-        onAction: () => unawaited(updates.checkAndDownload()),
+        onAction: viaWebsite
+            ? () => openWebsite!(Uri.parse(p.updateUrl.trim()))
+            : () => unawaited(updates.checkAndDownload()),
       );
     }
     return null;
