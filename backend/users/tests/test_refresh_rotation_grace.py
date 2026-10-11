@@ -8,8 +8,12 @@ sign-out, mid-exam, through no fault of the student's.
 So a rotation remembers its successor for AUTH_REFRESH_REUSE_GRACE_SECONDS, and the FIRST
 re-presentation of the retired token from the same device gets that same successor back.
 Everything around it stays exactly as strict as before, and most of this module pins that:
-a reuse after the window, a second reuse, a reuse from another device, a reuse after the
-successor was renewed or signed out, and any browser (cookie) caller are all still replays.
+a reuse after the window, a second reuse, a reuse from another device or network, a reuse
+after the successor was renewed or signed out (including signing out with the retired token
+itself), and any browser (cookie) caller are all still refused.
+
+Requests carry X-Real-IP as the deployed nginx sets it: gunicorn only ever sees the proxy as
+REMOTE_ADDR (127.0.0.1, which is also the test client's), so the client's own address is there.
 """
 from __future__ import annotations
 
@@ -18,7 +22,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.test import Client, TestCase, override_settings
+from django.test import Client, RequestFactory, SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIRequestFactory
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -32,7 +36,8 @@ _HOST = "mastersat.uz"
 _ALLOWED = ("testserver", "localhost", "127.0.0.1", _HOST)
 _NATIVE_HEADER_KEY = "HTTP_" + NATIVE_CLIENT_HEADER.upper().replace("-", "_")
 _DESKTOP_UA = "MasterSAT-Desktop/1.0 (Windows NT 10.0)"
-_NATIVE = {_NATIVE_HEADER_KEY: "windows/1.0.0", "HTTP_USER_AGENT": _DESKTOP_UA}
+_LAB_IP = "203.0.113.10"
+_NATIVE = {_NATIVE_HEADER_KEY: "windows/1.0.0", "HTTP_USER_AGENT": _DESKTOP_UA, "HTTP_X_REAL_IP": _LAB_IP}
 _GRACE = 60
 
 
@@ -227,6 +232,32 @@ class RefreshRotationGraceTests(TestCase):
         self.assertEqual(then_the_app.status_code, 401)
         self.assertEqual(self._replays_blocked(), 2)
 
+    def test_reuse_from_another_network_with_the_apps_user_agent_is_a_replay(self):
+        """The User-Agent is the client's to choose; the address nginx saw is not."""
+        spent = self._login()
+        self._rotate(spent)
+
+        elsewhere = self._refresh(spent, HTTP_X_REAL_IP="198.51.100.7")
+
+        self.assertEqual(elsewhere.status_code, 401)
+        self.assertEqual(self._replays_blocked(), 1)
+
+    def test_signing_out_with_the_spent_token_ends_its_successor(self):
+        """All the app holds after a lost reply is the retired token, so that is what it signs
+        out with. The session it now lives on as must end, or the grace would revive it."""
+        spent = self._login()
+        successor = self._rotate(spent)  # the reply never reaches the app
+
+        out = self.client.post(
+            "/api/auth/logout/", data={"refresh": spent}, content_type="application/json",
+            HTTP_HOST=_HOST, **_NATIVE,
+        )
+
+        self.assertEqual(out.status_code, 200, out.content)
+        self.assertEqual(self._live_jtis(), set())
+        self.assertEqual(self._refresh(spent).status_code, 401)
+        self.assertEqual(self._refresh(successor).status_code, 401)
+
     @override_settings(AUTH_REFRESH_REUSE_GRACE_SECONDS=0)
     def test_a_zero_window_turns_the_grace_off(self):
         spent = self._login()
@@ -290,3 +321,22 @@ class RefreshRotationGraceTests(TestCase):
 
         self.assertEqual(reuse.status_code, 401)
         self.assertIsNone(reuse.data.get("refresh"))
+
+
+class ClientAddressTests(SimpleTestCase):
+    """X-Real-IP is only as trustworthy as whoever set it: nginx overwrites it, but a caller
+    reaching gunicorn directly could write anything there."""
+
+    def _address(self, **meta) -> str:
+        return views._client_address(RequestFactory().post("/api/auth/refresh/", **meta))
+
+    def test_behind_the_proxy_the_forwarded_address_is_the_client(self):
+        self.assertEqual(self._address(REMOTE_ADDR="127.0.0.1", HTTP_X_REAL_IP=_LAB_IP), _LAB_IP)
+
+    def test_a_direct_caller_cannot_claim_someone_elses_address(self):
+        self.assertEqual(
+            self._address(REMOTE_ADDR="198.51.100.7", HTTP_X_REAL_IP=_LAB_IP), "198.51.100.7"
+        )
+
+    def test_without_the_header_the_peer_is_all_there_is(self):
+        self.assertEqual(self._address(REMOTE_ADDR="127.0.0.1"), "127.0.0.1")

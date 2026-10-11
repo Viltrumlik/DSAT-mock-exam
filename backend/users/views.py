@@ -387,9 +387,31 @@ def _step_up_refusal(user) -> Response | None:
 # The grace is deliberately narrow, so replay detection outside it is exactly what it was:
 #   * native clients only, both when the token was rotated and when it is re-presented;
 #   * one-shot — the first re-presentation spends it whether or not it qualifies;
-#   * same user and same _session_fingerprint as the rotation;
+#   * same user, and the same device as the rotation: User-Agent AND the client's real
+#     address (_client_address — not _session_fingerprint, whose REMOTE_ADDR is the proxy);
 #   * the successor must still be live and unused: once the app has renewed with it, or the
-#     session was signed out, the old token is a plain replay again.
+#     session was signed out (also by signing out with the retired token itself), the old
+#     token is a plain replay again.
+
+
+def _client_address(request) -> str:
+    """
+    The caller's own address. Behind the deployed nginx, REMOTE_ADDR is the proxy itself
+    (gunicorn listens on 127.0.0.1 only) and nginx overwrites X-Real-IP with the peer it
+    accepted the connection from — so X-Real-IP is the trustworthy one. It is believed only
+    when the direct peer is loopback: a request reaching Django any other way could set it.
+    """
+    remote = str(request.META.get("REMOTE_ADDR") or "")
+    if remote in ("127.0.0.1", "::1"):
+        real = str(request.META.get("HTTP_X_REAL_IP") or "").strip()
+        if real:
+            return real[:64]
+    return remote[:64]
+
+
+def _grace_fingerprint(request) -> str:
+    ua = str(request.META.get("HTTP_USER_AGENT") or "")[:512]
+    return hashlib.sha256(f"{_client_address(request)}\n{ua}".encode()).hexdigest()
 
 
 def _rotation_grace_seconds() -> int:
@@ -407,12 +429,8 @@ def _rotation_grace_claim_key(jti: str) -> str:
     return f"auth.refresh_rotation_grace_claimed.{jti}"
 
 
-def _fingerprint_digest(ip: str, ua: str) -> str:
-    return hashlib.sha256(f"{ip}\n{ua}".encode()).hexdigest()
-
-
 def _remember_rotation(
-    *, old_jti: str, user_id: int, successor_jti: str, successor_refresh: str, ip: str, ua: str
+    *, old_jti: str, user_id: int, successor_jti: str, successor_refresh: str, fingerprint: str
 ) -> None:
     window = _rotation_grace_seconds()
     if not window or not old_jti or not successor_jti:
@@ -424,7 +442,7 @@ def _remember_rotation(
                 "user_id": int(user_id),
                 "successor_jti": successor_jti,
                 "successor_refresh": successor_refresh,
-                "fingerprint": _fingerprint_digest(ip, ua),
+                "fingerprint": fingerprint,
                 "rotated_at": time.time(),
             },
             timeout=window,
@@ -459,7 +477,7 @@ def _rotation_grace_reply(*, refresh: str, request) -> Response | None:
             return None
         if int(rec.get("user_id") or 0) != user_id:
             return None
-        if rec.get("fingerprint") != _fingerprint_digest(*_session_fingerprint(request)):
+        if rec.get("fingerprint") != _grace_fingerprint(request):
             return None
         successor_jti = str(rec.get("successor_jti") or "")
         successor_refresh = str(rec.get("successor_refresh") or "")
@@ -496,6 +514,30 @@ def _rotation_grace_reply(*, refresh: str, request) -> Response | None:
         severity="info",
     )
     return Response({"access": access, "refresh": successor_refresh}, status=status.HTTP_200_OK)
+
+
+def _end_rotation_successor(refresh: str) -> None:
+    """
+    Signing out with a token rotated away moments ago — all an app holds when the rotation's
+    reply was lost — must end the session that token now lives on as. Otherwise the grace
+    would hand that still-live successor to the next re-presentation and undo the sign-out.
+    """
+    try:
+        jti = _jti_of_refresh(refresh)
+        rec = cache.get(_rotation_grace_key(jti)) if jti else None
+        if not isinstance(rec, dict):
+            return
+        cache.delete(_rotation_grace_key(jti))
+        successor_refresh = str(rec.get("successor_refresh") or "")
+        if successor_refresh:
+            _revoke_refresh(successor_refresh)
+        successor_jti = str(rec.get("successor_jti") or "")
+        if successor_jti:
+            RefreshSession.objects.filter(refresh_jti=successor_jti, revoked_at__isnull=True).update(
+                revoked_at=timezone.now()
+            )
+    except Exception:
+        logger.exception("refresh_rotation_successor_logout_failed")
 
 
 class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
@@ -705,7 +747,7 @@ class CookieTokenRefreshView(TokenRefreshView):
                 # that does not exist, and the grace refuses it.
                 _remember_rotation(
                     old_jti=jti, user_id=int(s.user_id), successor_jti=new_jti,
-                    successor_refresh=new_refresh_s, ip=ip, ua=ua,
+                    successor_refresh=new_refresh_s, fingerprint=_grace_fingerprint(request),
                 )
 
         # After commit: revoke old jti in cache (best-effort) and touch churn counters.
@@ -760,6 +802,7 @@ class CookieLogoutView(APIView):
                     RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).update(revoked_at=timezone.now())
             except Exception:
                 pass
+            _end_rotation_successor(str(refresh))
         resp = Response({"ok": True}, status=status.HTTP_200_OK)
         clear_auth_cookies(response=resp, request=request)
         return resp
