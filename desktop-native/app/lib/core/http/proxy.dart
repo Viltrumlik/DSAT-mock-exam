@@ -64,7 +64,11 @@ class ProxyResolver {
       _cache[key] = _Entry(value, _clock.now());
     }
 
-    return _preparing[key] = run().whenComplete(() => _preparing.remove(key));
+    // A block body: `=> _preparing.remove(key)` would return this very future, and whenComplete
+    // would then wait on itself forever.
+    return _preparing[key] = run().whenComplete(() {
+      _preparing.remove(key);
+    });
   }
 
   /// Number of native lookups made (tests).
