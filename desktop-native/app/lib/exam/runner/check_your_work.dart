@@ -71,7 +71,7 @@ class CheckYourWorkPage extends StatelessWidget {
                         trackingEm: BluebookTokens.trackingTight,
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: BluebookTokens.reviewIntroTop),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: BluebookTokens.reviewIntroMaxWidth),
                       child: Text(
@@ -80,7 +80,7 @@ class CheckYourWorkPage extends StatelessWidget {
                         style: intro,
                       ),
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: BluebookTokens.reviewIntroGap),
                     ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: BluebookTokens.reviewIntroMaxWidth),
                       child: Text.rich(
@@ -98,7 +98,7 @@ class CheckYourWorkPage extends StatelessWidget {
                         textAlign: TextAlign.center,
                       ),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: BluebookTokens.reviewCardTop),
                     Container(
                       key: const ValueKey('review.card'),
                       constraints: const BoxConstraints(maxWidth: BluebookTokens.reviewCardMaxWidth),
@@ -121,34 +121,38 @@ class CheckYourWorkPage extends StatelessWidget {
                             child: Wrap(
                               alignment: WrapAlignment.spaceBetween,
                               crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 12,
-                              runSpacing: 12,
+                              spacing: BluebookTokens.reviewHeaderGap,
+                              runSpacing: BluebookTokens.reviewHeaderGap,
                               children: [
                                 Text(
                                   '$moduleTitle Questions',
                                   key: const ValueKey('review.cardTitle'),
-                                  style: chromeText(18, weight: FontWeight.w700, height: 28 / 18),
+                                  style: chromeText(
+                                    BluebookTokens.reviewCardTitleSize,
+                                    weight: FontWeight.w700,
+                                    height: 28 / 18,
+                                  ),
                                 ),
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     const UnansweredSwatch(radius: BluebookTokens.reviewLegendBoxRadius),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: BluebookTokens.reviewLegendItemGap),
                                     Text(
                                       'Unanswered',
-                                      style: chromeText(14, color: TwColors.slate600, height: 20 / 14),
+                                      style: chromeText(14, color: BluebookTokens.reviewLegendColor, height: 20 / 14),
                                     ),
-                                    const SizedBox(width: 24),
+                                    const SizedBox(width: BluebookTokens.reviewLegendGap),
                                     const LucideIcon(
                                       LucideGlyphs.flag,
-                                      size: 16,
+                                      size: BluebookTokens.legendIcon,
                                       color: BluebookTokens.flagColor,
                                       fill: BluebookTokens.flagColor,
                                     ),
-                                    const SizedBox(width: 8),
+                                    const SizedBox(width: BluebookTokens.reviewLegendItemGap),
                                     Text(
                                       'For Review',
-                                      style: chromeText(14, color: TwColors.slate600, height: 20 / 14),
+                                      style: chromeText(14, color: BluebookTokens.reviewLegendColor, height: 20 / 14),
                                     ),
                                   ],
                                 ),
@@ -183,7 +187,7 @@ class CheckYourWorkPage extends StatelessWidget {
                     padding: BluebookTokens.reviewButtonPaddingFooter,
                     onTap: onBack,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: BluebookTokens.reviewFooterGap),
                   if (submitLocked)
                     Container(
                       key: const ValueKey('review.locked'),
@@ -192,7 +196,7 @@ class CheckYourWorkPage extends StatelessWidget {
                       decoration: BoxDecoration(
                         color: BluebookTokens.lockedNoteBackground,
                         border: Border.all(color: BluebookTokens.lockedNoteBorder),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(BluebookTokens.lockedNoteRadius),
                       ),
                       child: Text(
                         checkYourWorkLockedNote,
@@ -210,7 +214,7 @@ class CheckYourWorkPage extends StatelessWidget {
                       label: submitting ? 'Submitting…' : (isLastModule ? 'Submit' : 'Next'),
                       padding: BluebookTokens.reviewButtonPaddingFooter,
                       enabled: !submitting,
-                      disabledOpacity: 0.6,
+                      disabledOpacity: BluebookTokens.reviewSubmitDisabledOpacity,
                       onTap: onSubmit,
                     ),
                 ],

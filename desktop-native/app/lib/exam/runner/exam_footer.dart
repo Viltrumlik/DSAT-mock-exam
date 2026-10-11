@@ -38,7 +38,7 @@ class IndigoButton extends StatelessWidget {
         padding: padding,
         decoration: BoxDecoration(
           color: s.hovered ? BluebookTokens.primaryButtonHover : BluebookTokens.primaryButton,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
         ),
         child: Text(
           label,
@@ -115,7 +115,7 @@ class ExamFooter extends StatelessWidget {
               padding: BluebookTokens.navPillPadding,
               decoration: BoxDecoration(
                 color: s.hovered ? BluebookTokens.navPillHover : BluebookTokens.navPillBackground,
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,

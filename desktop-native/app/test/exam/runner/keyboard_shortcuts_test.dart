@@ -54,7 +54,10 @@ void main() {
         expect(runnerShortcutsEnabled(phase: p, inputLocked: false), isFalse, reason: p.name);
       }
       expect(runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: true), isFalse);
-      expect(runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: false, offscreenCountingDown: true), isFalse);
+      expect(
+        runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: false, offscreenCountingDown: true),
+        isFalse,
+      );
       expect(runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: false, dialogOpen: true), isFalse);
       expect(runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: false, inert: true), isFalse);
       expect(runnerShortcutsEnabled(phase: ExamPhase.running, inputLocked: false, busy: true), isFalse);
@@ -107,8 +110,10 @@ void main() {
     });
 
     testWidgets('A–D do nothing on a grid-in', (tester) async {
-      final h = await RunnerHarness.pump(tester,
-          session: FakeExamSession.math(initialPhase: ExamPhase.running, tick: false));
+      final h = await RunnerHarness.pump(
+        tester,
+        session: FakeExamSession.math(initialPhase: ExamPhase.running, tick: false),
+      );
       h.session.goTo(1); // grid-in
       await tester.pump();
       await letter(tester, 'a');

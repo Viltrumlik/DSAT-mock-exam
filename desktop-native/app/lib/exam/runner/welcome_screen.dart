@@ -43,7 +43,7 @@ class WelcomeScreen extends StatelessWidget {
 
   Widget _tile(LucideGlyph glyph, String value, String label) => Expanded(
     child: Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(BluebookTokens.welcomeTilePadding),
       decoration: BoxDecoration(
         color: BluebookTokens.welcomeTileBackground,
         border: Border.all(color: TwColors.slate200),
@@ -51,16 +51,16 @@ class WelcomeScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          LucideIcon(glyph, size: 20, color: TwColors.slate500),
-          const SizedBox(height: 8),
+          LucideIcon(glyph, size: BluebookTokens.welcomeTileIcon, color: BluebookTokens.welcomeTileIconColor),
+          const SizedBox(height: BluebookTokens.welcomeTileValueTop),
           Text(
             value,
-            style: chromeText(18, weight: FontWeight.w700, height: 28 / 18),
+            style: chromeText(BluebookTokens.welcomeTileValueSize, weight: FontWeight.w700, height: 28 / 18),
           ),
           Text(
             label.toUpperCase(),
             style: chromeText(
-              11,
+              BluebookTokens.welcomeTileLabelSize,
               weight: FontWeight.w600,
               color: BluebookTokens.welcomeTileLabelColor,
               trackingEm: BluebookTokens.trackingWide,
@@ -72,19 +72,23 @@ class WelcomeScreen extends StatelessWidget {
   );
 
   Widget _bullet(String text) => Padding(
-    padding: const EdgeInsets.only(top: 8),
+    padding: const EdgeInsets.only(top: BluebookTokens.welcomeBulletGap),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           '•',
-          style: chromeText(14, color: BluebookTokens.welcomeBullet, height: 20 / 14),
+          style: chromeText(BluebookTokens.welcomeBulletSize, color: BluebookTokens.welcomeBullet, height: 20 / 14),
         ),
-        const SizedBox(width: 8),
+        const SizedBox(width: BluebookTokens.welcomeBulletGap),
         Expanded(
           child: Text(
             text,
-            style: chromeText(14, color: TwColors.slate600, height: 20 / 14),
+            style: chromeText(
+              BluebookTokens.welcomeBulletSize,
+              color: BluebookTokens.welcomeBulletColor,
+              height: 20 / 14,
+            ),
           ),
         ),
       ],
@@ -103,7 +107,7 @@ class WelcomeScreen extends StatelessWidget {
           Expanded(
             child: Center(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+                padding: const EdgeInsets.symmetric(horizontal: BluebookTokens.welcomeSidePadding),
                 child: Container(
                   key: const ValueKey('welcome.card'),
                   constraints: const BoxConstraints(maxWidth: BluebookTokens.welcomeMaxWidth),
@@ -122,14 +126,14 @@ class WelcomeScreen extends StatelessWidget {
                         kindLabel.toUpperCase(),
                         textAlign: TextAlign.center,
                         style: chromeText(
-                          12,
+                          BluebookTokens.welcomeEyebrowSize,
                           weight: FontWeight.w700,
                           color: BluebookTokens.welcomeEyebrowColor,
                           height: 16 / 12,
                           trackingEm: BluebookTokens.welcomeEyebrowTracking,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: BluebookTokens.welcomeTitleTop),
                       Text(
                         moduleTitle,
                         key: const ValueKey('welcome.title'),
@@ -141,22 +145,22 @@ class WelcomeScreen extends StatelessWidget {
                           trackingEm: BluebookTokens.trackingTight,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: BluebookTokens.welcomeSubTop),
                       Text(
                         'When you’re ready, start the $subjectLabel module below.',
                         textAlign: TextAlign.center,
                         style: chromeText(
-                          14,
+                          BluebookTokens.welcomeSubSize,
                           weight: FontWeight.w500,
                           color: BluebookTokens.welcomeSubColor,
                           height: 20 / 14,
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: BluebookTokens.welcomeTilesTop),
                       Row(
                         children: [
                           _tile(LucideGlyphs.clock, minutes != null && minutes! > 0 ? '$minutes min' : '—', 'Time'),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: BluebookTokens.welcomeTileGap),
                           _tile(
                             LucideGlyphs.listChecks,
                             questionCount != null && questionCount! > 0 ? '$questionCount' : '—',
@@ -164,34 +168,38 @@ class WelcomeScreen extends StatelessWidget {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: BluebookTokens.welcomeBulletsTop - BluebookTokens.welcomeBulletGap),
                       for (final b in bullets) _bullet(b),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: BluebookTokens.welcomeStartTop),
                       Pressable(
                         key: const ValueKey('welcome.start'),
                         semanticLabel: 'Start',
                         enabled: !starting,
                         onTap: onStart,
                         builder: (context, s) => Opacity(
-                          opacity: s.enabled ? 1 : 0.6,
+                          opacity: s.enabled ? 1 : BluebookTokens.welcomeStartDisabledOpacity,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                            padding: BluebookTokens.welcomeStartPadding,
                             decoration: BoxDecoration(
                               color: s.hovered ? BluebookTokens.welcomeStartHover : BluebookTokens.welcomeStart,
-                              borderRadius: BorderRadius.circular(999),
+                              borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
                             ),
                             child: Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 LucideIcon(
                                   fullscreenSupported ? LucideGlyphs.maximize : LucideGlyphs.play,
-                                  size: 20,
+                                  size: BluebookTokens.welcomeStartIcon,
                                   color: TwColors.white,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: BluebookTokens.welcomeStartGap),
                                 Text(
                                   starting ? 'Starting…' : 'Start',
-                                  style: chromeText(16, weight: FontWeight.w700, color: TwColors.white),
+                                  style: chromeText(
+                                    BluebookTokens.welcomeStartSize,
+                                    weight: FontWeight.w700,
+                                    color: TwColors.white,
+                                  ),
                                 ),
                               ],
                             ),

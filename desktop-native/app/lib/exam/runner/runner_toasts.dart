@@ -121,12 +121,17 @@ class RunnerToastLayer extends StatelessWidget {
                       padding: BluebookTokens.timerToastPadding,
                       decoration: BoxDecoration(
                         color: BluebookTokens.timerToastBackground,
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(BluebookTokens.timerToastRadius),
                         boxShadow: TwShadows.xl,
                       ),
                       child: Text(
                         timer,
-                        style: chromeText(14, weight: FontWeight.w700, color: TwColors.white, height: 20 / 14),
+                        style: chromeText(
+                          BluebookTokens.timerToastSize,
+                          weight: FontWeight.w700,
+                          color: TwColors.white,
+                          height: 20 / 14,
+                        ),
                       ),
                     ),
                   ),
@@ -137,7 +142,9 @@ class RunnerToastLayer extends StatelessWidget {
             Positioned(
               top: BluebookTokens.noticeInset,
               right: BluebookTokens.noticeInset,
-              width: width * 0.92 < BluebookTokens.noticeWidth ? width * 0.92 : BluebookTokens.noticeWidth,
+              width: width * BluebookTokens.noticeMaxViewportFraction < BluebookTokens.noticeWidth
+                  ? width * BluebookTokens.noticeMaxViewportFraction
+                  : BluebookTokens.noticeWidth,
               // Never in the way: the cards hold nothing to click, and they sit over the
               // header's tool cluster.
               child: IgnorePointer(
@@ -145,7 +152,7 @@ class RunnerToastLayer extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     for (var i = 0; i < notices.length; i++) ...[
-                      if (i > 0) const SizedBox(height: 8),
+                      if (i > 0) const SizedBox(height: BluebookTokens.noticeGap),
                       _NoticeCard(notices[i]),
                     ],
                   ],
@@ -182,7 +189,7 @@ class _NoticeCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: bg,
           border: Border.all(color: border),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(BluebookTokens.noticeRadius),
           boxShadow: TwShadows.lg,
         ),
         child: Column(
@@ -190,9 +197,9 @@ class _NoticeCard extends StatelessWidget {
           children: [
             Text(
               toast.tone == ToastTone.error ? 'Error' : 'Notice',
-              style: uiText(14, weight: FontWeight.w800, height: 20 / 14),
+              style: uiText(BluebookTokens.noticeTitleSize, weight: FontWeight.w800, height: 20 / 14),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: BluebookTokens.noticeMessageTop),
             Text(
               toast.message,
               key: const ValueKey('toast.message'),

@@ -78,7 +78,8 @@ class NotesPanelState extends State<NotesPanel> {
           border: Border.all(color: _focused ? BluebookTokens.notesFocusBorder : BluebookTokens.notesBorder),
           borderRadius: BorderRadius.circular(8),
         ),
-        padding: const EdgeInsets.all(11), // p-3 minus the 1 px border
+        // p-3 inside the 1 px border (Flutter adds the border to the padding, as CSS does).
+        padding: const EdgeInsets.all(12),
         child: Material(
           type: MaterialType.transparency,
           child: TextField(

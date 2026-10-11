@@ -190,7 +190,7 @@ class MoreMenuPanel extends StatelessWidget {
                 if (onSaveAndExit != null) ...[
                   Container(
                     height: 1,
-                    margin: const EdgeInsets.symmetric(vertical: 4),
+                    margin: const EdgeInsets.symmetric(vertical: BluebookTokens.menuDividerMargin),
                     color: BluebookTokens.menuDivider,
                   ),
                   _row('saveExit', 'Save & Exit', LucideGlyphs.logOut, onSaveAndExit!),

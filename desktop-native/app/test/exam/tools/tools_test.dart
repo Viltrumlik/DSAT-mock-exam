@@ -30,11 +30,11 @@ import 'package:mastersat_app/island/protocol.dart';
 import '../runner/support/runner_harness.dart';
 
 Widget host(Widget child, {Size size = const Size(1366, 768)}) => runnerApp(
-      MediaQuery(
-        data: MediaQueryData(size: size),
-        child: Stack(children: [child]),
-      ),
-    );
+  MediaQuery(
+    data: MediaQueryData(size: size),
+    child: Stack(children: [child]),
+  ),
+);
 
 Future<void> settle() async {
   for (var i = 0; i < 10; i++) {
@@ -49,14 +49,18 @@ void main() {
     testWidgets('resizes from the grip down to its minimum; × closes', (tester) async {
       setWindowSize(tester, const Size(1366, 768));
       var closed = 0;
-      await tester.pumpWidget(host(FloatingPanel(
-        panelKey: const ValueKey('p'),
-        title: 'Notes',
-        onClose: () => closed++,
-        initial: const Rect.fromLTWH(100, 100, 360, 420),
-        minSize: const Size(260, 220),
-        child: const SizedBox.expand(),
-      )));
+      await tester.pumpWidget(
+        host(
+          FloatingPanel(
+            panelKey: const ValueKey('p'),
+            title: 'Notes',
+            onClose: () => closed++,
+            initial: const Rect.fromLTWH(100, 100, 360, 420),
+            minSize: const Size(260, 220),
+            child: const SizedBox.expand(),
+          ),
+        ),
+      );
       expect(tester.getRect(find.byKey(const ValueKey('p'))), const Rect.fromLTWH(100, 100, 360, 420));
       await tester.drag(find.byKey(const ValueKey('panel.grip')), const Offset(40, 30));
       await tester.pump();
@@ -70,14 +74,25 @@ void main() {
 
     testWidgets('docked: fills its parent, no drag, no grip', (tester) async {
       setWindowSize(tester, const Size(800, 600));
-      await tester.pumpWidget(runnerApp(Row(children: [
-        const Expanded(child: SizedBox()),
-        SizedBox(
-          width: 300,
-          child: FloatingPanel(
-              panelKey: const ValueKey('p'), docked: true, title: 'Notes', onClose: () {}, child: const SizedBox.expand()),
+      await tester.pumpWidget(
+        runnerApp(
+          Row(
+            children: [
+              const Expanded(child: SizedBox()),
+              SizedBox(
+                width: 300,
+                child: FloatingPanel(
+                  panelKey: const ValueKey('p'),
+                  docked: true,
+                  title: 'Notes',
+                  onClose: () {},
+                  child: const SizedBox.expand(),
+                ),
+              ),
+            ],
+          ),
         ),
-      ])));
+      );
       expect(tester.getRect(find.byKey(const ValueKey('p'))), const Rect.fromLTWH(500, 0, 300, 600));
       expect(find.byKey(const ValueKey('panel.grip')), findsNothing);
       await tester.drag(find.byKey(const ValueKey('panel.titlebar')), const Offset(-100, 50));
@@ -121,21 +136,26 @@ void main() {
       final sent = <QuestionReportRequest>[];
       final toasts = <(String, bool)>[];
       final closes = <int>[];
-      await tester.pumpWidget(host(Positioned.fill(
-        child: ReportProblemDialog(
-          questionId: 41,
-          questionNumber: 7,
-          attemptId: 900,
-          submit: submit ??
-              (r) async {
-                sent.add(r);
-                return ReportOutcome.sent;
-              },
-          onClose: () => closes.add(1),
-          onToast: (m, {error = false}) => toasts.add((m, error)),
-          prefill: prefill,
+      await tester.pumpWidget(
+        host(
+          Positioned.fill(
+            child: ReportProblemDialog(
+              questionId: 41,
+              questionNumber: 7,
+              attemptId: 900,
+              submit:
+                  submit ??
+                  (r) async {
+                    sent.add(r);
+                    return ReportOutcome.sent;
+                  },
+              onClose: () => closes.add(1),
+              onToast: (m, {error = false}) => toasts.add((m, error)),
+              prefill: prefill,
+            ),
+          ),
         ),
-      )));
+      );
       await tester.pump();
       return (sent, toasts, closes);
     }
@@ -253,19 +273,23 @@ void main() {
     testWidgets('the buttons report what they are', (tester) async {
       setWindowSize(tester, window);
       final calls = <String>[];
-      await tester.pumpWidget(host(Positioned.fill(
-        child: AnnotationToolbar(
-          anchorX: 600,
-          anchorTop: 300,
-          anchorBottom: 320,
-          activeColor: HighlightColor.blue,
-          activeUnderline: UnderlineStyle.dotted,
-          onColor: (c) => calls.add('color ${c.wire}'),
-          onUnderline: (u) => calls.add('underline ${u.wire}'),
-          onDelete: () => calls.add('delete'),
-          onAddNote: () => calls.add('note'),
+      await tester.pumpWidget(
+        host(
+          Positioned.fill(
+            child: AnnotationToolbar(
+              anchorX: 600,
+              anchorTop: 300,
+              anchorBottom: 320,
+              activeColor: HighlightColor.blue,
+              activeUnderline: UnderlineStyle.dotted,
+              onColor: (c) => calls.add('color ${c.wire}'),
+              onUnderline: (u) => calls.add('underline ${u.wire}'),
+              onDelete: () => calls.add('delete'),
+              onAddNote: () => calls.add('note'),
+            ),
+          ),
         ),
-      )));
+      );
       for (final k in [
         'toolbar.color.yellow',
         'toolbar.color.pink',
@@ -293,14 +317,14 @@ void main() {
     tearDown(() => session.dispose());
 
     DesmosController make({bool scripted = true, Duration timeout = const Duration(seconds: 8)}) => DesmosController(
-          session: session,
-          readyTimeout: timeout,
-          factory: (kind) {
-            final h = FakeIslandHost(kind, scripted: scripted);
-            hosts.add(h);
-            return h;
-          },
-        );
+      session: session,
+      readyTimeout: timeout,
+      factory: (kind) {
+        final h = FakeIslandHost(kind, scripted: scripted);
+        hosts.add(h);
+        return h;
+      },
+    );
 
     test('opens once; ready → init with the saved state and mode; tabs → desmos.mode', () async {
       session.saveDesmosState({'e': 1});
@@ -324,14 +348,20 @@ void main() {
       final c = make();
       await c.ensureOpen(CalculatorTab.graphing);
       await settle();
-      hosts.single.desmosStateValue = {'list': [1, 2]};
+      hosts.single.desmosStateValue = {
+        'list': [1, 2],
+      };
       hosts.single.emit(const DesmosChangedMessage());
       await settle();
-      expect(session.desmosState, {'list': [1, 2]});
+      expect(session.desmosState, {
+        'list': [1, 2],
+      });
       // A state reply nobody asked for is ignored.
       hosts.single.emit(const DesmosStateMessage(req: 999, state: {'x': 0}));
       await settle();
-      expect(session.desmosState, {'list': [1, 2]});
+      expect(session.desmosState, {
+        'list': [1, 2],
+      });
       c.dispose();
     });
 
@@ -384,12 +414,13 @@ void main() {
       final session = FakeExamSession.math(initialPhase: ExamPhase.running, tick: false);
       final hosts = <FakeIslandHost>[];
       final c = DesmosController(
-          session: session,
-          factory: (k) {
-            final h = FakeIslandHost(k, scripted: false);
-            hosts.add(h);
-            return h;
-          });
+        session: session,
+        factory: (k) {
+          final h = FakeIslandHost(k, scripted: false);
+          hosts.add(h);
+          return h;
+        },
+      );
       final tools = RunnerTools()..toggleCalculator();
       await tester.pumpWidget(host(DesmosPanel(controller: c, tools: tools, scientificOnly: false, animate: false)));
       await tester.pump();
@@ -465,7 +496,9 @@ void main() {
     testWidgets('Directions: under the anchor, passage width + 44, 150 px above the bottom', (tester) async {
       setWindowSize(tester, const Size(1366, 768));
       var closed = 0;
-      await tester.pumpWidget(host(DirectionsOverlay(anchorBottom: 80, widthFraction: 0.6, isMath: false, onClose: () => closed++)));
+      await tester.pumpWidget(
+        host(DirectionsOverlay(anchorBottom: 80, widthFraction: 0.6, isMath: false, onClose: () => closed++)),
+      );
       final r = tester.getRect(find.byKey(const ValueKey('directions.card')));
       expect(r, Rect.fromLTRB(0, 86, 1366 * 0.6 + 44, 768 - 150));
       expect(find.text(directionsRwP2), findsOneWidget);

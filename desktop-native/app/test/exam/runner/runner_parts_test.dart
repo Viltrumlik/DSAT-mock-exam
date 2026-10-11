@@ -31,8 +31,15 @@ void main() {
     });
 
     testWidgets('is 3 px tall and full width', (tester) async {
-      await tester.pumpWidget(const Directionality(
-          textDirection: TextDirection.ltr, child: Align(alignment: Alignment.topLeft, child: SizedBox(width: 500, child: SatColorRule()))));
+      await tester.pumpWidget(
+        const Directionality(
+          textDirection: TextDirection.ltr,
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(width: 500, child: SatColorRule()),
+          ),
+        ),
+      );
       expect(tester.getSize(find.byType(SatColorRule)), const Size(500, 3));
     });
   });
@@ -101,8 +108,16 @@ void main() {
         ..toggleDirections()
         ..toggleNotes()
         ..toggleReference()
-        ..showToolbar(const ToolbarRequest(
-            qid: 1, container: AnnotationContainer.passage, x: 0, top: 0, bottom: 0, selectionId: 's'));
+        ..showToolbar(
+          const ToolbarRequest(
+            qid: 1,
+            container: AnnotationContainer.passage,
+            x: 0,
+            top: 0,
+            bottom: 0,
+            selectionId: 's',
+          ),
+        );
       t.closeTransient();
       expect((t.navigatorOpen, t.moreOpen, t.directionsOpen, t.toolbar), (false, false, false, null));
       expect((t.notesOpen, t.referenceOpen), (true, true));
@@ -174,7 +189,12 @@ void main() {
   });
 
   test('tokens carry the website values the owner named', () {
-    expect(BluebookTokens.ruleColors, const [Color(0xFFB91C1C), Color(0xFFCA8A04), Color(0xFF15803D), Color(0xFF0F172A)]);
+    expect(BluebookTokens.ruleColors, const [
+      Color(0xFFB91C1C),
+      Color(0xFFCA8A04),
+      Color(0xFF15803D),
+      Color(0xFF0F172A),
+    ]);
     expect((BluebookTokens.ruleHeight, BluebookTokens.ruleDash, BluebookTokens.ruleGap), (3.0, 48.0, 6.0));
     expect(BluebookTokens.navPillBackground, const Color(0xFF151515));
     expect(BluebookTokens.primaryButton, const Color(0xFF253985));

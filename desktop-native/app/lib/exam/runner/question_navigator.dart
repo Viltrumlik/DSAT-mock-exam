@@ -44,7 +44,7 @@ class QuestionCell extends StatelessWidget {
         final label = Text(
           '$number',
           style: chromeText(
-            14,
+            BluebookTokens.cellTextSize,
             weight: FontWeight.w700,
             color: state.answered ? TwColors.white : BluebookTokens.cellUnansweredText,
             height: 20 / 14,
@@ -155,7 +155,7 @@ class QuestionGrid extends StatelessWidget {
                 child: LucideIcon(
                   LucideGlyphs.mapPin,
                   key: ValueKey('navigator.pin'),
-                  size: 16,
+                  size: BluebookTokens.cellPin,
                   color: BluebookTokens.currentPin,
                   fill: BluebookTokens.currentPin,
                 ),
@@ -205,7 +205,12 @@ class QuestionNavigator extends StatelessWidget {
       const SizedBox(width: BluebookTokens.legendItemGap),
       Text(
         label,
-        style: chromeText(14, weight: FontWeight.w600, color: BluebookTokens.legendColor, height: 20 / 14),
+        style: chromeText(
+          BluebookTokens.legendTextSize,
+          weight: FontWeight.w600,
+          color: BluebookTokens.legendColor,
+          height: 20 / 14,
+        ),
       ),
     ],
   );
@@ -231,7 +236,7 @@ class QuestionNavigator extends StatelessWidget {
             child: Stack(
               children: [
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
+                  padding: const EdgeInsets.symmetric(horizontal: BluebookTokens.navigatorTitlePadding),
                   child: Text(
                     '$title Questions',
                     key: const ValueKey('navigator.title'),
@@ -310,8 +315,8 @@ class QuestionNavigator extends StatelessWidget {
           ),
           // QuestionNavigator.tsx:79-90 — Go to Review Page.
           Container(
-            margin: const EdgeInsets.only(top: 20),
-            padding: const EdgeInsets.only(top: 16),
+            margin: const EdgeInsets.only(top: BluebookTokens.navigatorFooterTop),
+            padding: const EdgeInsets.only(top: BluebookTokens.navigatorFooterPadding),
             decoration: const BoxDecoration(
               border: Border(top: BorderSide(color: BluebookTokens.legendDivider)),
             ),
@@ -324,11 +329,15 @@ class QuestionNavigator extends StatelessWidget {
                   onGoToReview();
                 },
                 builder: (context, s) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 6), // px-6 py-2 minus the 2 px border
+                  // The border adds to the padding in Flutter as in CSS (border-box content offset).
+                  padding: BluebookTokens.reviewButtonPadding,
                   decoration: BoxDecoration(
                     color: s.hovered ? BluebookTokens.reviewButtonHover : null,
-                    border: Border.all(color: BluebookTokens.reviewButtonColor, width: 2),
-                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: BluebookTokens.reviewButtonColor,
+                      width: BluebookTokens.reviewButtonBorder,
+                    ),
+                    borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
                   ),
                   child: Text(
                     'Go to Review Page',
@@ -354,7 +363,11 @@ class QuestionNavigator extends StatelessWidget {
       color: BluebookTokens.navigatorScrim,
       onTap: onClose,
       child: Padding(
-        padding: const EdgeInsets.only(bottom: BluebookTokens.navigatorBottom, left: 16, right: 16),
+        padding: const EdgeInsets.only(
+          bottom: BluebookTokens.navigatorBottom,
+          left: BluebookTokens.navigatorMargin,
+          right: BluebookTokens.navigatorMargin,
+        ),
         child: Align(
           alignment: Alignment.bottomCenter,
           child: GestureDetector(

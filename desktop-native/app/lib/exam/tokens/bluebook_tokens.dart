@@ -659,8 +659,158 @@ abstract final class BluebookTokens {
   static const noticePadding = EdgeInsets.symmetric(horizontal: 16, vertical: 12);
   static const noticeDuration = Duration(milliseconds: 3200);
 
+  // ---- shared shapes -------------------------------------------------------------------------
+
+  /// tailwindcss `rounded-full` (calc(infinity * 1px)) — every pill and round button.
+  static const pillRadius = 999.0;
+
+  // ---- header extras -------------------------------------------------------------------------
+
+  /// MoreMenu.tsx:85 `my-1` around the divider before Save & Exit.
+  static const menuDividerMargin = 4.0;
+
+  // ---- navigator extras (components/QuestionNavigator.tsx) ----------------------------------
+
+  /// QuestionNavigator.tsx:37 `mx-4` (side margin of the card in a narrow window).
+  static const navigatorMargin = 16.0;
+
+  /// QuestionNavigator.tsx:41 `px-8` around the centred title (room for the close button).
+  static const navigatorTitlePadding = 32.0;
+
+  /// QuestionNavigator.tsx:46 legend `text-sm` (14/20); :58 the current pin `h-4 w-4`.
+  static const legendTextSize = 14.0;
+  static const cellPin = 16.0;
+
+  /// QuestionNavigator.tsx:66 cell number `text-sm font-bold` (14/20).
+  static const cellTextSize = 14.0;
+
+  /// QuestionNavigator.tsx:79 `mt-5 … pt-4` above Go to Review Page; :86 `border-2`.
+  static const navigatorFooterTop = 20.0;
+  static const navigatorFooterPadding = 16.0;
+  static const reviewButtonBorder = 2.0;
+
+  // ---- Check Your Work extras (components/CheckYourWorkPage.tsx) ---------------------------
+
+  /// CheckYourWorkPage.tsx:54 `mt-4`, :57 `mt-1.5`, :62 `mt-8`.
+  static const reviewIntroTop = 16.0;
+  static const reviewIntroGap = 6.0;
+  static const reviewCardTop = 32.0;
+
+  /// CheckYourWorkPage.tsx:64 `text-lg font-bold` (18/28).
+  static const reviewCardTitleSize = 18.0;
+
+  /// CheckYourWorkPage.tsx:63 `gap-3` (wrap gap); :65 legend `gap-6 text-sm text-slate-600`,
+  /// :66,69 items `gap-2`.
+  static const reviewHeaderGap = 12.0;
+  static const reviewLegendGap = 24.0;
+  static const reviewLegendItemGap = 8.0;
+  static const reviewLegendColor = TwColors.slate600;
+
+  /// CheckYourWorkPage.tsx:102 footer `gap-3`; :120 Next/Submit `disabled:opacity-60`.
+  static const reviewFooterGap = 12.0;
+  static const reviewSubmitDisabledOpacity = 0.6;
+
+  /// CheckYourWorkPage.tsx:111 the locked note `rounded-xl`.
+  static const lockedNoteRadius = 12.0;
+
+  // ---- Welcome extras (components/WelcomeScreen.tsx) ---------------------------------------
+
+  /// WelcomeScreen.tsx:42 `px-6` around the card.
+  static const welcomeSidePadding = 24.0;
+
+  /// WelcomeScreen.tsx:44 eyebrow `text-xs` (12/16); :45 `mt-3`; :46 `mt-2 text-sm` (14/20).
+  static const welcomeEyebrowSize = 12.0;
+  static const welcomeTitleTop = 12.0;
+  static const welcomeSubTop = 8.0;
+  static const welcomeSubSize = 14.0;
+
+  /// WelcomeScreen.tsx:50 `mt-7 grid-cols-2 gap-3`; :51 tile `p-4`; :52 icon `h-5 w-5`;
+  /// :53 value `mt-2 text-lg` (18/28); :56 label `text-[11px]`.
+  static const welcomeTilesTop = 28.0;
+  static const welcomeTileGap = 12.0;
+  static const welcomeTilePadding = 16.0;
+  static const welcomeTileIcon = 20.0;
+  static const welcomeTileValueTop = 8.0;
+  static const welcomeTileValueSize = 18.0;
+  static const welcomeTileLabelSize = 11.0;
+  static const welcomeTileIconColor = TwColors.slate500;
+
+  /// WelcomeScreen.tsx:67 `mt-6 space-y-2 text-sm text-slate-600`; :68 `gap-2`.
+  static const welcomeBulletsTop = 24.0;
+  static const welcomeBulletGap = 8.0;
+  static const welcomeBulletSize = 14.0;
+  static const welcomeBulletColor = TwColors.slate600;
+
+  /// WelcomeScreen.tsx:80 `mt-8 gap-2 px-8 py-3 text-base`; :82 icon `h-5 w-5`.
+  static const welcomeStartTop = 32.0;
+  static const welcomeStartPadding = EdgeInsets.symmetric(horizontal: 32, vertical: 12);
+  static const welcomeStartGap = 8.0;
+  static const welcomeStartIcon = 20.0;
+  static const welcomeStartSize = 16.0;
+  static const welcomeStartDisabledOpacity = 0.6;
+
+  // ---- status screens (StatusScreens.tsx, ModuleTransitionOverlay.tsx) ---------------------
+
+  /// StatusScreens.tsx:26,28 `px-6`, text `max-w-md`.
+  static const statusSidePadding = 24.0;
+  static const statusMaxWidth = 448.0;
+
+  /// ModuleTransitionOverlay.tsx:13 / StatusScreens.tsx:48 title `mt-6`; :14 / :49 body `mt-2
+  /// font-medium` (16/24); StatusScreens.tsx:8 loading label `mt-5`; :29 hint `mt-2 text-sm
+  /// text-slate-400`.
+  static const statusTitleTop = 24.0;
+  static const statusBodyTop = 8.0;
+  static const statusLoadingLabelTop = 20.0;
+  static const statusBodySize = 16.0;
+  static const statusHintSize = 14.0;
+  static const statusHintColor = TwColors.slate400;
+
+  /// The app's offline screens: a 40 px lucide icon where the website would spin (same box
+  /// as the spinner, ModuleTransitionOverlay.tsx:12 `h-10 w-10`), and StatusScreens.tsx:30-37's
+  /// action spacing `mt-6`.
+  static const statusIcon = 40.0;
+  static const statusIconColor = TwColors.slate500;
+  static const statusActionTop = 24.0;
+
+  // ---- toasts extras -------------------------------------------------------------------------
+
+  /// pages/ExamRunnerPage.tsx:1279 timer toast `rounded-xl text-sm font-bold`.
+  static const timerToastRadius = 12.0;
+  static const timerToastSize = 14.0;
+
+  /// ToastProvider.tsx:47 `gap-2`; :50 `rounded-2xl`; :58 title `text-sm font-extrabold`; :59
+  /// message `mt-1 text-sm`.
+  static const noticeGap = 8.0;
+  static const noticeRadius = 16.0;
+  static const noticeTitleSize = 14.0;
+  static const noticeMessageTop = 4.0;
+
+  /// ToastProvider.tsx:47 `w-[min(92vw,420px)]`.
+  static const noticeMaxViewportFraction = 0.92;
+
   // ---- battery (components/DesktopBattery.tsx) -----------------------------------------------
 
   /// frontend/src/lib/desktop/useBattery.ts:7 LOW_BATTERY_PERCENT = 25.
   static const lowBatteryPercent = 25;
+
+  /// DesktopBattery.tsx:25-29 reading: `text-xs font-semibold tabular-nums`, low `text-red-600`
+  /// else `text-slate-900`, icon `h-5 w-5`.
+  static const batteryColor = TwColors.slate900;
+  static const batteryLowColor = TwColors.red600;
+  static const batteryIcon = 20.0;
+  static const batteryLabelSize = 12.0;
+
+  /// DesktopBattery.tsx:47 banner `gap-3 border-b border-amber-200 bg-amber-50 px-6 py-2 text-sm
+  /// font-semibold text-amber-900`; :49 icon `h-4 w-4`; :55 dismiss `rounded p-1
+  /// hover:bg-amber-100`, X `h-4 w-4`.
+  static const batteryBannerPadding = EdgeInsets.symmetric(horizontal: 24, vertical: 8);
+  static const batteryBannerGap = 12.0;
+  static const batteryBannerBackground = TwColors.amber50;
+  static const batteryBannerBorder = TwColors.amber200;
+  static const batteryBannerColor = TwColors.amber900;
+  static const batteryBannerSize = 14.0;
+  static const batteryBannerIcon = 16.0;
+  static const batteryBannerDismissPadding = 4.0;
+  static const batteryBannerDismissRadius = 4.0;
+  static const batteryBannerDismissHover = TwColors.amber100;
 }

@@ -170,7 +170,8 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
       onTap: _submitting ? null : () => setState(() => _menuOpen = !_menuOpen),
       builder: (context, s) => Container(
         height: BluebookTokens.controlHeight,
-        padding: const EdgeInsets.only(left: 14, right: 12),
+        // pl-3.5; the chevron sits right-3 from the outer edge (the 1 px border is inside that).
+        padding: const EdgeInsets.only(left: 14, right: 11),
         decoration: BoxDecoration(
           color: BluebookTokens.fieldBackground,
           border: Border.all(color: _menuOpen || s.focused ? BluebookTokens.brandPrimary : BluebookTokens.dialogBorder),
@@ -383,7 +384,7 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
                 _label('Details (optional)'),
                 Container(
                   height: 4 * 20 + 20 + 2, // rows=4 × 20 px + py-2.5 + border
-                  padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   decoration: BoxDecoration(
                     color: BluebookTokens.fieldBackground,
                     border: Border.all(

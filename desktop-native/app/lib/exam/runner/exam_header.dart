@@ -110,7 +110,7 @@ class TimerPill extends StatelessWidget {
         padding: BluebookTokens.pillPadding,
         decoration: BoxDecoration(
           border: Border.all(color: s.hovered ? BluebookTokens.pillHoverBorder : BluebookTokens.pillBorder),
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -196,7 +196,7 @@ class ExamTimer extends StatelessWidget {
               padding: BluebookTokens.timerBadgePadding,
               decoration: BoxDecoration(
                 color: BluebookTokens.timerBadgeBackground,
-                borderRadius: BorderRadius.circular(999),
+                borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
               ),
               child: Text(
                 'LESS THAN 5 MINUTES',
@@ -259,7 +259,7 @@ class BatteryIndicator extends StatelessWidget {
         : b.percent! >= 30
         ? LucideGlyphs.batteryMedium
         : LucideGlyphs.batteryLow;
-    final color = low ? TwColors.red600 : TwColors.slate900;
+    final color = low ? BluebookTokens.batteryLowColor : BluebookTokens.batteryColor;
     return Semantics(
       label: 'Battery ${b.percent}%${b.charging ? ', charging' : ''}',
       child: ExcludeSemantics(
@@ -267,7 +267,7 @@ class BatteryIndicator extends StatelessWidget {
           key: const ValueKey('battery'),
           mainAxisSize: MainAxisSize.min,
           children: [
-            LucideIcon(glyph, size: BluebookTokens.toolIcon, color: color),
+            LucideIcon(glyph, size: BluebookTokens.batteryIcon, color: color),
             const SizedBox(height: BluebookTokens.toolGap),
             Text(
               '${b.percent}%',
@@ -310,37 +310,37 @@ class _LowBatteryBannerState extends State<LowBatteryBanner> {
   Widget build(BuildContext context) {
     final b = widget.battery;
     if (!isLowBattery(b) || _dismissed) return const SizedBox.shrink();
-    const ink = TwColors.amber900;
+    const ink = BluebookTokens.batteryBannerColor;
     return Container(
       key: const ValueKey('battery.banner'),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: BluebookTokens.batteryBannerPadding,
       decoration: const BoxDecoration(
-        color: TwColors.amber50,
-        border: Border(bottom: BorderSide(color: TwColors.amber200)),
+        color: BluebookTokens.batteryBannerBackground,
+        border: Border(bottom: BorderSide(color: BluebookTokens.batteryBannerBorder)),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const LucideIcon(LucideGlyphs.batteryWarning, size: 16, color: ink),
-          const SizedBox(width: 12),
+          const LucideIcon(LucideGlyphs.batteryWarning, size: BluebookTokens.batteryBannerIcon, color: ink),
+          const SizedBox(width: BluebookTokens.batteryBannerGap),
           Flexible(
             child: Text(
               'Your battery is low (${b!.percent}%). Plug in your device.',
-              style: chromeText(14, weight: FontWeight.w600, color: ink, height: 20 / 14),
+              style: chromeText(BluebookTokens.batteryBannerSize, weight: FontWeight.w600, color: ink, height: 20 / 14),
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: BluebookTokens.batteryBannerGap),
           Pressable(
             key: const ValueKey('battery.dismiss'),
             semanticLabel: 'Dismiss battery warning',
             onTap: () => setState(() => _dismissed = true),
             builder: (context, s) => Container(
-              padding: const EdgeInsets.all(4),
+              padding: const EdgeInsets.all(BluebookTokens.batteryBannerDismissPadding),
               decoration: BoxDecoration(
-                color: s.hovered ? TwColors.amber100 : null,
-                borderRadius: BorderRadius.circular(4),
+                color: s.hovered ? BluebookTokens.batteryBannerDismissHover : null,
+                borderRadius: BorderRadius.circular(BluebookTokens.batteryBannerDismissRadius),
               ),
-              child: const LucideIcon(LucideGlyphs.x, size: 16, color: ink),
+              child: const LucideIcon(LucideGlyphs.x, size: BluebookTokens.batteryBannerIcon, color: ink),
             ),
           ),
         ],

@@ -46,16 +46,17 @@ class StatusScreen extends StatelessWidget {
     color: BluebookTokens.surface,
     child: Center(
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
+        padding: const EdgeInsets.symmetric(horizontal: BluebookTokens.statusSidePadding),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 520),
+          constraints: const BoxConstraints(maxWidth: BluebookTokens.statusMaxWidth),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               if (spinner) BorderSpinner(arc: spinnerArc, animate: animate),
-              if (!spinner && icon != null) LucideIcon(icon!, size: 40, color: TwColors.slate500),
+              if (!spinner && icon != null)
+                LucideIcon(icon!, size: BluebookTokens.statusIcon, color: BluebookTokens.statusIconColor),
               if (title != null) ...[
-                const SizedBox(height: 24),
+                const SizedBox(height: BluebookTokens.statusTitleTop),
                 Text(
                   title!,
                   key: const ValueKey('status.title'),
@@ -69,24 +70,32 @@ class StatusScreen extends StatelessWidget {
                 ),
               ],
               if (body != null) ...[
-                SizedBox(height: title == null ? 20 : 8),
+                SizedBox(height: title == null ? BluebookTokens.statusLoadingLabelTop : BluebookTokens.statusBodyTop),
                 Text(
                   body!,
                   key: const ValueKey('status.body'),
                   textAlign: TextAlign.center,
-                  style: chromeText(16, weight: FontWeight.w500, color: BluebookTokens.statusBodyColor),
+                  style: chromeText(
+                    BluebookTokens.statusBodySize,
+                    weight: FontWeight.w500,
+                    color: BluebookTokens.statusBodyColor,
+                  ),
                 ),
               ],
               if (extra != null) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: BluebookTokens.statusBodyTop),
                 Text(
                   extra!,
                   key: const ValueKey('status.extra'),
                   textAlign: TextAlign.center,
-                  style: chromeText(14, color: TwColors.slate400, height: 20 / 14),
+                  style: chromeText(
+                    BluebookTokens.statusHintSize,
+                    color: BluebookTokens.statusHintColor,
+                    height: 20 / 14,
+                  ),
                 ),
               ],
-              if (action != null) ...[const SizedBox(height: 24), action!],
+              if (action != null) ...[const SizedBox(height: BluebookTokens.statusActionTop), action!],
             ],
           ),
         ),
@@ -200,10 +209,10 @@ class SavedOfflineExitScreen extends StatelessWidget {
       semanticLabel: 'Back to Home',
       onTap: onContinue,
       builder: (context, s) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+        padding: BluebookTokens.reviewButtonPaddingFooter,
         decoration: BoxDecoration(
           color: s.hovered ? BluebookTokens.primaryButtonHover : BluebookTokens.primaryButton,
-          borderRadius: BorderRadius.circular(999),
+          borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
         ),
         child: Text(
           'Back to Home',

@@ -132,14 +132,17 @@ final scenarios = <String, Scenario>{
   'highlight toolbar': (t) async {
     final h = await RunnerHarness.pump(t);
     await h.tap(find.text('Highlights & Notes'));
-    h.content.emit(const SelectionMessage(
+    h.content.emit(
+      const SelectionMessage(
         selectionId: 's',
         qid: 2001,
         container: 'passage',
         start: 0,
         end: 5,
         text: 'quiet',
-        rect: IslandRect(x: 400, y: 260, w: 80, h: 18)));
+        rect: IslandRect(x: 400, y: 260, w: 80, h: 18),
+      ),
+    );
     await settle(t);
     return h;
   },
@@ -181,8 +184,11 @@ void main() {
         // The calculator's active tab is a no-op, as on the website (setMode to the same mode).
         if (w.selected == true && (labels[i] == 'Graphing' || labels[i] == 'Scientific')) disabled.add(labels[i]);
       }
-      expect(disabled.where((l) => !allowedDisabled.contains(l) && l != 'Graphing' && l != 'Scientific'), isEmpty,
-          reason: 'unexpectedly disabled in ${entry.key}: $disabled');
+      expect(
+        disabled.where((l) => !allowedDisabled.contains(l) && l != 'Graphing' && l != 'Scientific'),
+        isEmpty,
+        reason: 'unexpectedly disabled in ${entry.key}: $disabled',
+      );
       await first.tester.pump(const Duration(seconds: 1));
 
       final dead = <String>[];
