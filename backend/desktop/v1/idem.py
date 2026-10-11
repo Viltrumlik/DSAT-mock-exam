@@ -48,8 +48,10 @@ class Outcome:
 
     status: int = 200
     body: dict = field(default_factory=dict)
-    #: False for answers that must not be replayed even below 500 (a lost race the client
-    #: should simply retry).
+    #: False for answers that must not be replayed even below 500: a write that changed
+    #: nothing because the module it names is not live YET (or no longer accepts late answers
+    #: for a sync). Remembering it would turn the real request, later, under the same key,
+    #: into a replayed "not applied" — module 2 never handed in.
     store: bool = True
     after_commit: list[Callable[[], None]] = field(default_factory=list)
     replayed: bool = False

@@ -361,6 +361,26 @@ class SubmitTests(MidtermCase):
         self.assertEqual((body["applied"], body["reason"], body["transitioned_to"]), (False, "late", "MODULE_2_ACTIVE"))
         self.assertEqual(MidtermAttempt.objects.get(pk=attempt_id).answers, {str(self.q1[0]): "A"})
 
+    def test_a_module_2_submit_that_arrives_first_is_not_remembered(self):
+        attempt_id = self.opened()
+        key = f"submit.{attempt_id}.{self.m2.id}"
+        early = self.submit(attempt_id, self.m2.id, {str(self.q2[0]): "B"}, key=key)
+        self.assertEqual((early["applied"], early["reason"]), (False, "module_not_active"))
+        self.assertFalse(MidtermAttemptIdempotencyKey.objects.filter(attempt_id=attempt_id, key=key).exists())
+        self.expire(attempt_id)
+        self.submit(attempt_id, self.m1.id)
+        self.expire(attempt_id, order=2)
+        with mock.patch("desktop.v1.midterms.enqueue_midterm_scoring"):
+            final = self.submit(attempt_id, self.m2.id, {str(self.q2[0]): "B"}, key=key)
+        self.assertEqual((final["applied"], final["transitioned_to"]), (True, "SCORING"))
+
+    def test_a_late_sync_is_not_remembered_either(self):
+        attempt_id = self.opened()
+        self.expire(attempt_id, extra=GRACE_S + 3)
+        key = f"sync.{attempt_id}.{self.m1.id}.1"
+        self.assertEqual(self.sync(attempt_id, self.m1.id, {str(self.q1[0]): "A"}, key=key)["reason"], "late")
+        self.assertFalse(MidtermAttemptIdempotencyKey.objects.filter(attempt_id=attempt_id, key=key).exists())
+
     def test_a_forfeited_sitting_may_hand_in_early(self):
         attempt_id = self.opened()
         MidtermAttempt.objects.filter(pk=attempt_id).update(offscreen_violations=3)

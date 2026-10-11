@@ -313,6 +313,30 @@ class SubmitTests(PastpaperCase):
         self.assertIsNone(body["attempt"]["module"])
         self.assertIsNone(body["attempt"]["timing"]["deadline_at"])
 
+    @NO_INLINE_SCORING
+    def test_a_module_2_submit_that_arrives_first_is_not_remembered(self):
+        """Out of order (an outbox replaying after a crash): the early module-2 submit writes
+        nothing and is forgotten, so the same key hands module 2 in once module 1 has landed."""
+        attempt_id = self.started()
+        key = f"submit.{attempt_id}.{self.m2.id}"
+        early = self.write("submit", attempt_id, {"module_id": self.m2.id, "seq": 1, "answers": {str(self.q2[0]): "B"}}, key=key)
+        self.assertEqual((early["applied"], early["reason"]), (False, "module_not_active"))
+        self.assertFalse(AttemptIdempotencyKey.objects.filter(attempt_id=attempt_id, key=key).exists())
+        self.write("submit", attempt_id, {"module_id": self.m1.id, "seq": 1}, key=new_key("s"))
+        final = self.write("submit", attempt_id, {"module_id": self.m2.id, "seq": 1, "answers": {str(self.q2[0]): "B"}}, key=key)
+        self.assertEqual((final["applied"], final["transitioned_to"]), (True, "SCORING"))
+        self.assertEqual(TestAttempt.objects.get(pk=attempt_id).module_answers[str(self.m2.id)], {str(self.q2[0]): "B"})
+
+    def test_a_sync_that_wrote_nothing_is_not_remembered(self):
+        attempt_id = self.started()
+        key = f"sync.{attempt_id}.{self.m2.id}.1"
+        body = self.write("sync", attempt_id, {"module_id": self.m2.id, "seq": 1, "answers": {str(self.q2[0]): "C"}}, key=key)
+        self.assertFalse(body["applied"])
+        self.assertFalse(AttemptIdempotencyKey.objects.filter(attempt_id=attempt_id, key=key).exists())
+        self.write("submit", attempt_id, {"module_id": self.m1.id, "seq": 1}, key=new_key("s"))
+        retry = self.write("sync", attempt_id, {"module_id": self.m2.id, "seq": 1, "answers": {str(self.q2[0]): "C"}}, key=key)
+        self.assertTrue(retry["applied"])
+
     def test_a_module_1_submit_while_not_started_starts_then_hands_in(self):
         """The welcome screen's background `start` never landed; the student sat module 1
         offline. The submit is the proof: module 1 is kept, not thrown away."""

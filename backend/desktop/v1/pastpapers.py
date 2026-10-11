@@ -204,6 +204,24 @@ def _conflict(attempt_id: int, detail: str = "The attempt is no longer in that s
     return state_conflict(pastpaper_lite(fresh_pastpaper(attempt_id)), detail)
 
 
+def _is_future_target(attempt: TestAttempt, module_id: int) -> bool:
+    """Whether ``module_id`` is a module of this paper the attempt has not reached yet."""
+    target = (
+        Module.objects.filter(pk=module_id, practice_test_id=attempt.practice_test_id)
+        .values_list("module_order", flat=True)
+        .first()
+    )
+    if target is None:
+        return False
+    state = attempt.current_state
+    if state in (TestAttempt.STATE_NOT_STARTED, TestAttempt.STATE_ABANDONED):
+        return True
+    if state in ACTIVE:
+        live = Module.objects.filter(pk=attempt.current_module_id).values_list("module_order", flat=True).first()
+        return live is not None and int(target) > int(live)
+    return False
+
+
 # ── open ─────────────────────────────────────────────────────────────────────────────────
 def _resumable(user, practice_test_id: int) -> TestAttempt | None:
     """The sitting ``open`` continues: the active one, else the newest ABANDONED one newer
@@ -336,7 +354,9 @@ class PastpaperSyncView(PastpaperView):
         def compute(locked):
             current = TestAttempt.objects.get(pk=locked.pk)
             if current.current_state not in ACTIVE or current.current_module_id != body.module_id:
-                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE})
+                # Not remembered: nothing was written, so a retry under this key may be applied
+                # once the module it names is live (an outbox that sent it out of order).
+                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE}, store=False)
             question_ids = _module_question_ids(body.module_id)
             mid = str(body.module_id)
             merged = dict((current.module_answers or {}).get(mid) or {})
@@ -396,7 +416,12 @@ class PastpaperSubmitView(PastpaperView):
                     current.pk, body.module_id, current.current_module_id, current.current_state,
                 )
                 outcome = idem.Outcome(
-                    body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE, "transitioned_to": None}
+                    body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE, "transitioned_to": None},
+                    # A module already handed in: remember the no-op, so a retry can never end the
+                    # next module. A module NOT YET reached: forget it, so the same key goes
+                    # through once the earlier module lands (outbox order, or a sitting the
+                    # website abandoned that `open` will restore).
+                    store=not _is_future_target(current, body.module_id),
                 )
                 if healed_to_scoring:
                     outcome.after_commit.append(lambda: enqueue_scoring(attempt.pk, request))

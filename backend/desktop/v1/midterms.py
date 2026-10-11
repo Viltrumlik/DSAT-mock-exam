@@ -358,18 +358,20 @@ class MidtermSyncView(MidtermView):
         key = require_idempotency_key(request)
         body = parse_sync_body(request.data)
 
+        # A sync that writes nothing is never remembered: a retry under the same key may be
+        # applied once the module it names is live, and recomputing "late" can only say "late".
         def compute(locked):
             if locked.current_state not in RUNNING:
-                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE})
+                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE}, store=False)
             live_order = locked.current_module_order
             target_order = _order_of(locked, body.module_id)
             if target_order is None or target_order > live_order:
-                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE})
+                return idem.Outcome(body={"applied": False, "reason": REASON_MODULE_NOT_ACTIVE}, store=False)
             question_ids = _question_ids(locked, target_order)
             answers = body.answers_for(question_ids)
             if not _late_answers_accepted(locked, target_order=target_order):
                 _drop_late_payload(locked, endpoint="desktop_v1_sync", order=target_order, answers=answers)
-                return idem.Outcome(body={"applied": False, "reason": REASON_LATE})
+                return idem.Outcome(body={"applied": False, "reason": REASON_LATE}, store=False)
             if target_order == live_order:
                 applied = locked.autosave(answers=answers, flagged=body.flagged_for(question_ids))
             else:
@@ -378,7 +380,8 @@ class MidtermSyncView(MidtermView):
                 # module 2's now.
                 applied = locked.autosave(answers=answers, flagged=None)
             return idem.Outcome(
-                body={"applied": bool(applied), "reason": None if applied else REASON_MODULE_NOT_ACTIVE}
+                body={"applied": bool(applied), "reason": None if applied else REASON_MODULE_NOT_ACTIVE},
+                store=bool(applied),
             )
 
         outcome = idem.run(attempt=attempt, endpoint=idem.ENDPOINT_SYNC, key=key, compute=compute)
@@ -429,7 +432,9 @@ class MidtermSubmitView(MidtermView):
         def compute(locked):
             noop = {"applied": False, "reason": REASON_MODULE_NOT_ACTIVE, "transitioned_to": None}
             if locked.current_state not in RUNNING:
-                return idem.Outcome(body=noop)
+                # Handed in: remember the no-op. Not started yet: forget it, so the same key
+                # goes through once the sitting is running.
+                return idem.Outcome(body=noop, store=locked.current_state != STATE_NOT_STARTED)
             live_order = locked.current_module_order
             target_order = _order_of(locked, body.module_id)
             if target_order is None:
@@ -451,7 +456,10 @@ class MidtermSubmitView(MidtermView):
                         _drop_late_payload(
                             locked, endpoint="desktop_v1_submit_stale", order=target_order, answers=answers
                         )
-                return idem.Outcome(body=noop)
+                    return idem.Outcome(body=noop)
+                # A module not reached yet: forget the no-op, so the same key ends that module
+                # once it is live.
+                return idem.Outcome(body=noop, store=False)
             if _late_answers_accepted(locked):
                 moved = locked.submit(answers=answers, flagged=body.flagged_for(question_ids))
                 applied, reason = True, None
