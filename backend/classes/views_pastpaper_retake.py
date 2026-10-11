@@ -15,9 +15,16 @@ from .pastpaper_retake import reopened_papers
 
 class ReopenedPastpapersView(APIView):
     """``{"items": [{practice_test_id, assignment_id, assignment_title, classroom_id,
-    classroom_name, set_at, due_at}]}`` for the requesting student."""
+    classroom_name, set_at, due_at}], "results": <the same list>}`` for the requesting student.
+
+    The website reads ``items``. The released Windows app (0.1.0) reads ``results`` — it
+    shipped expecting the paginated-list key, so with ``items`` alone its "Assigned again"
+    state never appeared. Both keys carry the one list; neither may be dropped while either
+    client is in use.
+    """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response({"items": list(reopened_papers(request.user).values())})
+        rows = list(reopened_papers(request.user).values())
+        return Response({"items": rows, "results": rows})
