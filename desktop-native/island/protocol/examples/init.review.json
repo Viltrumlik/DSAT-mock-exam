@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "t": "init",
+  "mode": "review",
+  "kind": "midterm",
+  "subject": "math",
+  "overlays": "inline",
+  "zoom": 1.2,
+  "split": 0.5,
+  "highlighterOn": true,
+  "eliminatorOn": true,
+  "calcReservePx": 420
+}

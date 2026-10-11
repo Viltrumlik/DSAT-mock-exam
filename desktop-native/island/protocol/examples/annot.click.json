@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "t": "annot.click",
+  "annotId": "a-3",
+  "qid": 2001,
+  "container": "passage",
+  "rect": {
+    "x": 40,
+    "y": 120,
+    "w": 64,
+    "h": 20
+  },
+  "current": {
+    "color": "yellow"
+  }
+}

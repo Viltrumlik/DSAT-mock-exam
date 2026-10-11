@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "t": "annot.changed",
+  "qid": 2001,
+  "container": "passage",
+  "list": [
+    {
+      "start": 0,
+      "end": 15,
+      "kind": "highlight",
+      "color": "yellow"
+    },
+    {
+      "start": 120,
+      "end": 168,
+      "kind": "underline",
+      "underline": "dashed"
+    }
+  ]
+}

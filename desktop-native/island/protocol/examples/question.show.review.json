@@ -1,0 +1,20 @@
+{
+  "v": 1,
+  "t": "question.show",
+  "qid": 1002,
+  "index": 1,
+  "total": 22,
+  "answer": null,
+  "eliminated": [],
+  "flagged": false,
+  "annotations": {
+    "passage": [],
+    "question": [],
+    "choices": []
+  },
+  "review": {
+    "correct": "7/2, 3.5",
+    "studentAnswer": null,
+    "isCorrect": false
+  }
+}

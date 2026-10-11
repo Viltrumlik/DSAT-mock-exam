@@ -1,0 +1,31 @@
+{
+  "v": 1,
+  "t": "question.show",
+  "qid": 2001,
+  "index": 0,
+  "total": 27,
+  "answer": "B",
+  "eliminated": [
+    "C"
+  ],
+  "flagged": true,
+  "annotations": {
+    "passage": [
+      {
+        "start": 0,
+        "end": 15,
+        "kind": "highlight",
+        "color": "yellow"
+      },
+      {
+        "start": 120,
+        "end": 168,
+        "kind": "underline",
+        "underline": "dashed"
+      }
+    ],
+    "question": [],
+    "choices": []
+  },
+  "scrollTop": 0
+}

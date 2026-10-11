@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "t": "desmos.init",
+  "mode": "graphing",
+  "state": {
+    "version": 11,
+    "expressions": {
+      "list": [
+        {
+          "id": "1",
+          "latex": "y=x^2"
+        }
+      ]
+    }
+  }
+}
