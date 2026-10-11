@@ -1,0 +1,21 @@
+# desktop-native/native — the Rust half of the native Windows exam app.
+#
+#   crates/mastersat-native   cdylib `mastersat_native.dll` (+ rlib for tests): the C ABI in
+#                             ../include/mastersat_native.h, implemented exactly.
+#
+# The lockdown and the proof are NOT copied here: they are desktop/src-tauri/crates/{lockdown,proof},
+# shared by path with the 0.1.x Tauri shell until it is retired (architecture §5).
+#
+# Cargo.lock is committed on purpose: the DLL ships, and its CI must build exactly what was tested.
+[workspace]
+resolver = "2"
+members = ["crates/mastersat-native"]
+
+[profile.release]
+# The DLL is loaded by MasterSAT.exe; size matters more than build time (nothing is CPU-bound).
+# panic stays "unwind" (the default): every exported function catches panics at the boundary and
+# returns MS_ERR_PANIC — with panic = "abort" a bug would kill the student's exam window instead.
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = "debuginfo"

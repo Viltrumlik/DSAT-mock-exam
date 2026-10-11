@@ -1,0 +1,670 @@
+{
+  "schema": 1,
+  "generated_by": "desktop-native/tool/contracts/gen_v1_fixtures.py",
+  "now": "2026-10-11T09:00:00.000Z",
+  "content_hash": "sha256 over json.dumps(questions, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8'), prefixed 'sha256:'",
+  "fixtures": [
+    {
+      "file": "home.response.json",
+      "endpoint": "home",
+      "method": "GET",
+      "path": "/api/desktop/v1/home",
+      "kind": "response",
+      "model": "HomeResponse",
+      "status": 200,
+      "headers": {
+        "ETag": "\"sha256:<hex of body>\""
+      },
+      "note": "Send If-None-Match with the cached ETag; an unchanged home is 304 with an empty body."
+    },
+    {
+      "file": "home.response.update_available.json",
+      "endpoint": "home",
+      "method": "GET",
+      "path": "/api/desktop/v1/home",
+      "kind": "response",
+      "model": "HomeResponse",
+      "status": 200
+    },
+    {
+      "file": "pastpaper_open.request.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "request",
+      "model": "PastpaperOpenRequest"
+    },
+    {
+      "file": "pastpaper_open.response.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "response",
+      "model": "ExamBundle",
+      "status": 200,
+      "note": "practice_test_id=52; fresh attempt created with start:false (Welcome screen pending)."
+    },
+    {
+      "file": "pastpaper_open.request.resume.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "request",
+      "model": "PastpaperOpenRequest"
+    },
+    {
+      "file": "pastpaper_open.response.resume.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "response",
+      "model": "ExamBundle",
+      "status": 200,
+      "note": "practice_test_id=51; resumes attempt 9124 in module 1 with saved answers, a flag and highlights."
+    },
+    {
+      "file": "pastpaper_open.request.cached.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "request",
+      "model": "PastpaperOpenRequest"
+    },
+    {
+      "file": "pastpaper_open.response.cached.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "response",
+      "model": "ExamBundle",
+      "status": 200,
+      "note": "Every `have` hash matched: questions:null, unchanged:true. Media is still listed (fresh URLs)."
+    },
+    {
+      "file": "pastpaper_open.response.deferred.json",
+      "endpoint": "pastpaper_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/{practice_test_id}/open",
+      "kind": "response",
+      "model": "ExamBundle",
+      "status": 200,
+      "note": "DESKTOP_PASTPAPER_M2_UPFRONT=False: module 2 deferred; it arrives as submit.next_module."
+    },
+    {
+      "file": "pastpaper_start.response.json",
+      "endpoint": "pastpaper_start",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/start",
+      "kind": "response",
+      "model": "AttemptEnvelope",
+      "status": 200,
+      "headers": {
+        "Idempotency-Key": "start.{attempt_id}"
+      },
+      "note": "Request body is empty ({})."
+    },
+    {
+      "file": "pastpaper_sync.request.json",
+      "endpoint": "pastpaper_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/sync",
+      "kind": "request",
+      "model": "SyncRequest",
+      "headers": {
+        "Idempotency-Key": "sync.{attempt_id}.{module_id}.{seq}"
+      }
+    },
+    {
+      "file": "pastpaper_sync.response.json",
+      "endpoint": "pastpaper_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/sync",
+      "kind": "response",
+      "model": "WriteOutcome",
+      "status": 200
+    },
+    {
+      "file": "pastpaper_sync.response.not_active.json",
+      "endpoint": "pastpaper_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/sync",
+      "kind": "response",
+      "model": "WriteOutcome",
+      "status": 200,
+      "note": "A late sync for module 1 after module 2 began: nothing written."
+    },
+    {
+      "file": "pastpaper_submit.request.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "request",
+      "model": "SyncRequest",
+      "headers": {
+        "Idempotency-Key": "submit.{attempt_id}.{module_id}"
+      }
+    },
+    {
+      "file": "pastpaper_submit.response.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200,
+      "note": "Module 1 submitted; module 2 content was already sent up front."
+    },
+    {
+      "file": "pastpaper_submit.request.final.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "request",
+      "model": "SyncRequest",
+      "headers": {
+        "Idempotency-Key": "submit.{attempt_id}.{module_id}"
+      }
+    },
+    {
+      "file": "pastpaper_submit.response.final.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200,
+      "note": "Module 2 submitted: scoring enqueued; poll result."
+    },
+    {
+      "file": "pastpaper_submit.response.noop.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200,
+      "note": "Duplicate submit for a module that is no longer live (new key or lost reply): a no-op success."
+    },
+    {
+      "file": "pastpaper_submit.response.deferred.json",
+      "endpoint": "pastpaper_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200,
+      "note": "Only when module 2 was deferred at open."
+    },
+    {
+      "file": "pastpaper_pause.response.json",
+      "endpoint": "pastpaper_pause",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/pause",
+      "kind": "response",
+      "model": "AttemptEnvelope",
+      "status": 200,
+      "note": "No idempotency key; request body {}."
+    },
+    {
+      "file": "pastpaper_resume.response.json",
+      "endpoint": "pastpaper_resume",
+      "method": "POST",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/resume",
+      "kind": "response",
+      "model": "AttemptEnvelope",
+      "status": 200,
+      "note": "No idempotency key; request body {}."
+    },
+    {
+      "file": "pastpaper_result.response.scoring.json",
+      "endpoint": "pastpaper_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/result",
+      "kind": "response",
+      "model": "PastpaperResult",
+      "status": 200
+    },
+    {
+      "file": "pastpaper_result.response.completed.json",
+      "endpoint": "pastpaper_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/result",
+      "kind": "response",
+      "model": "PastpaperResult",
+      "status": 200,
+      "note": "No ?have= sent, so content for both modules is included (review content)."
+    },
+    {
+      "file": "pastpaper_result.response.completed_cached.json",
+      "endpoint": "pastpaper_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/pastpapers/attempts/{id}/result",
+      "kind": "response",
+      "model": "PastpaperResult",
+      "status": 200,
+      "note": "?have=311:sha256:…,312:sha256:… matched: content questions are null; the app uses its cache."
+    },
+    {
+      "file": "midterm_prepare.request.json",
+      "endpoint": "midterm_prepare",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/{midterm_id}/prepare",
+      "kind": "request",
+      "model": "MidtermPrepareRequest"
+    },
+    {
+      "file": "midterm_prepare.response.json",
+      "endpoint": "midterm_prepare",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/{midterm_id}/prepare",
+      "kind": "response",
+      "model": "MidtermPrepareResponse",
+      "status": 200,
+      "note": "No code sent yet: the app shows the code screen."
+    },
+    {
+      "file": "midterm_prepare.request.code.json",
+      "endpoint": "midterm_prepare",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/{midterm_id}/prepare",
+      "kind": "request",
+      "model": "MidtermPrepareRequest"
+    },
+    {
+      "file": "midterm_prepare.response.verified.json",
+      "endpoint": "midterm_prepare",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/{midterm_id}/prepare",
+      "kind": "response",
+      "model": "MidtermPrepareResponse",
+      "status": 200
+    },
+    {
+      "file": "midterm_prepare.response.code_incorrect.json",
+      "endpoint": "midterm_prepare",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/{midterm_id}/prepare",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 403
+    },
+    {
+      "file": "midterm_challenge.response.json",
+      "endpoint": "midterm_challenge",
+      "method": "POST",
+      "path": "/api/midterms/attempts/{id}/desktop_challenge/",
+      "kind": "response",
+      "model": "LockdownChallenge",
+      "status": 200,
+      "note": "Existing endpoint. Request body {}."
+    },
+    {
+      "file": "midterm_session.request.json",
+      "endpoint": "midterm_session",
+      "method": "POST",
+      "path": "/api/midterms/attempts/{id}/desktop_session/",
+      "kind": "request",
+      "model": "LockdownSessionRequest",
+      "note": "`precheck` is ms_precheck_json() verbatim (never re-serialised); mac = ms_prove(...)."
+    },
+    {
+      "file": "midterm_session.response.json",
+      "endpoint": "midterm_session",
+      "method": "POST",
+      "path": "/api/midterms/attempts/{id}/desktop_session/",
+      "kind": "response",
+      "model": "LockdownSession",
+      "status": 200
+    },
+    {
+      "file": "midterm_open.request.json",
+      "endpoint": "midterm_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/open",
+      "kind": "request",
+      "model": "MidtermOpenRequest",
+      "headers": {
+        "X-Lockdown-Session": "{lockdown_session}"
+      }
+    },
+    {
+      "file": "midterm_open.response.json",
+      "endpoint": "midterm_open",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/open",
+      "kind": "response",
+      "model": "ExamBundle",
+      "status": 200,
+      "note": "Live module only; image URLs live 15 minutes; content is never written to disk."
+    },
+    {
+      "file": "midterm_sync.request.json",
+      "endpoint": "midterm_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/sync",
+      "kind": "request",
+      "model": "SyncRequest",
+      "headers": {
+        "X-Lockdown-Session": "{lockdown_session}",
+        "Idempotency-Key": "sync.{attempt_id}.{module_id}.{seq}"
+      }
+    },
+    {
+      "file": "midterm_sync.response.json",
+      "endpoint": "midterm_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/sync",
+      "kind": "response",
+      "model": "WriteOutcome",
+      "status": 200,
+      "note": "Also the 15 s heartbeat: same body even with no changes."
+    },
+    {
+      "file": "midterm_sync.response.late.json",
+      "endpoint": "midterm_sync",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/sync",
+      "kind": "response",
+      "model": "WriteOutcome",
+      "status": 200,
+      "note": "More than 300 s after the module deadline: nothing banked."
+    },
+    {
+      "file": "midterm_submit.request.json",
+      "endpoint": "midterm_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/submit",
+      "kind": "request",
+      "model": "SyncRequest",
+      "headers": {
+        "X-Lockdown-Session": "{lockdown_session}",
+        "Idempotency-Key": "submit.{attempt_id}.{module_id}"
+      }
+    },
+    {
+      "file": "midterm_submit.response.not_expired.json",
+      "endpoint": "midterm_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/submit",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 409,
+      "note": "Checked before the idempotency layer, never cached: retry after retry_after_ms + 250."
+    },
+    {
+      "file": "midterm_submit.response.json",
+      "endpoint": "midterm_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200,
+      "note": "Module 2 arrives here (content + 15-minute image list)."
+    },
+    {
+      "file": "midterm_submit.response.final.json",
+      "endpoint": "midterm_submit",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/submit",
+      "kind": "response",
+      "model": "SubmitOutcome",
+      "status": 200
+    },
+    {
+      "file": "midterm_offscreen.request.json",
+      "endpoint": "midterm_offscreen",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/offscreen",
+      "kind": "request",
+      "model": "OffscreenRequest",
+      "headers": {
+        "X-Lockdown-Session": "{lockdown_session}",
+        "Idempotency-Key": "off.{attempt_id}.{event_uuid}"
+      },
+      "note": "The body is informational; the server counts one strike per idempotency key."
+    },
+    {
+      "file": "midterm_offscreen.response.json",
+      "endpoint": "midterm_offscreen",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/offscreen",
+      "kind": "response",
+      "model": "OffscreenOutcome",
+      "status": 200
+    },
+    {
+      "file": "midterm_offscreen.response.terminated.json",
+      "endpoint": "midterm_offscreen",
+      "method": "POST",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/offscreen",
+      "kind": "response",
+      "model": "OffscreenOutcome",
+      "status": 200,
+      "note": "Third strike: the sitting ends on the server immediately."
+    },
+    {
+      "file": "midterm_result.response.scoring.json",
+      "endpoint": "midterm_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/result",
+      "kind": "response",
+      "model": "MidtermResult",
+      "status": 200
+    },
+    {
+      "file": "midterm_result.response.released.json",
+      "endpoint": "midterm_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/result",
+      "kind": "response",
+      "model": "MidtermResult",
+      "status": 200
+    },
+    {
+      "file": "midterm_result.response.awaiting_release.json",
+      "endpoint": "midterm_result",
+      "method": "GET",
+      "path": "/api/desktop/v1/midterms/attempts/{id}/result",
+      "kind": "response",
+      "model": "MidtermResult",
+      "status": 200,
+      "note": "Classroom midterm before the teacher publishes results."
+    },
+    {
+      "file": "media.response.json",
+      "endpoint": "media",
+      "method": "GET",
+      "path": "/api/desktop/v1/attempts/{kind}/{id}/media",
+      "kind": "response",
+      "model": "MediaResponse",
+      "status": 200,
+      "note": "kind is pastpaper|midterm; midterm needs X-Lockdown-Session."
+    },
+    {
+      "file": "auth_exchange.request.json",
+      "endpoint": "auth_exchange",
+      "method": "POST",
+      "path": "/api/desktop/auth/exchange/",
+      "kind": "request",
+      "model": "AuthExchangeRequest"
+    },
+    {
+      "file": "auth_exchange.response.json",
+      "endpoint": "auth_exchange",
+      "method": "POST",
+      "path": "/api/desktop/auth/exchange/",
+      "kind": "response",
+      "model": "AuthTokens",
+      "status": 200
+    },
+    {
+      "file": "auth_refresh.request.json",
+      "endpoint": "auth_refresh",
+      "method": "POST",
+      "path": "/api/auth/refresh/",
+      "kind": "request",
+      "model": "RefreshRequest"
+    },
+    {
+      "file": "auth_refresh.response.json",
+      "endpoint": "auth_refresh",
+      "method": "POST",
+      "path": "/api/auth/refresh/",
+      "kind": "response",
+      "model": "AuthTokens",
+      "status": 200,
+      "note": "Rotation: the old refresh is revoked (60 s lost-reply grace). Always store the new one."
+    },
+    {
+      "file": "annotation_write.request.json",
+      "endpoint": "annotation_write",
+      "method": "PUT",
+      "path": "/api/annotations/write/",
+      "kind": "request",
+      "model": "AnnotationWriteRequest",
+      "note": "204 No Content. Midterms use ref \"mt-<attempt_id>\"."
+    },
+    {
+      "file": "question_report.request.json",
+      "endpoint": "question_report",
+      "method": "POST",
+      "path": "/api/question-reports/reports/",
+      "kind": "request",
+      "model": "QuestionReportRequest",
+      "headers": {
+        "Idempotency-Key": "report.{uuid}"
+      }
+    },
+    {
+      "file": "question_report.response.json",
+      "endpoint": "question_report",
+      "method": "POST",
+      "path": "/api/question-reports/reports/",
+      "kind": "response",
+      "model": "QuestionReportResponse",
+      "status": 201
+    },
+    {
+      "file": "question_report.response.deduped.json",
+      "endpoint": "question_report",
+      "method": "POST",
+      "path": "/api/question-reports/reports/",
+      "kind": "response",
+      "model": "QuestionReportResponse",
+      "status": 200
+    },
+    {
+      "file": "error.400.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/desktop/v1/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 400
+    },
+    {
+      "file": "error.401.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 401,
+      "note": "Refresh once, then retry the request with the new access token."
+    },
+    {
+      "file": "error.403.lockdown.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/desktop/v1/midterms/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 403,
+      "note": "Lockdown refusals keep the existing shape: reason + desktop_required (no `code`)."
+    },
+    {
+      "file": "error.404.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/desktop/v1/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 404
+    },
+    {
+      "file": "error.409.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/desktop/v1/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 409
+    },
+    {
+      "file": "error.426.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 426,
+      "note": "From mobile.middleware for X-MasterSAT-Client: windows/<semver> below the policy minimum."
+    },
+    {
+      "file": "error.429.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 429,
+      "headers": {
+        "Retry-After": "30"
+      }
+    },
+    {
+      "file": "error.503.json",
+      "endpoint": "*",
+      "method": "*",
+      "path": "/api/desktop/v1/*",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 503,
+      "note": "DESKTOP_V1_ENABLED=False."
+    }
+  ],
+  "media": [
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+      "file": "media/question_images/math/2025-10-us-a/m1-q4-graph.png"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-a.png",
+      "file": "media/question_images/math/2025-10-us-a/m1-q6-a.png"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-b.png",
+      "file": "media/question_images/math/2025-10-us-a/m1-q6-b.png"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-c.png",
+      "file": "media/question_images/math/2025-10-us-a/m1-q6-c.png"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-d.png",
+      "file": "media/question_images/math/2025-10-us-a/m1-q6-d.png"
+    },
+    {
+      "key": "question_images/midterm/2026-10/m1-q3-circle.png",
+      "file": "media/question_images/midterm/2026-10/m1-q3-circle.png"
+    },
+    {
+      "key": "question_images/midterm/2026-10/m2-q3-scatter.png",
+      "file": "media/question_images/midterm/2026-10/m2-q3-scatter.png"
+    },
+    {
+      "key": "question_images/rw/2025-10-us-a/m1-q6-chart.png",
+      "file": "media/question_images/rw/2025-10-us-a/m1-q6-chart.png"
+    }
+  ]
+}

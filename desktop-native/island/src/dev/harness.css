@@ -1,0 +1,166 @@
+/* dev.html only: the harness chrome around the islands. Nothing here reaches the build. */
+:root {
+  --ink: #0f172a;
+  --muted: #64748b;
+  --line: #e2e8f0;
+  --accent: #253985;
+  --bg: #f8fafc;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: var(--ink);
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+}
+body {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas: "bar log" "stage log" "status log";
+}
+.bar {
+  grid-area: bar;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+.bar .group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.bar .label {
+  color: var(--muted);
+  margin-right: 2px;
+}
+.bar button,
+.desmos-head button,
+.native-toolbar button {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 6px;
+  padding: 3px 8px;
+  color: var(--ink);
+}
+.bar button[aria-pressed="true"],
+.desmos-head button[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.stage {
+  grid-area: stage;
+  position: relative;
+  min-height: 0;
+  border-top: 3px solid transparent;
+  border-image: repeating-linear-gradient(90deg, #b91c1c 0 48px, transparent 48px 54px, #ca8a04 54px 102px, transparent 102px 108px, #15803d 108px 156px, transparent 156px 162px, #0f172a 162px 210px, transparent 210px 216px) 3;
+}
+.stage > iframe#content {
+  border: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #fff;
+}
+.status {
+  grid-area: status;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 6px 12px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+  color: var(--muted);
+}
+.status strong {
+  color: var(--ink);
+}
+.log {
+  grid-area: log;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: #0b1020;
+  color: #cbd5e1;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 6px 8px;
+}
+.log div {
+  white-space: pre-wrap;
+  word-break: break-all;
+  border-bottom: 1px solid #1e293b;
+  padding: 2px 0;
+}
+.log .to_web {
+  color: #93c5fd;
+}
+.log .to_native {
+  color: #86efac;
+}
+.log .bad,
+.log .error {
+  color: #fca5a5;
+}
+.native-toolbar {
+  position: absolute;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+}
+.native-toolbar .swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  padding: 0;
+}
+.native-toolbar .on {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.desmos-panel {
+  position: absolute;
+  left: 16px;
+  top: 16px;
+  width: 460px;
+  height: 520px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #94a3b8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.25);
+  z-index: 20;
+}
+.desmos-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  background: #1e293b;
+  color: #fff;
+}
+.desmos-head .grow {
+  flex: 1;
+}
+.desmos-panel > iframe {
+  flex: 1;
+  border: 0;
+}
+/* `hidden` must win over the display rules above. */
+[hidden] {
+  display: none !important;
+}

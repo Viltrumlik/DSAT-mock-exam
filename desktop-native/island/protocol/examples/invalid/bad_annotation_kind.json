@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "t": "annot.changed",
+  "qid": 1,
+  "container": "passage",
+  "list": [
+    {
+      "start": 0,
+      "end": 1,
+      "kind": "bold"
+    }
+  ]
+}

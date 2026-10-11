@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "applied": true,
+  "reason": null,
+  "attempt": {
+    "id": 5521,
+    "kind": "midterm",
+    "ref_id": 14,
+    "state": "MODULE_1_ACTIVE",
+    "version": 4,
+    "module": {
+      "id": 401,
+      "order": 1,
+      "duration_ms": 2100000
+    },
+    "module_ids": [
+      401,
+      402
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:10:00.000Z",
+      "deadline_at": "2026-10-11T09:35:00.000Z",
+      "remaining_ms": 1500000,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": {
+      "offscreen_violations": 0,
+      "offscreen_limit": 3,
+      "offscreen_grace_seconds": 3,
+      "terminated_reason": null,
+      "desktop_required": true,
+      "late_grace_seconds": 300
+    }
+  }
+}

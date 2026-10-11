@@ -15,7 +15,9 @@
 //! The command names and payloads below ARE the contract in native.ts; the proof arithmetic is
 //! the contract in `backend/desktop/proof.py`. Changing either side alone breaks a real exam.
 
-mod lockdown;
+// The lockdown is its own crate (crates/lockdown, the former src/lockdown.rs moved verbatim) so
+// the native rewrite's mastersat_native.dll shares it; `lockdown::` here is that crate.
+use mastersat_lockdown as lockdown;
 
 // The proof is its own crate (crates/proof) so its shared vectors can be tested without Tauri;
 // `proof::` here is that crate.

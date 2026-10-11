@@ -1,0 +1,14 @@
+{
+  "scope": "exam",
+  "ref": "9124",
+  "target_id": 2001,
+  "container": "passage",
+  "data": [
+    {
+      "start": 0,
+      "end": 15,
+      "kind": "highlight",
+      "color": "yellow"
+    }
+  ]
+}

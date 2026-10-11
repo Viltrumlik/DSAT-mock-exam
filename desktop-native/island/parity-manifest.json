@@ -1,0 +1,284 @@
+{
+  "$comment": "Website files the island imports, ports, copies CSS from, or runs tests from, with the git blob hash (git hash-object) of the version its port was reviewed against. `npm run parity` fails when one changes; re-review the island file(s) listed, then `npm run parity:update`. Paths are relative to repo_root.",
+  "repo_root": "../..",
+  "website_commit": "98d1e86693a5f0b533a603acae887f010a9a6ad2",
+  "sources": [
+    {
+      "path": "frontend/src/features/testing-simulation/tools/highlight/annotations.ts",
+      "use": "imported",
+      "blob": "5be998229e195dc0de6ff5fe5482845efefda5e7",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "offsets, merge rules, painting"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/richContent.ts",
+      "use": "imported",
+      "blob": "520448c74ed0bcf18fde823a087950017274ab60",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "renderExamHtml: prepareRichText + KaTeX"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/options.ts",
+      "use": "imported",
+      "blob": "93c1705ca490be471d49486d47de9b87ac0b513a",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "parseOptions"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/questionKind.ts",
+      "use": "imported",
+      "blob": "c93a1dd8a5b7aedf3cea0e8054453ceb875617cb",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "isStudentProducedResponse"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/image.ts",
+      "use": "imported",
+      "blob": "e4262517590f0ad156f29a0e140936d954b47b9c",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "resolveImageUrl (legacy option `image` URLs)"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/types/index.ts",
+      "use": "imported",
+      "blob": "c0c324d13f9b14e2d426e717399ec6b108146f54",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "ExamQuestion (types only)"
+    },
+    {
+      "path": "frontend/src/components/MathText.tsx",
+      "use": "imported",
+      "blob": "3bb45e89d43545a82545cdf7d9d91116d6689b34",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "prepareRichText, via richContent.ts; its React component is shimmed out of the bundle"
+    },
+    {
+      "path": "frontend/src/lib/mathRender.ts",
+      "use": "imported",
+      "blob": "65589069ebd54a12655c8cd9669fe989586d4b0f",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "renderMathInString, via richContent.ts"
+    },
+    {
+      "path": "frontend/src/lib/cn.ts",
+      "use": "imported",
+      "blob": "f36100727440e0b1ef00dcc5262f469c84d51aac",
+      "island": [
+        "src/website/index.ts"
+      ],
+      "note": "imported by MathText.tsx"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/PassagePane.tsx",
+      "use": "ported",
+      "blob": "bc5caf9a81440f0ed2f1da3ee1e1477a108c9d29",
+      "island": [
+        "src/ported/PassagePane.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/AnswerPane.tsx",
+      "use": "ported",
+      "blob": "163f991ea1389e02ac4099ab7a447310361bee49",
+      "island": [
+        "src/ported/AnswerPane.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/ChoiceList.tsx",
+      "use": "ported",
+      "blob": "c38e6211f2f912178d814b529c8563b12532e0db",
+      "island": [
+        "src/ported/ChoiceList.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/SprInput.tsx",
+      "use": "ported",
+      "blob": "e4a1b443f6580358ec69a31eee46d63ca39c51e1",
+      "island": [
+        "src/ported/SprInput.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/StudentProducedResponseGuide.tsx",
+      "use": "ported",
+      "blob": "082e14317b093c5c256cd95fbfb657d48c021aa5",
+      "island": [
+        "src/ported/StudentProducedResponseGuide.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/components/SatColorRule.tsx",
+      "use": "ported",
+      "blob": "39e00bc685845a9141937d464a22de66f6236f6c",
+      "island": [
+        "src/ported/SatColorRule.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/components/SafeHtml.tsx",
+      "use": "ported",
+      "blob": "c82de593a41eb7b17bd7f57570c945ca3cf78ae1",
+      "island": [
+        "src/ported/safeHtml.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/highlight/useAnnotator.ts",
+      "use": "ported",
+      "blob": "9257af458b8f6aa503fae58e4cc8f0828c3bf8d1",
+      "island": [
+        "src/ported/annotator.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/highlight/AnnotationToolbar.tsx",
+      "use": "ported",
+      "blob": "d8231a8c2d58c4fb2bffa101dd27d23caa8c376d",
+      "island": [
+        "src/ported/AnnotationToolbar.ts"
+      ],
+      "note": "overlays:inline only"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/useKeyboardShortcuts.ts",
+      "use": "ported",
+      "blob": "f0175ebdb3241fd3f8dd33464ddafa0e6dd7d7a3",
+      "island": [
+        "src/content/keys.ts"
+      ],
+      "note": "forwarded keys + guards"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/pages/ExamRunnerPage.tsx",
+      "use": "ported",
+      "blob": "4469e087bbe8b78d8868f2eb3401f91b39c57f26",
+      "island": [
+        "src/content/card.ts",
+        "src/content/island.ts"
+      ],
+      "note": "<main> layout, divider drag 28-72%, SPR column, calcReserve rule, .ts-annotating"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/hooks/useAnswers.ts",
+      "use": "ported",
+      "blob": "e2c6e3f8b59fe46e6c6f1b403954be048c952acf",
+      "island": [
+        "src/content/island.ts"
+      ],
+      "note": "select always sets; eliminating the chosen option deselects it"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/calculator/loadDesmos.ts",
+      "use": "ported",
+      "blob": "b028b67bf3d9f8402dbef29fef55440a0a7b8c36",
+      "island": [
+        "src/desmos/island.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/calculator/DesmosCalculator.tsx",
+      "use": "ported",
+      "blob": "90f418ce06564feea607dcfb24992feb24ab44b8",
+      "island": [
+        "src/desmos/island.ts"
+      ],
+      "note": "instance options, loading overlay"
+    },
+    {
+      "path": "frontend/src/app/review/[attemptId]/page.tsx",
+      "use": "ported",
+      "blob": "a0910748630ec84526594dc94c4e1cca143329e6",
+      "island": [
+        "src/ported/AnswerPane.ts",
+        "src/ported/ChoiceList.ts"
+      ],
+      "note": "review-mode marking colours, SPR answer boxes, explanation block"
+    },
+    {
+      "path": "frontend/src/app/globals.css",
+      "use": "css",
+      "blob": "3d54a26033e72a16482cf3b138847b799f85b2a8",
+      "island": [
+        "src/content/runner.generated.css"
+      ],
+      "note": "regenerate with node scripts/runner-css.mjs"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/__tests__/annotations.test.ts",
+      "use": "test",
+      "blob": "284dab2338ed72db47bf2572b6f34cc3dfc90c82",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/tools/__tests__/reviewOffsetParity.test.ts",
+      "use": "test",
+      "blob": "b8df353a219d6b9cda8ab4fed1fe3cf7d4fc34ae",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/__tests__/richContent.test.ts",
+      "use": "test",
+      "blob": "6acb912a59116fd710187bf8917d490c1940bb65",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/__tests__/utils.test.ts",
+      "use": "test",
+      "blob": "1c55d5bf13d2a4d828a3a585449ece60655e597c",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ]
+    },
+    {
+      "path": "frontend/src/lib/assessmentText.tsx",
+      "use": "test",
+      "blob": "ed7926303f71ecf76f5851d9c77d5f627a965a72",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ],
+      "note": "imported by reviewOffsetParity.test.ts"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/time.ts",
+      "use": "test",
+      "blob": "72c32486ae1cf25c4c68d0de003ecf173ba392a2",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ],
+      "note": "imported by utils.test.ts"
+    },
+    {
+      "path": "frontend/src/features/testing-simulation/utils/idempotency.ts",
+      "use": "test",
+      "blob": "973cec3b989f7bb6c8dce1b887e941a00bbe5f33",
+      "island": [
+        "test/website/website-tests.test.ts"
+      ],
+      "note": "imported by utils.test.ts"
+    }
+  ]
+}

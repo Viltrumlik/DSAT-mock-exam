@@ -1,0 +1,118 @@
+{
+  "schema": 1,
+  "applied": true,
+  "reason": null,
+  "transitioned_to": "MODULE_2_ACTIVE",
+  "attempt": {
+    "id": 9123,
+    "kind": "pastpaper",
+    "ref_id": 52,
+    "state": "MODULE_2_ACTIVE",
+    "version": 7,
+    "module": {
+      "id": 302,
+      "order": 2,
+      "duration_ms": 2100000
+    },
+    "module_ids": [
+      301,
+      302
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:30:00.000Z",
+      "deadline_at": "2026-10-11T10:05:00.000Z",
+      "remaining_ms": 2100000,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": null
+  },
+  "next_module": {
+    "id": 302,
+    "order": 2,
+    "time_limit_minutes": 35,
+    "question_count": 4,
+    "content_hash": "sha256:de99dec61a1feb2b996ea08164d0c25fb0ea0860521e43f9324ac320f4669f13",
+    "unchanged": false,
+    "deferred": false,
+    "questions": [
+      {
+        "id": 1011,
+        "order": 1,
+        "question_type": "MATH",
+        "is_math_input": true,
+        "question_text": "<p>If $\\frac{2}{7}k = 1$, what is the value of $k$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": null
+      },
+      {
+        "id": 1012,
+        "order": 2,
+        "question_type": "MATH",
+        "is_math_input": false,
+        "question_text": "<p>In the $xy$-plane, line $\\ell$ passes through the points $(0, 4)$ and $(2, 0)$. What is the slope of line $\\ell$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": {
+          "A": {
+            "text": "$-2$",
+            "image_key": null
+          },
+          "B": {
+            "text": "$-\\frac{1}{2}$",
+            "image_key": null
+          },
+          "C": {
+            "text": "$\\frac{1}{2}$",
+            "image_key": null
+          },
+          "D": {
+            "text": "$2$",
+            "image_key": null
+          }
+        }
+      },
+      {
+        "id": 1013,
+        "order": 3,
+        "question_type": "MATH",
+        "is_math_input": false,
+        "question_text": "<p>Which expression is equivalent to $\\sqrt{50x^2}$ for $x > 0$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": {
+          "A": {
+            "text": "$5x\\sqrt{2}$",
+            "image_key": null
+          },
+          "B": {
+            "text": "$25x$",
+            "image_key": null
+          },
+          "C": {
+            "text": "$2x\\sqrt{5}$",
+            "image_key": null
+          },
+          "D": {
+            "text": "$10x$",
+            "image_key": null
+          }
+        }
+      },
+      {
+        "id": 1014,
+        "order": 4,
+        "question_type": "MATH",
+        "is_math_input": true,
+        "question_text": "<p>What is the solution to the equation $4(y + 3) = 2y + 6$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": null
+      }
+    ]
+  },
+  "media": [],
+  "result": null
+}

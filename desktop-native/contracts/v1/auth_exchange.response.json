@@ -1,0 +1,5 @@
+{
+  "ok": true,
+  "access": "eyJhbGciOiJIUzI1NiJ9.fixture-access.sig",
+  "refresh": "eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig"
+}

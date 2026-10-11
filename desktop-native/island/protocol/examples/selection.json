@@ -1,0 +1,16 @@
+{
+  "v": 1,
+  "t": "selection",
+  "selectionId": "s-17",
+  "qid": 2001,
+  "container": "passage",
+  "start": 12,
+  "end": 48,
+  "text": "spent three seasons recording",
+  "rect": {
+    "x": 96.5,
+    "y": 212,
+    "w": 180.25,
+    "h": 22
+  }
+}

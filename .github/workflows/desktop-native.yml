@@ -1,0 +1,451 @@
+name: desktop-native (Windows exam app)
+
+# The fully native Windows exam app in desktop-native/ (Flutter + two WebView2
+# islands + mastersat_native.dll). Architecture: native-rewrite/design-panel.
+#
+#  macos   tier A/B/C: generated-file drift, protocol tests, the C header,
+#          `cargo test` (the dylib the FFI bridge test then loads), flutter
+#          analyze + test (app and ms_webview2; goldens are recorded on macOS),
+#          the runner's pure C++ rules, the island's typecheck / tests / build,
+#          the Playwright picture comparison, and the website-parity check.
+#  windows the INTEGRATED build on windows-latest:
+#          * `cargo test` (tests/windows.rs, the Windows path of c_abi.rs) and the
+#            Dart FFI bridge test against the real debug DLL;
+#          * mastersat_native.dll --release (x86_64-pc-windows-msvc, `updates`,
+#            the DESKTOP_PROOF_KEY secret embedded);
+#          * the island built from this branch (data\island);
+#          * `flutter build windows --release` linking the DLL (MS_LINK_NATIVE=ON);
+#          * S0 diagnostics + the S1 harness on that build, the Velopack
+#            installer, its size against the 26 MB budget, an install/uninstall
+#            smoke test, and `flutter test --exclude-tags golden`.
+#          Artifacts: MasterSAT-Setup (Setup.exe), MasterSAT-full-nupkg,
+#          MasterSAT-symbols (--split-debug-info), s0-diagnostics.
+#
+# Nothing here deploys anything, and nothing here may reach production: the
+# Windows job maps mastersat.uz to 0.0.0.0 before anything runs.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "desktop-native/**"
+      # mastersat_native.dll builds the lockdown and proof crates by path.
+      - "desktop/src-tauri/crates/**"
+      - ".github/workflows/desktop-native.yml"
+  pull_request:
+    paths:
+      - "desktop-native/**"
+      - "desktop/src-tauri/crates/**"
+      - ".github/workflows/desktop-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: "true"
+  # Setup.exe must stay at or under this many bytes. Architecture §10 S4 said 25 MB; the owner
+  # raised it to 26 MB on 2026-10-12 (the wired 0.2.0 is 25.77 MB). Enforced: over budget fails.
+  INSTALLER_BUDGET_BYTES: "26000000"
+
+jobs:
+  macos:
+    name: analyze + test (macOS)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned versions
+        run: |
+          echo "FLUTTER_VERSION=$(tr -d '[:space:]' < desktop-native/.flutter-version)" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(tr -d '[:space:]' < desktop-native/VERSION)" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-native/native
+
+      - name: Generated files are up to date
+        run: desktop-native/tool/check_generated.sh
+
+      - name: Island protocol tests (TypeScript)
+        run: node --test desktop-native/island/protocol/protocol.test.ts
+
+      - name: The C header compiles (C99)
+        run: |
+          printf '#include "mastersat_native.h"\nint main(void){return MS_OK;}\n' |
+            clang -std=c99 -Wall -Wextra -Werror -pedantic -fsyntax-only -I desktop-native/native/include -x c -
+
+      # Debug build: embeds the development key, which the FFI test's proof vector expects.
+      # DESKTOP_PROOF_KEY is deliberately NOT in this step's environment.
+      - name: cargo test + the debug dylib the FFI test loads
+        working-directory: desktop-native/native
+        run: |
+          cargo test --locked --no-fail-fast
+          # `cargo test` links the tests against the rlib; only `cargo build` writes the cdylib.
+          cargo build --locked -p mastersat-native
+          ls -l target/debug/libmastersat_native.dylib
+
+      - name: flutter analyze + test (app)
+        working-directory: desktop-native/app
+        env:
+          # The FFI bridge test must run against the dylib built above, never skip.
+          MASTERSAT_NATIVE_LIB: ${{ github.workspace }}/desktop-native/native/target/debug/libmastersat_native.dylib
+          MASTERSAT_NATIVE_REQUIRE: "1"
+        run: |
+          flutter --version
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: flutter analyze + test (ms_webview2 plugin)
+        working-directory: desktop-native/plugins/ms_webview2
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Icons carry every frame
+        run: python3 desktop-native/packaging/icon/make_icon.py --check
+
+      - name: Runner launch rules (C++)
+        working-directory: desktop-native/app/windows/runner/test
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -I.. launch_policy_test.cc ../launch_policy.cpp -o "$RUNNER_TEMP/launch_policy_test"
+          "$RUNNER_TEMP/launch_policy_test"
+
+      # `npm run check` = typecheck + parity + protocol + vitest + build. It runs here in
+      # two steps so the website-parity verdict (the last step) never hides the tests.
+      - name: Island (npm ci, typecheck, protocol, vitest, build)
+        working-directory: desktop-native/island
+        run: |
+          npm ci
+          npm run typecheck
+          npm run test:protocol
+          npm test
+          npm run build
+
+      - name: Island picture comparison (Playwright, tier C)
+        id: visual
+        continue-on-error: true
+        working-directory: desktop-native/island
+        run: |
+          npx playwright-core install chromium
+          npm run visual
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.visual.outcome != 'skipped'
+        with:
+          name: island-visual
+          path: desktop-native/island/test-artifacts/visual/*.json
+          if-no-files-found: ignore
+
+      - name: Island website parity (npm run parity)
+        working-directory: desktop-native/island
+        run: npm run parity
+
+  windows:
+    name: build + installer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      # Every packaging script parses before anything is built (they only ever run here).
+      - name: PowerShell scripts parse
+        run: |
+          $bad = 0
+          Get-ChildItem -Recurse -File -Filter '*.ps1' desktop-native/packaging | ForEach-Object {
+            $tokens = $null; $errors = $null
+            $null = [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$errors)
+            if ($errors) {
+              $bad++
+              foreach ($e in $errors) { Write-Host "::error file=$($_.FullName),line=$($e.Extent.StartLineNumber)::$($e.Message)" }
+            } else { Write-Host "parsed $($_.Name)" }
+          }
+          if ($bad) { exit 1 }
+
+      # The release app's API origin is https://mastersat.uz. Nothing in this job may reach
+      # it (the app starts on the sign-in screen and makes no request there, but a later
+      # start-up change must not turn CI into production traffic): the names resolve to
+      # 0.0.0.0 / :: for the whole job, so any attempt fails at once on this machine.
+      - name: Keep the production API unreachable from this machine
+        run: |
+          $hosts = Join-Path $env:SystemRoot 'System32\drivers\etc\hosts'
+          $names = 'mastersat.uz', 'www.mastersat.uz', 'api.mastersat.uz'
+          $lines = @('', '# desktop-native CI: the app under test must never reach production')
+          foreach ($n in $names) { $lines += "0.0.0.0 $n"; $lines += ":: $n" }
+          Add-Content -Path $hosts -Value $lines -Encoding ascii
+          ipconfig /flushdns | Out-Null
+          foreach ($n in $names) {
+            # Windows answers "no data" for a 0.0.0.0 entry: the name has no usable address.
+            try { $a = @([System.Net.Dns]::GetHostAddresses($n) | ForEach-Object IPAddressToString) }
+            catch { $a = @() }
+            Write-Host "$n -> $(if ($a) { $a -join ', ' } else { 'no address' })"
+            if (@($a | Where-Object { $_ -notin '0.0.0.0', '::' }).Count -gt 0) { throw "$n still resolves to a real address" }
+          }
+
+      - name: Read pinned versions
+        run: |
+          $flutter = (Get-Content -Raw desktop-native/.flutter-version).Trim()
+          $version = (Get-Content -Raw desktop-native/VERSION).Trim()
+          # vpk must match the velopack crate the DLL's hooks are built from.
+          $lock = Get-Content -Raw desktop-native/native/Cargo.lock
+          if ($lock -notmatch 'name = "velopack"\r?\nversion = "([^"]+)"') { throw 'velopack is not in desktop-native/native/Cargo.lock' }
+          $velopack = $Matches[1]
+          # Once lib/main.dart routes --s1-harness (the wire integration), the release app IS
+          # the harness and no separate harness build is made.
+          $routed = [bool](Select-String -Path desktop-native/app/lib/main.dart -Pattern 's1_harness' -Quiet)
+          "FLUTTER_VERSION=$flutter" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "VELOPACK_VERSION=$velopack" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "S1_ROUTED=$routed" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "Flutter $flutter, app $version, velopack $velopack, main.dart routes --s1-harness: $routed"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # --- mastersat_native.dll ---------------------------------------------------------
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-native/native
+
+      # Debug, development key (DESKTOP_PROOF_KEY is deliberately NOT in this environment):
+      # tests/windows.rs and the Windows path of tests/c_abi.rs; target\debug\mastersat_native.dll
+      # is what the Dart FFI test loads below.
+      - name: cargo test (Windows) + the debug DLL the FFI test loads
+        working-directory: desktop-native/native
+        run: |
+          cargo test --locked --no-fail-fast
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # `cargo test` links the tests against the rlib; only `cargo build` writes the cdylib.
+          cargo build --locked -p mastersat-native
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item target/debug/mastersat_native.dll | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+
+      # The DLL that ships. A release build embeds DESKTOP_PROOF_KEY (key_id:hex) at compile
+      # time; WITHOUT it a release build has NO key at all (ms_prove answers MS_ERR_NO_KEY) —
+      # it does not fall back to the development key. A test build for a development server
+      # needs `--features dev-key` instead; never an installer.
+      - name: mastersat_native.dll (release, updates, proof key)
+        id: dll
+        working-directory: desktop-native/native
+        env:
+          DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
+        run: |
+          $hasKey = -not [string]::IsNullOrWhiteSpace($env:DESKTOP_PROOF_KEY)
+          if (-not $hasKey) {
+            if ('${{ github.event_name }}' -eq 'pull_request') {
+              Write-Host "::warning::DESKTOP_PROOF_KEY is not available to this pull request: the installer artifact is named *-NO-PROOF-KEY and cannot sign lockdown proofs"
+            } else {
+              Write-Host "::error::DESKTOP_PROOF_KEY is not set: the installer would have no proof key (midterms refuse it)"
+              exit 1
+            }
+          }
+          cargo build --release --locked -p mastersat-native --target x86_64-pc-windows-msvc --features updates
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $dir = Join-Path $PWD 'target\x86_64-pc-windows-msvc\release'
+          $dll = Join-Path $dir 'mastersat_native.dll'
+          Get-ChildItem "$dir\mastersat_native.*" | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          # Which key is inside, without printing it.
+          $text = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($dll))
+          if ($text.Contains('00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff')) {
+            Write-Host "::error::the release DLL carries the development proof key"; exit 1
+          }
+          $state = 'missing'
+          if ($hasKey) {
+            $secretHex = ($env:DESKTOP_PROOF_KEY.Trim() -split ':')[-1].Trim()
+            if (-not $text.Contains($secretHex)) { Write-Host "::error::DESKTOP_PROOF_KEY was set but is not embedded in the DLL"; exit 1 }
+            $state = 'embedded'
+          }
+          Write-Host "proof key: $state"
+          "proof_key=$state" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "MS_NATIVE_LIB_DIR=$dir" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "MS_LINK_NATIVE=ON" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      # --- The island pages (this branch) ---------------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Build the island
+        working-directory: desktop-native/island
+        env:
+          ISLAND_BUILD_SUFFIX: +${{ github.sha }}
+          # The website's Desmos key (a public value). Unset → the website's own public
+          # default key from loadDesmos.ts, exactly as the website builds.
+          DESMOS_API_KEY: ${{ vars.NEXT_PUBLIC_DESMOS_API_KEY }}
+        run: |
+          if ($env:DESMOS_API_KEY) { Write-Host 'Desmos key: vars.NEXT_PUBLIC_DESMOS_API_KEY' }
+          else { Write-Host "::notice::vars.NEXT_PUBLIC_DESMOS_API_KEY is not set: the island uses the website's public default Desmos key" }
+          npm ci
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # --- Native unit tests (plugin policy + runner launch rules) -------------------------
+      - name: ms_webview2 native tests (gtest)
+        run: |
+          cmake -S desktop-native/plugins/ms_webview2/windows/test -B build/plugin_tests
+          cmake --build build/plugin_tests --config Release
+          ctest --test-dir build/plugin_tests -C Release --output-on-failure
+      - name: Runner launch rules (C++)
+        run: |
+          cmake -S desktop-native/app/windows/runner/test -B build/runner_tests
+          cmake --build build/runner_tests --config Release
+          ctest --test-dir build/runner_tests -C Release --output-on-failure
+
+      # --- The app ---------------------------------------------------------------------------
+      - name: flutter pub get
+        working-directory: desktop-native/app
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: FFI bridge against the real DLL (debug build, development key)
+        working-directory: desktop-native/app
+        env:
+          MASTERSAT_NATIVE_LIB: ${{ github.workspace }}\desktop-native\native\target\debug\mastersat_native.dll
+          MASTERSAT_NATIVE_REQUIRE: "1"
+        run: flutter test test/native/ffi_native_bridge_test.dart
+
+      - name: Build the S1 harness (only while lib/main.dart does not route --s1-harness)
+        id: harness
+        if: env.S1_ROUTED != 'True'
+        working-directory: desktop-native/app
+        run: |
+          # lib/island/s1_harness.dart has its own main(); same DLL and island as the app.
+          flutter build windows --release -t lib/island/s1_harness.dart `
+            --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER `
+            --dart-define=MASTERSAT_APP_VERSION=$env:APP_VERSION
+          if ($LASTEXITCODE -ne 0) {
+            # flutter hides MSBuild's reason; the install step prints it.
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
+          $dest = Join-Path $env:RUNNER_TEMP 's1-harness'
+          Copy-Item -Recurse build/windows/x64/runner/Release $dest
+          "dir=$dest" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - name: flutter build windows --release (the app that ships)
+        working-directory: desktop-native/app
+        run: |
+          $symbols = Join-Path $env:RUNNER_TEMP 'symbols'
+          flutter build windows --release `
+            --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER `
+            --dart-define=MASTERSAT_APP_VERSION=$env:APP_VERSION `
+            --split-debug-info=$symbols
+          if ($LASTEXITCODE -ne 0) {
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
+          $bundle = Resolve-Path 'build/windows/x64/runner/Release'
+          # Files the app can never load (unused Lucide weights, KaTeX's woff/ttf fallbacks),
+          # removed before S0 so every check below runs on exactly what ships.
+          ../packaging/prune-bundle.ps1 -BundleDir $bundle -AppLibDir lib
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Get-ChildItem $bundle | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          Get-ChildItem "$bundle/data" -File | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          $problems = @()
+          foreach ($f in 'MasterSAT.exe', 'mastersat_native.dll', 'data/app.so', 'data/island/content.html', 'data/island/desmos.html') {
+            if (-not (Test-Path (Join-Path $bundle $f))) { $problems += "missing $f" }
+          }
+          if (Test-Path (Join-Path $bundle 'data/island/probe.js')) { $problems += 'data/island is the S0 probe page, not the island' }
+          # The exe really imports the DLL (MS_LINK_NATIVE=ON linked it, not just copied it).
+          $exeText = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes((Join-Path $bundle 'MasterSAT.exe')))
+          if (-not $exeText.Contains('mastersat_native.dll')) { $problems += 'MasterSAT.exe does not import mastersat_native.dll' }
+          # The bundled DLL is the release one built above (proof key and all).
+          $built = (Get-FileHash (Join-Path $env:MS_NATIVE_LIB_DIR 'mastersat_native.dll')).Hash
+          $shipped = (Get-FileHash (Join-Path $bundle 'mastersat_native.dll') -ErrorAction SilentlyContinue).Hash
+          if ($built -ne $shipped) { $problems += 'the bundled mastersat_native.dll is not the release build' }
+          Write-Host "island files: $((Get-ChildItem -Recurse -File "$bundle/data/island" | Measure-Object).Count)"
+          if ($problems) { $problems | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
+          Write-Host 'bundle OK: MasterSAT.exe links mastersat_native.dll (release); data\island is the real island'
+
+      # --- S0 diagnostics + S1 harness on the integrated build (never fails the job) -----------
+      - name: S0 diagnostics + S1 harness (integrated build)
+        run: |
+          $app = Join-Path (Resolve-Path 'desktop-native/app/build/windows/x64/runner/Release') 'MasterSAT.exe'
+          $harness = '${{ steps.harness.outputs.dir }}'
+          $exe = if ($harness) { Join-Path $harness 'MasterSAT.exe' } else { $app }
+          ./desktop-native/packaging/ci/s0-diagnostics.ps1 -Exe $exe -OutDir "$env:RUNNER_TEMP/s0" -Seconds 30 -AppExe $app
+
+      # --- Velopack installer ----------------------------------------------------------------
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install vpk ${{ env.VELOPACK_VERSION }}
+        run: |
+          dotnet tool install -g vpk --version $env:VELOPACK_VERSION
+          vpk --help | Select-Object -First 3
+      - name: vpk pack
+        run: |
+          ./desktop-native/packaging/pack.ps1 -Version $env:APP_VERSION -Channel stable -OutDir "$env:RUNNER_TEMP/velopack"
+      - name: Installer size (budget ${{ env.INSTALLER_BUDGET_BYTES }} bytes)
+        run: |
+          ./desktop-native/packaging/ci/size-report.ps1 `
+            -BundleDir desktop-native/app/build/windows/x64/runner/Release `
+            -VelopackDir "$env:RUNNER_TEMP/velopack" -OutDir "$env:RUNNER_TEMP/s0" `
+            -BudgetBytes $env:INSTALLER_BUDGET_BYTES -Enforce
+      - name: Install / uninstall smoke test (S4, records)
+        continue-on-error: true
+        run: |
+          ./desktop-native/packaging/ci/install-smoke.ps1 -VelopackDir "$env:RUNNER_TEMP/velopack" -OutDir "$env:RUNNER_TEMP/s0"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-Setup${{ steps.dll.outputs.proof_key != 'embedded' && '-NO-PROOF-KEY' || '' }}
+          path: ${{ runner.temp }}/velopack/*-Setup.exe
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-full-nupkg${{ steps.dll.outputs.proof_key != 'embedded' && '-NO-PROOF-KEY' || '' }}
+          path: |
+            ${{ runner.temp }}/velopack/*-full.nupkg
+            ${{ runner.temp }}/velopack/releases.*.json
+            ${{ runner.temp }}/velopack/assets.*.json
+          if-no-files-found: error
+          compression-level: 0
+      # Dart symbols for the shipped app.so (flutter symbolize -i <trace> -d <file>).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-symbols
+          path: ${{ runner.temp }}/symbols
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s0-diagnostics
+          path: ${{ runner.temp }}/s0
+          if-no-files-found: warn
+
+      # --- The whole Dart suite on Windows (goldens are recorded on macOS only) ---------------
+      - name: flutter test --exclude-tags golden (Windows)
+        working-directory: desktop-native/app
+        env:
+          MASTERSAT_NATIVE_LIB: ${{ github.workspace }}\desktop-native\native\target\debug\mastersat_native.dll
+          MASTERSAT_NATIVE_REQUIRE: "1"
+        run: flutter test --exclude-tags golden

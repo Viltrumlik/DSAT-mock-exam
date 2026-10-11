@@ -1,0 +1,31 @@
+# Lints for the MasterSAT native app. Shared by every workstream: keep it green
+# (`flutter analyze` must print "No issues found!").
+include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  language:
+    strict-casts: true
+    strict-raw-types: true
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+    - build/**
+    - windows/**
+    - macos/**
+  errors:
+    unawaited_futures: warning
+    missing_return: error
+
+linter:
+  rules:
+    - always_declare_return_types
+    - avoid_print
+    - avoid_dynamic_calls
+    - cancel_subscriptions
+    - close_sinks
+    - prefer_final_fields
+    - prefer_final_locals
+    - unawaited_futures
+    - use_super_parameters
+    - sort_child_properties_last
+    - directives_ordering

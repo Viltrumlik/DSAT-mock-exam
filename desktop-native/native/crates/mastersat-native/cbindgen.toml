@@ -1,0 +1,7 @@
+# Used only by ../../check_header.py to render the crate's exports as C and diff them against the
+# hand-written contract, include/mastersat_native.h (which stays the source of truth).
+language = "C"
+usize_is_size_t = true
+documentation = false
+[export]
+item_types = ["functions"]

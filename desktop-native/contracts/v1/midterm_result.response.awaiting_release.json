@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "attempt_id": 5521,
+  "state": "COMPLETED",
+  "poll_after_ms": null,
+  "score_only": true,
+  "released": false,
+  "mock_kind": "MIDTERM",
+  "subject": "MATH",
+  "scoring_scale": "SCALE_800",
+  "total_score": null,
+  "score_ceiling": null,
+  "certificate": null
+}

@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "t": "init",
+  "mode": "exam",
+  "kind": "pastpaper",
+  "subject": "rw",
+  "overlays": "native",
+  "zoom": 1,
+  "split": 0.5,
+  "highlighterOn": false,
+  "eliminatorOn": false,
+  "calcReservePx": 0
+}

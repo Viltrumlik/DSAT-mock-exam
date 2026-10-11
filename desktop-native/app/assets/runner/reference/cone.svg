@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (cone); labels drawn natively -->
+  <path d="M48 18 L22 64 L74 64 Z"/>
+  <ellipse cx="48" cy="64" rx="26" ry="8"/>
+  <line x1="48" y1="18" x2="48" y2="64" stroke-dasharray="3 3"/>
+  <line x1="48" y1="64" x2="74" y2="64"/>
+</svg>

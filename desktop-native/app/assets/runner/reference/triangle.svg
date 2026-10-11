@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (triangle); labels drawn natively -->
+  <path d="M20 70 L70 70 L52 24 Z"/>
+  <line x1="52" y1="24" x2="52" y2="70" stroke-dasharray="3 3"/>
+</svg>

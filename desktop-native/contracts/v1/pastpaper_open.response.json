@@ -1,0 +1,320 @@
+{
+  "schema": 1,
+  "attempt": {
+    "id": 9123,
+    "kind": "pastpaper",
+    "ref_id": 52,
+    "state": "NOT_STARTED",
+    "version": 1,
+    "module": {
+      "id": 301,
+      "order": 1,
+      "duration_ms": 2100000
+    },
+    "module_ids": [
+      301,
+      302
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:00:00.000Z",
+      "deadline_at": null,
+      "remaining_ms": 2100000,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": null
+  },
+  "test": {
+    "id": 52,
+    "subject": "MATH",
+    "title": "",
+    "label": "A",
+    "form_type": "US",
+    "practice_date": "2025-10-04",
+    "collection_name": "October 2025 US A",
+    "tools": {
+      "calculator": "graphing",
+      "reference_sheet": true
+    }
+  },
+  "modules": [
+    {
+      "id": 301,
+      "order": 1,
+      "time_limit_minutes": 35,
+      "question_count": 6,
+      "content_hash": "sha256:8e2a8ac8ea5256a929199944825f1918f299be568430c43d3fd92668dc500464",
+      "unchanged": false,
+      "deferred": false,
+      "questions": [
+        {
+          "id": 1001,
+          "order": 1,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>If $3x + 5 = 20$, what is the value of $x$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$3$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$5$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$\\frac{25}{3}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$15$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1002,
+          "order": 2,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>The function $f$ is defined by $f(x) = x^2 - 6x + 11$. What is the minimum value of $f(x)$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        },
+        {
+          "id": 1003,
+          "order": 3,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>The table shows four pairs of values for a linear relationship between $x$ and $y$.</p><table><thead><tr><th>$x$</th><th>$y$</th></tr></thead><tbody><tr><td>$-1$</td><td>$-1$</td></tr><tr><td>$0$</td><td>$2$</td></tr><tr><td>$1$</td><td>$5$</td></tr><tr><td>$2$</td><td>$8$</td></tr></tbody></table>",
+          "question_prompt": "Which equation represents this relationship?",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$y = 2x + 3$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$y = 3x + 2$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$y = 3x - 1$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$y = x + 2$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1004,
+          "order": 4,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>The graph of $y = g(x)$ is shown.</p>",
+          "question_prompt": "For what value of $x$ does $g(x)$ reach its maximum?",
+          "question_image_key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+          "options": {
+            "A": {
+              "text": "$-2$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$0$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$1$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$3$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1005,
+          "order": 5,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>A colony of bacteria has 3&nbsp;&times;&nbsp;10<sup>5</sup> cells and doubles every 4 hours. Which expression gives the number of cells after $t$ hours?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$300{,}000(2)^{4t}$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$300{,}000(2)^{t/4}$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$300{,}000(4)^{t/2}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$300{,}000 + 2^{t/4}$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1006,
+          "order": 6,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>Which of the following could be the graph of $y = -(x - 1)^2 + 4$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-a.png"
+            },
+            "B": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-b.png"
+            },
+            "C": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-c.png"
+            },
+            "D": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-d.png"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 302,
+      "order": 2,
+      "time_limit_minutes": 35,
+      "question_count": 4,
+      "content_hash": "sha256:de99dec61a1feb2b996ea08164d0c25fb0ea0860521e43f9324ac320f4669f13",
+      "unchanged": false,
+      "deferred": false,
+      "questions": [
+        {
+          "id": 1011,
+          "order": 1,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>If $\\frac{2}{7}k = 1$, what is the value of $k$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        },
+        {
+          "id": 1012,
+          "order": 2,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>In the $xy$-plane, line $\\ell$ passes through the points $(0, 4)$ and $(2, 0)$. What is the slope of line $\\ell$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$-2$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$-\\frac{1}{2}$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$\\frac{1}{2}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$2$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1013,
+          "order": 3,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>Which expression is equivalent to $\\sqrt{50x^2}$ for $x > 0$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$5x\\sqrt{2}$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$25x$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$2x\\sqrt{5}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$10x$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1014,
+          "order": 4,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>What is the solution to the equation $4(y + 3) = 2y + 6$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        }
+      ]
+    }
+  ],
+  "answers": {
+    "301": {},
+    "302": {}
+  },
+  "flagged": {
+    "301": [],
+    "302": []
+  },
+  "media": [
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q4-graph.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T090000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=9996770e422dac3a61c0ca4c1317f0daae5c9dce5789fd3505d00259fd27b1b3",
+      "expires_at": "2026-10-11T15:00:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-a.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-a.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T090000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=ab200c22659c578c069cb676f84cae23edbb02c726cb6a6d695a017590ac029b",
+      "expires_at": "2026-10-11T15:00:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-b.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-b.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T090000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=1d4636f69bb487376e0dcfa0bebacb04b50188f3a3d789ed9417ed99df8f2def",
+      "expires_at": "2026-10-11T15:00:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-c.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-c.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T090000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=aef77c029a11d88c73977f488cad61223afe241b7c0af5008aa1fd4fbfefef8b",
+      "expires_at": "2026-10-11T15:00:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-d.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-d.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T090000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=4015ff7d9ff5318e484555b8c03ff794d3ef36a90decbffe4933e14934e8ab17",
+      "expires_at": "2026-10-11T15:00:00.000Z"
+    }
+  ],
+  "annotations": []
+}

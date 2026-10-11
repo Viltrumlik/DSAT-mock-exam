@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "server_now": "2026-10-11T09:00:00.000Z",
+  "student": {
+    "id": 77,
+    "first_name": "Aziza",
+    "last_name": "Karimova"
+  },
+  "app": {
+    "latest_version": "0.3.0",
+    "minimum_version": "0.2.0",
+    "update_url": "https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe",
+    "update": "available",
+    "message": "A new version of MasterSAT is ready."
+  },
+  "midterms": [],
+  "pastpapers": [
+    {
+      "id": 52,
+      "title": "",
+      "practice_date": "2025-10-04",
+      "subject": "MATH",
+      "label": "A",
+      "form_type": "US",
+      "collection_name": "October 2025 US A",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 35,
+          "question_count": 6
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 35,
+          "question_count": 4
+        }
+      ],
+      "state": {
+        "status": "new",
+        "open_attempt_id": null,
+        "open_state": null,
+        "last_attempt_id": null,
+        "last_score": null,
+        "last_completed_at": null,
+        "sittings": 0,
+        "reopened": null
+      },
+      "history": []
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "v": 1,
+  "t": "module.load",
+  "moduleId": 311,
+  "questions": [
+    {
+      "id": 2001,
+      "order": 1,
+      "question_type": "READING",
+      "is_math_input": false,
+      "question_text": "<p>Marine biologist Ayesha Rahman spent three seasons recording sperm whale <em>codas</em>.</p>",
+      "question_prompt": "Which choice best states the main idea of the text?",
+      "question_image_key": null,
+      "options": {
+        "A": {
+          "text": "Option A",
+          "image_key": null
+        },
+        "B": {
+          "text": "Option B",
+          "image_key": null
+        },
+        "C": {
+          "text": "Option C",
+          "image_key": null
+        },
+        "D": {
+          "text": "Option D",
+          "image_key": null
+        }
+      }
+    },
+    {
+      "id": 1002,
+      "order": 2,
+      "question_type": "MATH",
+      "is_math_input": true,
+      "question_text": "<p>The function $f$ is defined by $f(x) = x^2 - 6x + 11$. What is the minimum value of $f(x)$?</p>",
+      "question_prompt": "",
+      "question_image_key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+      "options": null
+    }
+  ]
+}

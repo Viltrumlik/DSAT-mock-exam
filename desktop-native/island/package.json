@@ -1,0 +1,46 @@
+{
+  "name": "mastersat-island",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The two WebView2 islands of the native MasterSAT app: the question card (content.html) and Desmos (desmos.html).",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build && node scripts/check-build.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:protocol": "node --test protocol/protocol.test.ts",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "parity": "node scripts/parity.mjs check",
+    "parity:update": "node scripts/parity.mjs update",
+    "visual": "npm run build && vitest run --config vitest.visual.config.ts && node scripts/visual.mjs",
+    "dev:smoke": "node scripts/dev-smoke.mjs",
+    "check": "npm run typecheck && npm run parity && npm run test:protocol && npm test && npm run build"
+  },
+  "dependencies": {
+    "dompurify": "3.4.0",
+    "katex": "0.17.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.2.1",
+    "@types/node": "24.10.1",
+    "@types/pngjs": "6.0.5",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "jsdom": "29.1.1",
+    "lucide-react": "0.577.0",
+    "pixelmatch": "7.1.0",
+    "playwright-core": "1.61.0",
+    "pngjs": "7.0.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tailwindcss": "4.2.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.6",
+    "zod": "4.3.6"
+  }
+}

@@ -1,0 +1,339 @@
+{
+  "schema": 1,
+  "server_now": "2026-10-11T09:00:00.000Z",
+  "student": {
+    "id": 77,
+    "first_name": "Aziza",
+    "last_name": "Karimova"
+  },
+  "app": {
+    "latest_version": "0.2.0",
+    "minimum_version": "0.2.0",
+    "update_url": "https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe",
+    "update": "none",
+    "message": ""
+  },
+  "midterms": [
+    {
+      "midterm_id": 14,
+      "title": "October Midterm · Math",
+      "subject": "MATH",
+      "scoring_scale": "SCALE_800",
+      "score_ceiling": 800,
+      "duration_minutes": 70,
+      "question_count": 44,
+      "flavor": "CLASSROOM",
+      "attempt_id": null,
+      "state": "NOT_STARTED",
+      "submitted": false,
+      "resit_open": false,
+      "is_open": true,
+      "is_before_start": false,
+      "awaiting_code": false,
+      "available_at": "2026-10-11T08:30:00.000Z",
+      "deadline": "2026-10-11T12:00:00.000Z",
+      "results_visible": false,
+      "score": null,
+      "certificate": null,
+      "requires_code": true
+    },
+    {
+      "midterm_id": 15,
+      "title": "October Midterm · Reading and Writing",
+      "subject": "READING_WRITING",
+      "scoring_scale": "SCALE_800",
+      "score_ceiling": 800,
+      "duration_minutes": 64,
+      "question_count": 54,
+      "flavor": "CLASSROOM",
+      "attempt_id": null,
+      "state": "NOT_STARTED",
+      "submitted": false,
+      "resit_open": false,
+      "is_open": false,
+      "is_before_start": true,
+      "awaiting_code": false,
+      "available_at": "2026-10-12T09:00:00.000Z",
+      "deadline": "2026-10-12T12:30:00.000Z",
+      "results_visible": false,
+      "score": null,
+      "certificate": null,
+      "requires_code": true
+    },
+    {
+      "midterm_id": 9,
+      "title": "September Midterm · Math",
+      "subject": "MATH",
+      "scoring_scale": "SCALE_800",
+      "score_ceiling": 800,
+      "duration_minutes": 70,
+      "question_count": 44,
+      "flavor": "CLASSROOM",
+      "attempt_id": 4410,
+      "state": "COMPLETED",
+      "submitted": true,
+      "resit_open": false,
+      "is_open": false,
+      "is_before_start": false,
+      "awaiting_code": false,
+      "available_at": "2026-09-18T08:30:00.000Z",
+      "deadline": "2026-09-18T12:00:00.000Z",
+      "results_visible": true,
+      "score": 680,
+      "certificate": {
+        "available": true,
+        "code": "MT-9-77-4F2K",
+        "download_url": "/classes/certificates/midterm/MT-9-77-4F2K/download/",
+        "rank": 4,
+        "cohort_size": 23
+      },
+      "requires_code": true
+    },
+    {
+      "midterm_id": 10,
+      "title": "September Midterm · Reading and Writing",
+      "subject": "READING_WRITING",
+      "scoring_scale": "SCALE_100",
+      "score_ceiling": 100,
+      "duration_minutes": 64,
+      "question_count": 54,
+      "flavor": "STANDALONE",
+      "attempt_id": 4411,
+      "state": "COMPLETED",
+      "submitted": true,
+      "resit_open": true,
+      "is_open": true,
+      "is_before_start": false,
+      "awaiting_code": false,
+      "available_at": null,
+      "deadline": null,
+      "results_visible": true,
+      "score": 71,
+      "certificate": null,
+      "requires_code": false
+    }
+  ],
+  "pastpapers": [
+    {
+      "id": 52,
+      "title": "",
+      "practice_date": "2025-10-04",
+      "subject": "MATH",
+      "label": "A",
+      "form_type": "US",
+      "collection_name": "October 2025 US A",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 35,
+          "question_count": 6
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 35,
+          "question_count": 4
+        }
+      ],
+      "state": {
+        "status": "new",
+        "open_attempt_id": null,
+        "open_state": null,
+        "last_attempt_id": null,
+        "last_score": null,
+        "last_completed_at": null,
+        "sittings": 0,
+        "reopened": null
+      },
+      "history": []
+    },
+    {
+      "id": 51,
+      "title": "",
+      "practice_date": "2025-10-04",
+      "subject": "READING_WRITING",
+      "label": "A",
+      "form_type": "US",
+      "collection_name": "October 2025 US A",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 32,
+          "question_count": 6
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 32,
+          "question_count": 3
+        }
+      ],
+      "state": {
+        "status": "progress",
+        "open_attempt_id": 9124,
+        "open_state": "MODULE_1_ACTIVE",
+        "last_attempt_id": null,
+        "last_score": null,
+        "last_completed_at": null,
+        "sittings": 0,
+        "reopened": null
+      },
+      "history": []
+    },
+    {
+      "id": 43,
+      "title": "",
+      "practice_date": "2025-08-23",
+      "subject": "READING_WRITING",
+      "label": "B",
+      "form_type": "INTERNATIONAL",
+      "collection_name": "August 2025 International B",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 32,
+          "question_count": 27
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 32,
+          "question_count": 27
+        }
+      ],
+      "state": {
+        "status": "completed",
+        "open_attempt_id": null,
+        "open_state": null,
+        "last_attempt_id": 8801,
+        "last_score": 640,
+        "last_completed_at": "2026-09-28T14:12:05.000Z",
+        "sittings": 2,
+        "reopened": null
+      },
+      "history": [
+        {
+          "attempt_id": 8801,
+          "score": 640,
+          "completed_at": "2026-09-28T14:12:05.000Z"
+        },
+        {
+          "attempt_id": 8710,
+          "score": 590,
+          "completed_at": "2026-09-14T10:03:41.000Z"
+        }
+      ]
+    },
+    {
+      "id": 44,
+      "title": "",
+      "practice_date": "2025-08-23",
+      "subject": "MATH",
+      "label": "B",
+      "form_type": "INTERNATIONAL",
+      "collection_name": "August 2025 International B",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 35,
+          "question_count": 22
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 35,
+          "question_count": 22
+        }
+      ],
+      "state": {
+        "status": "reopened",
+        "open_attempt_id": null,
+        "open_state": null,
+        "last_attempt_id": 8802,
+        "last_score": 610,
+        "last_completed_at": "2026-09-29T15:40:00.000Z",
+        "sittings": 1,
+        "reopened": {
+          "assignment_id": 5,
+          "assignment_title": "Retake: August Math",
+          "classroom_name": "SAT Evening B",
+          "set_at": "2026-10-09T12:00:00.000Z",
+          "due_at": "2026-10-16T18:00:00.000Z"
+        }
+      },
+      "history": [
+        {
+          "attempt_id": 8802,
+          "score": 610,
+          "completed_at": "2026-09-29T15:40:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 38,
+      "title": "June practice — Math",
+      "practice_date": "2025-06-07",
+      "subject": "MATH",
+      "label": "C",
+      "form_type": "US",
+      "collection_name": "June 2025 US C",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 35,
+          "question_count": 22
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 35,
+          "question_count": 22
+        }
+      ],
+      "state": {
+        "status": "completed",
+        "open_attempt_id": null,
+        "open_state": null,
+        "last_attempt_id": 8420,
+        "last_score": 700,
+        "last_completed_at": "2026-08-30T11:00:00.000Z",
+        "sittings": 1,
+        "reopened": null
+      },
+      "history": [
+        {
+          "attempt_id": 8420,
+          "score": 700,
+          "completed_at": "2026-08-30T11:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "title": "",
+      "practice_date": "2025-06-07",
+      "subject": "READING_WRITING",
+      "label": "C",
+      "form_type": "US",
+      "collection_name": "June 2025 US C",
+      "modules": [
+        {
+          "order": 1,
+          "time_limit_minutes": 32,
+          "question_count": 27
+        },
+        {
+          "order": 2,
+          "time_limit_minutes": 32,
+          "question_count": 27
+        }
+      ],
+      "state": {
+        "status": "progress",
+        "open_attempt_id": 8990,
+        "open_state": "MODULE_2_ACTIVE",
+        "last_attempt_id": null,
+        "last_score": null,
+        "last_completed_at": null,
+        "sittings": 0,
+        "reopened": null
+      },
+      "history": []
+    }
+  ]
+}
