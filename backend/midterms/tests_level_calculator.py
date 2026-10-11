@@ -1,9 +1,11 @@
 """Midterm level + level-gated Desmos calculator.
 
 The calculator used to be blanket-denied for every midterm. It is now level-gated: a MATH
-midterm at middle/senior offers the full Desmos, junior/foundation its Scientific
-calculator only; R&W and an untagged Math midterm get none. The rule lives on the model
-and is echoed to the runner, so the frontend never re-derives it.
+midterm at middle/senior offers the full Desmos, junior its Scientific calculator only;
+foundation, R&W and an untagged Math midterm get none. Foundation shared junior's
+Scientific calculator until 2026-10-11 (the school's request: Foundation works by hand).
+The rule lives on the model and is echoed to the runner — and read by the scheduling
+email — so nothing downstream re-derives it.
 """
 from __future__ import annotations
 
@@ -32,11 +34,19 @@ class CalculatorEnabledRuleTests(TestCase):
         self.assertEqual(_mk(level=Midterm.LEVEL_MIDDLE).calculator_mode, Midterm.CALCULATOR_FULL)
         self.assertEqual(_mk(level=Midterm.LEVEL_SENIOR).calculator_mode, Midterm.CALCULATOR_FULL)
 
-    def test_math_junior_and_foundation_get_the_scientific_calculator_only(self):
-        for level in (Midterm.LEVEL_JUNIOR, Midterm.LEVEL_FOUNDATION):
-            midterm = _mk(level=level)
-            self.assertTrue(midterm.calculator_enabled)
-            self.assertEqual(midterm.calculator_mode, Midterm.CALCULATOR_SCIENTIFIC)
+    def test_math_junior_gets_the_scientific_calculator_only(self):
+        midterm = _mk(level=Midterm.LEVEL_JUNIOR)
+        self.assertTrue(midterm.calculator_enabled)
+        self.assertEqual(midterm.calculator_mode, Midterm.CALCULATOR_SCIENTIFIC)
+
+    def test_math_foundation_gets_no_calculator_at_all(self):
+        """2026-10-11, the school's request: Foundation Math is worked by hand. Not the
+        Scientific calculator junior keeps — none, the same as an untagged paper."""
+        midterm = _mk(level=Midterm.LEVEL_FOUNDATION)
+        self.assertFalse(midterm.calculator_enabled)
+        self.assertIsNone(midterm.calculator_mode)
+        self.assertNotIn(Midterm.LEVEL_FOUNDATION, Midterm.CALCULATOR_LEVELS)
+        self.assertNotIn(Midterm.LEVEL_FOUNDATION, Midterm.SCIENTIFIC_CALCULATOR_LEVELS)
 
     def test_untagged_math_gets_none(self):
         midterm = _mk(level="")  # legacy/untagged
@@ -128,6 +138,74 @@ class RunnerPayloadTests(TestCase):
         details = MidtermAttemptSerializer(attempt).data["practice_test_details"]
         self.assertTrue(details["calculator_enabled"])
         self.assertEqual(details["calculator_mode"], "scientific")
+
+    def test_foundation_math_midterm_reports_no_calculator(self):
+        """The payload is the gate both runners obey (web selectors.calculatorAllowed and the
+        Windows app's ExamRunner), so Foundation's "by hand" rule has to be visible here."""
+        from midterms.serializers import MidtermAttemptSerializer
+        from midterms.models import MidtermAttempt
+
+        student = User.objects.create_user("calc_student3@test.com", "secret123")
+        attempt = MidtermAttempt.objects.create(
+            midterm=_mk(level=Midterm.LEVEL_FOUNDATION, title="Foundation Math Midterm"), student=student
+        )
+        details = MidtermAttemptSerializer(attempt).data["practice_test_details"]
+        self.assertEqual(details["level"], "foundation")
+        self.assertIs(details["calculator_enabled"], False)
+        self.assertIsNone(details["calculator_mode"])
+
+
+class SchedulingEmailCalculatorTests(TestCase):
+    """The "your midterm is scheduled" email states the calculator rule before the student
+    ever opens the paper, so it must say what the runner will do. Both identities are
+    covered: the new Midterm reads the property, the legacy MockExam the model's tuples."""
+
+    def _legacy(self, level):
+        from exams.models import MockExam
+
+        return MockExam.objects.create(
+            title=f"Legacy {level} Math", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="MATH", midterm_level=level,
+        )
+
+    def test_foundation_math_mail_promises_no_calculator(self):
+        from classes.mail_midterm import _legacy_facts, _midterm_facts
+
+        for facts in (_midterm_facts(_mk(level=Midterm.LEVEL_FOUNDATION)), _legacy_facts(self._legacy("foundation"))):
+            self.assertIs(facts["calculator_enabled"], False)
+            self.assertIs(facts["calculator_scientific_only"], False)
+
+    def test_junior_math_mail_promises_the_scientific_calculator(self):
+        from classes.mail_midterm import _legacy_facts, _midterm_facts
+
+        for facts in (_midterm_facts(_mk(level=Midterm.LEVEL_JUNIOR)), _legacy_facts(self._legacy("junior"))):
+            self.assertIs(facts["calculator_enabled"], True)
+            self.assertIs(facts["calculator_scientific_only"], True)
+
+    def test_legacy_rule_matches_the_model_at_every_level(self):
+        """The legacy path used to hand-copy the rule; this pins it to the model so the two
+        cannot drift again (legacy levels are free-form case, so "Middle" counts too)."""
+        from classes.mail_midterm import _legacy_facts
+
+        for level in ("", "foundation", "junior", "middle", "senior", "Middle"):
+            model = _mk(level=level.lower())
+            facts = _legacy_facts(self._legacy(level))
+            self.assertEqual(facts["calculator_enabled"], model.calculator_enabled, level)
+            self.assertEqual(
+                facts["calculator_scientific_only"],
+                model.calculator_mode == Midterm.CALCULATOR_SCIENTIFIC,
+                level,
+            )
+
+    def test_reading_writing_legacy_mail_never_promises_one(self):
+        from classes.mail_midterm import _legacy_facts
+        from exams.models import MockExam
+
+        exam = MockExam.objects.create(
+            title="Legacy RW", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="READING_WRITING", midterm_level="middle",
+        )
+        self.assertIs(_legacy_facts(exam)["calculator_enabled"], False)
 
 
 class AdminLevelValidationTests(TestCase):

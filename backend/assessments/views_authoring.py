@@ -207,8 +207,9 @@ class AdminAssessmentSetDetailView(APIView):
             return denied
         s = AssessmentSetAdminWriteSerializer(inst, data=request.data, partial=True)
         s.is_valid(raise_exception=True)
-        # A metadata edit (title/category/source/level/description/subject) un-approves
-        # the set; a pure is_active toggle (archive/unarchive) does NOT.
+        # A metadata edit (title/category/source/level/secondary_level/description/
+        # subject) un-approves the set; a pure is_active toggle (archive/unarchive) does
+        # NOT. Adding a second level counts: it puts the set in front of a new cohort.
         meta_changed = bool(set(s.validated_data.keys()) - {"is_active"})
         inst = s.save()
         if meta_changed:
@@ -255,6 +256,7 @@ class AdminAssessmentSetDetailView(APIView):
                     "title": inst.title,
                     "subject": inst.subject,
                     "level": inst.level,
+                    "secondary_level": inst.secondary_level,
                     "category": inst.category,
                     "created_by_id": inst.created_by_id,
                     "created_by_email": getattr(inst.created_by, "email", None),

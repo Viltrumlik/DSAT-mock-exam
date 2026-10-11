@@ -33,6 +33,8 @@ type AdminSet = {
   title?: string | null;
   subject?: string | null;
   level?: string | null;
+  /** Optional second level (2026-10-11, the school's request). */
+  secondary_level?: string | null;
   questions?: AssessmentQuestion[] | null;
 };
 
@@ -95,9 +97,17 @@ export default function TeacherAssessmentPracticePage() {
   const total = questions.length;
   const current = questions[currentIdx];
 
+  // Desmos follows the level the set is sat at (Middle/Senior maths get it; Foundation/
+  // Junior work by hand). Students get that level resolved by the server from their
+  // classroom; a teacher practising here has no classroom, and a set can carry an
+  // optional second level (2026-10-11, the school's request) — so offer Desmos if EITHER
+  // level would. A teacher previewing a Junior+Middle set should be able to try what the
+  // Middle class will have; leaving it unused costs nothing.
   const calculatorEnabled =
     (set?.subject || "").toLowerCase() === "math" &&
-    ["middle", "senior"].includes((set?.level || "").toLowerCase());
+    [set?.level, set?.secondary_level].some((lv) =>
+      ["middle", "senior"].includes((lv || "").toLowerCase()),
+    );
 
   // Map to the shared review shape (correct answers shown — teachers see them).
   const reviewQuestions: PedagogicalReviewQuestion[] = useMemo(

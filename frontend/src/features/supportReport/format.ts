@@ -52,9 +52,15 @@ export function formatRate(rate: number | null | undefined): string {
   return Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
 }
 
-/** The denominator behind an attendance rate: everyone settled either way. */
-export function settledCount(counts: Pick<SupportCounts, "held" | "no_show">): number {
-  return counts.held + counts.no_show;
+/** The denominator behind an attendance rate: everyone settled either way. Late counts as
+ *  attended (2026-10-11), so it is on the settled side too. */
+export function settledCount(counts: Pick<SupportCounts, "held" | "no_show" | "late">): number {
+  return counts.held + (counts.late ?? 0) + counts.no_show;
+}
+
+/** The numerator: everyone who was in the room — held, or attended late. */
+export function attendedCount(counts: Pick<SupportCounts, "held" | "late">): number {
+  return counts.held + (counts.late ?? 0);
 }
 
 /**
@@ -98,6 +104,7 @@ export function formatShare(numerator: number, denominator: number): string {
 export const STATUS_LABEL: Record<SupportStatus, string> = {
   BOOKED: "Booked",
   HELD: "Held",
+  LATE: "Attended late",
   NO_SHOW: "Did not attend",
   CANCELLED: "Cancelled",
 };
@@ -111,7 +118,7 @@ export const STATUS_LABEL: Record<SupportStatus, string> = {
  */
 export const UNSETTLED_LABEL = "Not settled yet";
 
-export type StatusTone = "held" | "missed" | "cancelled" | "unsettled" | "upcoming";
+export type StatusTone = "held" | "late" | "missed" | "cancelled" | "unsettled" | "upcoming";
 
 /**
  * The words and the colour for one row's status.
@@ -124,6 +131,7 @@ export function sessionStatusLabel(
 ): { label: string; tone: StatusTone } {
   const server = row.status_label?.trim();
   if (row.status === "HELD") return { label: server || STATUS_LABEL.HELD, tone: "held" };
+  if (row.status === "LATE") return { label: server || STATUS_LABEL.LATE, tone: "late" };
   if (row.status === "NO_SHOW") return { label: server || STATUS_LABEL.NO_SHOW, tone: "missed" };
   if (row.status === "CANCELLED") {
     return { label: server || STATUS_LABEL.CANCELLED, tone: "cancelled" };
@@ -136,6 +144,7 @@ export function sessionStatusLabel(
 /** What each outcome means, on hover. Written for somebody who does not run the desk. */
 export const STATUS_NOTE: Record<StatusTone, string> = {
   held: "The support teacher confirmed the student came. This is the only outcome that pays points.",
+  late: "The student came, but late. It counts as attended and pays nothing — the student was told why.",
   missed: "The seat was taken and the student did not turn up. It pays nothing.",
   cancelled: "Called off before the hour, so the seat went back to the calendar.",
   unsettled:
@@ -153,6 +162,7 @@ export const STATUS_NOTE: Record<StatusTone, string> = {
 export const FALLBACK_STATUS_OPTIONS: StatusOption[] = [
   { value: "BOOKED", label: STATUS_LABEL.BOOKED },
   { value: "HELD", label: STATUS_LABEL.HELD },
+  { value: "LATE", label: STATUS_LABEL.LATE },
   { value: "NO_SHOW", label: STATUS_LABEL.NO_SHOW },
   { value: "CANCELLED", label: STATUS_LABEL.CANCELLED },
   { value: STATUS_UNSETTLED, label: UNSETTLED_LABEL },

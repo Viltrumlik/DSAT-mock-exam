@@ -37,6 +37,7 @@ import { DesktopBlockedError, lockdownHeaders, takeUnconfirmedBind } from "../lo
 import { useBattery } from "../lockdown/useBattery";
 import { useLockdown } from "../lockdown/useLockdown";
 import { useOffscreenGuard } from "../lockdown/useOffscreenGuard";
+import { useScreenWakeLock } from "../lockdown/useScreenWakeLock";
 import { useExamAttempt } from "../useExamAttempt";
 import { MidtermCodeScreen } from "./MidtermCodeScreen";
 import { MidtermRulesScreen } from "./MidtermRulesScreen";
@@ -74,6 +75,11 @@ export function MidtermScreen({ source, onExit }: { source: ExamSource; onExit: 
   const terminal = isTerminal(a);
   const running = isRunning(a);
   const { release } = lock;
+  // The display stays awake from the rules screen until the paper is in (2026-10-11, the school's
+  // request): a screen that sleeps and locks reads as leaving, and the off-screen rule would spend
+  // the student's strikes on it. The native lock covers only the locked run; this covers the
+  // rules, code and pre-check screens too. See ../lockdown/useScreenWakeLock.
+  useScreenWakeLock(id != null && !terminal);
 
   useEffect(() => {
     let alive = true;

@@ -7,6 +7,13 @@ interface DirectionsOverlayProps {
   /** Width of the left (passage) pane as a %, so the card covers it like Bluebook. */
   widthPct: number;
   subject: ExamSubjectKind;
+  /**
+   * Whether this paper offers a calculator (selectors.calculatorAllowed). The SAT's wording
+   * promises one on every Math question; a Foundation Math midterm has none (2026-10-11, the
+   * school's request — worked by hand), and directions that contradict the toolbar send a
+   * student looking for a tool that is not there in the middle of a timed paper.
+   */
+  calculatorAllowed: boolean;
   onClose: () => void;
 }
 
@@ -16,7 +23,7 @@ interface DirectionsOverlayProps {
  * bottom so the question stays visible), with an upward pointer and a gold Close
  * button. Content is section-specific (Reading & Writing vs Math).
  */
-export function DirectionsOverlay({ anchorBottom, widthPct, subject, onClose }: DirectionsOverlayProps) {
+export function DirectionsOverlay({ anchorBottom, widthPct, subject, calculatorAllowed, onClose }: DirectionsOverlayProps) {
   const isMath = subject === "MATH";
   return (
     <div
@@ -31,8 +38,10 @@ export function DirectionsOverlay({ anchorBottom, widthPct, subject, onClose }: 
         {isMath ? (
           <>
             <p className="mb-4">
-              The questions in this section address a number of important math skills. Use of a calculator is
-              permitted for all questions.
+              The questions in this section address a number of important math skills.{" "}
+              {calculatorAllowed
+                ? "Use of a calculator is permitted for all questions."
+                : "A calculator is not available on this paper — work these questions by hand."}
             </p>
             <p>
               For <strong>multiple-choice questions</strong>, solve each problem and choose the correct answer from

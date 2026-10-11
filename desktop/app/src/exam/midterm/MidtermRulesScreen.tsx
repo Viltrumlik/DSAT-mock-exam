@@ -62,6 +62,18 @@ const SCIENTIFIC_CALCULATOR_ALLOWED: Rule = {
   text: "The built-in Desmos scientific calculator, opened from the toolbar. No physical calculator.",
 };
 
+/**
+ * A Math paper with no calculator — Foundation since 2026-10-11 (the school's request: the paper
+ * tests the arithmetic itself), or an untagged Math midterm. Stated as a rule, first under
+ * Prohibited, instead of only leaving the calculator out of Allowed: a student who has had Desmos
+ * on every other Math paper reads a missing line as an oversight and goes looking for the button.
+ * Same copy as the site's rules screen and the scheduling email; R&W gets no calculator line.
+ */
+const BY_HAND: Rule = {
+  icon: Calculator,
+  text: "Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper.",
+};
+
 const PROHIBITED: Rule[] = [
   { icon: MonitorX, text: "Other apps, browser tabs, or programs — close everything else before you begin." },
   { icon: BookX, text: "Notes, books, or any other reference material." },
@@ -111,7 +123,8 @@ export function MidtermRulesScreen({
   onProceed: () => void;
 }) {
   const details = attempt.practice_test_details;
-  const subjectLabel = isReadingWriting(details.subject) ? "Reading and Writing" : "Math";
+  const isMath = !isReadingWriting(details.subject);
+  const subjectLabel = isMath ? "Math" : "Reading and Writing";
   const modules = (details.modules ?? []).slice().sort((a, b) => a.module_order - b.module_order);
   // The WHOLE paper for a midterm: quoting only module 1 told a student sitting 32+32 that the exam
   // was 32 minutes, then dropped them into a second module they were never warned about.
@@ -124,6 +137,9 @@ export function MidtermRulesScreen({
 
   const required = requiresCode ? [...REQUIRED, REQUIRED_CODE] : REQUIRED;
   const allowed = calculatorEnabled ? [...ALLOWED, calculatorScientificOnly ? SCIENTIFIC_CALCULATOR_ALLOWED : CALCULATOR_ALLOWED] : ALLOWED;
+  // The same subject test ExamRunner uses for its Calculator button, so the rules and the toolbar
+  // cannot disagree about which papers are Math.
+  const prohibited = isMath && !calculatorEnabled ? [BY_HAND, ...PROHIBITED] : PROHIBITED;
   // Quote a pass mark ONLY when the scale is known: the two scales don't share a floor, so a guess
   // would put a number in front of the student that the server would then disagree with.
   const passMarkLabel = details.scoring_scale ? midtermPassMarkLabel(details.scoring_scale, details.pass_mark) : null;
@@ -178,7 +194,7 @@ export function MidtermRulesScreen({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-red-600">Prohibited</h2>
-              <RuleList rules={PROHIBITED} tone="no" />
+              <RuleList rules={prohibited} tone="no" />
             </div>
           </div>
 

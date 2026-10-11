@@ -189,7 +189,10 @@ class BookingMechanicsTests(SupportFixture):
         """Re-booking reuses the row, so without this a student could erase a NO_SHOW — or
         overwrite a HELD and silently revoke their own points — just by pressing Book again."""
         booking = support_service.book(self.student, self.slot)
-        support_service.settle(booking, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            booking, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=booking.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
 
         with self.assertRaises(ValidationError):
             support_service.book(self.student, self.slot)
@@ -229,7 +232,10 @@ class RewardTests(SupportFixture):
 
     def test_a_no_show_earns_nothing(self):
         booking = support_service.book(self.student, self.slot)
-        support_service.settle(booking, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            booking, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=booking.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
 
         self.assertEqual(balance(self.student), 0)
 
@@ -238,7 +244,10 @@ class RewardTests(SupportFixture):
         support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
         self.assertEqual(balance(self.student), 10)
 
-        support_service.settle(booking, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            booking, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=booking.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
         self.assertEqual(balance(self.student), 0)
 
     def test_settling_held_repeatedly_pays_once(self):
@@ -421,7 +430,10 @@ class GroupRewardTests(SupportFixture):
         booking = support_service.book(self.student, self.slot)
         guest = support_service.invite_member(booking, self.mate, actor=self.student)
 
-        support_service.settle(guest, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            guest, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=guest.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
         support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
 
         self.assertEqual(balance(self.student), 10)
@@ -433,7 +445,10 @@ class GroupRewardTests(SupportFixture):
         booking, guest = self._held_group(2)
         self.assertEqual(balance(self.student), 15)
 
-        support_service.settle(guest, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            guest, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=guest.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
 
         self.assertEqual(balance(self.student), 10)
         self.assertEqual(balance(self.mate), 0)

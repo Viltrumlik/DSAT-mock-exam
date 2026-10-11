@@ -48,10 +48,21 @@ interface MidtermRulesScreenProps {
   isRetake?: boolean;
   /** Whether an access code is required — a standalone midterm has none to hand out. */
   requiresCode?: boolean;
-  /** Desmos gate as decided server-side; midterms offer it at every tagged Math level. */
+  /**
+   * Desmos gate as decided server-side: Math middle/senior/junior. Foundation Math is worked
+   * by hand (2026-10-11, the school's request), so it lists no calculator under Allowed and
+   * says "by hand" under Prohibited instead (with `isMath`); R&W lists neither.
+   */
   calculatorEnabled?: boolean;
-  /** Junior/foundation Math: Desmos's Scientific calculator only. */
+  /** Junior Math: Desmos's Scientific calculator only. */
   calculatorScientificOnly?: boolean;
+  /**
+   * Whether this is a Math paper. Only read together with `calculatorEnabled`: a Math paper
+   * with no calculator is worked BY HAND, and that is said out loud under Prohibited (see
+   * BY_HAND). R&W has never had a calculator, so it gets no calculator line at all.
+   * Defaults to false — a caller that forgets it says nothing rather than something wrong.
+   */
+  isMath?: boolean;
 }
 
 type Rule = { icon: React.ElementType; text: string };
@@ -79,6 +90,19 @@ const CALCULATOR_ALLOWED: Rule = {
 const SCIENTIFIC_CALCULATOR_ALLOWED: Rule = {
   icon: Calculator,
   text: "The built-in Desmos scientific calculator, opened from the toolbar. No physical calculator.",
+};
+
+/**
+ * A Math paper with no calculator — Foundation since 2026-10-11 (the school's request: the
+ * paper tests the arithmetic itself), or an untagged Math midterm. Stated as a rule, first
+ * under Prohibited, instead of only leaving the calculator out of Allowed: a student who has
+ * had Desmos on every other Math paper reads a missing line as an oversight and goes looking
+ * for the button. Mirrored in the Windows app's rules screen and the scheduling email
+ * (backend/classes/mail_midterm.py, templates/email/midterm_scheduled.html).
+ */
+const BY_HAND: Rule = {
+  icon: Calculator,
+  text: "Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper.",
 };
 
 const PROHIBITED: Rule[] = [
@@ -146,10 +170,12 @@ export function MidtermRulesScreen({
   requiresCode = true,
   calculatorEnabled = false,
   calculatorScientificOnly = false,
+  isMath = false,
 }: MidtermRulesScreenProps) {
   const required = requiresCode ? [...REQUIRED, REQUIRED_CODE] : REQUIRED;
   const calculatorRule = calculatorScientificOnly ? SCIENTIFIC_CALCULATOR_ALLOWED : CALCULATOR_ALLOWED;
   const allowed = calculatorEnabled ? [...ALLOWED, calculatorRule] : ALLOWED;
+  const prohibited = isMath && !calculatorEnabled ? [BY_HAND, ...PROHIBITED] : PROHIBITED;
   // Quote a pass mark ONLY when the scale is known. The two scales don't share a floor
   // (a blank 800-scale paper scores 200), so guessing one would put a real number in front
   // of the student that the server would then disagree with.
@@ -209,7 +235,7 @@ export function MidtermRulesScreen({
             </div>
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <h2 className="mb-3 text-sm font-extrabold uppercase tracking-wide text-red-600">Prohibited</h2>
-              <RuleList rules={PROHIBITED} tone="no" />
+              <RuleList rules={prohibited} tone="no" />
             </div>
           </div>
 

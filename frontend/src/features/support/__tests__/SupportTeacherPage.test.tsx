@@ -455,6 +455,62 @@ describe("the diary", () => {
       host.querySelector<HTMLInputElement>('[aria-label="What the session with Kamola covered"]')?.value,
     ).toBe("Went through inference questions");
   });
+
+  /* ── the school's attendance rules (2026-10-11) ── */
+
+  it("sends LATE when the student came late — attended, no XP", async () => {
+    const settle = mutation();
+    hooks.useSettleBooking.mockReturnValue(settle);
+    await render();
+
+    await click(buttonNamed("Came late"));
+
+    expect(settle.mutate).toHaveBeenCalledWith({ bookingId: 1, status: "LATE", teacherNote: "" });
+  });
+
+  it("offers late and not-attended only once the hour has started", async () => {
+    // DIARY[2] is Madina's session two days ahead.
+    hooks.useSupportDiary.mockReturnValue(loaded([DIARY[2]]));
+    await render();
+    await showEverything();
+
+    expect(buttonNamed("They came")).toBeTruthy();
+    expect(buttonNamed("Came late")).toBeUndefined();
+    expect(buttonNamed("Did not attend")).toBeUndefined();
+  });
+
+  it("shows the late and not-attended buttons when the hour starts, without a reload", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const startsSoon = booking({
+        id: 51, student: "Laylo", slot: { starts_at: new Date(Date.now() + 10_000).toISOString() } as never,
+      });
+      hooks.useSupportDiary.mockReturnValue(loaded([startsSoon]));
+      await render();
+      await showEverything();
+      expect(buttonNamed("Came late")).toBeUndefined();
+
+      await act(async () => {
+        vi.advanceTimersByTime(31_000);
+      });
+
+      expect(buttonNamed("Came late")).toBeTruthy();
+      expect(buttonNamed("Did not attend")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("names a late session as attended late, among the recorded ones", async () => {
+    hooks.useSupportDiary.mockReturnValue(
+      loaded([{ ...DIARY[3], id: 41, status: "LATE", student: "Kamola" }]),
+    );
+    await render();
+    await showEverything();
+
+    expect(host.textContent).toContain("Came late");
+    expect(host.textContent?.toLowerCase()).not.toContain("no-show");
+  });
 });
 
 /* ── the week ─────────────────────────────────────────────────────────────────────────── */

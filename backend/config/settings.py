@@ -271,6 +271,28 @@ from desktop.proof import parse_keys as _parse_desktop_keys  # noqa: E402
 
 DESKTOP_PROOF_KEYS = _parse_desktop_keys(os.getenv("DESKTOP_PROOF_KEYS", ""))
 
+# The native Windows app's own API, /api/desktop/v1/ (desktop/v1/). Off by default: every v1
+# path answers 503 {"code": "desktop_v1_disabled"} until it is switched on, and switching it
+# off again is the kill switch — the app keeps its answers on the laptop and retries, because a
+# 5xx is "try later" to its outbox. Nothing outside v1 reads this. Literal "true" only.
+DESKTOP_V1_ENABLED = os.getenv("DESKTOP_V1_ENABLED", "False").lower() == "true"
+# Past papers ship BOTH modules in the open response (no network wait at the module boundary,
+# fully offline sittings). Past papers are not adaptive and carry no answer key, so the only cost
+# is that a determined student could pre-read module 2 of a practice paper. Off: module 2 comes
+# back as {"questions": null, "deferred": true} and arrives with the module-1 submit instead.
+# DESKTOP_PASTPAPER_M2_UPFRONT is the design document's name for the same switch.
+DESKTOP_V1_SHIP_MODULE_2 = os.getenv(
+    "DESKTOP_V1_SHIP_MODULE_2", os.getenv("DESKTOP_PASTPAPER_M2_UPFRONT", "True")
+).lower() == "true"
+# Lifetimes of the signed image URLs v1 hands out. Images are cached on the laptop by storage
+# key, so a URL only has to live until it is fetched. Midterm URLs are short on purpose.
+DESKTOP_MEDIA_URL_TTL_SECONDS = int(os.getenv("DESKTOP_MEDIA_URL_TTL_SECONDS", "21600"))
+DESKTOP_MIDTERM_MEDIA_URL_TTL_SECONDS = int(os.getenv("DESKTOP_MIDTERM_MEDIA_URL_TTL_SECONDS", "900"))
+# Where "Update" sends a Windows build when the console's Windows release policy has no URL.
+DESKTOP_UPDATE_URL = os.getenv(
+    "DESKTOP_UPDATE_URL", "https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe"
+).strip()
+
 
 # ─── Database ─────────────────────────────────────────────────────────────────
 # Uses PostgreSQL in production (when DATABASE_URL is set), SQLite locally.
@@ -907,6 +929,10 @@ REST_FRAMEWORK = {
         # Windows app "Sign in with browser" code exchange, per client address. A whole class
         # signs in at once from behind one school NAT, hence the headroom.
         'desktop_auth': os.getenv('DESKTOP_AUTH_THROTTLE', '300/hour'),
+        # Windows app v1 midterm prepare (per student), and — counted separately — the
+        # prepares that carry a 6-digit access code, so the code cannot be guessed through it.
+        'desktop_v1_prepare': os.getenv('DESKTOP_V1_PREPARE_THROTTLE', '120/hour'),
+        'desktop_v1_code': os.getenv('DESKTOP_V1_CODE_THROTTLE', '20/hour'),
         # Student-submitted question error reports (per user).
         'question_report': os.getenv('QUESTION_REPORT_THROTTLE', '20/hour'),
         # Tighter limit when a classroom is under mitigation (auto after abuse spike).

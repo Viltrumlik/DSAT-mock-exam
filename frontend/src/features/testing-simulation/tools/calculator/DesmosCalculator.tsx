@@ -10,7 +10,7 @@ interface DesmosCalculatorProps {
   /** Enlarged window (and the runner reserves more space for it). */
   enlarged: boolean;
   onToggleEnlarge: () => void;
-  /** Offer only the Scientific calculator — no Graphing tab (junior/foundation Math midterms). */
+  /** Offer only the Scientific calculator — no Graphing tab (junior Math midterms; foundation gets none). */
   scientificOnly?: boolean;
 }
 

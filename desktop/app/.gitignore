@@ -1,3 +1,6 @@
-node_modules/
+# No trailing slash: a worktree that symlinks node_modules to another checkout's has a FILE
+# here, which `node_modules/` (directories only) does not match, and a `git add` would commit a
+# symlink to an absolute path on one machine. frontend/.gitignore's `/node_modules` already works.
+node_modules
 dist/
 *.local

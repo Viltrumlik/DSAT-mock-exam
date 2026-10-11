@@ -74,7 +74,12 @@ export function TeacherAssessments() {
     {
       key: "level",
       header: "Level",
-      render: (s) => s.level || <span style={{ color: "var(--dz-faint)" }}>—</span>,
+      // A set can carry an optional second level (2026-10-11, the school's request): show
+      // both, primary first — "junior · middle" — in the same raw form as before.
+      render: (s) =>
+        [s.level, s.secondaryLevel].filter(Boolean).join(" · ") || (
+          <span style={{ color: "var(--dz-faint)" }}>—</span>
+        ),
     },
     {
       key: "questions",

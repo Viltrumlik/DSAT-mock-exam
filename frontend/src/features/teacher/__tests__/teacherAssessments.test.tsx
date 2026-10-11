@@ -270,6 +270,42 @@ describe("the assessment library — when the sets come back", () => {
   });
 });
 
+describe("the assessment library — a set with a second level", () => {
+  // 2026-10-11, the school's request: a set can also be shown to a second cohort. The mapper
+  // is a whitelist, so a forgotten field here would silently never reach the page.
+  const DUAL = [
+    {
+      id: 40, title: "Ratios and rates", subject: "math", level: "junior", secondary_level: "middle",
+      category: "Problem solving", description: "", is_active: true, questions: [question(41)],
+    },
+    {
+      id: 41, title: "Rational exponents", subject: "math", level: "senior", secondary_level: "",
+      category: "Advanced math", description: "", is_active: true, questions: [question(42)],
+    },
+  ];
+
+  beforeEach(() => {
+    adminListSets.mockResolvedValue(envelope(DUAL));
+  });
+
+  it("shows both levels, primary first", async () => {
+    await mount(<TeacherAssessments />);
+
+    const rows = [...host.querySelectorAll("tbody tr")].map((r) => r.textContent ?? "");
+    expect(rows.find((r) => r.includes("Ratios and rates"))).toContain("junior · middle");
+    expect(rows.find((r) => r.includes("Rational exponents"))).not.toContain("·");
+  });
+
+  it("is found by its second level", async () => {
+    await mount(<TeacherAssessments />);
+
+    await type('input[aria-label="Search assessments"]', "middle");
+
+    expect(text()).toContain("Ratios and rates");
+    expect(text()).not.toContain("Rational exponents");
+  });
+});
+
 describe("the assessment library — when the server pages the list", () => {
   it("walks the pages instead of keeping the first 200", async () => {
     // The view pins max_limit = 200, so the old single `limit: 500` was clamped and the 201st

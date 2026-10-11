@@ -26,10 +26,12 @@ _CLIENT_RE = re.compile(r"^\s*(?P<platform>[A-Za-z]+)/(?P<version>[0-9][0-9.]*)"
 _LEADING_RE = re.compile(r"^[0-9.]*")
 
 PLATFORM_IOS = "ios"
-#: The Windows exam app (`desktop/`). It never sends `X-MasterSAT-Client` — its pages are the
-#: website's, signed in with the website's cookies, and that header would switch login to the
-#: native token flow — so the middleware gate never sees it. Its minimum is enforced where it
-#: matters instead: `desktop.lockdown` refuses a lockdown proof from an older build.
+#: The Windows exam app. The 0.1.x Tauri build (`desktop/`) sends a bare ``desktop`` — no slash,
+#: no version — so the middleware gate never judges it (``parse_client_header`` returns None) and
+#: its minimum is enforced only where it matters, by ``desktop.lockdown`` refusing a lockdown
+#: proof from an older build. The native rewrite (`desktop-native/`, 0.2.0+) sends
+#: ``windows/<semver>`` on every request, so the gate below answers it with a 426 once the
+#: console's Windows minimum passes it, exactly as it does for ``ios/<semver>``.
 PLATFORM_WINDOWS = "windows"
 
 

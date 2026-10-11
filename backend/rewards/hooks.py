@@ -690,18 +690,25 @@ def sync_support_booking(booking, *, actor=None) -> None:
         if not any(b.pk == booking.pk for b in siblings):
             siblings.append(booking)
 
-    held = [b for b in siblings if b.status == SupportBooking.STATUS_HELD]
+    # The group's size is everyone who was IN THE ROOM — held or attended late. A late
+    # arrival earns nothing themselves (the school's rule, 2026-10-11, revoked below), but
+    # they were there: counting them keeps the classmate who came on time at the group rate,
+    # instead of docking that student's points for somebody else's lateness.
+    present = [b for b in siblings if b.status in SupportBooking.ATTENDED_STATUSES]
     # Priced ONCE for the hour, from the live rule, then passed explicitly to every award.
     # Explicitly, because `award` otherwise freezes an earning at the price it was first
     # granted at — which is right for a homework re-grade and wrong here: the second student
     # being settled is precisely the event that must move the first student's number.
     points = constants.support_session_points(
-        points_for(constants.EVENT_SUPPORT_SESSION), len(held)
+        points_for(constants.EVENT_SUPPORT_SESSION), len(present)
     )
 
     for row in siblings:
         key = constants.support_session_key(row.id)
         if row.status != SupportBooking.STATUS_HELD:
+            # LATE lands here on purpose: `revoke` zeroes points AND XP, so a HELD corrected
+            # to late takes its XP back too. `award(points=0)` would not — XP is a
+            # high-water mark there — and the late student would keep it.
             revoke(key, reason=f"support session {row.status.lower()}", actor=actor)
             continue
         award(
@@ -715,8 +722,8 @@ def sync_support_booking(booking, *, actor=None) -> None:
             actor=actor,
             reason=(
                 "support session held"
-                if len(held) == 1
-                else f"support session held, group of {len(held)}"
+                if len(present) == 1
+                else f"support session held, group of {len(present)}"
             ),
         )
 

@@ -145,14 +145,37 @@ class SupportInviteTests(TestCase):
         with self.assertRaises(ValidationError):
             support_service.invite_member(self.booking, self.guest, actor=self.host)
 
-    def test_a_busy_week_does_not_block_the_guest(self):
+    def test_a_busy_week_of_attended_sessions_does_not_block_the_guest(self):
         """The weekly cap the school withdrew used to refuse this invitation.
 
-        The guest's sessions are all on a DIFFERENT day from the one they are being invited
-        to, so nothing about their own afternoon is disturbed — and having used the desk a
-        lot this week is not a reason to be kept out of it.
+        The guest's sessions are all BEHIND them, on other days: having used the desk a lot
+        this week is not a reason to be kept out of it, and a session already attended holds
+        nothing.
         """
         for i in range(4):
+            start = support_service._hour_start(timezone.localdate() - timedelta(days=1 + i), 9)
+            slot = SupportAvailability.objects.create(
+                support_teacher=self.support, starts_at=start,
+                ends_at=start + timedelta(hours=1), capacity=5,
+            )
+            SupportBooking.objects.create(
+                availability=slot, student=self.guest, status=SupportBooking.STATUS_HELD
+            )
+
+        support_service.invite_member(self.booking, self.guest, actor=self.host)
+        self.assertTrue(
+            SupportBooking.objects.filter(
+                availability=self.booking.availability,
+                student=self.guest,
+                status=SupportBooking.STATUS_BOOKED,
+            ).exists()
+        )
+
+    def test_a_guest_holding_their_full_allowance_cannot_be_invited(self):
+        """The leak students found (2026-10-11): fill your own allowance, then have a
+        classmate invite you into one more. An invited seat is held to the upcoming limit
+        exactly as a booked one is — this test used to assert the opposite."""
+        for i in range(support_service.MAX_UPCOMING_BOOKINGS):
             start = support_service._hour_start(
                 timezone.localdate() + timedelta(days=support_service.CALENDAR_DAYS + 4 + i), 9
             )
@@ -164,6 +187,15 @@ class SupportInviteTests(TestCase):
                 availability=slot, student=self.guest, status=SupportBooking.STATUS_BOOKED
             )
 
+        with self.assertRaises(ValidationError):
+            support_service.invite_member(self.booking, self.guest, actor=self.host)
+        self.assertFalse(
+            SupportBooking.objects.filter(
+                availability=self.booking.availability, student=self.guest
+            ).exists()
+        )
+
+    def test_the_guest_is_added_when_they_have_room(self):
         support_service.invite_member(self.booking, self.guest, actor=self.host)
         self.assertTrue(
             SupportBooking.objects.filter(
