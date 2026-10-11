@@ -347,7 +347,7 @@ class _PastpaperReviewScreenState extends State<PastpaperReviewScreen> {
         Expanded(
           child: Text(
             _title,
-            key: const ValueKey('review.title'),
+            key: const ValueKey('qreview.title'),
             overflow: TextOverflow.ellipsis,
             style: chromeText(BluebookTokens.headerTitleSize, weight: FontWeight.w700),
           ),
@@ -382,7 +382,7 @@ class _PastpaperReviewScreenState extends State<PastpaperReviewScreen> {
                   style: chromeText(15, weight: FontWeight.w700, color: color),
                 ),
               ]),
-              key: const ValueKey('review.position'),
+              key: const ValueKey('qreview.position'),
             ),
           ),
           RunnerPillButton(label: 'Back', onTap: _index > 0 ? () => _go(-1) : null, primary: false),
