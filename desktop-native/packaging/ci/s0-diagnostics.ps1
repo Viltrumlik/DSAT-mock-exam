@@ -180,6 +180,19 @@ if ($AppExe -and (Test-Path $AppExe)) {
     $null = [S0.Win]::DwmGetWindowAttribute($hwnd, 20, [ref]$dark, 4)
     $runner.immersiveDarkMode = $dark
     $runner.dpi = [S0.Win]::GetDpiForWindow($hwnd)
+    # The release app's first screen as a student sees it (sign-in on a fresh machine).
+    Start-Sleep -Seconds 2
+    $runner.screenshot = Try-Get {
+      $wr = New-Object S0.Win+RECT
+      $null = [S0.Win]::GetWindowRect($hwnd, [ref]$wr)
+      $w = $wr.Right - $wr.Left; $h = $wr.Bottom - $wr.Top
+      $bmp = New-Object System.Drawing.Bitmap $w, $h
+      $g = [System.Drawing.Graphics]::FromImage($bmp)
+      $g.CopyFromScreen($wr.Left, $wr.Top, 0, 0, $bmp.Size)
+      $bmp.Save((Join-Path $OutDir 'app-window.png'), [System.Drawing.Imaging.ImageFormat]::Png)
+      $g.Dispose(); $bmp.Dispose()
+      "app-window.png ${w}x${h}"
+    }
     # Ask for a tiny window: WM_GETMINMAXINFO must keep the client >= 1000 x 640 logical.
     $null = [S0.Win]::MoveWindow($hwnd, 40, 40, 400, 300, $true)
     Start-Sleep -Milliseconds 500

@@ -51,6 +51,9 @@ function Get-Component([string]$rel) {
     '^[^/]+_plugin\.dll$' { return 'Other plugins' }
     '^dartjni\.dll$' { return 'Other plugins' }
     '^mastersat\.exe$' { return 'Runner (MasterSAT.exe)' }
+    # Velopack adds its updater (Update.exe, packed as Squirrel.exe) and the shortcut stub.
+    '^squirrel\.exe$' { return 'Velopack updater + stub' }
+    '_executionstub\.exe$' { return 'Velopack updater + stub' }
     default { return 'Other' }
   }
 }
