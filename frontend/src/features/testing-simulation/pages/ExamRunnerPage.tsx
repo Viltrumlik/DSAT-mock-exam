@@ -1181,9 +1181,11 @@ export function ExamRunnerPage() {
               style={{ flex: "1 1 0%", minWidth: 0 }}
               // SPR questions already show the directions panel on the left, so
               // don't also reserve calculator space (that pushes the question
-              // off-screen); Desmos floats over the directions instead.
+              // off-screen); Desmos floats over the directions instead. Gated on the
+              // rule too: ExamToolsLayer won't mount a calculator this paper doesn't
+              // allow, so reserving room for it would squeeze the question for nothing.
               calcReserve={
-                tools.calculatorOpen && !isStudentProducedResponse(currentQuestion)
+                calculatorAllowed(attempt) && tools.calculatorOpen && !isStudentProducedResponse(currentQuestion)
                   ? tools.calculatorEnlarged
                     ? 760
                     : 500
@@ -1228,13 +1230,20 @@ export function ExamRunnerPage() {
           anchorBottom={dirTop}
           widthPct={twoPane ? splitPct : 50}
           subject={subjectKind(attempt)}
+          calculatorAllowed={calculatorAllowed(attempt)}
           onClose={() => setShowDirections(false)}
         />
       )}
 
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
-          highlight popover). Single mount point; each is engine-isolated. */}
-      <ExamToolsLayer tools={tools} attemptId={attemptId} calculatorScientificOnly={calculatorScientificOnly(attempt)} />
+          highlight popover). Single mount point; each is engine-isolated. The calculator
+          is gated on the RULE here as well as on the header button — see ExamToolsLayer. */}
+      <ExamToolsLayer
+        tools={tools}
+        attemptId={attemptId}
+        calculatorEnabled={calculatorAllowed(attempt)}
+        calculatorScientificOnly={calculatorScientificOnly(attempt)}
+      />
 
       {/* Forced fullscreen — if the student leaves fullscreen mid-test, block the
           UI until they re-enter (the only path is a user-gesture button). Gated on

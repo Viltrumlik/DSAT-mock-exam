@@ -200,6 +200,12 @@ export function ExamRunner({
   }
 
   const isMath = !isReadingWriting(attempt.practice_test_details.subject);
+  // The Calculator button follows the paper's RULE, as the site's selectors.calculatorAllowed
+  // does: any Math practice paper, but a midterm only when the server says so
+  // (`calculator_enabled`) — middle/senior/junior Math. A Foundation Math midterm is worked by
+  // hand (2026-10-11, the school's request), and a button there would tell a student the
+  // opposite of what the rules screen just told them.
+  const showCalculator = isMath && (!isMidterm || attempt.practice_test_details.calculator_enabled === true);
   const count = mod.questions.length;
   // On a module change the saved index can briefly exceed the new module's question count (the
   // reset runs in an effect, after this render), so clamp it here to avoid reading past the end.
@@ -247,7 +253,7 @@ export function ExamRunner({
 
         <div className="relative flex items-center justify-end gap-6">
           {headerExtra}
-          {isMath ? (
+          {showCalculator ? (
             <ToolButton label="Calculator" onClick={() => {}}>
               <Calculator className="h-5 w-5" />
             </ToolButton>

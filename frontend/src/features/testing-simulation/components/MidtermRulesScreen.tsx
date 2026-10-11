@@ -48,9 +48,12 @@ interface MidtermRulesScreenProps {
   isRetake?: boolean;
   /** Whether an access code is required — a standalone midterm has none to hand out. */
   requiresCode?: boolean;
-  /** Desmos gate as decided server-side; midterms offer it at every tagged Math level. */
+  /**
+   * Desmos gate as decided server-side: Math middle/senior/junior. Foundation Math is worked
+   * by hand (2026-10-11, the school's request), so it — like R&W — lists no calculator.
+   */
   calculatorEnabled?: boolean;
-  /** Junior/foundation Math: Desmos's Scientific calculator only. */
+  /** Junior Math: Desmos's Scientific calculator only. */
   calculatorScientificOnly?: boolean;
 }
 
