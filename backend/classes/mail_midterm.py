@@ -65,6 +65,7 @@ def _legacy_facts(exam) -> dict:
     unprovisioned midterm), which the template renders as a missing row rather than a zero.
     """
     from exams.models import Module, Question
+    from midterms.models import Midterm
 
     modules = Module.objects.filter(practice_test__mock_exam_id=exam.pk)
     minutes = sum(m.time_limit_minutes or 0 for m in modules)
@@ -72,6 +73,13 @@ def _legacy_facts(exam) -> dict:
     scale = getattr(exam, "midterm_scoring_scale", "") or ""
     subject = getattr(exam, "midterm_subject", "") or ""
     level = str(getattr(exam, "midterm_level", "") or "").lower()
+    # The calculator rule is READ from Midterm, not restated. This used to be a hand-written
+    # copy of `Midterm.calculator_mode` ("middle/senior/junior/foundation"), and when the school
+    # took the calculator away from Foundation (2026-10-11, the school's request) a copy is
+    # exactly what would have kept promising a Foundation class a calculator the runner no
+    # longer offers. Only the comparison is adapted: the legacy exam stores the subject in its
+    # own casing and the level free-form, so both are normalised before the tuple lookup.
+    is_math = subject.upper() == Midterm.MATH
     return {
         "title": exam.title or f"Midterm #{exam.pk}",
         "subject": subject,
@@ -81,10 +89,12 @@ def _legacy_facts(exam) -> dict:
         "pass_mark": getattr(exam, "midterm_pass_mark", None),
         "is_graded": str(getattr(exam, "midterm_type", "") or "").upper() != "PRE_MIDTERM",
         "is_retake": str(getattr(exam, "midterm_type", "") or "").upper() == "RETAKE",
-        # Mirror Midterm.calculator_mode without importing it: Math middle/senior get the full
-        # Desmos, junior/foundation its Scientific calculator only.
-        "calculator_enabled": subject.upper() == "MATH" and level in ("middle", "senior", "junior", "foundation"),
-        "calculator_scientific_only": subject.upper() == "MATH" and level in ("junior", "foundation"),
+        # Same answer as Midterm.calculator_mode: Math middle/senior get the full Desmos, junior
+        # its Scientific calculator only, foundation (worked by hand) and everything else none.
+        "calculator_enabled": (
+            is_math and level in (*Midterm.CALCULATOR_LEVELS, *Midterm.SCIENTIFIC_CALCULATOR_LEVELS)
+        ),
+        "calculator_scientific_only": is_math and level in Midterm.SCIENTIFIC_CALCULATOR_LEVELS,
     }
 
 
@@ -101,6 +111,15 @@ def _midterm_facts(midterm) -> dict:
         "calculator_enabled": bool(midterm.calculator_enabled),
         "calculator_scientific_only": midterm.calculator_mode == midterm.CALCULATOR_SCIENTIFIC,
     }
+
+
+def _is_math(facts: dict) -> bool:
+    """Whether the paper is Math, whichever identity the facts came from. The new Midterm
+    stores ``MATH``; a legacy MockExam keeps its subject in its own casing (see
+    ``_legacy_facts``), so it is normalised before the comparison."""
+    from midterms.models import Midterm
+
+    return str(facts.get("subject") or "").upper() == Midterm.MATH
 
 
 def _facts(schedule: MidtermSchedule) -> dict | None:
@@ -179,6 +198,12 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
         is_graded=facts["is_graded"],
         calculator_enabled=facts["calculator_enabled"],
         calculator_scientific_only=facts["calculator_scientific_only"],
+        # A Math paper with no calculator is worked BY HAND — Foundation since 2026-10-11 (the
+        # school's request), or an untagged Math midterm — and the mail says so under NOT
+        # ALLOWED instead of only leaving the calculator out of ALLOWED: a student who has had
+        # Desmos on every other Math paper reads a missing line as an oversight. R&W has never
+        # had a calculator and gets no calculator line at all. Same rule as both rules screens.
+        calculator_by_hand=_is_math(facts) and not facts["calculator_enabled"],
         # A classroom midterm always hands out a code (this mail is classroom-only).
         requires_code=True,
         pass_mark_label=_pass_mark_label(facts),
@@ -214,7 +239,12 @@ def _text_rules(context: dict) -> str:
         kind = "Desmos scientific calculator" if context.get("calculator_scientific_only") else "Desmos calculator"
         allowed.append(f"- The built-in {kind} from the toolbar. No physical calculator.")
 
-    not_allowed = [
+    not_allowed = []
+    if context.get("calculator_by_hand"):
+        not_allowed.append(
+            "- Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper."
+        )
+    not_allowed += [
         "- Other apps, tabs, or programs — close everything else first.",
         "- Notes, books, or any other reference material.",
         "- Phones, smartwatches, headphones, or earbuds.",

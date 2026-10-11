@@ -45,6 +45,7 @@ import { MidtermRulesScreen } from "../components/MidtermRulesScreen";
 import { MidtermCodeScreen } from "../components/MidtermCodeScreen";
 import { OffscreenTerminatedScreen, OffscreenWarning } from "../components/OffscreenWarning";
 import { useOffscreenGuard } from "../hooks/useOffscreenGuard";
+import { useScreenWakeLock } from "../hooks/useScreenWakeLock";
 import { midtermApi } from "@/lib/midtermApi";
 import { MockBreakScreen } from "../components/MockBreakScreen";
 import { FullscreenWarning } from "../components/FullscreenWarning";
@@ -155,6 +156,12 @@ export function ExamRunnerPage() {
   // browser nothing here does anything, except to say so when the server will only take the
   // sitting from the app. The lockdown is released the moment the paper is in.
   const lockdown = useDesktopLockdown({ attemptId, enabled: isMidterm, finished: isTerminal(attempt) });
+  // Keep the display awake for the whole midterm — rules, code entry and the paper itself —
+  // until it is in (2026-10-11, the school's request). A screen that sleeps and locks after
+  // inactivity reads as the page going hidden, which the off-screen guard counts as leaving:
+  // three quiet stretches and a student who never moved forfeits. See useScreenWakeLock.
+  // `isMidterm` already holds from `?src=midterm` before the attempt loads.
+  useScreenWakeLock(isMidterm && !isTerminal(attempt));
   const inShell = lockdown.inShell;
   const battery = useBattery();
   // The pre-check stands between "the student is ready" and Start, for a midterm in the app.
@@ -1013,6 +1020,9 @@ export function ExamRunnerPage() {
           requiresCode={requiresCode !== false}
           calculatorEnabled={calculatorAllowed(attempt)}
           calculatorScientificOnly={calculatorScientificOnly(attempt)}
+          // With the calculator off, a Math paper (Foundation since 2026-10-11, the school's
+          // request) is told it is worked by hand; R&W is told nothing about calculators.
+          isMath={mathQuestions}
         />
       );
     }
@@ -1181,9 +1191,11 @@ export function ExamRunnerPage() {
               style={{ flex: "1 1 0%", minWidth: 0 }}
               // SPR questions already show the directions panel on the left, so
               // don't also reserve calculator space (that pushes the question
-              // off-screen); Desmos floats over the directions instead.
+              // off-screen); Desmos floats over the directions instead. Gated on the
+              // rule too: ExamToolsLayer won't mount a calculator this paper doesn't
+              // allow, so reserving room for it would squeeze the question for nothing.
               calcReserve={
-                tools.calculatorOpen && !isStudentProducedResponse(currentQuestion)
+                calculatorAllowed(attempt) && tools.calculatorOpen && !isStudentProducedResponse(currentQuestion)
                   ? tools.calculatorEnlarged
                     ? 760
                     : 500
@@ -1228,13 +1240,20 @@ export function ExamRunnerPage() {
           anchorBottom={dirTop}
           widthPct={twoPane ? splitPct : 50}
           subject={subjectKind(attempt)}
+          calculatorAllowed={calculatorAllowed(attempt)}
           onClose={() => setShowDirections(false)}
         />
       )}
 
       {/* All SAT-experience tool overlays (calculator, reference, notes, help,
-          highlight popover). Single mount point; each is engine-isolated. */}
-      <ExamToolsLayer tools={tools} attemptId={attemptId} calculatorScientificOnly={calculatorScientificOnly(attempt)} />
+          highlight popover). Single mount point; each is engine-isolated. The calculator
+          is gated on the RULE here as well as on the header button — see ExamToolsLayer. */}
+      <ExamToolsLayer
+        tools={tools}
+        attemptId={attemptId}
+        calculatorEnabled={calculatorAllowed(attempt)}
+        calculatorScientificOnly={calculatorScientificOnly(attempt)}
+      />
 
       {/* Forced fullscreen — if the student leaves fullscreen mid-test, block the
           UI until they re-enter (the only path is a user-gesture button). Gated on
