@@ -12,6 +12,7 @@
 #include <string>
 
 #include "win32_window.h"
+#include "window_fullscreen.h"
 
 // A window that hosts the Flutter view, plus MasterSAT's two runner channels:
 //
@@ -41,6 +42,9 @@
 //      Dart -> native  "restorePlacement" {x, y, width, height, maximized}
 //                       -> bool applied (same on-screen rule as the runner's
 //                       own HKCU placement; never while locked down)
+//                      "setFullscreen" {on: bool} -> bool applied
+//                       (window_fullscreen.h: More -> Full screen on a past
+//                       paper; refused while lockdown owns the window)
 //      native -> Dart  "placementChanged" {x, y, width, height, maximized}
 //                       after a move/resize ends or on maximise/restore
 //      x/y/width/height: the restored rectangle, physical pixels, workspace
@@ -84,6 +88,10 @@ class FlutterWindow : public Win32Window {
   std::unique_ptr<Channel> launch_channel_;
   std::unique_ptr<Channel> power_channel_;
   std::unique_ptr<Channel> window_channel_;
+
+  // More -> Full screen (window_fullscreen.h).
+  bool fullscreen_ = false;
+  window_fullscreen::Saved fullscreen_saved_;
 
   // Links that arrived before Dart called takePending (bounded).
   std::deque<std::string> pending_urls_;

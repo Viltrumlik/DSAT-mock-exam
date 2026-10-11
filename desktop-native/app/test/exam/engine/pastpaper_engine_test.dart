@@ -401,6 +401,43 @@ void main() {
   });
 
   group('crash recovery', () {
+    // Eliminations are memory-only, as on the website (draftStore / useAnswers: never sent,
+    // never saved). What IS saved is their one side effect: striking out the chosen option
+    // deselects it, and that cleared answer is journaled, kept and sent like any other.
+    test('an elimination that clears the chosen answer saves the clear; the strike-out itself is never kept', () {
+      withHarness((h) {
+        var e = started(h);
+        e.select(1001, 'A');
+        h.elapse(const Duration(seconds: 11));
+        expect(h.serverAnswers(P52.attempt, P52.m1), {1001: 'A'});
+
+        e.toggleEliminate(1001, 'A');
+        expect(e.answerFor(1001), isNull);
+        expect(e.eliminatedFor(1001), {'A'});
+        e.toggleEliminate(1001, 'C'); // not chosen: nothing to save
+        h.flush();
+        final journal = h.run(() => h.store.journal(P52.attempt));
+        expect(journal.map((j) => '${j.op.name}:${j.qid}:${j.value ?? ''}'), ['answer:1001:A', 'clear:1001:'],
+            reason: 'the clear is journaled; no elimination ever is');
+        final state = h.run(() => h.store.answerState(P52.attempt, P52.m1));
+        expect(state[1001]?.value ?? '', '', reason: 'answer_state holds the cleared answer');
+
+        h.elapse(const Duration(seconds: 11));
+        expect(h.serverAnswers(P52.attempt, P52.m1), isEmpty, reason: 'the clear reached the server');
+        final body = h.api.calls.lastWhere((c) => c.method == 'pastpaperSync').args;
+        expect((body['answers']! as Map)['1001'], '');
+
+        // A restart: the cleared answer stays cleared; the strike-outs are gone (memory only).
+        h.kill(e);
+        e = h.pastpaper();
+        h.run(e.open);
+        expect(e.phase, ExamPhase.running);
+        expect(e.answerFor(1001), isNull);
+        expect(e.eliminatedFor(1001), isEmpty);
+        e.dispose();
+      }, fileDb: true);
+    });
+
     test('a kill mid-module loses nothing: the reopen renders the cached copy and reconciles', () {
       withHarness((h) {
         var e = started(h);

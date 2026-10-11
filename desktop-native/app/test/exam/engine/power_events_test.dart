@@ -29,11 +29,13 @@ void main() {
     await power.dispose();
   });
 
-  test('an unknown method is refused, not turned into an event', () async {
+  test('an unknown method is ignored (null), not turned into an event and not an error', () async {
     final power = PowerEvents();
     final got = <PowerEvent>[];
     final sub = power.events.listen(got.add);
-    await expectLater(power.handleCall(const MethodCall('lidClosed')), throwsA(isA<MissingPluginException>()));
+    for (final m in ['resumedByUser', 'powerStatus', 'displayChanged', 'lidClosed']) {
+      expect(await power.handleCall(MethodCall(m, const {'event': 'x'})), isNull, reason: m);
+    }
     await Future<void>.delayed(Duration.zero);
     expect(got, isEmpty);
     await sub.cancel();

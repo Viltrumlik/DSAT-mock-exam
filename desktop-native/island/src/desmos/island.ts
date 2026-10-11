@@ -16,7 +16,10 @@
 //     the saved state holds both;
 //   * failure is reported, not drawn: offline / script error / 6 s timeout → desmos.failed,
 //     and native shows its scientific calculator (the website swaps in ScientificCalculator);
-//   * changes are reported debounced (2 s) so native can save the state per attempt.
+//   * changes are reported debounced (2 s) so native can save the state per attempt;
+//   * the island never decides whether a paper HAS a calculator: native creates it only on a
+//     paper whose rule allows one (calculatorAllowed — a Foundation Math midterm has none,
+//     2026-10-11) and picks Scientific-only (junior Math) before desmos.init.
 import { IslandChannel, type Outgoing } from "../channel";
 import type { DesmosInitMessage, DesmosToNative, NativeToDesmos } from "../protocol";
 import { h } from "../ported/dom";

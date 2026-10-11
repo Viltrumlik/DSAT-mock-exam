@@ -5,7 +5,10 @@
 //   * `suspending`  — WM_POWERBROADCAST / PBT_APMSUSPEND;
 //   * `timeChanged` — WM_TIMECHANGE (the user or Windows time sync moved the wall clock).
 // Arguments are ignored. Engines re-anchor on `resumed` and re-baseline the wall clock on
-// `timeChanged` (so a time change is never mistaken for sleep).
+// `timeChanged` (so a time change is never mistaken for sleep). The runner also sends
+// `resumedByUser`, `powerStatus` and `displayChanged` (diagnostics); any method this class does
+// not know is accepted and ignored (null), never answered with MissingPluginException — the
+// runner may grow new events without breaking older Dart code (windows-host request #3).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -39,7 +42,7 @@ class PowerEvents {
       'timeChanged' => PowerEvent.timeChanged,
       _ => null,
     };
-    if (e == null) throw MissingPluginException('mastersat/power has no method ${call.method}');
+    if (e == null) return null;
     _events.add(e);
     return null;
   }

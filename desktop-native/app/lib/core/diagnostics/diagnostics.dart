@@ -66,6 +66,7 @@ class DiagnosticsInput {
     this.serverClockOffset,
     required this.events,
     required this.now,
+    this.islands,
   });
 
   final String appVersion;
@@ -88,6 +89,10 @@ class DiagnosticsInput {
   final Duration? serverClockOffset;
   final List<LogEvent> events;
   final DateTime now;
+
+  /// The question islands (WebView2): runtime version, the last host problem — or null when
+  /// the exam layer is not wired (tests of the screens around the exam).
+  final Map<String, Object?>? islands;
 }
 
 String _ts(DateTime? t) => t?.toUtc().toIso8601String() ?? '';
@@ -126,6 +131,7 @@ Map<String, Object?> buildDiagnostics(DiagnosticsInput i) => {
       'unsent': i.unsent,
       'update': {'channel': i.updateChannel, 'state': i.updateState},
       'clock': {'server_offset_ms': i.serverClockOffset?.inMilliseconds},
+      if (i.islands != null) 'islands': i.islands,
       'recent_events': [for (final e in i.events) e.toJson()],
     };
 

@@ -216,6 +216,40 @@ FakeExamSession scientificMidterm() {
   );
 }
 
+/// A Foundation Math midterm: worked by hand, no calculator at all (`calculator: null`).
+FakeExamSession byHandMidterm() {
+  final json = FixtureV1Api.fixture('midterm_open.response.json');
+  final test = Map<String, Object?>.of(json['test']! as Map<String, Object?>);
+  test['tools'] = {'calculator': null, 'reference_sheet': false};
+  json['test'] = test;
+  return FakeExamSession(
+    bundle: ExamBundle.fromJson(JsonReader.of(json)),
+    tick: false,
+    initialPhase: ExamPhase.running,
+  );
+}
+
+/// A Math midterm whose calculator rule the test can change mid-sitting (the rule a sitting
+/// opens with can differ from the one it was prepared with).
+class RuleChangingSession extends FakeExamSession {
+  RuleChangingSession()
+    : super(
+        bundle: ExamBundle.fromJson(JsonReader.of(FixtureV1Api.fixture('midterm_open.response.json'))),
+        tick: false,
+        initialPhase: ExamPhase.running,
+      );
+
+  bool _allowed = true;
+
+  @override
+  bool get calculatorAllowed => _allowed;
+
+  set allowed(bool v) {
+    _allowed = v;
+    notifyListeners();
+  }
+}
+
 /// A battery reading.
 const lowBattery = BatteryStatus(percent: 18, charging: false, hasBattery: true);
 const okBattery = BatteryStatus(percent: 76, charging: false, hasBattery: true);
