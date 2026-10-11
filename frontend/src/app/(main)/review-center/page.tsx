@@ -124,7 +124,10 @@ export default function ReviewCenterPage() {
                     <div className="truncate text-sm font-semibold text-foreground">{it.title}</div>
                     <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                       {subj && <span>{subj}</span>}
-                      {it.level && <span>· {it.level}</span>}
+                      {/* Both levels of a two-level set, primary first ("junior / middle"). */}
+                      {it.level && (
+                        <span>· {[it.level, it.secondaryLevel].filter(Boolean).join(" / ")}</span>
+                      )}
                       {it.meta && <span>· {it.meta}</span>}
                       {typeof it.questionCount === "number" && <span>· {it.questionCount} Q</span>}
                     </div>
