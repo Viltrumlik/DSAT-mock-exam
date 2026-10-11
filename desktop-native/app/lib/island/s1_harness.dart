@@ -427,6 +427,9 @@ class S1Controller extends ChangeNotifier {
   bool _ready = false;
   Completer<void>? _readyWaiter;
   final List<_Waiter> _waiters = [];
+  int _showSeq = 0;
+  final List<({int seq, int qid})> _pendingShows = [];
+  final Map<int, Completer<QuestionShownMessage?>> _showWaiters = {};
 
   S1Module get module => modules[moduleIndex];
   Question get question => module.questions[questionIndex];
@@ -541,11 +544,36 @@ class S1Controller extends ChangeNotifier {
     questionIndex = index;
     selection = null;
     final q = question;
+    // The island answers every question.show in order. A late answer to a show that already
+    // timed out belongs to that show, never to a newer show of the same question.
+    final seq = ++_showSeq;
+    final completer = Completer<QuestionShownMessage?>();
+    _showWaiters[seq] = completer;
+    _pendingShows.add((seq: seq, qid: q.id));
+    if (_pendingShows.length > 200) _pendingShows.removeAt(0);
     final sw = Stopwatch()..start();
-    final shown = await _expect<QuestionShownMessage>((msg) => msg.qid == q.id, () => host.post(_showMessage(index)));
+    host.post(_showMessage(index));
+    QuestionShownMessage? shown;
+    try {
+      shown = await completer.future.timeout(waitTimeout);
+    } on TimeoutException {
+      shown = null;
+    } finally {
+      _showWaiters.remove(seq);
+    }
     notifyListeners();
     if (shown == null) return null;
     return (_ms(sw), shown.ms.toDouble());
+  }
+
+  void _onShown(QuestionShownMessage m) {
+    final i = _pendingShows.indexWhere((e) => e.qid == m.qid);
+    if (i < 0) return;
+    final entry = _pendingShows[i];
+    // Shows before it were never answered (the island dropped them); forget them.
+    _pendingShows.removeRange(0, i + 1);
+    final waiter = _showWaiters.remove(entry.seq);
+    if (waiter != null && !waiter.isCompleted) waiter.complete(m);
   }
 
   QuestionShowMessage _showMessage(int index) {
@@ -606,6 +634,7 @@ class S1Controller extends ChangeNotifier {
   void _onMessage(IslandMessage m) {
     if (recentMessages.length >= 8) recentMessages.removeAt(0);
     recentMessages.add(m.t);
+    if (m is QuestionShownMessage) _onShown(m);
     for (final w in [..._waiters]) {
       if (w.matches(m)) {
         _waiters.remove(w);
@@ -933,6 +962,10 @@ class S1Controller extends ChangeNotifier {
       if (!w.completer.isCompleted) w.completer.complete(null);
     }
     _waiters.clear();
+    for (final c in _showWaiters.values) {
+      if (!c.isCompleted) c.complete(null);
+    }
+    _showWaiters.clear();
     unawaited(_sub?.cancel());
     unawaited(_host?.dispose());
     super.dispose();

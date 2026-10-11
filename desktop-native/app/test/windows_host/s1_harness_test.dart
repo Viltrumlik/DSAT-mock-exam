@@ -1,5 +1,6 @@
 // The S1 harness over FakeIslandHost: the timing run, the results JSON, protocol echoes, crash
 // replay, power events, lockdown, and the screen.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -41,6 +42,32 @@ class FakeLockdown implements S1Lockdown {
   bool heartbeat() {
     calls.add('heartbeat');
     return lockedNative && !watchdogReleased;
+  }
+}
+
+/// Answers the first question.show late (after the harness gave up on it) and later ones on time.
+class LateIslandHost extends FakeIslandHost {
+  LateIslandHost(super.kind) : super(scripted: false);
+  int shows = 0;
+
+  @override
+  Future<void> open() async {
+    await super.open();
+    emit(const ReadyMessage(build: 'late', protocol: 1));
+  }
+
+  @override
+  void post(IslandMessage message) {
+    super.post(message);
+    switch (message) {
+      case ModuleLoadMessage(:final moduleId):
+        emit(ModuleLoadedMessage(moduleId: moduleId, ms: 1, failed: const []));
+      case QuestionShowMessage(:final qid):
+        final n = ++shows;
+        Timer(Duration(milliseconds: n == 1 ? 45 : 20), () => emit(QuestionShownMessage(qid: qid, ms: n.toDouble())));
+      default:
+        break;
+    }
   }
 }
 
@@ -152,6 +179,36 @@ void main() {
     expect(rw.firstRenderMs, isNull);
     expect(c.problems.any((t) => t.contains('no module.loaded')), isTrue);
     expect((results()['pass']! as Map)['nextP95'], isNull);
+    c.dispose();
+  });
+
+  testWidgets('a late question.shown belongs to its own show, not to a newer show of the same question', (
+    tester,
+  ) async {
+    final rw = S1Module.fixtures().first;
+    final c = S1Controller(
+      hostFactory: LateIslandHost.new,
+      lockdown: null,
+      resultsDirectory: tmp,
+      modules: [
+        S1Module(
+          subject: 'rw',
+          label: 'One question',
+          moduleId: rw.moduleId,
+          questions: [rw.questions.first],
+          media: const {},
+        ),
+      ],
+      nextIterations: 1,
+      waitTimeout: const Duration(milliseconds: 30),
+    );
+    await tester.runAsync(() async {
+      await c.start();
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+    final t = c.timings['rw']!;
+    expect(t.firstRenderMs, isNull, reason: 'show 1 was answered after the 30 ms wait');
+    expect(t.islandNextMs, [2.0], reason: "show 2 got show 2's answer, not show 1's late one");
     c.dispose();
   });
 
