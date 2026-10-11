@@ -22,6 +22,21 @@ std::optional<WINDOWPLACEMENT> Load();
 // (lockdown's fullscreen): that rectangle is not the student's window.
 void Save(HWND hwnd);
 
+// |hwnd|'s normal (restored) rectangle in workspace coordinates, physical
+// pixels, and whether it is maximised; nullopt while borderless (lockdown) or
+// minimised-and-unknown.
+struct Placement {
+  RECT normal{};
+  bool maximized = false;
+};
+std::optional<Placement> Current(HWND hwnd);
+
+// Applies a placement Dart remembered (MethodChannel 'mastersat/window'),
+// with the same rule as Load: only when the rectangle is at least the minimum
+// size and reachable on a connected monitor, and never while borderless.
+// Returns true when applied.
+bool Apply(HWND hwnd, const Placement& placement);
+
 }  // namespace window_placement
 
 #endif  // RUNNER_WINDOW_PLACEMENT_H_

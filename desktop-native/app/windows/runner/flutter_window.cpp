@@ -3,11 +3,14 @@
 #include <flutter/standard_method_codec.h>
 
 #include <chrono>
+#include <cmath>
 #include <optional>
 #include <utility>
+#include <variant>
 
 #include "flutter/generated_plugin_registrant.h"
 #include "launch_policy.h"
+#include "window_placement.h"
 
 #if defined(MS_HAVE_NATIVE)
 #include "mastersat_native.h"
@@ -21,6 +24,27 @@ namespace {
 
 // At most this many links wait for Dart; older ones are dropped first.
 constexpr size_t kMaxPendingUrls = 8;
+
+// A number from a StandardMethodCodec map (Dart ints arrive as int32/int64,
+// doubles as double).
+std::optional<double> NumberAt(const flutter::EncodableMap& map,
+                               const char* key) {
+  const auto it = map.find(flutter::EncodableValue(key));
+  if (it == map.end()) {
+    return std::nullopt;
+  }
+  const flutter::EncodableValue& v = it->second;
+  if (const auto* d = std::get_if<double>(&v)) {
+    return *d;
+  }
+  if (const auto* i = std::get_if<int32_t>(&v)) {
+    return static_cast<double>(*i);
+  }
+  if (const auto* l = std::get_if<int64_t>(&v)) {
+    return static_cast<double>(*l);
+  }
+  return std::nullopt;
+}
 
 int64_t WallClockMs() {
   return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -109,6 +133,71 @@ void FlutterWindow::SetUpChannels() {
 
   power_channel_ =
       std::make_unique<Channel>(messenger, "mastersat/power", &codec);
+
+  window_channel_ =
+      std::make_unique<Channel>(messenger, "mastersat/window", &codec);
+  window_channel_->SetMethodCallHandler(
+      [this](const flutter::MethodCall<flutter::EncodableValue>& call,
+             std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>
+                 result) {
+        if (call.method_name() != "restorePlacement") {
+          result->NotImplemented();
+          return;
+        }
+        const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+        if (args == nullptr) {
+          result->Error("bad_args", "expected {x, y, width, height, maximized}");
+          return;
+        }
+        const auto x = NumberAt(*args, "x");
+        const auto y = NumberAt(*args, "y");
+        const auto w = NumberAt(*args, "width");
+        const auto h = NumberAt(*args, "height");
+        if (!x || !y || !w || !h) {
+          result->Error("bad_args", "expected {x, y, width, height, maximized}");
+          return;
+        }
+        window_placement::Placement placement;
+        placement.normal.left = static_cast<LONG>(std::lround(*x));
+        placement.normal.top = static_cast<LONG>(std::lround(*y));
+        placement.normal.right =
+            placement.normal.left + static_cast<LONG>(std::lround(*w));
+        placement.normal.bottom =
+            placement.normal.top + static_cast<LONG>(std::lround(*h));
+        const auto maximized =
+            args->find(flutter::EncodableValue("maximized"));
+        placement.maximized =
+            maximized != args->end() &&
+            std::holds_alternative<bool>(maximized->second) &&
+            std::get<bool>(maximized->second);
+        result->Success(flutter::EncodableValue(
+            window_placement::Apply(GetHandle(), placement)));
+      });
+}
+
+void FlutterWindow::OnPlacementChanged() {
+  if (!window_channel_) {
+    return;
+  }
+  const auto placement = window_placement::Current(GetHandle());
+  if (!placement.has_value()) {
+    return;
+  }
+  const RECT& r = placement->normal;
+  window_channel_->InvokeMethod(
+      "placementChanged",
+      std::make_unique<flutter::EncodableValue>(flutter::EncodableMap{
+          {flutter::EncodableValue("x"),
+           flutter::EncodableValue(static_cast<double>(r.left))},
+          {flutter::EncodableValue("y"),
+           flutter::EncodableValue(static_cast<double>(r.top))},
+          {flutter::EncodableValue("width"),
+           flutter::EncodableValue(static_cast<double>(r.right - r.left))},
+          {flutter::EncodableValue("height"),
+           flutter::EncodableValue(static_cast<double>(r.bottom - r.top))},
+          {flutter::EncodableValue("maximized"),
+           flutter::EncodableValue(placement->maximized)},
+      }));
 }
 
 void FlutterWindow::DeliverLaunchUrl(const std::string& url) {
@@ -152,6 +241,7 @@ void FlutterWindow::SendPowerEvent(const char* event, std::optional<int> width,
 void FlutterWindow::OnDestroy() {
   launch_channel_ = nullptr;
   power_channel_ = nullptr;
+  window_channel_ = nullptr;
   if (flutter_controller_) {
     flutter_controller_ = nullptr;
   }

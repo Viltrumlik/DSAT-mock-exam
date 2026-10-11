@@ -37,6 +37,14 @@
 //        "displayChanged" WM_DISPLAYCHANGE (+ "width", "height")
 //      arguments: {"event": <same name>, "wallClockMs": int, "tickMs": int}
 //      (GetTickCount64 counts through sleep; receivers may ignore them).
+//  * MethodChannel("mastersat/window")  (app-core's WindowPlacementSync)
+//      Dart -> native  "restorePlacement" {x, y, width, height, maximized}
+//                       -> bool applied (same on-screen rule as the runner's
+//                       own HKCU placement; never while locked down)
+//      native -> Dart  "placementChanged" {x, y, width, height, maximized}
+//                       after a move/resize ends or on maximise/restore
+//      x/y/width/height: the restored rectangle, physical pixels, workspace
+//      coordinates (GetWindowPlacement's rcNormalPosition).
 //
 // Only links (launch_policy::IsLaunchUrl) cross the channel; Dart decides what
 // they mean (architecture §6: only mastersat://auth?code= is acted on, and
@@ -64,6 +72,9 @@ class FlutterWindow : public Win32Window {
   void SendPowerEvent(const char* event, std::optional<int> width = std::nullopt,
                       std::optional<int> height = std::nullopt);
 
+  // Win32Window:
+  void OnPlacementChanged() override;
+
   // The project to run.
   flutter::DartProject project_;
 
@@ -72,6 +83,7 @@ class FlutterWindow : public Win32Window {
 
   std::unique_ptr<Channel> launch_channel_;
   std::unique_ptr<Channel> power_channel_;
+  std::unique_ptr<Channel> window_channel_;
 
   // Links that arrived before Dart called takePending (bounded).
   std::deque<std::string> pending_urls_;

@@ -76,4 +76,64 @@ void Save(HWND hwnd) {
                   sizeof(placement));
 }
 
+std::optional<Placement> Current(HWND hwnd) {
+  if (hwnd == nullptr) {
+    return std::nullopt;
+  }
+  const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+  if ((style & WS_CAPTION) != WS_CAPTION) {
+    return std::nullopt;
+  }
+  WINDOWPLACEMENT wp{};
+  wp.length = sizeof(wp);
+  if (!GetWindowPlacement(hwnd, &wp)) {
+    return std::nullopt;
+  }
+  Placement p;
+  p.normal = wp.rcNormalPosition;
+  p.maximized = wp.showCmd == SW_SHOWMAXIMIZED ||
+                ((wp.showCmd == SW_SHOWMINIMIZED || wp.showCmd == SW_MINIMIZE) &&
+                 (wp.flags & WPF_RESTORETOMAXIMIZED) != 0);
+  return p;
+}
+
+bool Apply(HWND hwnd, const Placement& placement) {
+  if (hwnd == nullptr) {
+    return false;
+  }
+  const LONG_PTR style = GetWindowLongPtrW(hwnd, GWL_STYLE);
+  if ((style & WS_CAPTION) != WS_CAPTION) {
+    return false;
+  }
+  HMONITOR monitor = MonitorFromRect(&placement.normal, MONITOR_DEFAULTTONULL);
+  if (monitor == nullptr) {
+    return false;
+  }
+  MONITORINFO info{};
+  info.cbSize = sizeof(info);
+  if (!GetMonitorInfoW(monitor, &info)) {
+    return false;
+  }
+  const UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+  if (!launch_policy::IsRestorableRect(ToRect(placement.normal),
+                                       ToRect(info.rcWork), dpi) &&
+      !launch_policy::IsRestorableRect(ToRect(placement.normal),
+                                       ToRect(info.rcMonitor), dpi)) {
+    return false;
+  }
+  WINDOWPLACEMENT wp{};
+  wp.length = sizeof(wp);
+  if (!GetWindowPlacement(hwnd, &wp)) {
+    return false;
+  }
+  wp.flags = 0;
+  wp.rcNormalPosition = placement.normal;
+  if (IsWindowVisible(hwnd)) {
+    wp.showCmd = placement.maximized ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL;
+  } else {
+    wp.showCmd = SW_HIDE;
+  }
+  return SetWindowPlacement(hwnd, &wp) != FALSE;
+}
+
 }  // namespace window_placement

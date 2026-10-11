@@ -80,6 +80,10 @@ class Win32Window {
   // Called when Destroy is called.
   virtual void OnDestroy();
 
+  // MasterSAT: called after a move/resize ends or the window is maximised or
+  // restored (the placement was just saved).
+  virtual void OnPlacementChanged() {}
+
  private:
   friend class WindowClassRegistrar;
 

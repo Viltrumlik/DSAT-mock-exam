@@ -265,6 +265,7 @@ Win32Window::MessageHandler(HWND hwnd,
     }
     case WM_EXITSIZEMOVE:
       window_placement::Save(hwnd);
+      OnPlacementChanged();
       break;
 
     case WM_SIZE: {
@@ -275,6 +276,7 @@ Win32Window::MessageHandler(HWND hwnd,
         if (maximized != last_maximized_) {
           last_maximized_ = maximized;
           window_placement::Save(hwnd);
+          OnPlacementChanged();
         }
       }
       RECT rect = GetClientArea();
