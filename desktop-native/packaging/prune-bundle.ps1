@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Removes files from the built app bundle that the app can never load (installer budget,
-  architecture §10 S4: Setup.exe at most 25 MB).
+  architecture §10 S4: Setup.exe at most 26 MB).
 
 .DESCRIPTION
   Run after `flutter build windows --release` and before `vpk pack` (pack.ps1 runs it too;

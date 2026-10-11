@@ -16,7 +16,7 @@ name: desktop-native (Windows exam app)
 #          * the island built from this branch (data\island);
 #          * `flutter build windows --release` linking the DLL (MS_LINK_NATIVE=ON);
 #          * S0 diagnostics + the S1 harness on that build, the Velopack
-#            installer, its size against the 25 MB budget, an install/uninstall
+#            installer, its size against the 26 MB budget, an install/uninstall
 #            smoke test, and `flutter test --exclude-tags golden`.
 #          Artifacts: MasterSAT-Setup (Setup.exe), MasterSAT-full-nupkg,
 #          MasterSAT-symbols (--split-debug-info), s0-diagnostics.
@@ -48,8 +48,9 @@ concurrency:
 
 env:
   FLUTTER_SUPPRESS_ANALYTICS: "true"
-  # Setup.exe must stay at or under this many bytes (architecture §10, S4).
-  INSTALLER_BUDGET_BYTES: "25000000"
+  # Setup.exe must stay at or under this many bytes. Architecture §10 S4 said 25 MB; the owner
+  # raised it to 26 MB on 2026-10-12 (the wired 0.2.0 is 25.77 MB). Enforced: over budget fails.
+  INSTALLER_BUDGET_BYTES: "26000000"
 
 jobs:
   macos:
@@ -407,7 +408,7 @@ jobs:
           ./desktop-native/packaging/ci/size-report.ps1 `
             -BundleDir desktop-native/app/build/windows/x64/runner/Release `
             -VelopackDir "$env:RUNNER_TEMP/velopack" -OutDir "$env:RUNNER_TEMP/s0" `
-            -BudgetBytes $env:INSTALLER_BUDGET_BYTES
+            -BudgetBytes $env:INSTALLER_BUDGET_BYTES -Enforce
       - name: Install / uninstall smoke test (S4, records)
         continue-on-error: true
         run: |
