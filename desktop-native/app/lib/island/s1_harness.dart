@@ -438,7 +438,9 @@ class S1Controller extends ChangeNotifier {
     final total = Stopwatch()..start();
     try {
       webview2Version = await TextureIslandHost.runtimeVersion();
+      _log('WebView2 runtime: ${webview2Version ?? 'not found'}');
       final host = hostFactory(IslandKind.content);
+      _log('opening ${host.runtimeType}');
       _host = host;
       _readyWaiter = Completer<void>();
       _sub = host.events.listen(_onEvent);
@@ -894,6 +896,7 @@ class S1Controller extends ChangeNotifier {
   // ---------------------------------------------------------------------------------------------
 
   void _log(String line) {
+    debugPrint('[s1] $line');
     log.add('${_now().toIso8601String().substring(11, 19)}  $line');
     if (log.length > 200) log.removeAt(0);
     if (!_disposed) notifyListeners();

@@ -258,7 +258,11 @@ class WkIslandWebview implements IslandWebview {
       },
     );
     await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
-    await controller.setBackgroundColor(const Color(0xFFFFFFFF));
+    try {
+      await controller.setBackgroundColor(const Color(0xFFFFFFFF));
+    } on UnimplementedError {
+      // WKWebView on macOS cannot be made non-opaque through webview_flutter; white is its default.
+    }
     await controller.addJavaScriptChannel('ms', onMessageReceived: (m) => _messages.add(m.message));
     await controller.setNavigationDelegate(
       NavigationDelegate(

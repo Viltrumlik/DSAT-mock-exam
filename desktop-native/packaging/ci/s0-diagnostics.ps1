@@ -62,7 +62,8 @@ $report.virtualScreen = Try-Get {
 # Architecture §9: try to raise the resolution (Windows Server cmdlet).
 $report.setDisplayResolution = Try-Get {
   if (Get-Command Set-DisplayResolution -ErrorAction SilentlyContinue) {
-    Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop
+    # The cmdlet prints UTF-16 text through the pipeline; keep only the outcome.
+    $null = Set-DisplayResolution -Width 1920 -Height 1080 -Force -ErrorAction Stop *>&1
     Start-Sleep -Seconds 2
     $v = [System.Windows.Forms.SystemInformation]::VirtualScreen
     "ok, now $($v.Width)x$($v.Height)"
