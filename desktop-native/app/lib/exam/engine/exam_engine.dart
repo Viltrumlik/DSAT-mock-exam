@@ -150,6 +150,10 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
   final Map<int, int> queuedSeq = {};
 
   Future<void> _writes = Future<void>.value();
+  int _pendingWrites = 0;
+
+  /// Store writes queued and not yet committed.
+  bool get hasPendingWrites => _pendingWrites > 0;
 
   /// The answers of [moduleId] (tests, diagnostics).
   Map<int, String> answersOf(int moduleId) => Map.unmodifiable(answers[moduleId] ?? const <int, String>{});
@@ -314,7 +318,9 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
 
   /// Queue a store operation after every earlier one (click order is commit order).
   void write(Future<void> Function() op) {
-    _writes = _writes.then((_) => op()).then<void>((_) {}, onError: (Object e, StackTrace st) {
+    _pendingWrites++;
+    _writes = _writes.then((_) => op()).whenComplete(() => _pendingWrites--).then<void>((_) {},
+        onError: (Object e, StackTrace st) {
       if (e is StateError && disposed) return; // the database closed under a late write
       setProblem(EngineProblem(EngineProblemKind.storageFailed,
           "Your answers couldn't be saved on this computer. Free some disk space, then keep going.",
@@ -410,8 +416,14 @@ abstract class ExamEngine extends ExamSession implements OutboxListener {
 
   Future<void> refreshUnsent() async {
     if (disposed || attemptIdValue == 0) return;
-    final n = await store.unsentCount(attemptIdValue, lane: OutboxLane.exam) +
-        await store.unsentCount(attemptIdValue, lane: OutboxLane.urgent);
+    int n;
+    try {
+      n = await store.unsentCount(attemptIdValue, lane: OutboxLane.exam) +
+          await store.unsentCount(attemptIdValue, lane: OutboxLane.urgent);
+    } on Object {
+      return; // only a count for the status line; the store is closing or busy
+    }
+    if (disposed) return;
     if (n != _unsent) {
       _unsent = n;
       changed();

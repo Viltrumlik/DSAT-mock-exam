@@ -124,8 +124,12 @@ class OutboxSender {
   /// Connectivity is back: anything in backoff is due at once.
   Future<void> connectivityRestored() async {
     if (_stopped) return;
-    await store.makeDueNow(attemptId);
-    kick();
+    try {
+      await store.makeDueNow(attemptId);
+    } on Object catch (e) {
+      storeErrors.add(e); // the items keep their backoff; the next timer sends them
+    }
+    if (!_stopped) kick();
   }
 
   /// Stop sending on the exam lanes (lockdown refusal being resolved, update required).
@@ -386,6 +390,16 @@ class OutboxHub {
       s.stop();
     }
     _senders.clear();
+  }
+
+  /// Stop every sender and wait until no request is on the wire (before closing the store:
+  /// an acknowledged item must still be recorded as done).
+  Future<void> quiesce() async {
+    final senders = _senders.values.toList();
+    stopAll();
+    for (final s in senders) {
+      await s.whenQuiet();
+    }
   }
 
   /// Forget a finished attempt's sender.

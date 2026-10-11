@@ -339,6 +339,17 @@ class ExamStore {
 
   Future<void> close() => _db.close();
 
+  /// The connection's durability settings (diagnostics, tests): `journal_mode`, `synchronous`
+  /// (2 = FULL) and `foreign_keys`.
+  Future<Map<String, Object?>> pragmas() async {
+    Object? one(List<QueryRow> rows) => rows.isEmpty ? null : rows.first.data.values.first;
+    return {
+      'journal_mode': one(await _select('PRAGMA journal_mode')),
+      'synchronous': one(await _select('PRAGMA synchronous')),
+      'foreign_keys': one(await _select('PRAGMA foreign_keys')),
+    };
+  }
+
   Uint8List _seal(String s) => _native.seal(Uint8List.fromList(utf8.encode(s)));
   String _unseal(Uint8List b) => utf8.decode(_native.open(b));
 

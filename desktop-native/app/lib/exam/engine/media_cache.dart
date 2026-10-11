@@ -109,7 +109,7 @@ class SealedFileMediaStore implements MediaStore {
     final file = File(row.path);
     if (!file.existsSync()) return null;
     final bytes = native.open(file.readAsBytesSync());
-    unawaited(store.touchMedia(key, wallMs()));
+    unawaited(store.touchMedia(key, wallMs()).then<void>((_) {}, onError: (Object _) {}));
     return MediaBlob(key: key, mime: row.contentType, bytes: bytes);
   }
 
@@ -145,7 +145,13 @@ class MediaDownloader {
     final unique = <String, MediaRef>{for (final r in refs) r.key: r};
     final missing = <MediaRef>[];
     for (final r in unique.values) {
-      if (!await target.has(r.key)) missing.add(r);
+      bool present;
+      try {
+        present = await target.has(r.key);
+      } on Object {
+        present = false; // the store is closing or failed: fetching again is harmless
+      }
+      if (!present) missing.add(r);
     }
     missing.sort((a, b) => (first.contains(a.key) ? 0 : 1).compareTo(first.contains(b.key) ? 0 : 1));
     final total = missing.length;
