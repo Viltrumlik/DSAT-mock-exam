@@ -40,7 +40,11 @@ class AnnotationToolbar extends StatelessWidget {
     required this.onUnderline,
     required this.onDelete,
     this.onAddNote,
+    this.barKey,
   });
+
+  /// Keys the bar itself (the runner hit-tests it for outside clicks).
+  final Key? barKey;
 
   /// Selection centre x and top/bottom, in the coordinates of the Stack this sits in.
   final double anchorX;
@@ -54,11 +58,11 @@ class AnnotationToolbar extends StatelessWidget {
   final VoidCallback? onAddNote;
 
   Widget _divider() => Container(
-        width: 1,
-        height: BluebookTokens.toolbarDividerHeight,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        color: TwColors.slate200,
-      );
+    width: 1,
+    height: BluebookTokens.toolbarDividerHeight,
+    margin: const EdgeInsets.symmetric(horizontal: 2),
+    color: TwColors.slate200,
+  );
 
   Widget _iconButton({
     required Key key,
@@ -67,36 +71,35 @@ class AnnotationToolbar extends StatelessWidget {
     required Widget Function(Color fg) icon,
     bool active = false,
     bool danger = false,
-  }) =>
-      Pressable(
-        key: key,
-        semanticLabel: label,
-        selected: active,
-        onTap: onTap,
-        builder: (context, s) {
-          Color fg = BluebookTokens.toolbarIconColor;
-          Color? bg;
-          if (active) {
-            fg = TwColors.blue700;
-            bg = TwColors.blue50;
-          }
-          if (s.hovered) {
-            if (danger) {
-              fg = TwColors.red600;
-              bg = TwColors.red50;
-            } else if (!active) {
-              bg = TwColors.slate100;
-            }
-          }
-          return Container(
-            width: BluebookTokens.toolbarButton,
-            height: BluebookTokens.toolbarButton,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-            child: icon(fg),
-          );
-        },
+  }) => Pressable(
+    key: key,
+    semanticLabel: label,
+    selected: active,
+    onTap: onTap,
+    builder: (context, s) {
+      Color fg = BluebookTokens.toolbarIconColor;
+      Color? bg;
+      if (active) {
+        fg = TwColors.blue700;
+        bg = TwColors.blue50;
+      }
+      if (s.hovered) {
+        if (danger) {
+          fg = TwColors.red600;
+          bg = TwColors.red50;
+        } else if (!active) {
+          bg = TwColors.slate100;
+        }
+      }
+      return Container(
+        width: BluebookTokens.toolbarButton,
+        height: BluebookTokens.toolbarButton,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+        child: icon(fg),
       );
+    },
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -172,7 +175,11 @@ class AnnotationToolbar extends StatelessWidget {
     );
     return CustomSingleChildLayout(
       delegate: ToolbarLayoutDelegate(x: anchorX, top: anchorTop, bottom: anchorBottom),
-      child: Semantics(container: true, label: 'Annotation options', child: bar),
+      child: Semantics(
+        container: true,
+        label: 'Annotation options',
+        child: KeyedSubtree(key: barKey, child: bar),
+      ),
     );
   }
 }
@@ -190,7 +197,8 @@ class ToolbarLayoutDelegate extends SingleChildLayoutDelegate {
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) => constraints.loosen();
 
   @override
-  Offset getPositionForChild(Size size, Size childSize) => toolbarPosition(size, childSize, x: x, top: top, bottom: bottom);
+  Offset getPositionForChild(Size size, Size childSize) =>
+      toolbarPosition(size, childSize, x: x, top: top, bottom: bottom);
 
   @override
   bool shouldRelayout(ToolbarLayoutDelegate old) => old.x != x || old.top != top || old.bottom != bottom;

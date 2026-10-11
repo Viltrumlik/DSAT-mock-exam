@@ -27,6 +27,7 @@ class FloatingPanel extends StatefulWidget {
     this.dark = false,
     this.onBodyRect,
     this.panelKey,
+    this.docked = false,
   });
 
   final String title;
@@ -53,6 +54,11 @@ class FloatingPanel extends StatefulWidget {
 
   /// Key for the panel box (tests find panels by it).
   final Key? panelKey;
+
+  /// Docked: no Positioned, no drag, no resize — the box fills its parent. The windowed
+  /// fallback docks Notes beside the question card (architecture §2.6), because a Flutter
+  /// panel cannot float over a child window.
+  final bool docked;
 
   @override
   State<FloatingPanel> createState() => FloatingPanelState();
@@ -91,124 +97,131 @@ class FloatingPanelState extends State<FloatingPanel> {
     final viewport = MediaQuery.sizeOf(context);
     _reportBody();
     final dark = widget.dark;
-    return Positioned(
-      left: _pos.dx,
-      top: _pos.dy,
-      width: _size.width,
-      height: _size.height,
-      child: Semantics(
-        container: true,
-        label: widget.title,
-        child: Container(
-          key: widget.panelKey,
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: TwColors.white,
-            border: Border.all(color: BluebookTokens.panelBorder),
-            borderRadius: BorderRadius.circular(BluebookTokens.panelRadius),
-            boxShadow: TwShadows.xxl,
-          ),
-          child: Stack(
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Title bar (FloatingPanel.tsx:91-109): drag handle.
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    dragStartBehavior: DragStartBehavior.down,
-                    onPanStart: (d) => _dragAnchor = d.globalPosition - _pos,
-                    onPanUpdate: (d) {
-                      final a = _dragAnchor;
-                      if (a == null) return;
-                      final maxX = viewport.width - BluebookTokens.panelKeepVisibleX;
-                      final maxY = viewport.height - BluebookTokens.panelKeepVisibleY;
-                      setState(() => _pos = Offset(
-                            math.min(maxX, math.max(0, d.globalPosition.dx - a.dx)),
-                            math.min(maxY, math.max(0, d.globalPosition.dy - a.dy)),
-                          ));
-                    },
-                    onPanEnd: (_) => _dragAnchor = null,
-                    onSecondaryTap: () {},
-                    child: Container(
-                      key: const ValueKey('panel.titlebar'),
-                      padding: BluebookTokens.panelHeaderPadding,
-                      decoration: BoxDecoration(
-                        color: dark ? BluebookTokens.panelHeaderDark : BluebookTokens.panelHeaderLight,
-                        border: Border(
-                          bottom: BorderSide(
-                            color: dark ? BluebookTokens.panelHeaderDarkBorder : BluebookTokens.panelHeaderLightBorder,
-                          ),
+    final docked = widget.docked;
+    final box = Semantics(
+      container: true,
+      label: widget.title,
+      child: Container(
+        key: widget.panelKey,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: TwColors.white,
+          border: Border.all(color: BluebookTokens.panelBorder),
+          borderRadius: BorderRadius.circular(BluebookTokens.panelRadius),
+          boxShadow: TwShadows.xxl,
+        ),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Title bar (FloatingPanel.tsx:91-109): drag handle.
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  dragStartBehavior: DragStartBehavior.down,
+                  onPanStart: docked ? null : (d) => _dragAnchor = d.globalPosition - _pos,
+                  onPanUpdate: (d) {
+                    if (docked) return;
+                    final a = _dragAnchor;
+                    if (a == null) return;
+                    final maxX = viewport.width - BluebookTokens.panelKeepVisibleX;
+                    final maxY = viewport.height - BluebookTokens.panelKeepVisibleY;
+                    setState(
+                      () => _pos = Offset(
+                        math.min(maxX, math.max(0, d.globalPosition.dx - a.dx)),
+                        math.min(maxY, math.max(0, d.globalPosition.dy - a.dy)),
+                      ),
+                    );
+                  },
+                  onPanEnd: (_) => _dragAnchor = null,
+                  onSecondaryTap: () {},
+                  child: Container(
+                    key: const ValueKey('panel.titlebar'),
+                    padding: BluebookTokens.panelHeaderPadding,
+                    decoration: BoxDecoration(
+                      color: dark ? BluebookTokens.panelHeaderDark : BluebookTokens.panelHeaderLight,
+                      border: Border(
+                        bottom: BorderSide(
+                          color: dark ? BluebookTokens.panelHeaderDarkBorder : BluebookTokens.panelHeaderLightBorder,
                         ),
                       ),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.centerLeft,
-                              child: widget.headerLeft ??
-                                  Text(
-                                    widget.title,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.clip,
-                                    style: chromeText(14,
-                                        weight: FontWeight.w700,
-                                        color: dark ? TwColors.white : BluebookTokens.panelTitleColor,
-                                        height: 20 / 14),
-                                  ),
-                            ),
-                          ),
-                          Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (widget.headerExtra != null) ...[widget.headerExtra!, const SizedBox(width: 4)],
-                              PanelIconButton(
-                                key: ValueKey('panel.close.${widget.title}'),
-                                glyph: LucideGlyphs.x,
-                                label: 'Close ${widget.title}',
-                                dark: dark,
-                                onTap: widget.onClose,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ),
-                  ),
-                  Expanded(child: KeyedSubtree(key: _bodyKey, child: widget.child)),
-                ],
-              ),
-              if (widget.resizable)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  width: BluebookTokens.panelGrip,
-                  height: BluebookTokens.panelGrip,
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.resizeDownRight,
-                    child: GestureDetector(
-                      key: const ValueKey('panel.grip'),
-                      behavior: HitTestBehavior.opaque,
-                      dragStartBehavior: DragStartBehavior.down,
-                      onPanStart: (d) => _resizeAnchor = d.globalPosition - Offset(_size.width, _size.height),
-                      onPanUpdate: (d) {
-                        final a = _resizeAnchor;
-                        if (a == null) return;
-                        setState(() => _size = Size(
-                              math.max(widget.minSize.width, d.globalPosition.dx - a.dx),
-                              math.max(widget.minSize.height, d.globalPosition.dy - a.dy),
-                            ));
-                      },
-                      onPanEnd: (_) => _resizeAnchor = null,
-                      child: const CustomPaint(painter: _GripPainter()),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child:
+                                widget.headerLeft ??
+                                Text(
+                                  widget.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.clip,
+                                  style: chromeText(
+                                    14,
+                                    weight: FontWeight.w700,
+                                    color: dark ? TwColors.white : BluebookTokens.panelTitleColor,
+                                    height: 20 / 14,
+                                  ),
+                                ),
+                          ),
+                        ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (widget.headerExtra != null) ...[widget.headerExtra!, const SizedBox(width: 4)],
+                            PanelIconButton(
+                              key: ValueKey('panel.close.${widget.title}'),
+                              glyph: LucideGlyphs.x,
+                              label: 'Close ${widget.title}',
+                              dark: dark,
+                              onTap: widget.onClose,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
-            ],
-          ),
+                Expanded(
+                  child: KeyedSubtree(key: _bodyKey, child: widget.child),
+                ),
+              ],
+            ),
+            if (widget.resizable && !docked)
+              Positioned(
+                right: 0,
+                bottom: 0,
+                width: BluebookTokens.panelGrip,
+                height: BluebookTokens.panelGrip,
+                child: MouseRegion(
+                  cursor: SystemMouseCursors.resizeDownRight,
+                  child: GestureDetector(
+                    key: const ValueKey('panel.grip'),
+                    behavior: HitTestBehavior.opaque,
+                    dragStartBehavior: DragStartBehavior.down,
+                    onPanStart: (d) => _resizeAnchor = d.globalPosition - Offset(_size.width, _size.height),
+                    onPanUpdate: (d) {
+                      final a = _resizeAnchor;
+                      if (a == null) return;
+                      setState(
+                        () => _size = Size(
+                          math.max(widget.minSize.width, d.globalPosition.dx - a.dx),
+                          math.max(widget.minSize.height, d.globalPosition.dy - a.dy),
+                        ),
+                      );
+                    },
+                    onPanEnd: (_) => _resizeAnchor = null,
+                    child: const CustomPaint(painter: _GripPainter()),
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
+    if (docked) return box;
+    return Positioned(left: _pos.dx, top: _pos.dy, width: _size.width, height: _size.height, child: box);
   }
 }
 
@@ -244,23 +257,23 @@ class PanelIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Pressable(
-        semanticLabel: label,
-        onTap: onTap,
-        builder: (context, s) {
-          final Color fg;
-          final Color? bg;
-          if (dark) {
-            fg = s.hovered ? TwColors.white : BluebookTokens.panelDarkIcon;
-            bg = s.hovered ? BluebookTokens.panelDarkHover : null;
-          } else {
-            fg = s.hovered ? TwColors.slate700 : TwColors.slate400;
-            bg = s.hovered ? TwColors.slate200 : null;
-          }
-          return Container(
-            padding: const EdgeInsets.all(2),
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
-            child: LucideIcon(glyph, size: BluebookTokens.panelCloseIcon, color: fg),
-          );
-        },
+    semanticLabel: label,
+    onTap: onTap,
+    builder: (context, s) {
+      final Color fg;
+      final Color? bg;
+      if (dark) {
+        fg = s.hovered ? TwColors.white : BluebookTokens.panelDarkIcon;
+        bg = s.hovered ? BluebookTokens.panelDarkHover : null;
+      } else {
+        fg = s.hovered ? TwColors.slate700 : TwColors.slate400;
+        bg = s.hovered ? TwColors.slate200 : null;
+      }
+      return Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(4)),
+        child: LucideIcon(glyph, size: BluebookTokens.panelCloseIcon, color: fg),
       );
+    },
+  );
 }

@@ -19,12 +19,12 @@ enum RunnerShortcut { previous, next, choiceA, choiceB, choiceC, choiceD, mark, 
 extension RunnerShortcutChoice on RunnerShortcut {
   /// 0..3 for A..D, else null.
   int? get choiceIndex => switch (this) {
-        RunnerShortcut.choiceA => 0,
-        RunnerShortcut.choiceB => 1,
-        RunnerShortcut.choiceC => 2,
-        RunnerShortcut.choiceD => 3,
-        _ => null,
-      };
+    RunnerShortcut.choiceA => 0,
+    RunnerShortcut.choiceB => 1,
+    RunnerShortcut.choiceC => 2,
+    RunnerShortcut.choiceD => 3,
+    _ => null,
+  };
 }
 
 /// useKeyboardShortcuts.ts:58-64, verbatim (the help list).
@@ -39,17 +39,17 @@ const shortcutHelpRows = <({String keys, String action})>[
 /// The `e.key` switch of useKeyboardShortcuts.ts:39-49. [key] is a DOM `KeyboardEvent.key`
 /// value — also what the content island forwards in `key` messages.
 RunnerShortcut? shortcutForDomKey(String key) => switch (key) {
-      'ArrowLeft' => RunnerShortcut.previous,
-      'ArrowRight' => RunnerShortcut.next,
-      'a' || 'A' => RunnerShortcut.choiceA,
-      'b' || 'B' => RunnerShortcut.choiceB,
-      'c' || 'C' => RunnerShortcut.choiceC,
-      'd' || 'D' => RunnerShortcut.choiceD,
-      'm' || 'M' => RunnerShortcut.mark,
-      'r' || 'R' => RunnerShortcut.navigator,
-      '?' => RunnerShortcut.help,
-      _ => null,
-    };
+  'ArrowLeft' => RunnerShortcut.previous,
+  'ArrowRight' => RunnerShortcut.next,
+  'a' || 'A' => RunnerShortcut.choiceA,
+  'b' || 'B' => RunnerShortcut.choiceB,
+  'c' || 'C' => RunnerShortcut.choiceC,
+  'd' || 'D' => RunnerShortcut.choiceD,
+  'm' || 'M' => RunnerShortcut.mark,
+  'r' || 'R' => RunnerShortcut.navigator,
+  '?' => RunnerShortcut.help,
+  _ => null,
+};
 
 /// A Flutter key event → shortcut, applying the modifier rule. Repeats count, like keydown.
 RunnerShortcut? shortcutForKeyEvent(KeyEvent event, {HardwareKeyboard? keyboard}) {
@@ -91,75 +91,86 @@ class KeyboardShortcutsHelp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => PointerSink(
-        key: const ValueKey('help.scrim'),
-        color: BluebookTokens.helpScrim,
-        onTap: onClose,
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: GestureDetector(
-              onTap: () {}, // clicks inside the card do not close it (stopPropagation)
-              child: Container(
-                key: const ValueKey('help.card'),
-                constraints: const BoxConstraints(maxWidth: BluebookTokens.helpMaxWidth),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: TwColors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: TwShadows.xl,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 16),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text('Keyboard shortcuts',
-                                style: chromeText(18,
-                                    weight: FontWeight.w700,
-                                    color: TwColors.slate900,
-                                    trackingEm: BluebookTokens.trackingTight,
-                                    height: 28 / 18)),
+    key: const ValueKey('help.scrim'),
+    color: BluebookTokens.helpScrim,
+    onTap: onClose,
+    child: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: GestureDetector(
+          onTap: () {}, // clicks inside the card do not close it (stopPropagation)
+          child: Container(
+            key: const ValueKey('help.card'),
+            constraints: const BoxConstraints(maxWidth: BluebookTokens.helpMaxWidth),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: TwColors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: TwShadows.xl,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Keyboard shortcuts',
+                          style: chromeText(
+                            18,
+                            weight: FontWeight.w700,
+                            color: TwColors.slate900,
+                            trackingEm: BluebookTokens.trackingTight,
+                            height: 28 / 18,
                           ),
-                          Pressable(
-                            key: const ValueKey('help.close'),
-                            semanticLabel: 'Close keyboard shortcuts',
-                            onTap: onClose,
-                            builder: (context, s) => LucideIcon(LucideGlyphs.x,
-                                size: 20, color: s.hovered ? BluebookTokens.closeIconHover : BluebookTokens.closeIconColor),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
-                    for (var i = 0; i < shortcutHelpRows.length; i++) ...[
-                      if (i > 0) const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(shortcutHelpRows[i].action,
-                                style: chromeText(14, color: TwColors.slate600, height: 20 / 14)),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: BluebookTokens.kbdBackground,
-                              border: Border.all(color: BluebookTokens.kbdBorder),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(shortcutHelpRows[i].keys,
-                                style: monoText(12, weight: FontWeight.w700, color: BluebookTokens.kbdColor, height: 16 / 12)),
-                          ),
-                        ],
+                      Pressable(
+                        key: const ValueKey('help.close'),
+                        semanticLabel: 'Close keyboard shortcuts',
+                        onTap: onClose,
+                        builder: (context, s) => LucideIcon(
+                          LucideGlyphs.x,
+                          size: 20,
+                          color: s.hovered ? BluebookTokens.closeIconHover : BluebookTokens.closeIconColor,
+                        ),
                       ),
                     ],
-                  ],
+                  ),
                 ),
-              ),
+                for (var i = 0; i < shortcutHelpRows.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          shortcutHelpRows[i].action,
+                          style: chromeText(14, color: TwColors.slate600, height: 20 / 14),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: BluebookTokens.kbdBackground,
+                          border: Border.all(color: BluebookTokens.kbdBorder),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          shortcutHelpRows[i].keys,
+                          style: monoText(12, weight: FontWeight.w700, color: BluebookTokens.kbdColor, height: 16 / 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
             ),
           ),
         ),
-      );
+      ),
+    ),
+  );
 }

@@ -110,7 +110,13 @@ class DesmosController extends ChangeNotifier {
   /// Shown/hidden with the panel (hidden islands drop to low memory).
   Future<void> setVisible(bool visible) async => _host?.setVisible(visible);
 
-  void _onEvent(IslandEvent e) {
+  /// Handled in a microtask (see ContentIslandBridge._onEvent): replying from inside a
+  /// synchronous delivery would re-enter the host.
+  void _onEvent(IslandEvent e) => scheduleMicrotask(() {
+        if (!_disposed) _handle(e);
+      });
+
+  void _handle(IslandEvent e) {
     switch (e) {
       case IslandCrashedEvent(:final reason):
         onDiagnostic?.call('desmos', 'crashed: $reason');

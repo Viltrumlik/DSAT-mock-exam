@@ -86,11 +86,15 @@ class _DesmosPanelState extends State<DesmosPanel> {
           color: active ? TwColors.white : null,
           borderRadius: BorderRadius.circular(BluebookTokens.calcTabRadius),
         ),
-        child: Text(label,
-            style: chromeText(12,
-                weight: FontWeight.w700,
-                color: active ? TwColors.slate900 : (s.hovered ? TwColors.white : TwColors.slate300),
-                height: 16 / 12)),
+        child: Text(
+          label,
+          style: chromeText(
+            12,
+            weight: FontWeight.w700,
+            color: active ? TwColors.slate900 : (s.hovered ? TwColors.white : TwColors.slate300),
+            height: 16 / 12,
+          ),
+        ),
       ),
     );
   }

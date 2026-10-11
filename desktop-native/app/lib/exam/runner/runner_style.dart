@@ -19,21 +19,21 @@ TextStyle chromeText(
   List<FontFeature>? features,
   TextDecoration? decoration,
   Color? decorationColor,
-}) =>
-    TextStyle(
-      fontFamily: BluebookTokens.chromeFont,
-      fontFamilyFallback: BluebookTokens.chromeFontFallback,
-      fontSize: size,
-      fontWeight: weight,
-      fontStyle: style,
-      color: color,
-      height: height,
-      leadingDistribution: TextLeadingDistribution.even,
-      letterSpacing: trackingEm == 0 ? null : trackingEm * size,
-      fontFeatures: features,
-      decoration: decoration,
-      decorationColor: decorationColor,
-    );
+}) => TextStyle(
+  fontFamily: BluebookTokens.chromeFont,
+  fontFamilyFallback: BluebookTokens.chromeFontFallback,
+  fontSize: size,
+  fontWeight: weight,
+  fontStyle: style,
+  color: color,
+  height: height,
+  leadingDistribution: TextLeadingDistribution.even,
+  // Always set: a null spacing would inherit a Material theme's (bodyLarge has 0.5).
+      letterSpacing: trackingEm * size,
+  fontFeatures: features,
+  decoration: decoration,
+  decorationColor: decorationColor,
+);
 
 /// The UI sans used by overlays the website portals outside the runner (Report dialog, toasts).
 TextStyle uiText(
@@ -42,41 +42,49 @@ TextStyle uiText(
   Color color = BluebookTokens.textPrimary,
   double height = 1.5,
   double trackingEm = 0,
-}) =>
-    TextStyle(
-      fontFamily: BluebookTokens.uiFont,
-      fontFamilyFallback: BluebookTokens.uiFontFallback,
-      fontSize: size,
-      fontWeight: weight,
-      color: color,
-      height: height,
-      leadingDistribution: TextLeadingDistribution.even,
-      letterSpacing: trackingEm == 0 ? null : trackingEm * size,
-    );
+}) => TextStyle(
+  fontFamily: BluebookTokens.uiFont,
+  fontFamilyFallback: BluebookTokens.uiFontFallback,
+  fontSize: size,
+  fontWeight: weight,
+  color: color,
+  height: height,
+  leadingDistribution: TextLeadingDistribution.even,
+  // Always set: a null spacing would inherit a Material theme's (bodyLarge has 0.5).
+      letterSpacing: trackingEm * size,
+);
 
 /// Georgia reading text (Directions, Reference formulas).
-TextStyle readingText(double size, {Color color = TwColors.slate900, double height = 1.5, FontWeight weight = FontWeight.w400}) =>
-    TextStyle(
-      fontFamily: BluebookTokens.readingFont,
-      fontFamilyFallback: const ['Times New Roman'],
-      fontSize: size,
-      fontWeight: weight,
-      color: color,
-      height: height,
-      leadingDistribution: TextLeadingDistribution.even,
-    );
+TextStyle readingText(
+  double size, {
+  Color color = TwColors.slate900,
+  double height = 1.5,
+  FontWeight weight = FontWeight.w400,
+}) => TextStyle(
+  fontFamily: BluebookTokens.readingFont,
+  fontFamilyFallback: const ['Times New Roman'],
+  fontSize: size,
+  fontWeight: weight,
+  color: color,
+  height: height,
+  leadingDistribution: TextLeadingDistribution.even,
+);
 
 /// Monospace (Tailwind `font-mono`).
-TextStyle monoText(double size, {Color color = TwColors.slate900, FontWeight weight = FontWeight.w400, double height = 1.5}) =>
-    TextStyle(
-      fontFamily: BluebookTokens.monoFont,
-      fontFamilyFallback: BluebookTokens.monoFontFallback,
-      fontSize: size,
-      fontWeight: weight,
-      color: color,
-      height: height,
-      leadingDistribution: TextLeadingDistribution.even,
-    );
+TextStyle monoText(
+  double size, {
+  Color color = TwColors.slate900,
+  FontWeight weight = FontWeight.w400,
+  double height = 1.5,
+}) => TextStyle(
+  fontFamily: BluebookTokens.monoFont,
+  fontFamilyFallback: BluebookTokens.monoFontFallback,
+  fontSize: size,
+  fontWeight: weight,
+  color: color,
+  height: height,
+  leadingDistribution: TextLeadingDistribution.even,
+);
 
 /// Hover/press state handed to a [Pressable] builder.
 @immutable
@@ -189,15 +197,17 @@ class PointerSink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MouseRegion(
-        cursor: SystemMouseCursors.basic,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          onSecondaryTap: () {},
-          onPanStart: (_) {},
-          child: color == null ? (child ?? const SizedBox.expand()) : ColoredBox(color: color!, child: child ?? const SizedBox.expand()),
-        ),
-      );
+    cursor: SystemMouseCursors.basic,
+    child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      onSecondaryTap: () {},
+      onPanStart: (_) {},
+      child: color == null
+          ? (child ?? const SizedBox.expand())
+          : ColoredBox(color: color!, child: child ?? const SizedBox.expand()),
+    ),
+  );
 }
 
 /// The website's CSS spinner: `rounded-full border-4 border-slate-200 border-t-blue-600
@@ -241,14 +251,14 @@ class _BorderSpinnerState extends State<BorderSpinner> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
-        dimension: widget.size,
-        child: AnimatedBuilder(
-          animation: _c,
-          builder: (context, _) => CustomPaint(
-            painter: _SpinnerPainter(turns: _c.value, stroke: widget.stroke, track: widget.track, arc: widget.arc),
-          ),
-        ),
-      );
+    dimension: widget.size,
+    child: AnimatedBuilder(
+      animation: _c,
+      builder: (context, _) => CustomPaint(
+        painter: _SpinnerPainter(turns: _c.value, stroke: widget.stroke, track: widget.track, arc: widget.arc),
+      ),
+    ),
+  );
 }
 
 class _SpinnerPainter extends CustomPainter {

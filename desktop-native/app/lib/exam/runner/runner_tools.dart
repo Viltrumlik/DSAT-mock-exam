@@ -50,17 +50,17 @@ class ToolbarRequest {
   final String? text;
 
   ToolbarRequest copyWith({HighlightColor? color, UnderlineStyle? underline}) => ToolbarRequest(
-        qid: qid,
-        container: container,
-        x: x,
-        top: top,
-        bottom: bottom,
-        selectionId: selectionId,
-        annotId: annotId,
-        color: color ?? this.color,
-        underline: underline ?? this.underline,
-        text: text,
-      );
+    qid: qid,
+    container: container,
+    x: x,
+    top: top,
+    bottom: bottom,
+    selectionId: selectionId,
+    annotId: annotId,
+    color: color ?? this.color,
+    underline: underline ?? this.underline,
+    text: text,
+  );
 }
 
 class RunnerTools extends ChangeNotifier {
@@ -108,9 +108,9 @@ class RunnerTools extends ChangeNotifier {
 
   /// useExamTools.ts:42-46 — every open/close starts at the normal size.
   void toggleCalculator() => _set(() {
-        calculatorEnlarged = false;
-        calculatorOpen = !calculatorOpen;
-      });
+    calculatorEnlarged = false;
+    calculatorOpen = !calculatorOpen;
+  });
 
   void toggleCalculatorEnlarge() => _set(() => calculatorEnlarged = !calculatorEnlarged);
   void setCalculatorTab(CalculatorTab tab) => _set(() => calculatorTab = tab);
@@ -128,10 +128,10 @@ class RunnerTools extends ChangeNotifier {
   void toggleTimerHidden() => _set(() => timerHidden = !timerHidden);
 
   void openReport({required int questionId, required int questionNumber}) => _set(() {
-        reportOpen = true;
-        reportQuestionId = questionId;
-        reportQuestionNumber = questionNumber;
-      });
+    reportOpen = true;
+    reportQuestionId = questionId;
+    reportQuestionNumber = questionNumber;
+  });
 
   void closeReport() => _set(() => reportOpen = false);
 
@@ -146,11 +146,11 @@ class RunnerTools extends ChangeNotifier {
   /// Closes everything that hangs over the question card (used when a full screen such as
   /// Check Your Work replaces the frame, and on module change).
   void closeTransient() => _set(() {
-        navigatorOpen = false;
-        moreOpen = false;
-        directionsOpen = false;
-        toolbar = null;
-      });
+    navigatorOpen = false;
+    moreOpen = false;
+    directionsOpen = false;
+    toolbar = null;
+  });
 
   /// Runs [move] unless navigation is frozen, then freezes it for [navLockDuration]
   /// (withNavLock, ExamRunnerPage.tsx:270-280). Returns whether [move] ran.
@@ -165,20 +165,20 @@ class RunnerTools extends ChangeNotifier {
 
   /// A one-line fingerprint of the state (tests: "did this button change anything?").
   String get fingerprint => [
-        calculatorOpen,
-        calculatorEnlarged,
-        calculatorTab.name,
-        referenceOpen,
-        notesOpen,
-        helpOpen,
-        directionsOpen,
-        navigatorOpen,
-        moreOpen,
-        timerHidden,
-        reportOpen,
-        toolbar == null ? '-' : '${toolbar!.selectionId ?? toolbar!.annotId}:${toolbar!.color}:${toolbar!.underline}',
-        activeColor.name,
-      ].join('|');
+    calculatorOpen,
+    calculatorEnlarged,
+    calculatorTab.name,
+    referenceOpen,
+    notesOpen,
+    helpOpen,
+    directionsOpen,
+    navigatorOpen,
+    moreOpen,
+    timerHidden,
+    reportOpen,
+    toolbar == null ? '-' : '${toolbar!.selectionId ?? toolbar!.annotId}:${toolbar!.color}:${toolbar!.underline}',
+    activeColor.name,
+  ].join('|');
 
   @override
   void dispose() {

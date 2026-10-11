@@ -17,12 +17,36 @@ class _Key {
 
 /// ScientificCalculator.tsx:5-12, in order.
 const _keys = <_Key>[
-  _Key('sin', insert: 'sin('), _Key('cos', insert: 'cos('), _Key('tan', insert: 'tan('), _Key('^', insert: '^'), _Key('√', insert: 'sqrt('), //
-  _Key('ln', insert: 'ln('), _Key('log', insert: 'log('), _Key('(', insert: '('), _Key(')', insert: ')'), _Key('!', insert: '!'), //
-  _Key('7', insert: '7'), _Key('8', insert: '8'), _Key('9', insert: '9'), _Key('÷', insert: '/'), _Key('π', insert: 'pi'), //
-  _Key('4', insert: '4'), _Key('5', insert: '5'), _Key('6', insert: '6'), _Key('×', insert: '*'), _Key('e', insert: 'e'), //
-  _Key('1', insert: '1'), _Key('2', insert: '2'), _Key('3', insert: '3'), _Key('−', insert: '-'), _Key('%', insert: '%'), //
-  _Key('0', insert: '0'), _Key('.', insert: '.'), _Key('C', act: _Act.clear), _Key('⌫', act: _Act.back), _Key('+', insert: '+'), //
+  _Key('sin', insert: 'sin('),
+  _Key('cos', insert: 'cos('),
+  _Key('tan', insert: 'tan('),
+  _Key('^', insert: '^'),
+  _Key('√', insert: 'sqrt('), //
+  _Key('ln', insert: 'ln('),
+  _Key('log', insert: 'log('),
+  _Key('(', insert: '('),
+  _Key(')', insert: ')'),
+  _Key('!', insert: '!'), //
+  _Key('7', insert: '7'),
+  _Key('8', insert: '8'),
+  _Key('9', insert: '9'),
+  _Key('÷', insert: '/'),
+  _Key('π', insert: 'pi'), //
+  _Key('4', insert: '4'),
+  _Key('5', insert: '5'),
+  _Key('6', insert: '6'),
+  _Key('×', insert: '*'),
+  _Key('e', insert: 'e'), //
+  _Key('1', insert: '1'),
+  _Key('2', insert: '2'),
+  _Key('3', insert: '3'),
+  _Key('−', insert: '-'),
+  _Key('%', insert: '%'), //
+  _Key('0', insert: '0'),
+  _Key('.', insert: '.'),
+  _Key('C', act: _Act.clear),
+  _Key('⌫', act: _Act.back),
+  _Key('+', insert: '+'), //
 ];
 
 /// The scientific calculator. State is per mount, like the website's `useState`.
@@ -78,12 +102,16 @@ class ScientificCalculatorState extends State<ScientificCalculator> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('SCIENTIFIC',
-                    style: chromeText(11,
-                        weight: FontWeight.w700,
-                        color: TwColors.slate400,
-                        trackingEm: BluebookTokens.trackingWidest,
-                        height: 1.5)),
+                Text(
+                  'SCIENTIFIC',
+                  style: chromeText(
+                    11,
+                    weight: FontWeight.w700,
+                    color: TwColors.slate400,
+                    trackingEm: BluebookTokens.trackingWidest,
+                    height: 1.5,
+                  ),
+                ),
                 Pressable(
                   key: const ValueKey('sci.degrees'),
                   semanticLabel: _degrees ? 'DEG' : 'RAD',
@@ -95,8 +123,10 @@ class ScientificCalculatorState extends State<ScientificCalculator> {
                       border: Border.all(color: TwColors.slate300),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text(_degrees ? 'DEG' : 'RAD',
-                        style: chromeText(12, weight: FontWeight.w700, color: TwColors.slate600, height: 16 / 12)),
+                    child: Text(
+                      _degrees ? 'DEG' : 'RAD',
+                      style: chromeText(12, weight: FontWeight.w700, color: TwColors.slate600, height: 16 / 12),
+                    ),
                   ),
                 ),
               ],
@@ -116,17 +146,21 @@ class ScientificCalculatorState extends State<ScientificCalculator> {
               children: [
                 ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 20),
-                  child: Text(_expr.isEmpty ? '0' : _expr,
-                      key: const ValueKey('sci.expr'),
-                      textAlign: TextAlign.right,
-                      style: monoText(14, color: TwColors.slate500, height: 20 / 14)),
+                  child: Text(
+                    _expr.isEmpty ? '0' : _expr,
+                    key: const ValueKey('sci.expr'),
+                    textAlign: TextAlign.right,
+                    style: monoText(14, color: TwColors.slate500, height: 20 / 14),
+                  ),
                 ),
                 ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 28),
-                  child: Text(preview.isEmpty ? '0' : preview,
-                      key: const ValueKey('sci.result'),
-                      textAlign: TextAlign.right,
-                      style: monoText(24, weight: FontWeight.w700, color: TwColors.slate900, height: 32 / 24)),
+                  child: Text(
+                    preview.isEmpty ? '0' : preview,
+                    key: const ValueKey('sci.result'),
+                    textAlign: TextAlign.right,
+                    style: monoText(24, weight: FontWeight.w700, color: TwColors.slate900, height: 32 / 24),
+                  ),
                 ),
               ],
             ),
@@ -134,52 +168,59 @@ class ScientificCalculatorState extends State<ScientificCalculator> {
           // ScientificCalculator.tsx:45-61: grid flex-1 grid-cols-5 gap-1.5; every auto row
           // grows by the same amount, the "=" row carries mt-1 + py-2 on top.
           Expanded(
-            child: LayoutBuilder(builder: (context, c) {
-              const gap = 6.0;
-              const keyRows = 6;
-              const keyBase = 20.0; // text-sm line box
-              const equalsBase = 4 + 8 + 20 + 8.0; // mt-1 + py-2 + line
-              final extra = ((c.maxHeight - keyRows * gap - keyRows * keyBase - equalsBase) / (keyRows + 1))
-                  .clamp(0.0, double.infinity);
-              final rowH = keyBase + extra;
-              return Column(
-                children: [
-                  for (var r = 0; r < keyRows; r++) ...[
-                    SizedBox(
-                      height: rowH,
-                      child: Row(
-                        children: [
-                          for (var col = 0; col < 5; col++) ...[
-                            if (col > 0) const SizedBox(width: gap),
-                            Expanded(child: _keyButton(_keys[r * 5 + col])),
+            child: LayoutBuilder(
+              builder: (context, c) {
+                const gap = 6.0;
+                const keyRows = 6;
+                const keyBase = 20.0; // text-sm line box
+                const equalsBase = 4 + 8 + 20 + 8.0; // mt-1 + py-2 + line
+                final extra = ((c.maxHeight - keyRows * gap - keyRows * keyBase - equalsBase) / (keyRows + 1)).clamp(
+                  0.0,
+                  double.infinity,
+                );
+                final rowH = keyBase + extra;
+                return Column(
+                  children: [
+                    for (var r = 0; r < keyRows; r++) ...[
+                      SizedBox(
+                        height: rowH,
+                        child: Row(
+                          children: [
+                            for (var col = 0; col < 5; col++) ...[
+                              if (col > 0) const SizedBox(width: gap),
+                              Expanded(child: _keyButton(_keys[r * 5 + col])),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: gap),
-                  ],
-                  SizedBox(
-                    height: equalsBase + extra,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Pressable(
-                        key: const ValueKey('sci.equals'),
-                        semanticLabel: '=',
-                        onTap: _equals,
-                        builder: (context, s) => Container(
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: s.hovered ? BluebookTokens.sciEqualsHover : BluebookTokens.sciEquals,
-                            borderRadius: BorderRadius.circular(6),
+                      const SizedBox(height: gap),
+                    ],
+                    SizedBox(
+                      height: equalsBase + extra,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Pressable(
+                          key: const ValueKey('sci.equals'),
+                          semanticLabel: '=',
+                          onTap: _equals,
+                          builder: (context, s) => Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: s.hovered ? BluebookTokens.sciEqualsHover : BluebookTokens.sciEquals,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '=',
+                              style: chromeText(14, weight: FontWeight.w700, color: TwColors.white, height: 20 / 14),
+                            ),
                           ),
-                          child: Text('=', style: chromeText(14, weight: FontWeight.w700, color: TwColors.white, height: 20 / 14)),
                         ),
                       ),
                     ),
-                  ),
-                ],
-              );
-            }),
+                  ],
+                );
+              },
+            ),
           ),
         ],
       ),
@@ -216,7 +257,10 @@ class ScientificCalculatorState extends State<ScientificCalculator> {
                 ? const [BoxShadow(color: BluebookTokens.sciDigitRing, spreadRadius: 1)]
                 : null,
           ),
-          child: Text(k.label, style: chromeText(14, weight: FontWeight.w600, color: fg, height: 20 / 14)),
+          child: Text(
+            k.label,
+            style: chromeText(14, weight: FontWeight.w600, color: fg, height: 20 / 14),
+          ),
         );
       },
     );

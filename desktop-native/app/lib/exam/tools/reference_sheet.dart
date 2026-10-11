@@ -57,55 +57,99 @@ class ReferenceFigure {
 
 /// Row 1 (ReferenceSheet.tsx:45-91).
 const referencePlaneFigures = <ReferenceFigure>[
-  ReferenceFigure('circle', [FigureLabel('r', 60, 38, 11)], [
-    [FText('A = πr'), FSup('2')],
-    [FText('C = 2πr')],
-  ]),
-  ReferenceFigure('rectangle', [FigureLabel('ℓ', 56, 20, 11), FigureLabel('w', 104, 50, 11)], [
-    [FText('A = ℓw')],
-  ]),
-  ReferenceFigure('triangle', [FigureLabel('h', 55, 50, 11), FigureLabel('b', 42, 84, 11)], [
-    [FText('A = '), FFrac('1', '2'), FText(' bh')],
-  ]),
-  ReferenceFigure('right_triangle', [FigureLabel('b', 6, 52, 11), FigureLabel('c', 60, 44, 11), FigureLabel('a', 52, 84, 11)], [
-    [FText('c'), FSup('2'), FText(' = a'), FSup('2'), FText(' + b'), FSup('2')],
-  ]),
-  ReferenceFigure('triangle_30_60_90', [
-    FigureLabel('x√3', 40, 84, 10),
-    FigureLabel('x', 100, 54, 10),
-    FigureLabel('2x', 48, 44, 10),
-    FigureLabel('30°', 26, 66, 8, italic: false),
-    FigureLabel('60°', 80, 42, 8, italic: false),
-  ], [
-    [FText('30°-60°-90°')],
-  ]),
-  ReferenceFigure('triangle_45_45_90', [
-    FigureLabel('s', 46, 84, 10),
-    FigureLabel('s', 90, 54, 10),
-    FigureLabel('s√2', 44, 44, 10),
-    FigureLabel('45°', 30, 66, 8, italic: false),
-  ], [
-    [FText('45°-45°-90°')],
-  ]),
+  ReferenceFigure(
+    'circle',
+    [FigureLabel('r', 60, 38, 11)],
+    [
+      [FText('A = πr'), FSup('2')],
+      [FText('C = 2πr')],
+    ],
+  ),
+  ReferenceFigure(
+    'rectangle',
+    [FigureLabel('ℓ', 56, 20, 11), FigureLabel('w', 104, 50, 11)],
+    [
+      [FText('A = ℓw')],
+    ],
+  ),
+  ReferenceFigure(
+    'triangle',
+    [FigureLabel('h', 55, 50, 11), FigureLabel('b', 42, 84, 11)],
+    [
+      [FText('A = '), FFrac('1', '2'), FText(' bh')],
+    ],
+  ),
+  ReferenceFigure(
+    'right_triangle',
+    [FigureLabel('b', 6, 52, 11), FigureLabel('c', 60, 44, 11), FigureLabel('a', 52, 84, 11)],
+    [
+      [FText('c'), FSup('2'), FText(' = a'), FSup('2'), FText(' + b'), FSup('2')],
+    ],
+  ),
+  ReferenceFigure(
+    'triangle_30_60_90',
+    [
+      FigureLabel('x√3', 40, 84, 10),
+      FigureLabel('x', 100, 54, 10),
+      FigureLabel('2x', 48, 44, 10),
+      FigureLabel('30°', 26, 66, 8, italic: false),
+      FigureLabel('60°', 80, 42, 8, italic: false),
+    ],
+    [
+      [FText('30°-60°-90°')],
+    ],
+  ),
+  ReferenceFigure(
+    'triangle_45_45_90',
+    [
+      FigureLabel('s', 46, 84, 10),
+      FigureLabel('s', 90, 54, 10),
+      FigureLabel('s√2', 44, 44, 10),
+      FigureLabel('45°', 30, 66, 8, italic: false),
+    ],
+    [
+      [FText('45°-45°-90°')],
+    ],
+  ),
 ];
 
 /// Row 2 (ReferenceSheet.tsx:96-141).
 const referenceSolids = <ReferenceFigure>[
-  ReferenceFigure('rectangular_solid', [FigureLabel('ℓ', 36, 86, 10), FigureLabel('h', 14, 60, 10), FigureLabel('w', 70, 20, 10)], [
-    [FText('V = ℓwh')],
-  ]),
-  ReferenceFigure('cylinder', [FigureLabel('r', 58, 20, 10), FigureLabel('h', 78, 48, 10)], [
-    [FText('V = πr'), FSup('2'), FText('h')],
-  ]),
-  ReferenceFigure('sphere', [FigureLabel('r', 58, 38, 10)], [
-    [FText('V = '), FFrac('4', '3'), FText('πr'), FSup('3')],
-  ]),
-  ReferenceFigure('cone', [FigureLabel('h', 38, 46, 10), FigureLabel('r', 60, 62, 10)], [
-    [FText('V = '), FFrac('1', '3'), FText('πr'), FSup('2'), FText('h')],
-  ]),
-  ReferenceFigure('pyramid', [FigureLabel('h', 40, 44, 10), FigureLabel('ℓ', 34, 72, 10), FigureLabel('w', 74, 66, 10)], [
-    [FText('V = '), FFrac('1', '3'), FText('ℓwh')],
-  ]),
+  ReferenceFigure(
+    'rectangular_solid',
+    [FigureLabel('ℓ', 36, 86, 10), FigureLabel('h', 14, 60, 10), FigureLabel('w', 70, 20, 10)],
+    [
+      [FText('V = ℓwh')],
+    ],
+  ),
+  ReferenceFigure(
+    'cylinder',
+    [FigureLabel('r', 58, 20, 10), FigureLabel('h', 78, 48, 10)],
+    [
+      [FText('V = πr'), FSup('2'), FText('h')],
+    ],
+  ),
+  ReferenceFigure(
+    'sphere',
+    [FigureLabel('r', 58, 38, 10)],
+    [
+      [FText('V = '), FFrac('4', '3'), FText('πr'), FSup('3')],
+    ],
+  ),
+  ReferenceFigure(
+    'cone',
+    [FigureLabel('h', 38, 46, 10), FigureLabel('r', 60, 62, 10)],
+    [
+      [FText('V = '), FFrac('1', '3'), FText('πr'), FSup('2'), FText('h')],
+    ],
+  ),
+  ReferenceFigure(
+    'pyramid',
+    [FigureLabel('h', 40, 44, 10), FigureLabel('ℓ', 34, 72, 10), FigureLabel('w', 74, 66, 10)],
+    [
+      [FText('V = '), FFrac('1', '3'), FText('ℓwh')],
+    ],
+  ),
 ];
 
 /// ReferenceSheet.tsx:145-147.
@@ -122,80 +166,100 @@ class ReferenceSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => FloatingPanel(
-        panelKey: const ValueKey('panel.reference'),
-        title: 'Reference Sheet',
-        onClose: onClose,
-        initial: BluebookTokens.referenceRect,
-        minSize: BluebookTokens.referenceMin,
-        child: const SingleChildScrollView(
-          child: Padding(padding: EdgeInsets.all(20), child: ReferenceSheetContent()),
-        ),
-      );
+    panelKey: const ValueKey('panel.reference'),
+    title: 'Reference Sheet',
+    onClose: onClose,
+    initial: BluebookTokens.referenceRect,
+    minSize: BluebookTokens.referenceMin,
+    child: const SingleChildScrollView(
+      child: Padding(padding: EdgeInsets.all(20), child: ReferenceSheetContent()),
+    ),
+  );
 }
 
 /// The sheet's content (no panel), for tests and goldens.
 class ReferenceSheetContent extends StatelessWidget {
   const ReferenceSheetContent({super.key});
 
-  Widget _row(List<ReferenceFigure> figures) => LayoutBuilder(builder: (context, c) {
-        // `grid sm:grid-cols-6 / sm:grid-cols-5 gap-x-4` (the window is always wider than
-        // `sm`): equal minmax(0, 1fr) columns; a figure wider than its column overflows it
-        // evenly on both sides, like the website.
-        const gap = 16.0;
-        final n = figures.length;
-        final col = (c.maxWidth - gap * (n - 1)) / n;
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            for (var i = 0; i < n; i++) ...[
-              if (i > 0) const SizedBox(width: gap),
-              SizedBox(width: col, child: OverflowBox(maxWidth: double.infinity, fit: OverflowBoxFit.deferToChild, child: _Figure(figures[i]))),
-            ],
+  Widget _row(List<ReferenceFigure> figures) => LayoutBuilder(
+    builder: (context, c) {
+      // `grid sm:grid-cols-6 / sm:grid-cols-5 gap-x-4` (the window is always wider than
+      // `sm`): equal minmax(0, 1fr) columns; a figure wider than its column overflows it
+      // evenly on both sides, like the website.
+      const gap = 16.0;
+      final n = figures.length;
+      final col = (c.maxWidth - gap * (n - 1)) / n;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var i = 0; i < n; i++) ...[
+            if (i > 0) const SizedBox(width: gap),
+            SizedBox(
+              width: col,
+              child: OverflowBox(
+                maxWidth: double.infinity,
+                fit: OverflowBoxFit.deferToChild,
+                child: _Figure(figures[i]),
+              ),
+            ),
           ],
-        );
-      });
+        ],
+      );
+    },
+  );
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ReferenceSheet.tsx:40-42
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-            decoration: BoxDecoration(color: TwColors.slate900, borderRadius: BorderRadius.circular(4)),
-            child: Text('REFERENCE',
-                style: chromeText(10,
-                    weight: FontWeight.w700, color: TwColors.white, trackingEm: BluebookTokens.trackingWidest, height: 1.5)),
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // ReferenceSheet.tsx:40-42
+      Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+        decoration: BoxDecoration(color: TwColors.slate900, borderRadius: BorderRadius.circular(4)),
+        child: Text(
+          'REFERENCE',
+          style: chromeText(
+            10,
+            weight: FontWeight.w700,
+            color: TwColors.white,
+            trackingEm: BluebookTokens.trackingWidest,
+            height: 1.5,
           ),
-          _row(referencePlaneFigures),
-          // ReferenceSheet.tsx:93
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            child: Center(
-              child: Text('Special Right Triangles',
-                  style: chromeText(11, weight: FontWeight.w600, color: TwColors.slate500, height: 1.5)),
-            ),
+        ),
+      ),
+      _row(referencePlaneFigures),
+      // ReferenceSheet.tsx:93
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Center(
+          child: Text(
+            'Special Right Triangles',
+            style: chromeText(11, weight: FontWeight.w600, color: TwColors.slate500, height: 1.5),
           ),
-          _row(referenceSolids),
-          // ReferenceSheet.tsx:144-148
-          Container(
-            margin: const EdgeInsets.only(top: 16),
-            padding: const EdgeInsets.only(top: 12),
-            width: double.infinity,
-            decoration: const BoxDecoration(border: Border(top: BorderSide(color: TwColors.slate200))),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (var i = 0; i < referenceNotes.length; i++) ...[
-                  if (i > 0) const SizedBox(height: 4),
-                  Text(referenceNotes[i], style: chromeText(12, color: TwColors.slate600, height: 1.5)),
-                ],
-              ],
-            ),
-          ),
-        ],
-      );
+        ),
+      ),
+      _row(referenceSolids),
+      // ReferenceSheet.tsx:144-148
+      Container(
+        margin: const EdgeInsets.only(top: 16),
+        padding: const EdgeInsets.only(top: 12),
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: TwColors.slate200)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < referenceNotes.length; i++) ...[
+              if (i > 0) const SizedBox(height: 4),
+              Text(referenceNotes[i], style: chromeText(12, color: TwColors.slate600, height: 1.5)),
+            ],
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class _Figure extends StatelessWidget {
@@ -204,23 +268,23 @@ class _Figure extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            width: BluebookTokens.referenceFigure.width,
-            height: BluebookTokens.referenceFigure.height,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                SvgPicture.asset('assets/runner/reference/${figure.asset}.svg', fit: BoxFit.contain),
-                CustomPaint(painter: _LabelPainter(figure.labels)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6), // gap-1.5
-          for (final line in figure.formula) _Formula(line),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        width: BluebookTokens.referenceFigure.width,
+        height: BluebookTokens.referenceFigure.height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            SvgPicture.asset('assets/runner/reference/${figure.asset}.svg', fit: BoxFit.contain),
+            CustomPaint(painter: _LabelPainter(figure.labels)),
+          ],
+        ),
+      ),
+      const SizedBox(height: 6), // gap-1.5
+      for (final line in figure.formula) _Formula(line),
+    ],
+  );
 }
 
 /// Paints labels at their SVG baseline positions, mapped like `preserveAspectRatio="xMidYMid
@@ -238,8 +302,12 @@ class _LabelPainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
           text: l.text,
-          style: chromeText(l.size * s,
-              color: const Color(0xFF0F172A), height: 1, style: l.italic ? FontStyle.italic : FontStyle.normal),
+          style: chromeText(
+            l.size * s,
+            color: const Color(0xFF0F172A),
+            height: 1,
+            style: l.italic ? FontStyle.italic : FontStyle.normal,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout();
@@ -263,12 +331,14 @@ class _Formula extends StatelessWidget {
   Widget build(BuildContext context) {
     final base = readingText(_size, height: 1.25); // leading-tight
     return Text.rich(
-      TextSpan(style: base, children: [
-        for (final p in parts)
-          switch (p) {
-            FText(:final text) => TextSpan(text: text),
-            // <sup className="text-[0.7em]">: vertical-align super ≈ a third of the em up.
-            FSup(:final text) => WidgetSpan(
+      TextSpan(
+        style: base,
+        children: [
+          for (final p in parts)
+            switch (p) {
+              FText(:final text) => TextSpan(text: text),
+              // <sup className="text-[0.7em]">: vertical-align super ≈ a third of the em up.
+              FSup(:final text) => WidgetSpan(
                 alignment: PlaceholderAlignment.baseline,
                 baseline: TextBaseline.alphabetic,
                 child: Transform.translate(
@@ -276,15 +346,17 @@ class _Formula extends StatelessWidget {
                   child: Text(text, style: readingText(_size * 0.7, height: 1)),
                 ),
               ),
-            // Frac: inline-flex column, 0.75em, numerator underlined (border-b), align-middle.
-            FFrac(:final n, :final d) => WidgetSpan(
+              // Frac: inline-flex column, 0.75em, numerator underlined (border-b), align-middle.
+              FFrac(:final n, :final d) => WidgetSpan(
                 alignment: PlaceholderAlignment.middle,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
-                      decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: TwColors.slate900))),
+                      decoration: const BoxDecoration(
+                        border: Border(bottom: BorderSide(color: TwColors.slate900)),
+                      ),
                       child: Text(n, style: readingText(_size * 0.75, height: 1)),
                     ),
                     Padding(
@@ -294,8 +366,9 @@ class _Formula extends StatelessWidget {
                   ],
                 ),
               ),
-          },
-      ]),
+            },
+        ],
+      ),
       textAlign: TextAlign.center,
     );
   }

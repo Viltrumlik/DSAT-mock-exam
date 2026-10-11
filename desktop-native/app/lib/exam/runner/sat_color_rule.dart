@@ -10,12 +10,12 @@ class SatColorRule extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const ExcludeSemantics(
-        child: SizedBox(
-          height: BluebookTokens.ruleHeight,
-          width: double.infinity,
-          child: CustomPaint(painter: SatColorRulePainter()),
-        ),
-      );
+    child: SizedBox(
+      height: BluebookTokens.ruleHeight,
+      width: double.infinity,
+      child: CustomPaint(painter: SatColorRulePainter()),
+    ),
+  );
 }
 
 class SatColorRulePainter extends CustomPainter {
@@ -27,7 +27,10 @@ class SatColorRulePainter extends CustomPainter {
   /// The colour at horizontal offset [x] (null inside a gap). Exposed for tests.
   static Color? colorAt(double x) {
     final p = x % period;
-    final slot = (p ~/ (BluebookTokens.ruleDash + BluebookTokens.ruleGap)).clamp(0, BluebookTokens.ruleColors.length - 1);
+    final slot = (p ~/ (BluebookTokens.ruleDash + BluebookTokens.ruleGap)).clamp(
+      0,
+      BluebookTokens.ruleColors.length - 1,
+    );
     final within = p - slot * (BluebookTokens.ruleDash + BluebookTokens.ruleGap);
     return within < BluebookTokens.ruleDash ? BluebookTokens.ruleColors[slot] : null;
   }

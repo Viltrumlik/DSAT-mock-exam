@@ -68,14 +68,21 @@ class DirectionsOverlay extends StatelessWidget {
                     if (isMath) ...[
                       Text(directionsMathP1, style: text),
                       const SizedBox(height: 16),
-                      Text.rich(TextSpan(style: text, children: [
-                        const TextSpan(text: 'For '),
-                        TextSpan(text: 'multiple-choice questions', style: bold),
-                        const TextSpan(
-                            text: ', solve each problem and choose the correct answer from the choices provided. For '),
-                        TextSpan(text: 'student-produced response questions', style: bold),
-                        const TextSpan(text: ', solve each problem and enter your answer as described below.'),
-                      ])),
+                      Text.rich(
+                        TextSpan(
+                          style: text,
+                          children: [
+                            const TextSpan(text: 'For '),
+                            TextSpan(text: 'multiple-choice questions', style: bold),
+                            const TextSpan(
+                              text:
+                                  ', solve each problem and choose the correct answer from the choices provided. For ',
+                            ),
+                            TextSpan(text: 'student-produced response questions', style: bold),
+                            const TextSpan(text: ', solve each problem and enter your answer as described below.'),
+                          ],
+                        ),
+                      ),
                     ] else ...[
                       Text(directionsRwP1, style: text),
                       const SizedBox(height: 16),
@@ -94,8 +101,10 @@ class DirectionsOverlay extends StatelessWidget {
                             color: s.hovered ? BluebookTokens.directionsCloseHover : BluebookTokens.directionsClose,
                             borderRadius: BorderRadius.circular(999),
                           ),
-                          child: Text('Close',
-                              style: chromeText(14, weight: FontWeight.w700, color: TwColors.slate900, height: 20 / 14)),
+                          child: Text(
+                            'Close',
+                            style: chromeText(14, weight: FontWeight.w700, color: TwColors.slate900, height: 20 / 14),
+                          ),
                         ),
                       ),
                     ),

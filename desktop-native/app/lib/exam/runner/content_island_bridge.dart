@@ -45,6 +45,7 @@ class ContentIslandBridge {
     required this.host,
     this.calcReservePx,
     this.extraView,
+    this.hideIsland,
     this.onSelection,
     this.onSelectionClear,
     this.onAnnotClick,
@@ -60,8 +61,12 @@ class ContentIslandBridge {
   /// The px the island keeps free for the calculator (`calcReserve`, ExamRunnerPage.tsx:1185).
   final double Function()? calcReservePx;
 
-  /// Fires when something behind [calcReservePx] changes (the runner's tools).
+  /// Fires when something behind [calcReservePx] or [hideIsland] changes (the runner's tools).
   final Listenable? extraView;
+
+  /// True while the island must be hidden although the student is answering — the windowed
+  /// fallback's freeze-frame (architecture §2.6: snapshot → hide the window → overlay).
+  final bool Function()? hideIsland;
 
   final void Function(SelectionMessage m)? onSelection;
   final VoidCallback? onSelectionClear;
@@ -106,14 +111,22 @@ class ContentIslandBridge {
     _attached = true;
     _sub = host.events.listen(_onEvent);
     session.addListener(_sync);
-    extraView?.addListener(_syncView);
+    extraView?.addListener(refresh);
+  }
+
+  /// Re-evaluates visibility and the view fields (call after [hideIsland] or
+  /// [calcReservePx] change outside [extraView]).
+  void refresh() {
+    if (!_ready || !_attached) return;
+    _syncVisibility();
+    _syncView();
   }
 
   Future<void> dispose() async {
     if (!_attached) return;
     _attached = false;
     session.removeListener(_sync);
-    extraView?.removeListener(_syncView);
+    extraView?.removeListener(refresh);
     await _sub?.cancel();
     for (final c in _pending.values) {
       if (!c.isCompleted) c.complete(IslandSelection(qid: _currentQid ?? 0));
@@ -143,27 +156,29 @@ class ContentIslandBridge {
   }
 
   _View _currentView() => _View(
-        zoom: session.zoom,
-        split: session.split,
-        highlighterOn: session.highlighterOn,
-        eliminatorOn: session.eliminatorOn,
-        inputLocked: session.inputLocked,
-        calcReservePx: calcReservePx?.call() ?? 0,
-      );
+    zoom: session.zoom,
+    split: session.split,
+    highlighterOn: session.highlighterOn,
+    eliminatorOn: session.eliminatorOn,
+    inputLocked: session.inputLocked,
+    calcReservePx: calcReservePx?.call() ?? 0,
+  );
 
   void _replay() {
     final v = _currentView();
-    _post(InitMessage(
-      mode: 'exam',
-      kind: session.kind == ExamKind.midterm ? 'midterm' : 'pastpaper',
-      subject: session.test.isMath ? 'math' : 'rw',
-      overlays: host.canDrawOverIsland ? 'native' : 'inline',
-      zoom: v.zoom,
-      split: v.split,
-      highlighterOn: v.highlighterOn,
-      eliminatorOn: v.eliminatorOn,
-      calcReservePx: v.calcReservePx,
-    ));
+    _post(
+      InitMessage(
+        mode: 'exam',
+        kind: session.kind == ExamKind.midterm ? 'midterm' : 'pastpaper',
+        subject: session.test.isMath ? 'math' : 'rw',
+        overlays: host.canDrawOverIsland ? 'native' : 'inline',
+        zoom: v.zoom,
+        split: v.split,
+        highlighterOn: v.highlighterOn,
+        eliminatorOn: v.eliminatorOn,
+        calcReservePx: v.calcReservePx,
+      ),
+    );
     _view = v;
     if (v.inputLocked) _post(const ViewSetMessage(inputLocked: true));
     _sync();
@@ -191,7 +206,7 @@ class ContentIslandBridge {
   void _syncVisibility() {
     // The island is only on screen while answering (architecture §2.6: hidden on Welcome,
     // Check Your Work and the transition; in windowed mode that also hides the HWND).
-    final visible = session.phase == ExamPhase.running;
+    final visible = session.phase == ExamPhase.running && !(hideIsland?.call() ?? false);
     if (_visible == visible) return;
     _visible = visible;
     unawaited(host.setVisible(visible));
@@ -207,14 +222,16 @@ class ContentIslandBridge {
     _shownIndex = null;
     _sent.clear();
     final keys = session.moduleMediaKeys.toList();
-    final blobs = await Future.wait(keys.map((k) async {
-      try {
-        return await session.media(k);
-      } on Object catch (e) {
-        onDiagnostic?.call('media', 'image $k failed: $e');
-        return null;
-      }
-    }));
+    final blobs = await Future.wait(
+      keys.map((k) async {
+        try {
+          return await session.media(k);
+        } on Object catch (e) {
+          onDiagnostic?.call('media', 'image $k failed: $e');
+          return null;
+        }
+      }),
+    );
     if (gen != _generation || !_attached) return;
     for (var i = 0; i < keys.length; i++) {
       final b = blobs[i];
@@ -234,23 +251,25 @@ class ContentIslandBridge {
   }
 
   _QState _stateOf(int qid) => _QState(
-        answer: session.answerFor(qid),
-        eliminated: (session.eliminatedFor(qid).toList()..sort()),
-        flagged: session.isFlagged(qid),
-      );
+    answer: session.answerFor(qid),
+    eliminated: (session.eliminatedFor(qid).toList()..sort()),
+    flagged: session.isFlagged(qid),
+  );
 
   void _showQuestion() {
     final q = session.currentQuestion;
     final s = _stateOf(q.id);
-    _post(QuestionShowMessage(
-      qid: q.id,
-      index: session.currentIndex,
-      total: session.questions.length,
-      answer: s.answer,
-      eliminated: s.eliminated,
-      flagged: s.flagged,
-      annotations: islandAnnotationSet(session.annotationsFor(q.id)),
-    ));
+    _post(
+      QuestionShowMessage(
+        qid: q.id,
+        index: session.currentIndex,
+        total: session.questions.length,
+        answer: s.answer,
+        eliminated: s.eliminated,
+        flagged: s.flagged,
+        annotations: islandAnnotationSet(session.annotationsFor(q.id)),
+      ),
+    );
     _shownQid = q.id;
     _shownIndex = session.currentIndex;
     _sent[q.id] = s;
@@ -260,12 +279,14 @@ class ContentIslandBridge {
     final now = _stateOf(qid);
     final before = _sent[qid];
     if (before == now) return;
-    _post(StatePatchMessage(
-      qid: qid,
-      answer: before?.answer != now.answer ? (now.answer ?? '') : null,
-      eliminated: before == null || !listEquals(before.eliminated, now.eliminated) ? now.eliminated : null,
-      flagged: before?.flagged != now.flagged ? now.flagged : null,
-    ));
+    _post(
+      StatePatchMessage(
+        qid: qid,
+        answer: before?.answer != now.answer ? (now.answer ?? '') : null,
+        eliminated: before == null || !listEquals(before.eliminated, now.eliminated) ? now.eliminated : null,
+        flagged: before?.flagged != now.flagged ? now.flagged : null,
+      ),
+    );
     _sent[qid] = now;
   }
 
@@ -282,21 +303,37 @@ class ContentIslandBridge {
     final now = _currentView();
     final before = _view!;
     if (now == before) return;
-    _post(ViewSetMessage(
-      zoom: now.zoom != before.zoom ? now.zoom : null,
-      split: now.split != before.split ? now.split : null,
-      highlighterOn: now.highlighterOn != before.highlighterOn ? now.highlighterOn : null,
-      eliminatorOn: now.eliminatorOn != before.eliminatorOn ? now.eliminatorOn : null,
-      inputLocked: now.inputLocked != before.inputLocked ? now.inputLocked : null,
-      calcReservePx: now.calcReservePx != before.calcReservePx ? now.calcReservePx : null,
-    ));
+    _post(
+      ViewSetMessage(
+        zoom: now.zoom != before.zoom ? now.zoom : null,
+        split: now.split != before.split ? now.split : null,
+        highlighterOn: now.highlighterOn != before.highlighterOn ? now.highlighterOn : null,
+        eliminatorOn: now.eliminatorOn != before.eliminatorOn ? now.eliminatorOn : null,
+        inputLocked: now.inputLocked != before.inputLocked ? now.inputLocked : null,
+        calcReservePx: now.calcReservePx != before.calcReservePx ? now.calcReservePx : null,
+      ),
+    );
     _view = now;
   }
 
   /// `annot.apply` for the toolbar.
-  void applyAnnotation({String? selectionId, String? annotId, required String op, HighlightColor? color, UnderlineStyle? underline}) {
+  void applyAnnotation({
+    String? selectionId,
+    String? annotId,
+    required String op,
+    HighlightColor? color,
+    UnderlineStyle? underline,
+  }) {
     if (!_ready) return;
-    _post(AnnotApplyMessage(selectionId: selectionId, annotId: annotId, op: op, color: color?.wire, underline: underline?.wire));
+    _post(
+      AnnotApplyMessage(
+        selectionId: selectionId,
+        annotId: annotId,
+        op: op,
+        color: color?.wire,
+        underline: underline?.wire,
+      ),
+    );
   }
 
   /// `selection.get` → the student's current selection (empty on timeout or before ready).
@@ -307,10 +344,13 @@ class ContentIslandBridge {
     final c = Completer<IslandSelection>();
     _pending[req] = c;
     _post(SelectionGetMessage(req: req));
-    return c.future.timeout(selectionTimeout, onTimeout: () {
-      _pending.remove(req);
-      return IslandSelection(qid: qid);
-    });
+    return c.future.timeout(
+      selectionTimeout,
+      onTimeout: () {
+        _pending.remove(req);
+        return IslandSelection(qid: qid);
+      },
+    );
   }
 
   /// Escape inside the island: take keyboard focus back to the frame.
@@ -321,7 +361,14 @@ class ContentIslandBridge {
 
   // ---- island → native ----------------------------------------------------------------------
 
-  void _onEvent(IslandEvent e) {
+  /// Island events are handled in a microtask, never inside the host's delivery: a host may
+  /// deliver synchronously, and answering (posting) from inside its delivery would re-enter
+  /// it. Microtasks keep the order.
+  void _onEvent(IslandEvent e) => scheduleMicrotask(() {
+        if (_attached) _handle(e);
+      });
+
+  void _handle(IslandEvent e) {
     switch (e) {
       case IslandCrashedEvent(:final reason):
         onDiagnostic?.call('island', 'content island crashed: $reason');
@@ -387,11 +434,15 @@ class ContentIslandBridge {
       case AnnotClickMessage():
         onAnnotClick?.call(m);
       case SelectionCurrentMessage(:final req, :final qid, :final container, :final text):
-        _pending.remove(req)?.complete(IslandSelection(
-          qid: qid,
-          container: container == null ? null : AnnotationContainer.fromWire(container),
-          text: text,
-        ));
+        _pending
+            .remove(req)
+            ?.complete(
+              IslandSelection(
+                qid: qid,
+                container: container == null ? null : AnnotationContainer.fromWire(container),
+                text: text,
+              ),
+            );
       case KeyMessage(:final key):
         onKey?.call(key);
       case FocusMessage(:final inIsland):
@@ -413,7 +464,10 @@ class _QState {
 
   @override
   bool operator ==(Object other) =>
-      other is _QState && other.answer == answer && other.flagged == flagged && listEquals(other.eliminated, eliminated);
+      other is _QState &&
+      other.answer == answer &&
+      other.flagged == flagged &&
+      listEquals(other.eliminated, eliminated);
 
   @override
   int get hashCode => Object.hash(answer, flagged, Object.hashAll(eliminated));
@@ -438,13 +492,13 @@ class _View {
   final double calcReservePx;
 
   _View copyWith({double? split, bool? eliminatorOn}) => _View(
-        zoom: zoom,
-        split: split ?? this.split,
-        highlighterOn: highlighterOn,
-        eliminatorOn: eliminatorOn ?? this.eliminatorOn,
-        inputLocked: inputLocked,
-        calcReservePx: calcReservePx,
-      );
+    zoom: zoom,
+    split: split ?? this.split,
+    highlighterOn: highlighterOn,
+    eliminatorOn: eliminatorOn ?? this.eliminatorOn,
+    inputLocked: inputLocked,
+    calcReservePx: calcReservePx,
+  );
 
   @override
   bool operator ==(Object other) =>

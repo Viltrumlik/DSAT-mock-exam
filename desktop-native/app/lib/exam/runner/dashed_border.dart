@@ -30,19 +30,13 @@ class CssBorderBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => CustomPaint(
-        painter: CssBorderPainter(color: color, style: style, width: width, radius: radius, background: background),
-        child: Padding(padding: EdgeInsets.all(width), child: child),
-      );
+    painter: CssBorderPainter(color: color, style: style, width: width, radius: radius, background: background),
+    child: Padding(padding: EdgeInsets.all(width), child: child),
+  );
 }
 
 class CssBorderPainter extends CustomPainter {
-  const CssBorderPainter({
-    required this.color,
-    required this.style,
-    this.width = 1,
-    this.radius = 0,
-    this.background,
-  });
+  const CssBorderPainter({required this.color, required this.style, this.width = 1, this.radius = 0, this.background});
 
   final Color color;
   final CssBorderStyle style;
@@ -91,7 +85,11 @@ class CssBorderPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(CssBorderPainter old) =>
-      old.color != color || old.style != style || old.width != width || old.radius != radius || old.background != background;
+      old.color != color ||
+      old.style != style ||
+      old.width != width ||
+      old.radius != radius ||
+      old.background != background;
 }
 
 /// A CSS `border-b-2 border-{solid,dashed,dotted}` line sample (the toolbar's underline buttons).
@@ -105,10 +103,10 @@ class CssLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: width,
-        height: thickness,
-        child: CustomPaint(painter: _LinePainter(color, style, thickness)),
-      );
+    width: width,
+    height: thickness,
+    child: CustomPaint(painter: _LinePainter(color, style, thickness)),
+  );
 }
 
 class _LinePainter extends CustomPainter {
