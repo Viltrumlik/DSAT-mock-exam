@@ -365,8 +365,8 @@ class ContentIslandBridge {
   /// deliver synchronously, and answering (posting) from inside its delivery would re-enter
   /// it. Microtasks keep the order.
   void _onEvent(IslandEvent e) => scheduleMicrotask(() {
-        if (_attached) _handle(e);
-      });
+    if (_attached) _handle(e);
+  });
 
   void _handle(IslandEvent e) {
     switch (e) {

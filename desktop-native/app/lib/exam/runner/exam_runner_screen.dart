@@ -662,7 +662,9 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     final inIsland = _inside(_islandKey, p) && session.phase == ExamPhase.running && _frozen == null;
     if (tools.toolbar != null && !inIsland && !_inside(_toolbarKey, p)) tools.dismissToolbar();
     if (inIsland) {
-      // Texture mode: route the keyboard to the page (the SPR input, island shortcuts).
+      // Texture mode: route the keyboard to the page (the SPR input, island shortcuts). A
+      // focused text field (Notes) lets go, as a browser's would.
+      if (!tools.reportOpen) _rootFocus.requestFocus();
       _islandFocused = true;
       unawaited(content.focus());
       return;
@@ -993,43 +995,43 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     return DefaultTextStyle(
       style: chromeText(16),
       child: NoSelection(
-      child: Focus(
-        focusNode: _rootFocus,
-        autofocus: true,
-        onKeyEvent: _onKey,
-        child: Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: _onPointerDown,
-          child: GestureDetector(
-            // No context menu anywhere in the runner.
-            onSecondaryTap: () {},
+        child: Focus(
+          focusNode: _rootFocus,
+          autofocus: true,
+          onKeyEvent: _onKey,
+          child: Listener(
             behavior: HitTestBehavior.translucent,
-            child: ColoredBox(
-              color: BluebookTokens.surface,
-              child: Stack(
-                key: _stackKey,
-                children: [
-                  // The frame stays mounted (offstage) on the other screens so the island
-                  // keeps its page and state.
-                  Positioned.fill(
-                    child: Offstage(
-                      offstage: !running,
-                      child: TickerMode(enabled: running, child: _frame()),
+            onPointerDown: _onPointerDown,
+            child: GestureDetector(
+              // No context menu anywhere in the runner.
+              onSecondaryTap: () {},
+              behavior: HitTestBehavior.translucent,
+              child: ColoredBox(
+                color: BluebookTokens.surface,
+                child: Stack(
+                  key: _stackKey,
+                  children: [
+                    // The frame stays mounted (offstage) on the other screens so the island
+                    // keeps its page and state.
+                    Positioned.fill(
+                      child: Offstage(
+                        offstage: !running,
+                        child: TickerMode(enabled: running, child: _frame()),
+                      ),
                     ),
-                  ),
-                  if (!running) Positioned.fill(child: _fullScreen()),
-                  if (running) ..._overlays(),
-                  if (phase == ExamPhase.running || phase == ExamPhase.review)
-                    Positioned.fill(child: RunnerToastLayer(toasts: toasts))
-                  else
-                    Positioned.fill(child: RunnerToastLayer(toasts: toasts, showTimer: false)),
-                  if (widget.overlay != null) Positioned.fill(child: widget.overlay!),
-                ],
+                    if (!running) Positioned.fill(child: _fullScreen()),
+                    if (running) ..._overlays(),
+                    if (phase == ExamPhase.running || phase == ExamPhase.review)
+                      Positioned.fill(child: RunnerToastLayer(toasts: toasts))
+                    else
+                      Positioned.fill(child: RunnerToastLayer(toasts: toasts, showTimer: false)),
+                    if (widget.overlay != null) Positioned.fill(child: widget.overlay!),
+                  ],
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }

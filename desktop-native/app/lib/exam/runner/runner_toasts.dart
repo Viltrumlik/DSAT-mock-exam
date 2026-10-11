@@ -138,14 +138,18 @@ class RunnerToastLayer extends StatelessWidget {
               top: BluebookTokens.noticeInset,
               right: BluebookTokens.noticeInset,
               width: width * 0.92 < BluebookTokens.noticeWidth ? width * 0.92 : BluebookTokens.noticeWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (var i = 0; i < notices.length; i++) ...[
-                    if (i > 0) const SizedBox(height: 8),
-                    _NoticeCard(notices[i]),
+              // Never in the way: the cards hold nothing to click, and they sit over the
+              // header's tool cluster.
+              child: IgnorePointer(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    for (var i = 0; i < notices.length; i++) ...[
+                      if (i > 0) const SizedBox(height: 8),
+                      _NoticeCard(notices[i]),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
         ],

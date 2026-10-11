@@ -77,9 +77,7 @@ abstract final class TwShadows {
   ];
 
   /// `shadow-2xl`: 0 25px 50px -12px rgb(0 0 0/.25).
-  static const xxl = [
-    BoxShadow(color: Color(0x40000000), offset: Offset(0, 25), blurRadius: 50, spreadRadius: -12),
-  ];
+  static const xxl = [BoxShadow(color: Color(0x40000000), offset: Offset(0, 25), blurRadius: 50, spreadRadius: -12)];
 }
 
 /// The runner's tokens. Semantic names; values cite their website source.

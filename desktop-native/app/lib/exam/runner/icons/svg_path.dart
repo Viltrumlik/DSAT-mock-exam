@@ -162,8 +162,13 @@ class _SvgPathParser {
         if (rx == 0 || ry == 0) {
           _path.lineTo(x, y);
         } else if (x != _cx || y != _cy) {
-          _path.arcToPoint(Offset(x, y),
-              radius: Radius.elliptical(rx, ry), rotation: rotation, largeArc: largeArc, clockwise: sweep);
+          _path.arcToPoint(
+            Offset(x, y),
+            radius: Radius.elliptical(rx, ry),
+            rotation: rotation,
+            largeArc: largeArc,
+            clockwise: sweep,
+          );
         }
         _set(x, y);
       case 'Z':

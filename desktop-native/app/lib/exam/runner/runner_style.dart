@@ -29,7 +29,7 @@ TextStyle chromeText(
   height: height,
   leadingDistribution: TextLeadingDistribution.even,
   // Always set: a null spacing would inherit a Material theme's (bodyLarge has 0.5).
-      letterSpacing: trackingEm * size,
+  letterSpacing: trackingEm * size,
   fontFeatures: features,
   decoration: decoration,
   decorationColor: decorationColor,
@@ -51,7 +51,7 @@ TextStyle uiText(
   height: height,
   leadingDistribution: TextLeadingDistribution.even,
   // Always set: a null spacing would inherit a Material theme's (bodyLarge has 0.5).
-      letterSpacing: trackingEm * size,
+  letterSpacing: trackingEm * size,
 );
 
 /// Georgia reading text (Directions, Reference formulas).

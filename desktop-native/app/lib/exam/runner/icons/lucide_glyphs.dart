@@ -19,19 +19,17 @@ abstract final class LucideGlyphs {
   ]);
 
   /// `chevron-down` — ExamHeader.tsx:78
-  static const chevronDown = LucideGlyph('chevron-down', [
-    LucideNode.path("m6 9 6 6 6-6"),
-  ]);
+  static const chevronDown = LucideGlyph('chevron-down', [LucideNode.path("m6 9 6 6 6-6")]);
 
   /// `chevron-up` — ExamFooter.tsx:52
-  static const chevronUp = LucideGlyph('chevron-up', [
-    LucideNode.path("m18 15-6-6-6 6"),
-  ]);
+  static const chevronUp = LucideGlyph('chevron-up', [LucideNode.path("m18 15-6-6-6 6")]);
 
   /// `pen-line` — ExamHeader.tsx:112
   static const penLine = LucideGlyph('pen-line', [
     LucideNode.path("M13 21h8"),
-    LucideNode.path("M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"),
+    LucideNode.path(
+      "M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z",
+    ),
   ]);
 
   /// `ellipsis-vertical` — MoreMenu.tsx:69 (MoreVertical)
@@ -42,14 +40,13 @@ abstract final class LucideGlyphs {
   ]);
 
   /// `clock` — Timer.tsx:29, WelcomeScreen.tsx:52
-  static const clock = LucideGlyph('clock', [
-    LucideNode.circle(12.0, 12.0, 10.0),
-    LucideNode.path("M12 6v6l4 2"),
-  ]);
+  static const clock = LucideGlyph('clock', [LucideNode.circle(12.0, 12.0, 10.0), LucideNode.path("M12 6v6l4 2")]);
 
   /// `eye` — Timer.tsx:47
   static const eye = LucideGlyph('eye', [
-    LucideNode.path("M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"),
+    LucideNode.path(
+      "M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0",
+    ),
     LucideNode.circle(12.0, 12.0, 3.0),
   ]);
 
@@ -74,7 +71,9 @@ abstract final class LucideGlyphs {
 
   /// `flag` — MoreMenu.tsx:78, QuestionNavigator.tsx:49, CheckYourWorkPage.tsx:70
   static const flag = LucideGlyph('flag', [
-    LucideNode.path("M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528"),
+    LucideNode.path(
+      "M4 22V4a1 1 0 0 1 .4-.8A6 6 0 0 1 8 2c3 0 5 2 7.333 2q2 0 3.067-.8A1 1 0 0 1 20 4v10a1 1 0 0 1-.4.8A6 6 0 0 1 16 16c-3 0-5-2-8-2a6 6 0 0 0-4 1.528",
+    ),
   ]);
 
   /// `highlighter` — MoreMenu.tsx:76
@@ -121,7 +120,9 @@ abstract final class LucideGlyphs {
 
   /// `sticky-note` — MoreMenu.tsx:77, AnnotationToolbar.tsx:103
   static const stickyNote = LucideGlyph('sticky-note', [
-    LucideNode.path("M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z"),
+    LucideNode.path(
+      "M21 9a2.4 2.4 0 0 0-.706-1.706l-3.588-3.588A2.4 2.4 0 0 0 15 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2z",
+    ),
     LucideNode.path("M15 3v5a1 1 0 0 0 1 1h5"),
   ]);
 
@@ -142,15 +143,14 @@ abstract final class LucideGlyphs {
 
   /// `map-pin` — QuestionNavigator.tsx:47
   static const mapPin = LucideGlyph('map-pin', [
-    LucideNode.path("M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"),
+    LucideNode.path(
+      "M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0",
+    ),
     LucideNode.circle(12.0, 10.0, 3.0),
   ]);
 
   /// `x` — QuestionNavigator.tsx:43, KeyboardShortcutsHelp.tsx:13, FloatingPanel.tsx:106
-  static const x = LucideGlyph('x', [
-    LucideNode.path("M18 6 6 18"),
-    LucideNode.path("m6 6 12 12"),
-  ]);
+  static const x = LucideGlyph('x', [LucideNode.path("M18 6 6 18"), LucideNode.path("m6 6 12 12")]);
 
   /// `list-checks` — WelcomeScreen.tsx:59
   static const listChecks = LucideGlyph('list-checks', [
@@ -195,7 +195,9 @@ abstract final class LucideGlyphs {
 
   /// `shield-alert` — OffscreenWarning.tsx:54
   static const shieldAlert = LucideGlyph('shield-alert', [
-    LucideNode.path("M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"),
+    LucideNode.path(
+      "M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z",
+    ),
     LucideNode.path("M12 8v4"),
     LucideNode.path("M12 16h.01"),
   ]);
@@ -249,7 +251,5 @@ abstract final class LucideGlyphs {
   ]);
 
   /// `check` — native addition: sync indicator
-  static const check = LucideGlyph('check', [
-    LucideNode.path("M20 6 9 17l-5-5"),
-  ]);
+  static const check = LucideGlyph('check', [LucideNode.path("M20 6 9 17l-5-5")]);
 }

@@ -30,13 +30,13 @@ void main() {
   // into solid blocks. Set before the first paint, reset before the test ends (the binding
   // checks it).
   void golden(String name, Future<void> Function(WidgetTester tester) body) => testWidgets(name, (tester) async {
-        debugDisableShadows = false;
-        try {
-          await body(tester);
-        } finally {
-          debugDisableShadows = true;
-        }
-      }, skip: skip != null);
+    debugDisableShadows = false;
+    try {
+      await body(tester);
+    } finally {
+      debugDisableShadows = true;
+    }
+  }, skip: skip != null);
 
   for (final e in sizes.entries) {
     final tag = e.key;
@@ -48,7 +48,11 @@ void main() {
     });
 
     golden('Math running, calculator + reference $tag', (tester) async {
-      final h = await RunnerHarness.pump(tester, size: size, session: FakeExamSession.math(initialPhase: ExamPhase.running, tick: false));
+      final h = await RunnerHarness.pump(
+        tester,
+        size: size,
+        session: FakeExamSession.math(initialPhase: ExamPhase.running, tick: false),
+      );
       await h.tap(find.text('Calculator'));
       await h.tap(find.text('Reference'));
       await shot(tester, 'math_tools_$tag');

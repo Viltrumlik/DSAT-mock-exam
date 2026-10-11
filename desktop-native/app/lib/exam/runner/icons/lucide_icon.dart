@@ -9,71 +9,71 @@ import 'svg_path.dart';
 @immutable
 class LucideNode {
   const LucideNode.path(String this.d)
-      : kind = LucideNodeKind.path,
-        a = 0,
-        b = 0,
-        c = 0,
-        e = 0,
-        rx = 0,
-        ry = 0,
-        points = null,
-        closed = false;
+    : kind = LucideNodeKind.path,
+      a = 0,
+      b = 0,
+      c = 0,
+      e = 0,
+      rx = 0,
+      ry = 0,
+      points = null,
+      closed = false;
 
   const LucideNode.circle(double cx, double cy, double r)
-      : kind = LucideNodeKind.ellipse,
-        d = null,
-        a = cx,
-        b = cy,
-        c = r,
-        e = r,
-        rx = 0,
-        ry = 0,
-        points = null,
-        closed = true;
+    : kind = LucideNodeKind.ellipse,
+      d = null,
+      a = cx,
+      b = cy,
+      c = r,
+      e = r,
+      rx = 0,
+      ry = 0,
+      points = null,
+      closed = true;
 
   const LucideNode.ellipse(double cx, double cy, double rx, double ry)
-      : kind = LucideNodeKind.ellipse,
-        d = null,
-        a = cx,
-        b = cy,
-        c = rx,
-        e = ry,
-        rx = 0,
-        ry = 0,
-        points = null,
-        closed = true;
+    : kind = LucideNodeKind.ellipse,
+      d = null,
+      a = cx,
+      b = cy,
+      c = rx,
+      e = ry,
+      rx = 0,
+      ry = 0,
+      points = null,
+      closed = true;
 
   const LucideNode.rect(double x, double y, double width, double height, this.rx, this.ry)
-      : kind = LucideNodeKind.rect,
-        d = null,
-        a = x,
-        b = y,
-        c = width,
-        e = height,
-        points = null,
-        closed = true;
+    : kind = LucideNodeKind.rect,
+      d = null,
+      a = x,
+      b = y,
+      c = width,
+      e = height,
+      points = null,
+      closed = true;
 
   const LucideNode.line(double x1, double y1, double x2, double y2)
-      : kind = LucideNodeKind.line,
-        d = null,
-        a = x1,
-        b = y1,
-        c = x2,
-        e = y2,
-        rx = 0,
-        ry = 0,
-        points = null,
-        closed = false;
+    : kind = LucideNodeKind.line,
+      d = null,
+      a = x1,
+      b = y1,
+      c = x2,
+      e = y2,
+      rx = 0,
+      ry = 0,
+      points = null,
+      closed = false;
 
   const LucideNode.poly(List<double> this.points, {required this.closed})
-      : kind = LucideNodeKind.poly,
-        d = null,
-        a = 0,
-        b = 0,
-        c = 0,
-        e = 0,
-        rx = 0,
-        ry = 0;
+    : kind = LucideNodeKind.poly,
+      d = null,
+      a = 0,
+      b = 0,
+      c = 0,
+      e = 0,
+      rx = 0,
+      ry = 0;
 
   final LucideNodeKind kind;
   final String? d;
@@ -137,9 +137,11 @@ class LucideIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
-        dimension: size,
-        child: CustomPaint(painter: LucidePainter(glyph, color: color, fill: fill, strokeWidth: strokeWidth)),
-      );
+    dimension: size,
+    child: CustomPaint(
+      painter: LucidePainter(glyph, color: color, fill: fill, strokeWidth: strokeWidth),
+    ),
+  );
 }
 
 class LucidePainter extends CustomPainter {
@@ -164,9 +166,9 @@ class LucidePainter extends CustomPainter {
     final filler = fill == null
         ? null
         : (Paint()
-          ..style = PaintingStyle.fill
-          ..color = fill!
-          ..isAntiAlias = true);
+            ..style = PaintingStyle.fill
+            ..color = fill!
+            ..isAntiAlias = true);
     for (final path in glyph.paths) {
       if (filler != null) canvas.drawPath(path, filler);
       canvas.drawPath(path, stroke);

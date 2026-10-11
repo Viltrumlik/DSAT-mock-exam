@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mastersat_app/core/api/fixture_v1_api.dart';
 import 'package:mastersat_app/core/models/models.dart';
 import 'package:mastersat_app/exam/fake_exam_session.dart';
 import 'package:mastersat_app/exam/runner/exam_runner_screen.dart';
@@ -72,10 +73,7 @@ Future<void> loadRunnerFonts() async {
 
 /// The app shell the runner lives in (MaterialApp supplies the localizations the text
 /// fields need; the runner draws everything else itself).
-Widget runnerApp(Widget child) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: child,
-    );
+Widget runnerApp(Widget child) => MaterialApp(debugShowCheckedModeBanner: false, home: child);
 
 /// Sets the test window to [size] logical px at 1× (the runner's goldens sizes).
 void setWindowSize(WidgetTester tester, Size size) {
@@ -118,37 +116,42 @@ class RunnerHarness {
     bool animate = false,
     bool customSubmitter = true,
     bool nativeScientificOnly = true,
+    bool scriptedContent = true,
   }) async {
     setWindowSize(tester, size);
     final s = session ?? FakeExamSession.readingWriting(tick: false);
-    final content = FakeIslandHost(IslandKind.content, canDrawOverIsland: canDrawOverIsland);
+    final content = FakeIslandHost(IslandKind.content, canDrawOverIsland: canDrawOverIsland, scripted: scriptedContent);
     final window = windowControls ? FakeRunnerWindowControls() : null;
     final batteryN = battery == null ? null : ValueNotifier<BatteryStatus?>(battery);
     final h = RunnerHarness._(tester, s, content, window, batteryN);
-    await tester.pumpWidget(runnerApp(ExamRunnerScreen(
-      session: s,
-      contentHost: content,
-      islandFactory: (kind) {
-        final host = FakeIslandHost(kind, canDrawOverIsland: canDrawOverIsland);
-        h.desmosHosts.add(host);
-        return host;
-      },
-      window: window,
-      battery: batteryN,
-      inert: inert,
-      overlay: overlay,
-      animate: animate,
-      nativeScientificOnly: nativeScientificOnly,
-      onExit: h.exits.add,
-      onDiagnostic: (w, m) => h.diagnostics.add('$w: $m'),
-      submitReport: customSubmitter
-          ? (r) async {
-              h.reports.add(r);
-              if (h.reportError != null) throw h.reportError!;
-              return h.reportOutcome;
-            }
-          : null,
-    )));
+    await tester.pumpWidget(
+      runnerApp(
+        ExamRunnerScreen(
+          session: s,
+          contentHost: content,
+          islandFactory: (kind) {
+            final host = FakeIslandHost(kind, canDrawOverIsland: canDrawOverIsland);
+            h.desmosHosts.add(host);
+            return host;
+          },
+          window: window,
+          battery: batteryN,
+          inert: inert,
+          overlay: overlay,
+          animate: animate,
+          nativeScientificOnly: nativeScientificOnly,
+          onExit: h.exits.add,
+          onDiagnostic: (w, m) => h.diagnostics.add('$w: $m'),
+          submitReport: customSubmitter
+              ? (r) async {
+                  h.reports.add(r);
+                  if (h.reportError != null) throw h.reportError!;
+                  return h.reportOutcome;
+                }
+              : null,
+        ),
+      ),
+    );
     await tester.pump();
     await tester.pump();
     addTearDown(() async {
@@ -197,6 +200,19 @@ class RunnerHarness {
     await tester.sendKeyEvent(key, character: character);
     await tester.pump();
   }
+}
+
+/// A midterm whose calculator is Desmos Scientific only (`calculator_mode = scientific`).
+FakeExamSession scientificMidterm() {
+  final json = FixtureV1Api.fixture('midterm_open.response.json');
+  final test = Map<String, Object?>.of(json['test']! as Map<String, Object?>);
+  test['tools'] = {'calculator': 'scientific', 'reference_sheet': false};
+  json['test'] = test;
+  return FakeExamSession(
+    bundle: ExamBundle.fromJson(JsonReader.of(json)),
+    tick: false,
+    initialPhase: ExamPhase.running,
+  );
 }
 
 /// A battery reading.

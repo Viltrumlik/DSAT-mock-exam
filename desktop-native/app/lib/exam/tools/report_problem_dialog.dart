@@ -85,6 +85,10 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
   final TextEditingController _message = TextEditingController();
   final FocusNode _messageFocus = FocusNode(debugLabel: 'report.message');
   final FocusScopeNode _scope = FocusScopeNode(debugLabel: 'report.dialog');
+
+  /// Holds the keyboard while nothing inside is focused, so Escape reaches the dialog's
+  /// shortcut (a focused scope node sits above its own CallbackShortcuts).
+  final FocusNode _dialogFocus = FocusNode(debugLabel: 'report.dialog.body');
   bool _submitting = false;
   bool _messageFocused = false;
   bool _menuOpen = false;
@@ -97,6 +101,10 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
   @override
   void initState() {
     super.initState();
+    // Modal: take the keyboard from the runner (Modal.tsx traps focus the same way).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && !_messageFocus.hasFocus) _dialogFocus.requestFocus();
+    });
     _messageFocus.addListener(() => setState(() => _messageFocused = _messageFocus.hasFocus));
     final prefill = widget.prefill;
     if (prefill != null) {
@@ -116,6 +124,7 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
     _message.dispose();
     _messageFocus.dispose();
     _scope.dispose();
+    _dialogFocus.dispose();
     super.dispose();
   }
 
@@ -457,34 +466,37 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
       autofocus: true,
       child: CallbackShortcuts(
         bindings: {const SingleActivator(LogicalKeyboardKey.escape): _close},
-        child: Stack(
-          children: [
-            // Modal.tsx:69-73 — scrim with a 2 px backdrop blur; a click closes.
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                child: PointerSink(
-                  key: const ValueKey('report.scrim'),
-                  color: BluebookTokens.dialogScrim,
-                  onTap: _close,
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: GestureDetector(
-                    onTap: () {
-                      if (_menuOpen) setState(() => _menuOpen = false);
-                    },
-                    child: card,
+        child: Focus(
+          focusNode: _dialogFocus,
+          child: Stack(
+            children: [
+              // Modal.tsx:69-73 — scrim with a 2 px backdrop blur; a click closes.
+              Positioned.fill(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                  child: PointerSink(
+                    key: const ValueKey('report.scrim'),
+                    color: BluebookTokens.dialogScrim,
+                    onTap: _close,
                   ),
                 ),
               ),
-            ),
-            if (_menuOpen) _menu(),
-          ],
+              Positioned.fill(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: GestureDetector(
+                      onTap: () {
+                        if (_menuOpen) setState(() => _menuOpen = false);
+                      },
+                      child: card,
+                    ),
+                  ),
+                ),
+              ),
+              if (_menuOpen) _menu(),
+            ],
+          ),
         ),
       ),
     );

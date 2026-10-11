@@ -98,12 +98,7 @@ class ModuleTransition {
 /// Midterm off-screen state (null for past papers and while no warning is due).
 @immutable
 class OffscreenStatus {
-  const OffscreenStatus({
-    required this.violations,
-    required this.limit,
-    this.graceRemaining,
-    this.terminated = false,
-  });
+  const OffscreenStatus({required this.violations, required this.limit, this.graceRemaining, this.terminated = false});
 
   /// Strikes so far (server count + unacknowledged local events).
   final int violations;
@@ -146,18 +141,22 @@ class ExamNotice {
   final ExamNoticeKind kind;
   final String message;
 
-  static const pauseNeedsConnection =
-      ExamNotice(ExamNoticeKind.pauseNeedsConnection, 'Pause needs a connection — your answers are safe.');
+  static const pauseNeedsConnection = ExamNotice(
+    ExamNoticeKind.pauseNeedsConnection,
+    'Pause needs a connection — your answers are safe.',
+  );
   static const reportSent = ExamNotice(ExamNoticeKind.reportSent, 'Thanks — your report was sent.');
-  static const reportDeduped =
-      ExamNotice(ExamNoticeKind.reportDeduped, 'You already reported this question. Thanks!');
-  static const reportQueued =
-      ExamNotice(ExamNoticeKind.reportQueued, 'Your report is saved and will be sent when you are online.');
-  static const reconnecting =
-      ExamNotice(ExamNoticeKind.reconnecting, 'Reconnecting — answers saved on this computer.');
+  static const reportDeduped = ExamNotice(ExamNoticeKind.reportDeduped, 'You already reported this question. Thanks!');
+  static const reportQueued = ExamNotice(
+    ExamNoticeKind.reportQueued,
+    'Your report is saved and will be sent when you are online.',
+  );
+  static const reconnecting = ExamNotice(ExamNoticeKind.reconnecting, 'Reconnecting — answers saved on this computer.');
   static const reconnected = ExamNotice(ExamNoticeKind.reconnected, 'Back online.');
   static const savedOffline = ExamNotice(
-      ExamNoticeKind.savedOffline, "Your answers are saved on this computer and will be sent when you're online.");
+    ExamNoticeKind.savedOffline,
+    "Your answers are saved on this computer and will be sent when you're online.",
+  );
   static const timeUp = ExamNotice(ExamNoticeKind.timeUp, "Time's up for this module.");
 }
 
@@ -228,12 +227,12 @@ abstract class ExamSession extends ChangeNotifier {
 
   /// Header title ([examModuleTitle]).
   String get title => examModuleTitle(
-        kind: kind,
-        subject: test.subject,
-        testTitle: test.title,
-        moduleOrder: moduleOrder,
-        moduleCount: moduleCount,
-      );
+    kind: kind,
+    subject: test.subject,
+    testTitle: test.title,
+    moduleOrder: moduleOrder,
+    moduleCount: moduleCount,
+  );
 
   String get subjectLabel => subjectLabelFor(test.subject);
 

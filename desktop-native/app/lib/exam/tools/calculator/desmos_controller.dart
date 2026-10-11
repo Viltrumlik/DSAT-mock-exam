@@ -113,8 +113,8 @@ class DesmosController extends ChangeNotifier {
   /// Handled in a microtask (see ContentIslandBridge._onEvent): replying from inside a
   /// synchronous delivery would re-enter the host.
   void _onEvent(IslandEvent e) => scheduleMicrotask(() {
-        if (!_disposed) _handle(e);
-      });
+    if (!_disposed) _handle(e);
+  });
 
   void _handle(IslandEvent e) {
     switch (e) {
