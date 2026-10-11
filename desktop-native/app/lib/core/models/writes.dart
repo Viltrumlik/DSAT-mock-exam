@@ -224,6 +224,9 @@ class MidtermRules {
     required this.offscreenLimit,
     required this.offscreenGraceSeconds,
     required this.lateGraceSeconds,
+    this.scoringScale,
+    this.passMark,
+    this.isRetake = false,
   });
 
   factory MidtermRules.fromJson(JsonReader r) => MidtermRules(
@@ -236,17 +239,40 @@ class MidtermRules {
         offscreenLimit: r.integer('offscreen_limit'),
         offscreenGraceSeconds: r.integer('offscreen_grace_seconds'),
         lateGraceSeconds: r.integer('late_grace_seconds'),
+        // Read leniently (additive keys, 2026-10-11): a reply without them quotes no pass
+        // mark and no retake line, which is what the website shows when it lacks them.
+        scoringScale: r.stringOrNull('scoring_scale'),
+        passMark: r.integerOrNull('pass_mark'),
+        isRetake: r.booleanOrNull('is_retake') ?? false,
       );
 
   final String title;
+
+  /// `MATH` | `READING_WRITING`.
   final String subject;
   final int questionCount;
   final int moduleCount;
   final List<int> durationsMin;
+
+  /// The paper's calculator rule (`Midterm.calculator_mode`): graphing at Math middle/senior,
+  /// scientific at junior, null for R&W, an untagged paper and Foundation Math (worked by hand).
   final CalculatorMode? calculator;
   final int offscreenLimit;
   final int offscreenGraceSeconds;
   final int lateGraceSeconds;
+
+  /// `SCALE_100` | `SCALE_800` — the sitting's own (pinned at start); null when not sent.
+  final String? scoringScale;
+
+  /// The mark to pass on [scoringScale] (the server already resolved the scale default);
+  /// null when the sitting is not judged pass/fail (a pre-midterm) or not sent.
+  final int? passMark;
+
+  /// This sitting IS the retake (the retake rule is worded in the past tense).
+  final bool isRetake;
+
+  /// The same subject test the runner's tools use ([TestInfo.isMath]).
+  bool get isMath => subject == 'MATH';
 
   Map<String, Object?> toJson() => {
         'title': title,
@@ -258,6 +284,9 @@ class MidtermRules {
         'offscreen_limit': offscreenLimit,
         'offscreen_grace_seconds': offscreenGraceSeconds,
         'late_grace_seconds': lateGraceSeconds,
+        'scoring_scale': scoringScale,
+        'pass_mark': passMark,
+        'is_retake': isRetake,
       };
 }
 

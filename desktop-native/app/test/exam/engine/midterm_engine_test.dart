@@ -480,9 +480,12 @@ void main() {
       }, fileDb: true);
     });
 
-    test('low battery is unplugged at or below 25 %', () {
-      expect(isLowBattery(const BatteryStatus(percent: 25, charging: false, hasBattery: true)), isTrue);
+    test('low battery is unplugged BELOW 25 % (the website and 0.1.0: percent < 25)', () {
+      expect(isLowBattery(const BatteryStatus(percent: 24, charging: false, hasBattery: true)), isTrue);
+      expect(isLowBattery(const BatteryStatus(percent: 25, charging: false, hasBattery: true)), isFalse);
       expect(isLowBattery(const BatteryStatus(percent: 26, charging: false, hasBattery: true)), isFalse);
+      expect(isLowBattery(const BatteryStatus(percent: 0, charging: false, hasBattery: true)), isTrue);
+      expect(isLowBattery(const BatteryStatus(charging: false, hasBattery: true)), isFalse);
       expect(isLowBattery(const BatteryStatus(percent: 10, charging: true, hasBattery: true)), isFalse);
       expect(isLowBattery(const BatteryStatus(percent: 10, charging: false, hasBattery: false)), isFalse);
       expect(isLowBattery(null), isFalse);

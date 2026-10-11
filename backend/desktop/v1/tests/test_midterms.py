@@ -17,7 +17,7 @@ from rest_framework.test import APIClient
 from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
 from desktop.proof import sign
-from midterms.models import MidtermAttempt, MidtermAttemptIdempotencyKey
+from midterms.models import Midterm, MidtermAttempt, MidtermAttemptIdempotencyKey
 
 from desktop.v1 import content
 from desktop.v1.tests.support import (
@@ -105,10 +105,60 @@ class PrepareTests(MidtermCase):
         self.assertEqual(body["rules"]["module_count"], 2)
         self.assertEqual(body["rules"]["durations_min"], [35, 35])
         self.assertEqual(body["rules"]["calculator"], "graphing")
+        # An 800-scale MIDTERM with no pass mark of its own: the scale's default, quoted.
+        self.assertEqual(
+            (body["rules"]["scoring_scale"], body["rules"]["pass_mark"], body["rules"]["is_retake"]),
+            ("SCALE_800", 500, False),
+        )
         self.assertNotIn("questions", json.dumps(body))
         # Again: the same sitting (create-or-resume).
         self.assertEqual(self.prepare()["attempt"]["id"], attempt["id"])
         self.assertEqual(MidtermAttempt.objects.filter(student=self.student).count(), 1)
+
+    def test_the_rules_carry_the_pass_mark_and_the_retake_line(self):
+        # A retake on the 100 scale with its own pass mark.
+        retake = make_midterm(title="October Retake · Math", scale=Midterm.SCALE_100)
+        Midterm.objects.filter(pk=retake.pk).update(
+            midterm_type=Midterm.TYPE_RETAKE, retake_of=self.midterm, pass_mark=60
+        )
+        grant_midterm(self.student, retake)
+        body = self.prepare(midterm=retake)
+        self.assertContract(body, "midterm_prepare.response")
+        rules = body["rules"]
+        self.assertEqual((rules["scoring_scale"], rules["pass_mark"], rules["is_retake"]), ("SCALE_100", 60, True))
+
+        # A pre-midterm is never judged pass/fail: no pass mark for the app to quote.
+        pre = make_midterm(title="Pre-midterm · Math")
+        Midterm.objects.filter(pk=pre.pk).update(midterm_type=Midterm.TYPE_PRE_MIDTERM)
+        grant_midterm(self.student, pre)
+        body = self.prepare(midterm=pre)
+        self.assertContract(body, "midterm_prepare.response")
+        rules = body["rules"]
+        self.assertEqual((rules["scoring_scale"], rules["pass_mark"], rules["is_retake"]), ("SCALE_800", None, False))
+
+    def test_a_started_sitting_quotes_the_scale_and_mark_it_was_pinned_to(self):
+        self.opened()
+        Midterm.objects.filter(pk=self.midterm.pk).update(scoring_scale=Midterm.SCALE_100, pass_mark=70)
+        rules = self.prepare()["rules"]
+        self.assertEqual((rules["scoring_scale"], rules["pass_mark"]), ("SCALE_800", 500))
+
+    def test_the_calculator_follows_the_level_and_foundation_math_has_none(self):
+        """Math middle/senior: the full Desmos; junior: Scientific only; Foundation: none —
+        worked by hand since 2026-10-11 (Midterm.calculator_mode). The rules screen and the
+        runner's tools both carry it."""
+        cases = {"senior": "graphing", "middle": "graphing", "junior": "scientific", "foundation": None}
+        for level, calculator in cases.items():
+            with self.subTest(level=level):
+                midterm = make_midterm(title=f"{level} Math", level=level)
+                grant_midterm(self.student, midterm)
+                body = self.prepare(midterm=midterm)
+                self.assertContract(body, "midterm_prepare.response")
+                self.assertEqual(body["rules"]["calculator"], calculator)
+                opened = self.call("open", body["attempt"]["id"])
+                self.assertEqual(opened["test"]["tools"], {"calculator": calculator, "reference_sheet": False})
+        rw = make_midterm(title="R&W", subject=Midterm.READING_WRITING, level="junior")
+        grant_midterm(self.student, rw)
+        self.assertIsNone(self.prepare(midterm=rw)["rules"]["calculator"])
 
     def test_classroom_code(self):
         room = make_classroom()

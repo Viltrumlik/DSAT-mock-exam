@@ -28,6 +28,9 @@ const _rules = MidtermRules(
   offscreenLimit: 3,
   offscreenGraceSeconds: 3,
   lateGraceSeconds: 300,
+  // The pass mark comes in the prepared rules (`scoring_scale` + `pass_mark`).
+  scoringScale: 'SCALE_800',
+  passMark: 500,
 );
 
 /// A stand-in for the runner under the midterm overlays (runner-ui draws the real one).
@@ -94,8 +97,25 @@ void main() {
   }
 
   testWidgets('rules', (tester) async {
-    await golden(tester, 'midterm_rules',
-        MidtermRulesScreen(rules: _rules, requiresCode: true, onProceed: () {}, scoringScale: 'SCALE_800'),
+    await golden(tester, 'midterm_rules', MidtermRulesScreen(rules: _rules, requiresCode: true, onProceed: () {}),
+        size: const Size(1280, 1220));
+  }, skip: skip);
+
+  testWidgets('rules: Foundation Math, worked by hand', (tester) async {
+    const rules = MidtermRules(
+      title: 'Foundation Midterm · Math',
+      subject: 'MATH',
+      questionCount: 44,
+      moduleCount: 2,
+      durationsMin: [35, 35],
+      offscreenLimit: 3,
+      offscreenGraceSeconds: 3,
+      lateGraceSeconds: 300,
+      scoringScale: 'SCALE_100',
+      passMark: 50,
+    );
+    await golden(tester, 'midterm_rules_by_hand',
+        MidtermRulesScreen(rules: rules, requiresCode: true, onProceed: () {}),
         size: const Size(1280, 1220));
   }, skip: skip);
 

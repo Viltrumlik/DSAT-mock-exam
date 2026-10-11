@@ -83,15 +83,17 @@ bool runnerShortcutsEnabled({
   bool busy = false,
 }) => phase == ExamPhase.running && !inputLocked && !offscreenCountingDown && !dialogOpen && !inert && !busy;
 
-/// ExamRunnerPage.tsx:1185-1191 — the px the question keeps free for the calculator: Math,
-/// calculator open, not a grid-in (its directions column already sits on the left).
+/// ExamRunnerPage.tsx:1197-1203 — the px the question keeps free for the calculator: the
+/// paper allows one (`calculatorAllowed`, the RULE — not "is Math": a Foundation Math midterm
+/// is worked by hand), it is open, and this is not a grid-in (its directions column already
+/// sits on the left).
 double calcReserveFor({
-  required bool isMath,
+  required bool calculatorAllowed,
   required bool calculatorOpen,
   required bool enlarged,
   required bool isGridIn,
 }) {
-  if (!isMath || !calculatorOpen || isGridIn) return 0;
+  if (!calculatorAllowed || !calculatorOpen || isGridIn) return 0;
   return enlarged ? BluebookTokens.calcReserveEnlarged : BluebookTokens.calcReserve;
 }
 
@@ -226,7 +228,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       calcReservePx: () => session.questions.isEmpty
           ? 0
           : calcReserveFor(
-              isMath: _isMath,
+              calculatorAllowed: session.calculatorAllowed,
               calculatorOpen: tools.calculatorOpen,
               enlarged: tools.calculatorEnlarged,
               isGridIn: session.currentQuestion.isMathInput,
@@ -310,6 +312,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       tools.closeTransient();
       tools.closeHelp();
     }
+    _enforceCalculatorRule();
     if (session.phase != ExamPhase.running) {
       // Check Your Work / transition / end replace the frame: drop what floated over it.
       if (tools.moreOpen || tools.navigatorOpen || tools.directionsOpen || tools.toolbar != null) {
@@ -352,9 +355,20 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     }
   }
 
+  /// The calculator is a RULE, not a tool (ExamToolsLayer.tsx, 2026-10-11): on a paper that
+  /// offers none — a Foundation Math midterm is worked by hand — an open flag must not outlive
+  /// the rule. It can arrive after the panel was opened (the sitting's own rules replace the
+  /// prepared ones at open), and the header button that would close it is gone by then.
+  void _enforceCalculatorRule() {
+    if (tools.calculatorOpen && !session.calculatorAllowed) tools.closeCalculator();
+  }
+
   void _onTools() {
     if (!mounted) return;
-    if (tools.calculatorOpen && _desmos == null) {
+    _enforceCalculatorRule();
+    // The Desmos island is created on the first Calculator click, and only on a paper that
+    // allows a calculator (architecture §2.4).
+    if (tools.calculatorOpen && session.calculatorAllowed && _desmos == null) {
       _desmos = DesmosController(
         session: session,
         factory: widget.islandFactory,
@@ -822,6 +836,8 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
           anchorBottom: _directionsTop,
           widthFraction: _isMath ? 0.5 : s.split,
           isMath: _isMath,
+          // The wording follows the RULE: a Math paper with no calculator says so.
+          calculatorAllowed: s.calculatorAllowed,
           onClose: tools.closeDirections,
         ),
       );
@@ -841,8 +857,10 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
         ),
       );
     }
-    // ExamToolsLayer.tsx order: calculator, reference, notes, help, toolbar.
-    if (tools.calculatorOpen && _desmos != null) {
+    // ExamToolsLayer.tsx order: calculator, reference, notes, help, toolbar. The calculator
+    // mounts on the RULE and the open flag together, never on the flag alone (the flag is tool
+    // state that can outlive the rule; ExamToolsLayer.tsx `calculatorEnabled && calculatorOpen`).
+    if (s.calculatorAllowed && tools.calculatorOpen && _desmos != null) {
       out.add(
         DesmosPanel(
           key: const ValueKey('calculator'),
