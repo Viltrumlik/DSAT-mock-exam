@@ -474,7 +474,14 @@ class PastpaperEngine extends ExamEngine {
   int _probeTicks = 0;
 
   void _periodicCheck() {
-    if (disposed || !clockRunsInPhase) return;
+    if (disposed) return;
+    if (_waitingForModule) {
+      // The hand-in went through but its reply never brought the next module (a lost reply
+      // replayed from the idempotency store carries no questions): ask for it again.
+      if (unsentItems == 0 && !(outbox?.isBusy(OutboxLane.exam) ?? false)) unawaited(_refetchLiveModule());
+      return;
+    }
+    if (!clockRunsInPhase) return;
     final live = liveModuleId;
     if (live == null || _handedIn.contains(live)) return;
     _probeTicks++;
@@ -575,6 +582,38 @@ class PastpaperEngine extends ExamEngine {
     changed();
   }
 
+  bool get _waitingForModule =>
+      (phaseValue == ExamPhase.transition || phaseValue == ExamPhase.offlineWaiting) &&
+      (transitionValue?.waitingForServer ?? false) &&
+      liveModuleId != null &&
+      content[liveModuleId]?.questions == null;
+
+  bool _refetching = false;
+
+  /// `open` again (with the `have` hashes) to fetch the module the server is now on.
+  Future<void> _refetchLiveModule() async {
+    if (_refetching || disposed) return;
+    _refetching = true;
+    final sent = mono;
+    try {
+      final b = await deps.api.pastpaperOpen(practiceTestId, PastpaperOpenRequest(start: false, have: _haveHashes));
+      if (disposed || b.attempt.id != attemptIdValue) return;
+      setOnline(true);
+      for (final m in b.modules) {
+        if (m.questions != null && content[m.id]?.questions == null) _receiveModule(m, b.media);
+      }
+      _adoptServer(b.attempt, sent, mono);
+    } on NetworkError {
+      if (!disposed) setOnline(false);
+    } on ApiException {
+      // The next periodic check asks again.
+    } on FormatException {
+      // As above.
+    } finally {
+      _refetching = false;
+    }
+  }
+
   void _receiveModule(ModuleContent next, List<MediaRef> media) {
     if (next.questions == null) return;
     content[next.id] = next;
@@ -644,6 +683,12 @@ class PastpaperEngine extends ExamEngine {
         content[serverModule]?.questions != null &&
         clockModule != serverModule &&
         (live == null || _orderOf(serverModule) >= _orderOf(live));
+    if (a.state.isActive && serverModule != null && serverModule == live && _waitingForModule) {
+      // The server is on the module this screen waits for, but sent no questions with it.
+      lastAttempt = a;
+      unawaited(_refetchLiveModule());
+      return;
+    }
     if (follow) {
       // The server is on a module this screen is not counting: module 2 arrived for a
       // deferred paper, or the sitting moved on from another device. Follow it.

@@ -67,12 +67,16 @@ class TestClock implements EngineClock {
   DateTime get wallNow => serverNow.add(wallSkew);
 }
 
+/// Builds the fake server on the harness clock (tests that need a variant pass their own).
+typedef FixtureApiFactory = FixtureV1Api Function(DateTime Function() now);
+
 class EngineHarness {
-  EngineHarness(this.async, {this.fileDb = false, int seed = 1}) : random = Random(seed) {
+  EngineHarness(this.async, {this.fileDb = false, int seed = 1, FixtureApiFactory? apiFactory})
+      : random = Random(seed) {
     // Each test (and each simulated relaunch) opens its own store on purpose.
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     clock = TestClock(async);
-    api = FixtureV1Api(now: () => clock.serverNow);
+    api = (apiFactory ?? (now) => FixtureV1Api(now: now))(() => clock.serverNow);
     native = ScriptedNativeBridge();
     dir = Directory.systemTemp.createTempSync('exam-engine-test');
     power = PowerEvents.detached();
@@ -197,9 +201,10 @@ class EngineHarness {
 }
 
 /// Convenience: wrap a test body in fakeAsync with a harness.
-void withHarness(void Function(EngineHarness h) body, {bool fileDb = false, int seed = 1}) {
+void withHarness(void Function(EngineHarness h) body,
+    {bool fileDb = false, int seed = 1, FixtureApiFactory? apiFactory}) {
   fakeAsync((async) {
-    final h = EngineHarness(async, fileDb: fileDb, seed: seed);
+    final h = EngineHarness(async, fileDb: fileDb, seed: seed, apiFactory: apiFactory);
     try {
       body(h);
     } finally {
