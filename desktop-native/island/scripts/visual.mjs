@@ -245,6 +245,73 @@ async function behaviour(context, rwCase, errors) {
   };
 }
 
+/** A stand-in for Desmos's calculator.js, served at the REAL script URL (so the CSP is tested). */
+const FAKE_DESMOS_JS = `
+window.Desmos = {
+  GraphingCalculator(el, options) {
+    el.setAttribute("data-fake", "graphing:" + JSON.stringify(options));
+    let state = { version: 11, expressions: { list: [] } };
+    const observers = {};
+    return {
+      destroy() {}, resize() {},
+      getState() { return state; },
+      setState(s) { state = s; },
+      observeEvent(name, cb) { observers[name] = cb; setTimeout(cb, 10); },
+    };
+  },
+  ScientificCalculator(el) {
+    el.setAttribute("data-fake", "scientific");
+    return { destroy() {}, resize() {}, getState() { return { sci: 1 }; }, setState() {} };
+  },
+};`;
+
+/** The BUILT desmos.html under its CSP: ready with the script at the real URL, failed when blocked or offline. */
+async function desmosChecks(browser) {
+  const out = {};
+  const run = async (name, setup) => {
+    const context = await browser.newContext({ viewport: { width: 460, height: 480 } });
+    await context.route(`${ISLAND_ORIGIN}/**`, serveFolder(ISLAND_BUILD));
+    await context.addInitScript(FAKE_WEBVIEW);
+    const requested = [];
+    const errors = [];
+    await setup(context, requested);
+    const page = await context.newPage();
+    page.on("pageerror", (e) => errors.push(clip(e.message)));
+    await page.goto(`${ISLAND_ORIGIN}/desmos.html`);
+    if (name === "offline") await context.setOffline(true);
+    await page.evaluate(() => window.__deliver({ v: 1, t: "desmos.init", mode: "graphing", state: { v: 1, mode: "graphing", graphing: { restored: true }, scientific: null } }));
+    await page.waitForFunction(() => window.__toNative.some((m) => m.t === "desmos.ready" || m.t === "desmos.failed"), null, { timeout: 10000 });
+    if (name === "ready") {
+      await page.evaluate(() => window.__deliver({ v: 1, t: "desmos.mode", mode: "scientific" }));
+      await page.waitForTimeout(2300); // desmos.changed is debounced 2 s
+      await page.evaluate(() => window.__deliver({ v: 1, t: "desmos.getState", req: 1 }));
+      await page.waitForFunction(() => window.__toNative.some((m) => m.t === "desmos.state"));
+    }
+    const sent = await page.evaluate(() => window.__toNative);
+    const violations = await page.evaluate(() => window.__violations);
+    out[name] = { sent: sent.map((m) => (m.t === "desmos.state" ? { t: m.t, state: m.state } : m)), requested, violations, errors };
+    await context.close();
+  };
+  await run("ready", (context, requested) =>
+    context.route("https://www.desmos.com/**", (route) => {
+      requested.push(route.request().url());
+      return route.fulfill({ status: 200, headers: { "content-type": "text/javascript" }, body: FAKE_DESMOS_JS });
+    }),
+  );
+  await run("blocked", (context) => context.route("https://www.desmos.com/**", (route) => route.abort()));
+  await run("offline", async () => {});
+  const ready = out.ready.sent;
+  const ok =
+    ready.some((m) => m.t === "desmos.ready" && m.apiVersion === "1.11") &&
+    /^https:\/\/www\.desmos\.com\/api\/v1\.11\/calculator\.js\?apiKey=[0-9a-f]{32}$/.test(out.ready.requested[0] ?? "") &&
+    ready.some((m) => m.t === "desmos.changed") &&
+    ready.some((m) => m.t === "desmos.state" && m.state?.graphing?.restored === true && m.state?.mode === "scientific") &&
+    out.blocked.sent.some((m) => m.t === "desmos.failed" && m.reason === "script") &&
+    out.offline.sent.some((m) => m.t === "desmos.failed" && m.reason === "offline") &&
+    [out.ready, out.blocked, out.offline].every((r) => r.violations.length === 0 && r.errors.length === 0);
+  return { ok, ...out };
+}
+
 async function main() {
   const casesFile = resolve(OUT, "cases.json");
   if (!existsSync(resolve(ISLAND_BUILD, "content.html"))) fail("build/island is missing — run `npm run build` first");
@@ -295,6 +362,12 @@ async function main() {
       }
       await context.close();
     }
+    report.desmos = await desmosChecks(browser);
+    if (!report.desmos.ok) failed = true;
+    const d = report.desmos;
+    console.log(
+      `${d.ok ? "ok  " : "FAIL"} desmos.html (built, CSP on): ready=${JSON.stringify(d.ready.sent.map((m) => m.t))} script=${d.ready.requested[0] ?? "none"}; blocked=${JSON.stringify(d.blocked.sent.filter((m) => m.t === "desmos.failed"))}; offline=${JSON.stringify(d.offline.sent.filter((m) => m.t === "desmos.failed"))}`,
+    );
   } finally {
     await browser.close();
   }

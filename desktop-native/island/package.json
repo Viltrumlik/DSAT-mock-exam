@@ -12,11 +12,13 @@
     "build": "vite build && node scripts/check-build.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:protocol": "node --test protocol/protocol.test.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "parity": "node scripts/parity.mjs check",
     "parity:update": "node scripts/parity.mjs update",
-    "visual": "vite build && vitest run --config vitest.visual.config.ts && node scripts/visual.mjs",
-    "check": "npm run typecheck && npm run parity && npm test && npm run build"
+    "visual": "npm run build && vitest run --config vitest.visual.config.ts && node scripts/visual.mjs",
+    "dev:smoke": "node scripts/dev-smoke.mjs",
+    "check": "npm run typecheck && npm run parity && npm run test:protocol && npm test && npm run build"
   },
   "dependencies": {
     "dompurify": "3.4.0",

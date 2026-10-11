@@ -32,6 +32,9 @@ for (const page of ["content.html", "desmos.html"]) {
   if (/src="\.\/src\//.test(html)) fail(`${page}: still points at source files`);
 }
 
+// The dev harness never ships.
+if (files.includes("dev.html")) fail("dev.html is in the build (dev only)");
+
 const js = files.filter((f) => f.endsWith(".js"));
 const css = files.filter((f) => f.endsWith(".css"));
 if (js.length === 0) fail("no JavaScript emitted");
@@ -48,6 +51,7 @@ for (const f of js) {
   if (/(?<![.\w$])fetch\((?!\)\{)/.test(src) || src.includes("XMLHttpRequest")) fail(`${f}: network call in the bundle`);
   if (src.includes("__DESMOS_API_KEY__") || src.includes("__ISLAND_BUILD__")) fail(`${f}: unreplaced build constant`);
   if (src.includes("process.env")) fail(`${f}: process.env left in the bundle`);
+  if (src.includes("FakeNative") || src.includes("ms-island harness")) fail(`${f}: dev harness code in the bundle`);
 }
 
 for (const f of css) {
