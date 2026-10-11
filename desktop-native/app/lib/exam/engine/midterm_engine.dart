@@ -361,11 +361,25 @@ class MidtermEngine extends ExamEngine {
     final keys = {...?content[live]?.questions?.expand((q) => q.imageKeys)};
     final download = _downloader().ensure(b.media, first: keys);
     unawaited(download.then((_) => changed()));
-    await Future.any([download, Future<void>.delayed(const Duration(seconds: 3))]);
+    await _atMost(download, const Duration(seconds: 3));
     if (disposed) return;
 
     _enter(a, live, sent, mono);
     if (behind) enqueueSync();
+  }
+
+  /// Wait for [f], but no longer than [cap] — with a cancelled timer, not a stray
+  /// `Future.delayed` that outlives the wait.
+  static Future<void> _atMost(Future<void> f, Duration cap) {
+    final done = Completer<void>();
+    final timer = Timer(cap, () {
+      if (!done.isCompleted) done.complete();
+    });
+    f.then<void>((_) {}, onError: (Object _) {}).whenComplete(() {
+      timer.cancel();
+      if (!done.isCompleted) done.complete();
+    });
+    return done.future;
   }
 
   MediaDownloader _downloader() => MediaDownloader(
