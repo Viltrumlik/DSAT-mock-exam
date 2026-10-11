@@ -1,0 +1,14 @@
+name: mastersat_fixture_server
+description: "Local v1 fixture server for the MasterSAT native app (development and tests only)."
+publish_to: 'none'
+version: 0.2.0
+
+environment:
+  sdk: ^3.13.5
+
+# The server reuses the app's wire models and its stateful FixtureV1Api (pure Dart: nothing it
+# imports touches dart:ui). Resolve with `flutter pub get` (the app package depends on Flutter).
+dependencies:
+  crypto: ^3.0.7
+  mastersat_app:
+    path: ../../app

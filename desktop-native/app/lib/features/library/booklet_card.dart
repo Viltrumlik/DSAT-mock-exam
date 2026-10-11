@@ -81,18 +81,23 @@ class BookletCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          StatusBadge(
-                            label: statusBadgeLabel(s.status),
-                            foreground: statusFg,
-                            background: statusBg,
-                            dot: statusDot,
+                          Flexible(
+                            child: StatusBadge(
+                              label: statusBadgeLabel(s.status),
+                              foreground: statusFg,
+                              background: statusBg,
+                              dot: statusDot,
+                            ),
                           ),
+                          const SizedBox(width: 8),
                           const Spacer(),
-                          StatusBadge(
-                            label: regionLabel(p),
-                            foreground: regionMain,
-                            background: regionSoft,
-                            icon: us ? LucideIcons.flag : LucideIcons.globe,
+                          Flexible(
+                            child: StatusBadge(
+                              label: regionLabel(p),
+                              foreground: regionMain,
+                              background: regionSoft,
+                              icon: us ? LucideIcons.flag : LucideIcons.globe,
+                            ),
                           ),
                         ],
                       ),

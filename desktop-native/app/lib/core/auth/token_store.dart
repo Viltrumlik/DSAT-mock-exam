@@ -34,11 +34,60 @@ class PendingSignIn {
       {'verifier': verifier, 'challenge': challenge, 'started_at': startedAt.toUtc().toIso8601String()};
 }
 
-class TokenStore {
-  TokenStore({required this.authFile, required this.pendingFile, required this._native});
+/// Where the session and the pending sign-in live.
+abstract class TokenStore {
+  /// The sealed files under [paths] (the app).
+  factory TokenStore.at(AppPaths paths, NativeBridge native) => FileTokenStore(
+        authFile: paths.authFile,
+        pendingFile: paths.pendingSignInFile,
+        native: native,
+      );
 
-  factory TokenStore.at(AppPaths paths, NativeBridge native) =>
-      TokenStore(authFile: paths.authFile, pendingFile: paths.pendingSignInFile, native: native);
+  /// The stored session, or null.
+  Future<AuthSession?> read();
+  Future<void> write(AuthSession session);
+  Future<void> clear();
+
+  Future<PendingSignIn?> readPending();
+  Future<void> writePending(PendingSignIn p);
+  Future<void> clearPending();
+}
+
+/// In memory (tests; nothing touches the disk).
+class MemoryTokenStore implements TokenStore {
+  MemoryTokenStore({this.session, this.pending});
+
+  AuthSession? session;
+  PendingSignIn? pending;
+
+  /// How many times [write] ran (tests check a refresh stored the rotated pair).
+  int writes = 0;
+
+  @override
+  Future<AuthSession?> read() async => session;
+
+  @override
+  Future<void> write(AuthSession s) async {
+    writes++;
+    session = s;
+  }
+
+  @override
+  Future<void> clear() async => session = null;
+
+  @override
+  Future<PendingSignIn?> readPending() async => pending;
+
+  @override
+  Future<void> writePending(PendingSignIn p) async => pending = p;
+
+  @override
+  Future<void> clearPending() async => pending = null;
+}
+
+/// `auth.bin` / `signin.bin`, sealed with DPAPI through the native library.
+class FileTokenStore implements TokenStore {
+  FileTokenStore({required this.authFile, required this.pendingFile, required this._native});
 
   final File authFile;
   final File pendingFile;
@@ -48,6 +97,7 @@ class TokenStore {
 
   /// The stored session, or null when there is none or it cannot be opened (another Windows
   /// user's file, a corrupted file): either way the student signs in again.
+  @override
   Future<AuthSession?> read() async {
     final j = await _readSealed(authFile);
     if (j == null || j['v'] != _version) return null;
@@ -58,10 +108,13 @@ class TokenStore {
     }
   }
 
+  @override
   Future<void> write(AuthSession session) => _writeSealed(authFile, {'v': _version, ...session.toJson()});
 
+  @override
   Future<void> clear() => _remove(authFile);
 
+  @override
   Future<PendingSignIn?> readPending() async {
     final j = await _readSealed(pendingFile);
     if (j == null) return null;
@@ -72,8 +125,10 @@ class TokenStore {
     }
   }
 
+  @override
   Future<void> writePending(PendingSignIn p) => _writeSealed(pendingFile, p.toJson());
 
+  @override
   Future<void> clearPending() => _remove(pendingFile);
 
   Future<Map<String, Object?>?> _readSealed(File f) async {

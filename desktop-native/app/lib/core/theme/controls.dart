@@ -500,7 +500,15 @@ class StatusBadge extends StatelessWidget {
             const SizedBox(width: 6),
           ],
           if (icon != null) ...[Icon(icon, size: 12, color: foreground), const SizedBox(width: 5)],
-          Text(label, style: AppText.badge.copyWith(color: foreground)),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: AppText.badge.copyWith(color: foreground),
+            ),
+          ),
         ],
       ),
     );
@@ -893,11 +901,14 @@ class AppDialog extends StatelessWidget {
               const SizedBox(height: 12),
               Text(message, style: AppText.bodyMuted.copyWith(height: 1.5, color: AppColors.textSecondary)),
               const SizedBox(height: 22),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  for (final a in actions) ...[if (a != actions.first) const SizedBox(width: 8), a],
-                ],
+              Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: actions,
+                ),
               ),
             ],
           ),

@@ -95,6 +95,7 @@ Future<AppServices> buildAppServices({
   LaunchLinks? links,
   WindowPlacementSync? windowPlacement,
   StoreOpener? openStore,
+  TokenStore? tokenStore,
   DocumentSaver? documents,
   UrlOpener? openUrl,
   Future<void> Function(String text)? copyToClipboard,
@@ -119,7 +120,7 @@ Future<AppServices> buildAppServices({
   final auth = AuthController(
     api: v1,
     native: native,
-    store: TokenStore.at(paths, native),
+    store: tokenStore ?? TokenStore.at(paths, native),
     config: config,
     unsentWork: unsent,
     clock: clock,
@@ -167,7 +168,7 @@ Future<AppServices> buildAppServices({
     windowPlacement: windowPlacement,
     examLauncher: examLauncher,
     copyToClipboard: copyToClipboard,
-    openExternal: (url) => launchUrl(url, mode: LaunchMode.externalApplication),
+    openExternal: openUrl ?? (url) => launchUrl(url, mode: LaunchMode.externalApplication),
   );
 }
 
