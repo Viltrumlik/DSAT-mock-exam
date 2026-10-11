@@ -7,8 +7,9 @@ check, cannot keep writing to endpoints whose shape it no longer matches.
 
 It is deliberately narrow:
 
-* only requests that declare an app build (`X-MasterSAT-Client: ios/<version>`) — browsers and
-  test clients are never judged;
+* only requests that declare an app build (`X-MasterSAT-Client: ios/<version>` or
+  `windows/<version>`) — browsers, test clients and the 0.1.x Windows app's bare `desktop` are
+  never judged;
 * only `/api/`, and never `/api/mobile/`, so a refused build can still read the policy that
   refused it and still report the crash that made the minimum go up;
 * an unreadable version passes (see `versioning`): failing closed would lock out students for a

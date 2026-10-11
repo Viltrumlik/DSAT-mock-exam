@@ -10,16 +10,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from django.conf import settings
 from django.core.cache import cache
 
 from .models import AppReleasePolicy
-from .versioning import Version, evaluate, format_version, parse_version
+from .versioning import PLATFORM_WINDOWS, Version, evaluate, format_version, parse_version
 
 CACHE_SECONDS = 60
 
 
 def _cache_key(platform: str) -> str:
     return f"mobile:policy:{platform}"
+
+
+def default_update_url(platform: str) -> str:
+    """Where "Update" goes when the console's row has no URL (or there is no row yet).
+
+    Windows builds always have somewhere to go: the installer on our own site
+    (``DESKTOP_UPDATE_URL``). An update screen whose button leads nowhere would strand a
+    student on a build the server has just refused. iOS has no default — its URL is the App
+    Store page, which only the console knows.
+    """
+    if platform == PLATFORM_WINDOWS:
+        return str(getattr(settings, "DESKTOP_UPDATE_URL", "") or "")
+    return ""
 
 
 @dataclass(frozen=True)
@@ -59,7 +73,7 @@ def get_policy(platform: str) -> Policy:
         platform=platform,
         latest=parse_version(row.latest_version) if row else None,
         minimum=parse_version(row.minimum_version) if row else None,
-        update_url=(row.update_url or "") if row else "",
+        update_url=((row.update_url or "") if row else "") or default_update_url(platform),
         message=(row.message or "") if row else "",
     )
     try:
