@@ -113,6 +113,7 @@ class ExamRunnerScreen extends StatefulWidget {
     this.battery,
     this.inert = false,
     this.overlay,
+    this.banner,
     this.nativeScientificOnly = true,
     this.animate = true,
     this.navLockDuration = BluebookTokens.navLock,
@@ -149,6 +150,10 @@ class ExamRunnerScreen extends StatefulWidget {
 
   /// Drawn over everything (e.g. the midterm off-screen warning).
   final Widget? overlay;
+
+  /// A strip under the header and the low-battery banner, above the question card (the
+  /// midterm's reconnecting / refused-work banners, a past paper's stuck send). Not modal.
+  final Widget? banner;
 
   /// Scientific-only papers use the native scientific calculator, never Desmos.
   final bool nativeScientificOnly;
@@ -780,6 +785,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
                 header,
                 const SatColorRule(),
                 LowBatteryBanner(battery: battery),
+                ?widget.banner,
               ],
             ),
           ),
