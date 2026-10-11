@@ -228,7 +228,8 @@ def parse_sync_body(data) -> SyncBody:
         raise bad_request("The body must be a JSON object.")
     module_id = _as_int(data.get("module_id"), "module_id")
     seq = _as_int(data.get("seq", 0), "seq")
-    raw_answers = data.get("answers") or {}
+    raw_answers = data.get("answers")
+    raw_answers = {} if raw_answers is None else raw_answers
     if not isinstance(raw_answers, dict):
         raise bad_request("answers must be an object of question id to answer.")
     if len(raw_answers) > MAX_ANSWERS_PER_MODULE:
@@ -245,7 +246,8 @@ def parse_sync_body(data) -> SyncBody:
         if len(value) > MAX_ANSWER_CHARS:
             raise bad_request("An answer is too long.")
         answers[str(int(key))] = value
-    raw_flagged = data.get("flagged") or []
+    raw_flagged = data.get("flagged")
+    raw_flagged = [] if raw_flagged is None else raw_flagged
     if not isinstance(raw_flagged, list) or len(raw_flagged) > MAX_ANSWERS_PER_MODULE:
         raise bad_request("flagged must be a list of question ids.")
     flagged: list[int] = []
