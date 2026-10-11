@@ -15,7 +15,7 @@ dependency to `app/pubspec.yaml` (say so in your report).
 | **exam-engine** | `app/lib/exam/engine/**`, `app/lib/features/midterm/**`, `app/test/exam/engine/**`, `app/test/features/midterm/**` |
 | **runner-ui** | `app/lib/exam/{runner,tools,tokens}/**`, `app/assets/runner/**`, `app/test/exam/{runner,tools}/**` |
 | **island** | `island/**` except `island/protocol/**` and `island/src/protocol.ts` (consume those as-is) |
-| **windows-host** | `plugins/ms_webview2/**`, `app/lib/island/{texture_island_host.dart,windows_island_host*.dart,macos_island_host.dart,island_host_factory.dart}`, `app/windows/**`, `app/macos/**` (dev runner tweaks only), `packaging/**`, `.github/workflows/desktop-native.yml` |
+| **windows-host** | `plugins/ms_webview2/**`, `app/lib/island/{texture_island_host.dart,windows_island_host*.dart,macos_island_host.dart,island_host_factory.dart,s1_harness.dart}`, `app/windows/**`, `app/macos/**` (dev runner tweaks only), `packaging/**`, `.github/workflows/desktop-native.yml`, the CI test glue `app/test/{flutter_test_config.dart,ci_golden_tolerance.dart}`; tests `app/test/windows_host/**` |
 
 ## Contracts (foundation) — build against these, never around them
 

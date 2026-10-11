@@ -66,6 +66,9 @@ $vpkArgs = @(
   '--packTitle', 'MasterSAT',
   '--packAuthors', 'MasterSAT',
   '--framework', 'webview2',
+  # The app is x64 only (Flutter + mastersat_native.dll for x86_64-pc-windows-msvc); without
+  # this vpk assumes x86.
+  '--runtime', 'win-x64',
   '--icon', $icon,
   '--channel', $Channel,
   '--outputDir', $OutDir,
