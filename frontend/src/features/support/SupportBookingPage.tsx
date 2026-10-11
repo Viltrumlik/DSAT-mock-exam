@@ -80,6 +80,9 @@ function dayLabel(iso: string): { title: string; sub: string } {
 const STATUS_STYLE: Record<SupportBooking["status"], { label: string; tone: PillTone }> = {
   BOOKED: { label: "Booked", tone: "info" },
   HELD: { label: "Attended", tone: "success" },
+  // Attended, but late (the school's rule, 2026-10-11): it counts, and earns no XP. The row
+  // says why underneath, so the missing XP never reads as a bug.
+  LATE: { label: "Attended late", tone: "warning" },
   // Growth-oriented: the fact is recorded without naming the student a failure.
   NO_SHOW: { label: "Missed", tone: "warning" },
   CANCELLED: { label: "Cancelled", tone: "neutral" },
@@ -98,7 +101,19 @@ const UNAVAILABLE_REASON: Record<Exclude<SupportHour["state"], "open" | "mine">,
   // only one they can do something about — so it says what they already have rather than
   // what the desk lacks.
   day_taken: "You have a session today",
+  // The no-show pause (2026-10-11). Every hour reads this, with every teacher; the banner
+  // above the calendar says until when and why.
+  paused: "Booking paused",
 };
+
+/** A local ISO date ("2026-10-20") as a student reads it: "Tue, Oct 20". */
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime())
+    ? iso
+    : d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
 
 /** A small pill action on a session row — the shape the house tabs and chips already use. */
 function rowAction(kind: "primary" | "quiet") {
@@ -202,7 +217,7 @@ export function SupportBookingPage() {
               </h1>
               <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-muted-foreground">
                 Pick an hour with a support teacher from one of your classes — one session a day.
-                Attending one earns you points.
+                Arriving on time earns you points.
               </p>
             </div>
           </div>
@@ -237,9 +252,50 @@ export function SupportBookingPage() {
         </div>
       </section>
 
+      {/* The no-show rule (2026-10-11), said on the page as well as in the bell: a student
+          can mute support notifications, and must still never be surprised by a pause. The
+          pause outranks the session limit — it is the reason nothing below is bookable. */}
+      {allowance?.paused_until ? (
+        <div
+          role="status"
+          className="squircle cr-rowin flex items-start gap-3 bg-warning/10 px-5 py-4 [--sq:11px]"
+        >
+          <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              Support booking is paused — you can book again from {fmtDate(allowance.paused_until)}
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-muted-foreground">
+              You didn&apos;t come to two booked sessions within a week
+              {allowance.paused_missed && allowance.paused_missed.length === 2
+                ? ` (${fmtDate(allowance.paused_missed[0])} and ${fmtDate(allowance.paused_missed[1])})`
+                : ""}
+              . Sessions you had booked in that week were cancelled.
+            </p>
+          </div>
+        </div>
+      ) : allowance?.warning_until ? (
+        <div
+          role="status"
+          className="squircle cr-rowin flex items-start gap-3 bg-warning/10 px-5 py-4 [--sq:11px]"
+        >
+          <Info className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
+          <div>
+            <p className="text-sm font-bold text-foreground">
+              Warning: you didn&apos;t come to your booked session on{" "}
+              {fmtDate(allowance.warning_missed)}
+            </p>
+            <p className="mt-1 text-[13px] font-medium text-muted-foreground">
+              If it happens again before {fmtDate(allowance.warning_until)}, support booking pauses
+              for a week. Can&apos;t make it? Cancel before the session starts.
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {/* Said once, up front. The alternative is a student picking an hour, typing a topic,
           pressing Confirm and only then being told they are at their limit. */}
-      {allowance && !allowance.can_book ? (
+      {allowance && !allowance.can_book && !allowance.paused_until ? (
         <div className="squircle cr-rowin flex items-start gap-3 bg-warning/10 px-5 py-4 [--sq:11px]">
           <CalendarClock className="mt-0.5 h-5 w-5 shrink-0 text-warning-foreground" aria-hidden />
           <div>
@@ -363,6 +419,17 @@ export function SupportBookingPage() {
                       {b.invited_by} added you to this one
                     </p>
                   )}
+                  {/* Why there is no XP — the school asked that the student be told, and the
+                      bell can be muted. A warning well, not the note's green one. */}
+                  {b.status === "LATE" && (
+                    <p className="squircle mt-2 flex items-start gap-1.5 bg-warning/10 px-3 py-2 text-xs font-semibold text-foreground [--sq:7px]">
+                      <Clock className="mt-0.5 h-3 w-3 shrink-0 text-warning-foreground" aria-hidden />
+                      <span>
+                        You came late, so this session earns no XP. It still counts as attended —
+                        arrive on time next session to earn it.
+                      </span>
+                    </p>
+                  )}
                   {b.status === "CANCELLED" && b.cancel_reason && (
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">
                       Cancelled — {b.cancel_reason}
@@ -379,7 +446,10 @@ export function SupportBookingPage() {
                       Add a member
                     </button>
                   )}
-                  {b.status === "BOOKED" && (
+                  {/* Not once the hour has begun: the server refuses it (cancelling a started
+                      session gave the day back, a second hour walked round the one-a-day
+                      limit), and a button that always fails is worse than none. */}
+                  {b.status === "BOOKED" && new Date(b.slot.starts_at).getTime() > Date.now() && (
                     <button
                       type="button"
                       className={rowAction("quiet")}
@@ -395,8 +465,9 @@ export function SupportBookingPage() {
                   )}
                 </div>
                 {/* Only a session that happened can be rated — there is nothing to judge
-                    about one that was cancelled, missed, or is still to come. */}
-                {b.status === "HELD" && (
+                    about one that was cancelled, missed, or is still to come. A late arrival
+                    still sat through it, so it may be rated too. */}
+                {(b.status === "HELD" || b.status === "LATE") && (
                   <div className="w-full">
                     <SessionRating
                       rating={b.rating}
@@ -511,9 +582,14 @@ function TeacherCalendar({
           // Ahead of the other three: a student who has booked Wednesday needs the strip to
           // say so on Wednesday, not "Full" — which would send them looking for a
           // cancellation that would not help them anyway.
+          // A paused student's every hour is "paused"; saying "Full" would send them hunting
+          // for a cancellation that cannot help them.
+          const paused = d.hours.some((h) => h.state === "paused");
           const emptyLabel = dayIsTaken(d)
             ? "Booked"
-            : notWorking
+            : paused
+              ? "Paused"
+              : notWorking
               ? "Not working"
               : gone
                 ? "Day over"

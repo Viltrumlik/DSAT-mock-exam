@@ -73,6 +73,110 @@ MAX_UPCOMING_BOOKINGS = 2
 #: them pick a second and refusing it.
 MAX_BOOKINGS_PER_DAY = 1
 
+#: **The no-show rule — the school's, 2026-10-11.** A student who books a support hour and
+#: does not come is warned the first time. Two missed sessions within any seven days pause
+#: their support booking for a week, with every support teacher: from the day of the second
+#: missed session until the same weekday a week later (they may book again ON that day).
+#:
+#: Four choices the school made, each load-bearing:
+#:
+#: * **"Within any seven days", not "in one calendar week".** Friday and the next Tuesday
+#:   are two misses in a week; a Monday–Sunday reading would let them through.
+#: * **The pause runs from the day of the missed SESSION**, not from when the teacher
+#:   records it. A teacher who records it days late shortens the pause rather than moving
+#:   it — the school chose the literal reading over a full week from the marking.
+#: * **Sessions already booked inside the paused week are cancelled**, and the student is
+#:   told. A pause that let pre-booked hours stand would be a pause on clicking, not on
+#:   using the desk.
+#: * **The pause is COMPUTED, never stored.** It is read off the NO_SHOW rows every time, so
+#:   a teacher who corrects a mis-click (NO_SHOW → held) lifts it with no second step and no
+#:   row to forget about.
+#:
+#: Only hours the student booked THEMSELVES count. A seat a classmate put them in
+#: (``invited_by``) was not their booking — the school's rule is about booking and not
+#: coming — and counting it would let one student get another paused simply by inviting
+#: them to hours they never agreed to. Only sessions that have STARTED count: a session
+#: that has not happened yet cannot have been missed.
+NO_SHOW_WINDOW_DAYS = 7
+NO_SHOW_PAUSE_DAYS = 7
+
+
+def _no_show_dates_by_student(student_ids, *, now) -> dict[int, list]:
+    """``{student_id: [local dates of self-booked, started NO_SHOW sessions]}``, oldest first.
+
+    Read back only as far as a pause that could still be running needs: a pause that is
+    live today began on a missed session at most ``NO_SHOW_PAUSE_DAYS - 1`` days ago, whose
+    partner was at most ``NO_SHOW_WINDOW_DAYS - 1`` days before that. One query for any
+    number of students, so the invite picker can ask about a whole class at once.
+
+    A date appears once per missed session, so two misses on one day (possible only for
+    bookings made before the one-a-day limit existed) are two misses, not one.
+    """
+    ids = [int(i) for i in student_ids]
+    if not ids:
+        return {}
+    today = timezone.localdate(now)
+    since = _hour_start(today - timedelta(days=NO_SHOW_WINDOW_DAYS + NO_SHOW_PAUSE_DAYS), 0)
+    out: dict[int, list] = {}
+    for student_id, starts_at in SupportBooking.objects.filter(
+        student_id__in=ids,
+        status=SupportBooking.STATUS_NO_SHOW,
+        invited_by__isnull=True,
+        availability__starts_at__gte=since,
+        availability__starts_at__lte=now,
+    ).values_list("student_id", "availability__starts_at"):
+        out.setdefault(int(student_id), []).append(timezone.localdate(starts_at))
+    for dates in out.values():
+        dates.sort()
+    return out
+
+
+def _pause_from_dates(dates, today) -> dict | None:
+    """The pause these missed dates impose and that is still running ``today``, or None.
+
+    Every pair of consecutive misses less than ``NO_SHOW_WINDOW_DAYS`` apart pauses booking
+    from the later one for ``NO_SHOW_PAUSE_DAYS``. Consecutive pairs are enough: if the
+    neighbours are a week apart, anything further out is too. The dates are sorted, so the
+    last qualifying pair is the pause that ends latest.
+    """
+    pause = None
+    for earlier, later in zip(dates, dates[1:]):
+        if (later - earlier).days < NO_SHOW_WINDOW_DAYS:
+            until = later + timedelta(days=NO_SHOW_PAUSE_DAYS)
+            if today < until:
+                pause = {"from": later, "until": until, "missed": [earlier, later]}
+    return pause
+
+
+def booking_pause_for(student, *, now=None) -> dict | None:
+    """``{"from", "until", "missed"}`` if this student's support booking is paused, else None.
+
+    ``until`` is EXCLUSIVE — the first local date they may book again.
+    """
+    now = now or timezone.now()
+    dates = _no_show_dates_by_student([student.pk], now=now).get(int(student.pk), [])
+    return _pause_from_dates(dates, timezone.localdate(now))
+
+
+def no_show_warning_for(student, *, now=None) -> dict | None:
+    """The warning the student is under, if any: ``{"missed", "until"}``, else None.
+
+    A self-booked session missed within the last ``NO_SHOW_WINDOW_DAYS`` days, with no pause
+    running. Missing another booked session dated before ``until`` (exclusive) pauses
+    booking. Shown on the support page as well as sent once as a notification, because a
+    student can mute the support bell and must still not be surprised by a pause.
+    """
+    now = now or timezone.now()
+    today = timezone.localdate(now)
+    dates = _no_show_dates_by_student([student.pk], now=now).get(int(student.pk), [])
+    if not dates or _pause_from_dates(dates, today) is not None:
+        return None
+    last = dates[-1]
+    until = last + timedelta(days=NO_SHOW_WINDOW_DAYS)
+    if today >= until:
+        return None
+    return {"missed": last, "until": until}
+
 
 def _active_student_classroom_ids(student):
     """Classrooms this student is in, for the purpose of "may they book support here".
@@ -204,6 +308,8 @@ def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
             availability__starts_at__lt=horizon_end,
         ).values_list("availability__starts_at", flat=True)
     })
+    pause = booking_pause_for(student, now=now)
+    warning = None if pause else no_show_warning_for(student, now=now)
     return {
         "upcoming": upcoming,
         "max_upcoming": MAX_UPCOMING_BOOKINGS,
@@ -215,7 +321,22 @@ def booking_allowance(student, *, now=None, exclude_booking_id=None) -> dict:
         # right now". The per-day limit is deliberately NOT folded in: it is about a
         # particular day, and a student at their day's limit on Tuesday can still book
         # Wednesday. ``taken_days`` is what greys the days out.
+        #
+        # The no-show pause is NOT folded in either, on purpose. Builds of the app already
+        # installed read ``can_book: false`` as "you have sessions booked already" and would
+        # tell a paused student with nothing booked that they hold two. The pause travels
+        # in its own fields, and every hour reads ``"paused"`` (see ``open_calendar_for``),
+        # which old builds already render as "not available".
         "can_book": upcoming < MAX_UPCOMING_BOOKINGS,
+        # The no-show rule (``NO_SHOW_WINDOW_DAYS``). ``paused_until`` is the first day the
+        # student may book again; null when nothing is paused.
+        "paused_from": pause["from"].isoformat() if pause else None,
+        "paused_until": pause["until"].isoformat() if pause else None,
+        "paused_missed": [d.isoformat() for d in pause["missed"]] if pause else [],
+        # A first miss: the date it happened, and the date before which a second one pauses
+        # booking. Null once the week has passed or a pause has replaced it.
+        "warning_missed": warning["missed"].isoformat() if warning else None,
+        "warning_until": warning["until"].isoformat() if warning else None,
     }
 
 
@@ -238,30 +359,84 @@ def bookings_on_day(student, day, *, exclude_booking_id=None) -> int:
     ).count()
 
 
-def _check_booking_allowance(student, *, now=None, exclude_booking_id=None, for_date=None) -> None:
-    """Raise a student-readable ValidationError when they are at a limit.
+def _day_label(day) -> str:
+    """A date as a student reads it in a sentence — "Tue 20 Oct"."""
+    return day.strftime("%a %d %b")
 
-    ``for_date`` is the LOCAL date of the hour being claimed. Passing it adds the per-day
-    check; leaving it out asks only the standing questions, which is what a caller with no
-    particular slot in hand (a UI asking "can this student book at all") wants.
+
+def _assert_may_take_seat(student, availability, *, now, existing=None, invited=False) -> None:
+    """THE gate. Every path that puts a student into a support hour runs it — no exceptions.
+
+    Raises a ValidationError with a sentence the person looking at the screen can read:
+    the student themselves, or — when ``invited`` — the classmate inviting them, so the
+    sentence names the invitee instead of saying "you".
+
+    **Why one gate (2026-10-11).** Booking and inviting used to apply different limits:
+    ``book()`` checked the per-day limit and the upcoming limit, ``invite_member()`` only
+    the per-day one, on the stated theory that a seat somebody else gave you is not you
+    hoarding. Students found the gap and used it in pairs — each booked up to their own
+    limit, then invited the other into those hours, so both held two sessions more than the
+    rules allow and earned the group rate on all of them. Production showed exactly two
+    pairs doing it, always inside the upcoming limit and never inside the per-day one,
+    which had held. The school's ruling: **if a student has used their limit, nobody can
+    put them in a session — whoever presses the button.** So an invited seat now counts
+    against, and is refused by, every limit a seat booked yourself is.
+
+    **The student row is locked first.** The slot's lock (taken by the caller) only
+    serialises claims on ONE hour. Two requests for the same student on two different hours
+    — a classmate inviting them into one while they book another — each locked a different
+    slot, each counted zero, and both succeeded. Locking the student serialises every claim
+    on that student's allowance. Lock order is always slot, then student, and nothing here
+    ever locks a slot while holding a student, so the two cannot deadlock.
+
+    Order of the checks: the pause first (it is the one that explains everything else), then
+    the per-day limit (the tightest, so the one people actually meet), then the upcoming one.
     """
-    allowance = booking_allowance(
-        student, now=now, exclude_booking_id=exclude_booking_id
-    )
-    # Checked first, and deliberately: it is the tightest limit, so it is the one a student
-    # will actually hit, and being told "you already have a session that day" is a more
-    # useful sentence than being told about a weekly total they are nowhere near.
-    if for_date is not None and bookings_on_day(
-        student, for_date, exclude_booking_id=exclude_booking_id
+    get_user_model().objects.select_for_update().filter(pk=student.pk).values_list(
+        "pk", flat=True
+    ).first()
+
+    exclude = existing.pk if existing is not None else None
+    name = _display(student)
+
+    pause = booking_pause_for(student, now=now)
+    if pause is not None:
+        if invited:
+            # Deliberately not "is paused for missing sessions": that is the student's own
+            # business, and the classmate only needs to know the seat cannot be given.
+            raise ValidationError(f"{name} can't be booked for support right now.")
+        raise ValidationError(
+            "You didn't come to two booked support sessions within a week, so support "
+            f"booking is paused. You can book again from {_day_label(pause['until'])}."
+        )
+
+    if bookings_on_day(
+        student, timezone.localdate(availability.starts_at), exclude_booking_id=exclude
     ) >= MAX_BOOKINGS_PER_DAY:
+        if invited:
+            raise ValidationError(f"{name} already has a support session that day.")
         raise ValidationError(
             "You already have a support session that day. You can book one session a day — "
             "pick another day, or cancel the one you have."
         )
-    if allowance["upcoming"] >= MAX_UPCOMING_BOOKINGS:
+
+    held_ahead = SupportBooking.objects.filter(
+        student=student,
+        status=SupportBooking.STATUS_BOOKED,
+        availability__starts_at__gt=now,
+    )
+    if exclude is not None:
+        held_ahead = held_ahead.exclude(pk=exclude)
+    upcoming = held_ahead.count()
+    if upcoming >= MAX_UPCOMING_BOOKINGS:
+        if invited:
+            raise ValidationError(
+                f"{name} already has {upcoming} support sessions booked — the most anyone "
+                f"can hold at once."
+            )
         raise ValidationError(
-            f"You already have {allowance['upcoming']} support "
-            f"session{'' if allowance['upcoming'] == 1 else 's'} booked. Attend one, or "
+            f"You already have {upcoming} support "
+            f"session{'' if upcoming == 1 else 's'} booked. Attend one, or "
             f"cancel it, and you can book again."
         )
 
@@ -544,6 +719,9 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
 
     schedules = weekly_hours_for_many(teacher_ids)
 
+    # The no-show pause covers the whole calendar, with every teacher — resolved once.
+    paused = booking_pause_for(student, now=now) is not None
+
     # Days this student has already spent, across EVERY support teacher — the per-day limit
     # is a property of the student's day, not of one teacher's column, so it has to be
     # resolved once here rather than inside the per-teacher loop.
@@ -581,6 +759,13 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
                     state = "mine"
                 elif starts_at <= now:
                     state = "past"
+                elif paused:
+                    # Two missed sessions within a week (NO_SHOW_WINDOW_DAYS). Above every
+                    # other reason because it is the one that applies to every hour: a grid
+                    # of "full" and "he's not in" would hide that nothing here is bookable
+                    # for this student. "mine" still outranks it — though the pause cancels
+                    # the sessions inside its week, one booked for after it stands.
+                    state = "paused"
                 elif day in taken_days:
                     # One session a day (MAX_BOOKINGS_PER_DAY). Ranked above the teacher-side
                     # states on purpose: the student cannot book ANY hour that day, and a day
@@ -794,23 +979,16 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
     ).first()
     if existing is not None and existing.status == SupportBooking.STATUS_BOOKED:
         raise ValidationError("You have already booked that slot.")
-    if existing is not None and existing.status in (
-        SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW
-    ):
+    if existing is not None and existing.status in SupportBooking.SETTLED_STATUSES:
         # A settled session is the teacher's record. Re-booking reuses the row, so allowing
-        # it here would let a student erase a NO_SHOW — or overwrite a HELD and silently
-        # revoke their own 10 points — by pressing Book again.
+        # it here would let a student erase a NO_SHOW or a late mark — or overwrite a HELD
+        # and silently revoke their own points — by pressing Book again.
         raise ValidationError("That session has already been settled.")
 
     # After the entitlement checks and before the seat is taken. Checked here rather than in
     # the view so book() and book_at() cannot diverge, and so a management path gets the same
-    # answer as a student clicking a chip.
-    _check_booking_allowance(
-        student,
-        now=now,
-        exclude_booking_id=existing.pk if existing else None,
-        for_date=timezone.localdate(availability.starts_at),
-    )
+    # answer as a student clicking a chip. The same gate guards invitations.
+    _assert_may_take_seat(student, availability, now=now, existing=existing)
 
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
@@ -830,9 +1008,13 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
         existing.cancel_reason = ""
         existing.cancelled_at = None
         existing.cancelled_by = None
+        # Booked by the student themselves now, whoever first invited them to it. The
+        # no-show rule only counts hours a student booked themselves, so a stale inviter
+        # left on a row the student re-took would exempt their missed session from it.
+        existing.invited_by = None
         existing.save(update_fields=[
             "status", "classroom", "topic", "settled_at", "settled_by",
-            "cancel_reason", "cancelled_at", "cancelled_by", "updated_at",
+            "cancel_reason", "cancelled_at", "cancelled_by", "invited_by", "updated_at",
         ])
         return existing
 
@@ -875,7 +1057,7 @@ def invitable_classmates(booking, *, limit: int = 200):
     already.add(booking.student_id)
 
     User = get_user_model()
-    return list(
+    candidates = list(
         User.objects.filter(
             class_memberships__classroom_id__in=shared_ids,
             class_memberships__role=ClassroomMembership.ROLE_STUDENT,
@@ -883,8 +1065,57 @@ def invitable_classmates(booking, *, limit: int = 200):
         )
         .exclude(pk__in=already)
         .distinct()
-        .order_by("first_name", "last_name", "id")[:limit]
+        .order_by("first_name", "last_name", "id")
     )
+    refused = _would_refuse_seat({u.pk for u in candidates}, availability)
+    return [u for u in candidates if u.pk not in refused][:limit]
+
+
+def _would_refuse_seat(student_ids, availability, *, now=None) -> set[int]:
+    """Which of these students :func:`_assert_may_take_seat` would turn away from this hour.
+
+    The picker's half of the one gate, asked for a whole class in three queries rather than
+    three per student. It must agree with the gate, which is why it reads the same three
+    limits — a name the picker offers and the invite then refuses is a click that fails.
+    The gate itself still decides; this only keeps doomed names off the list.
+    """
+    ids = {int(i) for i in student_ids}
+    if not ids:
+        return set()
+    now = now or timezone.now()
+    refused: set[int] = set()
+
+    today = timezone.localdate(now)
+    for student_id, dates in _no_show_dates_by_student(ids, now=now).items():
+        if _pause_from_dates(dates, today) is not None:
+            refused.add(student_id)
+
+    day_start = _hour_start(timezone.localdate(availability.starts_at), 0)
+    same_day = (
+        SupportBooking.objects.filter(
+            student_id__in=ids,
+            availability__starts_at__gte=day_start,
+            availability__starts_at__lt=day_start + timedelta(days=1),
+        )
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .values("student_id")
+        .annotate(n=Count("id"))
+        .values_list("student_id", "n")
+    )
+    refused |= {sid for sid, n in same_day if n >= MAX_BOOKINGS_PER_DAY}
+
+    ahead = (
+        SupportBooking.objects.filter(
+            student_id__in=ids,
+            status=SupportBooking.STATUS_BOOKED,
+            availability__starts_at__gt=now,
+        )
+        .values("student_id")
+        .annotate(n=Count("id"))
+        .values_list("student_id", "n")
+    )
+    refused |= {sid for sid, n in ahead if n >= MAX_UPCOMING_BOOKINGS}
+    return refused
 
 
 @transaction.atomic
@@ -905,14 +1136,17 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     the reason ``invited_by`` is shown to the teacher — an hour they published as a
     one-to-one can grow, so it has to be obvious who did it and who they brought.
 
-    **The invitee's per-day cap still applies.** It is about the invitee's own afternoon, and
-    being pulled into a second hour on a day they already have one is precisely what the
-    school asked to make impossible. The *upcoming* cap is not enforced, because it exists to
-    stop one student sitting on the whole calendar, and a seat they did not ask for is not
-    them hoarding. (A weekly cap was enforced here too until the school withdrew it — see
-    MAX_UPCOMING_BOOKINGS.) The error names the invitee so the inviter can read it — they are
-    the one looking at the screen, and "You already have a session that day" said about
-    somebody else would be nonsense to them.
+    **Every limit applies to the invitee, exactly as if they had booked it themselves**
+    (2026-10-11) — the per-day cap, the upcoming cap and the no-show pause, all through
+    :func:`_assert_may_take_seat`. The upcoming cap used to be skipped here on the theory that
+    a seat somebody else gave you is not you hoarding; students used that gap in pairs, each
+    inviting the other past their own limit, and the school ruled that a student who has used
+    their limit cannot be put in a session by anyone. The error names the invitee so the
+    inviter can read it — they are the one looking at the screen, and "You already have a
+    session that day" said about somebody else would be nonsense to them.
+
+    An inviter whose own booking is paused cannot invite either: the pause is on using the
+    desk, and bringing a classmate is using it.
     """
     now = now or timezone.now()
 
@@ -929,6 +1163,12 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
         raise ValidationError("That session has already started.")
     if invitee.id == booking.student_id:
         raise ValidationError("You are already in this session.")
+    inviter_pause = booking_pause_for(booking.student, now=now)
+    if inviter_pause is not None:
+        raise ValidationError(
+            "Your support booking is paused, so you can't add anyone yet. You can book "
+            f"again from {_day_label(inviter_pause['until'])}."
+        )
 
     # Same entitlement rule as booking it yourself. An invitation must not become a way to put
     # a student in front of a support teacher who does not teach them.
@@ -943,20 +1183,11 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     ).first()
     if existing is not None and existing.status == SupportBooking.STATUS_BOOKED:
         raise ValidationError(f"{_display(invitee)} is already in this session.")
-    if existing is not None and existing.status in (
-        SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW
-    ):
+    if existing is not None and existing.status in SupportBooking.SETTLED_STATUSES:
         raise ValidationError("That session has already been settled.")
 
-    # The per-day cap, on the invitee's own day — see the docstring.
-    if bookings_on_day(
-        invitee,
-        timezone.localdate(availability.starts_at),
-        exclude_booking_id=existing.pk if existing else None,
-    ) >= MAX_BOOKINGS_PER_DAY:
-        raise ValidationError(
-            f"{_display(invitee)} already has a support session that day."
-        )
+    # Every limit, on the invitee's own allowance — see the docstring.
+    _assert_may_take_seat(invitee, availability, now=now, existing=existing, invited=True)
 
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
@@ -1047,7 +1278,7 @@ def cancel(booking, *, actor=None, reason: str = "", now=None) -> SupportBooking
     own. A blank reason from a student would be a bug in the view, not in this function.
     """
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
-    if booking.status in (SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW):
+    if booking.status in SupportBooking.SETTLED_STATUSES:
         raise ValidationError("That session has already been settled.")
     booking.status = SupportBooking.STATUS_CANCELLED
     booking.settled_at = None
@@ -1062,19 +1293,51 @@ def cancel(booking, *, actor=None, reason: str = "", now=None) -> SupportBooking
 
 @transaction.atomic
 def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = "") -> SupportBooking:
-    """Record whether the session actually happened.
+    """Record how the session went: ``HELD``, ``LATE`` (attended late) or ``NO_SHOW``.
 
     ``HELD`` is what earns the student their points, which is why only the support teacher
     (or an admin) may set it — enforced by the view, since this function is also used by
-    management paths.
+    management paths. ``LATE`` is attended with no XP (the school's rule, 2026-10-11); the
+    student is told why, once, on the transition.
+
+    **Late and not-attended need the session to have started.** Neither can be true of an
+    hour that has not begun, and both now carry consequences — a NO_SHOW can pause the
+    student's booking and cancel their week. The diary shows the buttons on upcoming rows
+    too, so one mis-click on tomorrow's booking would otherwise do all of that. HELD keeps
+    its old behaviour.
+
+    **The no-show rule runs here**, on the transition and never on a re-press: a teacher who
+    presses "Did not attend" again to save a note must not send a second warning. A first
+    self-booked miss sends the warning; a second inside the window pauses booking, cancels
+    the sessions booked inside the paused week, and says so; correcting the miss away lifts
+    a pause it caused (the pause is computed, so lifting needs no write of its own).
     """
-    if status not in (SupportBooking.STATUS_HELD, SupportBooking.STATUS_NO_SHOW):
-        raise ValidationError("A session is settled as held or not attended.")
+    if status not in SupportBooking.SETTLED_STATUSES:
+        raise ValidationError("A session is settled as attended, attended late, or not attended.")
+    now = now or timezone.now()
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
     if booking.status == SupportBooking.STATUS_CANCELLED:
         raise ValidationError("That booking was cancelled.")
+    if (
+        status in (SupportBooking.STATUS_LATE, SupportBooking.STATUS_NO_SHOW)
+        and booking.availability.starts_at > now
+    ):
+        raise ValidationError(
+            "That session hasn't started yet. You can mark it late or not attended once it has."
+        )
+
+    previous = booking.status
+    # Only a self-booked, started session counts towards the pause (see NO_SHOW_WINDOW_DAYS),
+    # and only a move INTO or OUT OF NO_SHOW can change it.
+    touches_pause = (
+        booking.invited_by_id is None
+        and booking.availability.starts_at <= now
+        and (status == SupportBooking.STATUS_NO_SHOW) != (previous == SupportBooking.STATUS_NO_SHOW)
+    )
+    pause_before = booking_pause_for(booking.student, now=now) if touches_pause else None
+
     booking.status = status
-    booking.settled_at = now or timezone.now()
+    booking.settled_at = now
     booking.settled_by = actor
     note = (teacher_note or "").strip()[:500]
     fields = ["status", "settled_at", "settled_by", "updated_at"]
@@ -1084,23 +1347,161 @@ def settle(booking, status: str, *, actor=None, now=None, teacher_note: str = ""
         booking.teacher_note = note
         fields.append("teacher_note")
     booking.save(update_fields=fields)
+
+    settled = booking
+    if touches_pause:
+        pause_after = booking_pause_for(booking.student, now=now)
+        if status == SupportBooking.STATUS_NO_SHOW:
+            if pause_after is not None and (
+                pause_before is None or pause_after["until"] > pause_before["until"]
+            ):
+                cancelled = _cancel_inside_pause(booking.student, pause_after, now=now)
+                transaction.on_commit(
+                    lambda: _announce_pause(settled, pause_after, cancelled)
+                )
+            elif pause_after is None:
+                transaction.on_commit(lambda: _announce_no_show_warning(settled))
+        elif pause_before is not None and pause_after is None:
+            transaction.on_commit(lambda: _announce_pause_lifted(settled))
+    if status == SupportBooking.STATUS_LATE and previous != SupportBooking.STATUS_LATE:
+        transaction.on_commit(lambda: _announce_late(settled))
     return booking
+
+
+def _cancel_inside_pause(student, pause, *, now) -> list[SupportBooking]:
+    """Cancel the student's sessions still to come inside the paused week. Returns them.
+
+    Every seat they hold there — invited ones too: the pause is on using the desk, whoever
+    booked the hour. Each cancellation carries its reason, which the support teacher reads
+    on the row; the student gets one notification for the lot (``_announce_pause``).
+    """
+    window_start = _hour_start(pause["from"], 0)
+    window_end = _hour_start(pause["until"], 0)
+    reason = (
+        "Cancelled automatically: support booking is paused for this student until "
+        f"{_day_label(pause['until'])} after two booked sessions they didn't come to."
+    )
+    rows = list(
+        SupportBooking.objects.filter(
+            student=student,
+            status=SupportBooking.STATUS_BOOKED,
+            availability__starts_at__gt=now,
+            availability__starts_at__gte=window_start,
+            availability__starts_at__lt=window_end,
+        ).select_related("availability", "availability__support_teacher")
+    )
+    for row in rows:
+        cancel(row, actor=None, reason=reason, now=now)
+    return rows
+
+
+def _notify_student(student, *, title: str, body: str, dedupe_key: str) -> None:
+    """One support-attendance notification to the student, in the bell and as a push."""
+    from notifications import constants as n_const
+    from notifications.services import notify
+
+    notify(
+        student,
+        event=n_const.EVENT_SUPPORT_ATTENDANCE,
+        title=title[:160],
+        body=body[:400],
+        link_url="/support",
+        dedupe_key=dedupe_key[:120],
+    )
+
+
+def _session_phrase(booking) -> str:
+    when = timezone.localtime(booking.availability.starts_at)
+    return f"{when.strftime('%a %d %b, %H:%M')} with {_display(booking.availability.support_teacher)}"
+
+
+def _announce_late(booking) -> None:
+    """Why there is no XP for this hour — the school asked that the student be told."""
+    booking = SupportBooking.objects.select_related(
+        "student", "availability", "availability__support_teacher"
+    ).get(pk=booking.pk)
+    _notify_student(
+        booking.student,
+        # The reason lives in the TITLE: the bell shows the body on one truncated line.
+        title="You came late to support, so this session earns no XP",
+        body=(
+            f"Your teacher marked you as late for {_session_phrase(booking)}. It still counts "
+            "as attended. Arrive on time next session to earn your XP."
+        ),
+        dedupe_key=f"support-late:{booking.pk}",
+    )
+
+
+def _announce_no_show_warning(booking) -> None:
+    """The first miss: a warning, with the date before which a second one pauses booking."""
+    booking = SupportBooking.objects.select_related(
+        "student", "availability", "availability__support_teacher"
+    ).get(pk=booking.pk)
+    warning = no_show_warning_for(booking.student)
+    deadline = (
+        f" before {_day_label(warning['until'])}" if warning else " within a week"
+    )
+    _notify_student(
+        booking.student,
+        title="Warning: you didn't come to your booked support session",
+        body=(
+            f"You booked {_session_phrase(booking)} and didn't come. If it happens again"
+            f"{deadline}, support booking pauses for a week. Can't make it? Cancel before "
+            "the session starts."
+        ),
+        dedupe_key=f"support-no-show:{booking.pk}",
+    )
+
+
+def _announce_pause(booking, pause, cancelled) -> None:
+    """The second miss: booking paused, until when, and what it cancelled."""
+    student = booking.student
+    first, second = pause["missed"]
+    body = (
+        f"You didn't come to two booked sessions within a week ({_day_label(first)} and "
+        f"{_day_label(second)}). You can book support again from "
+        f"{_day_label(pause['until'])}."
+    )
+    if cancelled:
+        n = len(cancelled)
+        body += f" Your {n} booked session{'' if n == 1 else 's'} in that week {'was' if n == 1 else 'were'} cancelled."
+    _notify_student(
+        student,
+        title=f"Support booking is paused until {_day_label(pause['until'])}",
+        body=body,
+        dedupe_key=f"support-pause:{student.pk}:{pause['from'].isoformat()}",
+    )
+
+
+def _announce_pause_lifted(booking) -> None:
+    """A teacher corrected a miss and the pause it caused is gone."""
+    _notify_student(
+        booking.student,
+        title="Support booking is open again",
+        body=(
+            "Your teacher updated a session record, so the pause on your support booking is "
+            "lifted. Sessions cancelled by the pause aren't restored — book again from the "
+            "calendar."
+        ),
+        dedupe_key=f"support-pause-lifted:{booking.pk}",
+    )
 
 
 @transaction.atomic
 def rate(booking, rating: int, *, comment: str = "", now=None) -> SupportBooking:
     """The student's verdict on the hour they were given.
 
-    Only a HELD session can be rated — there is nothing to judge about a session that was
-    cancelled, missed, or has not happened yet. Re-rating overwrites, so a student who
-    misclicks 1 is not stuck with it.
+    Only an ATTENDED session can be rated — held, or attended late — since there is nothing
+    to judge about a session that was cancelled, not attended, or has not happened yet. A
+    student who came late still sat through the session and is owed a say in it.
+    Re-rating overwrites, so a student who misclicks 1 is not stuck with it.
 
     This deliberately does not touch points. Settling as HELD is what pays, whatever the
     rating says; making the money depend on the review would put the teacher's interest
     against the student's honesty.
     """
     booking = SupportBooking.objects.select_for_update().get(pk=booking.pk)
-    if booking.status != SupportBooking.STATUS_HELD:
+    if booking.status not in SupportBooking.ATTENDED_STATUSES:
         raise ValidationError("You can rate a session once your teacher marks it attended.")
     try:
         value = int(rating)
@@ -1120,7 +1521,7 @@ def rating_summary(support_teacher) -> dict:
     """Average rating and count for one support teacher's settled sessions."""
     rated = SupportBooking.objects.filter(
         availability__support_teacher=support_teacher,
-        status=SupportBooking.STATUS_HELD,
+        status__in=SupportBooking.ATTENDED_STATUSES,
         rating__isnull=False,
     )
     stats = rated.aggregate(avg=Avg("rating"), n=Count("id"))

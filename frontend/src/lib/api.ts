@@ -921,8 +921,12 @@ export interface SupportHour {
      *  bookable by them. The only state here that is about the STUDENT rather than about
      *  the teacher's calendar, which is why it outranks the others: it applies to the whole
      *  day at once, and the day's real reason is more use than a per-hour one they cannot
-     *  act on. Their own hour still comes back as "mine". */
-    state: "open" | "mine" | "full" | "closed" | "past" | "off" | "day_taken";
+     *  act on. Their own hour still comes back as "mine".
+     *
+     *  "paused" = the student's support booking is paused after two booked sessions they
+     *  didn't come to within a week (the school's rule, 2026-10-11). Applies to every hour
+     *  with every teacher; `allowance.paused_until` says when it ends. */
+    state: "open" | "mine" | "full" | "closed" | "past" | "off" | "day_taken" | "paused";
     capacity: number;
     seats_left: number;
     note: string;
@@ -951,7 +955,8 @@ export interface SupportCalendar {
 
 export interface SupportBooking {
     id: number;
-    status: "BOOKED" | "HELD" | "NO_SHOW" | "CANCELLED";
+    /** "LATE" = attended, but late: counts as attended, earns no XP (2026-10-11). */
+    status: "BOOKED" | "HELD" | "LATE" | "NO_SHOW" | "CANCELLED";
     topic: string;
     booked_at: string;
     settled_at: string | null;
@@ -989,7 +994,19 @@ export interface SupportAllowance {
      *  Bounded by that window on purpose — it drives greying-out on screen, not the
      *  server's own refusal, which counts without a horizon. */
     taken_days: string[];
+    /** The standing "may this student book at all" — about how many sessions they HOLD.
+     *  It deliberately does NOT include a no-show pause: read `paused_until` for that. */
     can_book: boolean;
+    /** The no-show pause (2026-10-11): two booked sessions not attended within a week.
+     *  `paused_until` is the first local date they may book again. Absent on an older server. */
+    paused_from?: string | null;
+    paused_until?: string | null;
+    /** The two dates that caused the pause. */
+    paused_missed?: string[];
+    /** A first miss and its deadline: another miss on a session dated before
+     *  `warning_until` pauses booking for a week. */
+    warning_missed?: string | null;
+    warning_until?: string | null;
 }
 
 /** One hour of the support teacher's own week. Mirrors SupportHour but carries the
@@ -1245,7 +1262,7 @@ export const classesApi = {
         return r.data as SupportSlot & { bookings_cancelled: number };
     },
     /** Settling as HELD is what awards the student their points — teacher-only, by design. */
-    supportSettle: async (bookingId: number, status: "HELD" | "NO_SHOW", teacher_note?: string) => {
+    supportSettle: async (bookingId: number, status: "HELD" | "LATE" | "NO_SHOW", teacher_note?: string) => {
         const r = await api.post(`/classes/support/bookings/${bookingId}/settle/`, { status, teacher_note });
         return r.data as SupportBooking;
     },

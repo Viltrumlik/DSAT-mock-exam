@@ -16,10 +16,13 @@ Support teacher:
   POST   /api/classes/support/hours/close/          { starts_at }        withdraw one hour
   POST   /api/classes/support/hours/open/           { starts_at, capacity?, note? }
   GET    /api/classes/support/diary/                who booked me
-  POST   /api/classes/support/bookings/<id>/settle/ { status: HELD | NO_SHOW, teacher_note? }
+  POST   /api/classes/support/bookings/<id>/settle/ { status: HELD | LATE | NO_SHOW,
+                                                      teacher_note? }
 
-Settling as HELD is what earns the student their 10 points, so only the support teacher who
-owns the slot (or an admin) may do it — a student cannot mark their own session attended.
+Settling as HELD is what earns the student their points (the group ladder, from 10), so only
+the support teacher who owns the slot (or an admin) may do it — a student cannot mark their
+own session attended. LATE is attended with no XP, and LATE / NO_SHOW can only be recorded
+once the hour has begun; NO_SHOW drives the no-show pause (see ``support.NO_SHOW_WINDOW_DAYS``).
 The rating runs the other way and is the student's alone: a review the teacher can write is
 not a review. It never touches points.
 """
@@ -419,6 +422,21 @@ class SupportBookingDetailView(SupportBookingsView):
         )
         if not allowed:
             return Response({"detail": "Not your booking."}, status=http.HTTP_403_FORBIDDEN)
+
+        if (
+            is_student
+            and booking.status == SupportBooking.STATUS_BOOKED
+            and booking.availability.starts_at <= timezone.now()
+        ):
+            # A session that has begun is the teacher's to record, not the student's to
+            # withdraw. Cancelling it gave the day back, so a student could attend at 09:00,
+            # cancel the still-unsettled row and take a second hour that afternoon — the
+            # one-a-day limit, walked round (2026-10-11). It also let a no-show erase itself
+            # before the teacher could record it.
+            return Response(
+                {"detail": "That session has already started, so it can't be cancelled now."},
+                status=400,
+            )
 
         reason = (request.data.get("reason") or "").strip()
         if is_student and not reason:

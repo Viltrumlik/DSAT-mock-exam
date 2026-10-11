@@ -11,6 +11,7 @@ import {
   monthLabel,
   personName,
   plural,
+  attendedCount,
   settledCount,
   teacherSubline,
 } from "./format";
@@ -59,12 +60,17 @@ function Headline({ report }: { report: SupportMonthlyReport }) {
             className="text-2xl font-extrabold"
           />
         }
-        detail={`${formatShare(t.held, settledCount(t))} settled either way`}
+        detail={`${formatShare(attendedCount(t), settledCount(t))} settled either way`}
       />
       <StatTile
         label="Sessions held"
         value={t.held}
         detail={`out of ${plural(t.bookings, "booking")}`}
+      />
+      <StatTile
+        label="Came late"
+        value={t.late ?? 0}
+        detail="Attended, earned no XP"
       />
       <StatTile
         label="Students who came"
@@ -127,7 +133,7 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
         <RateCell
           rate={row.attendance_rate}
           reason={attendanceReason(row)}
-          detail={formatShare(row.held, settledCount(row))}
+          detail={formatShare(attendedCount(row), settledCount(row))}
         />
       ),
     },
@@ -140,6 +146,17 @@ function columns(report: SupportMonthlyReport): Column<MonthlyTeacherRow>[] {
           value={row.held}
           className="font-bold"
           title="Sessions the teacher confirmed the student attended. The only outcome that pays points."
+        />
+      ),
+    },
+    {
+      key: "late",
+      header: "Came late",
+      align: "right",
+      cell: (row) => (
+        <Num
+          value={row.late ?? 0}
+          title="Attended, but late (2026-10-11): counts as attended and pays nothing."
         />
       ),
     },
@@ -258,11 +275,14 @@ export function MonthlySummary({
                     <RateCell
                       rate={total.attendance_rate}
                       reason={attendanceReason(total)}
-                      detail={formatShare(total.held, settledCount(total))}
+                      detail={formatShare(attendedCount(total), settledCount(total))}
                     />
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Num value={total.held} className="font-bold" />
+                  </td>
+                  <td className="px-3 py-3 text-right">
+                    <Num value={total.late ?? 0} />
                   </td>
                   <td className="px-3 py-3 text-right">
                     <Num
@@ -286,7 +306,7 @@ export function MonthlySummary({
             <div className="space-y-2 border-t border-border px-5 py-4">
               <Note>
                 Attendance is {formatRate(total.attendance_rate)} for the learning center:{" "}
-                {formatShare(total.held, settledCount(total))} settled either way, pooled across
+                {formatShare(attendedCount(total), settledCount(total))} settled either way, pooled across
                 every teacher rather than averaged over them. Cancelled hours are in neither
                 half — the seat went back to the calendar — and unsettled ones are in neither
                 either, which is why clearing the backlog can move this number in both

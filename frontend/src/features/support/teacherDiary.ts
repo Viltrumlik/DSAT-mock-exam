@@ -15,7 +15,7 @@ import type { SupportBooking } from "@/lib/api";
 import type { Tone } from "@/features/teacher/ui";
 
 /** Where a session stands, as the teacher reads it — not as the database stores it. */
-export type Stand = "waiting" | "upcoming" | "held" | "missed" | "cancelled";
+export type Stand = "waiting" | "upcoming" | "held" | "late" | "missed" | "cancelled";
 
 /**
  * Has the hour finished?
@@ -40,6 +40,7 @@ export function needsSettling(b: SupportBooking, now: number): boolean {
 
 export function standOf(b: SupportBooking, now: number): Stand {
   if (b.status === "HELD") return "held";
+  if (b.status === "LATE") return "late";
   if (b.status === "NO_SHOW") return "missed";
   if (b.status === "CANCELLED") return "cancelled";
   // The same BOOKED is next Tuesday's appointment on one row and August's unfinished
@@ -50,7 +51,7 @@ export function standOf(b: SupportBooking, now: number): Stand {
 /**
  * The chip for each stand, and what it means on hover.
  *
- * All five stands are here and all five are reachable: four statuses, with BOOKED splitting in
+ * All six stands are here and all six are reachable: five statuses, with BOOKED splitting in
  * two on the clock. `cancelled` reaches the screen only through the "Everything" filter — the
  * diary endpoint excludes cancelled rows today — but it keeps its chip, because the type
  * permits it and a row that arrives without one would render as a blank verdict.
@@ -74,6 +75,13 @@ export const STAND: Record<Stand, { label: string; tone: Tone; note: string }> =
     tone: "success",
     note: "You confirmed the student came. This is the outcome that awards their points.",
   },
+  // The school's rule (2026-10-11): late is attended, and earns no XP. The student is told
+  // why the moment it is recorded.
+  late: {
+    label: "Came late",
+    tone: "warning",
+    note: "The student came, but late. It counts as attended and earns them no XP — they have been told why.",
+  },
   // "Missed", never "Absent": the fact is recorded without naming the student a failure.
   missed: {
     label: "Missed",
@@ -94,7 +102,7 @@ export function inBucket(stand: Stand, bucket: Bucket): boolean {
   if (bucket === "all") return true;
   // "Recorded" means a teacher wrote the outcome. A cancelled session is finished but nobody
   // recorded anything on it, so it belongs under "Everything" and nowhere else.
-  if (bucket === "recorded") return stand === "held" || stand === "missed";
+  if (bucket === "recorded") return stand === "held" || stand === "late" || stand === "missed";
   return stand === bucket;
 }
 
