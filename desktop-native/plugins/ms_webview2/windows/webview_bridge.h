@@ -5,6 +5,7 @@
 #include <flutter/standard_method_codec.h>
 #include <flutter/texture_registrar.h>
 
+#include <functional>
 #include <memory>
 
 #include "graphics_context.h"
@@ -13,10 +14,14 @@
 
 class WebviewBridge {
  public:
+  // |on_browser_process_exited| (MasterSAT patch) tells the plugin that the
+  // shared environment's browser process died, so the next webview is created
+  // on a fresh environment.
   WebviewBridge(flutter::BinaryMessenger* messenger,
                 flutter::TextureRegistrar* texture_registrar,
                 GraphicsContext* graphics_context,
-                std::unique_ptr<Webview> webview);
+                std::unique_ptr<Webview> webview,
+                std::function<void()> on_browser_process_exited = nullptr);
   ~WebviewBridge();
 
   TextureBridge* texture_bridge() const { return texture_bridge_.get(); }
@@ -39,6 +44,10 @@ class WebviewBridge {
 
   flutter::TextureRegistrar* texture_registrar_;
   int64_t texture_id_;
+  std::function<void()> on_browser_process_exited_;
+  // MasterSAT patch: setVisible(false) stopped the texture; setSize must not
+  // restart it until setVisible(true).
+  bool hidden_ = false;
 
   void HandleMethodCall(
       const flutter::MethodCall<flutter::EncodableValue>& method_call,

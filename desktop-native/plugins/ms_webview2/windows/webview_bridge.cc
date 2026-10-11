@@ -133,6 +133,10 @@ constexpr auto kMethodSetDefaultContextMenusEnabled =
     "setDefaultContextMenusEnabled";
 constexpr auto kMethodSetFpsLimit = "setFpsLimit";
 constexpr auto kMethodMoveFocus = "moveFocus";
+// MasterSAT patch.
+constexpr auto kMethodCapturePreview = "capturePreview";
+constexpr auto kMethodSetVisible = "setVisible";
+constexpr auto kMethodSetAllowedResourceHosts = "setAllowedResourceHosts";
 
 constexpr auto kEventType = "type";
 constexpr auto kEventValue = "value";
@@ -193,8 +197,11 @@ static const std::optional<util::SurfaceGeometry> GetSurfaceGeometryFromArgs(
 WebviewBridge::WebviewBridge(flutter::BinaryMessenger* messenger,
                              flutter::TextureRegistrar* texture_registrar,
                              GraphicsContext* graphics_context,
-                             std::unique_ptr<Webview> webview)
-    : webview_(std::move(webview)), texture_registrar_(texture_registrar) {
+                             std::unique_ptr<Webview> webview,
+                             std::function<void()> on_browser_process_exited)
+    : webview_(std::move(webview)),
+      texture_registrar_(texture_registrar),
+      on_browser_process_exited_(std::move(on_browser_process_exited)) {
   texture_bridge_ =
       std::make_unique<TextureBridgeGpu>(graphics_context, webview_->surface());
 
@@ -214,8 +221,40 @@ WebviewBridge::WebviewBridge(flutter::BinaryMessenger* messenger,
   //  webview_->SetSurfaceSize(size.width, size.height);
   //});
 
+  // MasterSAT patch: registered here, not on listen, so the plugin learns
+  // about a dead browser process even before Dart subscribes to events.
+  webview_->OnProcessFailed([this](int kind, int reason, int exit_code) {
+    if (kind == COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED &&
+        on_browser_process_exited_) {
+      on_browser_process_exited_();
+    }
+    EmitEvent(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue(kEventType),
+         flutter::EncodableValue("processFailed")},
+        {flutter::EncodableValue(kEventValue),
+         flutter::EncodableValue(flutter::EncodableMap{
+             {flutter::EncodableValue("kind"), flutter::EncodableValue(kind)},
+             {flutter::EncodableValue("reason"),
+              flutter::EncodableValue(reason)},
+             {flutter::EncodableValue("exitCode"),
+              flutter::EncodableValue(exit_code)},
+         })},
+    }));
+  });
+  webview_->OnBlocked([this](const std::string& what, const std::string& uri) {
+    EmitEvent(flutter::EncodableValue(flutter::EncodableMap{
+        {flutter::EncodableValue(kEventType),
+         flutter::EncodableValue("blocked")},
+        {flutter::EncodableValue(kEventValue),
+         flutter::EncodableValue(flutter::EncodableMap{
+             {flutter::EncodableValue("what"), flutter::EncodableValue(what)},
+             {flutter::EncodableValue("uri"), flutter::EncodableValue(uri)},
+         })},
+    }));
+  });
+
   const auto method_channel_name =
-      std::format("io.jns.webview.win/{}", texture_id_);
+      std::format("mastersat/ms_webview2/{}", texture_id_);
   method_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           messenger, method_channel_name,
@@ -225,7 +264,7 @@ WebviewBridge::WebviewBridge(flutter::BinaryMessenger* messenger,
   });
 
   const auto event_channel_name =
-      std::format("io.jns.webview.win/{}/events", texture_id_);
+      std::format("mastersat/ms_webview2/{}/events", texture_id_);
   event_channel_ =
       std::make_unique<flutter::EventChannel<flutter::EncodableValue>>(
           messenger, event_channel_name,
@@ -499,7 +538,9 @@ void WebviewBridge::HandleMethodCall(
     const auto geometry = GetSurfaceGeometryFromArgs(method_call.arguments());
     if (geometry) {
       webview_->SetSurfaceSize(*geometry);
-      texture_bridge_->Start();
+      if (!hidden_) {
+        texture_bridge_->Start();
+      }
       return result->Success();
     }
     return result->Error(kErrorInvalidArgs);
@@ -913,6 +954,56 @@ void WebviewBridge::HandleMethodCall(
       return result->Success();
     }
     return result->Error(kErrorInvalidArgs);
+  }
+
+  // MasterSAT patch. capturePreview -> Uint8List (PNG)
+  if (method_name.compare(kMethodCapturePreview) == 0) {
+    std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+        shared_result = std::move(result);
+    webview_->CapturePreview(
+        [shared_result](bool success, std::vector<uint8_t> png) {
+          if (!success) {
+            return shared_result->Error(kMethodFailed,
+                                        "Capturing the preview failed.");
+          }
+          shared_result->Success(flutter::EncodableValue(std::move(png)));
+        });
+    return;
+  }
+
+  // MasterSAT patch. setVisible: bool (IsVisible + MemoryUsageTargetLevel)
+  if (method_name.compare(kMethodSetVisible) == 0) {
+    if (const auto visible = std::get_if<bool>(method_call.arguments())) {
+      hidden_ = !*visible;
+      if (*visible) {
+        webview_->SetVisible(true);
+        texture_bridge_->Start();
+      } else {
+        texture_bridge_->Stop();
+        webview_->SetVisible(false);
+      }
+      return result->Success();
+    }
+    return result->Error(kErrorInvalidArgs);
+  }
+
+  // MasterSAT patch. setAllowedResourceHosts: List<String>
+  if (method_name.compare(kMethodSetAllowedResourceHosts) == 0) {
+    const flutter::EncodableList* list =
+        std::get_if<flutter::EncodableList>(method_call.arguments());
+    if (!list) {
+      return result->Error(kErrorInvalidArgs);
+    }
+    std::vector<std::string> hosts;
+    for (const auto& value : *list) {
+      const auto host = std::get_if<std::string>(&value);
+      if (!host) {
+        return result->Error(kErrorInvalidArgs);
+      }
+      hosts.push_back(*host);
+    }
+    webview_->SetAllowedResourceHosts(hosts);
+    return result->Success();
   }
 
   // moveFocus

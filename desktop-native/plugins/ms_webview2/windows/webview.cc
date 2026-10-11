@@ -2,9 +2,11 @@
 
 #include <wrl.h>
 
+#include <filesystem>
 #include <format>
 #include <iostream>
 
+#include "ms_policy.h"
 #include "util/composition.desktop.interop.h"
 #include "util/string_converter.h"
 #include "util/surface_geometry.h"
@@ -19,40 +21,6 @@ inline void ConvertColor(COREWEBVIEW2_COLOR& webview_color, int32_t color) {
   webview_color.G = (color >> 8) & 0xFF;
   webview_color.R = (color >> 16) & 0xFF;
   webview_color.A = (color >> 24) & 0xFF;
-}
-
-inline WebviewPermissionKind CW2PermissionKindToPermissionKind(
-    COREWEBVIEW2_PERMISSION_KIND kind) {
-  using k = COREWEBVIEW2_PERMISSION_KIND;
-  switch (kind) {
-    case k::COREWEBVIEW2_PERMISSION_KIND_MICROPHONE:
-      return WebviewPermissionKind::Microphone;
-    case k::COREWEBVIEW2_PERMISSION_KIND_CAMERA:
-      return WebviewPermissionKind::Camera;
-    case k::COREWEBVIEW2_PERMISSION_KIND_GEOLOCATION:
-      return WebviewPermissionKind::GeoLocation;
-    case k::COREWEBVIEW2_PERMISSION_KIND_NOTIFICATIONS:
-      return WebviewPermissionKind::Notifications;
-    case k::COREWEBVIEW2_PERMISSION_KIND_OTHER_SENSORS:
-      return WebviewPermissionKind::OtherSensors;
-    case k::COREWEBVIEW2_PERMISSION_KIND_CLIPBOARD_READ:
-      return WebviewPermissionKind::ClipboardRead;
-    default:
-      return WebviewPermissionKind::Unknown;
-  }
-}
-
-inline COREWEBVIEW2_PERMISSION_STATE WebViewPermissionStateToCW2PermissionState(
-    WebviewPermissionState state) {
-  using s = COREWEBVIEW2_PERMISSION_STATE;
-  switch (state) {
-    case WebviewPermissionState::Allow:
-      return s::COREWEBVIEW2_PERMISSION_STATE_ALLOW;
-    case WebviewPermissionState::Deny:
-      return s::COREWEBVIEW2_PERMISSION_STATE_DENY;
-    default:
-      return s::COREWEBVIEW2_PERMISSION_STATE_DEFAULT;
-  }
 }
 
 }  // namespace
@@ -92,13 +60,12 @@ Webview::Webview(
 
   if (SUCCEEDED(webview_->get_Settings(settings_.put())) && settings_) {
     settings2_ = settings_.try_query<ICoreWebView2Settings2>();
-
-    settings_->put_IsStatusBarEnabled(FALSE);
-    settings_->put_AreDefaultContextMenusEnabled(FALSE);
   }
+  ApplyIslandSettings();
 
   EnableSecurityUpdates();
   RegisterEventHandlers();
+  RegisterIslandPolicyHandlers();
 
   is_valid_ = CreateSurface(host->compositor(), hwnd, offscreen_only);
 }
@@ -163,6 +130,268 @@ bool Webview::CreateSurface(
   webview_controller_->put_IsVisible(true);
 
   return true;
+}
+
+// MasterSAT patch: the island lockdown (architecture §2.5). Applied before the
+// first navigation, so every setting is in force for the island page.
+void Webview::ApplyIslandSettings() {
+  if (settings_) {
+    settings_->put_IsStatusBarEnabled(FALSE);
+    settings_->put_AreDefaultContextMenusEnabled(FALSE);
+    settings_->put_IsZoomControlEnabled(FALSE);
+    settings_->put_AreHostObjectsAllowed(FALSE);
+    settings_->put_IsBuiltInErrorPageEnabled(FALSE);
+    settings_->put_AreDefaultScriptDialogsEnabled(FALSE);
+#if !defined(MS_WEBVIEW2_DEVTOOLS)
+    settings_->put_AreDevToolsEnabled(FALSE);
+#endif
+    // F5, Ctrl+R, Ctrl+F, Ctrl+P, F12, Alt+Left... all off in one setting.
+    if (auto settings3 = settings_.try_query<ICoreWebView2Settings3>()) {
+      settings3->put_AreBrowserAcceleratorKeysEnabled(FALSE);
+    }
+    if (auto settings4 = settings_.try_query<ICoreWebView2Settings4>()) {
+      settings4->put_IsGeneralAutofillEnabled(FALSE);
+      settings4->put_IsPasswordAutosaveEnabled(FALSE);
+    }
+    if (auto settings5 = settings_.try_query<ICoreWebView2Settings5>()) {
+      settings5->put_IsPinchZoomEnabled(FALSE);
+    }
+    if (auto settings6 = settings_.try_query<ICoreWebView2Settings6>()) {
+      settings6->put_IsSwipeNavigationEnabled(FALSE);
+    }
+  }
+  if (webview_controller_) {
+    // The app's zoom is a CSS variable inside the island: 1 CSS px stays
+    // 1 Flutter logical px.
+    webview_controller_->put_ZoomFactor(1.0);
+    COREWEBVIEW2_COLOR white;
+    white.A = 0xFF;
+    white.R = 0xFF;
+    white.G = 0xFF;
+    white.B = 0xFF;
+    webview_controller_->put_DefaultBackgroundColor(white);
+  }
+  MapIslandFolder();
+}
+
+// MasterSAT patch: https://island.mastersat.example/ serves <exe dir>\data\island
+// (the island build the runner's CMake installs next to the exe), DENY_CORS,
+// before the first navigation. Dart may re-map it (setVirtualHostNameMapping),
+// but never has to remember to.
+void Webview::MapIslandFolder() {
+  auto webview3 = webview_.try_query<ICoreWebView2_3>();
+  if (!webview3) {
+    return;
+  }
+  std::wstring exe(32768, L'\0');
+  const DWORD length =
+      GetModuleFileNameW(nullptr, exe.data(), static_cast<DWORD>(exe.size()));
+  if (length == 0 || length >= exe.size()) {
+    return;
+  }
+  exe.resize(length);
+  const auto folder =
+      std::filesystem::path(exe).parent_path() / L"data" / L"island";
+  const std::wstring host(ms_policy::kIslandHost);
+  webview3->SetVirtualHostNameToFolderMapping(
+      host.c_str(), folder.c_str(),
+      COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_DENY_CORS);
+}
+
+void Webview::ReportBlocked(const char* what, LPCWSTR uri) {
+  if (blocked_callback_) {
+    blocked_callback_(what, util::Utf8FromUtf16(uri));
+  }
+}
+
+// MasterSAT patch: nothing leaves the island. Navigation only to the island
+// origin, sub-resources only from the island host (plus per-island extras),
+// no new windows, no external protocols, no script dialogs.
+void Webview::RegisterIslandPolicyHandlers() {
+  if (!webview_) {
+    return;
+  }
+
+  webview_->add_NavigationStarting(
+      Callback<ICoreWebView2NavigationStartingEventHandler>(
+          [this](ICoreWebView2* sender,
+                 ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+            wil::unique_cotaskmem_string uri;
+            if (FAILED(args->get_Uri(&uri)) || !uri ||
+                !ms_policy::IsAllowedNavigation(uri.get())) {
+              args->put_Cancel(TRUE);
+              ReportBlocked("navigation", uri.get());
+            }
+            return S_OK;
+          })
+          .Get(),
+      &event_registrations_.navigation_starting_token_);
+
+  webview_->add_FrameNavigationStarting(
+      Callback<ICoreWebView2NavigationStartingEventHandler>(
+          [this](ICoreWebView2* sender,
+                 ICoreWebView2NavigationStartingEventArgs* args) -> HRESULT {
+            wil::unique_cotaskmem_string uri;
+            if (FAILED(args->get_Uri(&uri)) || !uri ||
+                !ms_policy::IsAllowedFrameNavigation(uri.get())) {
+              args->put_Cancel(TRUE);
+              ReportBlocked("frame", uri.get());
+            }
+            return S_OK;
+          })
+          .Get(),
+      &event_registrations_.frame_navigation_starting_token_);
+
+  webview_->AddWebResourceRequestedFilter(L"*",
+                                          COREWEBVIEW2_WEB_RESOURCE_CONTEXT_ALL);
+  webview_->add_WebResourceRequested(
+      Callback<ICoreWebView2WebResourceRequestedEventHandler>(
+          [this](ICoreWebView2* sender,
+                 ICoreWebView2WebResourceRequestedEventArgs* args) -> HRESULT {
+            wil::com_ptr<ICoreWebView2WebResourceRequest> request;
+            wil::unique_cotaskmem_string uri;
+            if (SUCCEEDED(args->get_Request(request.put())) && request &&
+                SUCCEEDED(request->get_Uri(&uri)) && uri &&
+                ms_policy::IsAllowedResource(uri.get(),
+                                             allowed_resource_hosts_)) {
+              return S_OK;
+            }
+            wil::com_ptr<ICoreWebView2WebResourceResponse> response;
+            if (host_ && host_->environment() &&
+                SUCCEEDED(host_->environment()->CreateWebResourceResponse(
+                    nullptr, 403, L"Blocked", L"", response.put()))) {
+              args->put_Response(response.get());
+            }
+            ReportBlocked("resource", uri.get());
+            return S_OK;
+          })
+          .Get(),
+      &event_registrations_.web_resource_requested_token_);
+
+  webview_->add_ProcessFailed(
+      Callback<ICoreWebView2ProcessFailedEventHandler>(
+          [this](ICoreWebView2* sender,
+                 ICoreWebView2ProcessFailedEventArgs* args) -> HRESULT {
+            COREWEBVIEW2_PROCESS_FAILED_KIND kind =
+                COREWEBVIEW2_PROCESS_FAILED_KIND_RENDER_PROCESS_EXITED;
+            args->get_ProcessFailedKind(&kind);
+            int reason = -1;
+            int exit_code = 0;
+            wil::com_ptr<ICoreWebView2ProcessFailedEventArgs> base(args);
+            if (auto args2 =
+                    base.try_query<ICoreWebView2ProcessFailedEventArgs2>()) {
+              COREWEBVIEW2_PROCESS_FAILED_REASON failed_reason =
+                  COREWEBVIEW2_PROCESS_FAILED_REASON_UNEXPECTED;
+              if (SUCCEEDED(args2->get_Reason(&failed_reason))) {
+                reason = static_cast<int>(failed_reason);
+              }
+              int code = 0;
+              if (SUCCEEDED(args2->get_ExitCode(&code))) {
+                exit_code = code;
+              }
+            }
+            if (process_failed_callback_) {
+              process_failed_callback_(static_cast<int>(kind), reason,
+                                       exit_code);
+            }
+            return S_OK;
+          })
+          .Get(),
+      &event_registrations_.process_failed_token_);
+
+  if (auto webview18 = webview_.try_query<ICoreWebView2_18>()) {
+    webview18->add_LaunchingExternalUriScheme(
+        Callback<ICoreWebView2LaunchingExternalUriSchemeEventHandler>(
+            [this](ICoreWebView2* sender,
+                   ICoreWebView2LaunchingExternalUriSchemeEventArgs* args)
+                -> HRESULT {
+              args->put_Cancel(TRUE);
+              wil::unique_cotaskmem_string uri;
+              args->get_Uri(&uri);
+              ReportBlocked("externalUri", uri.get());
+              return S_OK;
+            })
+            .Get(),
+        &event_registrations_.launching_external_uri_scheme_token_);
+  }
+
+  webview_->add_ScriptDialogOpening(
+      Callback<ICoreWebView2ScriptDialogOpeningEventHandler>(
+          [this](ICoreWebView2* sender,
+                 ICoreWebView2ScriptDialogOpeningEventArgs* args) -> HRESULT {
+            // Not accepted: alert/confirm/prompt return as if dismissed.
+            wil::unique_cotaskmem_string uri;
+            args->get_Uri(&uri);
+            ReportBlocked("dialog", uri.get());
+            return S_OK;
+          })
+          .Get(),
+      &event_registrations_.script_dialog_opening_token_);
+}
+
+void Webview::CapturePreview(CapturePreviewCallback callback) {
+  if (!IsValid()) {
+    return callback(false, {});
+  }
+  wil::com_ptr<IStream> stream;
+  if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, stream.put())) || !stream) {
+    return callback(false, {});
+  }
+  const auto hr = webview_->CapturePreview(
+      COREWEBVIEW2_CAPTURE_PREVIEW_IMAGE_FORMAT_PNG, stream.get(),
+      Callback<ICoreWebView2CapturePreviewCompletedHandler>(
+          [stream, callback](HRESULT result) -> HRESULT {
+            if (FAILED(result)) {
+              callback(false, {});
+              return S_OK;
+            }
+            STATSTG stat = {};
+            if (FAILED(stream->Stat(&stat, STATFLAG_NONAME)) ||
+                stat.cbSize.HighPart != 0) {
+              callback(false, {});
+              return S_OK;
+            }
+            std::vector<uint8_t> png(stat.cbSize.LowPart);
+            LARGE_INTEGER zero = {};
+            ULONG read = 0;
+            if (FAILED(stream->Seek(zero, STREAM_SEEK_SET, nullptr)) ||
+                (png.size() > 0 &&
+                 FAILED(stream->Read(png.data(),
+                                     static_cast<ULONG>(png.size()), &read)))) {
+              callback(false, {});
+              return S_OK;
+            }
+            png.resize(read);
+            callback(true, std::move(png));
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(hr)) {
+    callback(false, {});
+  }
+}
+
+bool Webview::SetVisible(bool visible) {
+  if (!IsValid()) {
+    return false;
+  }
+  const bool ok =
+      SUCCEEDED(webview_controller_->put_IsVisible(visible ? TRUE : FALSE));
+  if (auto webview19 = webview_.try_query<ICoreWebView2_19>()) {
+    webview19->put_MemoryUsageTargetLevel(
+        visible ? COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+                : COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW);
+  }
+  return ok;
+}
+
+void Webview::SetAllowedResourceHosts(const std::vector<std::string>& hosts) {
+  allowed_resource_hosts_.clear();
+  for (const auto& host : hosts) {
+    if (!host.empty()) {
+      allowed_resource_hosts_.push_back(util::Utf16FromUtf8(host));
+    }
+  }
 }
 
 void Webview::EnableSecurityUpdates() {
@@ -343,41 +572,16 @@ void Webview::RegisterEventHandlers() {
           .Get(),
       &event_registrations_.web_message_received_token_);
 
+  // MasterSAT patch: an island never gets a permission (camera, microphone,
+  // clipboard read, notifications...). Denied here, not asked of Dart.
   webview_->add_PermissionRequested(
       Callback<ICoreWebView2PermissionRequestedEventHandler>(
           [this](ICoreWebView2* sender,
                  ICoreWebView2PermissionRequestedEventArgs* args) -> HRESULT {
-            if (!permission_requested_callback_) {
-              return S_OK;
-            }
-
+            args->put_State(COREWEBVIEW2_PERMISSION_STATE_DENY);
             wil::unique_cotaskmem_string wuri;
-            COREWEBVIEW2_PERMISSION_KIND kind =
-                COREWEBVIEW2_PERMISSION_KIND_UNKNOWN_PERMISSION;
-            BOOL is_user_initiated = false;
-
-            if (args->get_Uri(&wuri) == S_OK &&
-                args->get_PermissionKind(&kind) == S_OK &&
-                args->get_IsUserInitiated(&is_user_initiated) == S_OK) {
-              wil::com_ptr<ICoreWebView2Deferral> deferral;
-              args->GetDeferral(deferral.put());
-
-              const std::string uri = util::Utf8FromUtf16(wuri.get());
-              permission_requested_callback_(
-                  uri, CW2PermissionKindToPermissionKind(kind),
-                  is_user_initiated == TRUE,
-                  // The event args are only borrowed for the duration of this
-                  // handler, but the completer runs after an async round trip
-                  // to Dart; keep a real reference (AddRef) on them.
-                  [deferral = std::move(deferral),
-                   args = wil::com_ptr<ICoreWebView2PermissionRequestedEventArgs>(
-                       args)](WebviewPermissionState state) {
-                    args->put_State(
-                        WebViewPermissionStateToCW2PermissionState(state));
-                    deferral->Complete();
-                  });
-            }
-
+            args->get_Uri(&wuri);
+            ReportBlocked("permission", wuri.get());
             return S_OK;
           })
           .Get(),
@@ -387,16 +591,12 @@ void Webview::RegisterEventHandlers() {
       Callback<ICoreWebView2NewWindowRequestedEventHandler>(
           [this](ICoreWebView2* sender,
                  ICoreWebView2NewWindowRequestedEventArgs* args) -> HRESULT {
-            switch (popup_window_policy_) {
-              case WebviewPopupWindowPolicy::Deny:
-                args->put_Handled(TRUE);
-                break;
-              case WebviewPopupWindowPolicy::ShowInSameWindow:
-                args->put_NewWindow(webview_.get());
-                args->put_Handled(TRUE);
-                break;
-            }
-
+            // MasterSAT patch: never open a window, whatever the popup
+            // policy says (Handled without NewWindow = denied).
+            args->put_Handled(TRUE);
+            wil::unique_cotaskmem_string uri;
+            args->get_Uri(&uri);
+            ReportBlocked("newWindow", uri.get());
             return S_OK;
           })
           .Get(),
@@ -421,42 +621,16 @@ void Webview::RegisterEventHandlers() {
         Callback<ICoreWebView2DownloadStartingEventHandler>(
             [this](ICoreWebView2* sender,
                    ICoreWebView2DownloadStartingEventArgs* args) -> HRESULT {
-              // Everything below runs synchronously, so no deferral is taken;
-              // taking one without completing it would leave the event pending.
+              // MasterSAT patch: an island never downloads anything.
+              args->put_Cancel(TRUE);
               args->put_Handled(TRUE);
-
               wil::com_ptr<ICoreWebView2DownloadOperation> download;
-              if (FAILED(args->get_DownloadOperation(download.put())) ||
-                  !download) {
-                return S_OK;
-              }
-
-              INT64 totalBytesToReceive = 0;
-              download->get_TotalBytesToReceive(&totalBytesToReceive);
-
               wil::unique_cotaskmem_string uri;
-              download->get_Uri(&uri);
-
-              wil::unique_cotaskmem_string mimeType;
-              download->get_MimeType(&mimeType);
-
-              wil::unique_cotaskmem_string contentDisposition;
-              download->get_ContentDisposition(&contentDisposition);
-
-              wil::unique_cotaskmem_string resultFilePath;
-              args->get_ResultFilePath(&resultFilePath);
-
-              args->put_ResultFilePath(resultFilePath.get());
-              UpdateDownloadProgress(download.get());
-
-              if (download_event_callback_) {
-                download_event_callback_(
-                    {WebviewDownloadEventKind::DownloadStarted,
-                     util::Utf8FromUtf16(uri.get()),
-                     util::Utf8FromUtf16(resultFilePath.get()), 0,
-                     totalBytesToReceive});
+              if (SUCCEEDED(args->get_DownloadOperation(download.put())) &&
+                  download) {
+                download->get_Uri(&uri);
               }
-
+              ReportBlocked("download", uri.get());
               return S_OK;
             })
             .Get(),
@@ -511,6 +685,12 @@ bool Webview::SetDevToolsEnabled(bool enabled) {
   if (!settings_) {
     return false;
   }
+#if !defined(MS_WEBVIEW2_DEVTOOLS)
+  // MasterSAT patch: release builds never turn DevTools on.
+  if (enabled) {
+    return false;
+  }
+#endif
   return SUCCEEDED(settings_->put_AreDevToolsEnabled(enabled ? TRUE : FALSE));
 }
 
@@ -518,7 +698,12 @@ bool Webview::OpenDevTools() {
   if (!IsValid()) {
     return false;
   }
+#if !defined(MS_WEBVIEW2_DEVTOOLS)
+  // MasterSAT patch: no DevTools window in release builds.
+  return false;
+#else
   return SUCCEEDED(webview_->OpenDevToolsWindow());
+#endif
 }
 
 void Webview::GetCookies(const std::string& uri, GetCookiesCallback callback) {

@@ -69,10 +69,11 @@ std::optional<std::wstring> WebviewPlatform::GetDefaultDataDirectory() {
   auto path = std::filesystem::path(path_tmp);
   CoTaskMemFree(path_tmp);
 
-  wchar_t filename[MAX_PATH];
-  GetModuleFileName(nullptr, filename, MAX_PATH);
-  path /= "flutter_webview_windows";
-  path /= std::filesystem::path(filename).stem();
+  // MasterSAT patch: one WebView2 user data folder for both islands, outside
+  // the Velopack install folder so updates and uninstalls never touch it
+  // (architecture §2.5, §6): %LOCALAPPDATA%\MasterSAT\wv2.
+  path /= "MasterSAT";
+  path /= "wv2";
 
   return path.wstring();
 }

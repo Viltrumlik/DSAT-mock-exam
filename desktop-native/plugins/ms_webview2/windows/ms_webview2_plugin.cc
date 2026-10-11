@@ -1,4 +1,4 @@
-#include "include/webview_flutter_windows/webview_windows_plugin.h"
+#include "include/ms_webview2/ms_webview2_plugin.h"
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
@@ -10,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "util/string_converter.h"
 #include "webview_bridge.h"
@@ -49,13 +50,13 @@ std::optional<T> GetOptionalValue(const flutter::EncodableMap& map,
   return std::nullopt;
 }
 
-class WebviewWindowsPlugin : public flutter::Plugin {
+class MsWebview2Plugin : public flutter::Plugin {
  public:
   static void RegisterWithRegistrar(flutter::PluginRegistrarWindows* registrar);
 
-  WebviewWindowsPlugin(flutter::PluginRegistrarWindows* registrar);
+  MsWebview2Plugin(flutter::PluginRegistrarWindows* registrar);
 
-  virtual ~WebviewWindowsPlugin();
+  virtual ~MsWebview2Plugin();
 
  private:
   // The options initializeEnvironment was last called with. They outlive the
@@ -69,6 +70,14 @@ class WebviewWindowsPlugin : public flutter::Plugin {
 
   std::unique_ptr<WebviewPlatform> platform_;
   std::unique_ptr<WebviewHost> webview_host_;
+  // MasterSAT patch: set when any webview reports that the browser process
+  // exited. Every webview on that environment is dead, so the next creation
+  // starts a fresh environment instead of failing on the dead one.
+  bool webview_host_dead_ = false;
+  // Environments replaced after a browser crash. Webviews still alive on them
+  // hold a raw pointer to their host, so they are kept until no webview is
+  // left at all.
+  std::vector<std::unique_ptr<WebviewHost>> retired_hosts_;
   EnvironmentOptions environment_options_{};
   std::unordered_map<int64_t, std::unique_ptr<WebviewBridge>> instances_;
   // Creations whose async completion is still outstanding. The environment
@@ -98,14 +107,14 @@ class WebviewWindowsPlugin : public flutter::Plugin {
 };
 
 // static
-void WebviewWindowsPlugin::RegisterWithRegistrar(
+void MsWebview2Plugin::RegisterWithRegistrar(
     flutter::PluginRegistrarWindows* registrar) {
   auto channel =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
-          registrar->messenger(), "io.jns.webview.win",
+          registrar->messenger(), "mastersat/ms_webview2",
           &flutter::StandardMethodCodec::GetInstance());
 
-  auto plugin = std::make_unique<WebviewWindowsPlugin>(registrar);
+  auto plugin = std::make_unique<MsWebview2Plugin>(registrar);
 
   channel->SetMethodCallHandler(
       [plugin_pointer = plugin.get()](const auto& call, auto result) {
@@ -115,7 +124,7 @@ void WebviewWindowsPlugin::RegisterWithRegistrar(
   registrar->AddPlugin(std::move(plugin));
 }
 
-WebviewWindowsPlugin::WebviewWindowsPlugin(
+MsWebview2Plugin::MsWebview2Plugin(
     flutter::PluginRegistrarWindows* registrar)
     : registrar_(registrar),
       textures_(registrar->texture_registrar()),
@@ -141,7 +150,7 @@ WebviewWindowsPlugin::WebviewWindowsPlugin(
       });
 }
 
-WebviewWindowsPlugin::~WebviewWindowsPlugin() {
+MsWebview2Plugin::~MsWebview2Plugin() {
   if (window_proc_id_ != -1) {
     registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_id_);
   }
@@ -149,7 +158,7 @@ WebviewWindowsPlugin::~WebviewWindowsPlugin() {
   UnregisterClass(window_class_.lpszClassName, nullptr);
 }
 
-void WebviewWindowsPlugin::HandleMethodCall(
+void MsWebview2Plugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name().compare(kMethodInitializeEnvironment) == 0) {
@@ -194,6 +203,8 @@ void WebviewWindowsPlugin::HandleMethodCall(
         GetOptionalValue<std::string>(*map, "additionalArguments");
 
     webview_host_ = nullptr;
+    webview_host_dead_ = false;
+    retired_hosts_.clear();
     auto host = WebviewHost::Create(platform_.get(), options.user_data_path,
                                     options.browser_exe_path,
                                     options.additional_arguments);
@@ -252,6 +263,8 @@ void WebviewWindowsPlugin::HandleMethodCall(
         // reconfigure it.
         if (instances_.empty() && pending_creations_ == 0) {
           webview_host_ = nullptr;
+          webview_host_dead_ = false;
+          retired_hosts_.clear();
         }
         return result->Success();
       }
@@ -262,11 +275,18 @@ void WebviewWindowsPlugin::HandleMethodCall(
   }
 }
 
-void WebviewWindowsPlugin::CreateWebviewInstance(
+void MsWebview2Plugin::CreateWebviewInstance(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (!InitPlatform()) {
     return result->Error(kErrorUnsupportedPlatform,
                          "The platform is not supported");
+  }
+
+  if (webview_host_ && webview_host_dead_) {
+    // MasterSAT patch: the browser process behind this environment exited
+    // (ProcessFailed BROWSER_PROCESS_EXITED); start a fresh one.
+    retired_hosts_.push_back(std::move(webview_host_));
+    webview_host_dead_ = false;
   }
 
   if (!webview_host_) {
@@ -300,6 +320,8 @@ void WebviewWindowsPlugin::CreateWebviewInstance(
           // was alive; apply the same release-on-zero rule as dispose.
           if (instances_.empty() && pending_creations_ == 0) {
             webview_host_ = nullptr;
+            webview_host_dead_ = false;
+            retired_hosts_.clear();
           }
           if (error) {
             return shared_result->Error(
@@ -314,7 +336,7 @@ void WebviewWindowsPlugin::CreateWebviewInstance(
 
         auto bridge = std::make_unique<WebviewBridge>(
             messenger_, textures_, platform_->graphics_context(),
-            std::move(webview));
+            std::move(webview), [this]() { webview_host_dead_ = true; });
         auto texture_id = bridge->texture_id();
         instances_[texture_id] = std::move(bridge);
 
@@ -327,14 +349,14 @@ void WebviewWindowsPlugin::CreateWebviewInstance(
       });
 }
 
-bool WebviewWindowsPlugin::InitPlatform() {
+bool MsWebview2Plugin::InitPlatform() {
   if (!platform_) {
     platform_ = std::make_unique<WebviewPlatform>();
   }
   return platform_->IsSupported();
 }
 
-HWND WebviewWindowsPlugin::GetFlutterViewHwnd() {
+HWND MsWebview2Plugin::GetFlutterViewHwnd() {
   if (!registrar_) {
     return nullptr;
   }
@@ -347,9 +369,9 @@ HWND WebviewWindowsPlugin::GetFlutterViewHwnd() {
 
 }  // namespace
 
-void WebviewWindowsPluginRegisterWithRegistrar(
+void MsWebview2PluginRegisterWithRegistrar(
     FlutterDesktopPluginRegistrarRef registrar) {
-  WebviewWindowsPlugin::RegisterWithRegistrar(
+  MsWebview2Plugin::RegisterWithRegistrar(
       flutter::PluginRegistrarManager::GetInstance()
           ->GetRegistrar<flutter::PluginRegistrarWindows>(registrar));
 }

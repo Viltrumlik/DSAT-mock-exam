@@ -36,6 +36,11 @@ class WebviewHost {
                              std::unique_ptr<WebviewCreationError>)>
       PointerInfoCreationCallback;
 
+  // MasterSAT patch: clears the WebView2 loader's override environment
+  // variables in release builds (see webview_host.cc). Called by Create; also
+  // safe to call early (e.g. from the runner) to make the policy explicit.
+  static void ApplyLoaderOverridePolicy();
+
   static std::unique_ptr<WebviewHost> Create(
       WebviewPlatform* platform,
       std::optional<std::wstring> user_data_directory = std::nullopt,
@@ -51,6 +56,9 @@ class WebviewHost {
       const {
     return compositor_;
   }
+
+  // MasterSAT patch: the environment, for WebResourceRequested responses.
+  ICoreWebView2Environment3* environment() const { return webview_env_.get(); }
 
  private:
   winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor_;

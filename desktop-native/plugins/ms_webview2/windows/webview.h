@@ -6,6 +6,7 @@
 #include <windows.ui.composition.h>
 #include <winrt/base.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <vector>
@@ -125,6 +126,13 @@ struct EventRegistrations {
   EventRegistrationToken download_starting_token_{};
   EventRegistrationToken download_bytes_received_token_{};
   EventRegistrationToken download_state_changed_token_{};
+  // MasterSAT patch.
+  EventRegistrationToken navigation_starting_token_{};
+  EventRegistrationToken frame_navigation_starting_token_{};
+  EventRegistrationToken web_resource_requested_token_{};
+  EventRegistrationToken process_failed_token_{};
+  EventRegistrationToken launching_external_uri_scheme_token_{};
+  EventRegistrationToken script_dialog_opening_token_{};
 };
 
 class Webview {
@@ -157,6 +165,19 @@ class Webview {
   typedef std::function<void(WebviewDownloadEvent)> DownloadEventCallback;
   typedef std::function<void(bool success, std::vector<WebviewCookie> cookies)>
       GetCookiesCallback;
+  // MasterSAT patch.
+  // |kind| is COREWEBVIEW2_PROCESS_FAILED_KIND, |reason| is
+  // COREWEBVIEW2_PROCESS_FAILED_REASON (or -1), |exit_code| the process exit
+  // code (or 0).
+  typedef std::function<void(int kind, int reason, int exit_code)>
+      ProcessFailedCallback;
+  // Something the island policy refused: |what| is "navigation", "frame",
+  // "resource", "newWindow", "download", "permission", "externalUri" or
+  // "dialog"; |uri| what it tried to open.
+  typedef std::function<void(const std::string& what, const std::string& uri)>
+      BlockedCallback;
+  typedef std::function<void(bool success, std::vector<uint8_t> png)>
+      CapturePreviewCallback;
 
   ~Webview();
 
@@ -215,6 +236,15 @@ class Webview {
   bool Suspend();
   bool Resume();
   bool MoveFocus();
+
+  // MasterSAT patch: PNG of the current page pixels (CapturePreview).
+  void CapturePreview(CapturePreviewCallback callback);
+  // MasterSAT patch: show/hide without destroying; a hidden island asks
+  // WebView2 for MemoryUsageTargetLevel LOW (architecture §2.5).
+  bool SetVisible(bool visible);
+  // MasterSAT patch: extra https hosts this island may load resources from
+  // (exact "www.desmos.com" or "*.desmos.com"); replaces the previous list.
+  void SetAllowedResourceHosts(const std::vector<std::string>& hosts);
 
   bool SetVirtualHostNameMapping(const std::string& hostName,
                                  const std::string& path,
@@ -276,6 +306,15 @@ class Webview {
     contains_fullscreen_element_changed_callback_ = std::move(callback);
   }
 
+  // MasterSAT patch.
+  void OnProcessFailed(ProcessFailedCallback callback) {
+    process_failed_callback_ = std::move(callback);
+  }
+
+  void OnBlocked(BlockedCallback callback) {
+    blocked_callback_ = std::move(callback);
+  }
+
  private:
   HWND hwnd_;
   HWND flutter_view_hwnd_;
@@ -318,6 +357,10 @@ class Webview {
   DevtoolsProtocolEventCallback devtools_protocol_event_callback_;
   ContainsFullScreenElementChangedCallback
       contains_fullscreen_element_changed_callback_;
+  // MasterSAT patch.
+  ProcessFailedCallback process_failed_callback_;
+  BlockedCallback blocked_callback_;
+  std::vector<std::wstring> allowed_resource_hosts_;
 
   Webview(
       wil::com_ptr<ICoreWebView2CompositionController> composition_controller,
@@ -328,6 +371,11 @@ class Webview {
       winrt::com_ptr<ABI::Windows::UI::Composition::ICompositor> compositor,
       HWND hwnd, bool offscreen_only);
   void RegisterEventHandlers();
+  // MasterSAT patch: the island lockdown (settings + blocking handlers).
+  void ApplyIslandSettings();
+  void MapIslandFolder();
+  void RegisterIslandPolicyHandlers();
+  void ReportBlocked(const char* what, LPCWSTR uri);
   void EnableSecurityUpdates();
   void SendScroll(double offset, bool horizontal);
 };

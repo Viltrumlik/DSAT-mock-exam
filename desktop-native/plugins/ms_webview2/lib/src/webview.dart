@@ -4,8 +4,8 @@ import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:webview_flutter_windows/src/cursor.dart';
-import 'package:webview_flutter_windows/src/enums.dart';
+import 'package:ms_webview2/src/cursor.dart';
+import 'package:ms_webview2/src/enums.dart';
 
 /// A snapshot of the webview's navigation history state.
 class HistoryChanged {
@@ -45,6 +45,51 @@ class WebviewDownloadEvent {
     this.bytesReceived,
     this.totalBytesToReceive,
   );
+}
+
+/// MasterSAT patch: a WebView2 `ProcessFailed` report.
+class WebviewProcessFailure {
+  /// The `COREWEBVIEW2_PROCESS_FAILED_KIND` value.
+  final int kindIndex;
+
+  /// The `COREWEBVIEW2_PROCESS_FAILED_REASON` value, or -1 when unknown.
+  final int reason;
+
+  /// The exit code of the failed process, or 0 when unknown.
+  final int exitCode;
+
+  /// Creates a process failure report.
+  const WebviewProcessFailure(this.kindIndex, this.reason, this.exitCode);
+
+  /// The failure kind, or [WebviewProcessFailedKind.unknown] for a value
+  /// newer than this enum.
+  WebviewProcessFailedKind get kind =>
+      kindIndex >= 0 && kindIndex < WebviewProcessFailedKind.values.length - 1
+      ? WebviewProcessFailedKind.values[kindIndex]
+      : WebviewProcessFailedKind.unknown;
+
+  /// True when the whole browser process died: the controller is unusable
+  /// and must be disposed and created again.
+  bool get browserExited => kind == WebviewProcessFailedKind.browserProcessExited;
+
+  @override
+  String toString() => 'WebviewProcessFailure(${kind.name}, reason $reason, exit $exitCode)';
+}
+
+/// MasterSAT patch: something the island policy refused.
+class WebviewBlockedEvent {
+  /// "navigation", "frame", "resource", "newWindow", "download",
+  /// "permission", "externalUri" or "dialog".
+  final String what;
+
+  /// What the page tried to open.
+  final String uri;
+
+  /// Creates a blocked report.
+  const WebviewBlockedEvent(this.what, this.uri);
+
+  @override
+  String toString() => 'WebviewBlockedEvent($what, $uri)';
 }
 
 /// An HTTP cookie, as managed by the WebView2 cookie store.
@@ -159,7 +204,9 @@ PointerButton _getButton(int value) {
   }
 }
 
-const String _pluginChannelPrefix = 'io.jns.webview.win';
+// MasterSAT patch: own channel names, so this copy can never collide with an
+// upstream webview_flutter_windows registered in the same engine.
+const String _pluginChannelPrefix = 'mastersat/ms_webview2';
 const MethodChannel _pluginChannel = MethodChannel(_pluginChannelPrefix);
 
 /// The state of a [WebviewController], exposed through
@@ -335,6 +382,29 @@ class WebviewController extends ValueNotifier<WebviewValue> {
   /// Emits an error event if a message is not valid JSON.
   Stream<dynamic> get webMessage => _webMessageStreamController.stream;
 
+  final StreamController<String> _webMessageRawStreamController =
+      StreamController<String>.broadcast();
+
+  /// MasterSAT patch: the same messages as [webMessage], undecoded (the JSON
+  /// text WebView2 reports), for callers that validate the text themselves.
+  Stream<String> get webMessageRaw => _webMessageRawStreamController.stream;
+
+  final StreamController<WebviewProcessFailure> _processFailedStreamController =
+      StreamController<WebviewProcessFailure>.broadcast();
+
+  /// MasterSAT patch: WebView2 `ProcessFailed` (renderer crash, browser
+  /// process exit, GPU process exit, ...).
+  Stream<WebviewProcessFailure> get onProcessFailed =>
+      _processFailedStreamController.stream;
+
+  final StreamController<WebviewBlockedEvent> _blockedStreamController =
+      StreamController<WebviewBlockedEvent>.broadcast();
+
+  /// MasterSAT patch: navigations, resources, windows, downloads,
+  /// permissions, external protocols and script dialogs the island policy
+  /// refused (diagnostics).
+  Stream<WebviewBlockedEvent> get onBlocked => _blockedStreamController.stream;
+
   final StreamController<bool>
   _containsFullScreenElementChangedStreamController =
       StreamController<bool>.broadcast();
@@ -460,12 +530,30 @@ class WebviewController extends ValueNotifier<WebviewValue> {
         _cursorStreamController.add(getCursorByName(map['value']));
         break;
       case 'webMessageReceived':
+        final raw = map['value'] as String;
+        _webMessageRawStreamController.add(raw);
         try {
-          final message = json.decode(map['value']);
+          final message = json.decode(raw);
           _webMessageStreamController.add(message);
         } catch (ex) {
           _webMessageStreamController.addError(ex);
         }
+        break;
+      case 'processFailed':
+        final value = map['value'] as Map<dynamic, dynamic>;
+        _processFailedStreamController.add(
+          WebviewProcessFailure(
+            value['kind'] as int,
+            value['reason'] as int,
+            value['exitCode'] as int,
+          ),
+        );
+        break;
+      case 'blocked':
+        final value = map['value'] as Map<dynamic, dynamic>;
+        _blockedStreamController.add(
+          WebviewBlockedEvent(value['what'] as String, value['uri'] as String),
+        );
         break;
       case 'containsFullScreenElementChanged':
         _containsFullScreenElementChangedStreamController.add(map['value']);
@@ -558,6 +646,9 @@ class WebviewController extends ValueNotifier<WebviewValue> {
       _titleStreamController,
       _cursorStreamController,
       _webMessageStreamController,
+      _webMessageRawStreamController,
+      _processFailedStreamController,
+      _blockedStreamController,
       _containsFullScreenElementChangedStreamController,
       _focusChangedStreamController,
     ]) {
@@ -907,6 +998,39 @@ class WebviewController extends ValueNotifier<WebviewValue> {
     return _channel.invokeMethod('clearVirtualHostNameMapping', hostName);
   }
 
+  /// MasterSAT patch: a PNG of the page as currently rendered (WebView2
+  /// `CapturePreview`). Returns null after [dispose].
+  ///
+  /// Throws a [PlatformException] if WebView2 cannot capture the page.
+  Future<Uint8List?> capturePreview() async {
+    if (_isDisposed) {
+      return null;
+    }
+    return _channel.invokeMethod<Uint8List>('capturePreview');
+  }
+
+  /// MasterSAT patch: hides or shows the webview without destroying it. A
+  /// hidden webview stops producing frames and asks WebView2 for
+  /// `MemoryUsageTargetLevel` LOW; showing it restores NORMAL.
+  Future<void> setVisible(bool visible) async {
+    if (_isDisposed) {
+      return;
+    }
+    return _channel.invokeMethod('setVisible', visible);
+  }
+
+  /// MasterSAT patch: the extra https hosts this webview may load
+  /// sub-resources from, besides the island host, `blob:` and `data:`.
+  /// Entries are exact host names (`www.desmos.com`) or subdomain wildcards
+  /// (`*.desmos.com`). Replaces the previous list; every other request gets a
+  /// 403. Navigation is never widened: only the island origin may be shown.
+  Future<void> setAllowedResourceHosts(List<String> hosts) async {
+    if (_isDisposed) {
+      return;
+    }
+    return _channel.invokeMethod('setAllowedResourceHosts', hosts);
+  }
+
   /// Limits the number of frames per second to the given value, or removes
   /// the limit when [maxFps] is 0 or null.
   Future<void> setFpsLimit([int? maxFps = 0]) async {
@@ -1041,6 +1165,11 @@ class Webview extends StatefulWidget {
   /// unless specifying a [scaleFactor].
   final FilterQuality filterQuality;
 
+  /// MasterSAT patch: maps the cursor WebView2 asks for to the cursor shown
+  /// (e.g. the hand over links becomes the arrow: no hand cursor anywhere).
+  /// Defaults to showing the page's cursor unchanged.
+  final MouseCursor Function(SystemMouseCursor cursor)? cursorMapper;
+
   /// Creates a webview widget backed by [controller].
   const Webview(
     this.controller, {
@@ -1050,6 +1179,7 @@ class Webview extends StatefulWidget {
     this.permissionRequested,
     this.scaleFactor,
     this.filterQuality = FilterQuality.none,
+    this.cursorMapper,
   });
 
   @override
@@ -1087,8 +1217,12 @@ class _WebviewState extends State<Webview> {
     _scheduleGeometryCheck();
 
     _cursorSubscription = _controller._cursor.listen((cursor) {
+      final mapped = widget.cursorMapper?.call(cursor) ?? cursor;
+      if (mapped == _cursor) {
+        return;
+      }
       setState(() {
-        _cursor = cursor;
+        _cursor = mapped;
       });
     });
 

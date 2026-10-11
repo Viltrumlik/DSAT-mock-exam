@@ -2,9 +2,9 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:webview_flutter_windows/webview_flutter_windows.dart';
+import 'package:ms_webview2/ms_webview2.dart';
 
-const MethodChannel _pluginChannel = MethodChannel('io.jns.webview.win');
+const MethodChannel _pluginChannel = MethodChannel('mastersat/ms_webview2');
 const StandardMethodCodec _codec = StandardMethodCodec();
 
 void main() {
@@ -38,7 +38,7 @@ void main() {
     });
 
     messenger.setMockMethodCallHandler(
-      MethodChannel('io.jns.webview.win/$textureId'),
+      MethodChannel('mastersat/ms_webview2/$textureId'),
       (call) async {
         instanceLog.add(call);
         return onInstanceCall?.call(call);
@@ -46,7 +46,7 @@ void main() {
     );
 
     messenger.setMockStreamHandler(
-      EventChannel('io.jns.webview.win/$textureId/events'),
+      EventChannel('mastersat/ms_webview2/$textureId/events'),
       // Block bodies on purpose: the mock encodes the callback's runtime
       // return value into the `listen`/`cancel` reply envelope, and an arrow
       // body would leak the (unencodable) assignment value.
@@ -302,7 +302,7 @@ void main() {
             ? 'Updating the DevTools setting failed.'
             : 'Opening DevTools failed.';
         messenger.setMockMethodCallHandler(
-          const MethodChannel('io.jns.webview.win/1'),
+          const MethodChannel('mastersat/ms_webview2/1'),
           (call) async {
             instanceLog.add(call);
             throw PlatformException(code: 'method_failed', message: message);
@@ -360,7 +360,7 @@ void main() {
 
     test('setZoomControlEnabled propagates native failures', () async {
       messenger.setMockMethodCallHandler(
-        const MethodChannel('io.jns.webview.win/1'),
+        const MethodChannel('mastersat/ms_webview2/1'),
         (call) async {
           instanceLog.add(call);
           throw PlatformException(
@@ -400,7 +400,7 @@ void main() {
 
     test('setDefaultContextMenusEnabled propagates native failures', () async {
       messenger.setMockMethodCallHandler(
-        const MethodChannel('io.jns.webview.win/1'),
+        const MethodChannel('mastersat/ms_webview2/1'),
         (call) async {
           instanceLog.add(call);
           throw PlatformException(
@@ -1330,7 +1330,7 @@ void main() {
         return tester.runAsync<Object?>(() async {
           ByteData? reply;
           await messenger.handlePlatformMessage(
-            'io.jns.webview.win/1',
+            'mastersat/ms_webview2/1',
             _codec.encodeMethodCall(
               const MethodCall('permissionRequested', {
                 'url': 'https://a',
@@ -1367,7 +1367,7 @@ void main() {
       final reply = await tester.runAsync(() async {
         ByteData? data;
         await messenger.handlePlatformMessage(
-          'io.jns.webview.win/1',
+          'mastersat/ms_webview2/1',
           _codec.encodeMethodCall(
             const MethodCall('permissionRequested', {
               'url': 'https://a',

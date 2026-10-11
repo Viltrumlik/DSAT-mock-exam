@@ -1,3 +1,8 @@
+## 1.3.0+ms.1 (MasterSAT)
+
+* Vendored as `ms_webview2` with the island lockdown, policy, environment and
+  API patches listed in NOTICE.
+
 ## 1.3.0
 
 * Add `WebviewController.setDevToolsEnabled()` to control user access to

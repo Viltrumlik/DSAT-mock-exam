@@ -217,3 +217,35 @@ enum WebErrorStatus {
   /// The request requires proxy authentication.
   validProxyAuthenticationRequired,
 }
+
+/// MasterSAT patch: the kind of a WebView2 process failure.
+// Order must match COREWEBVIEW2_PROCESS_FAILED_KIND (WebView2.h); `unknown`
+// stays last for values newer than this list.
+enum WebviewProcessFailedKind {
+  /// The browser process exited: every webview on the environment is dead.
+  browserProcessExited,
+
+  /// The main frame's renderer process exited; the webview can reload.
+  renderProcessExited,
+
+  /// The main frame's renderer stopped responding.
+  renderProcessUnresponsive,
+
+  /// A subframe's renderer process exited.
+  frameRenderProcessExited,
+
+  /// A utility process exited.
+  utilityProcessExited,
+
+  /// A sandbox helper process exited.
+  sandboxHelperProcessExited,
+
+  /// The GPU process exited (WebView2 restarts it).
+  gpuProcessExited,
+
+  /// A PPAPI plugin process exited.
+  ppapiPluginProcessExited,
+
+  /// A value newer than this enum.
+  unknown,
+}

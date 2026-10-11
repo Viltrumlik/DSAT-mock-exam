@@ -5,7 +5,7 @@ if(POLICY CMP0175)
   cmake_policy(SET CMP0175 NEW)
 endif()
 
-set(PROJECT_NAME "webview_flutter_windows")
+set(PROJECT_NAME "ms_webview2")
 
 set(WIL_VERSION "1.0.260126.7")
 set(WEBVIEW_VERSION "1.0.3967.48")
@@ -16,7 +16,18 @@ project(${PROJECT_NAME} LANGUAGES CXX)
 
 # This value is used when generating builds using this plugin, so it must
 # not be changed
-set(PLUGIN_NAME "webview_flutter_windows_plugin")
+set(PLUGIN_NAME "ms_webview2_plugin")
+
+# MasterSAT patch: test builds (tier D on windows-latest) honour
+# WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS (e.g. --remote-debugging-port for
+# Playwright) and keep DevTools. Release builds clear every WEBVIEW2_* override
+# variable before the environment is created and disable DevTools.
+# Turn on with -DMS_WEBVIEW2_TEST_BUILD=ON or the MS_WEBVIEW2_TEST_BUILD=1
+# environment variable at configure time (`flutter build windows` reads it).
+option(MS_WEBVIEW2_TEST_BUILD "Build ms_webview2 for automated tests" OFF)
+if(DEFINED ENV{MS_WEBVIEW2_TEST_BUILD} AND "$ENV{MS_WEBVIEW2_TEST_BUILD}" STREQUAL "1")
+  set(MS_WEBVIEW2_TEST_BUILD ON)
+endif()
 
 # NuGet tooling shared with the native test build (windows/test).
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/nuget.cmake)
@@ -28,7 +39,8 @@ ensure_nuget_package(Microsoft.Web.WebView2 ${WEBVIEW_VERSION}
 
 # Define source files
 set(PLUGIN_SOURCES
-  "webview_windows_plugin.cc"
+  "ms_webview2_plugin.cc"
+  "ms_policy.cc"
   "webview_platform.cc"
   "webview.cc"
   "webview_host.cc"
@@ -68,11 +80,17 @@ target_link_libraries(${PLUGIN_NAME} PRIVATE
 
 # Configure definitions and includes
 target_compile_definitions(${PLUGIN_NAME} PRIVATE FLUTTER_PLUGIN_IMPL)
+# MasterSAT patch: DevTools only in Debug and test builds.
+target_compile_definitions(${PLUGIN_NAME} PRIVATE "$<$<CONFIG:Debug>:MS_WEBVIEW2_DEVTOOLS>")
+if(MS_WEBVIEW2_TEST_BUILD)
+  message(STATUS "ms_webview2: TEST BUILD (WEBVIEW2_* overrides honoured, DevTools on)")
+  target_compile_definitions(${PLUGIN_NAME} PRIVATE MS_WEBVIEW2_TEST_BUILD MS_WEBVIEW2_DEVTOOLS)
+endif()
 target_include_directories(${PLUGIN_NAME} INTERFACE
   "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
 # Set bundled libraries
-set(webview_flutter_windows_bundled_libraries
+set(ms_webview2_bundled_libraries
   PARENT_SCOPE
 )

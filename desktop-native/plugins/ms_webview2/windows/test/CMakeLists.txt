@@ -39,6 +39,8 @@ add_executable(webview_windows_unittests
   cursor_util_test.cc
   virtual_key_state_test.cc
   surface_geometry_test.cc
+  ms_policy_test.cc
+  ../ms_policy.cc
   ../util/string_converter.cc
   ../util/cursor_util.cc
 )

@@ -10,17 +10,73 @@
 
 using namespace Microsoft::WRL;
 
+namespace {
+
+// MasterSAT patch: the WebView2 loader lets these environment variables
+// override what the app asks for. A student could set
+// WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222 and drive
+// the question island from outside, or point the loader at another browser or
+// profile. Release builds remove them from this process's environment before
+// the environment is created; test builds keep them (Playwright attaches to
+// the island through --remote-debugging-port, architecture §1.4 / §9 tier D).
+constexpr const wchar_t* kLoaderOverrideVariables[] = {
+    L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+    L"WEBVIEW2_BROWSER_EXECUTABLE_FOLDER",
+    L"WEBVIEW2_USER_DATA_FOLDER",
+    L"WEBVIEW2_RELEASE_CHANNEL_PREFERENCE",
+    L"WEBVIEW2_CHANNEL_SEARCH_KIND",
+    L"WEBVIEW2_PIPE_FOR_SCRIPT_DEBUGGER",
+    L"WEBVIEW2_WAIT_FOR_SCRIPT_DEBUGGER",
+};
+
+#if defined(MS_WEBVIEW2_TEST_BUILD)
+std::optional<std::string> ReadEnvironmentVariableUtf8(const wchar_t* name) {
+  const DWORD size = GetEnvironmentVariableW(name, nullptr, 0);
+  if (size == 0) {
+    return std::nullopt;
+  }
+  std::wstring value(size, L'\0');
+  const DWORD written = GetEnvironmentVariableW(name, value.data(), size);
+  value.resize(written);
+  return util::Utf8FromUtf16(value.c_str());
+}
+#endif
+
+}  // namespace
+
 // static
+void WebviewHost::ApplyLoaderOverridePolicy() {
+#if !defined(MS_WEBVIEW2_TEST_BUILD)
+  for (const auto* name : kLoaderOverrideVariables) {
+    SetEnvironmentVariableW(name, nullptr);
+  }
+#endif
+}
+
 std::unique_ptr<WebviewHost> WebviewHost::Create(
     WebviewPlatform* platform, std::optional<std::wstring> user_data_directory,
     std::optional<std::wstring> browser_exe_path,
     std::optional<std::string> arguments) {
-  wil::com_ptr<CoreWebView2EnvironmentOptions> opts;
+  ApplyLoaderOverridePolicy();
+
+#if defined(MS_WEBVIEW2_TEST_BUILD)
+  // Test builds: merge the variable into the explicit arguments so the result
+  // does not depend on how the loader combines the two.
+  if (auto extra = ReadEnvironmentVariableUtf8(
+          L"WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")) {
+    arguments = arguments.has_value() ? *arguments + " " + *extra : *extra;
+  }
+#endif
+
+  // MasterSAT patch: always pass options — Fluent overlay scroll bars look
+  // native (architecture §2.5; needs runtime >= 125.0.2535.41, ignored before).
+  wil::com_ptr<CoreWebView2EnvironmentOptions> opts =
+      Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
   if (arguments.has_value()) {
-    opts = Microsoft::WRL::Make<CoreWebView2EnvironmentOptions>();
     const std::wstring warguments = util::Utf16FromUtf8(arguments.value());
     opts->put_AdditionalBrowserArguments(warguments.c_str());
   }
+  opts->put_ScrollBarStyle(COREWEBVIEW2_SCROLLBAR_STYLE_FLUENT_OVERLAY);
 
   std::promise<HRESULT> result_promise;
   wil::com_ptr<ICoreWebView2Environment> env;
