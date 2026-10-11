@@ -359,3 +359,86 @@ class ContextTests(MidtermEmailFixture):
             classroom=self.classroom, starts_at=timezone.now() + timedelta(days=1)
         )
         self.assertIsNone(build_context(sched))
+
+
+@override_settings(**SENDING_ON)
+class WorkedByHandRuleTests(MidtermEmailFixture):
+    """2026-10-11, the school's request: a Foundation Math midterm is worked by hand. The mail
+    says so under NOT ALLOWED, in both parts, instead of only leaving the calculator out of
+    ALLOWED — and only for a Math paper with no calculator: junior keeps its Scientific line
+    and no "by hand" line, and R&W never gets a calculator line of either kind."""
+
+    BY_HAND = "worked out by hand"
+
+    def _math(self, level):
+        self.midterm.subject = Midterm.MATH
+        self.midterm.level = level
+        self.midterm.save(update_fields=["subject", "level"])
+        return self._schedule()
+
+    def _sent(self, sched):
+        send_midterm_scheduled_emails(sched.pk)
+        msg = mail.outbox[-1]
+        return msg.body, msg.alternatives[0][0]
+
+    def test_foundation_math_is_told_to_work_by_hand(self):
+        sched = self._math(Midterm.LEVEL_FOUNDATION)
+        context = build_context(sched)
+        self.assertIs(context["calculator_enabled"], False)
+        self.assertIs(context["calculator_by_hand"], True)
+        text, html = self._sent(sched)
+        for part in (text, html):
+            self.assertIn(self.BY_HAND, part)
+            self.assertNotIn("Desmos", part)
+            # Under NOT ALLOWED — a rule — not somewhere a student could read as permission.
+            self.assertGreater(part.index(self.BY_HAND), part.index("NOT ALLOWED"))
+
+    def test_junior_math_keeps_the_scientific_calculator_and_no_by_hand_line(self):
+        sched = self._math(Midterm.LEVEL_JUNIOR)
+        context = build_context(sched)
+        self.assertIs(context["calculator_enabled"], True)
+        self.assertIs(context["calculator_by_hand"], False)
+        text, html = self._sent(sched)
+        for part in (text, html):
+            self.assertIn("Desmos scientific calculator", part)
+            self.assertNotIn(self.BY_HAND, part)
+            self.assertNotIn("Any calculator", part)
+
+    def test_reading_writing_gets_no_calculator_line_at_all(self):
+        sched = self._schedule()  # the fixture's R&W midterm
+        self.assertIs(build_context(sched)["calculator_by_hand"], False)
+        text, html = self._sent(sched)
+        for part in (text, html):
+            self.assertNotIn(self.BY_HAND, part)
+            self.assertNotIn("Any calculator", part)
+            self.assertNotIn("Desmos", part)
+
+    def test_the_line_follows_the_model_at_every_math_level(self):
+        """Untagged Math has no calculator either, so it is worked by hand too; the flag is
+        derived from the same `calculator_enabled` the runner obeys, never a level list."""
+        cases = (
+            ("", True),
+            (Midterm.LEVEL_FOUNDATION, True),
+            (Midterm.LEVEL_JUNIOR, False),
+            (Midterm.LEVEL_MIDDLE, False),
+            (Midterm.LEVEL_SENIOR, False),
+        )
+        for level, by_hand in cases:
+            with self.subTest(level=level):
+                sched = self._math(level)
+                self.assertIs(build_context(sched)["calculator_by_hand"], by_hand)
+                sched.delete()
+
+    def test_a_legacy_foundation_math_schedule_says_by_hand_too(self):
+        """The legacy MockExam keeps subject and level in its own casing; both are normalised."""
+        exam = MockExam.objects.create(
+            title="Legacy Foundation Math", kind=MockExam.KIND_MIDTERM,
+            midterm_subject="Math", midterm_level="Foundation",
+            midterm_scoring_scale=MockExam.SCALE_100,
+        )
+        sched = MidtermSchedule.objects.create(
+            classroom=self.classroom, mock_exam=exam, starts_at=timezone.now() + timedelta(days=1)
+        )
+        context = build_context(sched)
+        self.assertIs(context["calculator_enabled"], False)
+        self.assertIs(context["calculator_by_hand"], True)

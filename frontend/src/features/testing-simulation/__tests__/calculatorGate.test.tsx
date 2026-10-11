@@ -17,6 +17,7 @@ vi.mock("../tools/calculator/DesmosCalculator", () => ({
 }));
 
 import { DirectionsOverlay } from "../components/DirectionsOverlay";
+import { MidtermRulesScreen } from "../components/MidtermRulesScreen";
 import { calculatorAllowed, calculatorScientificOnly } from "../state/selectors";
 import { ExamToolsLayer } from "../tools/ExamToolsLayer";
 import type { ExamTools } from "../tools/useExamTools";
@@ -133,5 +134,49 @@ describe("DirectionsOverlay — the Math wording matches the toolbar", () => {
 
   it("a paper with a calculator keeps the SAT wording", () => {
     expect(overlay(true).textContent ?? "").toContain("Use of a calculator is permitted for all questions.");
+  });
+});
+
+describe("MidtermRulesScreen — a Math paper without a calculator says it is worked by hand", () => {
+  const BY_HAND = "worked out by hand";
+
+  /** The Prohibited column's text, separately from Allowed, so WHERE the line sits is pinned. */
+  const rules = (props: { calculatorEnabled?: boolean; calculatorScientificOnly?: boolean; isMath?: boolean }) => {
+    const el = render(
+      <MidtermRulesScreen
+        title="Midterm"
+        subjectLabel={props.isMath ? "Math" : "Reading and Writing"}
+        starting={false}
+        fullscreenSupported={false}
+        onProceed={() => {}}
+        {...props}
+      />,
+    );
+    const column = (heading: string) =>
+      Array.from(el.querySelectorAll("h2")).find((h) => h.textContent === heading)?.parentElement?.textContent ?? "";
+    return { all: el.textContent ?? "", allowed: column("Allowed"), prohibited: column("Prohibited") };
+  };
+
+  it("Foundation Math (calculator off): the by-hand line under Prohibited, no Desmos under Allowed", () => {
+    const r = rules({ isMath: true, calculatorEnabled: false });
+    expect(r.prohibited).toContain(BY_HAND);
+    expect(r.allowed).not.toContain(BY_HAND);
+    expect(r.all).not.toContain("Desmos");
+  });
+
+  it("Junior Math: the Scientific calculator, and no by-hand line", () => {
+    const r = rules({ isMath: true, calculatorEnabled: true, calculatorScientificOnly: true });
+    expect(r.allowed).toContain("Desmos scientific calculator");
+    expect(r.all).not.toContain(BY_HAND);
+  });
+
+  it("R&W: no calculator line of either kind", () => {
+    const r = rules({ isMath: false, calculatorEnabled: false });
+    expect(r.all).not.toContain(BY_HAND);
+    expect(r.all).not.toContain("Desmos");
+  });
+
+  it("a caller that forgets isMath says nothing rather than something wrong", () => {
+    expect(rules({ calculatorEnabled: false }).all).not.toContain(BY_HAND);
   });
 });

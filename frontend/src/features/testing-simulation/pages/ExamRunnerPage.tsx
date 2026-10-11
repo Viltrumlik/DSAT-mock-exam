@@ -1020,6 +1020,9 @@ export function ExamRunnerPage() {
           requiresCode={requiresCode !== false}
           calculatorEnabled={calculatorAllowed(attempt)}
           calculatorScientificOnly={calculatorScientificOnly(attempt)}
+          // With the calculator off, a Math paper (Foundation since 2026-10-11, the school's
+          // request) is told it is worked by hand; R&W is told nothing about calculators.
+          isMath={mathQuestions}
         />
       );
     }

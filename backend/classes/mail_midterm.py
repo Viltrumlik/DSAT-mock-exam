@@ -113,6 +113,15 @@ def _midterm_facts(midterm) -> dict:
     }
 
 
+def _is_math(facts: dict) -> bool:
+    """Whether the paper is Math, whichever identity the facts came from. The new Midterm
+    stores ``MATH``; a legacy MockExam keeps its subject in its own casing (see
+    ``_legacy_facts``), so it is normalised before the comparison."""
+    from midterms.models import Midterm
+
+    return str(facts.get("subject") or "").upper() == Midterm.MATH
+
+
 def _facts(schedule: MidtermSchedule) -> dict | None:
     """The exam behind a schedule row, in one shape whichever identity it carries."""
     if schedule.midterm_id:
@@ -189,6 +198,12 @@ def build_context(schedule: MidtermSchedule) -> dict | None:
         is_graded=facts["is_graded"],
         calculator_enabled=facts["calculator_enabled"],
         calculator_scientific_only=facts["calculator_scientific_only"],
+        # A Math paper with no calculator is worked BY HAND — Foundation since 2026-10-11 (the
+        # school's request), or an untagged Math midterm — and the mail says so under NOT
+        # ALLOWED instead of only leaving the calculator out of ALLOWED: a student who has had
+        # Desmos on every other Math paper reads a missing line as an oversight. R&W has never
+        # had a calculator and gets no calculator line at all. Same rule as both rules screens.
+        calculator_by_hand=_is_math(facts) and not facts["calculator_enabled"],
         # A classroom midterm always hands out a code (this mail is classroom-only).
         requires_code=True,
         pass_mark_label=_pass_mark_label(facts),
@@ -224,7 +239,12 @@ def _text_rules(context: dict) -> str:
         kind = "Desmos scientific calculator" if context.get("calculator_scientific_only") else "Desmos calculator"
         allowed.append(f"- The built-in {kind} from the toolbar. No physical calculator.")
 
-    not_allowed = [
+    not_allowed = []
+    if context.get("calculator_by_hand"):
+        not_allowed.append(
+            "- Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper."
+        )
+    not_allowed += [
         "- Other apps, tabs, or programs — close everything else first.",
         "- Notes, books, or any other reference material.",
         "- Phones, smartwatches, headphones, or earbuds.",
