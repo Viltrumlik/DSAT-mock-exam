@@ -497,6 +497,10 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     if (event is KeyUpEvent) return KeyEventResult.ignored;
+    // The island has the keyboard (texture mode forwards keys to the page): it sends the
+    // allowed shortcuts itself as `key` messages — and never while its SPR input has focus,
+    // where ← / → must move the caret, not the question.
+    if (_islandFocused) return KeyEventResult.ignored;
     if (event.logicalKey == LogicalKeyboardKey.escape) {
       if (isTypingInTextField() && !tools.notesOpen) return KeyEventResult.ignored;
       return _escape() ? KeyEventResult.handled : KeyEventResult.ignored;

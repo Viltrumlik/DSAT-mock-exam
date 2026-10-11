@@ -174,6 +174,26 @@ void main() {
       expect(h.session.isFlagged(2002), isTrue);
     });
 
+    testWidgets('while the island has the keyboard, Flutter-side keys are left to it (SPR caret)', (tester) async {
+      final h = await RunnerHarness.pump(tester);
+      await tester.tapAt(const Offset(600, 400)); // into the island
+      await tester.pump();
+      await press(tester, LogicalKeyboardKey.arrowRight);
+      await letter(tester, 'a');
+      expect(h.session.currentIndex, 0);
+      expect(h.session.answerFor(2001), 'B');
+      // What the page forwards still runs.
+      h.content.emit(const KeyMessage(key: 'ArrowRight'));
+      await tester.pump();
+      await tester.pump();
+      expect(h.session.currentIndex, 1);
+      // A click on the frame gives the keyboard back to Flutter.
+      await tester.tapAt(const Offset(500, 30));
+      await tester.pump(const Duration(milliseconds: 600));
+      await press(tester, LogicalKeyboardKey.arrowLeft);
+      expect(h.session.currentIndex, 0);
+    });
+
     testWidgets('Escape from the island takes the keyboard back and closes the toolbar', (tester) async {
       final h = await RunnerHarness.pump(tester);
       await tester.tapAt(const Offset(600, 400)); // into the island
