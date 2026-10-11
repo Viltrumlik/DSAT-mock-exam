@@ -1,0 +1,25 @@
+<!doctype html>
+<!--
+  S0 probe page: a stand-in for the content island (desktop-native/island) used
+  ONLY by CI diagnostics builds when the real island build is not available
+  (CMake installs it when MS_S0_PROBE=1). It proves the WebView2 texture, the
+  virtual host and the v1 message round trip; it does not look like the runner.
+  Never shipped in a release.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src blob: data:">
+<title>S0 probe</title>
+<link rel="stylesheet" href="probe.css">
+</head>
+<body>
+<main id="card">
+  <p id="status">S0 probe: waiting for the app</p>
+  <section id="passage"></section>
+  <section id="question"></section>
+  <ol id="choices"></ol>
+</main>
+<script src="probe.js"></script>
+</body>
+</html>

@@ -1,0 +1,313 @@
+name: desktop-native (Windows exam app)
+
+# The fully native Windows exam app in desktop-native/ (Flutter + two WebView2
+# islands + mastersat_native.dll). Architecture: native-rewrite/design-panel.
+#
+#  macos   tier A/B checks: generated-file drift, protocol tests, flutter
+#          analyze + test (app and ms_webview2), the runner's pure C++ rules,
+#          and the island (npm ci / test / build) once it exists.
+#  windows the real build on windows-latest: Rust DLL (when the crate exists),
+#          island build, native unit tests, `flutter build windows --release`,
+#          S0 diagnostics (resolution, WebView2 runtime, interactive desktop,
+#          a screenshot of the app running with --s1-harness), then the
+#          Velopack installer. Artifacts: MasterSAT-Setup (Setup.exe),
+#          MasterSAT-full-nupkg, s0-diagnostics.
+#
+# Releasing is a separate, deliberate step: nothing here deploys anything.
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "desktop-native/**"
+      - ".github/workflows/desktop-native.yml"
+  pull_request:
+    paths:
+      - "desktop-native/**"
+      - ".github/workflows/desktop-native.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FLUTTER_SUPPRESS_ANALYTICS: "true"
+  # The island workstream's branch, built for the S1 harness while this branch
+  # has no desktop-native/island/package.json (empty = never).
+  ISLAND_PREVIEW_REF: native/island
+
+jobs:
+  macos:
+    name: analyze + test (macOS)
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned versions
+        run: |
+          echo "FLUTTER_VERSION=$(tr -d '[:space:]' < desktop-native/.flutter-version)" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(tr -d '[:space:]' < desktop-native/VERSION)" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Generated files are up to date
+        run: desktop-native/tool/check_generated.sh
+
+      - name: Island protocol tests (TypeScript)
+        run: node --test desktop-native/island/protocol/protocol.test.ts
+
+      - name: flutter analyze + test (app)
+        working-directory: desktop-native/app
+        run: |
+          flutter --version
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: flutter analyze + test (ms_webview2 plugin)
+        working-directory: desktop-native/plugins/ms_webview2
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Icons carry every frame
+        run: python3 desktop-native/packaging/icon/make_icon.py --check
+
+      - name: Runner launch rules (C++)
+        working-directory: desktop-native/app/windows/runner/test
+        run: |
+          clang++ -std=c++17 -Wall -Wextra -Werror -I.. launch_policy_test.cc ../launch_policy.cpp -o "$RUNNER_TEMP/launch_policy_test"
+          "$RUNNER_TEMP/launch_policy_test"
+
+      - name: Island (npm ci / test / build)
+        if: hashFiles('desktop-native/island/package.json') != ''
+        working-directory: desktop-native/island
+        run: |
+          npm ci
+          npm test
+          npm run build
+
+  windows:
+    name: build + installer (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned versions
+        run: |
+          $flutter = (Get-Content -Raw desktop-native/.flutter-version).Trim()
+          $version = (Get-Content -Raw desktop-native/VERSION).Trim()
+          "FLUTTER_VERSION=$flutter" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "APP_VERSION=$version" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          $hasCrate = Test-Path desktop-native/native/Cargo.toml
+          $hasIsland = Test-Path desktop-native/island/package.json
+          "HAS_NATIVE_CRATE=$hasCrate" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "HAS_ISLAND=$hasIsland" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          Write-Host "Flutter $flutter, app $version, native crate: $hasCrate, island: $hasIsland"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      # --- mastersat_native.dll (skipped until the rust workstream's crate is merged)
+      - uses: dtolnay/rust-toolchain@stable
+        if: env.HAS_NATIVE_CRATE == 'True'
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: Swatinem/rust-cache@v2
+        if: env.HAS_NATIVE_CRATE == 'True'
+        with:
+          workspaces: desktop-native/native
+      - name: Build mastersat-native (cdylib)
+        if: env.HAS_NATIVE_CRATE == 'True'
+        working-directory: desktop-native/native
+        env:
+          # The production proof key (repo secret, key_id:hex). Without it a
+          # release build embeds NO key: ms_prove answers MS_ERR_NO_KEY, so a
+          # mis-built installer fails loudly at the first midterm.
+          DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
+        run: |
+          if (-not $env:DESKTOP_PROOF_KEY) { Write-Host "::warning::DESKTOP_PROOF_KEY is not set: this DLL cannot sign lockdown proofs (midterms will refuse it)" }
+          cargo build --release --locked -p mastersat-native --target x86_64-pc-windows-msvc
+          Get-ChildItem target/x86_64-pc-windows-msvc/release/mastersat_native.*
+          "MS_NATIVE_LIB_DIR=$PWD\target\x86_64-pc-windows-msvc\release" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+          "MS_LINK_NATIVE=ON" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+      - name: No native crate yet
+        if: env.HAS_NATIVE_CRATE != 'True'
+        run: Write-Host "::notice::desktop-native/native/Cargo.toml not found; building without mastersat_native.dll"
+
+      # --- Island pages
+      - uses: actions/setup-node@v4
+        if: env.HAS_ISLAND == 'True'
+        with:
+          node-version: 24
+      - name: Build the island
+        if: env.HAS_ISLAND == 'True'
+        working-directory: desktop-native/island
+        env:
+          ISLAND_BUILD_SUFFIX: +${{ github.sha }}
+        run: |
+          npm ci
+          npm run build
+      - name: No island yet (S0 probe page instead)
+        if: env.HAS_ISLAND != 'True'
+        run: |
+          Write-Host "::warning::desktop-native/island has no package.json; this build carries the S0 probe page, NOT the real question card"
+          "MS_S0_PROBE=1" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      # Integration preview, CI only: while this branch has no island, build the
+      # island workstream's current branch into a temp folder and give it to the
+      # S1 harness build ONLY (the installer keeps this branch's contents). The
+      # working tree is put back afterwards; nothing is committed.
+      - uses: actions/setup-node@v4
+        if: env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        with:
+          node-version: 24
+      - name: Island preview for the S1 harness (${{ env.ISLAND_PREVIEW_REF }})
+        id: island_preview
+        if: env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        continue-on-error: true
+        run: |
+          git fetch --no-tags --depth=1 origin "$env:ISLAND_PREVIEW_REF"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning::no $env:ISLAND_PREVIEW_REF branch"; exit 1 }
+          $sha = (git rev-parse FETCH_HEAD).Trim()
+          git checkout FETCH_HEAD -- desktop-native/island
+          Push-Location desktop-native/island
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          $dest = Join-Path $env:RUNNER_TEMP 'island-preview'
+          Copy-Item -Recurse desktop-native/island/build/island $dest
+          Get-ChildItem $dest | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          "dir=$dest" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "sha=$sha" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          Write-Host "::notice::S1 harness uses the island from $env:ISLAND_PREVIEW_REF @ $sha (preview, not merged)"
+      - name: Put this branch's island folder back
+        if: always() && env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        run: |
+          git checkout HEAD -- desktop-native/island
+          git clean -fdxq -- desktop-native/island
+          git status --short -- desktop-native/island
+
+      # --- Native unit tests (plugin policy + runner launch rules)
+      - name: ms_webview2 native tests (gtest)
+        run: |
+          cmake -S desktop-native/plugins/ms_webview2/windows/test -B build/plugin_tests
+          cmake --build build/plugin_tests --config Release
+          ctest --test-dir build/plugin_tests -C Release --output-on-failure
+      - name: Runner launch rules (C++)
+        run: |
+          cmake -S desktop-native/app/windows/runner/test -B build/runner_tests
+          cmake --build build/runner_tests --config Release
+          ctest --test-dir build/runner_tests -C Release --output-on-failure
+
+      # --- The app
+      - name: flutter pub get
+        working-directory: desktop-native/app
+        run: |
+          flutter --version
+          flutter pub get
+
+      - name: Build the S1 harness (when lib/main.dart does not route --s1-harness yet)
+        id: harness
+        working-directory: desktop-native/app
+        run: |
+          $routes = (Test-Path lib/main.dart) -and (Select-String -Path lib/main.dart -Pattern 's1_harness' -Quiet)
+          if ($routes) {
+            Write-Host "lib/main.dart routes --s1-harness; the release build is the harness"
+            "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+            exit 0
+          }
+          if (-not (Test-Path lib/island/s1_harness.dart)) { Write-Host "no harness entry point"; "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT; exit 0 }
+          # lib/island/s1_harness.dart has its own main(): build it as the target.
+          $preview = '${{ steps.island_preview.outputs.dir }}'
+          if ($preview -and (Test-Path "$preview/content.html")) {
+            $env:MS_ISLAND_DIR = $preview
+            Write-Host "S1 harness build carries the island preview from $preview"
+          }
+          flutter build windows --release -t lib/island/s1_harness.dart --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
+          if ($LASTEXITCODE -ne 0) {
+            # flutter hides MSBuild's reason; the install step prints it.
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
+          $dest = Join-Path $env:RUNNER_TEMP 's1-harness'
+          Copy-Item -Recurse build/windows/x64/runner/Release $dest
+          "dir=$dest" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+
+      - name: flutter build windows --release
+        working-directory: desktop-native/app
+        run: |
+          flutter build windows --release --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
+          if ($LASTEXITCODE -ne 0) {
+            cmake --install build/windows/x64 --config Release 2>&1 | Select-Object -Last 40
+            exit 1
+          }
+          $bundle = 'build/windows/x64/runner/Release'
+          Get-ChildItem $bundle | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          if (-not (Test-Path "$bundle/MasterSAT.exe")) { Write-Error "MasterSAT.exe was not built"; exit 1 }
+          if (-not (Test-Path "$bundle/data/island")) { Write-Error "data/island is missing from the bundle"; exit 1 }
+          Get-ChildItem -Recurse "$bundle/data/island" -File | Select-Object -First 20 | ForEach-Object { $_.FullName }
+
+      # --- S0 diagnostics (never fails the job; it records)
+      - name: S0 diagnostics (resolution, WebView2, desktop, --s1-harness screenshot)
+        run: |
+          $harness = '${{ steps.harness.outputs.dir }}'
+          if (-not $harness) { $harness = 'desktop-native/app/build/windows/x64/runner/Release' }
+          $exe = Join-Path (Resolve-Path $harness) 'MasterSAT.exe'
+          $app = Join-Path (Resolve-Path 'desktop-native/app/build/windows/x64/runner/Release') 'MasterSAT.exe'
+          ./desktop-native/packaging/ci/s0-diagnostics.ps1 -Exe $exe -OutDir "$env:RUNNER_TEMP/s0" -Seconds 25 -AppExe $app
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: s0-diagnostics
+          path: ${{ runner.temp }}/s0
+          if-no-files-found: warn
+
+      # --- Velopack installer
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install vpk
+        run: |
+          dotnet tool install -g vpk
+          vpk --help | Select-Object -First 3
+      - name: vpk pack
+        run: |
+          ./desktop-native/packaging/pack.ps1 -Version $env:APP_VERSION -Channel stable -OutDir "$env:RUNNER_TEMP/velopack"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-Setup
+          path: ${{ runner.temp }}/velopack/*-Setup.exe
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-full-nupkg
+          path: |
+            ${{ runner.temp }}/velopack/*-full.nupkg
+            ${{ runner.temp }}/velopack/releases.*.json
+            ${{ runner.temp }}/velopack/assets.*.json
+          if-no-files-found: error

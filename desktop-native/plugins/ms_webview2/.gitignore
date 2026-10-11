@@ -1,0 +1,4 @@
+# A plugin package: the app's pubspec.lock pins the versions.
+pubspec.lock
+.flutter-plugins
+.flutter-plugins-dependencies

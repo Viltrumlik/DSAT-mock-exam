@@ -1,12 +1,25 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  macOS is the DEVELOPMENT runner only; it never ships (the app ships on Windows).
+  network.client: the local fixture server and the island's loopback page server.
+  network.server: the island's loopback page server (127.0.0.1, random port).
+  absolute-path.read-only "/": read the island build from the repository
+  (desktop-native/island/build/island) without leaving the sandbox for writes.
+-->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
 	<true/>
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
+	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
+	<array>
+		<string>/</string>
+	</array>
 </dict>
 </plist>
