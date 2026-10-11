@@ -136,10 +136,12 @@ jobs:
         if: env.HAS_NATIVE_CRATE == 'True'
         working-directory: desktop-native/native
         env:
-          # The production proof key (repo secret, key_id:hex). Without it the
-          # crate embeds its development key, which production rejects.
+          # The production proof key (repo secret, key_id:hex). Without it a
+          # release build embeds NO key: ms_prove answers MS_ERR_NO_KEY, so a
+          # mis-built installer fails loudly at the first midterm.
           DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
         run: |
+          if (-not $env:DESKTOP_PROOF_KEY) { Write-Host "::warning::DESKTOP_PROOF_KEY is not set: this DLL cannot sign lockdown proofs (midterms will refuse it)" }
           cargo build --release --locked -p mastersat-native --target x86_64-pc-windows-msvc
           Get-ChildItem target/x86_64-pc-windows-msvc/release/mastersat_native.*
           "MS_NATIVE_LIB_DIR=$PWD\target\x86_64-pc-windows-msvc\release" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
@@ -196,8 +198,9 @@ jobs:
             "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
             exit 0
           }
-          if (-not (Test-Path lib/island/s1_entry.dart)) { Write-Host "no harness entry point"; "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT; exit 0 }
-          flutter build windows --release -t lib/island/s1_entry.dart --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
+          if (-not (Test-Path lib/island/s1_harness.dart)) { Write-Host "no harness entry point"; "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT; exit 0 }
+          # lib/island/s1_harness.dart has its own main(): build it as the target.
+          flutter build windows --release -t lib/island/s1_harness.dart --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $dest = Join-Path $env:RUNNER_TEMP 's1-harness'
           Copy-Item -Recurse build/windows/x64/runner/Release $dest
