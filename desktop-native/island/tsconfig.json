@@ -1,0 +1,35 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": false,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "jsx": "react-jsx",
+    "types": ["node", "vite/client"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../frontend/src/*"],
+      "@website/*": ["../../frontend/src/*"],
+      "katex": ["./node_modules/katex"],
+      "dompurify": ["./node_modules/dompurify"],
+      "zod": ["./node_modules/zod"],
+      "react": ["./node_modules/@types/react"],
+      "react/*": ["./node_modules/@types/react/*"],
+      "react-dom": ["./node_modules/@types/react-dom"],
+      "react-dom/*": ["./node_modules/@types/react-dom/*"],
+      "lucide-react": ["./node_modules/lucide-react"],
+      "vitest": ["./node_modules/vitest"]
+    }
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "test/**/*.tsx", "visual/**/*.ts", "visual/**/*.tsx", "vite.config.ts", "vitest.config.ts", "vitest.visual.config.ts", "src/env.d.ts"]
+}
