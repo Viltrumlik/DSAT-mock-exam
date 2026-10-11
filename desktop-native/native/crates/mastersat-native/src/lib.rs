@@ -310,7 +310,11 @@ pub extern "C" fn ms_keep_awake(on: i32) -> i32 {
 // ── Updates ──────────────────────────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub unsafe extern "C" fn ms_update_check(feed_url: *const c_char, channel: *const c_char, out_json: *mut *mut c_char) -> i32 {
+pub unsafe extern "C" fn ms_update_check(
+    feed_url: *const c_char,
+    channel: *const c_char,
+    out_json: *mut *mut c_char,
+) -> i32 {
     clear_out_str(out_json);
     boundary("ms_update_check", || {
         require_out(out_json, "out_json")?;

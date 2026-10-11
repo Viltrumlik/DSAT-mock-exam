@@ -31,8 +31,7 @@ pub type DataKey = [u8; KEY_LEN];
 
 pub fn random_bytes<const N: usize>() -> MsResult<[u8; N]> {
     let mut buf = [0u8; N];
-    getrandom::getrandom(&mut buf)
-        .map_err(|e| MsError::os(format!("the OS random generator failed: {e}")))?;
+    getrandom::getrandom(&mut buf).map_err(|e| MsError::os(format!("the OS random generator failed: {e}")))?;
     Ok(buf)
 }
 
@@ -83,17 +82,13 @@ pub fn load_or_create(dir: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
 
 fn unwrap_key(blob: &[u8], wrap: &dyn KeyWrap) -> MsResult<DataKey> {
     let key = wrap.unwrap(blob)?;
-    key.as_slice().try_into().map_err(|_| {
-        MsError::crypto(format!(
-            "{KEY_FILE} holds a {}-byte key, expected {KEY_LEN}",
-            key.len()
-        ))
-    })
+    key.as_slice()
+        .try_into()
+        .map_err(|_| MsError::crypto(format!("{KEY_FILE} holds a {}-byte key, expected {KEY_LEN}", key.len())))
 }
 
 fn create_key(dir: &Path, path: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
-    fs::create_dir_all(dir)
-        .map_err(|e| MsError::os(format!("cannot create {}: {e}", dir.display())))?;
+    fs::create_dir_all(dir).map_err(|e| MsError::os(format!("cannot create {}: {e}", dir.display())))?;
     let key: DataKey = random_bytes()?;
     let blob = wrap.wrap(&key)?;
 
@@ -102,8 +97,7 @@ fn create_key(dir: &Path, path: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> 
     // overwritten, and a crash mid-write never leaves a truncated key.bin behind.
     let tmp = dir.join(format!("{KEY_FILE}.{}.tmp", std::process::id()));
     {
-        let mut f = fs::File::create(&tmp)
-            .map_err(|e| MsError::os(format!("cannot create {}: {e}", tmp.display())))?;
+        let mut f = fs::File::create(&tmp).map_err(|e| MsError::os(format!("cannot create {}: {e}", tmp.display())))?;
         restrict_permissions(&f);
         f.write_all(&blob)?;
         f.sync_all()?;

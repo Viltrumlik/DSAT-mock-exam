@@ -252,8 +252,8 @@ mod imp {
         WinHttpCloseHandle, WinHttpGetIEProxyConfigForCurrentUser, WinHttpGetProxyForUrl, WinHttpOpen,
         WinHttpSetTimeouts, WINHTTP_ACCESS_TYPE_NAMED_PROXY, WINHTTP_ACCESS_TYPE_NO_PROXY,
         WINHTTP_AUTOPROXY_AUTO_DETECT, WINHTTP_AUTOPROXY_CONFIG_URL, WINHTTP_AUTOPROXY_OPTIONS,
-        WINHTTP_AUTO_DETECT_TYPE_DHCP, WINHTTP_AUTO_DETECT_TYPE_DNS_A,
-        WINHTTP_CURRENT_USER_IE_PROXY_CONFIG, WINHTTP_PROXY_INFO,
+        WINHTTP_AUTO_DETECT_TYPE_DHCP, WINHTTP_AUTO_DETECT_TYPE_DNS_A, WINHTTP_CURRENT_USER_IE_PROXY_CONFIG,
+        WINHTTP_PROXY_INFO,
     };
 
     /// Take a WinHTTP-allocated string (GlobalAlloc'd) and free it.
@@ -397,9 +397,16 @@ mod tests {
     #[test]
     fn a_single_proxy_applies_to_every_scheme() {
         let target = t("https://mastersat.uz/");
-        assert_eq!(proxies_for_list("proxy.school.lan:3128", &target), vec!["proxy.school.lan:3128"]);
+        assert_eq!(
+            proxies_for_list("proxy.school.lan:3128", &target),
+            vec!["proxy.school.lan:3128"]
+        );
         assert_eq!(proxies_for_list("http://proxy:8080/", &target), vec!["proxy:8080"]);
-        assert_eq!(proxies_for_list("proxy", &target), vec!["proxy:80"], "WinHTTP's default port");
+        assert_eq!(
+            proxies_for_list("proxy", &target),
+            vec!["proxy:80"],
+            "WinHTTP's default port"
+        );
         assert_eq!(proxies_for_list("p1:80; p2:81 p1:80", &target), vec!["p1:80", "p2:81"]);
     }
 

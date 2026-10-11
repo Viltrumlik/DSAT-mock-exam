@@ -59,8 +59,8 @@ fn init_with_window() -> i32 {
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassExW, TranslateMessage,
-        HMENU, MSG, WINDOW_EX_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, RegisterClassExW, TranslateMessage, HMENU, MSG,
+        WINDOW_EX_STYLE, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
     };
     unsafe extern "system" fn proc_(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
         DefWindowProcW(h, m, w, l)
@@ -228,7 +228,11 @@ fn proof_vector_through_the_c_abi() {
     let j: serde_json::Value = serde_json::from_str(&proof).unwrap();
     assert_eq!(j["key_id"], "dev1", "debug builds embed the development key");
     assert_eq!(j["app_version"], APP_VERSION);
-    assert_eq!(j["precheck"], captured.as_str(), "signs and returns the captured pre-check");
+    assert_eq!(
+        j["precheck"],
+        captured.as_str(),
+        "signs and returns the captured pre-check"
+    );
     if captured == STUB_PRECHECK {
         assert_eq!(j["mac"], STUB_PRECHECK_MAC, "the server's proof.py vector");
     }
@@ -285,7 +289,9 @@ fn pkce_through_the_c_abi() {
     assert_eq!(unsafe { ms_pkce_new(&mut v, &mut c) }, 0);
     let (verifier, challenge) = (take(v), take(c));
     assert_eq!(verifier.len(), 43, "32 random bytes, base64url");
-    assert!(verifier.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
+    assert!(verifier
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'));
     // S256, computed independently.
     assert_eq!(challenge, URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes())));
     // And the library's S256 is RFC 7636's (appendix B vector).
@@ -309,7 +315,12 @@ fn pkce_through_the_c_abi() {
 #[test]
 fn seal_and_open_round_trip_through_the_c_abi() {
     init();
-    for plain in [&b""[..], b"x", "{\"answers\":{\"101\":\"B\"},\"name\":\"Maşa\"}".as_bytes(), &[7u8; 70_000][..]] {
+    for plain in [
+        &b""[..],
+        b"x",
+        "{\"answers\":{\"101\":\"B\"},\"name\":\"Maşa\"}".as_bytes(),
+        &[7u8; 70_000][..],
+    ] {
         let (code, sealed) = out_bytes(ms_seal, plain);
         assert_eq!(code, 0, "{:?}", last_error());
         let sealed = sealed.unwrap();
@@ -349,14 +360,23 @@ fn development_host_stubs_behave() {
     assert_eq!(out_bytes(ms_unprotect, b"blob"), (-7, None));
 
     // lockdown.rs's stubs, serialised.
-    assert_eq!(out_str(|o| unsafe { ms_precheck_json(o) }), (0, Some(STUB_PRECHECK.to_string())));
-    assert_eq!(out_str(|o| unsafe { ms_battery_json(o) }), (0, Some("null".to_string())));
+    assert_eq!(
+        out_str(|o| unsafe { ms_precheck_json(o) }),
+        (0, Some(STUB_PRECHECK.to_string()))
+    );
+    assert_eq!(
+        out_str(|o| unsafe { ms_battery_json(o) }),
+        (0, Some("null".to_string()))
+    );
     assert_eq!(ms_away_now(), 0);
     assert_eq!(ms_keep_awake(1), 0);
     assert_eq!(ms_keep_awake(0), 0);
 
     let url = CString::new("https://mastersat.uz/api/desktop/v1/home").unwrap();
-    assert_eq!(out_str(|o| unsafe { ms_proxy_for(url.as_ptr(), o) }), (0, Some("DIRECT".to_string())));
+    assert_eq!(
+        out_str(|o| unsafe { ms_proxy_for(url.as_ptr(), o) }),
+        (0, Some("DIRECT".to_string()))
+    );
     let bad = CString::new("not a url").unwrap();
     assert_eq!(out_str(|o| unsafe { ms_proxy_for(bad.as_ptr(), o) }), (-1, None));
 
@@ -386,7 +406,11 @@ fn updates_outside_an_installed_copy() {
     let feed = CString::new("http://127.0.0.1:9/downloads/desktop/").unwrap();
     let channel = CString::new("stable").unwrap();
     let (code, out) = out_str(|o| unsafe { ms_update_check(feed.as_ptr(), channel.as_ptr(), o) });
-    assert_eq!((code, out), (-7, None), "not a Velopack install (or no updater): unsupported");
+    assert_eq!(
+        (code, out),
+        (-7, None),
+        "not a Velopack install (or no updater): unsupported"
+    );
     let evil = CString::new("../x").unwrap();
     let (code, _) = out_str(|o| unsafe { ms_update_check(feed.as_ptr(), evil.as_ptr(), o) });
     assert_eq!(code, -1);
@@ -394,5 +418,8 @@ fn updates_outside_an_installed_copy() {
     assert!(code == -9 || code == -7, "nothing found to download: {code}");
     assert_eq!(ms_update_progress(), -1);
     let code = ms_update_apply_restart();
-    assert!(code == -9 || code == -7, "nothing to apply (and the test process lives on): {code}");
+    assert!(
+        code == -9 || code == -7,
+        "nothing to apply (and the test process lives on): {code}"
+    );
 }

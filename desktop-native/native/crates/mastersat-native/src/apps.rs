@@ -40,7 +40,11 @@ pub fn is_running(exe: &str) -> bool {
         let mut found = false;
         if Process32FirstW(snapshot, &mut entry).is_ok() {
             loop {
-                let end = entry.szExeFile.iter().position(|&c| c == 0).unwrap_or(entry.szExeFile.len());
+                let end = entry
+                    .szExeFile
+                    .iter()
+                    .position(|&c| c == 0)
+                    .unwrap_or(entry.szExeFile.len());
                 if String::from_utf16_lossy(&entry.szExeFile[..end]).to_ascii_lowercase() == target {
                     found = true;
                     break;

@@ -47,10 +47,7 @@ impl MsError {
         Self::new(MS_ERR_CRYPTO, message)
     }
     pub fn unsupported(what: &str) -> Self {
-        Self::new(
-            MS_ERR_UNSUPPORTED,
-            format!("{what} is only available on Windows"),
-        )
+        Self::new(MS_ERR_UNSUPPORTED, format!("{what} is only available on Windows"))
     }
 }
 
@@ -283,7 +280,10 @@ mod tests {
         unsafe {
             assert_eq!(arg_str(std::ptr::null(), "s").unwrap_err().code, MS_ERR_ARG);
             let bad = [0xffu8, 0xfe, 0];
-            assert_eq!(arg_str(bad.as_ptr() as *const c_char, "s").unwrap_err().code, MS_ERR_ARG);
+            assert_eq!(
+                arg_str(bad.as_ptr() as *const c_char, "s").unwrap_err().code,
+                MS_ERR_ARG
+            );
             assert_eq!(
                 write_str(std::ptr::null_mut(), "x".into(), "out").unwrap_err().code,
                 MS_ERR_ARG

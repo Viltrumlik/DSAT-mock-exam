@@ -31,23 +31,20 @@ mod imp {
 
     use windows::core::w;
     use windows::Win32::Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM};
-    use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST,
-    };
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MonitorFromWindow, MONITORINFO, MONITOR_DEFAULTTONEAREST};
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Power::{
         SetThreadExecutionState, ES_CONTINUOUS, ES_DISPLAY_REQUIRED, ES_SYSTEM_REQUIRED,
     };
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, GetWindowLongPtrW, GetWindowPlacement,
-        GetWindowThreadProcessId, IsIconic, IsWindow, IsZoomed, PostMessageW, RegisterClassExW,
-        SendMessageW, SetWindowLongPtrW, SetWindowPlacement, SetWindowPos, ShowWindow,
-        GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_MESSAGE, HWND_NOTOPMOST, HWND_TOPMOST,
-        SC_RESTORE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-        SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE, SW_SHOWMINIMIZED, SW_SHOWNORMAL, WINDOWPLACEMENT,
-        WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP, WM_SYSCOMMAND, WNDCLASSEXW, WS_CAPTION,
-        WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE, WS_EX_WINDOWEDGE, WS_THICKFRAME,
+        CreateWindowExW, DefWindowProcW, GetWindowLongPtrW, GetWindowPlacement, GetWindowThreadProcessId, IsIconic,
+        IsWindow, IsZoomed, PostMessageW, RegisterClassExW, SendMessageW, SetWindowLongPtrW, SetWindowPlacement,
+        SetWindowPos, ShowWindow, GWL_EXSTYLE, GWL_STYLE, HMENU, HWND_MESSAGE, HWND_NOTOPMOST, HWND_TOPMOST,
+        SC_RESTORE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_SHOWWINDOW,
+        SW_RESTORE, SW_SHOWMINIMIZED, SW_SHOWNORMAL, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP,
+        WM_SYSCOMMAND, WNDCLASSEXW, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE,
+        WS_EX_WINDOWEDGE, WS_THICKFRAME,
     };
 
     fn hwnd(raw: isize) -> HWND {
@@ -80,12 +77,7 @@ mod imp {
 
     static DISPATCHER: Mutex<Option<Dispatcher>> = Mutex::new(None);
 
-    unsafe extern "system" fn dispatch_proc(
-        h: HWND,
-        msg: u32,
-        wparam: WPARAM,
-        lparam: LPARAM,
-    ) -> LRESULT {
+    unsafe extern "system" fn dispatch_proc(h: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if msg == WM_MS_RUN && lparam.0 != 0 {
             let job: Box<Job> = Box::from_raw(lparam.0 as *mut Job);
             // A panic must not unwind through the window procedure (that aborts the process).
@@ -171,8 +163,7 @@ mod imp {
             let _ = tx.send(f());
         });
         let raw = Box::into_raw(Box::new(job));
-        let posted =
-            unsafe { PostMessageW(hwnd(d.hwnd), WM_MS_RUN, WPARAM(0), LPARAM(raw as isize)) };
+        let posted = unsafe { PostMessageW(hwnd(d.hwnd), WM_MS_RUN, WPARAM(0), LPARAM(raw as isize)) };
         if posted.is_err() {
             // The dispatcher is gone (window destroyed): run it here rather than drop it.
             let job = unsafe { Box::from_raw(raw) };

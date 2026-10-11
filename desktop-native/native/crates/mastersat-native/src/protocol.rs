@@ -324,10 +324,17 @@ mod tests {
         assert_eq!(picked.uninstaller, r"C:\Users\s\AppData\Local\MasterSAT\uninstall.exe");
         assert_eq!(picked.install_dir, r"C:\Users\s\AppData\Local\MasterSAT");
 
-        assert_eq!(pick_legacy(&[velopack, other], Some(current)), None, "Update.exe is never run");
+        assert_eq!(
+            pick_legacy(&[velopack, other], Some(current)),
+            None,
+            "Update.exe is never run"
+        );
 
         // An uninstall.exe in the running app's own folder (or above it) is never run either.
-        let ours = entry("MasterSAT", r#""C:\Users\s\AppData\Local\MasterSAT.Exam\uninstall.exe""#);
+        let ours = entry(
+            "MasterSAT",
+            r#""C:\Users\s\AppData\Local\MasterSAT.Exam\uninstall.exe""#,
+        );
         assert_eq!(pick_legacy(&[ours], Some(current)), None);
 
         // Display name match is exact (case-insensitive), not a prefix.
@@ -339,7 +346,9 @@ mod tests {
 
     #[test]
     fn the_legacy_uninstaller_would_kill_an_exe_of_the_same_name() {
-        assert!(legacy_uninstaller_would_kill(r"C:\Users\s\AppData\Local\MasterSAT.Exam\current\MasterSAT.exe"));
+        assert!(legacy_uninstaller_would_kill(
+            r"C:\Users\s\AppData\Local\MasterSAT.Exam\current\MasterSAT.exe"
+        ));
         assert!(legacy_uninstaller_would_kill(r"C:\x\mastersat.EXE"));
         assert!(!legacy_uninstaller_would_kill(r"C:\x\MasterSATExam.exe"));
         assert!(!legacy_uninstaller_would_kill(r"C:\MasterSAT.exe\other.exe"));
@@ -349,10 +358,7 @@ mod tests {
     fn the_quiet_string_is_a_fallback() {
         let mut e = entry("MasterSAT", "");
         e.quiet_uninstall_string = r#""C:\M\uninstall.exe" /S"#.into();
-        assert_eq!(
-            pick_legacy(&[e], None).unwrap().uninstaller,
-            r"C:\M\uninstall.exe"
-        );
+        assert_eq!(pick_legacy(&[e], None).unwrap().uninstaller, r"C:\M\uninstall.exe");
     }
 
     #[test]
@@ -376,7 +382,10 @@ mod tests {
     #[test]
     fn other_hosts_report_no_legacy_install_and_cannot_register() {
         assert_eq!(uninstall_legacy().unwrap(), LegacyOutcome::not_found());
-        assert_eq!(register("/x/MasterSAT").unwrap_err().code, crate::ffi::MS_ERR_UNSUPPORTED);
+        assert_eq!(
+            register("/x/MasterSAT").unwrap_err().code,
+            crate::ffi::MS_ERR_UNSUPPORTED
+        );
         assert_eq!(register("").unwrap_err().code, crate::ffi::MS_ERR_ARG);
     }
 }

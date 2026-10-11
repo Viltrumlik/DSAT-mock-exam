@@ -19,9 +19,7 @@ use mastersat_lockdown as lockdown;
 use mastersat_proof as proof;
 use serde::Serialize;
 
-use crate::ffi::{
-    MsError, MsResult, MS_ERR_NOT_INIT, MS_ERR_NOT_LOCKED, MS_ERR_NO_KEY, MS_ERR_PRECHECK,
-};
+use crate::ffi::{MsError, MsResult, MS_ERR_NOT_INIT, MS_ERR_NOT_LOCKED, MS_ERR_NO_KEY, MS_ERR_PRECHECK};
 use crate::key;
 use crate::window::{self, SavedWindow};
 
@@ -271,13 +269,11 @@ pub fn prove(attempt_id: i64, nonce: &str) -> MsResult<String> {
         }
         s.precheck_json.clone()
     };
-    let version = app_version()
-        .ok_or_else(|| MsError::new(MS_ERR_NOT_INIT, "ms_init has not run in this process"))?;
-    let (key_id, secret_hex) = key::embedded_key().ok_or_else(|| {
-        MsError::new(MS_ERR_NO_KEY, "this build has no DESKTOP_PROOF_KEY embedded")
-    })?;
-    let mac = proof::sign(&secret_hex, attempt_id, nonce, version, &precheck)
-        .map_err(|e| MsError::new(MS_ERR_NO_KEY, e))?;
+    let version = app_version().ok_or_else(|| MsError::new(MS_ERR_NOT_INIT, "ms_init has not run in this process"))?;
+    let (key_id, secret_hex) = key::embedded_key()
+        .ok_or_else(|| MsError::new(MS_ERR_NO_KEY, "this build has no DESKTOP_PROOF_KEY embedded"))?;
+    let mac =
+        proof::sign(&secret_hex, attempt_id, nonce, version, &precheck).map_err(|e| MsError::new(MS_ERR_NO_KEY, e))?;
     serde_json::to_string(&Proof {
         key_id,
         mac,
@@ -322,7 +318,10 @@ mod tests {
         let t0 = Instant::now();
         let mut s = locked_at(t0);
         assert!(watchdog_tick(&mut s, t0 + Duration::from_secs(5)).is_none());
-        assert!(watchdog_tick(&mut s, t0 + Duration::from_secs(10)).is_none(), "exactly 10 s is not yet stale");
+        assert!(
+            watchdog_tick(&mut s, t0 + Duration::from_secs(10)).is_none(),
+            "exactly 10 s is not yet stale"
+        );
         assert!(s.active);
 
         let r = watchdog_tick(&mut s, t0 + Duration::from_millis(10_001)).expect("released");

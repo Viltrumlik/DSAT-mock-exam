@@ -64,7 +64,9 @@ fn header_functions() -> BTreeMap<String, Signature> {
             continue;
         }
         let head = decl[..open].trim();
-        let name_start = head.rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).map_or(0, |i| i + 1);
+        let name_start = head
+            .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+            .map_or(0, |i| i + 1);
         let name = &head[name_start..];
         if !name.starts_with("ms_") {
             continue;
@@ -76,7 +78,10 @@ fn header_functions() -> BTreeMap<String, Signature> {
         } else {
             params_src.split(',').map(|p| c_type(p, true)).collect()
         };
-        assert!(out.insert(name.to_string(), (ret, params)).is_none(), "{name} declared twice");
+        assert!(
+            out.insert(name.to_string(), (ret, params)).is_none(),
+            "{name} declared twice"
+        );
     }
     out
 }
@@ -86,7 +91,11 @@ fn rust_to_c(t: &str) -> String {
     let t = t.trim();
     if let Some(rest) = t.strip_prefix("*const ") {
         let inner = rust_to_c(rest);
-        let inner = if inner.ends_with('*') { format!("{inner} const") } else { format!("const {inner}") };
+        let inner = if inner.ends_with('*') {
+            format!("{inner} const")
+        } else {
+            format!("const {inner}")
+        };
         return format!("{inner} *");
     }
     if let Some(rest) = t.strip_prefix("*mut ") {
@@ -129,7 +138,10 @@ fn rust_functions() -> BTreeMap<String, Signature> {
             .map(|p| rust_to_c(p.split_once(':').expect("name: type").1))
             .collect();
         if name.starts_with("ms_") {
-            assert!(out.insert(name.clone(), (ret, params)).is_none(), "{name} defined twice");
+            assert!(
+                out.insert(name.clone(), (ret, params)).is_none(),
+                "{name} defined twice"
+            );
         }
         rest = &after[close..];
     }
@@ -144,7 +156,10 @@ fn every_header_function_is_exported_with_the_same_c_signature() {
 
     let missing: Vec<_> = header.keys().filter(|k| !rust.contains_key(*k)).collect();
     let extra: Vec<_> = rust.keys().filter(|k| !header.contains_key(*k)).collect();
-    assert!(missing.is_empty(), "declared in the header but not exported: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "declared in the header but not exported: {missing:?}"
+    );
     assert!(extra.is_empty(), "exported but not in the header: {extra:?}");
 
     for (name, (h_ret, h_params)) in &header {

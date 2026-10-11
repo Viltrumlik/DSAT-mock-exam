@@ -46,14 +46,8 @@ mod tests {
 
     #[test]
     fn parses_the_secret_format() {
-        assert_eq!(
-            parse_key("k7:abcd"),
-            Some(("k7".to_string(), "abcd".to_string()))
-        );
-        assert_eq!(
-            parse_key(" abcd \n"),
-            Some(("dev1".to_string(), "abcd".to_string()))
-        );
+        assert_eq!(parse_key("k7:abcd"), Some(("k7".to_string(), "abcd".to_string())));
+        assert_eq!(parse_key(" abcd \n"), Some(("dev1".to_string(), "abcd".to_string())));
         assert_eq!(parse_key(""), None);
         assert_eq!(parse_key("k7:"), None);
         assert_eq!(parse_key(":abcd"), None);

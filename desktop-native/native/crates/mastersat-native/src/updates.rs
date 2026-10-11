@@ -53,7 +53,10 @@ struct DownloadGuard;
 impl DownloadGuard {
     fn acquire() -> MsResult<DownloadGuard> {
         if DOWNLOADING.swap(true, Ordering::SeqCst) {
-            return Err(MsError::new(crate::ffi::MS_ERR_BUSY, "an update download is already running"));
+            return Err(MsError::new(
+                crate::ffi::MS_ERR_BUSY,
+                "an update download is already running",
+            ));
         }
         PROGRESS.store(0, Ordering::SeqCst);
         Ok(DownloadGuard)
@@ -176,9 +179,9 @@ mod imp {
         let _guard = DownloadGuard::acquire()?;
         let (manager, info) = {
             let found = FOUND.lock().unwrap_or_else(|p| p.into_inner());
-            let f = found.as_ref().ok_or_else(|| {
-                MsError::new(crate::ffi::MS_ERR_NOT_FOUND, "ms_update_check has not found an update")
-            })?;
+            let f = found
+                .as_ref()
+                .ok_or_else(|| MsError::new(crate::ffi::MS_ERR_NOT_FOUND, "ms_update_check has not found an update"))?;
             (f.manager.clone(), f.info.clone())
         };
         let (tx, rx) = std::sync::mpsc::channel::<i16>();
@@ -349,7 +352,14 @@ mod tests {
         assert_eq!(progress(), 0);
         assert_eq!(download().unwrap_err().code, MS_ERR_BUSY);
         assert!(DOWNLOADING.load(Ordering::SeqCst));
-        assert_eq!(apply_restart().unwrap_err().code, if cfg!(feature = "updates") { MS_ERR_BUSY } else { MS_ERR_UNSUPPORTED });
+        assert_eq!(
+            apply_restart().unwrap_err().code,
+            if cfg!(feature = "updates") {
+                MS_ERR_BUSY
+            } else {
+                MS_ERR_UNSUPPORTED
+            }
+        );
         drop(guard);
         assert_eq!(progress(), IDLE);
 
