@@ -109,7 +109,9 @@ fn lock_or_skip() -> Option<String> {
     if code == -4 {
         let report: serde_json::Value = serde_json::from_str(captured.as_deref().unwrap()).unwrap();
         assert_eq!(report["ok"], false, "MS_ERR_PRECHECK carries the failing report");
-        assert!(cfg!(windows), "only a real machine can fail the pre-check");
+        if cfg!(not(windows)) {
+            panic!("only a real machine can fail the pre-check");
+        }
         eprintln!("this machine fails the pre-check ({report}); the locked path is not exercised here");
         return None;
     }
