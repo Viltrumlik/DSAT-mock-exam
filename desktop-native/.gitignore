@@ -1,0 +1,18 @@
+# desktop-native: never commit build outputs or secrets.
+**/build/
+**/.dart_tool/
+**/node_modules/
+**/dist/
+native/target/
+*.dll
+*.dylib
+*.so
+*.pdb
+*.lib
+*.exe
+*.nupkg
+.env
+.env.*
+*.pem
+*.pfx
+*.key
