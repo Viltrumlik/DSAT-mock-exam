@@ -13,7 +13,6 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/core/api/fixture_v1_api.dart';
-import 'package:mastersat_app/core/models/models.dart';
 import 'package:mastersat_app/exam/engine/exam_engine.dart';
 import 'package:mastersat_app/exam/engine/midterm_engine.dart';
 import 'package:mastersat_app/exam/engine/pastpaper_engine.dart';
