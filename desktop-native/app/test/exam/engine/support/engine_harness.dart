@@ -19,6 +19,33 @@ import 'package:mastersat_app/exam/engine/outbox.dart';
 import 'package:mastersat_app/exam/engine/pastpaper_engine.dart';
 import 'package:mastersat_app/exam/engine/power_events.dart';
 import 'package:mastersat_app/native/fake_native_bridge.dart';
+import 'package:mastersat_app/native/native_bridge.dart';
+
+/// The fake bridge, plus a script for `ms_away_now` (each call pops the next reading) and a
+/// count of how often it was read.
+class ScriptedNativeBridge extends FakeNativeBridge {
+  final List<bool> awayScript = [];
+  int awayReads = 0;
+
+  /// When set, `ms_lock_enter` fails (the re-lock after a watchdog release cannot happen).
+  bool failLockEnter = false;
+
+  @override
+  bool awayNow() {
+    awayReads++;
+    if (awayScript.isNotEmpty) return awayScript.removeAt(0);
+    return away;
+  }
+
+  @override
+  PrecheckReport lockEnter() {
+    if (failLockEnter) {
+      calls.add('lockEnter');
+      throw const NativeBridgeException(NativeStatus.errOs, 'ms_lock_enter', 'failed');
+    }
+    return super.lockEnter();
+  }
+}
 
 /// Monotonic = fake_async elapsed. The server's clock also counts [slept] (time the machine
 /// was asleep, which the monotonic clock may not see); the local wall clock adds [wallSkew]
@@ -46,7 +73,7 @@ class EngineHarness {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     clock = TestClock(async);
     api = FixtureV1Api(now: () => clock.serverNow);
-    native = FakeNativeBridge();
+    native = ScriptedNativeBridge();
     dir = Directory.systemTemp.createTempSync('exam-engine-test');
     power = PowerEvents.detached();
     _openStore();
@@ -57,7 +84,7 @@ class EngineHarness {
   final Random random;
   late final TestClock clock;
   late final FixtureV1Api api;
-  late final FakeNativeBridge native;
+  late final ScriptedNativeBridge native;
   late final Directory dir;
   late final PowerEvents power;
   late ExamStore store;
