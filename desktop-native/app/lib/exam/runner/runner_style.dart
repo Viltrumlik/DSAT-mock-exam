@@ -35,6 +35,25 @@ TextStyle chromeText(
       decorationColor: decorationColor,
     );
 
+/// The UI sans used by overlays the website portals outside the runner (Report dialog, toasts).
+TextStyle uiText(
+  double size, {
+  FontWeight weight = FontWeight.w400,
+  Color color = BluebookTokens.textPrimary,
+  double height = 1.5,
+  double trackingEm = 0,
+}) =>
+    TextStyle(
+      fontFamily: BluebookTokens.uiFont,
+      fontFamilyFallback: BluebookTokens.uiFontFallback,
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+      leadingDistribution: TextLeadingDistribution.even,
+      letterSpacing: trackingEm == 0 ? null : trackingEm * size,
+    );
+
 /// Georgia reading text (Directions, Reference formulas).
 TextStyle readingText(double size, {Color color = TwColors.slate900, double height = 1.5, FontWeight weight = FontWeight.w400}) =>
     TextStyle(

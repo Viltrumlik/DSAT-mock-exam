@@ -94,6 +94,13 @@ abstract final class BluebookTokens {
   /// DirectionsOverlay.tsx:30 / ReferenceSheet.tsx:23 `font-[Georgia]`.
   static const readingFont = 'Georgia';
 
+  /// Overlays portalled outside `.ts-runner` (the Report dialog, toasts) wear `ds-app`
+  /// (frontend/src/components/ui/OverlayFace.tsx:37, frontend/src/app/globals.css:875), the
+  /// website's Geist web font. Nothing is bundled here, so they use the system UI face the
+  /// rest of the native app uses (architecture §2.3 "Fonts").
+  static const uiFont = 'Segoe UI';
+  static const uiFontFallback = ['Helvetica Neue', 'Arial'];
+
   /// ScientificCalculator.tsx:42-43 `font-mono` = tailwindcss/theme.css:6-8
   /// (ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, …) — Consolas on Windows.
   static const monoFont = 'Consolas';

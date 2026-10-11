@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (cylinder); labels drawn natively -->
+  <ellipse cx="48" cy="24" rx="26" ry="8"/>
+  <path d="M22 24 L22 66"/>
+  <path d="M74 24 L74 66"/>
+  <path d="M22 66 A26 8 0 0 0 74 66"/>
+  <line x1="48" y1="24" x2="74" y2="24" stroke-dasharray="3 3"/>
+</svg>

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 90" fill="none" stroke="#0f172a" stroke-width="1.5">
+  <!-- frontend/src/features/testing-simulation/tools/ReferenceSheet.tsx (circle); labels drawn natively -->
+  <circle cx="48" cy="42" r="32"/>
+  <circle cx="48" cy="42" r="2" fill="#0f172a"/>
+  <line x1="48" y1="42" x2="80" y2="42"/>
+</svg>
