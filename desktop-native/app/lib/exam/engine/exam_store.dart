@@ -672,11 +672,12 @@ class ExamStore {
         return true;
       });
 
-  /// The next item to send on [lane]: off-screen events first, then oldest first.
+  /// The next item to send on [lane]: strictly first in, first out (a `start` must reach the
+  /// server before the module-1 `submit` queued after it), off-screen events first.
   Future<OutboxItem?> nextPending(int attemptId, OutboxLane lane) async {
     final rows = await _select(
       '''SELECT * FROM outbox WHERE attempt_id = ? AND lane = ? AND state = 'pending'
-         ORDER BY CASE kind WHEN 'offscreen' THEN 0 WHEN 'submit' THEN 1 ELSE 2 END, id LIMIT 1''',
+         ORDER BY CASE kind WHEN 'offscreen' THEN 0 ELSE 1 END, id LIMIT 1''',
       [attemptId, lane.name],
     );
     return rows.isEmpty ? null : _outboxFrom(rows.single);

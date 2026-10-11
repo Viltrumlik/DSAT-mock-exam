@@ -53,6 +53,7 @@ class PastpaperEngine extends ExamEngine {
   int _pauseSerial = 0;
   bool _resumeOwed = false;
   bool _opened = false;
+  bool _toldSavedOffline = false;
 
   final ValueNotifier<PastpaperResult?> _result = ValueNotifier(null);
   final ValueNotifier<MediaProgress?> _mediaProgress = ValueNotifier(null);
@@ -543,7 +544,10 @@ class PastpaperEngine extends ExamEngine {
     if (next == null) {
       stopClockLoop();
       phaseValue = ExamPhase.submitting;
-      if (!online) emit(ExamNotice.savedOffline);
+      if (!online) {
+        _toldSavedOffline = true;
+        emit(ExamNotice.savedOffline);
+      }
     } else if (nextReady) {
       // Module 2 from the cache, now. Its clock is local until the server's reply about it
       // arrives, which then re-anchors it in both directions.
@@ -601,6 +605,20 @@ class PastpaperEngine extends ExamEngine {
       case final SubmitOutcome s:
         final next = s.nextModule;
         if (next != null) _receiveModule(next, s.media);
+        final handedIn = item.coversModule;
+        final serverModule = s.attempt.module?.id;
+        if (!s.applied &&
+            s.reason == 'module_not_active' &&
+            !s.attempt.state.isFinished &&
+            handedIn != null &&
+            serverModule != null &&
+            _orderOf(serverModule) <= _orderOf(handedIn)) {
+          // The server is BEHIND this hand-in (it never saw the module start). Nothing can be
+          // re-sent under the same key, so say so plainly; the answers stay on this computer.
+          setProblem(EngineProblem(EngineProblemKind.sendRefused,
+              "MasterSAT couldn't hand in this module on the server. Your answers are saved on this computer.",
+              detail: 'submit ${item.idemKey} ignored: server on module $serverModule (${s.attempt.state.wire})'));
+        }
         _adoptServer(s.attempt, sent, received);
       default:
         break;
@@ -695,6 +713,10 @@ class PastpaperEngine extends ExamEngine {
         if (phaseValue == ExamPhase.transition) {
           phaseValue = ExamPhase.offlineWaiting;
           changed();
+        }
+        if (phaseValue == ExamPhase.submitting && !_toldSavedOffline) {
+          _toldSavedOffline = true;
+          emit(ExamNotice.savedOffline);
         }
       case OutboxFailure.retrying:
       case OutboxFailure.notExpired:
