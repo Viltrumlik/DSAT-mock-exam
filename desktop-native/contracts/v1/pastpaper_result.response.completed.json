@@ -1,0 +1,382 @@
+{
+  "schema": 1,
+  "attempt_id": 9123,
+  "practice_test_id": 52,
+  "state": "COMPLETED",
+  "poll_after_ms": null,
+  "score": 690,
+  "previous_score": null,
+  "score_delta": null,
+  "completed_at": "2026-10-11T09:58:04.000Z",
+  "totals": {
+    "questions": 10,
+    "answered": 8,
+    "correct": 7,
+    "incorrect": 1,
+    "skipped": 2
+  },
+  "modules": [
+    {
+      "order": 1,
+      "module_id": 301,
+      "correct": 4,
+      "total": 6
+    },
+    {
+      "order": 2,
+      "module_id": 302,
+      "correct": 3,
+      "total": 4
+    }
+  ],
+  "questions": [
+    {
+      "id": 1001,
+      "module_id": 301,
+      "order": 1,
+      "student_answer": "B",
+      "correct_answers": "B",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1002,
+      "module_id": 301,
+      "order": 2,
+      "student_answer": "2",
+      "correct_answers": "2",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1003,
+      "module_id": 301,
+      "order": 3,
+      "student_answer": "B",
+      "correct_answers": "B",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1004,
+      "module_id": 301,
+      "order": 4,
+      "student_answer": "C",
+      "correct_answers": "C",
+      "is_correct": true,
+      "was_flagged": true
+    },
+    {
+      "id": 1005,
+      "module_id": 301,
+      "order": 5,
+      "student_answer": "A",
+      "correct_answers": "B",
+      "is_correct": false,
+      "was_flagged": false
+    },
+    {
+      "id": 1006,
+      "module_id": 301,
+      "order": 6,
+      "student_answer": null,
+      "correct_answers": "A",
+      "is_correct": false,
+      "was_flagged": false
+    },
+    {
+      "id": 1011,
+      "module_id": 302,
+      "order": 1,
+      "student_answer": "7/2",
+      "correct_answers": "7/2, 3.5",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1012,
+      "module_id": 302,
+      "order": 2,
+      "student_answer": "A",
+      "correct_answers": "A",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1013,
+      "module_id": 302,
+      "order": 3,
+      "student_answer": "A",
+      "correct_answers": "A",
+      "is_correct": true,
+      "was_flagged": false
+    },
+    {
+      "id": 1014,
+      "module_id": 302,
+      "order": 4,
+      "student_answer": null,
+      "correct_answers": "-3",
+      "is_correct": false,
+      "was_flagged": false
+    }
+  ],
+  "content": {
+    "301": {
+      "content_hash": "sha256:8e2a8ac8ea5256a929199944825f1918f299be568430c43d3fd92668dc500464",
+      "questions": [
+        {
+          "id": 1001,
+          "order": 1,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>If $3x + 5 = 20$, what is the value of $x$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$3$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$5$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$\\frac{25}{3}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$15$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1002,
+          "order": 2,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>The function $f$ is defined by $f(x) = x^2 - 6x + 11$. What is the minimum value of $f(x)$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        },
+        {
+          "id": 1003,
+          "order": 3,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>The table shows four pairs of values for a linear relationship between $x$ and $y$.</p><table><thead><tr><th>$x$</th><th>$y$</th></tr></thead><tbody><tr><td>$-1$</td><td>$-1$</td></tr><tr><td>$0$</td><td>$2$</td></tr><tr><td>$1$</td><td>$5$</td></tr><tr><td>$2$</td><td>$8$</td></tr></tbody></table>",
+          "question_prompt": "Which equation represents this relationship?",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$y = 2x + 3$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$y = 3x + 2$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$y = 3x - 1$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$y = x + 2$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1004,
+          "order": 4,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>The graph of $y = g(x)$ is shown.</p>",
+          "question_prompt": "For what value of $x$ does $g(x)$ reach its maximum?",
+          "question_image_key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+          "options": {
+            "A": {
+              "text": "$-2$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$0$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$1$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$3$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1005,
+          "order": 5,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>A colony of bacteria has 3&nbsp;&times;&nbsp;10<sup>5</sup> cells and doubles every 4 hours. Which expression gives the number of cells after $t$ hours?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$300{,}000(2)^{4t}$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$300{,}000(2)^{t/4}$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$300{,}000(4)^{t/2}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$300{,}000 + 2^{t/4}$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1006,
+          "order": 6,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>Which of the following could be the graph of $y = -(x - 1)^2 + 4$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-a.png"
+            },
+            "B": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-b.png"
+            },
+            "C": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-c.png"
+            },
+            "D": {
+              "text": "",
+              "image_key": "question_images/math/2025-10-us-a/m1-q6-d.png"
+            }
+          }
+        }
+      ]
+    },
+    "302": {
+      "content_hash": "sha256:de99dec61a1feb2b996ea08164d0c25fb0ea0860521e43f9324ac320f4669f13",
+      "questions": [
+        {
+          "id": 1011,
+          "order": 1,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>If $\\frac{2}{7}k = 1$, what is the value of $k$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        },
+        {
+          "id": 1012,
+          "order": 2,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>In the $xy$-plane, line $\\ell$ passes through the points $(0, 4)$ and $(2, 0)$. What is the slope of line $\\ell$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$-2$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$-\\frac{1}{2}$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$\\frac{1}{2}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$2$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1013,
+          "order": 3,
+          "question_type": "MATH",
+          "is_math_input": false,
+          "question_text": "<p>Which expression is equivalent to $\\sqrt{50x^2}$ for $x > 0$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": {
+            "A": {
+              "text": "$5x\\sqrt{2}$",
+              "image_key": null
+            },
+            "B": {
+              "text": "$25x$",
+              "image_key": null
+            },
+            "C": {
+              "text": "$2x\\sqrt{5}$",
+              "image_key": null
+            },
+            "D": {
+              "text": "$10x$",
+              "image_key": null
+            }
+          }
+        },
+        {
+          "id": 1014,
+          "order": 4,
+          "question_type": "MATH",
+          "is_math_input": true,
+          "question_text": "<p>What is the solution to the equation $4(y + 3) = 2y + 6$?</p>",
+          "question_prompt": "",
+          "question_image_key": null,
+          "options": null
+        }
+      ]
+    }
+  },
+  "media": [
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q4-graph.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T095900Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=5194a621b2cdf3316caa11778658997b01c08d3b4dd1133ae960892ef779a818",
+      "expires_at": "2026-10-11T15:59:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-a.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-a.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T095900Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=98f809fc85592c54dc5486b0574ed79f84bb7291491006cae5690affbf578e0b",
+      "expires_at": "2026-10-11T15:59:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-b.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-b.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T095900Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=9a9b808b50ce7568843d85102acf8aa8f73ab59c7e9dafef6c60378797b12e56",
+      "expires_at": "2026-10-11T15:59:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-c.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-c.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T095900Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=825efc178204bcbd56b8eb3ca5c35de02450c0f40a4d483a0c88a5f6d8c88706",
+      "expires_at": "2026-10-11T15:59:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-d.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-d.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T095900Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=3ae40fc1be5cb8ae3400e9492db16b149f08d7ed476a6fd3d25bf8b199d32ab9",
+      "expires_at": "2026-10-11T15:59:00.000Z"
+    }
+  ]
+}

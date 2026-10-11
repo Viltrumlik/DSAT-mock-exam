@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "attempt_id": 4410,
+  "state": "COMPLETED",
+  "poll_after_ms": null,
+  "score_only": true,
+  "released": true,
+  "mock_kind": "MIDTERM",
+  "subject": "MATH",
+  "scoring_scale": "SCALE_800",
+  "total_score": 680,
+  "score_ceiling": 800,
+  "certificate": {
+    "available": true,
+    "code": "MT-9-77-4F2K",
+    "download_url": "/classes/certificates/midterm/MT-9-77-4F2K/download/",
+    "rank": 4,
+    "cohort_size": 23
+  }
+}

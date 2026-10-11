@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "violations": 3,
+  "limit": 3,
+  "grace_seconds": 0,
+  "terminated": true,
+  "attempt": {
+    "id": 5521,
+    "kind": "midterm",
+    "ref_id": 14,
+    "state": "SCORING",
+    "version": 9,
+    "module": null,
+    "module_ids": [
+      401,
+      402
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:20:00.000Z",
+      "deadline_at": null,
+      "remaining_ms": null,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": {
+      "offscreen_violations": 3,
+      "offscreen_limit": 3,
+      "offscreen_grace_seconds": 3,
+      "terminated_reason": "OFFSCREEN",
+      "desktop_required": true,
+      "late_grace_seconds": 300
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "applied": true,
+  "reason": null,
+  "transitioned_to": "SCORING",
+  "attempt": {
+    "id": 9123,
+    "kind": "pastpaper",
+    "ref_id": 52,
+    "state": "SCORING",
+    "version": 9,
+    "module": null,
+    "module_ids": [
+      301,
+      302
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:58:00.000Z",
+      "deadline_at": null,
+      "remaining_ms": null,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": null
+  },
+  "next_module": null,
+  "media": [],
+  "result": {
+    "poll_after_ms": 2000
+  }
+}

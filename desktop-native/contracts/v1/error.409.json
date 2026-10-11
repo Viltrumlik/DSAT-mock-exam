@@ -1,0 +1,25 @@
+{
+  "code": "state_conflict",
+  "detail": "The attempt is no longer in that state.",
+  "attempt": {
+    "id": 9123,
+    "kind": "pastpaper",
+    "ref_id": 52,
+    "state": "SCORING",
+    "version": 9,
+    "module": null,
+    "module_ids": [
+      301,
+      302
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:59:00.000Z",
+      "deadline_at": null,
+      "remaining_ms": null,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": null
+  }
+}

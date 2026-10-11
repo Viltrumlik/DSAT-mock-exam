@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "attempt": {
+    "id": 9123,
+    "kind": "pastpaper",
+    "ref_id": 52,
+    "state": "MODULE_1_ACTIVE",
+    "version": 2,
+    "module": {
+      "id": 301,
+      "order": 1,
+      "duration_ms": 2100000
+    },
+    "module_ids": [
+      301,
+      302
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:00:05.000Z",
+      "deadline_at": "2026-10-11T09:35:05.000Z",
+      "remaining_ms": 2100000,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": null
+  }
+}

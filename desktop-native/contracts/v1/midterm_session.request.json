@@ -1,0 +1,7 @@
+{
+  "nonce": "n0nce-7f3c2a9e41b84d6c9a5e0b1d2c3f4a5b",
+  "key_id": "k2026a",
+  "mac": "3f1d0b6e9c2a4e8f7d5b1a0c9e8d7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e",
+  "app_version": "0.2.0",
+  "precheck": "{\"ok\":true,\"displays\":1,\"remote\":false,\"vm\":false,\"apps\":[]}"
+}

@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "applied": true,
+  "reason": null,
+  "transitioned_to": "MODULE_2_ACTIVE",
+  "attempt": {
+    "id": 5521,
+    "kind": "midterm",
+    "ref_id": 14,
+    "state": "MODULE_2_ACTIVE",
+    "version": 6,
+    "module": {
+      "id": 402,
+      "order": 2,
+      "duration_ms": 2100000
+    },
+    "module_ids": [
+      401,
+      402
+    ],
+    "timing": {
+      "server_now": "2026-10-11T09:35:00.750Z",
+      "deadline_at": "2026-10-11T10:10:00.750Z",
+      "remaining_ms": 2100000,
+      "paused": false
+    },
+    "results_ready": false,
+    "score": null,
+    "midterm": {
+      "offscreen_violations": 0,
+      "offscreen_limit": 3,
+      "offscreen_grace_seconds": 3,
+      "terminated_reason": null,
+      "desktop_required": true,
+      "late_grace_seconds": 300
+    }
+  },
+  "next_module": {
+    "id": 402,
+    "order": 2,
+    "time_limit_minutes": 35,
+    "question_count": 3,
+    "content_hash": "sha256:6b408496b022c299990a4bfa4aba7f1643e45adde4efda916a4b43fcd9b8020e",
+    "unchanged": false,
+    "deferred": false,
+    "questions": [
+      {
+        "id": 3011,
+        "order": 1,
+        "question_type": "MATH",
+        "is_math_input": false,
+        "question_text": "<p>What is $15\\%$ of $80$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": {
+          "A": {
+            "text": "$8$",
+            "image_key": null
+          },
+          "B": {
+            "text": "$12$",
+            "image_key": null
+          },
+          "C": {
+            "text": "$15$",
+            "image_key": null
+          },
+          "D": {
+            "text": "$20$",
+            "image_key": null
+          }
+        }
+      },
+      {
+        "id": 3012,
+        "order": 2,
+        "question_type": "MATH",
+        "is_math_input": true,
+        "question_text": "<p>If $\\frac{x}{4} + \\frac{x}{6} = 5$, what is the value of $x$?</p>",
+        "question_prompt": "",
+        "question_image_key": null,
+        "options": null
+      },
+      {
+        "id": 3013,
+        "order": 3,
+        "question_type": "MATH",
+        "is_math_input": false,
+        "question_text": "<p>The scatterplot shows the relationship between hours studied and test score.</p>",
+        "question_prompt": "Which statement is best supported by the scatterplot?",
+        "question_image_key": "question_images/midterm/2026-10/m2-q3-scatter.png",
+        "options": {
+          "A": {
+            "text": "More hours studied is associated with higher scores.",
+            "image_key": null
+          },
+          "B": {
+            "text": "More hours studied is associated with lower scores.",
+            "image_key": null
+          },
+          "C": {
+            "text": "There is no association between hours studied and score.",
+            "image_key": null
+          },
+          "D": {
+            "text": "Every student who studied more than 5 hours scored 800.",
+            "image_key": null
+          }
+        }
+      }
+    ]
+  },
+  "media": [
+    {
+      "key": "question_images/midterm/2026-10/m2-q3-scatter.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/midterm/2026-10/m2-q3-scatter.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T093500Z&X-Amz-Expires=900&X-Amz-SignedHeaders=host&X-Amz-Signature=ba580425edac0d2ef5c84a361fd094634565ddadd0216f6094b3dc2ff69e1543",
+      "expires_at": "2026-10-11T09:50:00.750Z"
+    }
+  ],
+  "result": null
+}

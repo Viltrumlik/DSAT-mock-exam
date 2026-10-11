@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "attempt_id": 9123,
+  "kind": "pastpaper",
+  "media": [
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q4-graph.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q4-graph.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T103000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=70bbd8f8ff85f7b6b39870c25e92acefe751cdbc28baa03343394451e939d1e2",
+      "expires_at": "2026-10-11T16:30:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-a.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-a.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T103000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=2ece6b4dfb01e09988416b90d85e4c9368a555d37d9248c81cd3724f725ba6b8",
+      "expires_at": "2026-10-11T16:30:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-b.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-b.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T103000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=7b187d1a4724fd9bb772442b8e4e5b6272e7b685d33918c89944012dde59d38a",
+      "expires_at": "2026-10-11T16:30:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-c.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-c.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T103000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=50c6841a8a09f80a3d6324c9be4dd5b294aa61e9df96f175ef3462c11f01ebba",
+      "expires_at": "2026-10-11T16:30:00.000Z"
+    },
+    {
+      "key": "question_images/math/2025-10-us-a/m1-q6-d.png",
+      "url": "https://r2.fixtures.invalid/mastersat-media/question_images/math/2025-10-us-a/m1-q6-d.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=FIXTURE%2F20261011%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261011T103000Z&X-Amz-Expires=21600&X-Amz-SignedHeaders=host&X-Amz-Signature=8724ae3643e51e18fd908ad87b3409697189ad3884a595af886f9af507bc25de",
+      "expires_at": "2026-10-11T16:30:00.000Z"
+    }
+  ]
+}
