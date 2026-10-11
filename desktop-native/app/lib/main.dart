@@ -10,8 +10,12 @@
 // database and read the cached Home → runApp (the first frame already shows Home) → one
 // conditional `GET home`. The Windows runner shows the window only after that first frame.
 //
-// The integrator wires the real native library and the exam runner through [runMasterSat]:
-//   runMasterSat(native: FfiNativeBridge.open(), examLauncher: openRunner)
+// main(args) routes the launch first: `--s1-harness` (windows-host's S1 diagnostics screen)
+// runs the harness and nothing else; otherwise the app runs on the native library
+// (core/startup/native_loader.dart: the DLL the runner loaded; development hosts fall back to
+// the fake bridge; a release build without it shows "MasterSAT needs to be installed again")
+// with the real exam launcher (exam/launch/exam_launcher.dart) and one ExamRuntime per
+// signed-in student.
 import 'dart:async';
 import 'dart:io';
 
@@ -31,41 +35,100 @@ import 'core/clock/clock.dart';
 import 'core/diagnostics/diagnostics.dart';
 import 'core/http/api_config.dart';
 import 'core/http/http_transport.dart';
+import 'core/http/native_proxy_lookup.dart';
 import 'core/http/proxy.dart';
+import 'core/startup/native_loader.dart';
 import 'core/store/app_paths.dart';
 import 'core/store/settings_store.dart';
 import 'core/store/unsent_work.dart';
 import 'core/store/user_store.dart';
 import 'core/store/window_placement_sync.dart';
 import 'core/theme/toast.dart';
+import 'exam/engine/exam_runtime.dart';
+import 'exam/engine/power_events.dart';
+import 'exam/launch/exam_launcher.dart';
+import 'exam/launch/exam_runtime_host.dart';
+import 'exam/launch/island_guard.dart';
+import 'exam/launch/media_fetch.dart';
 import 'features/home/home_controller.dart';
 import 'features/home/update_controller.dart';
 import 'features/library/library_controller.dart';
 import 'features/results/results_controller.dart';
-import 'native/fake_native_bridge.dart';
+import 'island/island_host_factory.dart';
+import 'island/s1_harness.dart';
 import 'native/native_bridge.dart';
 
 /// `--dart-define=MASTERSAT_API_BASE=…` (see [ApiConfig.fromDefine]).
 const String apiBaseDefine = String.fromEnvironment('MASTERSAT_API_BASE');
 
-Future<void> main() => runMasterSat();
+Future<void> main(List<String> args) => launchApp(args);
+
+/// The S1 harness entry (island/s1_harness.dart), injectable for tests.
+typedef S1HarnessRunner = Future<void> Function(List<String> args, {S1Lockdown? lockdown});
+
+/// The app entry ([runMasterSat]), injectable for tests.
+typedef AppRunner = Future<void> Function({NativeBridge? native, ExamLauncher? examLauncher});
+
+/// Routes one launch. `--s1-harness` runs windows-host's S1 harness before anything else,
+/// with lockdown through the real native library when it loaded; any other launch runs the
+/// app. A release build whose native library is missing shows [MissingPartApp] instead.
+Future<void> launchApp(
+  List<String> args, {
+  NativeLoad Function()? loadNative,
+  S1HarnessRunner? runHarness,
+  AppRunner? runAppMain,
+  void Function(Widget app)? showMissingPart,
+}) async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final load = (loadNative ?? () => loadNativeBridge(appVersion: appVersion))();
+  if (isS1HarnessLaunch(args)) {
+    final bridge = load.bridge;
+    final lockdown = bridge == null || load.isFake ? null : S1Lockdown.fromBridge(bridge);
+    await (runHarness ?? _runHarness)(args, lockdown: lockdown);
+    return;
+  }
+  final bridge = load.bridge;
+  if (bridge == null) {
+    (showMissingPart ?? runApp)(MissingPartApp(detail: load.problem));
+    return;
+  }
+  if (load.problem != null) debugPrint('MasterSAT (development): ${load.problem} — using the fake native bridge.');
+  await (runAppMain ?? runMasterSat)(native: bridge);
+}
+
+Future<void> _runHarness(List<String> args, {S1Lockdown? lockdown}) => runS1Harness(args, lockdown: lockdown);
 
 /// Builds every service, draws Home from the cache, and runs the app.
 ///
-/// [native] is the `mastersat_native.dll` binding (rust: FfiNativeBridge). Without one a
-/// debug/profile build uses [FakeNativeBridge] (base64 instead of DPAPI, no lockdown) — a
-/// release build refuses to start, so a shipped app can never store tokens unprotected.
+/// [native] is the `mastersat_native.dll` binding. Without one it is loaded here
+/// ([loadNativeBridge]: development hosts fall back to the fake bridge; a release build shows
+/// [MissingPartApp] and stops, so a shipped app never stores tokens unprotected).
+/// [examLauncher] defaults to the real runner ([ExamLauncherWiring]).
 Future<void> runMasterSat({NativeBridge? native, ExamLauncher? examLauncher}) async {
   WidgetsFlutterBinding.ensureInitialized();
+  var bridge = native;
+  if (bridge == null) {
+    final load = loadNativeBridge(appVersion: appVersion);
+    if (load.bridge == null) {
+      runApp(MissingPartApp(detail: load.problem));
+      return;
+    }
+    bridge = load.bridge!;
+  }
   final config = ApiConfig.fromDefine(apiBaseDefine, appVersion: appVersion);
   final paths = await AppPaths.resolve();
+  // ONE PowerEvents for the process (the runner's mastersat/power channel has one handler).
+  final power = PowerEvents();
   final services = await buildAppServices(
     config: config,
     paths: paths,
-    native: native ?? _devNativeBridge(),
-    examLauncher: examLauncher,
+    native: bridge,
+    examLauncher: examLauncher ?? ExamLauncherWiring(islandFactory: islandHostFactory()).call,
     links: LaunchLinks(),
-    windowPlacement: WindowPlacementSync(),
+    // Window placement: the Windows runner restores it before the first frame and saves it
+    // natively (HKCU); the Dart WindowPlacementSync is not used (one implementation).
+    examRuntimes: productionExamRuntimes(paths, power),
+    islandDiagnostics: IslandDiagnostics(),
   );
   _captureErrors(services.log);
   await services.auth.restore();
@@ -76,12 +139,17 @@ Future<void> runMasterSat({NativeBridge? native, ExamLauncher? examLauncher}) as
   unawaited(_windowsHousekeeping(services));
 }
 
-NativeBridge _devNativeBridge() {
-  if (kReleaseMode) {
-    throw StateError('Release builds need the mastersat_native.dll binding: runMasterSat(native: …).');
-  }
-  return FakeNativeBridge(appVersion: appVersion);
-}
+/// The real runtimes: `exam-<user>.db` beside the app's other data (%LOCALAPPDATA%\MasterSAT),
+/// SQLite on drift's background isolate, the process's one [PowerEvents].
+ExamRuntimeFactory productionExamRuntimes(AppPaths paths, PowerEvents power) =>
+    (userId, {required api, required native, required fetchMedia}) => ExamRuntime.open(
+          dataDir: Directory(paths.root),
+          userId: userId,
+          api: api,
+          native: native,
+          fetchMedia: fetchMedia,
+          power: power,
+        );
 
 /// Every long-lived object, wired together (tests build theirs with fakes the same way).
 Future<AppServices> buildAppServices({
@@ -99,6 +167,8 @@ Future<AppServices> buildAppServices({
   DocumentSaver? documents,
   UrlOpener? openUrl,
   Future<void> Function(String text)? copyToClipboard,
+  ExamRuntimeFactory? examRuntimes,
+  IslandDiagnostics? islandDiagnostics,
 }) async {
   final log = EventLog(clock: clock);
   final unsent = UnsentWork();
@@ -113,9 +183,14 @@ Future<AppServices> buildAppServices({
     v1 = FixtureV1Api(latency: const Duration(milliseconds: 120));
     http = null;
   } else {
-    http = transport ?? HttpTransport(config: config, proxy: ProxyResolver(native.proxyFor, clock: clock));
+    // The first WinHTTP lookup per host runs off the UI isolate (rust's request); the API
+    // origin's is warmed right away.
+    final proxy = ProxyResolver(native.proxyFor, clock: clock, backgroundLookup: backgroundProxyLookupFor(native));
+    unawaited(proxy.prepare(config.origin));
+    http = transport ?? HttpTransport(config: config, proxy: proxy);
     v1 = HttpV1Api(transport: http, config: config);
   }
+  final fetchMedia = mediaFetcherFor(config: config, transport: http);
 
   final auth = AuthController(
     api: v1,
@@ -169,6 +244,15 @@ Future<AppServices> buildAppServices({
     examLauncher: examLauncher,
     copyToClipboard: copyToClipboard,
     openExternal: openUrl ?? (url) => launchUrl(url, mode: LaunchMode.externalApplication),
+    exams: examRuntimes == null
+        ? null
+        : ExamRuntimeHost(
+            opener: (userId) => examRuntimes(userId, api: v1, native: native, fetchMedia: fetchMedia),
+            unsentWork: unsent,
+            log: log,
+          ),
+    fetchMedia: fetchMedia,
+    islandDiagnostics: islandDiagnostics,
   );
 }
 

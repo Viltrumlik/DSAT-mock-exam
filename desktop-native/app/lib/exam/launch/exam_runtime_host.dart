@@ -17,15 +17,27 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
 
+import '../../core/api/v1_api.dart';
 import '../../core/diagnostics/diagnostics.dart';
 import '../../core/models/models.dart';
 import '../../core/store/unsent_work.dart';
+import '../../native/native_bridge.dart';
 import '../engine/exam_engine.dart';
 import '../engine/exam_runtime.dart';
 import '../engine/exam_store.dart';
+import '../engine/media_cache.dart';
 
 /// Opens one student's runtime (main.dart: the real database under the app's data folder).
 typedef ExamRuntimeOpener = ExamRuntime Function(int userId);
+
+/// What buildAppServices needs to open runtimes: the API, the bridge and the image fetcher are
+/// the app's own (one HTTP client); the rest (data folder, PowerEvents, clock) is the caller's.
+typedef ExamRuntimeFactory = ExamRuntime Function(
+  int userId, {
+  required V1Api api,
+  required NativeBridge native,
+  required MediaFetcher fetchMedia,
+});
 
 /// The UnsentWork source name (shown in the "unsent" diagnostics).
 const String examOutboxSource = 'exam outbox';
