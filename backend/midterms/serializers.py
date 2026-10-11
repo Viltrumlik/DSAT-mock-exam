@@ -95,8 +95,9 @@ class MidtermAttemptSerializer(serializers.Serializer):
                 "mock_exam_id": None,
                 "mock_kind": "MIDTERM",
                 # Authoritative tool gate: Math midterms offer Desmos — the full calculator at
-                # middle/senior, the Scientific one alone at junior/foundation. Computed
-                # server-side so the runner never re-derives the rule (subject casing differs).
+                # middle/senior, the Scientific one alone at junior, none at foundation (worked
+                # by hand since 2026-10-11, the school's request). Computed server-side so the
+                # runner never re-derives the rule (subject casing differs).
                 "calculator_enabled": bool(midterm.calculator_enabled),
                 "calculator_mode": midterm.calculator_mode,
                 # Whole-paper size (both modules, version-aware). ONLY the pre-exam rules

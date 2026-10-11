@@ -127,11 +127,15 @@ class Midterm(TwoModuleQuestionSource, TimestampedModel):
         READING_WRITING: (LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
         MATH: (LEVEL_FOUNDATION, LEVEL_JUNIOR, LEVEL_MIDDLE, LEVEL_SENIOR),
     }
-    # Levels that unlock the Desmos calculator (Math only) — mirrors the assessment rule
+    # Levels that unlock the full Desmos calculator (Math only) — mirrors the assessment rule
     # (StudentAttemptRunnerContainer: math + middle/senior). See `calculator_mode`.
     CALCULATOR_LEVELS = (LEVEL_MIDDLE, LEVEL_SENIOR)
     # Math levels that get Desmos's Scientific calculator ONLY — no Graphing tab.
-    SCIENTIFIC_CALCULATOR_LEVELS = (LEVEL_FOUNDATION, LEVEL_JUNIOR)
+    # Foundation is deliberately NOT here (2026-10-11, the school's request): a Foundation
+    # Math midterm tests the arithmetic itself, so it is worked by hand with no calculator
+    # at all — it falls through to `None` in `calculator_mode`, exactly like an untagged
+    # paper. classes.mail_midterm reads these tuples too, so the email cannot drift.
+    SCIENTIFIC_CALCULATOR_LEVELS = (LEVEL_JUNIOR,)
     CALCULATOR_FULL = "full"
     CALCULATOR_SCIENTIFIC = "scientific"
 
@@ -283,10 +287,13 @@ class Midterm(TwoModuleQuestionSource, TimestampedModel):
         """Which Desmos the runner offers — the single source of truth.
 
         Math only: middle/senior get the full calculator (Graphing + Scientific tabs),
-        junior/foundation get the Scientific calculator alone, and R&W or an untagged Math
-        midterm get none (``None``). Computed here — not re-derived client-side — because
-        `subject` is UPPERCASE here while the assessment rule compares lowercase, and one
-        authority avoids the two drifting.
+        junior gets the Scientific calculator alone, and foundation, R&W or an untagged Math
+        midterm get none (``None``). Foundation used to share junior's Scientific calculator;
+        since 2026-10-11 (the school's request) Foundation students work the paper by hand,
+        so the web runner, the Windows app and the scheduling email all stop offering one —
+        they read this property (or its tuples), never a copy of the rule. Computed here —
+        not re-derived client-side — because `subject` is UPPERCASE here while the
+        assessment rule compares lowercase, and one authority avoids the two drifting.
         """
         if self.subject != self.MATH:
             return None
