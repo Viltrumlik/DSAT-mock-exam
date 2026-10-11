@@ -54,6 +54,17 @@ There is **no cross-compile**: a Tauri Windows installer is built on Windows. CI
 and publish it to the release's `downloads/desktop/MasterSAT-Setup.exe`, which is where
 `routes.ts` (`DESKTOP_DOWNLOAD_URL`) points.
 
+**Every installer students must take gets a new version.** The number the server gates on is
+`src-tauri/Cargo.toml`'s (the app reports `CARGO_PKG_VERSION`, and it is signed into the lockdown
+proof); `src-tauri/tauri.conf.json`, `app/package.json` and `package.json` (plus their lockfiles)
+move in step with it, so a rebuilt installer never carries the released one's number. Then, in this
+order: publish the installer, and only after it is live raise the Windows `minimum_version`
+(Django admin → App release policies, platform Windows; raise `latest_version` with it, since the
+model refuses a minimum above the latest). A build below the minimum is refused at the start of a locked
+midterm (426, `desktop_update_required`); raising it before the file is live sends every student to
+update to the old build. `desktop-v0.1.0` was the first release; 0.1.1 (2026-10-11) brings the
+Foundation Math "worked by hand" midterm and the screen wake lock before the paper.
+
 To build locally on a Windows machine:
 
 ```powershell

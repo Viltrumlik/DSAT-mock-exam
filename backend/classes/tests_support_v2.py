@@ -338,7 +338,10 @@ class TeacherNoteTests(SupportV2Fixture):
         support_service.settle(
             booking, SupportBooking.STATUS_HELD, actor=self.support, teacher_note="Inference",
         )
-        support_service.settle(booking, SupportBooking.STATUS_NO_SHOW, actor=self.support)
+        support_service.settle(
+            booking, SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=booking.availability.ends_at,  # not attended can only be recorded once it has begun
+        )
         booking.refresh_from_db()
         self.assertEqual(booking.teacher_note, "Inference")
         self.assertEqual(booking.status, SupportBooking.STATUS_NO_SHOW)

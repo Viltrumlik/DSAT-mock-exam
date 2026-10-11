@@ -81,6 +81,7 @@ from .attempt_timing import get_active_module_timing
 from .engine_integrity import autoheal_attempt_for_runtime
 from config.error_reporting import report_error
 from config.reliability import conflict_response
+from users.auth_cookies import is_native_client
 
 from exams.engine_db_guard import TransitionConflict
 
@@ -889,8 +890,16 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         # For non-mock practice tests: if the existing active attempt is on MODULE_2 but
         # the student navigated away (stale attempt), abandon it so they can start fresh.
         # Mock exams always resume (timed continuous flow).
+        #
+        # The Windows app is the exception to the stale-Module-2 rule. It calls create every
+        # time a paper is opened (it has no separate resume step), so for it an open Module 2
+        # is the student's work in progress, never a stale tab: abandoning it here restarted
+        # the paper from Module 1 on every reopen. A native client (X-MasterSAT-Client and NO
+        # auth cookie — see users.auth_cookies.is_native_client) therefore skips the
+        # abandonment and the get-or-create below resumes the open attempt, answers and all.
+        # A browser request always carries the auth cookies, so the website is unaffected.
         is_mock = bool(getattr(test, "mock_exam_id", None))
-        if not is_mock:
+        if not is_mock and not is_native_client(request):
             with transaction.atomic():
                 stale = (
                     TestAttempt.objects.select_for_update()

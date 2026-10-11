@@ -271,9 +271,11 @@ SUPPORT_GROUP_MAX = 3
 def support_session_points(base: int, attendees: int) -> int:
     """What ONE student earns from a support hour that ``attendees`` students turned up to.
 
-    ``attendees`` counts the bookings settled HELD in that slot, so a booked-and-missed
-    classmate does not pay their group a bonus. Zero attendees earns nothing — nobody was
-    helped — and the caller revokes rather than awarding it.
+    ``attendees`` counts the bookings settled as attended in that slot — HELD or LATE — so
+    a booked-and-missed classmate does not pay their group a bonus, while a late one still
+    counts as present (they earn nothing themselves; the caller revokes their row). Zero
+    attendees earns nothing — nobody was helped — and the caller revokes rather than
+    awarding it.
     """
     if attendees <= 0:
         return 0

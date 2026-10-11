@@ -9,7 +9,7 @@ import { Plus, Search, RefreshCw, Trash2, ChevronRight, BookOpen, Sigma, Upload,
 import { cn } from "@/lib/cn";
 import { StateTag, SetLineage } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
-import { levelLabel, levelsForSubject, type LevelKey } from "@/lib/levels";
+import { levelLabel, levelsForSubject, setHasLevel, setLevelsLabel, type LevelKey } from "@/lib/levels";
 import { REVIEW_STATUS_LABELS, type ReviewStatus } from "@/features/assessments/types";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
@@ -155,14 +155,18 @@ export default function BuilderSetsPage() {
     () => (selectedSubject ? sets.filter((s) => s.subject === selectedSubject) : []),
     [sets, selectedSubject],
   );
+  // A set with an optional second level (2026-10-11, the school's request) sits in BOTH
+  // level buckets — the same "either level" rule the server applies to classrooms and
+  // journals — so a Junior+Middle set is counted, and listed, under Junior and Middle.
+  // "Unassigned" stays primary-only: a set with no primary has no second level either.
   const countForLevel = (lv: string) =>
-    subjectSets.filter((s) => (lv === UNASSIGNED_LEVEL ? !s.level : s.level === lv)).length;
+    subjectSets.filter((s) => (lv === UNASSIGNED_LEVEL ? !s.level : setHasLevel(s, lv))).length;
   const hasUnassigned = subjectSets.some((s) => !s.level);
 
   const filtered = useMemo(() => {
     let result = subjectSets;
     if (selectedLevel === UNASSIGNED_LEVEL) result = result.filter((s) => !s.level);
-    else if (selectedLevel) result = result.filter((s) => s.level === selectedLevel);
+    else if (selectedLevel) result = result.filter((s) => setHasLevel(s, selectedLevel));
     const term = search.trim().toLowerCase();
     if (term.length >= 1) {
       result = result.filter(
@@ -464,7 +468,7 @@ export default function BuilderSetsPage() {
                       <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
                       {s.level && (
                         <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
-                          {levelLabel(s.level)}
+                          {setLevelsLabel(s.level, s.secondary_level)}
                         </span>
                       )}
                     </div>

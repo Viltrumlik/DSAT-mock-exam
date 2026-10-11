@@ -63,6 +63,11 @@ EVENT_COMMENT_REPLY = "COMMENT_REPLY"
 EVENT_SUPPORT_BOOKED = "SUPPORT_BOOKED"
 EVENT_SUPPORT_CANCELLED = "SUPPORT_CANCELLED"
 EVENT_SUPPORT_REMINDER = "SUPPORT_REMINDER"
+#: How a booked support hour was recorded, when it costs the student something: attended
+#: late (no XP, and why), a first no-show (the warning), a second (booking paused, until
+#: when, and what it cancelled), and a correction that lifts the pause. One event for the
+#: four because they are one conversation — the school's attendance rule (2026-10-11).
+EVENT_SUPPORT_ATTENDANCE = "SUPPORT_ATTENDANCE"
 EVENT_REWARD_EARNED = "REWARD_EARNED"
 EVENT_SHOP_ORDER_READY = "SHOP_ORDER_READY"
 EVENT_STRIKE_LOST = "STRIKE_LOST"
@@ -92,6 +97,7 @@ EVENT_CATEGORY = {
     EVENT_SUPPORT_BOOKED: CATEGORY_SUPPORT,
     EVENT_SUPPORT_CANCELLED: CATEGORY_SUPPORT,
     EVENT_SUPPORT_REMINDER: CATEGORY_SUPPORT,
+    EVENT_SUPPORT_ATTENDANCE: CATEGORY_SUPPORT,
     EVENT_EVENT_PUBLISHED: CATEGORY_EVENTS,
     EVENT_EVENT_REMINDER: CATEGORY_EVENTS,
     EVENT_EVENT_CHANGED: CATEGORY_EVENTS,
@@ -124,6 +130,9 @@ PUSH_EVENTS = frozenset({
     EVENT_SUPPORT_BOOKED,
     EVENT_SUPPORT_CANCELLED,
     EVENT_SUPPORT_REMINDER,
+    # A pause on support booking, or a warning that one is a session away, is exactly the
+    # kind of news that must not wait for the student to open the site.
+    EVENT_SUPPORT_ATTENDANCE,
     EVENT_SHOP_ORDER_READY,
     EVENT_EVENT_PUBLISHED,
     EVENT_EVENT_REMINDER,

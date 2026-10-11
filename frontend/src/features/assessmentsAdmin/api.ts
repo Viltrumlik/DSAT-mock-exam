@@ -54,6 +54,8 @@ export const assessmentsAdminApi = {
     subject: Subject;
     source?: string;
     level?: string;
+    /** Optional second level ("" = none); the server rejects it without a primary. */
+    secondary_level?: string;
     category?: string;
     title: string;
     description?: string;
@@ -130,13 +132,23 @@ export const assessmentsAdminApi = {
   // ── CSV import ─────────────────────────────────────────────────────────────
   /** Create a NEW set from a CSV of questions. Set-level fields ride alongside the file. */
   importSetCsv: async (
-    fields: { subject: Subject; source: string; level?: string; category?: string; title: string; description?: string },
+    fields: {
+      subject: Subject;
+      source: string;
+      level?: string;
+      /** Optional second level; the same validator as createSet checks it server-side. */
+      secondary_level?: string;
+      category?: string;
+      title: string;
+      description?: string;
+    },
     file: File,
   ): Promise<AssessmentSet & { created_count: number }> => {
     const fd = new FormData();
     fd.append("subject", fields.subject);
     fd.append("source", fields.source);
     if (fields.level) fd.append("level", fields.level);
+    if (fields.secondary_level) fd.append("secondary_level", fields.secondary_level);
     if (fields.category) fd.append("category", fields.category);
     fd.append("title", fields.title);
     if (fields.description) fd.append("description", fields.description);

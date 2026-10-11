@@ -339,6 +339,7 @@ def _empty_counts() -> dict:
         "slots_published": 0,
         "bookings": 0,
         "held": 0,
+        "late": 0,
         "no_show": 0,
         "cancelled": 0,
         "upcoming": 0,
@@ -364,8 +365,12 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
     filtered page whose banner still showed the school's backlog would read as that one
     teacher's, which is exactly the misattribution this report exists to avoid.
 
-    The five outcome counts (``held``, ``no_show``, ``cancelled``, ``upcoming``,
+    The six outcome counts (``held``, ``late``, ``no_show``, ``cancelled``, ``upcoming``,
     ``unsettled``) partition ``bookings`` exactly, so a reader can check the row adds up.
+
+    ``late`` (attended late, 2026-10-11) counts as ATTENDED wherever attendance is measured —
+    the rate and "students helped" — because the student was in the room; it is its own
+    column only so a teacher can see how often their hour starts without the student.
 
     ``unsettled`` here is the month's share of the backlog. ``backlog`` at the top level, and
     ``backlog_unsettled`` / ``backlog_oldest`` on each row, are **all time** and do not move
@@ -411,6 +416,7 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
     for row in bookings.values("availability__support_teacher_id").annotate(
         total=Count("id"),
         held=Count("id", filter=Q(status=SupportBooking.STATUS_HELD)),
+        late=Count("id", filter=Q(status=SupportBooking.STATUS_LATE)),
         no_show=Count("id", filter=Q(status=SupportBooking.STATUS_NO_SHOW)),
         cancelled=Count("id", filter=Q(status=SupportBooking.STATUS_CANCELLED)),
         unsettled=Count("id", filter=settled_late),
@@ -421,13 +427,15 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
         oldest_unsettled=Min("availability__starts_at", filter=settled_late),
         students_booked=Count("student_id", distinct=True),
         students_helped=Count(
-            "student_id", distinct=True, filter=Q(status=SupportBooking.STATUS_HELD)
+            "student_id", distinct=True,
+            filter=Q(status__in=SupportBooking.ATTENDED_STATUSES),
         ),
     ):
         entry = bucket(row["availability__support_teacher_id"])
         entry.update(
             bookings=row["total"],
             held=row["held"],
+            late=row["late"],
             no_show=row["no_show"],
             cancelled=row["cancelled"],
             unsettled=row["unsettled"],
@@ -457,7 +465,9 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
             "support_teacher_id": tid,
             "support_teacher": names.get(tid, "Support teacher"),
             **counts,
-            "attendance_rate": attendance_rate(counts["held"], counts["no_show"]),
+            "attendance_rate": attendance_rate(
+                counts["held"] + counts["late"], counts["no_show"]
+            ),
             "backlog_unsettled": back["unsettled"],
             "backlog_oldest": back["oldest"],
         })
@@ -465,7 +475,7 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
     total = _empty_counts()
     for row in rows:
         for field in (
-            "slots_published", "bookings", "held", "no_show",
+            "slots_published", "bookings", "held", "late", "no_show",
             "cancelled", "upcoming", "unsettled",
         ):
             total[field] += row[field]
@@ -475,12 +485,14 @@ def monthly_summary(*, month: str | None = None, teacher_id=None, now=None) -> d
     # per-teacher figures is the mean-of-means mistake one column over.
     total["students_booked"] = bookings.values("student_id").distinct().count()
     total["students_helped"] = (
-        bookings.filter(status=SupportBooking.STATUS_HELD)
+        bookings.filter(status__in=SupportBooking.ATTENDED_STATUSES)
         .values("student_id")
         .distinct()
         .count()
     )
-    total["attendance_rate"] = attendance_rate(total["held"], total["no_show"])
+    total["attendance_rate"] = attendance_rate(
+        total["held"] + total["late"], total["no_show"]
+    )
 
     backlog_total = sum(b["unsettled"] for b in backlog_by_teacher.values())
     backlog_oldest = None

@@ -118,3 +118,56 @@ class AssignmentOptionsLevelFilterTests(TestCase):
         for a in data["assessment_sets"]:
             self.assertIn("level", a)
             self.assertEqual(a["level"], "junior")
+
+
+class AssignmentOptionsSecondLevelTests(AssignmentOptionsLevelFilterTests):
+    """A set with an optional second level (2026-10-11, the school's request) is offered
+    to BOTH cohorts' classrooms, and to no third one.
+
+    Subclasses the single-level fixtures (so the rules above are re-checked with a
+    two-level set in the table) but overrides the tests whose exact title sets or
+    every-row-is-junior assertion the extra set legitimately changes.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.dual_set = AssessmentSet.objects.create(
+            subject="english", category="Boundaries", title="Junior+Middle Eng",
+            source=AssessmentSet.SOURCE_SATOPLAM, level="junior", secondary_level="middle",
+            created_by=self.admin,
+        )
+
+    def test_middle_class_sees_only_middle_sets(self):
+        # Overrides the parent: the two-level set now also belongs to Middle.
+        data = self._options(self._mk_class("middle"))
+        titles = {a["title"] for a in data["assessment_sets"]}
+        self.assertEqual(titles, {"Middle Eng", "Junior+Middle Eng"})
+
+    def test_untagged_class_sees_all_levels(self):
+        data = self._options(self._mk_class(""))
+        titles = {a["title"] for a in data["assessment_sets"]}
+        self.assertEqual(
+            titles, {"Middle Eng", "Junior Eng", "Untagged Eng", "Junior+Middle Eng"}
+        )
+
+    def test_level_present_on_each_set(self):
+        # Overrides the parent: every row in a Junior class is FOR junior, via either level.
+        data = self._options(self._mk_class("junior"))
+        for a in data["assessment_sets"]:
+            self.assertIn("secondary_level", a)
+            self.assertIn("junior", (a["level"], a["secondary_level"]))
+
+    def test_two_level_set_offered_to_both_cohorts(self):
+        junior = {a["title"] for a in self._options(self._mk_class("junior"))["assessment_sets"]}
+        middle = {a["title"] for a in self._options(self._mk_class("middle"))["assessment_sets"]}
+        self.assertIn("Junior+Middle Eng", junior)
+        self.assertIn("Junior+Middle Eng", middle)
+
+    def test_two_level_set_not_offered_to_a_third_cohort(self):
+        senior = {a["title"] for a in self._options(self._mk_class("senior"))["assessment_sets"]}
+        self.assertNotIn("Junior+Middle Eng", senior)
+
+    def test_row_carries_both_levels(self):
+        rows = self._options(self._mk_class("middle"))["assessment_sets"]
+        row = next(a for a in rows if a["id"] == self.dual_set.id)
+        self.assertEqual((row["level"], row["secondary_level"]), ("junior", "middle"))

@@ -36,7 +36,7 @@ from assessments.models import (
     HomeworkAssignment,
 )
 from classes.models import Assignment, Classroom, ClassroomMembership
-from classes.views_lessons import MAX_CLASSWORK_POINTS
+from classes.views_lessons import MAX_CLASSWORK_POINTS, MIN_CLASSWORK_POINTS
 from journals import delivery, services
 from journals.models import Journal
 from rewards.constants import EVENT_CLASSWORK_MANUAL, EVENT_HOMEWORK, classwork_key
@@ -421,17 +421,17 @@ class AwardClassworkEndpointTests(ClassworkFixture):
         )
 
     def test_a_teacher_awards_and_the_ledger_shows_it(self):
-        resp = self._award(self.teacher, 7, note="led the group")
+        resp = self._award(self.teacher, 4, note="led the group")
         self.assertEqual(resp.status_code, 200, resp.content)
 
         award = self.classwork_awards().get()
         self.assertEqual(award.student_id, self.student.id)
-        self.assertEqual(award.points, 7)
+        self.assertEqual(award.points, 4)
         # XP follows points everywhere now (§8) — XP_EXCLUDED_EVENTS is empty.
-        self.assertEqual(award.xp, 7)
+        self.assertEqual(award.xp, 4)
         self.assertEqual(award.classroom_id, self.classroom.id)
         self.assertEqual(award.note, "led the group")
-        self.assertEqual(resp.json()["points"], 7)
+        self.assertEqual(resp.json()["points"], 4)
 
     def test_awarding_hands_the_classwork_out_on_the_way_through(self):
         """A teacher mid-lesson must not have to press two buttons in the right order."""
@@ -448,7 +448,7 @@ class AwardClassworkEndpointTests(ClassworkFixture):
     def test_a_ta_cannot_mint_classwork_points(self):
         """The critical one. ``can_grade``/``can_manage_assignments`` include TAs, and these
         points are created out of nothing rather than derived from a student's work."""
-        resp = self._award(self.ta, 50)
+        resp = self._award(self.ta, 5)
         self.assertEqual(resp.status_code, 403, resp.content)
         self.assertEqual(PointAward.objects.count(), 0)
         self.assertEqual(self.carriers().count(), 0)
@@ -456,16 +456,16 @@ class AwardClassworkEndpointTests(ClassworkFixture):
     def test_a_student_cannot_award_themselves(self):
         resp = self.as_(self.student).post(
             self.award_url,
-            {"student_id": self.student.id, "points": 50},
+            {"student_id": self.student.id, "points": 5},
             format="json",
         )
         self.assertEqual(resp.status_code, 403, resp.content)
         self.assertEqual(PointAward.objects.count(), 0)
 
     def test_a_global_admin_may_award(self):
-        resp = self._award(self.admin, 6)
+        resp = self._award(self.admin, 4)
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual(self.classwork_awards().get().points, 6)
+        self.assertEqual(self.classwork_awards().get().points, 4)
 
     def test_re_awarding_corrects_the_amount_instead_of_stacking_a_row(self):
         self.assertEqual(self._award(self.teacher, 3).status_code, 200)
@@ -491,17 +491,28 @@ class AwardClassworkEndpointTests(ClassworkFixture):
 
     def test_a_correction_downwards_moves_points_and_leaves_xp_standing(self):
         """§6: XP is never taken away for doing WORSE. Only a withdrawn fact clears it."""
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 5)
         self._award(self.teacher, 2)
 
         award = self.classwork_awards().get()
         self.assertEqual(award.points, 2)
-        self.assertEqual(award.xp, 9)
+        self.assertEqual(award.xp, 5)
 
-    def test_zero_is_recorded_rather_than_refused(self):
+    def test_zero_is_refused_because_the_scale_starts_at_one(self):
+        """The school's scale is 1–5 (2026-10-11). A zero used to be recorded as "looked,
+        earned nothing"; it is refused now, and refused BEFORE the classwork is handed out,
+        so a refused amount leaves no carrier behind."""
         resp = self._award(self.teacher, 0)
-        self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual(self.classwork_awards().get().points, 0)
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["code"], "bad_points")
+        self.assertEqual(PointAward.objects.count(), 0)
+        self.assertEqual(self.carriers().count(), 0)
+
+    def test_every_step_of_the_scale_is_accepted(self):
+        for points in (1, 2, 3, 4, 5):
+            resp = self._award(self.teacher, points)
+            self.assertEqual(resp.status_code, 200, (points, resp.content))
+            self.assertEqual(self.classwork_awards().get().points, points)
 
     def test_negative_points_are_refused(self):
         resp = self._award(self.teacher, -5)
@@ -550,25 +561,25 @@ class AwardClassworkEndpointTests(ClassworkFixture):
         self.assertEqual(PointAward.objects.count(), 0)
 
     def test_the_panel_reads_back_what_was_awarded(self):
-        self._award(self.teacher, 8, note="explained it to the class")
+        self._award(self.teacher, 4, note="explained it to the class")
         resp = self.as_(self.teacher).get(self.classwork_url)
         self.assertEqual(resp.status_code, 200, resp.content)
         rows = resp.json()["awards"]
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["student_id"], self.student.id)
-        self.assertEqual(rows[0]["points"], 8)
+        self.assertEqual(rows[0]["points"], 4)
         self.assertEqual(rows[0]["note"], "explained it to the class")
 
     def test_the_student_sees_their_own_classwork_award(self):
         """Classwork has no percentage and no attempt behind it, so the award IS the whole
         of the student's outcome for the lesson."""
-        self._award(self.teacher, 8)
+        self._award(self.teacher, 4)
         carrier = self.carriers().get()
         resp = self.as_(self.student).get(
             f"/api/classes/{self.classroom.id}/assignments/{carrier.id}/"
         )
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual(resp.json()["classwork_award"]["points"], 8)
+        self.assertEqual(resp.json()["classwork_award"]["points"], 4)
 
     def test_a_students_classwork_award_is_their_own(self):
         """The award is keyed on (carrier, student); a classmate's payment must not show up
@@ -577,7 +588,7 @@ class AwardClassworkEndpointTests(ClassworkFixture):
             "cw_classmate@t.com", "secret123", role=acc_const.ROLE_STUDENT
         )
         M.objects.create(classroom=self.classroom, user=classmate, role=M.ROLE_STUDENT)
-        self._award(self.teacher, 8)
+        self._award(self.teacher, 4)
         carrier = self.carriers().get()
 
         resp = self.as_(classmate).get(
@@ -592,7 +603,7 @@ class AwardClassworkEndpointTests(ClassworkFixture):
 
         It reaches them through the Classwork tab's own request, ``?category=CLASSWORK`` —
         and NOT through the plain list, which is homework (tests_classwork_separation)."""
-        self._award(self.teacher, 8)
+        self._award(self.teacher, 4)
         carrier = self.carriers().get()
 
         url = f"/api/classes/{self.classroom.id}/assignments/"
@@ -609,7 +620,8 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
 
     Separate from the POST because the two corrections are different facts with different XP
     consequences (OVERHAUL §6), and the whole reason this endpoint exists is that the POST
-    cannot express the second one: ``points=0`` is a smaller fact and banks its XP forever.
+    cannot express the second one: a smaller number is a smaller fact and banks its XP
+    forever (and since 2026-10-11 the POST cannot record 0 at all — the scale is 1–5).
     """
 
     def _award(self, who, points, **extra):
@@ -628,25 +640,28 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
         return PointAward.objects.get(event=EVENT_CLASSWORK_MANUAL, student=self.student)
 
     def test_the_typed_amount_can_actually_be_taken_back(self):
-        """The defect in one test: the ceiling typed for 5, corrected the only way the POST
-        allows, then withdrawn. The middle assertion is what makes the last one necessary.
+        """The defect in one test: the ceiling given for the floor, corrected the only way
+        the POST allows, then withdrawn. The middle assertion is what makes the last one
+        necessary.
 
-        Written against ``MAX_CLASSWORK_POINTS`` rather than a literal: the school moved the
-        ceiling from 50 to 20, and a hard-coded 50 here would stop testing the fat-finger it
-        was written for and start testing the validator instead.
+        Written against the constants rather than literals: the school has moved the
+        ceiling from 50 to 20 to 5, and a hard-coded number here would stop testing the
+        fat-finger it was written for and start testing the validator instead.
         """
         self._award(self.teacher, MAX_CLASSWORK_POINTS)
-        self._award(self.teacher, 0)
-        self.assertEqual((self._row().points, self._row().xp), (0, MAX_CLASSWORK_POINTS))
+        self._award(self.teacher, MIN_CLASSWORK_POINTS)
+        self.assertEqual(
+            (self._row().points, self._row().xp), (MIN_CLASSWORK_POINTS, MAX_CLASSWORK_POINTS)
+        )
 
-        resp = self._withdraw(self.teacher, reason="typed 50 for 5")
+        resp = self._withdraw(self.teacher, reason="gave 5 for 1")
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual((self._row().points, self._row().xp), (0, 0))
 
     def test_a_withdrawal_keeps_the_row_rather_than_deleting_it(self):
         """Zeroed, not removed. A deleted row would make the student's history disagree with
         their balance, and the panel would read it as "never marked"."""
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         self._withdraw(self.teacher)
 
         self.assertEqual(self.classwork_awards().count(), 1)
@@ -655,35 +670,35 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
         ))
 
     def test_the_withdrawal_is_audited_with_the_teacher_who_pressed_it(self):
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         self._withdraw(self.admin, reason="wrong student")
 
         events = list(PointAwardAudit.objects.filter(award=self._row()).order_by("id"))
         self.assertEqual(len(events), 2)
-        self.assertEqual((events[1].previous_points, events[1].new_points), (9, 0))
-        self.assertEqual((events[1].previous_xp, events[1].new_xp), (9, 0))
+        self.assertEqual((events[1].previous_points, events[1].new_points), (4, 0))
+        self.assertEqual((events[1].previous_xp, events[1].new_xp), (4, 0))
         self.assertEqual(events[1].actor_id, self.admin.id)
 
     def test_a_ta_cannot_withdraw_points_either(self):
         """Taking points off is as much a ledger write as putting them on, so it carries the
         same Owner+Teacher gate — ``can_manage_assignments``/``can_grade`` include TAs."""
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         resp = self._withdraw(self.ta)
         self.assertEqual(resp.status_code, 403, resp.content)
-        self.assertEqual((self._row().points, self._row().xp), (9, 9))
+        self.assertEqual((self._row().points, self._row().xp), (4, 4))
 
     def test_a_student_cannot_withdraw_a_classmates_award(self):
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         resp = self.as_(self.student).delete(
             self.award_url, {"student_id": self.student.id}, format="json"
         )
         self.assertEqual(resp.status_code, 403, resp.content)
-        self.assertEqual(self._row().points, 9)
+        self.assertEqual(self._row().points, 4)
 
     def test_the_student_id_may_come_from_the_query_string(self):
         """A DELETE body is legal but not universally sent; a client that drops it must still
         be able to name the student."""
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         resp = self.as_(self.teacher).delete(
             f"{self.award_url}?student_id={self.student.id}"
         )
@@ -707,7 +722,7 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
         self.assertEqual(PointAward.objects.count(), 0)
 
     def test_withdrawing_twice_is_still_a_success(self):
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         self.assertEqual(self._withdraw(self.teacher).status_code, 200)
         resp = self._withdraw(self.teacher)
         self.assertEqual(resp.status_code, 200, resp.content)
@@ -718,11 +733,11 @@ class WithdrawClassworkEndpointTests(ClassworkFixture):
         The XP has to follow the new figure, not the withdrawn one."""
         self._award(self.teacher, MAX_CLASSWORK_POINTS)
         self._withdraw(self.teacher)
-        self.assertEqual(self._award(self.teacher, 5).status_code, 200)
-        self.assertEqual((self._row().points, self._row().xp), (5, 5))
+        self.assertEqual(self._award(self.teacher, 2).status_code, 200)
+        self.assertEqual((self._row().points, self._row().xp), (2, 2))
 
     def test_the_panel_shows_the_withdrawal(self):
-        self._award(self.teacher, 9)
+        self._award(self.teacher, 4)
         self._withdraw(self.teacher)
 
         resp = self.as_(self.teacher).get(self.classwork_url)
@@ -850,11 +865,11 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
     # ── the gap this route closes ─────────────────────────────────────────────
 
     def test_classwork_with_no_lesson_behind_it_can_be_paid(self):
-        resp = self._give(self.teacher, 12, note="ran the whole group")
+        resp = self._give(self.teacher, 5, note="ran the whole group")
 
         self.assertEqual(resp.status_code, 200, resp.content)
         row = self._row()
-        self.assertEqual((row.points, row.xp), (12, 12))
+        self.assertEqual((row.points, row.xp), (5, 5))
         self.assertEqual(row.note, "ran the whole group")
         self.assertEqual(row.source_type, "assignment")
         self.assertEqual(row.source_id, self.hand_authored.id)
@@ -870,26 +885,31 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
         """
         self.as_(self.teacher).post(
             f"/api/classes/{self.classroom.id}/lessons/{self.session.id}/classwork/award/",
-            {"student_id": self.student.id, "points": 4},
+            {"student_id": self.student.id, "points": 2},
             format="json",
         )
         # NOT `self.carriers().get()` — this fixture already owns a hand-authored carrier,
         # so the classroom has two. The lesson's is the one the lesson route just minted.
         carrier = self.carriers().exclude(pk=self.hand_authored.pk).get()
 
-        resp = self._give(self.teacher, 9, target=carrier)
+        resp = self._give(self.teacher, 4, target=carrier)
 
         self.assertEqual(resp.status_code, 200, resp.content)
         self.assertEqual(self.classwork_awards().count(), 1)
-        self.assertEqual(self._row().points, 9)
+        self.assertEqual(self._row().points, 4)
 
     # ── the ceiling ───────────────────────────────────────────────────────────
 
-    def test_the_ceiling_is_twenty(self):
-        """The school's number, not a fat-finger guard. Asserted as a literal on purpose: if
-        someone raises the constant, this test is the thing that asks whether the school did.
+    def test_the_scale_is_one_to_five(self):
+        """The school's numbers (2026-10-11), not a fat-finger guard. Asserted as literals on
+        purpose: if someone moves a constant, this test is the thing that asks whether the
+        school did.
         """
-        self.assertEqual(MAX_CLASSWORK_POINTS, 20)
+        self.assertEqual((MIN_CLASSWORK_POINTS, MAX_CLASSWORK_POINTS), (1, 5))
+
+    def test_the_panel_states_both_ends_of_the_scale(self):
+        body = self.as_(self.teacher).get(self.url()).json()
+        self.assertEqual((body["min_points"], body["max_points"]), (1, 5))
 
     def test_more_than_the_ceiling_is_refused_and_writes_nothing(self):
         resp = self._give(self.teacher, MAX_CLASSWORK_POINTS + 1)
@@ -906,11 +926,13 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
         self.assertEqual(self._give(self.teacher, -1).status_code, 400)
         self.assertEqual(PointAward.objects.count(), 0)
 
-    def test_zero_is_recorded_rather_than_refused(self):
-        """"A teacher looked and it earned nothing this time" is a real outcome, and it is a
-        different fact from nobody having looked."""
-        self.assertEqual(self._give(self.teacher, 0).status_code, 200)
-        self.assertEqual(self._row().points, 0)
+    def test_zero_is_refused_and_writes_nothing(self):
+        """The scale starts at 1. A mis-award is undone by taking it back, never by a 0."""
+        resp = self._give(self.teacher, 0)
+
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(resp.json()["code"], "bad_points")
+        self.assertEqual(PointAward.objects.count(), 0)
 
     # ── who may write ─────────────────────────────────────────────────────────
 
@@ -930,7 +952,7 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
         self.assertFalse(resp.json()["can_award"])
 
     def test_a_student_cannot_award_themselves(self):
-        resp = self._give(self.student, 20)
+        resp = self._give(self.student, 5)
 
         self.assertEqual(resp.status_code, 403, resp.content)
         self.assertEqual(PointAward.objects.count(), 0)
@@ -998,8 +1020,13 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
 
     def test_a_recorded_zero_reads_as_awarded_rather_than_as_nothing_yet(self):
         """The distinction the whole panel turns on: ``awarded`` is the field to test, never
-        ``points > 0``. A teacher who recorded 0 has looked; the absence of a row has not."""
-        self._give(self.teacher, 0)
+        ``points > 0``. A teacher who recorded 0 has looked; the absence of a row has not.
+
+        The POST no longer accepts 0, but rows written before 2026-10-11 still hold one, so
+        the zero is written the way those were — straight through the delivery layer."""
+        from journals.delivery import award_classwork
+
+        award_classwork(self.hand_authored, self.student, points=0, actor=self.teacher)
 
         row = self.as_(self.teacher).get(self.url()).json()["students"][0]
         self.assertTrue(row["awarded"])
@@ -1007,9 +1034,9 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
 
     def test_the_write_returns_the_refreshed_panel(self):
         """So the dialog never has to make a second request to show what it just did."""
-        body = self._give(self.teacher, 7).json()
+        body = self._give(self.teacher, 3).json()
 
-        self.assertEqual(body["students"][0]["points"], 7)
+        self.assertEqual(body["students"][0]["points"], 3)
         self.assertTrue(body["students"][0]["awarded"])
 
     def test_a_removed_student_is_neither_listed_nor_payable(self):
@@ -1024,22 +1051,22 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
 
     def test_re_awarding_corrects_the_amount_instead_of_stacking(self):
         self._give(self.teacher, 3)
-        self._give(self.teacher, 8)
+        self._give(self.teacher, 5)
 
         self.assertEqual(self.classwork_awards().count(), 1)
-        self.assertEqual(self._row().points, 8)
+        self.assertEqual(self._row().points, 5)
 
     def test_a_correction_downwards_leaves_the_xp_standing(self):
         """§6: XP is never taken away for doing worse. Only a withdrawal clears it — which is
         why the dialog needs a Take back button and not just a smaller number."""
-        self._give(self.teacher, 15)
+        self._give(self.teacher, 5)
         self._give(self.teacher, 2)
 
         row = self._row()
-        self.assertEqual((row.points, row.xp), (2, 15))
+        self.assertEqual((row.points, row.xp), (2, 5))
 
     def test_withdrawing_clears_the_points_and_the_xp(self):
-        self._give(self.teacher, 15)
+        self._give(self.teacher, 5)
 
         resp = self.as_(self.teacher).delete(
             self.url(), {"student_id": self.student.id}, format="json"
@@ -1056,39 +1083,40 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
         panel = resp.json()["students"][0]
         self.assertEqual((panel["points"], panel["xp"]), (0, 0))
 
-    def test_a_correction_to_zero_still_reports_the_xp_left_standing(self):
+    def test_a_correction_downwards_still_reports_the_xp_left_standing(self):
         """The trap this panel exists to make visible.
 
-        Correcting 15 down to 0 does NOT clear the XP — the engine never lowers XP for doing
-        worse — so a teacher who "undid" a mis-award by typing 0 has left 15 XP on the
-        leaderboard. The panel has to report that or the mistake is invisible and permanent.
+        Correcting 5 down to 1 does NOT lower the XP — the engine never lowers XP for doing
+        worse — so a teacher who "fixed" a mis-award by picking a smaller number has left 5
+        XP on the leaderboard. The panel has to report that or the mistake is invisible and
+        permanent.
         """
-        self._give(self.teacher, 15)
-        self._give(self.teacher, 0)
+        self._give(self.teacher, 5)
+        self._give(self.teacher, 1)
 
         panel = self.as_(self.teacher).get(self.url()).json()["students"][0]
-        self.assertEqual(panel["points"], 0)
-        self.assertEqual(panel["xp"], 15)
+        self.assertEqual(panel["points"], 1)
+        self.assertEqual(panel["xp"], 5)
 
     def test_the_withdrawal_is_audited_with_the_teacher_who_pressed_it(self):
-        self._give(self.teacher, 9)
+        self._give(self.teacher, 4)
         self.as_(self.teacher).delete(
             self.url(), {"student_id": self.student.id, "reason": "wrong student"},
             format="json",
         )
 
         events = list(PointAwardAudit.objects.filter(award=self._row()).order_by("id"))
-        self.assertEqual((events[-1].previous_xp, events[-1].new_xp), (9, 0))
+        self.assertEqual((events[-1].previous_xp, events[-1].new_xp), (4, 0))
         self.assertEqual(events[-1].actor_id, self.teacher.id)
 
     def test_a_ta_cannot_withdraw_either(self):
-        self._give(self.teacher, 9)
+        self._give(self.teacher, 4)
         resp = self.as_(self.ta).delete(
             self.url(), {"student_id": self.student.id}, format="json"
         )
 
         self.assertEqual(resp.status_code, 403, resp.content)
-        self.assertEqual(self._row().points, 9)
+        self.assertEqual(self._row().points, 4)
 
     def test_withdrawing_when_there_was_never_an_award_says_so(self):
         resp = self.as_(self.teacher).delete(
@@ -1100,7 +1128,7 @@ class ClassworkXpByCarrierTests(ClassworkFixture):
         self.assertEqual(PointAward.objects.count(), 0)
 
     def test_the_student_id_may_come_from_the_query_string_on_a_delete(self):
-        self._give(self.teacher, 9)
+        self._give(self.teacher, 4)
 
         resp = self.as_(self.teacher).delete(
             f"{self.url()}?student_id={self.student.id}"

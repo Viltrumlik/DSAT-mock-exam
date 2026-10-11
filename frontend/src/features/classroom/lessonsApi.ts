@@ -104,7 +104,9 @@ export interface LessonClasswork {
   assignment_id: number | null;
   title: string;
   given_at: string | null;
-  /** Server-side ceiling on one award; the points field is bounded by it, not by a local constant. */
+  /** Server-side floor on one award (1 since 2026-10-11); optional so an older server still renders. */
+  min_points?: number;
+  /** Server-side ceiling on one award; the picker is bounded by it, not by a local constant. */
   max_points: number;
   awards: ClassworkAward[];
 }

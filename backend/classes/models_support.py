@@ -163,17 +163,33 @@ class SupportBooking(models.Model):
 
     STATUS_BOOKED = "BOOKED"
     STATUS_HELD = "HELD"
+    #: In the room, but late. **The school's rule (2026-10-11): it counts as attended and
+    #: earns no XP.** Attended, because the student did turn up — it is never a no-show and
+    #: never counts towards the no-show ban. No XP (and no points), because arriving late to
+    #: an hour a teacher held open is exactly what the school wants to stop rewarding. The
+    #: student is told why in a notification, so the missing XP never reads as a bug.
+    STATUS_LATE = "LATE"
     STATUS_NO_SHOW = "NO_SHOW"
     STATUS_CANCELLED = "CANCELLED"
     STATUS_CHOICES = [
         (STATUS_BOOKED, "Booked"),
         (STATUS_HELD, "Held"),
+        (STATUS_LATE, "Attended late"),
         (STATUS_NO_SHOW, "Did not attend"),
         (STATUS_CANCELLED, "Cancelled"),
     ]
     #: Statuses that occupy a seat. A cancelled booking frees its seat; a held or missed one
     #: is in the past and no longer competes for it.
     OCCUPYING_STATUSES = (STATUS_BOOKED,)
+    #: The teacher has recorded how the hour went. A settled row is the teacher's record: it
+    #: cannot be cancelled, and re-booking the slot must not reuse (and so erase) it. One
+    #: tuple, because the pair (HELD, NO_SHOW) used to be spelled out by hand at every guard
+    #: and a third outcome would have slipped past whichever one was missed.
+    SETTLED_STATUSES = (STATUS_HELD, STATUS_LATE, STATUS_NO_SHOW)
+    #: The student was in the room. Late counts: they turned up, so they count towards the
+    #: group's size on the reward ladder and may rate the session — only their own XP is
+    #: withheld (``rewards.hooks.sync_support_booking``).
+    ATTENDED_STATUSES = (STATUS_HELD, STATUS_LATE)
 
     availability = models.ForeignKey(
         SupportAvailability, on_delete=models.CASCADE, related_name="bookings"

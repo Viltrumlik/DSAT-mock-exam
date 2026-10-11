@@ -1,6 +1,15 @@
 [package]
 name = "mastersat-desktop"
-version = "0.1.0"
+# THE version the server gates on: main.rs reports CARGO_PKG_VERSION, it is signed into the
+# lockdown proof, and backend/desktop/lockdown.py refuses (426) a build below the Windows
+# AppReleasePolicy.minimum_version. tauri.conf.json (the installer's own version),
+# app/package.json and package.json move in step with it, so a new installer never looks like
+# the one already released. 0.1.1 (2026-10-11, the school's request): a Foundation Math midterm
+# shows no calculator, says it is worked by hand, and keeps the screen awake before the paper.
+# Raise the Windows minimum to 0.1.1 only AFTER that installer is live at
+# downloads/desktop/MasterSAT-Setup.exe — earlier, every student is sent to update to a file
+# that is still the old build.
+version = "0.1.1"
 description = "MasterSAT exam app for Windows"
 authors = ["MasterSAT"]
 edition = "2021"

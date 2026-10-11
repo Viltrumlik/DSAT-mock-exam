@@ -24,7 +24,7 @@
  * rating, and an error surface for each request that can fail.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarClock, CalendarOff, Check, Clock, Info, Moon, Star, UserPlus, UserX,
 } from "lucide-react";
@@ -78,6 +78,15 @@ export function SupportTeacherPage() {
    * count and "waiting" three lines below it. Deliberately not memoised: it has to move.
    */
   const now = Date.now();
+  // …and a tick so it moves on its own. A teacher who opens the diary at 13:55 and leaves it
+  // open must see "Came late" and "Did not attend" appear when the 14:00 hour starts, and a
+  // finished hour turn into "Waiting for you" — nothing else here re-renders on the clock,
+  // and with only "They came" on screen a late student would be paid.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => window.clearInterval(id);
+  }, []);
   // Memoised only so the empty fallback is the SAME array between renders — every derived
   // list below depends on `now`, which changes each render, so nothing else here can be.
   const rows = useMemo(() => diary.data ?? [], [diary.data]);
@@ -102,7 +111,7 @@ export function SupportTeacherPage() {
 
   const shown = rows.filter((b) => inBucket(standOf(b, now), activeBucket));
 
-  const tally = { waiting: 0, upcoming: 0, held: 0, missed: 0, cancelled: 0 };
+  const tally = { waiting: 0, upcoming: 0, held: 0, late: 0, missed: 0, cancelled: 0 };
   for (const b of rows) tally[standOf(b, now)] += 1;
   /** Every stand gets a slice, and a slice worth 0 is dropped below rather than here — the
    *  legend would otherwise print four zeroes beside the one figure that matters. */
@@ -110,6 +119,7 @@ export function SupportTeacherPage() {
     { label: STAND.waiting.label, value: tally.waiting, tone: STAND.waiting.tone },
     { label: STAND.upcoming.label, value: tally.upcoming, tone: STAND.upcoming.tone },
     { label: STAND.held.label, value: tally.held, tone: STAND.held.tone },
+    { label: STAND.late.label, value: tally.late, tone: STAND.late.tone },
     { label: STAND.missed.label, value: tally.missed, tone: STAND.missed.tone },
     { label: STAND.cancelled.label, value: tally.cancelled, tone: STAND.cancelled.tone },
   ];
@@ -295,7 +305,7 @@ export function SupportTeacherPage() {
                 counts={{
                   waiting: tally.waiting,
                   upcoming: tally.upcoming,
-                  recorded: tally.held + tally.missed,
+                  recorded: tally.held + tally.late + tally.missed,
                   all: rows.length,
                 }}
               />
@@ -665,20 +675,27 @@ function BucketPicker({ value, onChange, counts }: {
  * is the only moment they will write it. The note is optional, so a session owed from August
  * is still one press away from paying.
  *
- * A settled row keeps both buttons live. A teacher who pressed the wrong one, or who wants to
+ * A settled row keeps its buttons live. A teacher who pressed the wrong one, or who wants to
  * add the note afterwards, has no other way back — and the mutation takes the same payload
  * either way.
+ *
+ * "Came late" and "Did not attend" appear only once the hour has STARTED (the school's
+ * attendance rule, 2026-10-11). Neither can be true of an hour that has not begun, and both
+ * cost the student something: late earns no XP, and a second "did not attend" within a week
+ * pauses their booking and cancels their week. The server refuses both before the start; the
+ * buttons are hidden so a mis-tap on tomorrow's row cannot even be attempted.
  */
 function DiaryRow({ booking: b, now, disabled, settling, onSettle }: {
   booking: SupportBooking;
   now: number;
   disabled: boolean;
   settling: boolean;
-  onSettle: (status: "HELD" | "NO_SHOW", note: string) => void;
+  onSettle: (status: "HELD" | "LATE" | "NO_SHOW", note: string) => void;
 }) {
   const [note, setNote] = useState(b.teacher_note);
   const stand = standOf(b, now);
   const owed = stand === "waiting";
+  const started = hasEnded(b.slot.starts_at, now);
   const noteId = `settle-note-${b.id}`;
 
   return (
@@ -776,10 +793,24 @@ function DiaryRow({ booking: b, now, disabled, settling, onSettle }: {
               <Check size={15} aria-hidden />
               They came
             </Button>
-            <Button variant="ghost" disabled={disabled} busy={settling} onClick={() => onSettle("NO_SHOW", note)}>
-              <UserX size={15} aria-hidden />
-              Did not attend
-            </Button>
+            {started && (
+              <>
+                <Button
+                  variant="ghost"
+                  disabled={disabled}
+                  busy={settling}
+                  onClick={() => onSettle("LATE", note)}
+                  title="Counts as attended, earns no XP — the student is told why"
+                >
+                  <Clock size={15} aria-hidden />
+                  Came late
+                </Button>
+                <Button variant="ghost" disabled={disabled} busy={settling} onClick={() => onSettle("NO_SHOW", note)}>
+                  <UserX size={15} aria-hidden />
+                  Did not attend
+                </Button>
+              </>
+            )}
             {b.teacher_note !== note && (
               <span style={{ fontSize: 12, fontWeight: 600, color: "var(--dz-mute)" }}>
                 Your note saves with whichever you press.

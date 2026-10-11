@@ -27,6 +27,12 @@ export type TeacherAssessment = {
   /** Platform subject, lowercased: "math", "english", or whatever else was stored. */
   subject: string;
   level: string;
+  /**
+   * The optional second level ("" = none) — 2026-10-11, the school's request: one set shown
+   * to two cohorts. Carried through `toAssessment` explicitly, because that mapper is a
+   * whitelist: a field not named there never reaches the page.
+   */
+  secondaryLevel: string;
   category: string;
   description: string;
   /** `is_active: false` — authored but not given out yet. */
@@ -50,6 +56,7 @@ type RawSet = {
   title?: string | null;
   subject?: string | null;
   level?: string | null;
+  secondary_level?: string | null;
   category?: string | null;
   description?: string | null;
   is_active?: boolean;
@@ -109,6 +116,7 @@ function toAssessment(raw: RawSet): TeacherAssessment {
     title: (raw.title || "").trim(),
     subject: (raw.subject || "").trim().toLowerCase(),
     level: (raw.level || "").trim(),
+    secondaryLevel: (raw.secondary_level || "").trim(),
     category: (raw.category || "").trim(),
     description: (raw.description || "").trim(),
     isDraft: raw.is_active === false,

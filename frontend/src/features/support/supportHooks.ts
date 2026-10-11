@@ -189,7 +189,7 @@ export function useSetSupportHour() {
 export function useSettleBooking() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (vars: { bookingId: number; status: "HELD" | "NO_SHOW"; teacherNote?: string }) =>
+    mutationFn: (vars: { bookingId: number; status: "HELD" | "LATE" | "NO_SHOW"; teacherNote?: string }) =>
       classesApi.supportSettle(vars.bookingId, vars.status, vars.teacherNote),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.diary });
