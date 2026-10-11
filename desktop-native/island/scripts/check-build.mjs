@@ -54,6 +54,8 @@ for (const f of css) {
   const src = readFileSync(join(OUT, f), "utf8");
   for (const m of src.matchAll(/url\(([^)]+)\)/g)) {
     const url = m[1].replace(/["']/g, "");
+    // font-src 'self' (content CSP): an inlined font would be blocked at runtime.
+    if (url.startsWith("data:font") || url.startsWith("data:application/font")) fail(`${f}: font inlined as a data: URL (the CSP blocks it)`);
     if (url.startsWith("data:")) continue;
     if (/^(?:https?:)?\/\//.test(url) || url.startsWith("/")) fail(`${f}: non-relative url(${url})`);
     if (!existsSync(join(OUT, url.replace(/^\.\//, "").split(/[?#]/)[0]))) fail(`${f}: url(${url}) not in the build`);

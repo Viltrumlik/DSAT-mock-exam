@@ -112,6 +112,10 @@ export default defineConfig(() => {
       outDir: "build/island",
       emptyOutDir: true,
       assetsDir: "",
+      // Never inline assets as data: URLs: the content CSP allows fonts only from 'self'
+      // (font-src 'self'), so an inlined KaTeX font would be blocked (scripts/visual.mjs
+      // caught exactly that in Chromium). Every font ships as a file.
+      assetsInlineLimit: 0,
       target: "chrome120",
       sourcemap: false,
       cssCodeSplit: true,
