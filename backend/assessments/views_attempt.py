@@ -268,7 +268,11 @@ class AttemptBundleView(APIView):
                 "attempt": AttemptSerializer(att).data,
                 # Runner-safe serializers: neither set.questions nor the top-level
                 # questions expose explanation/correct_answer during the attempt.
-                "set": AssessmentSetRunnerSerializer(aset).data,
+                # classroom_level: a set with two levels is sat at THIS class's level,
+                # and the runners decide Desmos from set.level (see the serializer).
+                "set": AssessmentSetRunnerSerializer(
+                    aset, context={"classroom_level": hw.classroom.level}
+                ).data,
                 "questions": AssessmentQuestionRunnerSerializer(questions, many=True).data,
                 "assignment_id": hw.assignment_id,
                 # Pedagogical context: classroom name, assignment title, due date.

@@ -34,6 +34,8 @@ export async function listCatalog(type: ReviewContentType): Promise<ReviewCatalo
         title: s.title || `Set ${s.id}`,
         subject: s.subject,
         level: s.level ?? null,
+        // A whitelist mapper: name the second level or the page never sees it.
+        secondaryLevel: s.secondary_level || null,
         meta: s.category || undefined,
         reviewStatus: s.review_status ?? null,
         isPublished: s.is_active ?? null,

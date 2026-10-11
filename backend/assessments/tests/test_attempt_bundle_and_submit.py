@@ -173,6 +173,95 @@ class AttemptBundleAndSubmitTests(TestCase):
         self.assertIn(r.status_code, (200, 202), r.content)
 
 
+@override_settings(
+    ASSESSMENT_MAX_ATTEMPT_LIFETIME_SECONDS=0,
+    CELERY_BROKER_URL="",
+    CELERY_TASK_ALWAYS_EAGER=False,
+)
+class BundleEffectiveLevelTests(TestCase):
+    """The bundle's ``set.level`` is the level the student's CLASS sits the set at.
+
+    Every runner (web, iOS — installed builds included) decides Desmos from that one
+    field: Middle/Senior maths get it, Foundation/Junior work by hand. A set with an
+    optional second level (2026-10-11, the school's request) must therefore say
+    "junior" to a Junior class and "middle" to a Middle class.
+    """
+
+    def setUp(self):
+        User = get_user_model()
+        self.teacher = User.objects.create_user(
+            email="t_efflvl@example.com", password="x",
+            role=acc_const.ROLE_TEACHER, subject=acc_const.DOMAIN_MATH,
+        )
+        self.dual = self._mk_set("Dual", level="junior", secondary="middle")
+
+    def _mk_set(self, title, *, level, secondary=""):
+        aset = AssessmentSet.objects.create(
+            subject=AssessmentSet.SUBJECT_MATH, category="algebra", title=title,
+            source=AssessmentSet.SOURCE_MATHBOOK, level=level, secondary_level=secondary,
+            created_by=self.teacher, is_active=True,
+        )
+        AssessmentQuestion.objects.create(
+            assessment_set=aset, order=1, prompt="2+2?",
+            question_type=AssessmentQuestion.TYPE_NUMERIC, correct_answer=4,
+            points=1, is_active=True,
+        )
+        return aset
+
+    def _bundle_set(self, classroom_level: str, aset=None):
+        """Student in a fresh class at ``classroom_level`` starts ``aset``; returns set."""
+        aset = aset or self.dual
+        User = get_user_model()
+        tag = classroom_level or "untagged"
+        student = User.objects.create_user(
+            email=f"st_efflvl_{tag}_{aset.id}@example.com", password="x",
+            role=acc_const.ROLE_STUDENT, subject="",
+        )
+        classroom = Classroom.objects.create(
+            name=f"Math {tag}", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            level=classroom_level, created_by=self.teacher, teacher=self.teacher,
+        )
+        ClassroomMembership.objects.create(
+            classroom=classroom, user=student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        assignment = Assignment.objects.create(
+            classroom=classroom, created_by=self.teacher, title="HW", instructions=""
+        )
+        hw = HomeworkAssignment.objects.create(
+            classroom=classroom, assessment_set=aset, assignment=assignment,
+            assigned_by=self.teacher,
+        )
+        client = APIClient()
+        client.force_authenticate(student)
+        started = client.post(
+            "/api/assessments/attempts/start/", {"homework_id": hw.id}, format="json"
+        )
+        self.assertEqual(started.status_code, 200, started.content)
+        r = client.get(f"/api/assessments/attempts/{started.data['id']}/bundle/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.data["set"]
+
+    def test_junior_class_sits_a_junior_plus_middle_set_as_junior(self):
+        s = self._bundle_set("junior")
+        self.assertEqual(s["level"], "junior")  # -> no Desmos
+        self.assertEqual(s["secondary_level"], "middle")  # raw, display only
+
+    def test_middle_class_sits_a_junior_plus_middle_set_as_middle(self):
+        s = self._bundle_set("middle")
+        self.assertEqual(s["level"], "middle")  # -> Desmos
+        self.assertEqual(s["secondary_level"], "middle")
+
+    def test_untagged_class_gets_the_primary_level(self):
+        # Exactly what the bundle said before a second level existed.
+        self.assertEqual(self._bundle_set("")["level"], "junior")
+
+    def test_single_level_set_is_unchanged(self):
+        plain = self._mk_set("Plain middle", level="middle")
+        s = self._bundle_set("middle", plain)
+        self.assertEqual(s["level"], "middle")
+        self.assertEqual(s["secondary_level"], "")
+
+
 class NfkcNormalizationTests(SimpleTestCase):
     """FIX 5: full-width digits/letters from mobile IMEs fold to ASCII before grading."""
 

@@ -38,7 +38,8 @@ export function matchesSubject(set: TeacherAssessment, filter: SubjectFilter): b
  * and too long to put in a row.
  */
 export function searchBlob(set: TeacherAssessment): string {
-  return [set.title, set.category, set.description, subjectLabel(set.subject), set.level]
+  // Both levels: typing "middle" should find a Junior+Middle set (2026-10-11, the second level).
+  return [set.title, set.category, set.description, subjectLabel(set.subject), set.level, set.secondaryLevel]
     .join(" ")
     .toLowerCase();
 }

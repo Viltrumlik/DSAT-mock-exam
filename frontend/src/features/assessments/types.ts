@@ -18,6 +18,13 @@ export type AssessmentSet = {
   source?: string;
   /** Difficulty tier; see lib/levels. Blank on legacy/untagged sets. */
   level?: string;
+  /**
+   * OPTIONAL second level: the set is also shown to this cohort (2026-10-11, the school's
+   * request). Blank = primary level only. Never set without `level`, never equal to it.
+   * On the runner's attempt bundle `level` is already the level the student's class sits
+   * the set at (the server resolves it), so the runner reads `level` alone.
+   */
+  secondary_level?: string;
   category: string;
   title: string;
   description: string;

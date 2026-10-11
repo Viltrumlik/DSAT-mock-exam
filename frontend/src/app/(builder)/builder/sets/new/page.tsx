@@ -9,7 +9,14 @@ import { normalizeApiError } from "@/lib/apiError";
 import { getSubject } from "@/lib/permissions";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
-import { levelsForSubject, levelLabel, type LevelKey } from "@/lib/levels";
+import {
+  levelsForSubject,
+  levelLabel,
+  reconcileSecondaryLevel,
+  secondaryLevelOptions,
+  setLevelsLabel,
+  type LevelKey,
+} from "@/lib/levels";
 
 const INPUT =
   "ui-input w-full rounded-xl border border-border bg-surface-2/80 px-3 py-2 text-sm shadow-sm";
@@ -41,6 +48,8 @@ function NewAssessmentSetForm() {
     subject: Subject;
     source: string;
     level: string;
+    /** OPTIONAL second cohort (2026-10-11, the school's request). "" = primary only. */
+    secondary_level: string;
     category: string;
     title: string;
     description: string;
@@ -49,6 +58,7 @@ function NewAssessmentSetForm() {
     subject: effSubject,
     source: "",
     level: validLevel ?? "",
+    secondary_level: "",
     category: "",
     title: "",
     description: "",
@@ -58,6 +68,7 @@ function NewAssessmentSetForm() {
 
   const sourceOptions = allowedSourcesForSubject(form.subject);
   const levelOptions = levelsForSubject(form.subject);
+  const secondaryOptions = secondaryLevelOptions(form.subject, form.level);
 
   const save = async () => {
     setError(null);
@@ -85,7 +96,7 @@ function NewAssessmentSetForm() {
           <p className="text-sm font-extrabold text-foreground">Create assessment set</p>
           <p className="mt-1 text-sm text-muted-foreground">
             {lockedLevel
-              ? `New ${SUBJECT_LABELS[form.subject]} · ${levelLabel(form.level)} set — then add questions.`
+              ? `New ${SUBJECT_LABELS[form.subject]} · ${setLevelsLabel(form.level, form.secondary_level)} set — then add questions.`
               : "Draft a set, then add questions."}
           </p>
         </div>
@@ -122,11 +133,15 @@ function NewAssessmentSetForm() {
                   // (e.g. English has no Foundation level).
                   const sourceOk = allowedSourcesForSubject(subject).includes(form.source as never);
                   const levelOk = levelsForSubject(subject).includes(form.level as never);
+                  const level = levelOk ? form.level : "";
                   setForm({
                     ...form,
                     subject,
                     source: sourceOk ? form.source : "",
-                    level: levelOk ? form.level : "",
+                    level,
+                    // The second level follows the same rule (and is cleared with the
+                    // primary — it never stands alone).
+                    secondary_level: reconcileSecondaryLevel(subject, level, form.secondary_level),
                   });
                 }}
               >
@@ -170,7 +185,16 @@ function NewAssessmentSetForm() {
               <select
                 className={INPUT}
                 value={form.level}
-                onChange={(e) => setForm({ ...form, level: e.target.value })}
+                onChange={(e) => {
+                  const level = e.target.value;
+                  // Blanking the primary, or moving it onto the second level, clears the
+                  // second level — the server would reject either pair.
+                  setForm({
+                    ...form,
+                    level,
+                    secondary_level: reconcileSecondaryLevel(form.subject, level, form.secondary_level),
+                  });
+                }}
               >
                 <option value="">Select a level…</option>
                 {levelOptions.map((l) => (
@@ -178,6 +202,29 @@ function NewAssessmentSetForm() {
                 ))}
               </select>
             )}
+          </div>
+        </div>
+
+        {/* Optional second level (2026-10-11, the school's request): the set is shown to
+            two cohorts at once. Sits under Level, which it extends. Never required, and
+            editable even when the primary is fixed by the ?level= bucket — a set made from
+            the Junior bucket can still also be for Middle. */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="col-start-2">
+            <p className="mb-1 text-xs font-bold uppercase tracking-wider text-label-foreground">
+              Second level (optional)
+            </p>
+            <select
+              className={`${INPUT} disabled:cursor-not-allowed disabled:opacity-50`}
+              value={form.secondary_level}
+              disabled={!form.level}
+              onChange={(e) => setForm({ ...form, secondary_level: e.target.value })}
+            >
+              <option value="">None</option>
+              {secondaryOptions.map((l) => (
+                <option key={l} value={l}>{levelLabel(l)}</option>
+              ))}
+            </select>
           </div>
         </div>
 

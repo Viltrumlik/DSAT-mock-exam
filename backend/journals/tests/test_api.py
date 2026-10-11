@@ -282,6 +282,62 @@ class ClassworkTests(TestCase):
         self.assertEqual(len(resp.json()["exercise_assessments"]), 0)
 
 
+class SecondLevelAssessmentTests(TestCase):
+    """A set with an optional second level (2026-10-11, the school's request) belongs to
+    the journal of EITHER level: offered by content-options, and kept by the write guard
+    (``_allowed_assessment_ids`` silently drops anything it does not allow)."""
+
+    def setUp(self):
+        self.admin = _admin("j_seclvl@test.com")
+        self.client = APIClient()
+        self.client.force_authenticate(self.admin)
+        # The set's SECOND level is this journal's level.
+        self.journal, _ = services.create_journal(
+            subject="MATH", level="middle", actor=self.admin
+        )
+        self.s1 = services.add_session(self.journal, actor=self.admin)
+        self.dual = AssessmentSet.objects.create(
+            subject="math", title="Junior+Middle set", source=AssessmentSet.SOURCE_SQB,
+            level="junior", secondary_level="middle", created_by=self.admin,
+        )
+
+    def _option_ids(self, level):
+        resp = self.client.get(f"/api/journals/content-options/?subject=MATH&level={level}")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        return {a["id"]: a for a in resp.json()["assessment_sets"]}
+
+    def test_content_options_offer_it_at_both_levels_only(self):
+        middle = self._option_ids("middle")
+        self.assertIn(self.dual.id, middle)
+        self.assertEqual(middle[self.dual.id]["level"], "junior")
+        self.assertEqual(middle[self.dual.id]["secondary_level"], "middle")
+        self.assertIn(self.dual.id, self._option_ids("junior"))
+        self.assertNotIn(self.dual.id, self._option_ids("senior"))
+
+    def test_lesson_patch_into_the_second_levels_journal_keeps_it(self):
+        resp = self.client.patch(
+            f"/api/journals/{self.journal.id}/lessons/{self.s1.id}/",
+            {"assessment_set_ids": [self.dual.id]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(
+            list(self.s1.assessments.values_list("assessment_set_id", flat=True)),
+            [self.dual.id],
+        )
+        rows = resp.json()["assessments"]
+        self.assertEqual([r["secondary_level"] for r in rows], ["middle"])
+
+    def test_classwork_patch_into_the_second_levels_journal_keeps_it(self):
+        resp = self.client.patch(
+            f"/api/journals/{self.journal.id}/lessons/{self.s1.id}/classwork/",
+            {"exercise_assessment_set_ids": [self.dual.id]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(len(resp.json()["exercise_assessments"]), 1)
+
+
 class PublishTests(TestCase):
     def setUp(self):
         self.admin = _admin("j_pub@test.com")

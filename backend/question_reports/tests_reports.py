@@ -111,6 +111,17 @@ class ResolverTests(TestCase):
         t = resolve_target("assessment", aq.id)
         self.assertEqual(t.level, aset.get_level_display())
 
+    def test_a_two_level_set_reports_both_cohorts(self):
+        # Optional second level (2026-10-11, the school's request): primary first.
+        aset = AssessmentSet.objects.create(
+            subject="english", level="junior", secondary_level="middle",
+            title="Set YY", created_by=self.staff,
+        )
+        aq = AssessmentQuestion.objects.create(
+            assessment_set=aset, order=0, prompt="…", question_type="short_text"
+        )
+        self.assertEqual(resolve_target("assessment", aq.id).level, "Junior / Middle")
+
     def test_an_untagged_set_reports_a_blank_level(self):
         # Blank means legacy/untagged — it shows in every classroom. Inventing a default here
         # would tell the reader a cohort that is not true.

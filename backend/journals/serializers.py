@@ -90,6 +90,7 @@ def _assessment_rows(links):
             "title": getattr(l.assessment_set, "title", ""),
             "subject": getattr(l.assessment_set, "subject", ""),
             "level": getattr(l.assessment_set, "level", "") or "",
+            "secondary_level": getattr(l.assessment_set, "secondary_level", "") or "",
             "source": getattr(l.assessment_set, "source", "") or "",
         }
         for l in links

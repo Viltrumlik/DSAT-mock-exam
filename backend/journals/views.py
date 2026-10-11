@@ -174,7 +174,11 @@ def _allowed_assessment_ids(journal) -> set[int]:
     if journal.domain_subject:
         qs = qs.filter(subject=journal.domain_subject)
     if journal.level:
-        qs = qs.filter(level=journal.level)
+        # Either of the set's levels (2026-10-11, the school's request). This is a WRITE
+        # guard — import, lesson/classwork PATCH and bulk replace silently DROP any id
+        # not in here — so a primary-only filter would quietly strip a Junior+Middle set
+        # from every Middle journal it is attached to.
+        qs = qs.filter(AssessmentSet.level_q(journal.level))
     return set(qs.values_list("id", flat=True))
 
 
@@ -688,7 +692,9 @@ class JournalContentOptionsView(APIView):
         if domain_subject:
             aset_qs = aset_qs.filter(subject=domain_subject)
         if level:
-            aset_qs = aset_qs.filter(level=level)
+            # Either of the set's levels — must agree with _allowed_assessment_ids, or
+            # the editor offers a set the save then drops (or hides one it would keep).
+            aset_qs = aset_qs.filter(AssessmentSet.level_q(level))
         assessment_sets = [
             {
                 "id": a.id,
@@ -696,6 +702,7 @@ class JournalContentOptionsView(APIView):
                 "subject": a.subject,
                 "source": a.source or "",
                 "level": a.level or "",
+                "secondary_level": a.secondary_level or "",
                 "category": a.category or "",
                 "description": a.description or "",
                 "question_count": a.questions.filter(is_active=True).count(),
