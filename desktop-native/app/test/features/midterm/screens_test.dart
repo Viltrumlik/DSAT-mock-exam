@@ -379,6 +379,13 @@ void main() {
       expect(find.textContaining('Battery'), findsNothing);
     });
 
+    testWidgets('exactly 25 % on battery is not low (LockdownScreens.tsx: isLowBattery, < 25)', (tester) async {
+      final native = FakeNativeBridge()..batteryStatus = const BatteryStatus(percent: 25, charging: false, hasBattery: true);
+      await pumpHost(tester, MidtermPrecheckScreen(native: native, resume: false, onContinue: () async {}));
+      expect(find.text('Battery 25%'), findsOneWidget);
+      expect(find.text('Plug in your charger before you start.'), findsNothing);
+    });
+
     testWidgets('failures are said plainly under the list; a failed pre-check updates the rows', (tester) async {
       final native = FakeNativeBridge();
       final errors = <Object>[
@@ -470,12 +477,16 @@ void main() {
   });
 
   group('battery and connection', () {
-    testWidgets('the banner shows at ≤ 25 % unplugged, can be dismissed, and warns again next time', (tester) async {
+    testWidgets('the banner shows below 25 % unplugged, can be dismissed, and warns again next time',
+        (tester) async {
       Future<void> show(BatteryStatus? b) => pumpHost(tester, LowBatteryBanner(battery: b));
       await show(const BatteryStatus(percent: 26, charging: false, hasBattery: true));
       expect(find.textContaining('battery is low'), findsNothing);
+      // 25 % itself does not warn (the website's and 0.1.0's `percent < 25`).
       await show(const BatteryStatus(percent: 25, charging: false, hasBattery: true));
-      expect(find.text('Your battery is low (25%). Plug in your device.'), findsOneWidget);
+      expect(find.textContaining('battery is low'), findsNothing);
+      await show(const BatteryStatus(percent: 24, charging: false, hasBattery: true));
+      expect(find.text('Your battery is low (24%). Plug in your device.'), findsOneWidget);
       await tester.tap(find.byIcon(LucideIcons.x));
       await tester.pump();
       expect(find.textContaining('battery is low'), findsNothing);

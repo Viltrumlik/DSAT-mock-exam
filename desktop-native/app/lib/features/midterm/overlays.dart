@@ -239,7 +239,7 @@ class MidtermBatteryIndicator extends StatelessWidget {
   }
 }
 
-/// Under the header while the laptop is unplugged at or below 25 %. Plugging in clears it; a
+/// Under the header while the laptop is unplugged below 25 %. Plugging in clears it; a
 /// new low spell warns again even after a dismissal.
 class LowBatteryBanner extends StatefulWidget {
   const LowBatteryBanner({super.key, required this.battery});

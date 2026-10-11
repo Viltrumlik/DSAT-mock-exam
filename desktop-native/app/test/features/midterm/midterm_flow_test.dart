@@ -114,6 +114,9 @@ void main() {
     final s = Shell(tester);
     await s.mount();
     expect(find.text('October Midterm · Math'), findsOneWidget);
+    // The pass mark comes from the prepared rules block (scoring_scale + pass_mark).
+    expect(find.text('500 out of 800'), findsOneWidget);
+    expect(find.textContaining('You need 500 out of 800 to pass.', findRichText: true), findsOneWidget);
     await s.throughRulesAndCode();
     expect(s.rig.native.locked, isFalse, reason: 'nothing locks before the student says so');
     await s.tapText('Lock and start');

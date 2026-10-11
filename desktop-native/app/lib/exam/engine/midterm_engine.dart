@@ -88,12 +88,14 @@ MidtermBlockReason? midtermBlockReasonOf(Object e) {
   };
 }
 
-/// The low-battery warning threshold (unplugged, at or below this percent).
+/// The low-battery warning threshold (unplugged, BELOW this percent).
 const int lowBatteryPercent = 25;
 
-/// Whether to warn: a laptop, on battery, at or below [lowBatteryPercent].
+/// Whether to warn: a laptop, on battery, under [lowBatteryPercent] — exactly the website's
+/// and 0.1.0's `isLowBattery` (`percent < LOW_BATTERY_PERCENT`, useBattery.ts) and the
+/// runner's (exam_header.dart). 25 % itself does not warn.
 bool isLowBattery(BatteryStatus? b) =>
-    b != null && b.hasBattery && !b.charging && b.percent != null && b.percent! <= lowBatteryPercent;
+    b != null && b.hasBattery && !b.charging && b.percent != null && b.percent! < lowBatteryPercent;
 
 class MidtermEngine extends ExamEngine {
   MidtermEngine(
