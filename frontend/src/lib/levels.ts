@@ -33,3 +33,27 @@ export function levelLabel(level: string | null | undefined): string {
   if (!level) return "";
   return LEVEL_LABELS[level as LevelKey] ?? level;
 }
+
+/**
+ * An assessment set's level(s) for display — "Junior", or "Junior · Middle" when the set
+ * carries the optional second level (2026-10-11, the school's request: one set shown to
+ * two cohorts at once). Primary first. "" for a legacy/untagged set.
+ */
+export function setLevelsLabel(
+  level: string | null | undefined,
+  secondary: string | null | undefined,
+): string {
+  return [level, secondary].filter(Boolean).map((l) => levelLabel(l)).join(" · ");
+}
+
+/**
+ * Whether a set belongs to cohort `level` through EITHER of its levels. Mirrors the
+ * backend's `AssessmentSet.level_q` — every level filter on sets must use it, or a
+ * Junior+Middle set disappears from the Middle bucket.
+ */
+export function setHasLevel(
+  set: { level?: string | null; secondary_level?: string | null },
+  level: string,
+): boolean {
+  return set.level === level || (Boolean(set.secondary_level) && set.secondary_level === level);
+}
