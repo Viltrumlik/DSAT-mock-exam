@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import secrets
 from urllib.parse import urlencode
@@ -362,6 +363,141 @@ def _session_fingerprint(request) -> tuple[str, str]:
     return ip, ua
 
 
+def _step_up_refusal(user) -> Response | None:
+    try:
+        step_until = getattr(user, "security_step_up_required_until", None)
+        if step_until and step_until > timezone.now():
+            security_metric_incr("refresh_fail", 1)
+            return Response(
+                {"detail": "Re-authentication required.", "code": "security_step_up"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+    except Exception:
+        pass
+    return None
+
+
+# ── Lost-reply grace for native refresh ───────────────────────────────────────
+# Rotation retires the presented refresh token inside the request, so a native app whose
+# reply is lost (a network blip) is left holding a revoked token, and its retry 401s — a
+# definite sign-out, mid-exam, through no fault of the student's. A rotation therefore
+# remembers its successor for a short window, and the FIRST re-presentation of the retired
+# token gets that same successor back instead of a 401.
+#
+# The grace is deliberately narrow, so replay detection outside it is exactly what it was:
+#   * native clients only, both when the token was rotated and when it is re-presented;
+#   * one-shot — the first re-presentation spends it whether or not it qualifies;
+#   * same user and same _session_fingerprint as the rotation;
+#   * the successor must still be live and unused: once the app has renewed with it, or the
+#     session was signed out, the old token is a plain replay again.
+
+
+def _rotation_grace_seconds() -> int:
+    try:
+        return max(0, int(getattr(settings, "AUTH_REFRESH_REUSE_GRACE_SECONDS", 0)))
+    except Exception:
+        return 0
+
+
+def _rotation_grace_key(jti: str) -> str:
+    return f"auth.refresh_rotation_grace.{jti}"
+
+
+def _rotation_grace_claim_key(jti: str) -> str:
+    return f"auth.refresh_rotation_grace_claimed.{jti}"
+
+
+def _fingerprint_digest(ip: str, ua: str) -> str:
+    return hashlib.sha256(f"{ip}\n{ua}".encode()).hexdigest()
+
+
+def _remember_rotation(
+    *, old_jti: str, user_id: int, successor_jti: str, successor_refresh: str, ip: str, ua: str
+) -> None:
+    window = _rotation_grace_seconds()
+    if not window or not old_jti or not successor_jti:
+        return
+    try:
+        cache.set(
+            _rotation_grace_key(old_jti),
+            {
+                "user_id": int(user_id),
+                "successor_jti": successor_jti,
+                "successor_refresh": successor_refresh,
+                "fingerprint": _fingerprint_digest(ip, ua),
+                "rotated_at": time.time(),
+            },
+            timeout=window,
+        )
+    except Exception:
+        # No grace is today's behaviour, not a failure: the rotation itself still stands.
+        logger.exception("refresh_rotation_grace_store_failed")
+
+
+def _rotation_grace_reply(*, refresh: str, request) -> Response | None:
+    """
+    The successor pair for a token rotated away moments ago whose reply never arrived — or
+    None, and then the caller treats the presentation as the replay it otherwise is.
+    """
+    window = _rotation_grace_seconds()
+    if not window:
+        return None
+    try:
+        tok = RefreshToken(refresh)
+        jti = str(tok.get("jti") or "")
+        user_id = int(tok.get("user_id"))
+        if not jti:
+            return None
+        rec = cache.get(_rotation_grace_key(jti))
+        if not isinstance(rec, dict):
+            return None
+        # Spend the grace before judging it: a second re-presentation is a replay even when
+        # the first one did not qualify.
+        if not cache.add(_rotation_grace_claim_key(jti), "1", timeout=window):
+            return None
+        if time.time() - float(rec.get("rotated_at") or 0) > window:
+            return None
+        if int(rec.get("user_id") or 0) != user_id:
+            return None
+        if rec.get("fingerprint") != _fingerprint_digest(*_session_fingerprint(request)):
+            return None
+        successor_jti = str(rec.get("successor_jti") or "")
+        successor_refresh = str(rec.get("successor_refresh") or "")
+        if not successor_jti or not successor_refresh:
+            return None
+        if cache.get(_revoked_key(successor_jti)):
+            return None
+        if not RefreshSession.objects.filter(
+            refresh_jti=successor_jti, user_id=user_id, revoked_at__isnull=True
+        ).exists():
+            return None
+        user = User.objects.filter(pk=user_id).first()
+        if user is None:
+            return None
+        refused = _step_up_refusal(user)
+        if refused is not None:
+            return refused
+        # Same checks a normal refresh runs on the token it is handed (signature, expiry,
+        # inactive account), and the fresh access token comes from the successor itself.
+        serializer = TokenRefreshSerializer(data={"refresh": successor_refresh})
+        if not serializer.is_valid():
+            return None
+        access = str(serializer.validated_data["access"])
+    except Exception:
+        logger.exception("refresh_rotation_grace_failed")
+        return None
+
+    security_metric_incr("refresh_reuse_grace", 1)
+    log_security_event(
+        user_id=user_id,
+        event_type="refresh_reuse_grace",
+        request=request,
+        detail={"age_seconds": round(time.time() - float(rec.get("rotated_at") or 0), 1)},
+        severity="info",
+    )
+    return Response({"access": access, "refresh": successor_refresh}, status=status.HTTP_200_OK)
+
+
 class CookieTokenObtainPairView(ThrottledTokenObtainPairView):
     """
     Browser auth: set HttpOnly cookies for access+refresh.
@@ -483,12 +619,20 @@ class CookieTokenRefreshView(TokenRefreshView):
         if not refresh:
             security_metric_incr("refresh_fail", 1)
             return Response({"detail": "Missing refresh token."}, status=status.HTTP_400_BAD_REQUEST)
-        if _is_refresh_revoked(refresh):
-            _audit_refresh_failure(
-                user_id=_user_id_of_refresh(refresh), request=request, kind="replay_revoked_cache"
-            )
+
+        def replay(kind: str, detail: str) -> Response:
+            # A native app re-presenting the token it just rotated away gets the successor
+            # back once (see _rotation_grace_reply); everything else is refused as a replay.
+            if native:
+                granted = _rotation_grace_reply(refresh=refresh, request=request)
+                if granted is not None:
+                    return granted
+            _audit_refresh_failure(user_id=_user_id_of_refresh(refresh), request=request, kind=kind)
             security_metric_incr("refresh_fail", 1)
-            return Response({"detail": "Refresh token revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({"detail": detail}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if _is_refresh_revoked(refresh):
+            return replay("replay_revoked_cache", "Refresh token revoked.")
 
         # Server-side session allowlist. A plain existence probe — do NOT lock here: the
         # request runs in autocommit (ATOMIC_REQUESTS is off), and select_for_update()
@@ -502,11 +646,7 @@ class CookieTokenRefreshView(TokenRefreshView):
                 raise ValueError("missing jti")
             s = RefreshSession.objects.filter(refresh_jti=jti, revoked_at__isnull=True).first()
             if not s:
-                _audit_refresh_failure(
-                    user_id=_user_id_of_refresh(refresh), request=request, kind="replay_no_session"
-                )
-                security_metric_incr("refresh_fail", 1)
-                return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+                return replay("replay_no_session", "Session revoked.")
         except Exception:
             # Never let a BUG masquerade as "your session is invalid" without a trace —
             # that silence is exactly what hid the outage above. Still 401 (a refresh we
@@ -532,23 +672,15 @@ class CookieTokenRefreshView(TokenRefreshView):
         with transaction.atomic():
             s = RefreshSession.objects.select_for_update().filter(pk=s.pk, revoked_at__isnull=True).first()
             if not s:
-                _audit_refresh_failure(
-                    user_id=_user_id_of_refresh(refresh), request=request, kind="concurrent_rotation"
-                )
-                security_metric_incr("refresh_fail", 1)
-                return Response({"detail": "Session revoked."}, status=status.HTTP_401_UNAUTHORIZED)
+                # Typically a client retry that raced a rotation still in flight: it waited
+                # on the row lock, and the rotation it lost to recorded its grace before
+                # committing, so the retry finds it here.
+                return replay("concurrent_rotation", "Session revoked.")
 
             user = User.objects.get(pk=s.user_id)
-            try:
-                step_until = getattr(user, "security_step_up_required_until", None)
-                if step_until and step_until > timezone.now():
-                    security_metric_incr("refresh_fail", 1)
-                    return Response(
-                        {"detail": "Re-authentication required.", "code": "security_step_up"},
-                        status=status.HTTP_401_UNAUTHORIZED,
-                    )
-            except Exception:
-                pass
+            refused = _step_up_refusal(user)
+            if refused is not None:
+                return refused
             new_refresh = RefreshToken.for_user(user)
             new_refresh_s = str(new_refresh)
             new_access = str(new_refresh.access_token)
@@ -566,6 +698,15 @@ class CookieTokenRefreshView(TokenRefreshView):
                 refresh_jti=new_jti,
                 defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
             )
+
+            if native:
+                # Before commit, so a retry parked on the row lock above finds it on waking.
+                # Should this transaction roll back instead, the record names a successor
+                # that does not exist, and the grace refuses it.
+                _remember_rotation(
+                    old_jti=jti, user_id=int(s.user_id), successor_jti=new_jti,
+                    successor_refresh=new_refresh_s, ip=ip, ua=ua,
+                )
 
         # After commit: revoke old jti in cache (best-effort) and touch churn counters.
         try:

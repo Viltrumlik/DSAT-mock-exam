@@ -755,6 +755,13 @@ SIMPLE_JWT = {
     'CHECK_USER_IS_ACTIVE': True,
 }
 
+# A native app whose refresh reply is lost on the way back (a network blip) still holds the
+# refresh token the server just rotated away, and its retry would 401 — signing a student out
+# mid-exam. For this many seconds after a rotation, the FIRST re-presentation of that token
+# from the same device is handed the successor pair instead, provided the successor is still
+# live and unused. Anything else stays a replay. 0 turns the grace off. Browsers never get it.
+AUTH_REFRESH_REUSE_GRACE_SECONDS = int(os.getenv("AUTH_REFRESH_REUSE_GRACE_SECONDS", "60"))
+
 
 # ─── CORS ─────────────────────────────────────────────────────────────────────
 
