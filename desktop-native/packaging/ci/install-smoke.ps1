@@ -8,7 +8,7 @@
      the HKCU uninstall entry, the shortcuts, and HKCU\Software\Classes\mastersat — which only
      the DLL's Velopack after-install hook (ms_startup) writes, so its presence proves the hooks
      run inside the installed app.
-  3. If Velopack started the app after installing, sends it mastersat://auth?code=s4-test
+  3. Starts the installed app (unless Velopack already did) and sends mastersat://auth?code=s4-test
      through the shell (the registered protocol): the second instance must hand it over and exit.
   4. Leaves a marker in %LOCALAPPDATA%\MasterSAT (the user-data folder), runs
      Update.exe --silent uninstall, and records that the install folder, the protocol key and
@@ -86,16 +86,32 @@ $report.installed = [ordered]@{
   protocolFromHook = [bool]($command -and $command.Contains($current))
 }
 
-# --- 3. the app Velopack started, and a link through the registered protocol ---------------
+# --- 3. the installed app running, and a link through the registered protocol ---------------
 $apps = Get-InstalledApps
 $report.appStartedAfterInstall = $apps.Count -gt 0
-if ($apps.Count -gt 0 -and $command) {
-  $before = $apps.Count
+$installedExe = Join-Path $current 'MasterSAT.exe'
+if ($apps.Count -eq 0 -and (Test-Path $installedExe)) {
+  Start-Process -FilePath $installedExe | Out-Null
+}
+Add-Type -Namespace S4 -Name Win -MemberDefinition @'
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowW(string cls, System.IntPtr title);
+'@ -ErrorAction SilentlyContinue
+$t0 = Get-Date
+$hwnd = [IntPtr]::Zero
+while (((Get-Date) - $t0).TotalSeconds -lt 20 -and $hwnd -eq [IntPtr]::Zero) {
+  Start-Sleep -Milliseconds 250
+  $hwnd = [S4.Win]::FindWindowW('MasterSATWindow', [IntPtr]::Zero)
+}
+$before = (Get-InstalledApps).Count
+if ($hwnd -ne [IntPtr]::Zero -and $command) {
+  # The shell starts "current\MasterSAT.exe" "mastersat://..."; that second instance hands the
+  # link to the running window and exits, so the count of installed processes stays the same.
   Start-Process 'mastersat://auth?code=s4-test'
-  Start-Sleep -Seconds 4
+  Start-Sleep -Seconds 5
   $after = (Get-InstalledApps).Count
-  # The second instance hands the link to the running window and exits: still one process.
-  $report.deepLink = [ordered]@{ processesBefore = $before; processesAfter = $after; handedOver = ($after -eq $before) }
+  $report.deepLink = [ordered]@{ windowFound = $true; processesBefore = $before; processesAfter = $after; handedOver = ($before -ge 1 -and $after -eq $before) }
+} else {
+  $report.deepLink = [ordered]@{ windowFound = ($hwnd -ne [IntPtr]::Zero); handedOver = $false }
 }
 Get-InstalledApps | ForEach-Object { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Seconds 2
@@ -134,6 +150,7 @@ $checks = [ordered]@{
   uninstalled      = ($report.uninstall -is [System.Collections.IDictionary]) -and $report.uninstall.appRemoved -and $report.uninstall.uninstallEntryGone
   protocolRemoved  = ($report.uninstall -is [System.Collections.IDictionary]) -and $report.uninstall.protocolKeyGone
   userDataKept     = ($report.uninstall -is [System.Collections.IDictionary]) -and $report.uninstall.userDataKept
+  deepLinkHandedOver = [bool]$report.deepLink.handedOver
 }
 $report.checks = $checks
 $json = $report | ConvertTo-Json -Depth 6

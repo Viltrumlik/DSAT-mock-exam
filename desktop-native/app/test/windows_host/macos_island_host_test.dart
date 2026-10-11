@@ -12,7 +12,8 @@ import 'package:mastersat_app/island/texture_island_host.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
-  group('resolveDevIslandSource', () {
+  // A macOS development helper; its cases are written with POSIX paths.
+  group('resolveDevIslandSource', skip: Platform.isWindows ? 'macOS dev host only (POSIX paths)' : null, () {
     const root = '/repo/desktop-native';
     final files = <String>{'$root/VERSION', '$root/app/pubspec.yaml', '$root/packaging/s0-probe/content.html'};
     bool exists(String path) => files.contains(p.normalize(path));

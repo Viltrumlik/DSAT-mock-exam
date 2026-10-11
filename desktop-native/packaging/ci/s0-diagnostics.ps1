@@ -217,4 +217,32 @@ if ($AppExe -and (Test-Path $AppExe)) {
 $json = $report | ConvertTo-Json -Depth 8
 Set-Content -Path (Join-Path $OutDir 's0-diagnostics.json') -Value $json -Encoding utf8
 Write-Host $json
+
+# A short table in the job summary (the JSON stays the record).
+if ($env:GITHUB_STEP_SUMMARY) {
+  $md = New-Object System.Collections.Generic.List[string]
+  $md.Add('### S0 / S1 on this build')
+  $md.Add('')
+  $md.Add("- Renderer: $($report.renderer); WebView2 $($report.webview2.machine); screen $($report.virtualScreen) ($($report.setDisplayResolution))")
+  $md.Add("- Bundle: $($report.app.islandFiles) island files, mastersat_native.dll present: $($report.app.nativeDll)")
+  $s1 = $report.s1
+  if ($s1 -and $s1.timings) {
+    $md.Add("- S1 harness: host $($s1.host), island $($s1.islandBuild), open $($s1.timings.openMs) ms, ready $($s1.timings.readyMs) ms, lockdown available: $($s1.lockdown.available), crashes $($s1.crashes), dropped $($s1.droppedMessages)")
+    $md.Add('')
+    $md.Add('| Subject | Module load ms | First question ms | Next p50 ms | Next p95 ms (budget 50) | Max ms | Timeouts |')
+    $md.Add('|---|---:|---:|---:|---:|---:|---:|')
+    foreach ($p in $s1.timings.subjects.PSObject.Properties) {
+      $t = $p.Value
+      $md.Add("| $($p.Name) | $($t.moduleLoadMs) | $($t.firstRenderMs) | $($t.next.p50) | $($t.next.p95) | $($t.next.max) | $($t.next.timeouts) |")
+    }
+  } else {
+    $md.Add("- S1 harness: $($report.s1)")
+  }
+  if ($report.runner) {
+    $r = $report.runner
+    $md.Add('')
+    $md.Add("- Runner: window class found $($r.windowClassFound), visible after $($r.visibleAfterFirstFrameSeconds) s, min size held $($r.minSizeHeld), second launch forwarded $($r.secondLaunch.forwarded) in $($r.secondLaunch.seconds) s, title bar dark mode $($r.immersiveDarkMode)")
+  }
+  Add-Content -Encoding utf8 $env:GITHUB_STEP_SUMMARY (($md -join "`n") + "`n")
+}
 exit 0
