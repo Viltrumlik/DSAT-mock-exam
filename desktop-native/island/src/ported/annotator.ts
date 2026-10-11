@@ -8,7 +8,8 @@
 //     website's `rangeToOffsets`; a selection spanning regions is ignored;
 //   * a click on an existing mark → the range is `boundingRange(annotationsAt(...))` of the
 //     annotations under it (else the mark's own offsets), and the toolbar's "current" style
-//     is `stylesOver` that range;
+//     is `stylesOver` that range — with one fix: the mark's offsets come from `markOffsets`
+//     below, because the website's `offsetsOfMark` always returns null (see there);
 //   * any other mouse-up closes the toolbar; clicks inside `[data-annot-toolbar]` are ignored;
 //   * applying runs `addHighlight` / `addUnderline` / `removeRange` (each ends in
 //     `mergeAnnotations`), repaints with `applyAnnotations` and clears the DOM selection;
@@ -31,7 +32,6 @@ import {
   applyAnnotations,
   boundingRange,
   markFromEvent,
-  offsetsOfMark,
   rangeToOffsets,
   removeRange,
   type Annotation,
@@ -131,6 +131,33 @@ function rectOf(r: { left: number; top: number; width: number; height: number } 
   if (!r) return { x: 0, y: 0, w: 0, h: 0 };
   const n = (v: number) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : 0);
   return { x: n(r.left), y: n(r.top), w: n(r.width), h: n(r.height) };
+}
+
+/**
+ * The character offsets a <mark> covers, counted by the website's `rangeToOffsets`.
+ *
+ * The website's `offsetsOfMark` builds its Range with `selectNodeContents(mark)`, whose
+ * boundaries are the <mark> ELEMENT; `rangeToOffsets` only matches text nodes, so it always
+ * returns null and, on the website, clicking an existing highlight never opens the toolbar
+ * (useAnnotator.ts:144 — reported in the island's build notes). Here the Range is bounded by
+ * the mark's first and last text nodes, so the website's own counting applies unchanged.
+ */
+export function markOffsets(container: HTMLElement, mark: HTMLElement): OffsetRange | null {
+  const doc = mark.ownerDocument;
+  const walker = doc.createTreeWalker(mark, NodeFilter.SHOW_TEXT);
+  let first: Text | null = null;
+  let last: Text | null = null;
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const t = n as Text;
+    if (t.length === 0) continue;
+    if (!first) first = t;
+    last = t;
+  }
+  if (!first || !last) return null;
+  const range = doc.createRange();
+  range.setStart(first, 0);
+  range.setEnd(last, last.length);
+  return rangeToOffsets(container, range);
 }
 
 function rangeRect(range: Range): IslandRect {
@@ -236,7 +263,7 @@ export class Annotator {
     if (mark) {
       const c = list.find((c) => c.el.contains(mark));
       if (c) {
-        const markRange = offsetsOfMark(c.el, mark);
+        const markRange = markOffsets(c.el, mark);
         if (markRange) {
           const anns = this.list(qid, c.key);
           const range = boundingRange(annotationsAt(anns, markRange.start)) ?? markRange;
