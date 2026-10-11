@@ -31,6 +31,8 @@ export interface ClassworkAwardStudent {
 export interface ClassworkAwardsPanel {
   assignment_id: number;
   title: string;
+  /** The floor on one award (1 since 2026-10-11). Optional only so an older server still renders. */
+  min_points?: number;
   /** The ceiling on one award. Read from the server, never hard-coded — the school owns it. */
   max_points: number;
   /** Whether THIS viewer may write. A TA reads the panel and gets no buttons. */

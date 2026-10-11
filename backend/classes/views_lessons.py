@@ -31,18 +31,23 @@ from .views_rankings import _ClassroomScopedView, _display_name
 
 logger = logging.getLogger(__name__)
 
-#: Ceiling on a single classwork award. **The school set this one** (2026-09-09): a teacher
-#: may hand out at most 20 for one classwork. It replaces a 50 that was my own fat-finger
-#: guard rather than a policy, and it is a POLICY now — a teacher who needs to give more is
+#: The range of a single classwork award. **The school set both ends** (2026-10-11): a
+#: classwork is worth 1, 2, 3, 4 or 5 XP, nothing else. The ceiling was 20 from 2026-09-09
+#: (and a fat-finger 50 before that); it is a POLICY — a teacher who wants to give more is
 #: meant to be told no, not nudged.
 #:
-#: One constant for every classwork surface. Points and XP move together on this event
-#: (CLASSWORK_MANUAL grants XP equal to its points), so this is equally "20 points" and
-#: "20 XP" — the teacher-facing copy says XP because that is the number a student watches.
+#: The floor is 1, not 0. A recorded 0 used to mean "looked at it, earned nothing this
+#: time"; the school's scale has no such step, and a mis-click is undone by taking the award
+#: back (``DELETE``), never by typing a smaller number.
 #:
-#: Awards already written above the new ceiling are LEFT STANDING; only new writes are
-#: checked. Re-awarding such a student, though, is re-validated and therefore capped at 20.
-MAX_CLASSWORK_POINTS = 20
+#: One pair of constants for every classwork surface. Points and XP move together on this
+#: event (CLASSWORK_MANUAL grants XP equal to its points), so this is equally "5 points" and
+#: "5 XP" — the teacher-facing copy says XP because that is the number a student watches.
+#:
+#: Awards already written outside the range are LEFT STANDING; only new writes are checked.
+#: Re-awarding such a student, though, is re-validated and therefore lands inside 1–5.
+MIN_CLASSWORK_POINTS = 1
+MAX_CLASSWORK_POINTS = 5
 
 
 def _vocab_rows(ids):
@@ -106,12 +111,12 @@ def _roster_student(classroom, raw_id):
 def _classwork_points(raw) -> tuple[int | None, str]:
     """Parse the teacher's points field into ``(points, error)``.
 
-    Zero is allowed and meaningful: it records "a teacher looked at this and it earned
-    nothing this time", which the absence of a row does not. It is NOT how a mis-click is
-    undone — awarding 0 is a *smaller fact* and leaves the XP standing (OVERHAUL §6), so
-    withdrawing the award is its own operation: ``DELETE`` on this endpoint. Negative is
-    refused — a classwork award is a reward, and docking a student is a manual admin
-    adjustment (``EVENT_MANUAL``), not something a lesson panel should do.
+    Only ``MIN_CLASSWORK_POINTS``–``MAX_CLASSWORK_POINTS`` (1–5) is accepted. Zero is
+    refused: the school's scale starts at 1, and a zero was never an undo anyway —
+    awarding a smaller number leaves the XP standing (OVERHAUL §6), so withdrawing an award
+    is its own operation, ``DELETE`` on this endpoint. Negative is refused too — a
+    classwork award is a reward, and docking a student is a manual admin adjustment
+    (``EVENT_MANUAL``), not something a lesson panel should do.
     """
     if raw is None or str(raw).strip() == "":
         return None, "points is required."
@@ -119,10 +124,11 @@ def _classwork_points(raw) -> tuple[int | None, str]:
         value = int(str(raw).strip())
     except (TypeError, ValueError):
         return None, "points must be a whole number."
-    if value < 0:
-        return None, "Classwork points cannot be negative."
-    if value > MAX_CLASSWORK_POINTS:
-        return None, f"Classwork points cannot be more than {MAX_CLASSWORK_POINTS}."
+    if not (MIN_CLASSWORK_POINTS <= value <= MAX_CLASSWORK_POINTS):
+        return None, (
+            f"Classwork XP is {MIN_CLASSWORK_POINTS} to {MAX_CLASSWORK_POINTS}. To clear an "
+            f"award, take it back instead."
+        )
     return value, ""
 
 
@@ -140,6 +146,7 @@ def _classwork_payload(assignment) -> dict:
             "given_at": None,
             # Sent on both branches so the points field can be bounded before the teacher
             # has handed anything out — the award endpoint hands it out on the way through.
+            "min_points": MIN_CLASSWORK_POINTS,
             "max_points": MAX_CLASSWORK_POINTS,
             "awards": [],
         }
@@ -149,6 +156,7 @@ def _classwork_payload(assignment) -> dict:
         "assignment_id": assignment.id,
         "title": assignment.title,
         "given_at": assignment.published_at or assignment.created_at,
+        "min_points": MIN_CLASSWORK_POINTS,
         "max_points": MAX_CLASSWORK_POINTS,
         "awards": [
             {"student_id": student_id, **row} for student_id, row in sorted(awards.items())
@@ -922,6 +930,7 @@ class ClassroomClassworkAwardsView(_ClassroomCapabilityView):
         return {
             "assignment_id": assignment.id,
             "title": assignment.title,
+            "min_points": MIN_CLASSWORK_POINTS,
             "max_points": MAX_CLASSWORK_POINTS,
             # Whether THIS viewer may write, not merely read. A TA gets the panel and no
             # buttons rather than buttons that 403 — a control that always fails is worse
