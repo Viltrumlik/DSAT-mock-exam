@@ -36,6 +36,9 @@ concurrency:
 
 env:
   FLUTTER_SUPPRESS_ANALYTICS: "true"
+  # The island workstream's branch, built for the S1 harness while this branch
+  # has no desktop-native/island/package.json (empty = never).
+  ISLAND_PREVIEW_REF: native/island
 
 jobs:
   macos:
@@ -80,6 +83,9 @@ jobs:
           flutter pub get
           flutter analyze
           flutter test
+
+      - name: Icons carry every frame
+        run: python3 desktop-native/packaging/icon/make_icon.py --check
 
       - name: Runner launch rules (C++)
         working-directory: desktop-native/app/windows/runner/test
@@ -169,6 +175,43 @@ jobs:
           Write-Host "::warning::desktop-native/island has no package.json; this build carries the S0 probe page, NOT the real question card"
           "MS_S0_PROBE=1" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
 
+      # Integration preview, CI only: while this branch has no island, build the
+      # island workstream's current branch into a temp folder and give it to the
+      # S1 harness build ONLY (the installer keeps this branch's contents). The
+      # working tree is put back afterwards; nothing is committed.
+      - uses: actions/setup-node@v4
+        if: env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        with:
+          node-version: 24
+      - name: Island preview for the S1 harness (${{ env.ISLAND_PREVIEW_REF }})
+        id: island_preview
+        if: env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        continue-on-error: true
+        run: |
+          git fetch --no-tags --depth=1 origin "$env:ISLAND_PREVIEW_REF"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::warning::no $env:ISLAND_PREVIEW_REF branch"; exit 1 }
+          $sha = (git rev-parse FETCH_HEAD).Trim()
+          git checkout FETCH_HEAD -- desktop-native/island
+          Push-Location desktop-native/island
+          try {
+            npm ci
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            npm run build
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } finally { Pop-Location }
+          $dest = Join-Path $env:RUNNER_TEMP 'island-preview'
+          Copy-Item -Recurse desktop-native/island/build/island $dest
+          Get-ChildItem $dest | Format-Table Name, Length -AutoSize | Out-String | Write-Host
+          "dir=$dest" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          "sha=$sha" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT
+          Write-Host "::notice::S1 harness uses the island from $env:ISLAND_PREVIEW_REF @ $sha (preview, not merged)"
+      - name: Put this branch's island folder back
+        if: always() && env.HAS_ISLAND != 'True' && env.ISLAND_PREVIEW_REF != ''
+        run: |
+          git checkout HEAD -- desktop-native/island
+          git clean -fdxq -- desktop-native/island
+          git status --short -- desktop-native/island
+
       # --- Native unit tests (plugin policy + runner launch rules)
       - name: ms_webview2 native tests (gtest)
         run: |
@@ -200,6 +243,11 @@ jobs:
           }
           if (-not (Test-Path lib/island/s1_harness.dart)) { Write-Host "no harness entry point"; "dir=" | Out-File -Append -Encoding utf8 $env:GITHUB_OUTPUT; exit 0 }
           # lib/island/s1_harness.dart has its own main(): build it as the target.
+          $preview = '${{ steps.island_preview.outputs.dir }}'
+          if ($preview -and (Test-Path "$preview/content.html")) {
+            $env:MS_ISLAND_DIR = $preview
+            Write-Host "S1 harness build carries the island preview from $preview"
+          }
           flutter build windows --release -t lib/island/s1_harness.dart --build-name $env:APP_VERSION --build-number $env:GITHUB_RUN_NUMBER
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $dest = Join-Path $env:RUNNER_TEMP 's1-harness'
