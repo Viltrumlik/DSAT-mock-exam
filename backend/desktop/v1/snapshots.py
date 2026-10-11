@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
+from django.db.models import Count, Prefetch
 from django.utils import timezone
 
 from exams.attempt_timing import _module_started_anchor
@@ -50,9 +51,36 @@ def _timing(*, now, deadline_at, remaining_ms, paused) -> dict:
 
 
 # ── past papers ──────────────────────────────────────────────────────────────────────────
-def pastpaper_modules(attempt: TestAttempt) -> list[Module]:
-    """The paper's modules in order (uses a prefetch of ``practice_test__modules`` if present)."""
+def modules_with_counts():
+    """Modules annotated with ``question_count`` — one query for a whole paper (or library)."""
+    return Module.objects.annotate(question_count=Count("questions"))
+
+
+def pastpaper_attempts():
+    """The queryset every v1 past-paper summary is built from: the paper and its modules
+    (with question counts) in two queries, never the questions themselves."""
+    return TestAttempt.objects.select_related("practice_test").prefetch_related(
+        Prefetch("practice_test__modules", queryset=modules_with_counts())
+    )
+
+
+def fresh_pastpaper(attempt_id: int) -> TestAttempt:
+    return pastpaper_attempts().get(pk=attempt_id)
+
+
+def _all_modules(attempt: TestAttempt) -> list[Module]:
     return sorted(attempt.practice_test.modules.all(), key=lambda m: (m.module_order, m.id))
+
+
+def pastpaper_modules(attempt: TestAttempt) -> list[Module]:
+    """The paper's SITTABLE modules in order.
+
+    A module with no questions is left out: a single-module paper keeps an empty Module 2 row,
+    and the engine skips it (``submit_module_1`` goes straight to SCORING), so the app must
+    never be handed a module it would have to render empty. Counts come from the
+    ``modules_with_counts`` prefetch; without it every module is kept.
+    """
+    return [m for m in _all_modules(attempt) if getattr(m, "question_count", None) != 0]
 
 
 def pastpaper_live_module(attempt: TestAttempt, modules: list[Module]) -> Module | None:
@@ -74,7 +102,7 @@ def pastpaper_live_module(attempt: TestAttempt, modules: list[Module]) -> Module
 def pastpaper_lite(attempt: TestAttempt, *, now: _dt.datetime | None = None) -> dict:
     now = now or timezone.now()
     modules = pastpaper_modules(attempt)
-    live = pastpaper_live_module(attempt, modules)
+    live = pastpaper_live_module(attempt, _all_modules(attempt))
     state = attempt.current_state
     paused = attempt.pause_started_at is not None
     module_block = None
@@ -191,3 +219,11 @@ def lite_for(attempt) -> dict:
     if isinstance(attempt, MidtermAttempt):
         return midterm_lite(attempt)
     return pastpaper_lite(attempt)
+
+
+def fresh_midterm(attempt_id: int) -> MidtermAttempt:
+    """A midterm attempt with everything its summary and bundle read, joined once. Never
+    used under ``select_for_update`` (the paper modules and version are nullable joins)."""
+    return MidtermAttempt.objects.select_related(
+        "midterm", "version", "paper_module", "paper_module_2"
+    ).get(pk=attempt_id)
