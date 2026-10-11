@@ -17,7 +17,10 @@
 param(
   [Parameter(Mandatory = $true)][string]$Exe,
   [Parameter(Mandatory = $true)][string]$OutDir,
-  [int]$Seconds = 20
+  [int]$Seconds = 20,
+  # The release app (not the harness build) for the runner checks: single
+  # instance + link forwarding, minimum size, light title bar, placement.
+  [string]$AppExe = ''
 )
 
 $ErrorActionPreference = 'Continue'
@@ -127,6 +130,16 @@ if (Test-Path $Exe) {
   $report.app.ranSeconds = [Math]::Round(((Get-Date) - $started).TotalSeconds, 1)
 }
 
+# The renderer the engine picked (architecture §10 S1: "the shipping renderer
+# is recorded"); the engine prints it on stderr at start.
+$report.renderer = Try-Get {
+  $err = Join-Path $OutDir 'app-stderr.txt'
+  if (Test-Path $err) {
+    $line = Select-String -Path $err -Pattern 'Using the Impeller rendering backend \(([^)]+)\)' | Select-Object -First 1
+    if ($line) { "Impeller ($($line.Matches[0].Groups[1].Value))" } else { 'Skia (no Impeller line on stderr)' }
+  } else { 'unknown' }
+}
+
 if (Test-Path $s1Json) {
   Copy-Item $s1Json (Join-Path $OutDir 'mastersat-s1.json')
   $report.s1 = Try-Get { Get-Content -Raw $s1Json | ConvertFrom-Json }
@@ -134,6 +147,70 @@ if (Test-Path $s1Json) {
   $report.s1 = 'no mastersat-s1.json was written'
 }
 if (Test-Path $s1Png) { Copy-Item $s1Png (Join-Path $OutDir 'island.png') }
+
+# --- The runner (windows/runner): single instance, link forwarding, window -
+if ($AppExe -and (Test-Path $AppExe)) {
+  Add-Type -Namespace S0 -Name Win -MemberDefinition @'
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowW(string cls, string title);
+[DllImport("user32.dll")] public static extern bool MoveWindow(System.IntPtr h, int x, int y, int w, int hgt, bool repaint);
+[DllImport("user32.dll")] public static extern bool GetClientRect(System.IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
+[DllImport("user32.dll")] public static extern uint GetDpiForWindow(System.IntPtr h);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr h);
+[DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(System.IntPtr h, int attr, out int value, int size);
+[StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+'@ -ErrorAction SilentlyContinue
+  $runner = [ordered]@{ exe = $AppExe }
+  Remove-ItemProperty -Path 'HKCU:\Software\MasterSAT\Exam' -Name WindowPlacement -ErrorAction SilentlyContinue
+  $first = Start-Process -FilePath $AppExe -PassThru
+  $hwnd = [IntPtr]::Zero
+  $t0 = Get-Date
+  while (((Get-Date) - $t0).TotalSeconds -lt 20 -and $hwnd -eq [IntPtr]::Zero) {
+    Start-Sleep -Milliseconds 250
+    $hwnd = [S0.Win]::FindWindowW('MasterSATWindow', $null)
+  }
+  $runner.windowClassFound = $hwnd -ne [IntPtr]::Zero
+  if ($runner.windowClassFound) {
+    $t1 = Get-Date
+    while (((Get-Date) - $t1).TotalSeconds -lt 15 -and -not [S0.Win]::IsWindowVisible($hwnd)) { Start-Sleep -Milliseconds 100 }
+    $runner.visibleAfterFirstFrameSeconds = [Math]::Round(((Get-Date) - $t0).TotalSeconds, 2)
+    $dark = 0
+    $null = [S0.Win]::DwmGetWindowAttribute($hwnd, 20, [ref]$dark, 4)
+    $runner.immersiveDarkMode = $dark
+    $runner.dpi = [S0.Win]::GetDpiForWindow($hwnd)
+    # Ask for a tiny window: WM_GETMINMAXINFO must keep the client >= 1000 x 640 logical.
+    $null = [S0.Win]::MoveWindow($hwnd, 40, 40, 400, 300, $true)
+    Start-Sleep -Milliseconds 500
+    $rc = New-Object S0.Win+RECT
+    $null = [S0.Win]::GetClientRect($hwnd, [ref]$rc)
+    $scale = $runner.dpi / 96.0
+    $runner.clientAfterShrink = "$([int](($rc.Right - $rc.Left) / $scale))x$([int](($rc.Bottom - $rc.Top) / $scale)) logical"
+    $runner.minSizeHeld = (($rc.Right - $rc.Left) / $scale -ge 999) -and (($rc.Bottom - $rc.Top) / $scale -ge 639)
+    $null = [S0.Win]::MoveWindow($hwnd, 60, 50, [int](1100 * $scale), [int](720 * $scale), $true)
+    Start-Sleep -Milliseconds 300
+
+    # A second launch with a link: it must hand the link over and exit at once.
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $second = Start-Process -FilePath $AppExe -ArgumentList 'mastersat://auth?code=s0-test' -PassThru
+    $exited = $second.WaitForExit(15000)
+    $runner.secondLaunch = [ordered]@{
+      exited       = $exited
+      exitCode     = $(if ($exited) { $second.ExitCode } else { $null })
+      forwarded    = $exited -and $second.ExitCode -eq 0
+      seconds      = [Math]::Round($sw.Elapsed.TotalSeconds, 2)
+      firstStillRunning = -not $first.HasExited
+    }
+    if (-not $exited) { Stop-Process -Id $second.Id -Force -ErrorAction SilentlyContinue }
+
+    # Close normally (WM_CLOSE): the placement is remembered for the next start.
+    $null = $first.CloseMainWindow()
+    $runner.closedCleanly = $first.WaitForExit(10000)
+    $saved = Get-ItemProperty -Path 'HKCU:\Software\MasterSAT\Exam' -Name WindowPlacement -ErrorAction SilentlyContinue
+    $runner.placementSaved = $null -ne $saved
+  }
+  if (-not $first.HasExited) { Stop-Process -Id $first.Id -Force -ErrorAction SilentlyContinue }
+  $report.runner = $runner
+}
 
 $json = $report | ConvertTo-Json -Depth 8
 Set-Content -Path (Join-Path $OutDir 's0-diagnostics.json') -Value $json -Encoding utf8

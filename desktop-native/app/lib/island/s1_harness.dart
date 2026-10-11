@@ -363,7 +363,8 @@ class S1Controller extends ChangeNotifier {
     DateTime Function()? now,
   }) : modules = modules ?? S1Module.fixtures(),
        _powerChannel = powerChannel ?? const MethodChannel('mastersat/power'),
-       _now = now ?? DateTime.now;
+       _now = now ?? DateTime.now,
+       startedAt = (now ?? DateTime.now)();
 
   final IslandHostFactory hostFactory;
   final S1Lockdown? lockdown;
@@ -389,7 +390,8 @@ class S1Controller extends ChangeNotifier {
   String notes = '';
 
   // Timings.
-  late final DateTime startedAt = _now();
+  /// When the harness was created (not when the results were first written).
+  final DateTime startedAt;
   double? openMs;
   double? readyMs;
   String? islandBuild;

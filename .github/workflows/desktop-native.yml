@@ -223,7 +223,8 @@ jobs:
           $harness = '${{ steps.harness.outputs.dir }}'
           if (-not $harness) { $harness = 'desktop-native/app/build/windows/x64/runner/Release' }
           $exe = Join-Path (Resolve-Path $harness) 'MasterSAT.exe'
-          ./desktop-native/packaging/ci/s0-diagnostics.ps1 -Exe $exe -OutDir "$env:RUNNER_TEMP/s0" -Seconds 25
+          $app = Join-Path (Resolve-Path 'desktop-native/app/build/windows/x64/runner/Release') 'MasterSAT.exe'
+          ./desktop-native/packaging/ci/s0-diagnostics.ps1 -Exe $exe -OutDir "$env:RUNNER_TEMP/s0" -Seconds 25 -AppExe $app
       - uses: actions/upload-artifact@v4
         if: always()
         with:

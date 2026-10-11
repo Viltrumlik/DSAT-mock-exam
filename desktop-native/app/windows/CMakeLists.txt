@@ -62,15 +62,20 @@ include(flutter/generated_plugins.cmake)
 # desktop-native/ (this file is desktop-native/app/windows/CMakeLists.txt).
 get_filename_component(MS_DESKTOP_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
 
-# mastersat_native.dll (Rust cdylib, desktop-native/native). `flutter build
-# windows` cannot pass -D options, so these are read from the environment:
-#   MS_LINK_NATIVE     AUTO (default) | ON | OFF
+# mastersat_native.dll (Rust cdylib, desktop-native/native).
+#   MS_LINK_NATIVE     AUTO (default) | ON | OFF   (CMake cache option)
 #   MS_NATIVE_LIB_DIR  folder holding mastersat_native.dll + .dll.lib
 # AUTO links the DLL when it has been built and builds without it otherwise,
-# so the app still builds before the Rust crate exists.
-set(MS_LINK_NATIVE "AUTO")
+# so the app still builds before the Rust crate exists. `flutter build
+# windows` cannot pass -D options, so the environment variables of the same
+# names override the cache (CI sets MS_LINK_NATIVE=ON once the crate builds).
+set(MS_LINK_NATIVE "AUTO" CACHE STRING "Link mastersat_native.dll: AUTO, ON or OFF")
+set_property(CACHE MS_LINK_NATIVE PROPERTY STRINGS AUTO ON OFF)
 if(DEFINED ENV{MS_LINK_NATIVE})
-  set(MS_LINK_NATIVE "$ENV{MS_LINK_NATIVE}")
+  set(MS_LINK_NATIVE "$ENV{MS_LINK_NATIVE}" CACHE STRING "Link mastersat_native.dll: AUTO, ON or OFF" FORCE)
+endif()
+if(NOT MS_LINK_NATIVE MATCHES "^(AUTO|ON|OFF)$")
+  message(FATAL_ERROR "MS_LINK_NATIVE must be AUTO, ON or OFF (got '${MS_LINK_NATIVE}')")
 endif()
 set(MS_NATIVE_LIB "")
 if(NOT MS_LINK_NATIVE STREQUAL "OFF")

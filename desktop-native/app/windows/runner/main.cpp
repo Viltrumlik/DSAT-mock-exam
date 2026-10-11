@@ -44,8 +44,9 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // and exits. The S1 diagnostics harness may run beside the app.
   SingleInstance single_instance;
   if (!s1_harness && !single_instance.Acquire()) {
-    SingleInstance::ForwardToRunning(launch_url);
-    return EXIT_SUCCESS;
+    // Exit code 3 = no running window answered (diagnostics only; the
+    // student sees the running window come forward either way).
+    return SingleInstance::ForwardToRunning(launch_url) ? EXIT_SUCCESS : 3;
   }
 
   // Attach to console when present (e.g., 'flutter run') or create a
