@@ -346,6 +346,13 @@ class SubmitTests(MidtermCase):
         enqueue.assert_called_once()
         self.assertEqual(MidtermAttempt.objects.get(pk=attempt_id).answers[str(self.q2[0])], "B")
 
+    def test_inside_the_grace_the_submit_banks_its_answers(self):
+        attempt_id = self.opened()
+        self.expire(attempt_id, extra=GRACE_S - 3)  # 3 s inside the 300 s grace
+        body = self.submit(attempt_id, self.m1.id, {str(self.q1[0]): "D"})
+        self.assertEqual((body["applied"], body["reason"], body["transitioned_to"]), (True, None, "MODULE_2_ACTIVE"))
+        self.assertEqual(MidtermAttempt.objects.get(pk=attempt_id).answers, {str(self.q1[0]): "D"})
+
     def test_past_the_grace_the_module_still_ends_without_unseen_answers(self):
         attempt_id = self.opened()
         self.sync(attempt_id, self.m1.id, {str(self.q1[0]): "A"})

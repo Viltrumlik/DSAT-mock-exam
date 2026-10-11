@@ -119,7 +119,8 @@ def midterm_rows(user) -> list[dict]:
     granted = {mid for mid in grant_mid.values() if mid is not None}
 
     # Oldest first, so the last one per midterm wins — the view's "last (latest) wins".
-    attempts = list(MidtermAttempt.objects.filter(student=user).order_by("created_at"))
+    # Without the answer maps: a row needs the state, the score and the pinned scale only.
+    attempts = list(MidtermAttempt.objects.filter(student=user).defer("answers", "flagged").order_by("created_at"))
     attempted = {a.midterm_id for a in attempts}
 
     loaded = {m.id: m for m in Midterm.objects.filter(id__in=granted | attempted)}
