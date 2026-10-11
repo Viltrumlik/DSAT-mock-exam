@@ -313,7 +313,7 @@ void main() {
     final c = controller(next: 1);
     await tester.runAsync(c.start);
     final call = const StandardMethodCodec().encodeMethodCall(
-      const MethodCall('event', {'event': 'resume', 'wallClockMs': 1, 'tickMs': 2}),
+      const MethodCall('resumed', {'event': 'resumed', 'wallClockMs': 1, 'tickMs': 2}),
     );
     await tester.runAsync(() async {
       await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.handlePlatformMessage(
@@ -323,7 +323,7 @@ void main() {
       );
       await Future<void>.delayed(const Duration(milliseconds: 2300));
     });
-    expect(c.powerEvents.single.event, 'resume');
+    expect(c.powerEvents.single.event, 'resumed');
     expect(c.powerEvents.single.islandAnswered, isTrue);
     await tester.runAsync(c.writeResults);
     expect(((results()['powerEvents']! as List).single as Map)['islandAnswered'], isTrue);

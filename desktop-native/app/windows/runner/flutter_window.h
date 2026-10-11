@@ -28,10 +28,15 @@
 //                                                    as ready
 //                      "focusWindow" -> bool         restore + foreground
 //  * MethodChannel("mastersat/power")
-//      native -> Dart  "event" {"event": "suspend" | "resume" |
-//                       "resumeAutomatic" | "powerStatus" | "timeChanged" |
-//                       "displayChanged", "wallClockMs": int,
-//                       "tickMs": int, ["width": int, "height": int]}
+//      native -> Dart, the method is the event:
+//        "suspending"     WM_POWERBROADCAST / PBT_APMSUSPEND
+//        "resumed"        PBT_APMRESUMEAUTOMATIC (every resume; act on this)
+//        "resumedByUser"  PBT_APMRESUMESUSPEND (after "resumed", user woke it)
+//        "powerStatus"    PBT_APMPOWERSTATUSCHANGE (AC/battery changed)
+//        "timeChanged"    WM_TIMECHANGE (the wall clock moved)
+//        "displayChanged" WM_DISPLAYCHANGE (+ "width", "height")
+//      arguments: {"event": <same name>, "wallClockMs": int, "tickMs": int}
+//      (GetTickCount64 counts through sleep; receivers may ignore them).
 //
 // Only links (launch_policy::IsLaunchUrl) cross the channel; Dart decides what
 // they mean (architecture §6: only mastersat://auth?code= is acted on, and

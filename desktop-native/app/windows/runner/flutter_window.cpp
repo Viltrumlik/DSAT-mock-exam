@@ -143,8 +143,10 @@ void FlutterWindow::SendPowerEvent(const char* event, std::optional<int> width,
     payload[flutter::EncodableValue("height")] =
         flutter::EncodableValue(*height);
   }
+  // The method IS the event (exam-engine's PowerEvents switches on the method
+  // name); the map carries the same name plus the clocks, for diagnostics.
   power_channel_->InvokeMethod(
-      "event", std::make_unique<flutter::EncodableValue>(std::move(payload)));
+      event, std::make_unique<flutter::EncodableValue>(std::move(payload)));
 }
 
 void FlutterWindow::OnDestroy() {
@@ -202,13 +204,15 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
     case WM_POWERBROADCAST:
       switch (wparam) {
         case PBT_APMSUSPEND:
-          SendPowerEvent("suspend");
-          break;
-        case PBT_APMRESUMESUSPEND:
-          SendPowerEvent("resume");
+          SendPowerEvent("suspending");
           break;
         case PBT_APMRESUMEAUTOMATIC:
-          SendPowerEvent("resumeAutomatic");
+          // Sent on EVERY resume; the one engines act on.
+          SendPowerEvent("resumed");
+          break;
+        case PBT_APMRESUMESUSPEND:
+          // Sent after "resumed" when a person woke the machine (diagnostics).
+          SendPowerEvent("resumedByUser");
           break;
         case PBT_APMPOWERSTATUSCHANGE:
           SendPowerEvent("powerStatus");

@@ -825,14 +825,13 @@ class S1Controller extends ChangeNotifier {
   // ---------------------------------------------------------------------------------------------
 
   Future<Object?> _onPowerCall(MethodCall call) async {
-    if (call.method != 'event') return null;
-    final args = (call.arguments as Map?)?.cast<Object?, Object?>() ?? const {};
-    final name = args['event'] as String? ?? '?';
+    // The method is the event (windows/runner/flutter_window.h).
+    final name = call.method;
     final event = S1PowerEvent(name, _now());
     powerEvents.add(event);
     _log('power: $name');
     notifyListeners();
-    if (name == 'resume' || name == 'resumeAutomatic' || name == 'displayChanged') {
+    if (name == 'resumed' || name == 'displayChanged') {
       // Give the system a moment, then check that the island still draws and answers.
       await Future<void>.delayed(const Duration(seconds: 2));
       if (_disposed || !interactive) return null;
