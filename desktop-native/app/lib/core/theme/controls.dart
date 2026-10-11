@@ -276,8 +276,9 @@ class AppButton extends StatelessWidget {
                 borderRadius: BorderRadius.circular(AppRadii.button),
                 border: colors.border == null ? null : Border.all(color: colors.border!),
               ),
-              alignment: Alignment.center,
-              child: content,
+              // Hug the label unless asked to fill: a Container with an alignment would
+              // stretch to any bounded width (a Wrap, a Column).
+              child: Center(widthFactor: expand ? null : 1, child: content),
             ),
           ),
         );

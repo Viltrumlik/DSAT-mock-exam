@@ -355,9 +355,9 @@ class _Row extends StatelessWidget {
         children: [
           SizedBox(
             width: 160,
-            child: Padding(
-              padding: const EdgeInsets.only(top: 7),
-              child: Text(label, style: AppText.small),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 34),
+              child: Align(alignment: Alignment.centerLeft, child: Text(label, style: AppText.small)),
             ),
           ),
           Expanded(

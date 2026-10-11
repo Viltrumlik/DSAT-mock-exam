@@ -80,6 +80,7 @@ class BookletCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Flexible(
                             child: StatusBadge(
@@ -90,7 +91,6 @@ class BookletCard extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Spacer(),
                           Flexible(
                             child: StatusBadge(
                               label: regionLabel(p),

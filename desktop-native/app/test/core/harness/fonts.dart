@@ -39,14 +39,22 @@ List<File> _segoeFaces() {
   ];
 }
 
-/// Goldens are compared only where they were recorded: macOS with the system Arial.
-bool get goldensSupported => Platform.isMacOS && File('$_macArial/Arial.ttf').existsSync();
+/// The time-zone offset the goldens were recorded in (Asia/Tashkent, like the students): a few
+/// labels are local times ("updated 14:00", "Opens Oct 12").
+const goldenTimeZoneOffset = Duration(hours: 5);
 
-/// Why goldens are skipped elsewhere (shown by `flutter test`).
+/// Goldens are compared only where they were recorded: macOS with the system Arial, in the
+/// recording time zone.
+bool get goldensSupported =>
+    Platform.isMacOS &&
+    File('$_macArial/Arial.ttf').existsSync() &&
+    DateTime.now().timeZoneOffset == goldenTimeZoneOffset;
+
+/// Why goldens are skipped elsewhere.
 String? get goldenSkipReason => goldensSupported
     ? null
-    : 'Goldens are recorded on macOS with the system Arial standing in for Segoe UI; '
-        'font rasterisation differs on other platforms.';
+    : 'Goldens are recorded on macOS (system Arial standing in for Segoe UI) at UTC+5; font '
+        'rasterisation and local-time labels differ elsewhere.';
 
 bool _loaded = false;
 
