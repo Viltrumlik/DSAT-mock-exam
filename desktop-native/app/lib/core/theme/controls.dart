@@ -42,12 +42,17 @@ class Pressable extends StatefulWidget {
     this.focusNode,
     this.autofocus = false,
     this.tooltip,
+    this.excludeChildSemantics = true,
   });
 
   /// Null disables the control.
   final VoidCallback? onPressed;
   final Widget Function(BuildContext context, PressableState state) builder;
   final String? semanticLabel;
+
+  /// With a [semanticLabel], hide the children from accessibility (a plain button). A card
+  /// that holds its own buttons passes false, so they stay reachable.
+  final bool excludeChildSemantics;
   final bool selected;
   final FocusNode? focusNode;
   final bool autofocus;
@@ -105,11 +110,12 @@ class _PressableState extends State<Pressable> {
       ),
     );
     child = Semantics(
+      container: !widget.excludeChildSemantics,
       button: true,
       enabled: _enabled,
       selected: widget.selected,
       label: widget.semanticLabel,
-      excludeSemantics: widget.semanticLabel != null,
+      excludeSemantics: widget.semanticLabel != null && widget.excludeChildSemantics,
       onTap: _enabled ? _activate : null,
       child: child,
     );
@@ -774,6 +780,8 @@ class AppTextField extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           onChanged: onChanged,
+          // No right-click menu anywhere (architecture §2.3); keyboard copy/paste still work.
+          contextMenuBuilder: null,
           style: AppText.body.copyWith(fontSize: 14),
           cursorWidth: 1.5,
           mouseCursor: SystemMouseCursors.text,
