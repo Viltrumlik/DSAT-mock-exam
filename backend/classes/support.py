@@ -107,7 +107,7 @@ NO_SHOW_PAUSE_DAYS = 7
 #: are cancelled only when a teacher records the second miss). A miss is "under the rule"
 #: when its ``settled_at`` is on or after this date. Move it to the release day if the
 #: release goes out later.
-NO_SHOW_RULE_START = datetime(2026, 10, 12).date()
+NO_SHOW_RULE_START = datetime(2026, 10, 11).date()
 
 
 def _no_show_dates_by_student(student_ids, *, now) -> dict[int, list]:
