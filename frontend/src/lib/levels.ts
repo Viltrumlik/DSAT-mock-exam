@@ -57,3 +57,31 @@ export function setHasLevel(
 ): boolean {
   return set.level === level || (Boolean(set.secondary_level) && set.secondary_level === level);
 }
+
+/**
+ * The choices for a set's optional second level: the subject's levels minus the primary.
+ * Empty until a primary is chosen — a second level never stands alone.
+ */
+export function secondaryLevelOptions(
+  subject: string | null | undefined,
+  level: string | null | undefined,
+): LevelKey[] {
+  if (!level) return [];
+  return levelsForSubject(subject).filter((l) => l !== level);
+}
+
+/**
+ * The second level to KEEP after the subject or primary level changes, or "" to clear it.
+ * Mirrors the backend validator (AssessmentSetAdminWriteSerializer) so the forms never
+ * send a pair the server rejects: no primary -> clear (a second level needs one); equal to
+ * the primary -> clear (it would name one cohort twice); not valid for the subject ->
+ * clear (English has no Foundation).
+ */
+export function reconcileSecondaryLevel(
+  subject: string | null | undefined,
+  level: string | null | undefined,
+  secondary: string | null | undefined,
+): string {
+  if (!secondary) return "";
+  return secondaryLevelOptions(subject, level).includes(secondary as LevelKey) ? secondary : "";
+}

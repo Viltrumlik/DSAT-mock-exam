@@ -862,6 +862,12 @@ export type AssignmentOptions = {
         subject: string;
         source: string;
         level: string;
+        /**
+         * Optional second level ("" = none; absent from servers before 2026-10-11). The
+         * server already offers a set to a classroom of EITHER level, so the picker need
+         * not filter on it — it is for display.
+         */
+        secondary_level?: string;
         category: string;
         description: string;
         question_count: number;
@@ -1762,6 +1768,8 @@ export const assessmentsAdminApi = {
         subject: "math" | "english";
         source?: string;
         level?: string;
+        /** Optional second level ("" = none) — 2026-10-11, the school's request. */
+        secondary_level?: string;
         category?: string;
         title: string;
         description?: string;
@@ -1776,6 +1784,8 @@ export const assessmentsAdminApi = {
             subject: "math" | "english";
             source: string;
             level: string;
+            /** "" clears it. The server rejects one equal to `level` or without a primary. */
+            secondary_level: string;
             category: string;
             title: string;
             description: string;
