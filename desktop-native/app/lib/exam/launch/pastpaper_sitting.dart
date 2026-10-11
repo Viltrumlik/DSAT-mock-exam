@@ -191,6 +191,9 @@ class _PastpaperSittingScreenState extends State<PastpaperSittingScreen> {
               onPrimary: () => unawaited(_leaveUnavailable()),
             )
           : null,
+      // Scientific-only papers (junior midterms) get Desmos's Scientific calculator, as on the
+      // website; the native one is only the offline / Desmos-failed fallback.
+      nativeScientificOnly: false,
       animate: widget.animate,
       onExit: _onRunnerExit,
       onDiagnostic: widget.onDiagnostic,

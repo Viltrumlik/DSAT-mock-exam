@@ -14,7 +14,9 @@
 //    WebView2 on the rules / code / pre-check screens) and kept across a lost lock;
 //  * the result ("See your report") and the update (Velopack, with the download as fallback).
 //
-// Every way out goes through MidtermFlow's exits, which release the machine first.
+// Every way out goes through MidtermFlow's exits, which release the machine first. The display
+// is kept awake by MidtermFlow itself (native/parity); the rules screen reads the scale, pass
+// mark and retake line from the prepare reply.
 import 'dart:async';
 
 import 'package:flutter/widgets.dart';
@@ -55,7 +57,7 @@ class MidtermSittingScreen extends StatefulWidget {
     this.animate = true,
   });
 
-  /// The Home row the student started from (rules extras: the scale, re-sit).
+  /// The Home row the student started from.
   final MidtermRow row;
   final MidtermEngine engine;
   final NativeBridge native;
@@ -195,6 +197,9 @@ class _MidtermSittingScreenState extends State<MidtermSittingScreen> {
               onPrimary: () => _exit(finished: false),
             )
           : null,
+      // Scientific-only papers (junior midterms) get Desmos's Scientific calculator, as on the
+      // website; the native one is only the offline / Desmos-failed fallback.
+      nativeScientificOnly: false,
       animate: widget.animate,
       onDiagnostic: widget.onDiagnostic,
     );
@@ -211,8 +216,7 @@ class _MidtermSittingScreenState extends State<MidtermSittingScreen> {
       onOpenReport: () => _exit(finished: true),
       onUpdateNow: widget.updates == null ? null : _updateNow,
       onDownload: widget.openDownload,
-      scoringScale: widget.row.scoringScale.isEmpty ? null : widget.row.scoringScale,
-      isRetake: widget.row.resitOpen,
+      // The scale, pass mark and retake line come from the prepare reply's rules (native/parity).
     );
   }
 }

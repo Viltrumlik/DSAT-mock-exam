@@ -69,6 +69,17 @@ class RigNativeBridge extends FakeNativeBridge {
   }
 }
 
+/// A content island whose WebView2 cannot start (open() throws, like a missing runtime).
+class FailingIslandHost extends FakeIslandHost {
+  FailingIslandHost(super.kind);
+
+  @override
+  Future<void> open() async {
+    opens++;
+    throw StateError('WebView2 runtime not found');
+  }
+}
+
 class AppRig {
   AppRig._(this.tester, this.dir, this.clock, this.api, this.native, this.tokens, this.services, this.hosts, this.openedUrls);
 
@@ -90,6 +101,7 @@ class AppRig {
     WidgetTester tester, {
     EngineTimings timings = const EngineTimings(),
     Duration accessLeft = const Duration(hours: 3),
+    bool islandOpenFails = false,
   }) async {
     driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
     final dir = Directory.systemTemp.createTempSync('wire-e2e-');
@@ -122,7 +134,7 @@ class AppRig {
       copyToClipboard: (_) async {},
       examLauncher: ExamLauncherWiring(
         islandFactory: (kind) {
-          final h = FakeIslandHost(kind);
+          final h = islandOpenFails ? FailingIslandHost(kind) : FakeIslandHost(kind);
           hosts.add(h);
           return h;
         },
