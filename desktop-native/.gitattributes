@@ -1,0 +1,4 @@
+# JSON is compared byte for byte by the tests (contracts/v1 fixtures against their embedded
+# copies, island/protocol/schema.json against protocol.dart). Git for Windows checks text out
+# with CRLF by default (core.autocrlf), which broke those comparisons on windows-latest.
+*.json text eol=lf
