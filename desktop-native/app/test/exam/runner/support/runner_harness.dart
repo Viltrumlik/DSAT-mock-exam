@@ -124,6 +124,7 @@ class RunnerHarness {
     final window = windowControls ? FakeRunnerWindowControls() : null;
     final batteryN = battery == null ? null : ValueNotifier<BatteryStatus?>(battery);
     final h = RunnerHarness._(tester, s, content, window, batteryN);
+    await tester.pumpWidget(const SizedBox.shrink()); // a fresh runner state every time
     await tester.pumpWidget(
       runnerApp(
         ExamRunnerScreen(

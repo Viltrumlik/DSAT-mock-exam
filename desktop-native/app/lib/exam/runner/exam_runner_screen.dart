@@ -257,6 +257,10 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   @override
   void didUpdateWidget(ExamRunnerScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    assert(
+      identical(oldWidget.session, widget.session) && identical(oldWidget.contentHost, widget.contentHost),
+      'Each sitting gets its own ExamRunnerScreen: key it by the attempt id.',
+    );
     if (oldWidget.battery != widget.battery) {
       oldWidget.battery?.removeListener(_rebuild);
       widget.battery?.addListener(_rebuild);
