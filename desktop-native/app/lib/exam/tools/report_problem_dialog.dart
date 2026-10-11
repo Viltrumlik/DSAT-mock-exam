@@ -84,7 +84,7 @@ class ReportProblemDialogState extends State<ReportProblemDialog> {
   ReportCategory _category = ReportCategory.wrongAnswer;
   final TextEditingController _message = TextEditingController();
   final FocusNode _messageFocus = FocusNode(debugLabel: 'report.message');
-  final FocusNode _scope = FocusNode(debugLabel: 'report.dialog');
+  final FocusScopeNode _scope = FocusScopeNode(debugLabel: 'report.dialog');
   bool _submitting = false;
   bool _messageFocused = false;
   bool _menuOpen = false;

@@ -3,6 +3,7 @@
 // the figures as inline SVG; here each figure's shapes are an asset
 // (assets/runner/reference/*.svg, same 120×90 viewBox and stroke) and the italic labels are
 // painted natively on the same coordinates (flutter_svg cannot draw italic SVG text).
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 

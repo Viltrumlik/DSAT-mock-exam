@@ -69,10 +69,10 @@ class FloatingPanelState extends State<FloatingPanel> {
   Rect get rect => _pos & _size;
 
   @override
-  void didUpdateWidget(FloatingPanel old) {
-    super.didUpdateWidget(old);
+  void didUpdateWidget(FloatingPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
     // FloatingPanel.tsx:42-45 — follow a new requested size (the enlarge toggle).
-    if (old.initial.width != widget.initial.width || old.initial.height != widget.initial.height) {
+    if (oldWidget.initial.width != widget.initial.width || oldWidget.initial.height != widget.initial.height) {
       _size = widget.initial.size;
     }
   }

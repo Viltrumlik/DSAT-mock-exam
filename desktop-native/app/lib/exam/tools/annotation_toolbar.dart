@@ -190,7 +190,7 @@ class ToolbarLayoutDelegate extends SingleChildLayoutDelegate {
   BoxConstraints getConstraintsForChild(BoxConstraints constraints) => constraints.loosen();
 
   @override
-  Offset getPositionForChild(Size size, Size child) => toolbarPosition(size, child, x: x, top: top, bottom: bottom);
+  Offset getPositionForChild(Size size, Size childSize) => toolbarPosition(size, childSize, x: x, top: top, bottom: bottom);
 
   @override
   bool shouldRelayout(ToolbarLayoutDelegate old) => old.x != x || old.top != top || old.bottom != bottom;

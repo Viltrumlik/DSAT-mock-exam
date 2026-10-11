@@ -22,8 +22,7 @@ class SatColorRulePainter extends CustomPainter {
   const SatColorRulePainter();
 
   /// One full period of the gradient (4 × (48 + 6) = 216 px).
-  static const double period =
-      BluebookTokens.ruleColors.length * (BluebookTokens.ruleDash + BluebookTokens.ruleGap);
+  static const double period = 4 * (BluebookTokens.ruleDash + BluebookTokens.ruleGap);
 
   /// The colour at horizontal offset [x] (null inside a gap). Exposed for tests.
   static Color? colorAt(double x) {
