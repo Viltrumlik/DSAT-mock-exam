@@ -6,10 +6,11 @@ authors = ["MasterSAT"]
 edition = "2021"
 rust-version = "1.77"
 
-# The proof lives in its own member crate so its shared vectors can be tested without Tauri or
-# the Linux GUI stack (`cargo test -p mastersat-proof`). The root package is a member implicitly.
+# The proof and the lockdown live in their own member crates so they build and test without Tauri
+# or the Linux GUI stack (`cargo test -p mastersat-proof`), and so the native rewrite
+# (desktop-native/native) can share them by path. The root package is a member implicitly.
 [workspace]
-members = ["crates/proof"]
+members = ["crates/proof", "crates/lockdown"]
 
 # A plain binary crate. This shell is Windows-only (midterms are sat on school laptops), so there
 # is no mobile entry point and no library split — `main.rs` is the whole program.
@@ -45,28 +46,15 @@ serde_json = "1"
 # The lockdown proof — byte-for-byte the same arithmetic as backend/desktop/proof.py, in its own
 # Tauri-free crate so the shared vectors test fast on any host.
 mastersat-proof = { path = "crates/proof" }
+# The machine lockdown (pre-check, keyboard guard, capture exclusion, battery) — the former
+# src/lockdown.rs, moved verbatim into its own crate; main.rs uses it as `lockdown::`.
+mastersat-lockdown = { path = "crates/lockdown" }
 # base64 for the PKCE verifier, rand to generate it.
 base64 = "0.22"
 rand = "0.8"
 
 # Open the student's own browser for "Sign in with browser" and for external links.
 open = "5"
-
-[target.'cfg(windows)'.dependencies]
-# Everything the shell can do that a web page cannot: count monitors, see a Remote Desktop
-# session, read the battery, close a blocked program, swallow Alt+Tab/Win, keep the machine awake,
-# hide the window from screen capture. All isolated in lockdown.rs behind #[cfg(windows)].
-windows = { version = "0.58", features = [
-  "Win32_Foundation",
-  "Win32_System_Threading",
-  "Win32_System_Diagnostics_ToolHelp",
-  "Win32_System_LibraryLoader",
-  "Win32_System_Power",
-  "Win32_UI_WindowsAndMessaging",
-  "Win32_UI_Input_KeyboardAndMouse",
-  "Win32_Graphics_Gdi",
-] }
-winreg = "0.52"
 
 [profile.release]
 # A single-file installer is friendlier to download over a school connection, and nothing here
