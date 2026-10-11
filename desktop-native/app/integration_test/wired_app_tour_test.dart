@@ -21,7 +21,6 @@
 // are covered by the widget tests (test/integration/**, the every-button sweeps).
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -30,7 +29,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:mastersat_app/app.dart';
-import 'package:mastersat_app/core/models/models.dart';
 import 'package:mastersat_app/core/store/app_paths.dart';
 import 'package:mastersat_app/exam/launch/exam_launcher.dart';
 import 'package:mastersat_app/exam/launch/pastpaper_sitting.dart';
@@ -152,6 +150,11 @@ void main() {
     final mathEngine = tester.widget<PastpaperSittingScreen>(find.byType(PastpaperSittingScreen)).engine;
     await mathEngine.start();
     await islandShowing(mathEngine.currentQuestion.id);
+    // A few answers, so the result and the review show real marking (the island paints them).
+    mathEngine
+      ..select(1001, 'B')
+      ..select(1002, '5')
+      ..select(1003, 'A');
     await _wait(tester, const Duration(seconds: 1));
     await shot('runner_math');
     // Question 4 carries a figure (an image through media.put).
@@ -167,6 +170,9 @@ void main() {
     // Module 1 handed in → module 2 → handed in → the result (openExam opens it).
     await mathEngine.submitModule();
     await _until(tester, () => mathEngine.moduleOrder == 2 && mathEngine.phase == ExamPhase.running, what: 'module 2');
+    mathEngine
+      ..select(1011, '7/2')
+      ..select(1012, 'C');
     mathEngine.openReview();
     await mathEngine.submitModule();
     await _until(tester, () => find.byType(PastpaperResultScreen).evaluate().isNotEmpty,

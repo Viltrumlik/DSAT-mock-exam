@@ -113,6 +113,7 @@ Future<void> runMasterSat({NativeBridge? native, ExamLauncher? examLauncher}) as
       runApp(MissingPartApp(detail: load.problem));
       return;
     }
+    if (load.problem != null) debugPrint('MasterSAT (development): ${load.problem} — using the fake native bridge.');
     bridge = load.bridge!;
   }
   final config = ApiConfig.fromDefine(apiBaseDefine, appVersion: appVersion);

@@ -22,21 +22,25 @@ class RunnerPillButton extends StatelessWidget {
     semanticLabel: label,
     onTap: onTap,
     enabled: onTap != null,
-    builder: (context, s) => Container(
-      padding: BluebookTokens.reviewButtonPaddingFooter,
-      decoration: BoxDecoration(
-        color: primary
-            ? (s.hovered ? BluebookTokens.primaryButtonHover : BluebookTokens.primaryButton)
-            : (s.hovered ? TwColors.slate100 : TwColors.white),
-        border: primary ? null : Border.all(color: TwColors.slate300),
-        borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
-      ),
-      child: Text(
-        label,
-        style: chromeText(
-          BluebookTokens.footerButtonSize,
-          weight: FontWeight.w700,
-          color: primary ? TwColors.white : TwColors.slate900,
+    // Disabled reads as disabled (the runner footer's faded Back), never as a live button.
+    builder: (context, s) => Opacity(
+      opacity: onTap == null ? 0.45 : 1,
+      child: Container(
+        padding: BluebookTokens.reviewButtonPaddingFooter,
+        decoration: BoxDecoration(
+          color: primary
+              ? (s.hovered ? BluebookTokens.primaryButtonHover : BluebookTokens.primaryButton)
+              : (s.hovered ? TwColors.slate100 : TwColors.white),
+          border: primary ? null : Border.all(color: TwColors.slate300),
+          borderRadius: BorderRadius.circular(BluebookTokens.pillRadius),
+        ),
+        child: Text(
+          label,
+          style: chromeText(
+            BluebookTokens.footerButtonSize,
+            weight: FontWeight.w700,
+            color: primary ? TwColors.white : TwColors.slate900,
+          ),
         ),
       ),
     ),
@@ -107,7 +111,10 @@ class RunnerProblemBanner extends StatelessWidget {
           const LucideIcon(LucideGlyphs.triangleAlert, size: 16, color: TwColors.red700),
           const SizedBox(width: 12),
           Flexible(
-            child: Text(text, style: chromeText(14, weight: FontWeight.w600, color: TwColors.red800, height: 20 / 14)),
+            child: Text(
+              text,
+              style: chromeText(14, weight: FontWeight.w600, color: TwColors.red800, height: 20 / 14),
+            ),
           ),
           if (onRetry != null) ...[
             const SizedBox(width: 16),
