@@ -151,7 +151,7 @@ if (Test-Path $s1Png) { Copy-Item $s1Png (Join-Path $OutDir 'island.png') }
 # --- The runner (windows/runner): single instance, link forwarding, window -
 if ($AppExe -and (Test-Path $AppExe)) {
   Add-Type -Namespace S0 -Name Win -MemberDefinition @'
-[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowW(string cls, string title);
+[DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr FindWindowW(string cls, System.IntPtr title);
 [DllImport("user32.dll")] public static extern bool MoveWindow(System.IntPtr h, int x, int y, int w, int hgt, bool repaint);
 [DllImport("user32.dll")] public static extern bool GetClientRect(System.IntPtr h, out RECT r);
 [DllImport("user32.dll")] public static extern bool GetWindowRect(System.IntPtr h, out RECT r);
@@ -167,9 +167,11 @@ if ($AppExe -and (Test-Path $AppExe)) {
   $t0 = Get-Date
   while (((Get-Date) - $t0).TotalSeconds -lt 20 -and $hwnd -eq [IntPtr]::Zero) {
     Start-Sleep -Milliseconds 250
-    $hwnd = [S0.Win]::FindWindowW('MasterSATWindow', $null)
+    # IntPtr.Zero, not $null: PowerShell turns $null into "" for a string parameter.
+    $hwnd = [S0.Win]::FindWindowW('MasterSATWindow', [IntPtr]::Zero)
   }
   $runner.windowClassFound = $hwnd -ne [IntPtr]::Zero
+  $runner.firstExitedEarly = $first.HasExited
   if ($runner.windowClassFound) {
     $t1 = Get-Date
     while (((Get-Date) - $t1).TotalSeconds -lt 15 -and -not [S0.Win]::IsWindowVisible($hwnd)) { Start-Sleep -Milliseconds 100 }
