@@ -8,9 +8,12 @@ project(runner LANGUAGES CXX)
 # Any new source files that you add to the application should be added here.
 add_executable(${BINARY_NAME} WIN32
   "flutter_window.cpp"
+  "launch_policy.cpp"
   "main.cpp"
+  "single_instance.cpp"
   "utils.cpp"
   "win32_window.cpp"
+  "window_placement.cpp"
   "${FLUTTER_MANAGED_DIR}/generated_plugin_registrant.cc"
   "Runner.rc"
   "runner.exe.manifest"
@@ -29,6 +32,15 @@ target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION_BUILD=${FLUTT
 
 # Disable Windows macros that collide with C++ standard library functions.
 target_compile_definitions(${BINARY_NAME} PRIVATE "NOMINMAX")
+
+# MasterSAT: the app version comes from desktop-native/VERSION, the one file
+# that also feeds Cargo, --build-name and `vpk pack -v` (architecture §5); it
+# is passed to ms_init and signed inside every lockdown proof.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../../VERSION" MS_APP_VERSION)
+string(STRIP "${MS_APP_VERSION}" MS_APP_VERSION)
+target_compile_definitions(${BINARY_NAME} PRIVATE "MS_APP_VERSION=\"${MS_APP_VERSION}\"")
+# The colour the window paints before the first frame (0xRRGGBB).
+target_compile_definitions(${BINARY_NAME} PRIVATE "MS_WINDOW_BACKGROUND=0xFFFFFF")
 
 # Add dependency libraries and include directories. Add any application-specific
 # dependencies here.

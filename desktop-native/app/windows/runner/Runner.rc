@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "uz.mastersat" "\0"
-            VALUE "FileDescription", "mastersat_app" "\0"
+            VALUE "CompanyName", "MasterSAT" "\0"
+            VALUE "FileDescription", "MasterSAT" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "mastersat_app" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 uz.mastersat. All rights reserved." "\0"
-            VALUE "OriginalFilename", "mastersat_app.exe" "\0"
-            VALUE "ProductName", "mastersat_app" "\0"
+            VALUE "InternalName", "MasterSAT" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 MasterSAT. All rights reserved." "\0"
+            VALUE "OriginalFilename", "MasterSAT.exe" "\0"
+            VALUE "ProductName", "MasterSAT" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

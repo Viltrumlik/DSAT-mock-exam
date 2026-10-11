@@ -4,7 +4,7 @@ project(mastersat_app LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "mastersat_app")
+set(BINARY_NAME "MasterSAT")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -58,6 +58,48 @@ add_subdirectory("runner")
 include(flutter/generated_plugins.cmake)
 
 
+# === MasterSAT: native library + island pages (windows-host) ===
+# desktop-native/ (this file is desktop-native/app/windows/CMakeLists.txt).
+get_filename_component(MS_DESKTOP_NATIVE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../.." ABSOLUTE)
+
+# mastersat_native.dll (Rust cdylib, desktop-native/native). `flutter build
+# windows` cannot pass -D options, so these are read from the environment:
+#   MS_LINK_NATIVE     AUTO (default) | ON | OFF
+#   MS_NATIVE_LIB_DIR  folder holding mastersat_native.dll + .dll.lib
+# AUTO links the DLL when it has been built and builds without it otherwise,
+# so the app still builds before the Rust crate exists.
+set(MS_LINK_NATIVE "AUTO")
+if(DEFINED ENV{MS_LINK_NATIVE})
+  set(MS_LINK_NATIVE "$ENV{MS_LINK_NATIVE}")
+endif()
+set(MS_NATIVE_LIB "")
+if(NOT MS_LINK_NATIVE STREQUAL "OFF")
+  set(_ms_native_candidates
+    "$ENV{MS_NATIVE_LIB_DIR}"
+    "${MS_DESKTOP_NATIVE_DIR}/native/target/x86_64-pc-windows-msvc/release"
+    "${MS_DESKTOP_NATIVE_DIR}/native/target/release")
+  foreach(_dir IN LISTS _ms_native_candidates)
+    if(_dir AND EXISTS "${_dir}/mastersat_native.dll.lib" AND EXISTS "${_dir}/mastersat_native.dll")
+      set(MS_NATIVE_LIB "${_dir}/mastersat_native.dll.lib")
+      set(MS_NATIVE_DLL "${_dir}/mastersat_native.dll")
+      break()
+    endif()
+  endforeach()
+  if(NOT MS_NATIVE_LIB AND MS_LINK_NATIVE STREQUAL "ON")
+    message(FATAL_ERROR "MS_LINK_NATIVE=ON but mastersat_native.dll(.lib) was not found "
+                        "(set MS_NATIVE_LIB_DIR or build desktop-native/native first)")
+  endif()
+endif()
+if(MS_NATIVE_LIB)
+  message(STATUS "MasterSAT: linking ${MS_NATIVE_LIB}")
+  target_compile_definitions(${BINARY_NAME} PRIVATE MS_HAVE_NATIVE)
+  target_include_directories(${BINARY_NAME} PRIVATE "${MS_DESKTOP_NATIVE_DIR}/native/include")
+  target_link_libraries(${BINARY_NAME} PRIVATE "${MS_NATIVE_LIB}")
+else()
+  message(STATUS "MasterSAT: building WITHOUT mastersat_native.dll (no Velopack hooks, no lockdown)")
+endif()
+
+
 # === Installation ===
 # Support files are copied into place next to the executable, so that it can
 # run in place. This is done instead of making a separate bundle (as on Linux)
@@ -85,6 +127,42 @@ if(PLUGIN_BUNDLED_LIBRARIES)
   install(FILES "${PLUGIN_BUNDLED_LIBRARIES}"
     DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
     COMPONENT Runtime)
+endif()
+
+# MasterSAT: the Rust DLL sits next to the exe (the runner links it; Dart's
+# DynamicLibrary.open returns the same loaded module).
+if(MS_NATIVE_LIB)
+  install(FILES "${MS_NATIVE_DLL}" DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    COMPONENT Runtime)
+endif()
+
+# MasterSAT: the island pages (desktop-native/island, `npm run build`) go to
+# data/island next to the exe; ms_webview2 maps https://island.mastersat.example/
+# to that folder. Environment:
+#   MS_ISLAND_DIR  the island build (default desktop-native/island/build/island)
+#   MS_S0_PROBE=1  when there is no island build, install the S0 probe page
+#                  (desktop-native/packaging/s0-probe) instead: CI diagnostics
+#                  only, never a release.
+set(MS_ISLAND_DIR "${MS_DESKTOP_NATIVE_DIR}/island/build/island")
+if(DEFINED ENV{MS_ISLAND_DIR})
+  set(MS_ISLAND_DIR "$ENV{MS_ISLAND_DIR}")
+endif()
+set(INSTALL_BUNDLE_ISLAND_DIR "${INSTALL_BUNDLE_DATA_DIR}/island")
+install(CODE "
+  file(REMOVE_RECURSE \"${INSTALL_BUNDLE_ISLAND_DIR}\")
+  " COMPONENT Runtime)
+if(EXISTS "${MS_ISLAND_DIR}/content.html")
+  message(STATUS "MasterSAT: installing the island build from ${MS_ISLAND_DIR}")
+  install(DIRECTORY "${MS_ISLAND_DIR}/" DESTINATION "${INSTALL_BUNDLE_ISLAND_DIR}"
+    COMPONENT Runtime)
+elseif("$ENV{MS_S0_PROBE}" STREQUAL "1")
+  message(WARNING "MasterSAT: no island build at ${MS_ISLAND_DIR}; installing the S0 probe page")
+  install(DIRECTORY "${MS_DESKTOP_NATIVE_DIR}/packaging/s0-probe/"
+    DESTINATION "${INSTALL_BUNDLE_ISLAND_DIR}" COMPONENT Runtime)
+else()
+  message(WARNING "MasterSAT: no island build at ${MS_ISLAND_DIR} "
+                  "(run `npm ci && npm run build` in desktop-native/island); "
+                  "questions will not render")
 endif()
 
 # Copy the native assets provided by the build.dart from all packages.

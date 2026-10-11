@@ -3,7 +3,15 @@
 #include <dwmapi.h>
 #include <flutter_windows.h>
 
+#include "launch_policy.h"
 #include "resource.h"
+#include "window_placement.h"
+
+// MasterSAT: the colour the window paints before Flutter's first frame and
+// while resizing (0xRRGGBB). CMake may override it.
+#ifndef MS_WINDOW_BACKGROUND
+#define MS_WINDOW_BACKGROUND 0xFFFFFF
+#endif
 
 namespace {
 
@@ -16,15 +24,13 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
-constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
+// MasterSAT: a stable class name; a second launch finds the running window by
+// it (single_instance.cpp).
+constexpr const wchar_t* kWindowClassName = launch_policy::kWindowClassName;
 
-/// Registry key for app theme preference.
-///
-/// A value of 0 indicates apps should use dark mode. A non-zero or missing
-/// value indicates apps should use light mode.
-constexpr const wchar_t kGetPreferredBrightnessRegKey[] =
-  L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme";
+constexpr COLORREF kBackground = RGB((MS_WINDOW_BACKGROUND >> 16) & 0xFF,
+                                     (MS_WINDOW_BACKGROUND >> 8) & 0xFF,
+                                     MS_WINDOW_BACKGROUND & 0xFF);
 
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
@@ -97,7 +103,8 @@ const wchar_t* WindowClassRegistrar::GetWindowClass() {
     window_class.hInstance = GetModuleHandle(nullptr);
     window_class.hIcon =
         LoadIcon(window_class.hInstance, MAKEINTRESOURCE(IDI_APP_ICON));
-    window_class.hbrBackground = 0;
+    // MasterSAT: no white flash; the brush lives as long as the process.
+    window_class.hbrBackground = CreateSolidBrush(kBackground);
     window_class.lpszMenuName = nullptr;
     window_class.lpfnWndProc = Win32Window::WndProc;
     RegisterClass(&window_class);
@@ -130,14 +137,30 @@ bool Win32Window::Create(const std::wstring& title,
 
   const POINT target_point = {static_cast<LONG>(origin.x),
                               static_cast<LONG>(origin.y)};
-  HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTONEAREST);
+  HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTOPRIMARY);
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
+  // MasterSAT: centre the default size on the monitor's work area.
+  int x = Scale(origin.x, scale_factor);
+  int y = Scale(origin.y, scale_factor);
+  int width = Scale(size.width, scale_factor);
+  int height = Scale(size.height, scale_factor);
+  MONITORINFO info{};
+  info.cbSize = sizeof(info);
+  if (GetMonitorInfoW(monitor, &info)) {
+    const auto r = launch_policy::DefaultRect(
+        {info.rcWork.left, info.rcWork.top, info.rcWork.right,
+         info.rcWork.bottom},
+        dpi);
+    x = r.left;
+    y = r.top;
+    width = r.right - r.left;
+    height = r.bottom - r.top;
+  }
+
   HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      window_class, title.c_str(), WS_OVERLAPPEDWINDOW, x, y, width, height,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {
@@ -146,11 +169,33 @@ bool Win32Window::Create(const std::wstring& title,
 
   UpdateTheme(window);
 
+  // MasterSAT: the remembered size and position, still hidden until Show().
+  if (auto placement = window_placement::Load()) {
+    show_maximized_ = placement->showCmd == SW_SHOWMAXIMIZED ||
+                      (placement->flags & WPF_RESTORETOMAXIMIZED) != 0;
+    placement->showCmd = SW_HIDE;
+    SetWindowPlacement(window, &*placement);
+  }
+
   return OnCreate();
 }
 
 bool Win32Window::Show() {
-  return ShowWindow(window_handle_, SW_SHOWNORMAL);
+  return ShowWindow(window_handle_,
+                    show_maximized_ ? SW_SHOWMAXIMIZED : SW_SHOWNORMAL);
+}
+
+void Win32Window::BringToFront() {
+  if (window_handle_ == nullptr) {
+    return;
+  }
+  if (IsIconic(window_handle_)) {
+    ShowWindow(window_handle_, SW_RESTORE);
+  } else if (!IsWindowVisible(window_handle_)) {
+    // Still waiting for the first frame; Show() will reveal it.
+    return;
+  }
+  SetForegroundWindow(window_handle_);
 }
 
 // static
@@ -179,6 +224,27 @@ Win32Window::MessageHandler(HWND hwnd,
                             WPARAM const wparam,
                             LPARAM const lparam) noexcept {
   switch (message) {
+    case WM_GETMINMAXINFO: {
+      // MasterSAT: the client area is never smaller than 1000 x 640 logical
+      // pixels (architecture §6).
+      auto info = reinterpret_cast<MINMAXINFO*>(lparam);
+      const UINT dpi = GetDpiForWindow(hwnd);
+      RECT min_rect{0, 0,
+                    launch_policy::ScaleForDpi(launch_policy::kMinWidth, dpi),
+                    launch_policy::ScaleForDpi(launch_policy::kMinHeight, dpi)};
+      AdjustWindowRectExForDpi(
+          &min_rect, static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_STYLE)),
+          FALSE, static_cast<DWORD>(GetWindowLongPtr(hwnd, GWL_EXSTYLE)), dpi);
+      info->ptMinTrackSize.x = min_rect.right - min_rect.left;
+      info->ptMinTrackSize.y = min_rect.bottom - min_rect.top;
+      return 0;
+    }
+
+    case WM_CLOSE:
+      // MasterSAT: remember where the window was (not while locked down).
+      window_placement::Save(hwnd);
+      break;
+
     case WM_DESTROY:
       window_handle_ = nullptr;
       Destroy();
@@ -197,7 +263,20 @@ Win32Window::MessageHandler(HWND hwnd,
 
       return 0;
     }
+    case WM_EXITSIZEMOVE:
+      window_placement::Save(hwnd);
+      break;
+
     case WM_SIZE: {
+      // MasterSAT: remember maximise/restore as it happens, so the state
+      // survives even when the app is closed by the system.
+      if (wparam == SIZE_MAXIMIZED || wparam == SIZE_RESTORED) {
+        const bool maximized = wparam == SIZE_MAXIMIZED;
+        if (maximized != last_maximized_) {
+          last_maximized_ = maximized;
+          window_placement::Save(hwnd);
+        }
+      }
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
         // Size and position the child window.
@@ -273,16 +352,7 @@ void Win32Window::OnDestroy() {
 }
 
 void Win32Window::UpdateTheme(HWND const window) {
-  DWORD light_mode;
-  DWORD light_mode_size = sizeof(light_mode);
-  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                               kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
-
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
-  }
+  BOOL enable_dark_mode = FALSE;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &enable_dark_mode, sizeof(enable_dark_mode));
 }

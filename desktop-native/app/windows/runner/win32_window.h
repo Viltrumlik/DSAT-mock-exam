@@ -34,10 +34,19 @@ class Win32Window {
   // consistent size this function will scale the inputted width and height as
   // as appropriate for the default monitor. The window is invisible until
   // |Show| is called. Returns true if the window was created successfully.
+  //
+  // MasterSAT: the window class is "MasterSATWindow" (single instance looks it
+  // up), it paints MS_WINDOW_BACKGROUND (no white flash), the title bar is
+  // always light, and the remembered placement (window_placement.h) wins over
+  // |origin| and |size| when it still fits a connected monitor.
   bool Create(const std::wstring& title, const Point& origin, const Size& size);
 
-  // Show the current window. Returns true if the window was successfully shown.
+  // Show the current window (maximised if it was maximised when the app last
+  // closed). Returns true if the window was successfully shown.
   bool Show();
+
+  // MasterSAT: restore (if minimised) and bring the window to the foreground.
+  void BringToFront();
 
   // Release OS resources associated with window.
   void Destroy();
@@ -87,10 +96,15 @@ class Win32Window {
   // Retrieves a class instance pointer for |window|
   static Win32Window* GetThisFromHandle(HWND const window) noexcept;
 
-  // Update the window frame's theme to match the system theme.
+  // MasterSAT: the app has no dark theme, so the title bar is always light
+  // (DWMWA_USE_IMMERSIVE_DARK_MODE = 0), whatever the system theme is.
   static void UpdateTheme(HWND const window);
 
   bool quit_on_close_ = false;
+
+  // MasterSAT: Show() maximises when the remembered placement was maximised.
+  bool show_maximized_ = false;
+  bool last_maximized_ = false;
 
   // window handle for top level window.
   HWND window_handle_ = nullptr;

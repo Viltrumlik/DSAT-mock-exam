@@ -1,0 +1,7 @@
+html, body { margin: 0; background: #ffffff; color: #1f2937; font: 16px/1.6 Georgia, serif; user-select: none; cursor: default; }
+#card { padding: 24px 32px; }
+#status { font: 12px/1.4 Arial, sans-serif; color: #6b7280; margin: 0 0 16px; }
+#passage { margin-bottom: 16px; }
+#choices { padding-left: 24px; }
+#choices li { padding: 6px 8px; margin: 4px 0; border: 1px solid #d1d5db; border-radius: 8px; }
+#choices li.chosen { border-color: #1d4ed8; background: #eff6ff; }
