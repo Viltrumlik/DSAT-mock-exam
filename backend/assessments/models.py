@@ -99,8 +99,15 @@ class AssessmentSet(models.Model):
     # varchar_pattern_ops index, and that pair is the double-create trap a migration hit
     # before. The filters this column serves always also hit the indexed ``level`` /
     # ``subject`` / ``is_active`` columns, and the table is small.
+    #
+    # ``db_default=""`` is DEPLOY SAFETY, not style: a plain ``default`` lives only in
+    # Python, and Django's AddField drops the column's DB default again right after
+    # back-filling. Our zero-downtime deploys run the migration while the OLD code is
+    # still serving, and old code INSERTs sets without naming this column — without a
+    # DB-side default that is NULL into a NOT NULL column, and creating a set fails until
+    # the new code is live. ``db_default`` keeps ``DEFAULT ''`` on the column for good.
     secondary_level = models.CharField(
-        max_length=16, choices=LEVEL_CHOICES, blank=True, default=""
+        max_length=16, choices=LEVEL_CHOICES, blank=True, default="", db_default=""
     )
     category = models.CharField(max_length=255, db_index=True, blank=True, default="")
     title = models.CharField(max_length=200, db_index=True)
