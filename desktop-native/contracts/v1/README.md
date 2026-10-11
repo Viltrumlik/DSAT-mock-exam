@@ -113,3 +113,10 @@ Lockdown `reason` values: `desktop_required`, `desktop_session_replaced`,
 6. Offscreen takes an informational body `{event_id, occurred_at, away_ms}`; the strike is
    still counted once per idempotency key.
 7. Media rows are `{key, url, expires_at}`.
+8. Midterm `prepare` → `rules` carries everything the rules screen shows, beyond the prose's
+   `{question_count, durations_min, calculator}`: `title`, `subject`, `module_count`,
+   `offscreen_limit`, `offscreen_grace_seconds`, `late_grace_seconds`, and (2026-10-11) the
+   pass-mark and retake lines — `scoring_scale` (`SCALE_100`|`SCALE_800`, the sitting's own,
+   pinned at start), `pass_mark` (int on that scale, **null** when the sitting is not judged
+   pass/fail, i.e. a pre-midterm) and `is_retake` (bool). `calculator` is null for R&W, an
+   untagged Math paper and Foundation Math (worked by hand since 2026-10-11).

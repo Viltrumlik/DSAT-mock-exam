@@ -57,7 +57,7 @@ NULLABLE = frozenset(
         "completed_at", "deadline", "deadline_at", "due_at", "form_type", "image_key", "label",
         "last_attempt_id", "last_completed_at", "last_score", "latest_version", "midterm",
         "minimum_version", "module", "next_module", "open_attempt_id", "open_state", "options",
-        "poll_after_ms", "practice_date", "previous_score", "question_image_key", "questions",
+        "pass_mark", "poll_after_ms", "practice_date", "previous_score", "question_image_key", "questions",
         "rank", "reason", "remaining_ms", "reopened", "result", "score", "score_ceiling",
         "score_delta", "set_at", "student_answer", "terminated_reason", "total_score",
         "transitioned_to",

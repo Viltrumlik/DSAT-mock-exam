@@ -72,6 +72,10 @@ abstract final class MidtermCopy {
       'The built-in Desmos calculator, opened from the toolbar. No physical calculator.';
   static const allowedScientific =
       'The built-in Desmos scientific calculator, opened from the toolbar. No physical calculator.';
+  /// BY_HAND (MidtermRulesScreen.tsx, 2026-10-11): FIRST under Prohibited on a Math paper with
+  /// no calculator (Foundation Math, or an untagged Math midterm). R&W gets no calculator line.
+  static const prohibitedCalculatorByHand =
+      'Any calculator, built-in or physical — this paper is worked out by hand, on your scratch paper.';
   static const prohibitedApps = 'Other apps, browser tabs, or programs — close everything else before you begin.';
   static const prohibitedNotes = 'Notes, books, or any other reference material.';
   static const prohibitedDevices = 'Phones, smartwatches, headphones, or earbuds.';

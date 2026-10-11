@@ -136,6 +136,19 @@ class MidtermFlowController extends ChangeNotifier {
   /// The paper has been opened in this process (its module is in memory).
   bool get _live => engine.liveModuleId != null;
 
+  /// Whether the display must stay awake — the website's `useScreenWakeLock(isMidterm &&
+  /// !isTerminal(attempt))` (2026-10-11, the learning center's request). A student reading the
+  /// rules or a long passage, or working on paper, touches nothing; after Windows' inactivity
+  /// timeout the display sleeps and usually locks, which the off-screen rule reads as leaving
+  /// the paper — three quiet stretches and a student who never moved forfeits. So it holds for
+  /// the WHOLE midterm (opening, rules, code, pre-check, the paper, the waits between modules)
+  /// and lets go once the paper is in: handed in, forfeited, or already finished on the server.
+  bool get keepScreenAwake {
+    if (_disposed) return false;
+    if (_terminated || engine.phase == ExamPhase.done) return false;
+    return !(engine.lastAttempt?.state.isFinished ?? false);
+  }
+
   MidtermView get view {
     if (_load == _Load.opening) return MidtermView.opening;
     if (_load == _Load.failed) return MidtermView.openFailed;
@@ -316,7 +329,7 @@ class MidtermFlow extends StatefulWidget {
     this.onDownload,
     this.scoringScale,
     this.passMark,
-    this.isRetake = false,
+    this.isRetake,
   });
 
   final MidtermFlowController controller;
@@ -331,10 +344,11 @@ class MidtermFlow extends StatefulWidget {
   final Future<void> Function(void Function(int percent) onProgress)? onUpdateNow;
   final VoidCallback? onDownload;
 
-  /// Rules-screen extras the v1 `rules` block does not carry yet (see the integration notes).
+  /// Overrides for the rules screen's pass-mark and retake lines. The prepared `rules` block
+  /// carries all three (`scoring_scale`, `pass_mark`, `is_retake`); null reads it.
   final String? scoringScale;
   final int? passMark;
-  final bool isRetake;
+  final bool? isRetake;
 
   @override
   State<MidtermFlow> createState() => _MidtermFlowState();
@@ -343,14 +357,63 @@ class MidtermFlow extends StatefulWidget {
 class _MidtermFlowState extends State<MidtermFlow> {
   MidtermFlowController get c => widget.controller;
 
+  /// What this flow last asked `ms_keep_awake` for.
+  bool _awake = false;
+
   @override
   void initState() {
     super.initState();
+    c.addListener(_syncAwake);
+    _syncAwake();
     if (c.engine.prepared == null) unawaited(c.load());
+  }
+
+  @override
+  void didUpdateWidget(MidtermFlow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.controller, widget.controller)) {
+      oldWidget.controller.removeListener(_syncAwake);
+      widget.controller.addListener(_syncAwake);
+    }
+    if (!identical(oldWidget.native, widget.native) && _awake) {
+      _keepAwake(oldWidget.native, false);
+      _keepAwake(widget.native, true);
+    }
+    _syncAwake();
+  }
+
+  @override
+  void dispose() {
+    c.removeListener(_syncAwake);
+    _setAwake(false);
+    super.dispose();
+  }
+
+  /// Screen wake lock ([MidtermFlowController.keepScreenAwake]) through `ms_keep_awake`. The
+  /// native library remembers the request and re-asserts it after a lock release (lock.rs:
+  /// `release_on_window_thread`, for both Lock exit and the watchdog), and turning it off while
+  /// locked leaves the lock's own flags in place — so one call per change is enough here.
+  void _syncAwake() => _setAwake(c.keepScreenAwake);
+
+  void _setAwake(bool on) {
+    if (on == _awake) return;
+    _awake = on;
+    _keepAwake(widget.native, on);
+  }
+
+  /// Best-effort, like the website's hook: the wake lock is a convenience, never a reason for
+  /// the midterm to fail.
+  static void _keepAwake(NativeBridge native, bool on) {
+    try {
+      native.keepAwake(on);
+    } on Object {
+      // Nothing may throw into the exam from here.
+    }
   }
 
   void _exit() {
     c.release();
+    _setAwake(false);
     widget.onExit();
   }
 

@@ -700,7 +700,11 @@ def build() -> None:
     # ---- midterm: prepare -------------------------------------------------------------------
     rules = {"title": "October Midterm · Math", "subject": "MATH", "question_count": 44, "module_count": 2,
              "durations_min": [35, 35], "calculator": "graphing", "offscreen_limit": 3,
-             "offscreen_grace_seconds": 3, "late_grace_seconds": 300}
+             "offscreen_grace_seconds": 3, "late_grace_seconds": 300,
+             # The rules screen's pass-mark and retake lines (the website's MidtermRulesScreen
+             # scoringScale / passMark / isRetake), read from the sitting. pass_mark is null when
+             # the sitting is not judged pass/fail (a pre-midterm).
+             "scoring_scale": "SCALE_800", "pass_mark": 500, "is_retake": False}
     emit("midterm_prepare.request", {}, endpoint="midterm_prepare", method="POST",
          path=V1 + "midterms/{midterm_id}/prepare", kind="request", model="MidtermPrepareRequest")
     not_started = mt("NOT_STARTED", 1, M401, timing(NOW, None, 35 * 60_000))

@@ -11,9 +11,20 @@ import 'package:flutter/widgets.dart';
 import '../runner/runner_style.dart';
 import '../tokens/bluebook_tokens.dart';
 
-/// DirectionsOverlay.tsx:31-52, verbatim.
-const directionsMathP1 =
-    'The questions in this section address a number of important math skills. Use of a calculator is permitted for all questions.';
+/// DirectionsOverlay.tsx:40-45, verbatim. The calculator sentence follows the paper's rule
+/// (`calculatorAllowed`), not "is Math": a Foundation Math midterm has no calculator
+/// (2026-10-11 — worked by hand), and directions that contradict the toolbar send a student
+/// looking for a tool that is not there in the middle of a timed paper.
+const directionsMathLead = 'The questions in this section address a number of important math skills.';
+const directionsCalculatorAllowed = 'Use of a calculator is permitted for all questions.';
+const directionsCalculatorNotAvailable =
+    'A calculator is not available on this paper — work these questions by hand.';
+
+/// The Math directions' first paragraph for a paper with or without a calculator.
+String directionsMathP1({required bool calculatorAllowed}) =>
+    '$directionsMathLead ${calculatorAllowed ? directionsCalculatorAllowed : directionsCalculatorNotAvailable}';
+
+/// DirectionsOverlay.tsx:54-59, verbatim.
 const directionsRwP1 =
     'The questions in this section address a number of important reading and writing skills. Each question includes one or more passages, which may include a table or graph. Read each passage and question carefully, and then choose the best answer to the question based on the passage(s).';
 const directionsRwP2 =
@@ -25,6 +36,7 @@ class DirectionsOverlay extends StatelessWidget {
     required this.anchorBottom,
     required this.widthFraction,
     required this.isMath,
+    required this.calculatorAllowed,
     required this.onClose,
   });
 
@@ -34,6 +46,9 @@ class DirectionsOverlay extends StatelessWidget {
   /// The passage pane's share of the width (0.5 for single-pane Math).
   final double widthFraction;
   final bool isMath;
+
+  /// Whether this paper offers a calculator (`ExamSession.calculatorAllowed`).
+  final bool calculatorAllowed;
   final VoidCallback onClose;
 
   @override
@@ -66,7 +81,7 @@ class DirectionsOverlay extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     if (isMath) ...[
-                      Text(directionsMathP1, style: text),
+                      Text(directionsMathP1(calculatorAllowed: calculatorAllowed), style: text),
                       const SizedBox(height: 16),
                       Text.rich(
                         TextSpan(
