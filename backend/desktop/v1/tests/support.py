@@ -232,10 +232,14 @@ def make_classroom(teacher_username: str = "teacher"):
     from classes.models import Classroom, ClassroomMembership
 
     teacher = User.objects.create_user(
-        username=teacher_username, email=f"{teacher_username}@example.com", password="x", role="teacher"
+        username=teacher_username, email=f"{teacher_username}@example.com", password="x", role="teacher",
+        subject="math",
     )
-    room = Classroom.objects.create(name="SAT Evening B", subject="MATH", lesson_days=Classroom.DAYS_ODD, created_by=teacher)
-    ClassroomMembership.objects.create(classroom=room, user=teacher, role=ClassroomMembership.ROLE_ADMIN)
+    room = Classroom.objects.create(
+        name="SAT Evening B", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+        created_by=teacher, teacher=teacher,
+    )
+    ClassroomMembership.objects.create(classroom=room, user=teacher, role=ClassroomMembership.ROLE_TEACHER)
     return room
 
 

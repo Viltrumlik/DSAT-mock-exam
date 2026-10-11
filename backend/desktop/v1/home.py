@@ -7,15 +7,17 @@ Replaces five website calls (``/users/me/``, ``/midterms/mine/``, ``/exams/``,
 
 * ``app`` is the console's Windows release policy (``mobile.policy.get_policy("windows")``),
   judged against the build in ``X-MasterSAT-Client: windows/<semver>``.
-* ``midterms`` are exactly the ``/api/midterms/mine/`` rows (computed by that view, so the two
-  can never drift), with v1 timestamps, the wire state names, and ``requires_code``.
+* ``midterms`` are the ``/api/midterms/mine/`` rows — the same rules over rows loaded once
+  (``midterm_rows``; a test pins them against that view) — with v1 timestamps, the wire state
+  names, and ``requires_code``.
 * ``pastpapers`` are the student's library — the website library's gate (assigned, standalone,
   has questions) — each with a slim server-computed state (new / progress / reopened /
   completed, so the 0.1.0 "assigned again" bug cannot come back) and its finished sittings.
 
-Query cost is fixed for the past-paper half (paper rows, module counts, attempt rows, and the
-reopened check only when something is finished) whatever the attempt history. The midterm half
-costs what ``/midterms/mine/`` costs.
+Query cost is fixed whatever the student's history: the midterm half is about ten queries
+(``midterm_rows``), the past-paper half three (paper rows, module counts, attempt rows) plus
+the website's reopened check (``reopened_papers``) only when a finished paper has no open
+sitting. ``tests/test_home.py`` holds the budget.
 
 ``ETag`` is ``"sha256:<hex>"`` of the body WITHOUT ``server_now`` (the one field that changes
 on every request), so ``If-None-Match`` answers 304 until something the student would see
@@ -34,12 +36,12 @@ from rest_framework.permissions import IsAuthenticated
 
 from classes.pastpaper_retake import finished_at
 from exams.models import Module, PracticeTest, TestAttempt
-from midterms.access import FLAVOR_CLASSROOM, resolve_midterm_schedule
 from midterms.state_machine import WIRE_STATE
 from mobile.policy import get_policy
 from mobile.versioning import PLATFORM_WINDOWS, format_version
 
 from .conventions import SCHEMA, V1APIView, client_version, iso, iso_date, iso_from_string, ok
+from .midterm_rows import midterm_rows as build_midterm_rows
 
 STATUS_NEW = "new"
 STATUS_PROGRESS = "progress"
@@ -64,26 +66,14 @@ def app_block(request) -> dict:
 
 
 def midterm_rows(request) -> list[dict]:
-    """The ``/api/midterms/mine/`` rows, computed by that very view."""
-    from midterms.views_student import MyMidtermsView
-
-    view = MyMidtermsView()
-    view.request, view.args, view.kwargs, view.format_kwarg = request, (), {}, None
-    rows = list((view.get(request).data or {}).get("results") or [])
+    """The ``/api/midterms/mine/`` rows (``midterm_rows.midterm_rows``, the same rules in a
+    fixed number of queries) with v1 timestamps and the wire state names."""
     out = []
-    for row in rows:
+    for row in build_midterm_rows(request.user):
         row = dict(row)
         row["available_at"] = iso_from_string(row.get("available_at"))
         row["deadline"] = iso_from_string(row.get("deadline"))
         row["state"] = WIRE_STATE.get(row.get("state"), row.get("state"))
-        # Whether the 6-digit code screen comes before the lockdown handshake — the same
-        # question `start` asks (a classroom schedule with a code). Standalone midterms
-        # never have one.
-        requires_code = False
-        if row.get("flavor") == FLAVOR_CLASSROOM:
-            schedule = resolve_midterm_schedule(request.user, int(row["midterm_id"]))
-            requires_code = bool(schedule is not None and schedule.requires_code())
-        row["requires_code"] = requires_code
         out.append(row)
     return out
 
