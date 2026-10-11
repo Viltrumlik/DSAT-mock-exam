@@ -93,3 +93,19 @@ Then run the tests: the round-trip test fails until the Dart models cover any ne
 
 Blind spots only the owner covers: real GPUs, sleep/resume, DPI changes, multi-monitor
 lockdown, SmartScreen, and how the app feels.
+
+## CI (`.github/workflows/desktop-native.yml`)
+
+* **macOS:** generated-file drift, protocol tests, the C header, `cargo test` plus the debug
+  dylib, `flutter analyze` + `flutter test` (goldens included; the FFI test must find the real
+  library), the plugin, the runner's C++ rules, the island's typecheck / protocol / vitest /
+  build, the Playwright picture comparison (recorded, not blocking) and, last, `npm run parity`.
+  Together the island steps are `npm run check`.
+* **Windows:** mastersat.uz is mapped to 0.0.0.0 first. `cargo test` (incl. `tests/windows.rs`),
+  the FFI test against the debug DLL, the release DLL (`updates`, `DESKTOP_PROOF_KEY` embedded —
+  a push without the secret fails), the island, `flutter build windows --release` linking the
+  DLL, `packaging/prune-bundle.ps1`, S0 + S1 on that build, `vpk pack`, the size report against
+  25 MB, the install/uninstall smoke test, then `flutter test --exclude-tags golden`.
+* **Artifacts:** `MasterSAT-Setup`, `MasterSAT-full-nupkg`, `MasterSAT-symbols` (keep them for
+  `flutter symbolize`), `s0-diagnostics` (S0/S1 JSON + screenshots, `size-report.*`,
+  `s4-install.json`), `island-visual` (macOS).

@@ -54,6 +54,10 @@ if (-not (Test-Path (Join-Path $BundleDir 'mastersat_native.dll'))) {
   Write-Warning 'The bundle has no mastersat_native.dll: no Velopack hooks, no lockdown.'
 }
 
+# Drop what the app can never load (idempotent; see prune-bundle.ps1).
+& (Join-Path $PSScriptRoot 'prune-bundle.ps1') -BundleDir $BundleDir
+if ($LASTEXITCODE -ne 0) { throw 'prune-bundle.ps1 refused to prune this bundle' }
+
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
 $icon = Join-Path $PSScriptRoot 'icon\MasterSAT.ico'
 

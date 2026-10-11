@@ -347,6 +347,10 @@ jobs:
             exit 1
           }
           $bundle = Resolve-Path 'build/windows/x64/runner/Release'
+          # Files the app can never load (unused Lucide weights, KaTeX's woff/ttf fallbacks),
+          # removed before S0 so every check below runs on exactly what ships.
+          ../packaging/prune-bundle.ps1 -BundleDir $bundle -AppLibDir lib
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           Get-ChildItem $bundle | Format-Table Name, Length -AutoSize | Out-String | Write-Host
           Get-ChildItem "$bundle/data" -File | Format-Table Name, Length -AutoSize | Out-String | Write-Host
           $problems = @()
