@@ -1,0 +1,30 @@
+[package]
+name = "mastersat-lockdown"
+version = "0.1.0"
+description = "The MasterSAT machine lockdown — pre-check, keyboard guard, capture exclusion, battery."
+edition = "2021"
+rust-version = "1.77"
+
+# `src/lib.rs` is the Tauri app's former `src/lockdown.rs`, moved VERBATIM so that the 0.1.x
+# Tauri shell (desktop/src-tauri) and the native rewrite's mastersat_native.dll
+# (desktop-native/native) share one implementation. Behaviour changes go here, once, for both.
+# Tauri-free, like crates/proof: it builds (with portable stubs) on any host.
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(windows)'.dependencies]
+# Everything the shell can do that a web page cannot: count monitors, see a Remote Desktop
+# session, read the battery, close a blocked program, swallow Alt+Tab/Win, keep the machine awake,
+# hide the window from screen capture. All behind #[cfg(windows)] in src/lib.rs.
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Power",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_Graphics_Gdi",
+] }
+winreg = "0.52"
