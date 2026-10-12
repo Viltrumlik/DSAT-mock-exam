@@ -97,8 +97,19 @@ void main() {
     lockdownAutoRelease: const Duration(seconds: 30),
   );
 
-  Map<String, Object?> results() =>
-      (jsonDecode(File(p.join(tmp.path, s1ResultsFileName)).readAsStringSync()) as Map).cast<String, Object?>();
+  // The harness replaces the file atomically (write .tmp, rename over). On Windows a read that
+  // lands during that rename gets a sharing violation for a moment, so a polling reader retries.
+  Map<String, Object?> results() {
+    final file = File(p.join(tmp.path, s1ResultsFileName));
+    for (var attempt = 0;; attempt++) {
+      try {
+        return (jsonDecode(file.readAsStringSync()) as Map).cast<String, Object?>();
+      } on FileSystemException {
+        if (attempt >= 50) rethrow;
+        sleep(const Duration(milliseconds: 10));
+      }
+    }
+  }
 
   test('flag, fixtures, percentiles, mime types', () {
     expect(isS1HarnessLaunch(['--s1-harness']), isTrue);
