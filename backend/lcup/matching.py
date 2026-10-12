@@ -67,7 +67,7 @@ def _digits_only(expression):
     return expression
 
 
-def _phone_owners(queryset, phone: str) -> list:
+def phone_owners(queryset, phone: str) -> list:
     if not phone:
         return []
     # Ours are stored however people typed them ("+998 90 123 45 67"), so strip the separators in
@@ -82,7 +82,7 @@ def match_teacher(link) -> MatchResult:
     pool = User.objects.filter(role__in=acc_const.TEACHER_PORTAL_ROLES).filter(
         Q(lcup_teacher_link__isnull=True) | Q(lcup_teacher_link=link)
     )
-    owners = _phone_owners(pool, link.phone)
+    owners = phone_owners(pool, link.phone)
     if len(owners) == 1:
         return MatchResult(owners[0].pk, LinkStatus.AUTO, "phone", [_candidate(owners[0], "phone")])
     tokens = name_tokens(link.name)
@@ -104,7 +104,7 @@ def match_student(link, *, shared_phones: set[str], class_user_ids: set[int]) ->
         Q(lcup_student_link__isnull=True) | Q(lcup_student_link=link)
     )
     tokens = name_tokens(link.name)
-    owners = _phone_owners(pool, link.phone)
+    owners = phone_owners(pool, link.phone)
 
     if link.phone and link.phone in shared_phones:
         return MatchResult(
