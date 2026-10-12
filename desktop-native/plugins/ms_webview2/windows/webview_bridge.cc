@@ -538,8 +538,9 @@ void WebviewBridge::HandleMethodCall(
     const auto geometry = GetSurfaceGeometryFromArgs(method_call.arguments());
     if (geometry) {
       webview_->SetSurfaceSize(*geometry);
-      if (!hidden_) {
-        texture_bridge_->Start();
+      if (!hidden_ && texture_bridge_->Start()) {
+        // The capture only sees changes from now on: re-present the page.
+        webview_->RequestRepaint();
       }
       return result->Success();
     }
@@ -607,7 +608,9 @@ void WebviewBridge::HandleMethodCall(
   // resume
   if (method_name.compare(kMethodResume) == 0) {
     webview_->Resume();
-    texture_bridge_->Start();
+    if (texture_bridge_->Start()) {
+      webview_->RequestRepaint();
+    }
     return result->Success();
   }
 
@@ -977,7 +980,9 @@ void WebviewBridge::HandleMethodCall(
       hidden_ = !*visible;
       if (*visible) {
         webview_->SetVisible(true);
-        texture_bridge_->Start();
+        if (texture_bridge_->Start()) {
+          webview_->RequestRepaint();
+        }
       } else {
         texture_bridge_->Stop();
         webview_->SetVisible(false);

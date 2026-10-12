@@ -99,6 +99,11 @@ New Dart API (lib/src/webview.dart)
  19. Webview(cursorMapper: ...) maps the cursor WebView2 asks for before it
      is shown (the app maps the hand cursor to the arrow: no hand cursor).
  20. WebviewProcessFailedKind, WebviewProcessFailure, WebviewBlockedEvent.
+ 20a. Webview::RequestRepaint (windows/webview.cc): whenever the texture
+     capture (re)starts — the first setSize, setVisible(true), resume — the
+     webview is hidden and shown again so it presents a fresh frame.
+     Windows.Graphics.Capture only delivers changes made after StartCapture,
+     so a page painted before the capture began stayed blank until it changed.
 
 Tests
  21. test/ms_patches_test.dart covers the Dart half of 15–20; upstream's

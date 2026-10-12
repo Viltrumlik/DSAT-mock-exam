@@ -385,6 +385,20 @@ bool Webview::SetVisible(bool visible) {
   return ok;
 }
 
+void Webview::RequestRepaint() {
+  if (!IsValid()) {
+    return;
+  }
+  BOOL visible = FALSE;
+  if (FAILED(webview_controller_->get_IsVisible(&visible)) || !visible) {
+    return;  // a hidden island paints when it is shown again
+  }
+  // Hidden then shown again: WebView2 treats the second as "became visible"
+  // and presents a complete new frame, which the running capture delivers.
+  webview_controller_->put_IsVisible(FALSE);
+  webview_controller_->put_IsVisible(TRUE);
+}
+
 void Webview::SetAllowedResourceHosts(const std::vector<std::string>& hosts) {
   allowed_resource_hosts_.clear();
   for (const auto& host : hosts) {

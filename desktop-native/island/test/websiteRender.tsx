@@ -133,6 +133,9 @@ export function renderWebsiteCard(props: WebsiteCardProps): { main: HTMLElement;
 // ── DOM comparison ──────────────────────────────────────────────────────────────────────────
 
 /** Attributes only one side has by design (island hardening / bookkeeping). */
+/** Classes that differ on the divider's pill only because the island's pill takes the press. */
+const ISLAND_DIVIDER_PILL_CLASSES = new Set(["pointer-events-none", "z-10", "cursor-col-resize"]);
+
 export const ISLAND_ONLY_ATTRS = new Set([
   "title", // stripped in the island (no tooltips)
   "data-media-key", // MediaStore binding
@@ -163,9 +166,15 @@ export function describeDom(node: Node, depth = 0): string[] {
   }
   if (node.nodeType !== 1) return [];
   const el = node as Element;
+  // The island's divider is grabbable where the website's is not (src/content/card.ts
+  // SplitDivider): an invisible grab strip, and the pill takes the press. Same pixels.
+  if (el.hasAttribute("data-split-grip")) return [];
+  const inDivider = el.parentElement?.getAttribute("role") === "separator";
+  const classOf = (v: string) =>
+    v.split(/\s+/).filter((c) => c && !(inDivider && ISLAND_DIVIDER_PILL_CLASSES.has(c))).join(" ");
   const attrs = [...el.attributes]
     .filter((a) => !ISLAND_ONLY_ATTRS.has(a.name) && a.name !== "style")
-    .map((a) => `${a.name}=${JSON.stringify(a.name === "class" ? a.value.split(/\s+/).filter(Boolean).join(" ") : a.value)}`)
+    .map((a) => `${a.name}=${JSON.stringify(a.name === "class" ? classOf(a.value) : a.value)}`)
     .sort();
   const style = styleOf(el);
   if (style) attrs.push(`style{${style}}`);

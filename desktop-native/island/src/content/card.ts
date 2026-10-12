@@ -30,7 +30,10 @@ export interface CardState {
   review: IslandReviewInfo | null;
 }
 
-/** The divider between the R&W panes, as ExamRunnerPage renders it (Bluebook drag handle). */
+/** The divider between the R&W panes, as ExamRunnerPage renders it (Bluebook drag handle).
+ *  Same pixels as the website, but grabbable: on the website only the 2 px line takes the press
+ *  (the pill is pointer-events-none), so dragging the handle the student can see did nothing
+ *  (2026-10-12). Here the pill and an invisible 18 px strip around the line start the drag. */
 export function SplitDivider(onDown: (e: MouseEvent) => void): HTMLDivElement {
   return h(
     "div",
@@ -39,11 +42,12 @@ export function SplitDivider(onDown: (e: MouseEvent) => void): HTMLDivElement {
       attrs: { role: "separator", "aria-orientation": "vertical" },
       on: { mousedown: onDown },
     },
+    h("span", { className: "absolute inset-y-0 -left-2 -right-2 z-10 cursor-col-resize", attrs: { "data-split-grip": "" } }),
     h(
       "span",
       {
         className:
-          "pointer-events-none absolute left-1/2 top-1/2 flex h-11 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-[#1b1b1b] text-white",
+          "absolute left-1/2 top-1/2 z-10 flex h-11 w-6 -translate-x-1/2 -translate-y-1/2 cursor-col-resize items-center justify-center rounded-md bg-[#1b1b1b] text-white",
       },
       svg("svg", { viewBox: "0 0 24 24", fill: "currentColor", class: "h-4 w-4" }, svg("path", { d: "M8 7l-5 5 5 5V7z" }), svg("path", { d: "M16 7l5 5-5 5V7z" })),
     ),
