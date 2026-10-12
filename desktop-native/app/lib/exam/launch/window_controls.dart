@@ -8,6 +8,10 @@
 //
 // macOS (development runner): no implementation; the More menu hides "Full screen" (null), as
 // the website does when the Fullscreen API is unavailable.
+//
+// Not wired since 0.2.4: a past paper is locked down like a midterm, and the lock owns full
+// screen (pastpaper_lockdown.dart → LockdownWindowControls). Kept, with the runner's channel,
+// for a sitting that ever runs unlocked again.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -26,6 +30,10 @@ class NativeRunnerWindowControls implements RunnerWindowControls {
 
   @override
   bool get fullscreenSupported => true;
+
+  /// The student toggles it (More → Full screen); nothing holds it.
+  @override
+  bool get fullscreenLocked => false;
 
   @override
   ValueListenable<bool> get isFullscreen => _full;

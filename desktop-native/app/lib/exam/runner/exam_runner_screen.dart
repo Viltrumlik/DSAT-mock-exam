@@ -13,6 +13,13 @@
 // island's events (answer, eliminate, flag, SPR input, selection rect, forwarded keys) into
 // session actions. Keyboard shortcuts run here when Flutter has focus and arrive as `key`
 // messages when the island has it; one switch ([runnerShortcutsEnabled]) turns them off.
+//
+// Forced full screen (ExamRunnerPage.tsx:405-470, 786-795): where the window's full screen is
+// held for the sitting ([RunnerWindowControls.fullscreenLocked] — a past paper's lockdown),
+// leaving it while a module is on screen raises [FullscreenWarning] after a 400 ms grace; it
+// counts down 10 s and then runs the same Save & Exit as the More menu. Never on Welcome,
+// loading, the module transition, Check Your Work or the exit screens, and never on a midterm
+// (its off-screen rule supersedes it, as `!proctored` does on the website).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -38,6 +45,7 @@ import 'check_your_work.dart';
 import 'content_island_bridge.dart';
 import 'exam_footer.dart';
 import 'exam_header.dart';
+import 'fullscreen_warning.dart';
 import 'more_menu.dart';
 import 'question_navigator.dart';
 import 'runner_style.dart';
@@ -141,7 +149,9 @@ class ExamRunnerScreen extends StatefulWidget {
   /// The sitting is over (submitted, terminated, or Save & Exit).
   final ValueChanged<RunnerExit>? onExit;
 
-  /// Full screen; null hides "Full screen" in the More menu.
+  /// Full screen; null hides "Full screen" in the More menu. Controls that report
+  /// [RunnerWindowControls.fullscreenLocked] make full screen mandatory on a past paper (Start
+  /// needs it; leaving it raises the full-screen warning) and hide the More menu's item.
   final RunnerWindowControls? window;
 
   /// The laptop battery (null on a desktop PC / in tests).
@@ -200,6 +210,12 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   final Set<int> _firedTimerToasts = {};
   Rect? _islandBounds;
 
+  // The full-screen warning (ExamRunnerPage.tsx showFsWarning / fsCountdown).
+  Timer? _fsGrace;
+  Timer? _fsTick;
+  bool _fsWarning = false;
+  int? _fsSecondsLeft;
+
   ExamSession get session => widget.session;
 
   /// The Desmos controller once the calculator was first opened (tests).
@@ -211,9 +227,15 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     inputLocked: session.inputLocked,
     offscreenCountingDown: session.offscreen.value?.countingDown ?? false,
     dialogOpen: tools.reportOpen,
-    inert: widget.inert || widget.overlay != null,
+    inert: widget.inert || widget.overlay != null || _fsWarning,
     busy: _exiting || _savedOffline != null,
   );
+
+  /// The full-screen warning is up (tests).
+  bool get fullscreenWarningVisible => _fsWarning;
+
+  /// Its countdown (null while hidden).
+  int? get fullscreenSecondsLeft => _fsSecondsLeft;
 
   bool get _isMath => session.test.isMath;
 
@@ -248,7 +270,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     session.offscreen.addListener(_onSession);
     tools.addListener(_onTools);
     widget.battery?.addListener(_rebuild);
-    widget.window?.isFullscreen.addListener(_rebuild);
+    widget.window?.isFullscreen.addListener(_onWindow);
     _notices = session.notices.listen(_onNotice);
     if (content.state == IslandHostState.idle) {
       unawaited(
@@ -259,6 +281,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     }
     _onRemaining();
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkDone());
+    _syncFullscreenWarning();
   }
 
   @override
@@ -273,8 +296,11 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       widget.battery?.addListener(_rebuild);
     }
     if (oldWidget.window != widget.window) {
-      oldWidget.window?.isFullscreen.removeListener(_rebuild);
-      widget.window?.isFullscreen.addListener(_rebuild);
+      oldWidget.window?.isFullscreen.removeListener(_onWindow);
+      widget.window?.isFullscreen.addListener(_onWindow);
+    }
+    if (oldWidget.window != widget.window || oldWidget.inert != widget.inert || oldWidget.overlay != widget.overlay) {
+      _syncFullscreenWarning();
     }
   }
 
@@ -285,7 +311,9 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     session.offscreen.removeListener(_onSession);
     tools.removeListener(_onTools);
     widget.battery?.removeListener(_rebuild);
-    widget.window?.isFullscreen.removeListener(_rebuild);
+    widget.window?.isFullscreen.removeListener(_onWindow);
+    _fsGrace?.cancel();
+    _fsTick?.cancel();
     unawaited(_notices?.cancel());
     unawaited(bridge.dispose());
     _desmos?.dispose();
@@ -298,6 +326,95 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
 
   void _rebuild() {
     if (mounted) setState(() {});
+  }
+
+  void _onWindow() {
+    if (!mounted) return;
+    _syncFullscreenWarning();
+    setState(() {});
+  }
+
+  // ---- forced full screen -------------------------------------------------------------------
+
+  /// ExamRunnerPage.tsx `fsEnforced`: only while the student is ACTIVELY in a past-paper module
+  /// — never on Welcome, loading, the transition, Check Your Work, the exit screens, or under a
+  /// screen the owner draws over the runner; never on a midterm.
+  bool get _fsEnforced {
+    final w = widget.window;
+    return w != null &&
+        w.fullscreenSupported &&
+        w.fullscreenLocked &&
+        session.kind == ExamKind.pastpaper &&
+        session.phase == ExamPhase.running &&
+        session.questions.isNotEmpty &&
+        !_exiting &&
+        _savedOffline == null &&
+        !widget.inert &&
+        widget.overlay == null;
+  }
+
+  /// Shows the warning only after the student has stayed OUT of full screen for the grace
+  /// (so a transient change never flashes it); hides it — and stops its countdown — the
+  /// moment they are back or the module is no longer on screen.
+  void _syncFullscreenWarning() {
+    if (!mounted) return;
+    final out = _fsEnforced && !widget.window!.isFullscreen.value;
+    if (!out) {
+      _fsGrace?.cancel();
+      _fsGrace = null;
+      _fsTick?.cancel();
+      _fsTick = null;
+      if (_fsWarning || _fsSecondsLeft != null) {
+        // Every caller rebuilds next (a session or window change, a widget update, Save & Exit).
+        _fsWarning = false;
+        _fsSecondsLeft = null;
+        _syncFreeze();
+      }
+      return;
+    }
+    if (_fsWarning || _fsGrace != null) return;
+    _fsGrace = Timer(fullscreenWarningGrace, () {
+      _fsGrace = null;
+      if (!mounted || !(_fsEnforced && !widget.window!.isFullscreen.value)) return;
+      // Nothing floats over the warning, and the keyboard leaves the question card.
+      tools.closeTransient();
+      if (_islandFocused) {
+        _islandFocused = false;
+        unawaited(content.releaseFocus());
+      }
+      setState(() {
+        _fsWarning = true;
+        _fsSecondsLeft = fullscreenWarningSeconds;
+      });
+      _syncFreeze();
+      _fsTick = Timer.periodic(const Duration(seconds: 1), (t) {
+        if (!mounted) {
+          t.cancel();
+          return;
+        }
+        final left = (_fsSecondsLeft ?? 0) - 1;
+        setState(() => _fsSecondsLeft = left);
+        if (left <= 0) {
+          t.cancel();
+          _fsTick = null;
+          // The off-full-screen kick: save their progress and take them out of the test
+          // (resumable), exactly as Save & Exit in the More menu does.
+          unawaited(_saveAndExit());
+        }
+      });
+    });
+  }
+
+  /// "Return to full screen": ask the window (the lockdown) for it again. A refusal leaves the
+  /// warning up; the owner may cover the runner with its reason.
+  Future<void> _returnToFullscreen() async {
+    final w = widget.window;
+    if (w == null) return;
+    try {
+      await w.setFullscreen(true);
+    } on Object catch (e) {
+      widget.onDiagnostic?.call('window', 'return to full screen refused: $e');
+    }
   }
 
   // ---- session → UI -------------------------------------------------------------------------
@@ -313,6 +430,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       tools.closeHelp();
     }
     _enforceCalculatorRule();
+    _syncFullscreenWarning();
     if (session.phase != ExamPhase.running) {
       // Check Your Work / transition / end replace the frame: drop what floated over it.
       if (tools.moreOpen || tools.navigatorOpen || tools.directionsOpen || tools.toolbar != null) {
@@ -387,6 +505,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   /// Overlays that must draw over the card. In texture mode they simply do; in the windowed
   /// fallback the island is swapped for its last frame first (architecture §2.6).
   bool get _overlayOverCard =>
+      _fsWarning ||
       tools.moreOpen ||
       tools.navigatorOpen ||
       tools.directionsOpen ||
@@ -616,6 +735,9 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
           await w.setFullscreen(true);
         } on Object catch (e) {
           widget.onDiagnostic?.call('window', 'full screen refused: $e');
+          // Mandatory full screen (a past paper's lockdown): the clock does not start without
+          // it. The owner shows why (the pre-check) and starts the module itself once locked.
+          if (w.fullscreenLocked) return;
         }
       }
       await session.start();
@@ -638,6 +760,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     if (_exiting) return;
     tools.closeTransient();
     setState(() => _exiting = true);
+    _syncFullscreenWarning();
     final result = await session.saveAndExit();
     if (!mounted) return;
     _exitHandled = true;
@@ -684,6 +807,8 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   }
 
   void _onPointerDown(PointerDownEvent e) {
+    // Under the full-screen warning nothing below it takes a click, focus included.
+    if (_fsWarning) return;
     final p = e.position;
     if (tools.moreOpen && !_inside(_moreButtonKey, p) && !_inside(_moreMenuKey, p)) tools.closeMore();
     final inIsland = _inside(_islandKey, p) && session.phase == ExamPhase.running && _frozen == null;
@@ -914,7 +1039,10 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
           onClose: tools.closeMore,
           items: moreMenuItems(
             isFullscreen: fs?.isFullscreen.value ?? false,
-            onToggleFullscreen: fs != null && fs.fullscreenSupported ? () => unawaited(_toggleFullscreen()) : null,
+            // The lockdown owns a past paper's full screen: no "Full screen" / "Exit full screen".
+            onToggleFullscreen: fs != null && fs.fullscreenSupported && !fs.fullscreenLocked
+                ? () => unawaited(_toggleFullscreen())
+                : null,
             highlighterOn: s.highlighterOn,
             onToggleHighlighter: s.toggleHighlighter,
             notesOpen: tools.notesOpen,
@@ -1057,6 +1185,13 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
                       Positioned.fill(child: RunnerToastLayer(toasts: toasts))
                     else
                       Positioned.fill(child: RunnerToastLayer(toasts: toasts, showTimer: false)),
+                    if (_fsWarning)
+                      Positioned.fill(
+                        child: FullscreenWarning(
+                          secondsLeft: _fsSecondsLeft,
+                          onReturn: () => unawaited(_returnToFullscreen()),
+                        ),
+                      ),
                     if (widget.overlay != null) Positioned.fill(child: widget.overlay!),
                   ],
                 ),

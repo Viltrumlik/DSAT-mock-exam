@@ -3,6 +3,9 @@
 // the one button that locks it down. The check re-runs every two seconds, so closing Telegram or
 // unplugging a projector turns its row green without a click; a closable app gets its own Close
 // button (`ms_close_app`).
+//
+// A past paper (0.2.4) locks the same way and shows this same screen when the lock is refused,
+// with [PrecheckCopy.test]: "test" where the midterm's lines name a midterm.
 import 'dart:async';
 
 import 'package:flutter/scheduler.dart';
@@ -23,9 +26,13 @@ class MidtermPrecheckScreen extends StatefulWidget {
     required this.onContinue,
     this.onBack,
     this.refreshEvery = const Duration(seconds: 2),
+    this.copy = PrecheckCopy.midterm,
   });
 
   final NativeBridge native;
+
+  /// The lines that name the paper (a midterm's, or a past paper's "test").
+  final PrecheckCopy copy;
 
   /// The paper is already running (the app was reopened mid-midterm, or the lock was lost).
   final bool resume;
@@ -144,10 +151,10 @@ class _MidtermPrecheckScreenState extends State<MidtermPrecheckScreen> {
         hint: oneScreen ? null : MidtermCopy.disconnectScreen,
       ));
       if (report.remote) {
-        rows.add(const _CheckRow(state: _RowState.fix, title: MidtermCopy.remoteTitle, hint: MidtermCopy.remoteHint));
+        rows.add(_CheckRow(state: _RowState.fix, title: MidtermCopy.remoteTitle, hint: widget.copy.remoteHint));
       }
       if (report.vm) {
-        rows.add(const _CheckRow(state: _RowState.fix, title: MidtermCopy.vmTitle, hint: MidtermCopy.vmHint));
+        rows.add(_CheckRow(state: _RowState.fix, title: MidtermCopy.vmTitle, hint: widget.copy.vmHint));
       }
       if (report.apps.isEmpty) {
         rows.add(const _CheckRow(state: _RowState.ok, title: MidtermCopy.noApps));
@@ -185,8 +192,8 @@ class _MidtermPrecheckScreenState extends State<MidtermPrecheckScreen> {
     return MidtermFrame(
       children: [
         const IconBadge(LucideIcons.lock),
-        MidtermTitle(widget.resume ? MidtermCopy.precheckResumeTitle : MidtermCopy.precheckTitle),
-        const MidtermLead(MidtermCopy.precheckLead),
+        MidtermTitle(widget.resume ? widget.copy.resumeTitle : widget.copy.title),
+        MidtermLead(widget.copy.lead),
         const SizedBox(height: 24),
         DecoratedBox(
           decoration: const BoxDecoration(
@@ -230,7 +237,7 @@ class _MidtermPrecheckScreenState extends State<MidtermPrecheckScreen> {
           const SizedBox(height: 16),
           Center(
             child: MidtermLinkButton(
-              label: MidtermCopy.back,
+              label: widget.copy.back,
               icon: LucideIcons.arrowLeft,
               // Not while locking: Back mid-"Locking…" let the start land behind the student.
               onPressed: _busy ? null : widget.onBack,

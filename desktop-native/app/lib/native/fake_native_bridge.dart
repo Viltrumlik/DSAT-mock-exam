@@ -2,7 +2,7 @@
 //  * precheck: a clean machine (configurable apps/displays/vm);
 //  * prove: a REAL HMAC-SHA256 over the proof crate's message format with a fixed test key,
 //    so a fake server can verify it (still refuses when not locked, like the DLL);
-//  * heartbeat true while locked, away false (settable);
+//  * heartbeat true while locked (counted), away false (settable);
 //  * battery 87 % charging; PKCE: fixed verifier with a correct S256 challenge;
 //  * seal/open: identity; protect/unprotect: base64 (visible, reversible, never secret).
 import 'dart:async';
@@ -42,6 +42,9 @@ class FakeNativeBridge implements NativeBridge {
   bool watchdogReleased = false;
 
   bool locked = false;
+
+  /// How often [heartbeat] was called (the lockdown's liveness ping).
+  int heartbeats = 0;
   bool keptAwake = false;
   String? registeredExe;
   String? _captured;
@@ -121,6 +124,7 @@ class FakeNativeBridge implements NativeBridge {
 
   @override
   bool heartbeat() {
+    heartbeats++;
     if (watchdogReleased) {
       locked = false;
       _captured = null;

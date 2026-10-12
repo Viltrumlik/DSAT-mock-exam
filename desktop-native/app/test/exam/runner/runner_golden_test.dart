@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/exam/fake_exam_session.dart';
+import 'package:mastersat_app/exam/runner/runner_window.dart';
 import 'package:mastersat_app/exam/session_contract.dart';
 
 import 'support/runner_harness.dart';
@@ -111,4 +112,19 @@ void main() {
       await shot(tester, 'warning_help_$tag');
     });
   }
+
+  // A past paper's lockdown let go (0.2.4): the website's FullscreenWarning, 3 s into its
+  // countdown, over the R&W paper. One size: the card is centred and does not reflow.
+  golden('full-screen warning 1366x768', (tester) async {
+    final h = await RunnerHarness.pump(
+      tester,
+      battery: okBattery,
+      window: FakeRunnerWindowControls(fullscreenLocked: true, initial: true),
+    );
+    h.window!.simulateExternal(false);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text('You’ll be removed from the test in 7 seconds.'), findsOneWidget);
+    await shot(tester, 'fullscreen_warning_1366x768');
+  });
 }

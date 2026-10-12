@@ -10,7 +10,6 @@
 //
 // It returns the ExamOutcome openExam() acts on: a finished sitting opens its result.
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 
@@ -22,21 +21,16 @@ import '../engine/exam_runtime.dart';
 import 'midterm_sitting.dart';
 import 'pastpaper_sitting.dart';
 import 'review_screen.dart';
-import 'window_controls.dart';
 
 class ExamLauncherWiring {
   ExamLauncherWiring({
     required this.islandFactory,
-    NativeRunnerWindowControls? Function()? windowControls,
     this.animate = true,
     this.batteryPeriod = const Duration(seconds: 30),
-  }) : _windowControls = windowControls ?? (() => platformWindowControls(isWindows: Platform.isWindows));
+  });
 
   /// The platform's island hosts (island_host_factory.dart), or a test's.
   final IslandHostFactory islandFactory;
-
-  /// A fresh full-screen control per past-paper sitting (null: "Full screen" hidden).
-  final NativeRunnerWindowControls? Function() _windowControls;
   final bool animate;
   final Duration batteryPeriod;
 
@@ -85,7 +79,6 @@ class ExamLauncherWiring {
   Future<ExamOutcome?> _pastpaper(BuildContext context, AppServices s, ExamRuntime rt, PastpaperExamRequest r) {
     final engine = s.exams!.track(rt.pastpaper(r.practiceTestId, studentName: _studentName(s)));
     unawaited(engine.open());
-    final window = _windowControls();
     final nav = Navigator.of(context);
     return nav.push<ExamOutcome>(instantRoute(
       settings: RouteSettings(name: '/exam/pastpaper/${r.practiceTestId}'),
@@ -93,7 +86,6 @@ class ExamLauncherWiring {
         engine: engine,
         native: s.native,
         islandFactory: islandFactory,
-        window: window,
         islandDiagnostics: s.islandDiagnostics,
         onDiagnostic: _diagnostic(s),
         batteryPeriod: batteryPeriod,
@@ -103,10 +95,10 @@ class ExamLauncherWiring {
           attemptId: engine.attemptId == 0 ? null : engine.attemptId,
           finished: finished,
         )),
+        // Disposing the engine releases the machine too (the sitting already has).
         onDispose: () {
           s.exams?.untrack(engine);
           engine.dispose();
-          window?.dispose();
         },
       ),
     ));

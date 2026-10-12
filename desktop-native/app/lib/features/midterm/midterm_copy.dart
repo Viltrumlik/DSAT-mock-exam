@@ -218,6 +218,51 @@ abstract final class MidtermCopy {
   static const openReport = 'Open the full report';
 }
 
+/// The pre-check's lines that name the paper. Midterms use [midterm] (the website's words); a
+/// past paper locks the same way since 0.2.4 and says "test" where a midterm is named ([test]).
+/// Every other line of the screen is shared.
+class PrecheckCopy {
+  const PrecheckCopy({
+    required this.title,
+    required this.resumeTitle,
+    required this.lead,
+    required this.remoteHint,
+    required this.vmHint,
+    required this.back,
+  });
+
+  final String title;
+  final String resumeTitle;
+  final String lead;
+  final String remoteHint;
+  final String vmHint;
+
+  /// The link under the button.
+  final String back;
+
+  static const midterm = PrecheckCopy(
+    title: MidtermCopy.precheckTitle,
+    resumeTitle: MidtermCopy.precheckResumeTitle,
+    lead: MidtermCopy.precheckLead,
+    remoteHint: MidtermCopy.remoteHint,
+    vmHint: MidtermCopy.vmHint,
+    back: MidtermCopy.back,
+  );
+
+  /// NATIVE (0.2.4): a past paper. The midterm's words with "test" for "midterm"; Back leaves
+  /// the paper, so it says where it goes (as the sitting's other screens do).
+  static const test = PrecheckCopy(
+    title: MidtermCopy.precheckTitle,
+    resumeTitle: 'Resume your test',
+    lead:
+        'When you continue, MasterSAT locks this computer until your test ends. Other apps, '
+        'notifications, screenshots and copying are turned off.',
+    remoteHint: 'Take the test on this computer itself, not over Remote Desktop.',
+    vmHint: "Tests can't be taken inside a virtual machine.",
+    back: 'Back to Home',
+  );
+}
+
 /// What to say under the pre-check when "Lock and start/resume" fails.
 String precheckErrorText(Object e) {
   if (e is ProofRefused) return MidtermCopy.proofInvalid;
