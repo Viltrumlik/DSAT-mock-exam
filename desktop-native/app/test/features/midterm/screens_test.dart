@@ -326,6 +326,47 @@ void main() {
       expect(backs, 1);
     });
 
+    testWidgets('a past paper (PrecheckCopy.test) says "test" where a midterm is named; the rest is shared', (
+      tester,
+    ) async {
+      final native = FakeNativeBridge(vm: true, remote: true);
+      var backs = 0;
+      await pumpHost(
+        tester,
+        MidtermPrecheckScreen(
+          native: native,
+          resume: true,
+          copy: PrecheckCopy.test,
+          onContinue: () async {},
+          onBack: () => backs++,
+        ),
+      );
+      expect(find.text('Resume your test'), findsOneWidget);
+      expect(
+        find.text(
+          'When you continue, MasterSAT locks this computer until your test ends. Other apps, '
+          'notifications, screenshots and copying are turned off.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Remote Desktop session'), findsOneWidget);
+      expect(find.text('Take the test on this computer itself, not over Remote Desktop.'), findsOneWidget);
+      expect(find.text('Virtual machine'), findsOneWidget);
+      expect(find.text("Tests can't be taken inside a virtual machine."), findsOneWidget);
+      expect(find.text('Lock and resume'), findsOneWidget);
+      expect(find.textContaining('idterm'), findsNothing);
+      await tester.tap(find.text('Back to Home'));
+      expect(backs, 1);
+
+      // The midterm's own words are unchanged (the default).
+      expect(PrecheckCopy.midterm.resumeTitle, 'Resume your midterm');
+      expect(PrecheckCopy.midterm.lead, MidtermCopy.precheckLead);
+      expect(PrecheckCopy.midterm.vmHint, "Midterms can't be taken inside a virtual machine.");
+      expect(PrecheckCopy.midterm.remoteHint, 'Take the midterm on this computer itself, not over Remote Desktop.');
+      expect(PrecheckCopy.midterm.back, 'Back');
+      expect(PrecheckCopy.test.title, PrecheckCopy.midterm.title);
+    });
+
     testWidgets('apps to close: a Close button each (or the tray hint); the row clears itself', (tester) async {
       final native = FakeNativeBridge(apps: [
         const BlockedApp(exe: 'Telegram.exe', name: 'Telegram', closable: true),
