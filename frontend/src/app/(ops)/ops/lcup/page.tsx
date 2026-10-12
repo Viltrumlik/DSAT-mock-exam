@@ -1,0 +1,40 @@
+"use client";
+
+import { useState } from "react";
+import { Tabs } from "@/components/ui";
+import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { AccountsPanel, GroupsPanel, StatusPanel, StudentsPanel, TeachersPanel } from "@/features/lcup/LcupPanels";
+
+/**
+ * The lc-up link: the centre's CRM is the master for groups and who is in them, and our classes
+ * follow it. This page is where an administrator settles what the sync could not decide alone —
+ * which of our classes an lc-up group is, which account an lc-up student is — and watches the
+ * sync itself. Accounts and classes are only created after the initial review is marked done.
+ */
+
+const TABS = [
+  { value: "status", label: "Status" },
+  { value: "groups", label: "Groups" },
+  { value: "students", label: "Students" },
+  { value: "teachers", label: "Teachers" },
+  { value: "accounts", label: "Accounts" },
+];
+
+export default function OpsLcupPage() {
+  const [tab, setTab] = useState("status");
+  return (
+    <div className="space-y-5">
+      <OpsPageHeader
+        section="lc-up"
+        title="lc-up"
+        description="Groups and their members follow the centre's CRM. Pair lc-up groups with our classes, link students and teachers the sync could not match, and keep an eye on each sync."
+      />
+      <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="lc-up sections" />
+      {tab === "status" ? <StatusPanel /> : null}
+      {tab === "groups" ? <GroupsPanel /> : null}
+      {tab === "students" ? <StudentsPanel /> : null}
+      {tab === "teachers" ? <TeachersPanel /> : null}
+      {tab === "accounts" ? <AccountsPanel /> : null}
+    </div>
+  );
+}
