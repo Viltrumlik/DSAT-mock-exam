@@ -65,4 +65,5 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/mobile/', include('mobile.urls')),
     path('api/desktop/', include('desktop.urls')),
+    path('api/lcup/', include('lcup.urls')),
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
