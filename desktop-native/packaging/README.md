@@ -9,7 +9,8 @@ on `windows-latest`. Nothing here deploys anything.
 | `icon/MasterSAT.ico` | The installer and exe icon, made from `desktop/app-icon.png` (the 0.1.x app's source) by `icon/make_icon.py`. |
 | `prune-bundle.ps1` | Removes files the app can never load from the built bundle: the six unused Lucide weight fonts (`Lucide100`…`Lucide600`, also dropped from `FontManifest.json`) and KaTeX's `.woff`/`.ttf` fallbacks (WebView2 always takes the `.woff2` listed first). Guarded, idempotent, and run by `pack.ps1`. |
 | `ci/s0-diagnostics.ps1` | The S0 run on a CI machine. It records the screen, the WebView2 runtime and whether an interactive desktop exists. It runs the app with `--s1-harness`, then checks the runner itself. Its outputs are `s0-diagnostics.json`, `screen.png`, `mastersat-s1.json` and `island.png`. |
-| `ci/size-report.ps1` | What `Setup.exe` is made of, per component (on disk and compressed inside the nupkg), against the 26 MB budget. Writes `size-report.json` / `.md` and the job summary. |
+| `ci/check-imports.py` | Every DLL any bundled module imports must be in the bundle or part of Windows — never the VC++ runtime (CI has it installed; a student's laptop may not). Pure Python; also runs on macOS against an unpacked nupkg. |
+| `ci/size-report.ps1` | What `Setup.exe` is made of, per component (on disk and compressed inside the nupkg), against the 27 MB budget. Writes `size-report.json` / `.md` and the job summary. |
 | `ci/install-smoke.ps1` | S4 smoke test: silent install, the files and registry keys it leaves (the `mastersat://` key proves the DLL's Velopack hook ran), a link through the protocol, then a silent uninstall that must keep `%LOCALAPPDATA%\MasterSAT`. Writes `s4-install.json`. |
 | `s0-probe/` | A stand-in question card that speaks protocol v1. CMake installs it only when `MS_S0_PROBE=1` and there is no island build. It is never part of a release. |
 

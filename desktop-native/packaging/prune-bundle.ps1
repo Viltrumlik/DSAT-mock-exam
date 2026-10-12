@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Removes files from the built app bundle that the app can never load (installer budget,
-  architecture §10 S4: Setup.exe at most 26 MB).
+  architecture §10 S4: Setup.exe at most 27 MB).
 
 .DESCRIPTION
   Run after `flutter build windows --release` and before `vpk pack` (pack.ps1 runs it too;
@@ -23,6 +23,12 @@
      so the .woff and .ttf copies in data\island are never requested.
      Guard: every @font-face in data\island\*.css names a .woff2 before any .woff/.ttf, and
      every removed file has a .woff2 sibling for the same KaTeX face.
+
+  3. dartjni.dll. package:jni is pulled in by path_provider_android (Android only), and its
+     Windows build imports jvm.dll — which no student laptop has, so the DLL could never even
+     load here (packaging/ci/check-imports.py flags it). Nothing on Windows opens it.
+     Guard: no Dart file under -AppLibDir imports package:jni / package:jni_flutter or names
+     dartjni.
 #>
 [CmdletBinding()]
 param(
@@ -85,6 +91,18 @@ if (Test-Path $island) {
     } else {
       $removeFiles.Add($f.FullName)
     }
+  }
+}
+
+# --- 3. dartjni.dll (Android-only JNI bridge) -------------------------------------------------
+$jni = Join-Path $BundleDir 'dartjni.dll'
+if (Test-Path $jni) {
+  if (-not (Test-Path $AppLibDir)) { $problems.Add("no Dart sources at $AppLibDir to check jni use against") }
+  else {
+    $jniUses = @(Get-ChildItem -Recurse -File -Filter '*.dart' $AppLibDir |
+      Select-String -Pattern 'package:jni(_flutter)?/|dartjni')
+    foreach ($u in $jniUses) { $problems.Add("jni used at $($u.Path):$($u.LineNumber): $($u.Line.Trim())") }
+    $removeFiles.Add($jni)
   }
 }
 
