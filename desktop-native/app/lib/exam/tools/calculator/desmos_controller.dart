@@ -2,7 +2,10 @@
 // "Desmos island", §2.8 "Desmos"). Created on the first Calculator click and kept until the
 // runner closes, so switching questions or closing the panel never loses the graph.
 //
-//   open → host.open() → `desmos.ready` → desmos.init{mode, state: session.desmosState}
+//   open → host.open() → the page's `ready` → desmos.init{mode, state: session.desmosState}
+//        → Desmos loads → `desmos.ready` (status ready). (Until 0.2.5 this waited for
+//        desmos.ready before sending desmos.init, which the page only answers AFTER init: a
+//        deadlock that ended every time in the 8 s timeout and the native calculator.)
 //   tab   → desmos.mode
 //   `desmos.changed` → desmos.getState{req} → `desmos.state` → session.saveDesmosState
 //   `desmos.failed` (offline/script/timeout) or no `ready` within [readyTimeout] → failed:
@@ -24,7 +27,7 @@ class DesmosController extends ChangeNotifier {
   DesmosController({
     required this.session,
     required this.factory,
-    this.readyTimeout = const Duration(seconds: 8),
+    this.readyTimeout = const Duration(seconds: 35),
     this.onDiagnostic,
     this.onKey,
   });
@@ -32,7 +35,7 @@ class DesmosController extends ChangeNotifier {
   final ExamSession session;
   final IslandHostFactory factory;
 
-  /// The island gives up on its own after 6 s (`desmos.failed{timeout}`); this guards a page
+  /// The island gives up on its own after 30 s (`desmos.failed{timeout}`); this guards a page
   /// that never loads at all.
   final Duration readyTimeout;
   final void Function(String where, String message)? onDiagnostic;
@@ -128,9 +131,12 @@ class DesmosController extends ChangeNotifier {
         onDiagnostic?.call('desmos', 'dropped message: $reason');
       case IslandMessageEvent(:final message):
         switch (message) {
+          case ReadyMessage():
+            // The page listens (first open, or a recreated island after a crash): (re)initialise
+            // it from the last saved state. The mode is whatever tab is showing now.
+            _host?.post(DesmosInitMessage(mode: _mode, state: session.desmosState));
           case DesmosReadyMessage():
             _timeout?.cancel();
-            _host?.post(DesmosInitMessage(mode: _mode, state: session.desmosState));
             _setStatus(DesmosStatus.ready);
           case DesmosFailedMessage(:final reason):
             _fail(reason);

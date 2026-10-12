@@ -176,7 +176,7 @@ const String islandProtocolSchemaJson = r'''{
     },
     "ready": {
       "direction": "to_native",
-      "islands": ["content"],
+      "islands": ["content", "desmos"],
       "fields": {"build": "string", "protocol": "int"}
     },
     "module.loaded": {
@@ -996,7 +996,7 @@ class FocusReleaseMessage extends IslandMessage {
       };
 }
 
-/// `ready` (to_native; content).
+/// `ready` (to_native; content, desmos).
 class ReadyMessage extends IslandMessage {
   const ReadyMessage({required this.build, required this.protocol});
 
@@ -1014,7 +1014,7 @@ class ReadyMessage extends IslandMessage {
   MessageDirection get direction => MessageDirection.toNative;
 
   @override
-  Set<IslandKind> get islands => const {IslandKind.content};
+  Set<IslandKind> get islands => const {IslandKind.content, IslandKind.desmos};
 
   final String build;
   final int protocol;

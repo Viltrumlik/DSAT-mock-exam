@@ -52,6 +52,10 @@ class FakeIslandHost extends IslandHost {
   int opens = 0;
   Object? desmosStateValue;
 
+  /// Scripted Desmos page: whether desmos.init loads Desmos (answers desmos.ready). False models
+  /// a load that never finishes (offline, blocked script).
+  bool desmosLoads = true;
+
   @override
   ValueListenable<IslandHostState> get stateListenable => _state;
 
@@ -68,11 +72,9 @@ class FakeIslandHost extends IslandHost {
     _state.value = IslandHostState.loading;
     await Future<void>.value();
     _state.value = IslandHostState.ready;
-    if (scripted) {
-      emit(kind == IslandKind.content
-          ? ReadyMessage(build: build_, protocol: islandProtocolVersion)
-          : const DesmosReadyMessage(apiVersion: 'v1.11'));
-    }
+    // Like the real pages: both say `ready` as soon as they listen; the Desmos page says
+    // desmos.ready only after desmos.init has loaded Desmos (see _reply).
+    if (scripted) emit(ReadyMessage(build: build_, protocol: islandProtocolVersion));
   }
 
   @override
@@ -101,6 +103,7 @@ class FakeIslandHost extends IslandHost {
         emit(SelectionCurrentMessage(req: req, qid: _currentQid(), container: null, text: null));
       case DesmosInitMessage(:final state):
         desmosStateValue = state;
+        if (desmosLoads) emit(const DesmosReadyMessage(apiVersion: '1.11'));
       case DesmosGetStateMessage(:final req):
         emit(DesmosStateMessage(req: req, state: desmosStateValue ?? const <String, Object?>{}));
       default:
