@@ -16,7 +16,7 @@ name: desktop-native (Windows exam app)
 #          * the island built from this branch (data\island);
 #          * `flutter build windows --release` linking the DLL (MS_LINK_NATIVE=ON);
 #          * S0 diagnostics + the S1 harness on that build, the Velopack
-#            installer, its size against the 26 MB budget, an install/uninstall
+#            installer, its size against the 27 MB budget, an install/uninstall
 #            smoke test, and `flutter test --exclude-tags golden`.
 #          Artifacts: MasterSAT-Setup (Setup.exe), MasterSAT-full-nupkg,
 #          MasterSAT-symbols (--split-debug-info), s0-diagnostics.
@@ -49,8 +49,9 @@ concurrency:
 env:
   FLUTTER_SUPPRESS_ANALYTICS: "true"
   # Setup.exe must stay at or under this many bytes. Architecture §10 S4 said 25 MB; the owner
-  # raised it to 26 MB on 2026-10-12 (the wired 0.2.0 is 25.77 MB). Enforced: over budget fails.
-  INSTALLER_BUDGET_BYTES: "26000000"
+  # raised it to 26 MB (the wired 0.2.0 is 25.77 MB), then to 27 MB on 2026-10-12 so the VC++
+  # runtime ships app-local (~0.35 MB). Enforced: over budget fails.
+  INSTALLER_BUDGET_BYTES: "27000000"
 
 jobs:
   macos:
@@ -362,7 +363,7 @@ jobs:
             exit 1
           }
           $bundle = Resolve-Path 'build/windows/x64/runner/Release'
-          # Files the app can never load (unused Lucide weights, KaTeX's woff/ttf fallbacks),
+          # Files the app can never load (unused Lucide weights, KaTeX's woff/ttf fallbacks, dartjni),
           # removed before S0 so every check below runs on exactly what ships.
           ../packaging/prune-bundle.ps1 -BundleDir $bundle -AppLibDir lib
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -381,6 +382,14 @@ jobs:
           $shipped = (Get-FileHash (Join-Path $bundle 'mastersat_native.dll') -ErrorAction SilentlyContinue).Hash
           if ($built -ne $shipped) { $problems += 'the bundled mastersat_native.dll is not the release build' }
           Write-Host "island files: $((Get-ChildItem -Recurse -File "$bundle/data/island" | Measure-Object).Count)"
+          # Every DLL any module imports is in the bundle or part of Windows — never the VC++
+          # runtime, which this machine has installed but a student's laptop may not (0.2.0
+          # refused to start with "VCRUNTIME140_1.dll was not found", 2026-10-12).
+          foreach ($vc in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            if (-not (Test-Path (Join-Path $bundle $vc))) { $problems += "missing $vc (the VC++ runtime must ship app-local)" }
+          }
+          python ../packaging/ci/check-imports.py $bundle
+          if ($LASTEXITCODE -ne 0) { $problems += 'a module imports a DLL that is neither bundled nor part of Windows (see check-imports above)' }
           if ($problems) { $problems | ForEach-Object { Write-Host "::error::$_" }; exit 1 }
           Write-Host 'bundle OK: MasterSAT.exe links mastersat_native.dll (release); data\island is the real island'
 

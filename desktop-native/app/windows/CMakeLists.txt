@@ -144,6 +144,38 @@ if(MS_NATIVE_LIB)
     COMPONENT Runtime)
 endif()
 
+# MasterSAT: the Visual C++ runtime ships next to the exe (Microsoft's "app-local"
+# deployment). The runner, the plugins, dartjni and the Rust DLL import
+# MSVCP140 / VCRUNTIME140 / VCRUNTIME140_1, and a laptop without the VC++
+# redistributable refused to start 0.2.0 ("VCRUNTIME140_1.dll was not found",
+# 2026-10-12) — the CI machine has it installed, so CI never saw it. Copying the
+# three DLLs needs no admin rights and no download, unlike installing the redist.
+# packaging/ci/check-imports.py fails the build if any module imports a DLL that
+# is neither in the bundle nor part of Windows.
+if(MSVC)
+  set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+  set(CMAKE_INSTALL_UCRT_LIBRARIES FALSE)
+  include(InstallRequiredSystemLibraries)
+  set(MS_VC_RUNTIME_DLLS "")
+  foreach(lib IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+    get_filename_component(lib_name "${lib}" NAME)
+    string(TOLOWER "${lib_name}" lib_name)
+    if(lib_name MATCHES "^(msvcp140|vcruntime140|vcruntime140_1)\\.dll$")
+      list(APPEND MS_VC_RUNTIME_DLLS "${lib}")
+    endif()
+  endforeach()
+  list(LENGTH MS_VC_RUNTIME_DLLS MS_VC_RUNTIME_COUNT)
+  if(NOT MS_VC_RUNTIME_COUNT EQUAL 3)
+    message(FATAL_ERROR "MasterSAT: expected msvcp140, vcruntime140 and vcruntime140_1 in the "
+                        "MSVC redist folder, found: ${MS_VC_RUNTIME_DLLS} "
+                        "(MSVC_REDIST_DIR=${MSVC_REDIST_DIR})")
+  endif()
+  message(STATUS "MasterSAT: bundling the VC++ runtime: ${MS_VC_RUNTIME_DLLS}")
+  install(FILES ${MS_VC_RUNTIME_DLLS} DESTINATION "${INSTALL_BUNDLE_LIB_DIR}"
+    CONFIGURATIONS Profile;Release
+    COMPONENT Runtime)
+endif()
+
 # MasterSAT: the island pages (desktop-native/island, `npm run build`) go to
 # data/island next to the exe; ms_webview2 maps https://island.mastersat.example/
 # to that folder. Environment:

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  What the installer is made of, against the 26 MB budget (architecture §10, S4).
+  What the installer is made of, against the 27 MB budget (architecture §10, S4).
 
 .DESCRIPTION
   Reads the app bundle (flutter build windows output) and the Velopack output, and reports

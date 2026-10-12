@@ -105,7 +105,7 @@ lockdown, SmartScreen, and how the app feels.
   the FFI test against the debug DLL, the release DLL (`updates`, `DESKTOP_PROOF_KEY` embedded —
   a push without the secret fails), the island, `flutter build windows --release` linking the
   DLL, `packaging/prune-bundle.ps1`, S0 + S1 on that build, `vpk pack`, the size report against
-  26 MB, the install/uninstall smoke test, then `flutter test --exclude-tags golden`.
+  27 MB, the install/uninstall smoke test, then `flutter test --exclude-tags golden`.
 * **Artifacts:** `MasterSAT-Setup`, `MasterSAT-full-nupkg`, `MasterSAT-symbols` (keep them for
   `flutter symbolize`), `s0-diagnostics` (S0/S1 JSON + screenshots, `size-report.*`,
   `s4-install.json`), `island-visual` (macOS).
