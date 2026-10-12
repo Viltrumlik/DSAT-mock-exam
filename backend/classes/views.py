@@ -1919,6 +1919,11 @@ class JoinClassView(APIView):
         classroom = Classroom.objects.filter(join_code=code, is_active=True).first()
         if not classroom:
             return Response({"detail": "Invalid class code."}, status=status.HTTP_400_BAD_REQUEST)
+        from lcup.guards import is_lcup_managed, lcup_managed_response
+
+        # A class paired with lc-up takes its students from lc-up; a code join would be undone.
+        if is_lcup_managed(classroom):
+            return lcup_managed_response()
 
         if classroom.max_students is not None:
             current_students = (
