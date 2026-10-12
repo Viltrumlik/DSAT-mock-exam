@@ -274,6 +274,9 @@ class _PastpaperSittingScreenState extends State<PastpaperSittingScreen> {
       contentHost: _island.host,
       // The lockdown is the window: mandatory full screen, the warning, no More → Full screen.
       window: _window,
+      // The app-wide update card covers the runner (and the engine let the machine go for it):
+      // nothing here may count the student out from under it.
+      inert: e.problem.value?.kind == EngineProblemKind.updateRequired,
       battery: _battery,
       banner: _banner(),
       overlay: unavailable

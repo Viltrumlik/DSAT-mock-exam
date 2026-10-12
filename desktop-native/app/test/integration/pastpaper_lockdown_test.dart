@@ -6,6 +6,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mastersat_app/exam/engine/exam_engine.dart' show EngineProblem, EngineProblemKind;
 import 'package:mastersat_app/exam/launch/island_guard.dart' show IslandUnavailableCopy;
 import 'package:mastersat_app/exam/launch/pastpaper_sitting.dart';
 import 'package:mastersat_app/exam/runner/fullscreen_warning.dart';
@@ -357,6 +358,19 @@ void main() {
       expect(engineOf(tester).phase, ExamPhase.running);
       await tester.pump(const Duration(seconds: 12));
       expect(warning, findsNothing);
+      await rig.dispose();
+    });
+
+    testWidgets('a required update lets the machine go and never counts the student out', (tester) async {
+      final rig = await startedLocked(tester);
+      final e = engineOf(tester);
+      e.setProblem(const EngineProblem(EngineProblemKind.updateRequired, 'Update the MasterSAT app to keep going.'));
+      await tester.pump();
+      expect(rig.native.locked, isFalse);
+      await tester.pump(const Duration(seconds: 12));
+      expect(warning, findsNothing);
+      expect(rig.native.locked, isFalse, reason: 'not taken again behind the update card');
+      expect(find.byType(PastpaperSittingScreen), findsOneWidget);
       await rig.dispose();
     });
 
