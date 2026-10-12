@@ -1,6 +1,6 @@
 // The Desmos island (architecture.md §2.4, §2.7): loads Desmos API v1.11 once, Graphing and
 // Scientific, restores and reports state, reports changes debounced, and fails fast and
-// clearly (offline / script / 6 s timeout) so native can fall back to its own calculator.
+// clearly (offline / script / 30 s timeout) so native can fall back to its own calculator.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PROTOCOL_VERSION, validateMessage } from "../src/protocol";
@@ -125,7 +125,14 @@ describe("loading", () => {
     expect(last("desmos.failed")).toMatchObject({ reason: "offline" });
   });
 
-  it("no answer within 6 s → desmos.failed{timeout}", async () => {
+  it("announces ready{build, protocol:1} the moment it listens, before any desmos.init (2026-10-12: without it native waited for desmos.ready and the page waited for desmos.init)", () => {
+    start({ build: "island/test", loader: () => new Promise(() => {}), online: () => true });
+    expect(sent()[0]).toEqual({ v: 1, t: "ready", build: "island/test", protocol: 1 });
+    expect(sent().filter((m) => m.t === "desmos.ready")).toHaveLength(0);
+    assertValid();
+  });
+
+  it("no answer within 30 s → desmos.failed{timeout}", async () => {
     vi.useFakeTimers();
     start({ loader: () => new Promise(() => {}), online: () => true });
     deliver({ t: "desmos.init", mode: "graphing" });
@@ -133,7 +140,8 @@ describe("loading", () => {
     expect(last("desmos.failed")).toBeUndefined();
     await vi.advanceTimersByTimeAsync(1);
     expect(last("desmos.failed")).toMatchObject({ reason: "timeout" });
-    expect(LOAD_TIMEOUT_MS).toBe(6000);
+    // ~1 MB of calculator.js over a slow connection the first time; the website waits for it.
+    expect(LOAD_TIMEOUT_MS).toBe(30000);
   });
 
   it("a calculator that throws on creation is reported and counts as a script failure", async () => {

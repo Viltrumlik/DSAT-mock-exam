@@ -6,22 +6,24 @@
 //
 //   native → island   desmos.init{mode, state?} · desmos.mode{mode} · desmos.getState{req} ·
 //                     focus.release
-//   island → native   desmos.ready{apiVersion} · desmos.failed{reason} · desmos.changed ·
-//                     desmos.state{req, state} · key{Escape} · focus{inIsland} · error
+//   island → native   ready{build, protocol} (on start: the page listens — native sends
+//                     desmos.init only after it) · desmos.ready{apiVersion} (Desmos loaded) ·
+//                     desmos.failed{reason} · desmos.changed · desmos.state{req, state} ·
+//                     key{Escape} · focus{inIsland} · error
 //
 // Differences from the website, on purpose:
 //   * the Desmos key comes from the build (vite.config.ts → __DESMOS_API_KEY__), the same
 //     variable the website reads; the protocol's desmos.init carries no key;
 //   * switching tabs keeps both calculators alive (the website re-mounts and loses the graph);
 //     the saved state holds both;
-//   * failure is reported, not drawn: offline / script error / 6 s timeout → desmos.failed,
+//   * failure is reported, not drawn: offline / script error / 30 s timeout → desmos.failed,
 //     and native shows its scientific calculator (the website swaps in ScientificCalculator);
 //   * changes are reported debounced (2 s) so native can save the state per attempt;
 //   * the island never decides whether a paper HAS a calculator: native creates it only on a
 //     paper whose rule allows one (calculatorAllowed — a Foundation Math midterm has none,
 //     2026-10-11) and picks Scientific-only (junior Math) before desmos.init.
 import { IslandChannel, type Outgoing } from "../channel";
-import type { DesmosInitMessage, DesmosToNative, NativeToDesmos } from "../protocol";
+import { PROTOCOL_VERSION, type DesmosInitMessage, type DesmosToNative, type NativeToDesmos } from "../protocol";
 import { h } from "../ported/dom";
 import { installHardening } from "../content/hardening";
 import type { IslandTransport } from "../transport";
@@ -46,8 +48,10 @@ export interface DesmosFactory {
 
 /** The API version the website loads (loadDesmos.ts). */
 export const DESMOS_API_VERSION = "1.11";
-/** desmos.failed{timeout} after this long (architecture.md §2.7). */
-export const LOAD_TIMEOUT_MS = 6000;
+/** desmos.failed{timeout} after this long. calculator.js is ~1 MB on the wire, which a slow
+ *  school connection takes well over 6 s to fetch the first time (later loads come from the
+ *  WebView2 cache); the website waits as long as it takes, showing its spinner. */
+export const LOAD_TIMEOUT_MS = 30000;
 /** desmos.changed debounce (architecture.md §2.7). */
 export const CHANGE_DEBOUNCE_MS = 2000;
 
@@ -113,6 +117,8 @@ export interface DesmosIslandOptions {
   timeoutMs?: number;
   debounceMs?: number;
   apiKey?: string;
+  /** The `ready.build` string (tests); the build id otherwise. */
+  build?: string;
 }
 
 type Status = "idle" | "loading" | "ready" | "failed";
@@ -176,6 +182,9 @@ export class DesmosIsland {
       win.removeEventListener("resize", onResize);
     });
     this.channel.start();
+    // The page is listening: native may now send desmos.init (and only now — a message posted
+    // before this would be lost). desmos.ready follows once Desmos itself has loaded.
+    this.send({ t: "ready", build: this.opts.build ?? (typeof __ISLAND_BUILD__ === "string" ? __ISLAND_BUILD__ : "island/dev"), protocol: PROTOCOL_VERSION });
   }
 
   stop(): void {

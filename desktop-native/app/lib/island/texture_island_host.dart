@@ -182,6 +182,11 @@ class WebviewIslandHost extends IslandHost {
   bool _visible = true;
   bool _recovering = false;
 
+  /// The web view whose controller has finished `initialize()`. Its controller throws
+  /// ("not initialized") on every call before that, so focus and visibility asked for early
+  /// are held: visibility is applied right after initialization, focus is dropped.
+  IslandWebview? _initialized;
+
   /// The last policy refusals (diagnostics; at most 50).
   final List<WebviewBlockedEvent> blocked = [];
 
@@ -222,6 +227,7 @@ class WebviewIslandHost extends IslandHost {
     try {
       await webview.initialize();
       if (!_isCurrent(webview)) return;
+      _initialized = webview;
       final folder = islandFolder;
       if (folder != null) await webview.mapIslandFolder(folder);
       await webview.setAllowedResourceHosts(islandAllowedResourceHosts[kind] ?? const []);
@@ -258,8 +264,9 @@ class WebviewIslandHost extends IslandHost {
     final event = decodeIncoming(kind, raw);
     if (event is IslandMessageEvent) {
       final m = event.message;
-      final isReady = kind == IslandKind.content ? m is ReadyMessage : m is DesmosReadyMessage;
-      if (isReady) {
+      // Both pages say `ready` the moment they listen (the Desmos page's desmos.ready only
+      // follows desmos.init, so waiting for it here deadlocked: 2026-10-12).
+      if (m is ReadyMessage) {
         _readyTimer?.cancel();
         _problem.value = null;
         _state.value = IslandHostState.ready;
@@ -360,6 +367,7 @@ class WebviewIslandHost extends IslandHost {
     _subscriptions.clear();
     final old = _webview.value;
     _webview.value = null;
+    _initialized = null;
     if (old != null) {
       try {
         await old.dispose();
@@ -385,7 +393,11 @@ class WebviewIslandHost extends IslandHost {
   );
 
   @override
-  Future<void> focus() async => _webview.value?.focus();
+  Future<void> focus() async {
+    final webview = _webview.value;
+    if (webview == null || !identical(webview, _initialized)) return; // not up yet: nothing to focus
+    await webview.focus();
+  }
 
   @override
   Future<void> releaseFocus() async {
@@ -396,7 +408,7 @@ class WebviewIslandHost extends IslandHost {
   @override
   Future<Uint8List?> capturePreview() async {
     final webview = _webview.value;
-    if (webview == null || _state.value == IslandHostState.disposed) return null;
+    if (webview == null || !identical(webview, _initialized) || _state.value == IslandHostState.disposed) return null;
     try {
       return await webview.capturePreview();
     } on PlatformException {
@@ -409,7 +421,10 @@ class WebviewIslandHost extends IslandHost {
   @override
   Future<void> setVisible(bool visible) async {
     _visible = visible;
-    await _webview.value?.setVisible(visible);
+    final webview = _webview.value;
+    // Before initialize() finishes, _create applies _visible itself.
+    if (webview == null || !identical(webview, _initialized)) return;
+    await webview.setVisible(visible);
   }
 
   @override

@@ -39,11 +39,22 @@ class FakeIslandWebview implements IslandWebview {
 
   List<String> get postedTypes => [for (final j in postedJson) (jsonDecode(j) as Map)['t'] as String];
 
+  /// Hold initialize() open until completed (null: it finishes at once).
+  Completer<void>? initGate;
+  bool initialized = false;
+
+  // Like the real WebviewController: every call before initialize() finishes throws.
+  void _requireInitialized() {
+    if (!initialized) throw StateError('WebviewController is not initialized. Call initialize() first.');
+  }
+
   @override
   Future<void> initialize() async {
     calls.add('initialize');
     final f = failInitialize;
     if (f != null) throw f;
+    await initGate?.future;
+    initialized = true;
   }
 
   @override
@@ -81,18 +92,23 @@ class FakeIslandWebview implements IslandWebview {
 
   @override
   Future<Uint8List?> capturePreview() async {
+    _requireInitialized();
     if (preview == null) throw PlatformException(code: 'no_preview');
     return preview;
   }
 
   @override
   Future<void> setVisible(bool visible) async {
+    _requireInitialized();
     calls.add('visible:$visible');
     this.visible = visible;
   }
 
   @override
-  Future<void> focus() async => calls.add('focus');
+  Future<void> focus() async {
+    _requireInitialized();
+    calls.add('focus');
+  }
 
   @override
   Future<void> releaseFocus() async => calls.add('releaseFocus');
@@ -154,17 +170,52 @@ void main() {
     expect(host.state, IslandHostState.disposed);
   });
 
-  test('the Desmos island may load the Desmos hosts and is ready on desmos.ready', () async {
+  test('the Desmos island may load the Desmos hosts; its page\'s `ready` releases desmos.init', () async {
+    // 2026-10-12: the host used to wait for desmos.ready, which the page sends only after
+    // desmos.init: neither moved and every calculator fell back to the native one.
     final host = TextureIslandHost(IslandKind.desmos, webviewFactory: factoryOf());
+    host.post(const DesmosInitMessage(mode: 'graphing'));
     await host.open();
     expect(made.single.allowedHosts, ['www.desmos.com', '*.desmos.com']);
     expect(made.single.loadedUrl, 'https://island.mastersat.example/desmos.html');
+    expect(made.single.postedTypes, isEmpty, reason: 'nothing goes out before the page listens');
     made.single.say({'v': 1, 't': 'ready', 'build': 'x', 'protocol': 1});
     await pumpEventQueue();
-    expect(host.state, IslandHostState.loading, reason: '`ready` is a content-island message');
-    made.single.say({'v': 1, 't': 'desmos.ready', 'apiVersion': 'v1.11'});
-    await pumpEventQueue();
     expect(host.state, IslandHostState.ready);
+    expect(made.single.postedTypes, ['desmos.init']);
+    final events = <IslandEvent>[];
+    final sub = host.events.listen(events.add);
+    made.single.say({'v': 1, 't': 'desmos.ready', 'apiVersion': '1.11'});
+    await pumpEventQueue();
+    expect(events.whereType<IslandMessageEvent>().map((e) => e.message), [isA<DesmosReadyMessage>()]);
+    await sub.cancel();
+    await host.dispose();
+  });
+
+  test('focus, visibility and a preview asked for while WebView2 starts never throw', () async {
+    // 2026-10-12 diagnostics: "Bad state: WebviewController is not initialized" when the
+    // Desmos panel asked for focus/visibility before initialize() had finished.
+    final gate = Completer<void>();
+    final host = TextureIslandHost(
+      IslandKind.desmos,
+      webviewFactory: () {
+        final w = FakeIslandWebview()..initGate = gate;
+        made.add(w);
+        return w;
+      },
+    );
+    final opening = host.open();
+    await pumpEventQueue();
+    await host.focus();
+    await host.setVisible(false);
+    expect(await host.capturePreview(), isNull);
+    expect(made.single.calls, ['initialize'], reason: 'nothing reached the uninitialised controller');
+    gate.complete();
+    await opening;
+    expect(made.single.calls, contains('visible:false'), reason: 'the visibility asked for early is applied');
+    await host.setVisible(true);
+    await host.focus();
+    expect(made.single.calls.sublist(made.single.calls.length - 2), ['visible:true', 'focus']);
     await host.dispose();
   });
 
