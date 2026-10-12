@@ -51,6 +51,11 @@ export interface Member {
      */
     role?: string | null;
   };
+  /**
+   * An account the lc-up sync created whose owner has not signed in yet. Sent only to people who
+   * manage the roster (backend: classes.views ``people``); absent everywhere else.
+   */
+  lcup_claim_pending?: boolean;
   role: RawRole;
   joined_at?: string;
 }

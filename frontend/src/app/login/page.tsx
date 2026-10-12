@@ -345,6 +345,10 @@ export default function LoginPage() {
                         <Button type="submit" loading={loading} fullWidth size="lg" rightIcon={<LogIn />} className="!bg-[#2a68c0] hover:!bg-[#21539e]">
                             Sign in
                         </Button>
+                        {/* Accounts the lc-up sync creates sign in with the phone first (backend/lcup). */}
+                        <p className="-mt-1 text-center text-[12px] text-muted-foreground">
+                            Enrolled through the learning centre? Sign in with your phone number — your first password is its last 4 digits.
+                        </p>
 
                         <div className="flex items-center gap-3 py-1">
                             <span className="h-px flex-1 bg-border" />

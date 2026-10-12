@@ -238,7 +238,13 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
                 className="cr-card group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 hover:bg-surface-2"
               >
                 <Avatar u={m.user} />
-                <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{fullName(m.user)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-foreground">{fullName(m.user)}</p>
+                  {m.lcup_claim_pending ? (
+                    // An account made from lc-up, not claimed yet: phone + last 4 digits signs them in.
+                    <p className="truncate text-xs text-muted-foreground">Not signed in yet</p>
+                  ) : null}
+                </div>
                 <Actions m={m} />
               </div>
             ))}

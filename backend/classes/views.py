@@ -1122,12 +1122,19 @@ class ClassroomViewSet(ModelViewSet):
     @action(detail=True, methods=["get"], permission_classes=[IsAuthenticatedAndNotFrozen])
     def people(self, request, pk=None):
         classroom = self.get_object()
-        memberships = (
+        memberships = list(
             classroom.memberships.select_related("user")
             .exclude(status=ClassroomMembership.STATUS_REMOVED)
             .order_by("role", "-joined_at")
         )
-        return Response(ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data)
+        context = {"request": request}
+        # Who has not signed in to an account the lc-up sync made is the teaching team's business,
+        # not their classmates': only someone who manages the roster gets the flag.
+        if has_cap(request.user, classroom, "can_manage_roster"):
+            from lcup.guards import pending_claim_user_ids
+
+            context["lcup_pending_user_ids"] = pending_claim_user_ids(m.user_id for m in memberships)
+        return Response(ClassroomMembershipSerializer(memberships, many=True, context=context).data)
 
     @action(
         detail=True,

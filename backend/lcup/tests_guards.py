@@ -77,6 +77,13 @@ class RosterGuardTests(TestCase):
         self.manage()
         self.assertEqual(self.remove_member().status_code, 200)
 
+    def test_the_people_page_flags_them_for_the_teacher_only(self):
+        AccountClaim.objects.create(user=self.member, phone="998901234567", expires_at=timezone.now() + timedelta(days=14))
+        for viewer, expected in ((self.teacher, True), (self.member, False)):
+            rows = self.as_user(viewer).get(f"/api/classes/{self.room.pk}/people/").data
+            flags = {row["user"]["id"]: row["lcup_claim_pending"] for row in rows}
+            self.assertEqual(flags[self.member.pk], expected, viewer.username)
+
     def test_the_roster_flags_accounts_that_have_not_signed_in_yet(self):
         AccountClaim.objects.create(user=self.member, phone="998901234567", expires_at=timezone.now() + timedelta(days=14))
         signed_in = self.student("signed_in")
