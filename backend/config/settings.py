@@ -595,6 +595,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.open_todays_attendance_registers",
         "schedule": crontab(minute="*/10"),
     },
+    # lc-up: groups, members and accounts follow the centre's CRM (backend/lcup). Returns at once
+    # while LCUP_ENABLED is off.
+    "lcup-sync": {
+        "task": "lcup.tasks.sync",
+        "schedule": crontab(minute="*/15"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.

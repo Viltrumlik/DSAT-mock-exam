@@ -12,6 +12,7 @@ sign-in is phone + its last four digits (``auth_backend``), and the claim is wha
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models import F
+from django.utils import timezone
 
 #: Wrong codes before a claim locks. The admin unlocks it by reissuing.
 MAX_CLAIM_FAILURES = 5
@@ -165,7 +166,9 @@ class AccountClaim(models.Model):
 
 
 class LcupSyncRun(models.Model):
-    started_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # Not auto_now_add: a dry run's row is written after its rolled-back transaction, and must
+    # still say when the run began.
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
     finished_at = models.DateTimeField(null=True, blank=True)
     dry_run = models.BooleanField(default=False)
     ok = models.BooleanField(default=False)
