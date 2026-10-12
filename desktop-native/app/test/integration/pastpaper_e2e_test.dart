@@ -2,7 +2,9 @@
 // on the content island → answers (from the island and the keyboard) → Check Your Work →
 // module 2 → Submit → the result screen; Save & Exit then Resume (the same sitting, answers
 // kept); "Review questions" in the island's review mode; sign-out blocked while an answer is
-// unsent. Real services, real engine, real file database; fake server, bridge and WebView2.
+// unsent. Since 0.2.4 a past paper is locked down like a midterm from Start until Save & Exit or
+// the hand-in (pastpaper_lockdown_test.dart covers the lock in depth; here it rides along).
+// Real services, real engine, real file database; fake server, bridge and WebView2.
 import 'package:flutter/services.dart' hide KeyMessage;
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -57,8 +59,10 @@ void main() {
     expect(rig.native.keepAwakeCalls, [true], reason: 'the display stays awake while a test is open');
     expect(rig.native.batteryReads, greaterThan(0), reason: 'the header shows the battery, as the website does in the app');
 
+    expect(rig.native.locked, isFalse, reason: 'Welcome: nothing locked yet');
     await rig.tapKey('welcome.start');
     expect(e.phase, ExamPhase.running);
+    expect(rig.native.locked, isTrue, reason: 'Start locks the machine, as a midterm does');
     final island = rig.content;
     expect(island.postedOf<InitMessage>().single.mode, 'exam');
     expect(island.postedOf<ModuleLoadMessage>().last.moduleId, 301);
@@ -87,6 +91,7 @@ void main() {
     await rig.settle(const Duration(milliseconds: 100), 10);
     expect(e.moduleId, 302, reason: 'module 2 from the bundle, at once');
     expect(e.phase, ExamPhase.running);
+    expect(rig.native.locked, isTrue, reason: 'still locked through the module change');
     expect(island.postedOf<ModuleLoadMessage>().last.moduleId, 302);
     expect(rig.api.stateOf(e.attemptId), AttemptState.module2Active);
     expect(rig.api.serverAnswers(e.attemptId, 301), containsPair(1001, 'B'));
@@ -106,6 +111,7 @@ void main() {
     expect(find.byType(PastpaperSittingScreen), findsNothing);
     expect(find.byType(PastpaperResultScreen), findsOneWidget);
     expect(rig.api.stateOf(e.attemptId), AttemptState.completed);
+    expect(rig.native.locked, isFalse, reason: 'released once the paper was in');
     expect(find.text('Review questions'), findsOneWidget);
     expect(rig.native.keepAwakeCalls.last, isFalse, reason: 'the display may sleep again');
 
@@ -134,6 +140,7 @@ void main() {
     await rig.tapKey('welcome.start');
     final e = engineOf(tester);
     final attempt = e.attemptId;
+    expect(rig.native.locked, isTrue);
     rig.content.emit(const AnswerChooseMessage(qid: 1001, key: 'D'));
     await rig.settle();
 
@@ -143,6 +150,7 @@ void main() {
     expect(find.byType(PastpaperSittingScreen), findsNothing);
     expect(find.byType(HomeScreen), findsOneWidget);
     expect(rig.native.keepAwakeCalls, [true, false]);
+    expect(rig.native.locked, isFalse, reason: 'Save & Exit releases the machine');
     // The answer reached the server with the pause (the website's Save & Exit flushes first).
     expect(rig.api.serverAnswers(attempt, 301), containsPair(1001, 'D'));
     expect(rig.api.calls.any((c) => c.method == 'pastpaperPause'), isTrue);
@@ -155,6 +163,7 @@ void main() {
     expect(again.attemptId, attempt, reason: 'Resume continues the open sitting, never a new one');
     expect(again.answerFor(1001), 'D');
     expect(again.paused, isTrue, reason: 'the website reopens a paused sitting paused');
+    expect(rig.native.locked, isTrue, reason: 'the reopened running sitting locks at once');
     await rig.tapText('Resume');
     await rig.settle();
     expect(again.paused, isFalse);
@@ -191,6 +200,7 @@ void main() {
     await rig.tapKey('header.more');
     await rig.tapKey('more.saveExit');
     await rig.settle(const Duration(milliseconds: 100), 10);
+    expect(rig.native.locked, isFalse);
     final out = await rig.services.auth.signOut();
     expect(out, isA<SignedOut>());
     await rig.settle(const Duration(milliseconds: 100), 6);

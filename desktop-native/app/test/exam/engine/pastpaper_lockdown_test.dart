@@ -174,13 +174,15 @@ void main() {
     }, apiFactory: adaptive);
   });
 
-  test('the window closing releases it after the last sync', () {
+  test('the window closing releases it after the last sync, and it is no longer wanted', () {
     withHarness((h) {
       final e = lockedAndStarted(h);
       e.select(1001, 'C');
       h.run(e.closeGracefully);
       expect(h.native.locked, isFalse);
       expect(e.lockdown.locked, isFalse);
+      expect(e.lockdownWanted, isFalse);
+      expect(h.serverAnswers(P52.attempt, P52.m1), {1001: 'C'}, reason: 'the last sync went out');
       e.dispose();
     });
   });

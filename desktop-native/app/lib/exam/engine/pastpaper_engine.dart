@@ -100,9 +100,11 @@ class PastpaperEngine extends ExamEngine {
   /// the paper is saved (Save & Exit) or finished, and while waiting OFFLINE for module 2 —
   /// nothing is on screen to answer and the runner offers no way out there, so a student must
   /// not sit locked until the connection returns (the lock comes back with the module). False
-  /// when the app must be updated (the update card covers everything; it would trap them).
+  /// when the app must be updated (the update card covers everything; it would trap them), and
+  /// once the window is closing ([closeGracefully]).
   bool get lockdownWanted =>
       !disposed &&
+      !_closing &&
       const {ExamPhase.running, ExamPhase.review, ExamPhase.transition}.contains(phaseValue) &&
       problem.value?.kind != EngineProblemKind.updateRequired;
 
@@ -116,6 +118,9 @@ class PastpaperEngine extends ExamEngine {
 
   /// Release the machine (every way out of the sitting). Safe to call when not locked.
   void releaseLock() => lockdown.exit();
+
+  /// The window is closing: the lock must not be taken again behind [closeGracefully].
+  bool _closing = false;
 
   /// Lets go the moment the sitting no longer needs the lock (see [lockdownWanted]); never
   /// takes it — only the screen does, where a refusal can be shown.
@@ -1038,6 +1043,7 @@ class PastpaperEngine extends ExamEngine {
 
   @override
   Future<void> closeGracefully() async {
+    _closing = true;
     if (hasUnqueuedChanges && clockRunsInPhase) _syncNow();
     try {
       await super.closeGracefully();
