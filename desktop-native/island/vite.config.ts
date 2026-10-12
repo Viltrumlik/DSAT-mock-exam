@@ -44,8 +44,12 @@ const DESMOS_HOSTS = "https://www.desmos.com https://*.desmos.com";
 export const CSP: Record<string, string> = {
   content:
     "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src blob: data:; font-src 'self'; base-uri 'none'; form-action 'none'",
+  // Desmos's calculator.js evaluates generated code: without 'unsafe-eval' it throws while loading,
+  // the island reports desmos.failed{script} and native falls back to its own scientific calculator
+  // in BOTH tabs (2026-10-12, the owner's laptop). The Desmos page loads nothing but Desmos and our
+  // own bundle, and never sees question content, so allowing eval here exposes nothing else.
   desmos:
-    `default-src 'none'; script-src 'self' ${DESMOS_HOSTS}; style-src 'self' 'unsafe-inline' ${DESMOS_HOSTS}; ` +
+    `default-src 'none'; script-src 'self' 'unsafe-eval' ${DESMOS_HOSTS}; style-src 'self' 'unsafe-inline' ${DESMOS_HOSTS}; ` +
     `img-src 'self' blob: data: ${DESMOS_HOSTS}; font-src 'self' data: ${DESMOS_HOSTS}; connect-src ${DESMOS_HOSTS}; ` +
     "worker-src 'self' blob:; child-src blob:; base-uri 'none'; form-action 'none'",
 };

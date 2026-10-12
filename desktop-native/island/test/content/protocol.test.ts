@@ -389,6 +389,22 @@ describe("the divider drag", () => {
     expect((h.island.main.firstElementChild as HTMLElement).style.width).toBe("61.5%");
     expect(document.body.getAttribute("style")).toBeNull();
   });
+
+  it("the visible handle and the strip around the line start the drag too (not only the 2 px line)", () => {
+    const qs = rw();
+    show(h, qs[0], 0, qs.length);
+    vi.spyOn(h.island.main, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 1000, height: 600, right: 1000, bottom: 600, x: 0, y: 0, toJSON: () => ({}) });
+    const divider = h.island.main.querySelector('[role="separator"]')!;
+    const pill = divider.querySelector("svg")!.parentElement!;
+    const grip = divider.querySelector("[data-split-grip]")!;
+    for (const [target, x] of [[pill, 400], [grip, 600]] as const) {
+      expect(getComputedStyle(target).pointerEvents).not.toBe("none");
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 500 }));
+      window.dispatchEvent(new MouseEvent("mousemove", { clientX: x }));
+      window.dispatchEvent(new MouseEvent("mouseup", {}));
+      expect(h.island.view.split).toBe(x / 1000);
+    }
+  });
 });
 
 describe("keys, focus", () => {

@@ -242,6 +242,11 @@ class Webview {
   // MasterSAT patch: show/hide without destroying; a hidden island asks
   // WebView2 for MemoryUsageTargetLevel LOW (architecture §2.5).
   bool SetVisible(bool visible);
+  // MasterSAT patch: make WebView2 present a fresh frame of what it shows now.
+  // Windows.Graphics.Capture only delivers frames for changes made AFTER the
+  // capture starts, so a page painted before TextureBridge::Start stayed blank
+  // until something on it changed (review: blank until Next, 2026-10-12).
+  void RequestRepaint();
   // MasterSAT patch: extra https hosts this island may load resources from
   // (exact "www.desmos.com" or "*.desmos.com"); replaces the previous list.
   void SetAllowedResourceHosts(const std::vector<std::string>& hosts);

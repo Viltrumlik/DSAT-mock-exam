@@ -30,6 +30,12 @@ for (const page of ["content.html", "desmos.html"]) {
     if (!url.startsWith("./")) fail(`${page}: non-relative asset URL ${url}`);
   }
   if (/src="\.\/src\//.test(html)) fail(`${page}: still points at source files`);
+  // Desmos's calculator.js evaluates generated code; without 'unsafe-eval' it never loads and
+  // native silently swaps in its own calculator for both tabs (2026-10-12). Question content
+  // must never get eval.
+  const scriptSrc = (html.match(/script-src([^;"]*)/) ?? [])[1] ?? "";
+  if (page === "desmos.html" && !scriptSrc.includes("'unsafe-eval'")) fail("desmos.html: CSP script-src must allow 'unsafe-eval' (Desmos needs it)");
+  if (page === "content.html" && scriptSrc.includes("'unsafe-eval'")) fail("content.html: CSP must not allow 'unsafe-eval'");
 }
 
 // The dev harness never ships.
