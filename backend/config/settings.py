@@ -773,6 +773,9 @@ AUTH_USER_MODEL = 'users.User'
 AUTHENTICATION_BACKENDS = [
     'users.backends.EmailOrUsernameModelBackend',
     'django.contrib.auth.backends.ModelBackend',
+    # Last on purpose: a real password is always tried first. Refuses everyone while
+    # LCUP_ENABLED is off (backend/lcup/auth_backend.py).
+    'lcup.auth_backend.LcupClaimBackend',
 ]
 
 SIMPLE_JWT = {
