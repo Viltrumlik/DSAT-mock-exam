@@ -21,6 +21,11 @@ import 'package:mastersat_app/features/results/results_controller.dart';
 import 'package:mastersat_app/main.dart';
 import 'package:mastersat_app/native/fake_native_bridge.dart';
 
+/// The app version every harness screen shows. Fixed, so bumping desktop-native/VERSION never
+/// changes a golden or a version assertion (test/core/http/proxy_config_test.dart checks the
+/// real default against VERSION).
+const String kHarnessAppVersion = '0.2.0';
+
 /// The fixtures' "now" (contracts/v1/manifest.json): midterm 14 is open, 15 opens tomorrow.
 final DateTime fixtureNow = DateTime.utc(2026, 10, 11, 9);
 
@@ -89,7 +94,7 @@ class AppHarness {
     late AppHarness h;
     final services = await buildAppServices(
       config: config ??
-          ApiConfig(origin: Uri.parse('http://fixtures.invalid'), appVersion: appVersion, target: ApiTarget.inProcessFixtures),
+          ApiConfig(origin: Uri.parse('http://fixtures.invalid'), appVersion: kHarnessAppVersion, target: ApiTarget.inProcessFixtures),
       paths: const AppPaths('/nonexistent-test-root'),
       native: native,
       clock: clock,
