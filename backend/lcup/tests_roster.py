@@ -1,6 +1,7 @@
 from django.test import TestCase
 from django.utils import timezone
 
+from access.models import UserAccess
 from classes.models import Classroom, ClassroomMembership
 from classes.models_membership_audit import ClassroomMembershipEvent
 from lcup.models import GroupLinkStatus, LcupGroupLink, LcupMembership, LcupStudentLink
@@ -49,6 +50,15 @@ class RosterTests(TestCase):
         self.assertEqual(apply_plan(self.group, plan, allow_removals=True), {"added": 1, "reactivated": 0, "removed": 0})
         self.assertEqual(self.status_of(s), ACTIVE)
         self.assertTrue(ClassroomMembershipEvent.objects.filter(classroom=self.room, student=s).exists())
+
+    def test_an_added_or_reactivated_student_gets_the_subject_access_grant(self):
+        new, back = self.student("new"), self.student("back")
+        self.linked(new)
+        self.linked(back)
+        self.ours(back, status=REMOVED)
+        apply_plan(self.group, plan_group(self.group), allow_removals=True)
+        for user in (new, back):
+            self.assertTrue(UserAccess.objects.filter(user=user, classroom=self.room, subject="math").exists(), user)
 
     def test_trial_and_frozen_members_are_ordinary_members(self):
         trial, frozen = self.student("trial"), self.student("frozen")

@@ -20,7 +20,9 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 
-from classes.models import ClassroomMembership
+from access import constants as acc_const
+from access.models import UserAccess
+from classes.models import Classroom, ClassroomMembership
 
 from .models import LcupStudentLink
 
@@ -72,6 +74,13 @@ def plan_group(link) -> RosterPlan:
     return plan
 
 
+def _grant_subject_access(room, user_id: int) -> None:
+    # Parity with JoinClassView and the admin roster add: without the classroom-scoped grant a
+    # student is in the class but cannot open its subject's content.
+    domain = acc_const.DOMAIN_MATH if room.subject == Classroom.SUBJECT_MATH else acc_const.DOMAIN_ENGLISH
+    UserAccess.objects.get_or_create(user_id=user_id, subject=domain, classroom=room, defaults={"granted_by": None})
+
+
 def apply_plan(link, plan: RosterPlan, *, allow_removals: bool) -> dict:
     counts = {"added": 0, "reactivated": 0, "removed": 0}
     room = link.classroom
@@ -82,10 +91,12 @@ def apply_plan(link, plan: RosterPlan, *, allow_removals: bool) -> dict:
             _, created = ClassroomMembership.objects.get_or_create(
                 classroom=room, user_id=user_id, defaults={"role": _STUDENT, "status": _ACTIVE}
             )
+            _grant_subject_access(room, user_id)
             counts["added"] += int(created)
         for row in ClassroomMembership.objects.filter(classroom=room, user_id__in=plan.to_reactivate, role=_STUDENT):
             row.status = _ACTIVE
             row.save(update_fields=["status"])
+            _grant_subject_access(room, row.user_id)
             counts["reactivated"] += 1
         if allow_removals and not plan.blocked_removals:
             for row in ClassroomMembership.objects.filter(
