@@ -84,6 +84,8 @@ static void Flags() {
   CHECK(HasFlag({"--s1-harness"}, kS1HarnessFlag));
   CHECK(!HasFlag({"--s1-harness=1"}, kS1HarnessFlag));
   CHECK(!HasFlag({}, kS1HarnessFlag));
+  CHECK(HasFlag({"--s1-harness", "--impeller"}, kImpellerFlag));
+  CHECK(!HasFlag({"--s1-harness"}, kImpellerFlag));
 }
 
 int main() {

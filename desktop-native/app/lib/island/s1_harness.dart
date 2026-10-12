@@ -33,6 +33,7 @@ import 'package:flutter/services.dart' hide KeyMessage;
 import 'package:path/path.dart' as p;
 
 import '../core/api/fixture_v1_api.dart';
+import '../core/diagnostics/renderer.dart';
 import '../core/models/models.dart';
 import '../native/native_bridge.dart';
 import 'island_host.dart';
@@ -898,6 +899,7 @@ class S1Controller extends ChangeNotifier {
     if (views.isEmpty) return null;
     final v = views.first;
     return {
+      'renderer': launchRenderer,
       'devicePixelRatio': v.devicePixelRatio,
       'physicalWidth': v.physicalSize.width,
       'physicalHeight': v.physicalSize.height,
@@ -1230,7 +1232,7 @@ class _SidePanel extends StatelessWidget {
             Text(
               'Island: ${c.host?.runtimeType ?? '—'} · ${c.host?.state.name ?? 'idle'}'
               '${c.islandBuild == null ? '' : ' · ${c.islandBuild}'}\n'
-              'WebView2: ${c.webview2Version ?? 'not found'}',
+              'WebView2: ${c.webview2Version ?? 'not found'} · renderer: $launchRenderer',
               style: const TextStyle(color: _muted, fontSize: 12),
             ),
             if (c.host is WebviewIslandHost)

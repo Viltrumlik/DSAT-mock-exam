@@ -61,6 +61,19 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
 
   flutter::DartProject project(L"data");
 
+  // Skia, not Impeller. Flutter 3.47 turns Impeller on for Windows by default, drawing through
+  // ANGLE with signed-distance-field text and shapes. On the owner's laptop (2026-10-12) that
+  // gave soft, low-resolution-looking text, a blank sign-in panel (its gradient was never
+  // drawn, so the white text on it vanished) and a sluggish machine. Skia's OpenGL backend is
+  // the long-proven one and draws text from a hinted glyph atlas. `--impeller` brings Impeller
+  // back for a side-by-side comparison; Dart sees `--ms-renderer=…` to report which one ran.
+  const bool impeller = launch_policy::HasFlag(command_line_arguments,
+                                               launch_policy::kImpellerFlag);
+  project.set_impeller_switch(impeller ? flutter::ImpellerSwitch::Enabled
+                                       : flutter::ImpellerSwitch::Disabled);
+  command_line_arguments.push_back(impeller ? "--ms-renderer=impeller"
+                                            : "--ms-renderer=skia");
+
   project.set_dart_entrypoint_arguments(command_line_arguments);
 
   FlutterWindow window(project, launch_url);
