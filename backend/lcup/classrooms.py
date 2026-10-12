@@ -26,6 +26,30 @@ from .models import GroupLinkStatus
 DEFAULT_LESSON_HOURS = 2
 
 
+def teachers_for(snapshot: dict) -> list:
+    """Our users linked to the group's lc-up teachers, in lc-up's order (the first owns the class)."""
+    from users.models import User
+
+    from .models import LcupTeacherLink
+
+    lcup_ids = [t.get("id") for t in snapshot.get("teachers") or [] if t.get("id") is not None]
+    user_by_lcup = dict(
+        LcupTeacherLink.objects.filter(lcup_teacher_id__in=lcup_ids, user__isnull=False).values_list(
+            "lcup_teacher_id", "user_id"
+        )
+    )
+    user_ids = [user_by_lcup[i] for i in lcup_ids if i in user_by_lcup]
+    users = User.objects.in_bulk(user_ids)
+    return [users[i] for i in user_ids if i in users]
+
+
+def branch_for(snapshot: dict):
+    from .models import LcupFilialLink
+
+    link = LcupFilialLink.objects.filter(lcup_filial_id=snapshot.get("filial_id")).select_related("branch").first()
+    return link.branch if link else None
+
+
 def _lesson_hours(snapshot: dict) -> int:
     try:
         start = datetime.strptime(str(snapshot.get("start_time") or "")[:5], "%H:%M")

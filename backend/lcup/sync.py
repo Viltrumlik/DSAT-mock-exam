@@ -26,10 +26,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
 from classes.models import Branch, ClassroomMembership
-from users.models import User
 
 from .accounts import create_account_for
-from .classrooms import create_classroom_for
+from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
 from .matching import match_student, match_teacher, suggest_classroom
 from .models import (
@@ -135,8 +134,6 @@ def _teachers(client, run: _Run) -> None:
 def _groups(client, run: _Run) -> None:
     rows = client.fetch_all(f"{API}/groups", {"include_deleted": "true"})
     taken = set(LcupGroupLink.objects.filter(classroom__isnull=False).values_list("classroom_id", flat=True))
-    teacher_users = dict(LcupTeacherLink.objects.filter(user__isnull=False).values_list("lcup_teacher_id", "user_id"))
-    filial_branch = dict(LcupFilialLink.objects.values_list("lcup_filial_id", "branch_id"))
 
     for row in rows:
         link, _ = LcupGroupLink.objects.get_or_create(lcup_group_id=row["id"], defaults={"name": (row.get("name") or "")[:200]})
@@ -154,27 +151,27 @@ def _groups(client, run: _Run) -> None:
         if link.classroom_id or link.status not in (GroupLinkStatus.SUGGESTED, GroupLinkStatus.NEEDS_TEACHER):
             continue
 
-        teacher_ids = [teacher_users[t["id"]] for t in row.get("teachers") or [] if teacher_users.get(t.get("id"))]
-        branch_id = filial_branch.get(row.get("filial_id"))
-        suggestion = suggest_classroom(row, teacher_user_ids=set(teacher_ids), branch_id=branch_id, taken_classroom_ids=taken)
+        teachers = teachers_for(row)
+        branch = branch_for(row)
+        suggestion = suggest_classroom(
+            row,
+            teacher_user_ids={t.pk for t in teachers},
+            branch_id=branch.pk if branch else None,
+            taken_classroom_ids=taken,
+        )
         link.suggestion_id = suggestion.classroom_id
         link.suggestion_score = suggestion.score
         link.suggestion_reasons = suggestion.reasons
         if suggestion.classroom_id:
             link.status = GroupLinkStatus.SUGGESTED
-        elif not teacher_ids:
+        elif not teachers:
             link.status = GroupLinkStatus.NEEDS_TEACHER
         elif not run.review_done:
             link.status = GroupLinkStatus.SUGGESTED
             link.suggestion_reasons = ["no matching class; one is created after the initial review"]
         else:
-            by_id = User.objects.in_bulk(teacher_ids)
             try:
-                room = create_classroom_for(
-                    link,
-                    teacher_users=[by_id[i] for i in teacher_ids if i in by_id],
-                    branch=Branch.objects.filter(pk=branch_id).first() if branch_id else None,
-                )
+                room = create_classroom_for(link, teacher_users=teachers, branch=branch)
             except ValueError as exc:
                 link.status = GroupLinkStatus.SUGGESTED
                 link.suggestion_reasons = [str(exc)]
@@ -257,7 +254,7 @@ def _memberships(client, run: _Run) -> None:
             run.error(f"members:{link.lcup_group_id}", exc)
 
 
-def _live_student_ids() -> set[int]:
+def live_student_ids() -> set[int]:
     return set(
         LcupMembership.objects.filter(left_at__isnull=True, group__deleted_in_lcup_at__isnull=True)
         .exclude(group__status=GroupLinkStatus.IGNORED)
@@ -269,7 +266,7 @@ def _match_students(run: _Run) -> None:
     phones = Counter(LcupStudentLink.objects.exclude(phone="").values_list("phone", flat=True))
     shared = {phone for phone, n in phones.items() if n >= 2}
     pending = (
-        LcupStudentLink.objects.filter(pk__in=_live_student_ids())
+        LcupStudentLink.objects.filter(pk__in=live_student_ids())
         .exclude(status__in=_SETTLED)
         .exclude(status=LinkStatus.AUTO, user__isnull=False)
     )
@@ -288,7 +285,7 @@ def _match_students(run: _Run) -> None:
 def _accounts(run: _Run) -> None:
     if not run.review_done:
         return
-    for link in LcupStudentLink.objects.filter(pk__in=_live_student_ids(), status=LinkStatus.UNMATCHED, user__isnull=True):
+    for link in LcupStudentLink.objects.filter(pk__in=live_student_ids(), status=LinkStatus.UNMATCHED, user__isnull=True):
         if create_account_for(link, now=run.now):
             run.counts["accounts_created"] += 1
 
@@ -327,12 +324,17 @@ def _run_stages(client, run: _Run) -> None:
 def run_sync(client, *, dry_run: bool = False, now=None) -> LcupSyncRun:
     started = timezone.now()
     run = _Run(now or started)
-    if dry_run:
-        with transaction.atomic():
+    try:
+        if dry_run:
+            with transaction.atomic():
+                _run_stages(client, run)
+                transaction.set_rollback(True)
+        else:
             _run_stages(client, run)
-            transaction.set_rollback(True)
-    else:
-        _run_stages(client, run)
+    except LcupAuthError as exc:
+        # Nothing can work without the login; the run still says so in /ops/lcup.
+        log.error("lc-up refused the integration login; the sync stopped")
+        run.error("login", exc)
     return LcupSyncRun.objects.create(
         started_at=started,
         finished_at=timezone.now(),

@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from classes.models import Classroom, ClassroomMembership
-from lcup.client import LcupUnavailable
+from lcup.client import LcupAuthError, LcupUnavailable
 from lcup.models import (
     AccountClaim,
     GroupLinkStatus,
@@ -209,6 +209,14 @@ class SyncTests(TestCase):
             run = self.run_sync()
         self.assertIn(sardor.pk, self.active_students())
         self.assertTrue(any(a.startswith("removals held") for a in run.alerts))
+
+    def test_a_refused_login_stops_the_run_and_is_recorded_on_it(self):
+        data = lcup_data()
+        data[f"{API}/filials"] = LcupAuthError("lc-up refused the login (422)")
+        run = self.run_sync(data)
+        self.assertFalse(run.ok)
+        self.assertEqual([e["stage"] for e in run.errors], ["login"])
+        self.assertEqual(LcupTeacherLink.objects.count(), 0)
 
     def test_a_dry_run_writes_nothing_but_records_the_run(self):
         run = self.run_sync(dry_run=True)
