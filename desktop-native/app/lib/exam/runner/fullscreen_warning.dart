@@ -12,8 +12,9 @@
 // text-base font-bold text-white hover:bg-blue-800`, Maximize `h-5 w-5`, `gap-2`. No backdrop
 // blur (the website dropped it: it flashed during the full-screen change).
 //
-// Native rules: nothing under it can be clicked or typed into; keys are swallowed (Tab moves
-// to the button, Enter/Space press it); the arrow cursor; no hover lift.
+// Native rules: nothing under it can be clicked or typed into; it takes the keyboard when it
+// rises and swallows every key (Tab moves to the button, Enter/Space press it); the arrow
+// cursor; no hover lift.
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -40,13 +41,36 @@ abstract final class FullscreenWarningCopy {
 const Duration fullscreenWarningGrace = Duration(milliseconds: 400);
 const int fullscreenWarningSeconds = 10;
 
-class FullscreenWarning extends StatelessWidget {
+class FullscreenWarning extends StatefulWidget {
   const FullscreenWarning({super.key, required this.onReturn, this.secondsLeft});
 
   final VoidCallback onReturn;
 
   /// Seconds left before the student is removed from the test (null hides the countdown).
   final int? secondsLeft;
+
+  @override
+  State<FullscreenWarning> createState() => _FullscreenWarningState();
+}
+
+class _FullscreenWarningState extends State<FullscreenWarning> {
+  final FocusScopeNode _scope = FocusScopeNode(debugLabel: 'fullscreenWarning');
+
+  @override
+  void initState() {
+    super.initState();
+    // The runner already holds the keyboard, so `autofocus` would not move it: take it, so Tab
+    // can only reach this card's button and never a runner button underneath.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scope.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    _scope.dispose();
+    super.dispose();
+  }
 
   static KeyEventResult _swallow(FocusNode node, KeyEvent event) {
     // Tab / Shift+Tab still reach the button (focus traversal); nothing else gets through.
@@ -56,7 +80,8 @@ class FullscreenWarning extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final left = secondsLeft;
+    final left = widget.secondsLeft;
+    final onReturn = widget.onReturn;
     final card = Container(
       key: const ValueKey('fullscreenWarning.card'),
       width: double.infinity,
@@ -161,6 +186,7 @@ class FullscreenWarning extends StatelessWidget {
     return Focus(
       onKeyEvent: _swallow,
       child: FocusScope(
+        node: _scope,
         autofocus: true,
         child: BlockSemantics(
           child: Semantics(

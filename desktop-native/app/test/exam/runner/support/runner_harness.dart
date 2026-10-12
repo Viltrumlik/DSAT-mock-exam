@@ -117,11 +117,12 @@ class RunnerHarness {
     bool customSubmitter = true,
     bool nativeScientificOnly = true,
     bool scriptedContent = true,
+    FakeRunnerWindowControls? window,
   }) async {
     setWindowSize(tester, size);
     final s = session ?? FakeExamSession.readingWriting(tick: false);
     final content = FakeIslandHost(IslandKind.content, canDrawOverIsland: canDrawOverIsland, scripted: scriptedContent);
-    final window = windowControls ? FakeRunnerWindowControls() : null;
+    window ??= windowControls ? FakeRunnerWindowControls() : null;
     final batteryN = battery == null ? null : ValueNotifier<BatteryStatus?>(battery);
     final h = RunnerHarness._(tester, s, content, window, batteryN);
     await tester.pumpWidget(const SizedBox.shrink()); // a fresh runner state every time
