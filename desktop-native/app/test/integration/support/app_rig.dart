@@ -138,7 +138,6 @@ class AppRig {
           hosts.add(h);
           return h;
         },
-        windowControls: () => null,
         animate: false,
       ).call,
       examRuntimes: (userId, {required api, required native, required fetchMedia}) => ExamRuntime.open(
