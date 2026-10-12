@@ -148,7 +148,6 @@ class _PastpaperReviewScreenState extends State<PastpaperReviewScreen> {
   int _index = 0;
   bool _ready = false;
   int? _loadedModule;
-  int _generation = 0;
   late final MediaStore _media;
   final FocusNode _focus = FocusNode(debugLabel: 'review');
 
@@ -238,15 +237,15 @@ class _PastpaperReviewScreenState extends State<PastpaperReviewScreen> {
     if (!_ready || plan == null || plan.items.isEmpty) return;
     final item = plan.items[_index.clamp(0, plan.items.length - 1)];
     final moduleId = item.result.moduleId;
-    final gen = ++_generation;
-    if (_loadedModule != moduleId) {
-      final questions = plan.modules[moduleId] ?? const <Question>[];
-      _island.host.post(moduleLoadMessage(moduleId, questions));
-      await _putMedia(questions);
-      if (gen != _generation || !mounted) return;
-      _loadedModule = moduleId;
-    }
     final moduleQuestions = plan.modules[moduleId] ?? const <Question>[];
+    if (_loadedModule != moduleId) {
+      _island.host.post(moduleLoadMessage(moduleId, moduleQuestions));
+      _loadedModule = moduleId;
+      // The question shows NOW and its images stream in behind it: the island points every
+      // <img> at its bytes the moment they arrive (island/src/content/media.ts). Waiting for
+      // a whole module's images first left the review blank on a real connection (2026-10-12).
+      unawaited(_putMedia(moduleQuestions));
+    }
     final r = item.result;
     _island.host.post(QuestionShowMessage(
       qid: r.id,
@@ -286,6 +285,7 @@ class _PastpaperReviewScreenState extends State<PastpaperReviewScreen> {
         b = null;
       }
       if (b == null || !_mimes.contains(b.mime)) continue;
+      if (!mounted) return; // the student left while the images were on their way
       _island.host.post(MediaPutMessage(key: b.key, mime: b.mime, b64: base64Encode(b.bytes)));
     }
   }

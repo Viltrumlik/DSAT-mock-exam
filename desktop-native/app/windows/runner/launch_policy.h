@@ -76,6 +76,8 @@ Rect DefaultRect(const Rect& work_area, unsigned int dpi);
 
 // Command-line flags the runner understands before Dart starts.
 inline constexpr std::string_view kS1HarnessFlag = "--s1-harness";
+// Draw with Impeller instead of Skia (comparison on a laptop; see main.cpp).
+inline constexpr std::string_view kImpellerFlag = "--impeller";
 bool HasFlag(const std::vector<std::string>& args, std::string_view flag);
 
 }  // namespace launch_policy

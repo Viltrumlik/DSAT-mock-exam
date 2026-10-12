@@ -67,87 +67,90 @@ class BrandPanel extends StatelessWidget {
     ];
     return ExcludeSemantics(
       excluding: false,
-      child: Container(
-        clipBehavior: Clip.hardEdge,
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            // CSS 160deg ≈ from the top-left-ish corner down to the bottom.
-            begin: Alignment(-0.34, -1),
-            end: Alignment(0.34, 1),
-            colors: [AppColors.primary, AppColors.brandGradientEnd],
+      // A solid brand blue under the gradient: if a graphics driver ever fails to draw the
+      // gradient, the white text stays readable instead of the panel looking empty (seen on
+      // the owner's laptop under Impeller, 2026-10-12). The gradient covers it entirely.
+      child: ColoredBox(
+        color: AppColors.primary,
+        child: Container(
+          clipBehavior: Clip.hardEdge,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              // CSS 160deg ≈ from the top-left-ish corner down to the bottom.
+              begin: Alignment(-0.34, -1),
+              end: Alignment(0.34, 1),
+              colors: [AppColors.primary, AppColors.brandGradientEnd],
+            ),
           ),
-        ),
-        child: Stack(
-          children: [
-            // The website's soft shapes, without their drift.
-            const Positioned(right: -70, top: -50, child: _Blob(size: 280, radius: 140, color: Color(0x1AFFFFFF))),
-            const Positioned(right: 60, bottom: -90, child: _Blob(size: 200, radius: 44, color: Color(0x14FFFFFF))),
-            Positioned(
-              left: -60,
-              bottom: 120,
-              child: Container(
-                width: 150,
-                height: 150,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0x1CFFFFFF), width: 18),
+          child: Stack(
+            children: [
+              // The website's soft shapes, without their drift.
+              const Positioned(right: -70, top: -50, child: _Blob(size: 280, radius: 140, color: Color(0x1AFFFFFF))),
+              const Positioned(right: 60, bottom: -90, child: _Blob(size: 200, radius: 44, color: Color(0x14FFFFFF))),
+              Positioned(
+                left: -60,
+                bottom: 120,
+                child: Container(
+                  width: 150,
+                  height: 150,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0x1CFFFFFF), width: 18),
+                  ),
                 ),
               ),
-            ),
-            const Positioned(left: 40, top: 180, child: _Blob(size: 16, radius: 5, color: Color(0x4DFFFFFF))),
-            Padding(
-              padding: const EdgeInsets.all(48),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const BrandWordmark(size: 40, color: white, logoColor: white),
-                  const Spacer(),
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 440),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Your digital SAT, mastered.',
-                          style: AppText.title.copyWith(fontSize: 44, height: 1.05, color: white),
-                        ),
-                        const SizedBox(height: 36),
-                        for (final p in points)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0x26FFFFFF),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Icon(p.$1, size: 16, color: white),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    p.$2,
-                                    style: AppText.body.copyWith(fontSize: 15, color: white),
-                                  ),
-                                ),
-                              ],
-                            ),
+              const Positioned(left: 40, top: 180, child: _Blob(size: 16, radius: 5, color: Color(0x4DFFFFFF))),
+              Padding(
+                padding: const EdgeInsets.all(48),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const BrandWordmark(size: 40, color: white, logoColor: white),
+                    const Spacer(),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 440),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Your digital SAT, mastered.',
+                            style: AppText.title.copyWith(fontSize: 44, height: 1.05, color: white),
                           ),
-                      ],
+                          const SizedBox(height: 36),
+                          for (final p in points)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0x26FFFFFF),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(p.$1, size: 16, color: white),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(p.$2, style: AppText.body.copyWith(fontSize: 15, color: white)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    '© $year MasterSAT Center',
-                    style: AppText.caption.copyWith(color: const Color(0xB3FFFFFF), fontWeight: FontWeight.w500),
-                  ),
-                ],
+                    const Spacer(),
+                    Text(
+                      '© $year MasterSAT Center',
+                      style: AppText.caption.copyWith(color: const Color(0xB3FFFFFF), fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -163,10 +166,10 @@ class _Blob extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(radius)),
-      );
+    width: size,
+    height: size,
+    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(radius)),
+  );
 }
 
 class _SignInPanel extends StatelessWidget {
@@ -185,9 +188,9 @@ class _SignInPanel extends StatelessWidget {
     final helper = waiting
         ? 'Finish signing in in your browser, then come back — this screen updates on its own.'
         : exchanging
-            ? 'Almost there — getting your tests ready.'
-            : 'Your browser opens so you can sign in with Google, Telegram or your email — whatever you use '
-                'on the website. The app takes it from there.';
+        ? 'Almost there — getting your tests ready.'
+        : 'Your browser opens so you can sign in with Google, Telegram or your email — whatever you use '
+              'on the website. The app takes it from there.';
 
     return Center(
       child: SingleChildScrollView(

@@ -33,6 +33,7 @@ import 'core/auth/launch_links.dart';
 import 'core/auth/token_store.dart';
 import 'core/clock/clock.dart';
 import 'core/diagnostics/diagnostics.dart';
+import 'core/diagnostics/renderer.dart';
 import 'core/http/api_config.dart';
 import 'core/http/http_transport.dart';
 import 'core/http/native_proxy_lookup.dart';
@@ -80,6 +81,7 @@ Future<void> launchApp(
   void Function(Widget app)? showMissingPart,
 }) async {
   WidgetsFlutterBinding.ensureInitialized();
+  noteLaunchRenderer(args);
   final load = (loadNative ?? () => loadNativeBridge(appVersion: appVersion))();
   if (isS1HarnessLaunch(args)) {
     final bridge = load.bridge;
@@ -132,6 +134,7 @@ Future<void> runMasterSat({NativeBridge? native, ExamLauncher? examLauncher}) as
     islandDiagnostics: IslandDiagnostics(),
   );
   _captureErrors(services.log);
+  services.log.add('renderer', launchRenderer);
   await services.auth.restore();
   if (services.auth.isSignedIn) await services.home.loadCached();
   runApp(MasterSatApp(services: services));
