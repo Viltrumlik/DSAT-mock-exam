@@ -1,2 +1,3 @@
 # pack.ps1 output (Setup.exe, nupkg, releases/assets JSON, portable zip)
 out/
+__pycache__/
