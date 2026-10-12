@@ -13,6 +13,12 @@
 //    the server confirms SCORING, then `done` and result polling (`poll_after_ms`).
 //  * Pause/resume need the network (optimistic freeze; only the latest reply is adopted).
 //  * Offline: everything but pause works; the server's timing is accepted on reconnect.
+//  * Lockdown (0.2.4, the learning center's request): the machine is locked exactly as for a
+//    midterm — the same [LockdownController] (`ms_lock_enter`, a heartbeat every 3 s, a silent
+//    re-lock after the native watchdog let go) — from Start (or the reopen of a running
+//    sitting) until Save & Exit, the hand-in of the last module, or any other way out. Local
+//    only: no off-screen strikes, no server session, no proof. The sitting screen asks for the
+//    lock ([lock]); this engine lets go by itself when the paper is in or saved ([lockdownWanted]).
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -21,21 +27,30 @@ import '../../core/api/v1_api.dart';
 import '../../core/models/models.dart';
 import '../session_contract.dart';
 import 'engine_clock.dart';
+import 'engine_deps.dart';
 import 'exam_engine.dart';
 import 'exam_store.dart';
+import 'lockdown_controller.dart';
 import 'media_cache.dart';
 import 'outbox.dart';
 
 class PastpaperEngine extends ExamEngine {
   PastpaperEngine(
-    super.deps, {
+    EngineDeps deps, {
     required this.practiceTestId,
     required super.studentName,
-  }) : super(kind: ExamKind.pastpaper) {
+    LockdownController? lockdown,
+  })  : lockdown = lockdown ?? LockdownController(native: deps.native, heartbeatPeriod: deps.timings.lockHeartbeat),
+        _ownsLockdown = lockdown == null,
+        super(deps, kind: ExamKind.pastpaper) {
     _media = SealedFileMediaStore(store: deps.store, native: deps.native, wallMs: () => deps.wallMs);
   }
 
   final int practiceTestId;
+
+  /// The machine lockdown (the midterm's controller, unchanged). Nothing locks until [lock].
+  final LockdownController lockdown;
+  final bool _ownsLockdown;
 
   late final SealedFileMediaStore _media;
 
@@ -74,6 +89,53 @@ class PastpaperEngine extends ExamEngine {
       moduleClock != null &&
       (phase == ExamPhase.running || phase == ExamPhase.review) &&
       timeUpModule != liveModuleId;
+
+  // ---------------------------------------------------------------------------------------
+  // Lockdown
+  // ---------------------------------------------------------------------------------------
+
+  /// Whether the machine must be locked now: the module's clock has started (answering, Check
+  /// Your Work, or between modules while online) and the sitting is still going. False on
+  /// Welcome and while loading (nothing started yet); false once the last module is handed in,
+  /// the paper is saved (Save & Exit) or finished, and while waiting OFFLINE for module 2 —
+  /// nothing is on screen to answer and the runner offers no way out there, so a student must
+  /// not sit locked until the connection returns (the lock comes back with the module). False
+  /// when the app must be updated (the update card covers everything; it would trap them).
+  bool get lockdownWanted =>
+      !disposed &&
+      const {ExamPhase.running, ExamPhase.review, ExamPhase.transition}.contains(phaseValue) &&
+      problem.value?.kind != EngineProblemKind.updateRequired;
+
+  /// Lock the machine (Start, the reopen of a running sitting, "Return to full screen", the
+  /// pre-check's "Lock and start/resume"). A no-op while locked. Throws [PrecheckFailed] when
+  /// the machine is not ready, or the native error.
+  void lock() {
+    if (disposed) return;
+    if (!lockdown.locked) lockdown.enter();
+  }
+
+  /// Release the machine (every way out of the sitting). Safe to call when not locked.
+  void releaseLock() => lockdown.exit();
+
+  /// Lets go the moment the sitting no longer needs the lock (see [lockdownWanted]); never
+  /// takes it — only the screen does, where a refusal can be shown.
+  void _syncLock() {
+    if (disposed || !(lockdown.locked || lockdown.lost)) return;
+    if (phaseValue == ExamPhase.welcome || phaseValue == ExamPhase.loading) return;
+    if (!lockdownWanted) lockdown.exit();
+  }
+
+  @override
+  void changed() {
+    _syncLock();
+    super.changed();
+  }
+
+  @override
+  void setProblem(EngineProblem? p) {
+    super.setProblem(p);
+    _syncLock();
+  }
 
   ModuleContent? _module(int id) => content[id];
 
@@ -977,7 +1039,12 @@ class PastpaperEngine extends ExamEngine {
   @override
   Future<void> closeGracefully() async {
     if (hasUnqueuedChanges && clockRunsInPhase) _syncNow();
-    await super.closeGracefully();
+    try {
+      await super.closeGracefully();
+    } finally {
+      // The window is closing: give the machine (and the window's own placement) back first.
+      releaseLock();
+    }
   }
 
   @override
@@ -986,7 +1053,9 @@ class PastpaperEngine extends ExamEngine {
     _cancelSyncTimers();
     _periodic?.cancel();
     _resultTimer?.cancel();
+    releaseLock();
     super.dispose();
+    if (_ownsLockdown) lockdown.dispose();
     _result.dispose();
     _mediaProgress.dispose();
   }

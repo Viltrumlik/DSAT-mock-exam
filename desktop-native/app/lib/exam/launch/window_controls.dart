@@ -27,6 +27,10 @@ class NativeRunnerWindowControls implements RunnerWindowControls {
   @override
   bool get fullscreenSupported => true;
 
+  /// The student toggles it (More → Full screen); nothing holds it.
+  @override
+  bool get fullscreenLocked => false;
+
   @override
   ValueListenable<bool> get isFullscreen => _full;
 
