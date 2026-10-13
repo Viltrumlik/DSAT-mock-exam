@@ -127,6 +127,82 @@ class PushIsPublishedAfterCommitTests(TestCase):
         self.assertEqual(delay.call_count, 0)
 
 
+class UnreachableBrokerTests(TestCase):
+    """A broker that is down must cost a buzz, never the request.
+
+    The ``try`` around ``transaction.on_commit`` only guarded *registering* the callback. The
+    callback ran after ``COMMIT``, where ``on_commit`` is not robust by default, so a ``.delay()``
+    that could not reach Redis raised ``OperationalError`` out of the commit hook and the view
+    answered 500 — with the notification and every one of the caller's writes already saved.
+    """
+
+    def setUp(self):
+        from kombu.exceptions import OperationalError
+
+        self.student = _u("ub_student@t.com")
+        self.broker_down = OperationalError("Error 111 connecting to localhost:6379.")
+
+    def test_notify_survives_a_broker_failure_after_commit(self):
+        with patch(
+            "notifications.tasks.send_push_for_notification.delay", side_effect=self.broker_down
+        ) as delay:
+            with self.captureOnCommitCallbacks(execute=True):
+                note = notify(
+                    self.student,
+                    event=constants.EVENT_HOMEWORK_GRADED,
+                    title="Your work has been marked",
+                )
+
+        self.assertEqual(delay.call_count, 1, "the push was never attempted")
+        self.assertIsNotNone(note)
+        self.assertTrue(Notification.objects.filter(pk=note.pk).exists())
+
+    def test_notify_many_survives_a_broker_failure_after_commit(self):
+        others = [self.student, _u("ub_other@t.com")]
+
+        with patch(
+            "notifications.tasks.send_push_for_notifications.delay", side_effect=self.broker_down
+        ) as delay:
+            with self.captureOnCommitCallbacks(execute=True):
+                landed = notify_many(
+                    others, event=constants.EVENT_HOMEWORK_ASSIGNED, title="New homework",
+                )
+
+        self.assertEqual(delay.call_count, 1, "the push was never attempted")
+        self.assertEqual(landed, 2)
+        self.assertEqual(Notification.objects.count(), 2)
+
+    def test_the_apns_task_survives_a_broker_failure_after_commit(self):
+        """Both transports, single and fan-out: each is its own ``.delay()`` after COMMIT."""
+        with patch("notifications.services._apns_configured", return_value=True), \
+                patch("notifications.tasks.send_push_for_notification.delay"), \
+                patch("notifications.tasks.send_push_for_notifications.delay"), \
+                patch(
+                    "notifications.tasks.send_apns_for_notifications.delay",
+                    side_effect=self.broker_down,
+                ) as apns_delay:
+            with self.captureOnCommitCallbacks(execute=True):
+                notify(self.student, event=constants.EVENT_HOMEWORK_GRADED, title="Marked")
+                notify_many(
+                    [_u("ub_ios@t.com")],
+                    event=constants.EVENT_HOMEWORK_ASSIGNED,
+                    title="New homework",
+                )
+
+        self.assertEqual(apns_delay.call_count, 2)
+        self.assertEqual(Notification.objects.count(), 2)
+
+    def test_the_failure_is_logged_rather_than_silent(self):
+        """A missed buzz is acceptable; an unexplained one is not."""
+        with patch(
+            "notifications.tasks.send_push_for_notification.delay", side_effect=self.broker_down
+        ), self.assertLogs("notifications.services", level="WARNING") as logs:
+            with self.captureOnCommitCallbacks(execute=True):
+                notify(self.student, event=constants.EVENT_HOMEWORK_GRADED, title="Marked")
+
+        self.assertTrue(any("push_dispatch_failed" in line for line in logs.output), logs.output)
+
+
 class FanOutShapeTests(TestCase):
     """``notify_many`` must not cost a query per recipient.
 

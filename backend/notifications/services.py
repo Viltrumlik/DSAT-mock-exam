@@ -304,6 +304,31 @@ def _apns_configured() -> bool:
         return False
 
 
+def _delay_on_commit(task, *args, context: str) -> None:
+    """Publish ``task.delay(*args)`` once the caller's transaction commits — and never raise.
+
+    The ``try`` in the callers below only guards *registering* the callback. The callback itself
+    runs after ``COMMIT``, and ``transaction.on_commit`` is not robust by default: a ``.delay()``
+    that cannot reach the broker (no ``CELERY_BROKER_URL``, Redis down) raises
+    ``kombu.exceptions.OperationalError`` straight out of the commit hook, and a request whose
+    notification and writes have all already landed answers 500. Caught here, it is what it
+    should be — a missed buzz, with a line in the log saying so.
+    """
+
+    def _publish() -> None:
+        try:
+            task.delay(*args)
+        except Exception as exc:
+            logger.warning(
+                "push_dispatch_failed task=%s %s error=%s",
+                getattr(task, "name", task),
+                context,
+                type(exc).__name__,
+            )
+
+    transaction.on_commit(_publish)
+
+
 def queue_push(notification: Notification) -> None:
     """Hand the fan-out to Celery, **after the caller's transaction commits**.
 
@@ -311,9 +336,9 @@ def queue_push(notification: Notification) -> None:
 
     **Never sent inline.** Gunicorn runs three *sync* workers, so N sequential HTTPS requests
     to a push service inside a request handler is the same worker-starvation problem that keeps
-    SSE capped at 25 seconds per connection in this codebase. If Celery is not configured the
-    send is skipped rather than attempted — an unqueued push is a missed buzz; an inline one is
-    an outage.
+    SSE capped at 25 seconds per connection in this codebase. If the broker cannot be reached
+    the send is dropped and logged rather than attempted inline — an unqueued push is a missed
+    buzz; an inline one is an outage. See :func:`_delay_on_commit`.
 
     **Never published before commit.** ``.delay()`` puts the id on the broker the instant it is
     called, and a Celery worker is a *different process with its own database connection*. The
@@ -334,11 +359,12 @@ def queue_push(notification: Notification) -> None:
         from .tasks import send_apns_for_notifications, send_push_for_notification
 
         notification_id = notification.pk
-        transaction.on_commit(lambda: send_push_for_notification.delay(notification_id))
+        context = f"notification={notification_id}"
+        _delay_on_commit(send_push_for_notification, notification_id, context=context)
         # The iOS app's transport, as its own task — queued only when APNs is configured, so
         # a deployment without it publishes nothing extra to the broker.
         if _apns_configured():
-            transaction.on_commit(lambda: send_apns_for_notifications.delay([notification_id]))
+            _delay_on_commit(send_apns_for_notifications, [notification_id], context=context)
     except Exception:
         logger.warning("push_enqueue_failed notification=%s", notification.pk)
 
@@ -361,9 +387,10 @@ def queue_push_many(notification_ids) -> None:
     try:
         from .tasks import send_apns_for_notifications, send_push_for_notifications
 
-        transaction.on_commit(lambda: send_push_for_notifications.delay(ids))
+        context = f"n={len(ids)}"
+        _delay_on_commit(send_push_for_notifications, ids, context=context)
         if _apns_configured():
-            transaction.on_commit(lambda: send_apns_for_notifications.delay(ids))
+            _delay_on_commit(send_apns_for_notifications, ids, context=context)
     except Exception:
         logger.warning("push_enqueue_many_failed n=%s", len(ids))
 
