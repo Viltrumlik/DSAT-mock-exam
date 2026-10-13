@@ -23,6 +23,7 @@ const attempts = vi.hoisted(() => ({ getAttempts: vi.fn() }));
 const rewards = vi.hoisted(() => ({ me: vi.fn() }));
 const toast = vi.hoisted(() => ({ push: vi.fn() }));
 const theme = vi.hoisted(() => ({ setTheme: vi.fn() }));
+const session = vi.hoisted(() => ({ role: "student" }));
 
 vi.mock("@/lib/api", () => ({ authApi: auth, classesApi: classes, usersApi: users }));
 vi.mock("@/features/profile/profileApi", async (importOriginal) => ({
@@ -31,7 +32,7 @@ vi.mock("@/features/profile/profileApi", async (importOriginal) => ({
 }));
 vi.mock("@/features/examsStudent/api", () => ({ examsStudentApi: attempts }));
 vi.mock("@/features/rewards/rewardsApi", () => ({ rewardsApi: rewards }));
-vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn() }));
+vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn(), useMe: () => ({ me: { role: session.role } }) }));
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => toast }));
 vi.mock("next-themes", () => ({ useTheme: () => ({ theme: "system", setTheme: theme.setTheme }) }));
 vi.mock("next/link", () => ({
@@ -154,6 +155,27 @@ afterEach(async () => {
   await act(async () => root.unmount());
   host.remove();
   vi.clearAllMocks();
+  session.role = "student";
+});
+
+describe("A public learner", () => {
+  // Owner, 2026-10-13: a public learner sees mock exams and events; the profile stays usable,
+  // as its settings, and nothing of the learning center's is asked for.
+  it("gets Settings alone, and none of the learning center's requests", async () => {
+    session.role = "public_student";
+    await renderPage("?tab=overview");
+    // The page's own tabs; the settings sections below are tabs too, and stay.
+    const tabs = [...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim());
+    expect(tabs[0]).toBe("Settings");
+    expect(tabs).not.toContain("Overview");
+    expect(tabs.some((t) => t?.startsWith("Classes"))).toBe(false);
+    expect(text()).toContain("Photo, name and phone");
+    expect(classes.list).not.toHaveBeenCalled();
+    expect(classes.myAssignments).not.toHaveBeenCalled();
+    expect(rewards.me).not.toHaveBeenCalled();
+    expect(attempts.getAttempts).not.toHaveBeenCalled();
+    expect(users.getMe).toHaveBeenCalled();
+  });
 });
 
 describe("Overview", () => {

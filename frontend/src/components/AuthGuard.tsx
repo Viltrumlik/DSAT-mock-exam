@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AlertTriangle, Loader2, RefreshCw } from "lucide-react";
 import { useMe } from "@/hooks/useMe";
+import { isPublicStudentPath, PUBLIC_STUDENT_HOME } from "@/lib/roles";
 import { FrozenOverlay } from "@/components/FrozenOverlay";
 import { ProfileCompletionGate } from "@/components/ProfileCompletionGate";
 
@@ -59,6 +60,7 @@ export default function AuthGuard({
     adminOnly?: boolean;
 }) {
     const router = useRouter();
+    const pathname = usePathname() || "";
     const { bootState, me } = useMe();
     const bootTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -88,7 +90,11 @@ export default function AuthGuard({
     const perms = permissionList(me);
     const frozen = !!me?.is_frozen;
     const isTester = roleRaw === "test_admin";
-    const isStudent = roleRaw === "student";
+    const isPublic = roleRaw === "public_student";
+    const isStudent = roleRaw === "student" || isPublic;
+    // A public learner sees mock exams and events, plus their profile (owner, 2026-10-13). Any
+    // other page is the learning center's: the API refuses it, so the screen does not try.
+    const publicBlocked = isPublic && consoleMode === "main" && !isPublicStudentPath(pathname);
     const hasStaff = staffAccess(perms);
     // Teacher portal access is role-based (NOT permission-based): teacher, support_teacher
     // and super_admin. This deliberately excludes admin/test_admin, unlike the perm-based
@@ -121,6 +127,10 @@ export default function AuthGuard({
             router.replace("/");
             return;
         }
+        if (publicBlocked) {
+            router.replace(PUBLIC_STUDENT_HOME);
+            return;
+        }
     }, [
         bootState,
         me,
@@ -131,6 +141,7 @@ export default function AuthGuard({
         teacherPortalAllowed,
         adminOnly,
         consoleMode,
+        publicBlocked,
         router,
     ]);
 
@@ -206,7 +217,8 @@ export default function AuthGuard({
         (consoleMode === "teacher" && !teacherPortalAllowed) ||
         (consoleMode === "questions" && isStudent) ||
         (consoleMode === "admin" && (isStudent || isTester)) ||
-        (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester)));
+        (adminOnly && (!hasStaff || (consoleMode === "admin" && isTester))) ||
+        publicBlocked;
 
     if (willRedirectAway) {
         return (

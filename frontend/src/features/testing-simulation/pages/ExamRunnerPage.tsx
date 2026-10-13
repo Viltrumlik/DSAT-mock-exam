@@ -62,6 +62,7 @@ import { useBattery } from "@/lib/desktop/useBattery";
 import { useDesktopLockdown } from "../hooks/useDesktopLockdown";
 import { isTerminal } from "../state/attemptMerge";
 import { LowBatteryBanner } from "../components/DesktopBattery";
+import { homePathFor, isStudentSiteRole } from "@/lib/roles";
 import {
   AppUpdateRequiredScreen,
   DesktopPrecheckScreen,
@@ -109,7 +110,7 @@ export function ExamRunnerPage() {
   // Load-error recovery actions are admin-only; students never see a Retry button.
   const { me } = useMe();
   const role = String((me as { role?: string } | undefined)?.role ?? "").toLowerCase();
-  const isAdmin = role !== "" && role !== "student";
+  const isAdmin = role !== "" && !isStudentSiteRole(role);
   // Student identity for the persistent footer (item: Student Identity Footer).
   const studentName = (() => {
     const u = me as { first_name?: string; last_name?: string } | undefined;
@@ -783,9 +784,9 @@ export function ExamRunnerPage() {
       // The save genuinely failed. The local draft still holds the work (the
       // autosave never clears it), so resuming on this device recovers it.
     } finally {
-      router.push(inShell ? DESKTOP_HOME : "/");
+      router.push(inShell ? DESKTOP_HOME : homePathFor(role));
     }
-  }, [mockFlow, attemptId, applyAttempt, router, engineApi, inShell]);
+  }, [mockFlow, attemptId, applyAttempt, router, engineApi, inShell, role]);
 
   // Keep the off-fullscreen kick action current without restarting the countdown
   // when handleSaveAndExit's identity changes (e.g. on autosave).

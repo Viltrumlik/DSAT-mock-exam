@@ -33,6 +33,7 @@ import { CalendarDays } from "lucide-react";
 import { Modal } from "@/components/ui";
 import { useMe } from "@/hooks/useMe";
 import { markEventInviteShown, wasEventInviteShown } from "@/lib/eventInvitePrompt";
+import { isStudentSiteRole } from "@/lib/roles";
 
 import { useSignUpForEvent, useUpcomingEvents } from "./eventsHooks";
 
@@ -67,7 +68,8 @@ export function EventInviteDialog() {
 
   const role = String((me as { role?: string } | undefined)?.role ?? "").trim().toLowerCase();
   const onEventsRoute = (pathname || "").startsWith("/events");
-  const eligible = role === "student" && !onEventsRoute && featured != null;
+  // Public learners too: events are one of the two things they see (owner, 2026-10-13).
+  const eligible = isStudentSiteRole(role) && !onEventsRoute && featured != null;
 
   // Read after mount, never during render: `sessionStorage` does not exist while the server
   // renders, and seeding state from it would hydrate-mismatch.

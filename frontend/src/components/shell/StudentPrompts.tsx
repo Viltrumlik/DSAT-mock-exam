@@ -28,7 +28,8 @@ import { PushOptInDialog } from "@/features/notifications/PushOptInDialog";
 import { usePushOptIn } from "@/features/notifications/usePushOptIn";
 import { SurveyInviteDialog } from "@/features/surveys/SurveyInviteDialog";
 
-export function StudentPrompts() {
+/** `surveys={false}` for a public learner: surveys are the learning center's (owner, 2026-10-13). */
+export function StudentPrompts({ surveys = true }: { surveys?: boolean } = {}) {
   const optIn = usePushOptIn();
 
   // Push is exclusive by construction: while a push decision is pending, this return means
@@ -38,7 +39,7 @@ export function StudentPrompts() {
   if (optIn.shouldAsk) return <PushOptInDialog optIn={optIn} />;
   return (
     <>
-      <SurveyInviteDialog />
+      {surveys ? <SurveyInviteDialog /> : null}
       <EventInviteDialog />
     </>
   );

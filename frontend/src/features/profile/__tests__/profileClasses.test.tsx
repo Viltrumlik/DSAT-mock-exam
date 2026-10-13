@@ -34,7 +34,7 @@ const users = vi.hoisted(() => ({
 vi.mock("@/lib/api", () => ({ authApi: {}, classesApi: classes, usersApi: users }));
 vi.mock("@/features/examsStudent/api", () => ({ examsStudentApi: { getAttempts: async () => ({ items: [] }) } }));
 vi.mock("@/features/rewards/rewardsApi", () => ({ rewardsApi: { me: async () => null } }));
-vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn() }));
+vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn(), useMe: () => ({ me: { role: "student" } }) }));
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push: vi.fn() }) }));
 vi.mock("next/link", () => ({
   default: ({ children, href, className }: { children: React.ReactNode; href: string; className?: string }) => (

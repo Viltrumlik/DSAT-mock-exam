@@ -11,6 +11,8 @@ import { pushGlobalToast } from "@/lib/toastBus";
 import { HeroPage, PageHero, Skeleton } from "@/components/ui";
 // The house devices, so a mock reads as part of the same product as the classroom.
 import { Button, buttonClassName, Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+import { useMe } from "@/hooks/useMe";
+import { isPublicStudent } from "@/lib/roles";
 import MockSessionPanel from "./MockSessionPanel";
 
 /** Student full-mock list — 4-module SAT simulations (2 English + 2 Math + a 10-min break). */
@@ -97,6 +99,8 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default function MockList() {
+  const { me } = useMe();
+  const isPublic = isPublicStudent((me as { role?: string } | undefined)?.role);
   const mine = useQuery({ queryKey: ["mock", "mine"], queryFn: mockApi.myMocks });
   const mocks = mine.data ?? [];
   const best = mocks.reduce<number | null>(
@@ -125,8 +129,9 @@ export default function MockList() {
       </Card>
 
       {/* Two ways to sit the same paper. An invigilated sitting is run by a teacher with a
-          code; practice below is the student's own, whenever they like. */}
-      <MockSessionPanel />
+          code; practice below is the student's own, whenever they like. Sittings are the
+          learning center's, so a public learner sees practice only. */}
+      {isPublic ? null : <MockSessionPanel />}
 
       <div className="space-y-3 pt-3">
         <SectionLabel>PRACTISE ON YOUR OWN</SectionLabel>
