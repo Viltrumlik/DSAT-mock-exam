@@ -5,7 +5,8 @@ Validates BUSINESS-ARCHITECTURE §4 / §4.1.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
@@ -20,10 +21,15 @@ from classes.ranking import service
 
 User = get_user_model()
 P, A, L, E = "PRESENT", "ABSENT", "LATE", "EXCUSED"
+FIRST_LESSON = date(2026, 6, 1)
 
 
 def _u(email):
     return User.objects.create_user(email, "secret123")
+
+
+def _noon(day):
+    return timezone.make_aware(datetime.combine(day, time(12)), timezone.get_current_timezone())
 
 
 class AttendanceScoreMathTests(SimpleTestCase):
@@ -55,13 +61,31 @@ class _ClassFixture(TestCase):
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=u, role=ClassroomMembership.ROLE_STUDENT
             )
+        # Everyone was on the roster before the first lesson. ``joined_at`` is auto_now_add,
+        # so left alone it says "today", months after these June lessons, and a student can be
+        # neither marked nor paid for a lesson held before they joined: the register's roster
+        # and ``rewards.hooks`` both refuse it.
+        ClassroomMembership.objects.filter(classroom=self.classroom).update(
+            joined_at=_noon(FIRST_LESSON - timedelta(days=1))
+        )
 
     def _session(self, day_offset=0, finalized=True):
         return AttendanceSession.objects.create(
-            classroom=self.classroom, date=date(2026, 6, 1) + timedelta(days=day_offset),
+            classroom=self.classroom, date=FIRST_LESSON + timedelta(days=day_offset),
             status=AttendanceSession.STATUS_FINALIZED if finalized else AttendanceSession.STATUS_OPEN,
             created_by=self.owner,
         )
+
+    def _freeze_clock_on(self, day):
+        """Hold the clock at noon on ``day`` for the rest of the test.
+
+        A register can be written only during its lesson and for two hours after
+        (``attendance_window``). This class has no ``lesson_time``, so the window is the whole
+        of the lesson's own day, and these lessons are in June.
+        """
+        patcher = mock.patch("django.utils.timezone.now", return_value=_noon(day))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _mark(self, session, student, status):
         return AttendanceRecord.objects.create(
@@ -110,6 +134,7 @@ class AttendanceApiTests(_ClassFixture):
         self.assertEqual(r.status_code, 403)
 
     def test_full_marking_flow(self):
+        self._freeze_clock_on(date(2026, 6, 2))
         self.client.force_authenticate(self.owner)
         r = self.client.post(self._url("sessions/"), {"date": "2026-06-02", "title": "Lesson 1"}, format="json")
         self.assertEqual(r.status_code, 201)
@@ -145,6 +170,7 @@ class AttendanceApiTests(_ClassFixture):
         self.assertEqual(me["attendance_score"], 50.0)  # LATE alone = 0.5 → 50
 
     def test_invalid_status_ignored(self):
+        self._freeze_clock_on(date(2026, 6, 3))
         self.client.force_authenticate(self.owner)
         sid = self.client.post(self._url("sessions/"), {"date": "2026-06-03"}, format="json").json()["id"]
         r = self.client.post(self._url(f"sessions/{sid}/mark/"), {
@@ -168,6 +194,7 @@ class AttendanceOneSessionPerDayTests(_ClassFixture):
         return f"/api/classes/{self.classroom.id}/attendance/{suffix}"
 
     def test_creating_the_same_date_twice_returns_the_first_session(self):
+        self._freeze_clock_on(date(2026, 6, 4))
         first = self.client.post(self._url("sessions/"), {"date": "2026-06-04"}, format="json")
         self.assertEqual(first.status_code, 201)
         # Marking the first session is what makes the upsert matter: a second row for the
@@ -245,6 +272,8 @@ class AttendanceFinalizeIsOnceTests(_ClassFixture):
         session = self._session(0, finalized=True)
         self._mark(session, self.s1, A)
 
+        # Inside the lesson's window: that lock is separate, and this test is about this one.
+        self._freeze_clock_on(session.date)
         self.client.force_authenticate(self.owner)
         r = self.client.post(self._url(f"sessions/{session.id}/mark-all-present/"), {}, format="json")
 
