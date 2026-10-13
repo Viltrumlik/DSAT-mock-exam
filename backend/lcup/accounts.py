@@ -6,6 +6,8 @@ through ``auth_backend`` (phone + its last four digits), limited by the ``Accoun
 
 A phone already on another account — in any spelling, "+998 90 …" included — is never reused: two
 accounts for one phone would split one student's history in two. That case goes to the admin.
+The one exception is a single public account (someone who signed up on the site): its phone moves
+to the new learning-center account, and the public one keeps its email or Google sign-in.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ from datetime import timedelta
 from django.db import IntegrityError, transaction
 
 from access import constants as acc_const
-from users.models import User
+from users.models import SecurityAuditEvent, User
 
 from .matching import phone_owners
 from .models import AccountClaim, LinkStatus
@@ -36,13 +38,26 @@ def create_account_for(link, *, now, phone_override: str | None = None) -> User 
     if not phone:
         _send_to_review(link, "phone is not a valid Uzbek number" if phone_override else "no phone in lc-up")
         return None
-    if User.objects.filter(username__iexact=phone).exists() or phone_owners(User.objects.all(), phone):
+    if User.objects.filter(username__iexact=phone).exists():
+        _send_to_review(link, "phone already used by another account")
+        return None
+    owners = phone_owners(User.objects.all(), phone)
+    if owners and not (len(owners) == 1 and owners[0].role == acc_const.ROLE_PUBLIC_STUDENT):
         _send_to_review(link, "phone already used by another account")
         return None
 
     first_name, last_name = split_lcup_name(link.name)
     try:
         with transaction.atomic():
+            if owners:
+                # The phone follows the person to their new learning-center account; the public
+                # one keeps its email / Google sign-in (owner, 2026-10-13).
+                moved = owners[0]
+                moved.phone_number = None
+                moved.save(update_fields=["phone_number"])
+                SecurityAuditEvent.objects.create(
+                    user=moved, event_type="lcup_phone_moved", detail={"lcup_student_id": link.lcup_student_id}
+                )
             # password=None makes create_user store an unusable password.
             user = User.objects.create_user(
                 None,

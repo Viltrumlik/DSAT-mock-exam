@@ -45,6 +45,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
+from access import constants as acc_const
 from notifications import constants as note_const
 from notifications.services import notify
 
@@ -229,7 +230,8 @@ def may_enforce_against(user, chat_status: str) -> bool:
         return False
     if user is None:
         return False
-    return str(getattr(user, "role", "") or "").strip().lower() == "student"
+    # A public learner is a former student whose seat is gone: exactly who the bot removes.
+    return str(getattr(user, "role", "") or "").strip().lower() in acc_const.LEARNER_ROLES
 
 
 def may_remove(row: ClassroomTelegramMember, chat_status: str) -> bool:

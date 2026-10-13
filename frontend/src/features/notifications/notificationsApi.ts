@@ -112,4 +112,37 @@ export const notificationsApi = {
     const { data } = await api.post("/notifications/push/unsubscribe/", { endpoint });
     return data;
   },
+  /** A system announcement to a whole audience. super_admin only; it cannot be recalled. */
+  async broadcast(payload: BroadcastPayload): Promise<BroadcastResult> {
+    const { data } = await api.post<BroadcastResult>("/notifications/broadcast/", payload);
+    return data;
+  },
 };
+
+/** Mirrors `notifications.serializers.AUDIENCE_CHOICES`. `students` is the learning center's,
+ *  kept for older callers; the page offers the three named ones. */
+export type BroadcastAudience =
+  | "centre_students"
+  | "public_students"
+  | "all_students"
+  | "students"
+  | "teachers"
+  | "staff"
+  | "all";
+
+export interface BroadcastPayload {
+  title: string;
+  body?: string;
+  link_url?: string;
+  audience: BroadcastAudience;
+  push?: boolean;
+}
+
+export interface BroadcastResult {
+  audience: BroadcastAudience;
+  /** Who was targeted. */
+  recipients: number;
+  /** Who it reached: smaller by whoever muted System notifications. */
+  notified: number;
+  pushed: boolean;
+}

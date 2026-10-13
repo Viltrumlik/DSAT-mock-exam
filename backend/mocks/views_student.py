@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .access import accessible_mock_ids
 from .models import Mock, MockAttempt
@@ -12,7 +13,7 @@ from .state_machine import STATE_ABANDONED
 
 
 class MyMocksView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request):
         user = request.user

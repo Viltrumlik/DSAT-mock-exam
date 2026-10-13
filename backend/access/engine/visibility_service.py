@@ -39,7 +39,7 @@ class VisibilityService:
 
     @staticmethod
     def _is_student(user) -> bool:
-        return normalized_role(user) == constants.ROLE_STUDENT
+        return normalized_role(user) in constants.LEARNER_ROLES
 
     @classmethod
     def _staff_can_view(cls, user, domains: frozenset) -> bool:

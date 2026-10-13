@@ -59,7 +59,7 @@ def is_signupable_student(user) -> bool:
         and getattr(user, "pk", None)
         and getattr(user, "is_active", False)
         and not getattr(user, "is_frozen", False)
-        and normalized_role(user) == acc_const.ROLE_STUDENT
+        and normalized_role(user) in acc_const.LEARNER_ROLES
     )
 
 
@@ -283,7 +283,11 @@ def mark_attendance(registration: EventRegistration, value, *, actor=None, now=N
     registration.save(update_fields=["attendance", "marked_by", "marked_at", "updated_at"])
 
     key = reward_const.event_attendance_key(registration.pk)
+    # XP is the learning center's economy: a public learner attends, but earns no points.
+    # The revoke below stays unconditional, so a withdrawn mark always takes its award back.
     if value == EventRegistration.ATTENDANCE_ATTENDED:
+        if normalized_role(registration.student) != acc_const.ROLE_STUDENT:
+            return registration
         award(
             registration.student,
             reward_const.EVENT_ATTENDED,

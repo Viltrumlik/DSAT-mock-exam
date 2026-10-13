@@ -23,7 +23,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from access import constants as acc_const
 from access.permissions import CanCreateMockSessions, CanRunMockSessions
+from access.services import normalized_role
 
 from .models import MockSession, MockSessionParticipant
 from .session_serializers import (
@@ -67,6 +69,8 @@ class MyMockSessionsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        if normalized_role(request.user) == acc_const.ROLE_PUBLIC_STUDENT:
+            return Response({"results": []})
         places = (
             MockSessionParticipant.objects.filter(student=request.user)
             .exclude(session__status=MockSession.STATUS_CANCELLED)

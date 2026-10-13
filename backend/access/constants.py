@@ -108,6 +108,10 @@ ROLE_TEST_AUDITOR = "test_auditor"
 # ``ClassroomMembership.ROLE_TA`` capability set rather than a new one.
 ROLE_SUPPORT_TEACHER = "support_teacher"
 ROLE_STUDENT = "student"
+#: A learner who signed up on the site and is not (or no longer) at the learning center. Sees only
+#: mock exams, events and their own profile — the host guard's allowlist enforces it. The lc-up sync
+#: moves people between this role and ROLE_STUDENT (users.audience); nothing else should.
+ROLE_PUBLIC_STUDENT = "public_student"
 
 CANONICAL_ROLES = frozenset(
     {
@@ -118,6 +122,7 @@ CANONICAL_ROLES = frozenset(
         ROLE_TEST_AUDITOR,
         ROLE_SUPPORT_TEACHER,
         ROLE_STUDENT,
+        ROLE_PUBLIC_STUDENT,
     }
 )
 
@@ -130,6 +135,7 @@ CANONICAL_ROLES = frozenset(
 #: to rehash.
 ROLE_CHOICES = (
     (ROLE_STUDENT, "Student"),
+    (ROLE_PUBLIC_STUDENT, "Public student"),
     (ROLE_TEACHER, "Teacher"),
     (ROLE_SUPPORT_TEACHER, "Support teacher"),
     (ROLE_TEST_ADMIN, "Test admin"),
@@ -151,3 +157,8 @@ TEACHER_PORTAL_ROLES = frozenset({ROLE_TEACHER, ROLE_SUPPORT_TEACHER, ROLE_SUPER
 #: a bare ``== ROLE_TEACHER`` is how a new subject-scoped role silently loses its subject
 #: rules and falls through to a hard deny.
 SUBJECT_SCOPED_STAFF_ROLES = frozenset({ROLE_TEACHER, ROLE_SUPPORT_TEACHER})
+
+#: Everyone who learns here, at the learning center or public. Use it where both must be treated as
+#: learners (frozen block, subject clearing, override guards); keep ROLE_STUDENT wherever only the
+#: learning center counts.
+LEARNER_ROLES = frozenset({ROLE_STUDENT, ROLE_PUBLIC_STUDENT})

@@ -28,6 +28,7 @@ import {
   ClipboardList as ClipboardListIcon,
   CalendarDays,
 } from "lucide-react";
+import { isPublicStudentPath } from "@/lib/roles";
 
 export type NavItem = {
   /** Present on leaf items (real routes). Omitted on collapsible group parents. */
@@ -205,6 +206,23 @@ export const teacherNav: NavSection[] = [
 ];
 
 /** Returns only the leaf items (those with an href), recursing into collapsible groups. */
+/**
+ * The student IA cut to what a public learner may open (owner, 2026-10-13: mock exams and
+ * events, plus the profile). A group left with one route collapses into it.
+ */
+export function publicStudentNav(nav: NavSection[]): NavSection[] {
+  const keep = (items: NavItem[]): NavItem[] =>
+    items.flatMap((i) => {
+      if (i.children?.length) {
+        const kids = keep(i.children);
+        if (!kids.length) return [];
+        return kids.length === 1 ? kids : [{ ...i, children: kids }];
+      }
+      return i.href && isPublicStudentPath(i.href) ? [i] : [];
+    });
+  return nav.map((s) => ({ ...s, items: keep(s.items) })).filter((s) => s.items.length > 0);
+}
+
 export function flattenNav(nav: NavSection[]): NavItem[] {
   const out: NavItem[] = [];
   const walk = (items: NavItem[]) => {

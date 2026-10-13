@@ -1920,6 +1920,11 @@ class JoinClassView(APIView):
     permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
+        if normalized_role(request.user) == acc_const.ROLE_PUBLIC_STUDENT:
+            return Response(
+                {"detail": "Classes are for learning center students.", "code": "centre_only"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         code = (request.data.get("join_code") or "").strip().upper()
         if not code:
             return Response({"detail": "Missing join_code."}, status=status.HTTP_400_BAD_REQUEST)

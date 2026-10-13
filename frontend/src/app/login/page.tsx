@@ -10,6 +10,7 @@ import { type TelegramOIDCResult } from "@/components/TelegramLoginButton";
 import type { AuthNoticeRecord } from "@/lib/auth/authTabSync";
 import { consumeAuthNotice } from "@/lib/auth/authTabSync";
 import { Button, Input, Field, Alert, Spinner, type AlertTone } from "@/components/ui";
+import { homePathFor } from "@/lib/roles";
 
 declare global {
     interface Window {
@@ -48,13 +49,14 @@ function classifyLoginError(err: unknown): { message: string; retryable: boolean
 // to bounce someone off to a page of an attacker's choosing.
 const RETURNABLE_NEXT = /^\/desktop\/link(\?[A-Za-z0-9_=&%.~-]*)?$/;
 
-function getRedirectTarget(): string {
+function getRedirectTarget(role?: unknown): string {
     const host = typeof window !== "undefined" ? window.location.hostname.toLowerCase() : "";
     if (host.startsWith("admin.")) return "/ops";
     if (host.startsWith("questions.")) return "/builder";
     const next = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("next") : null;
     if (next && RETURNABLE_NEXT.test(next)) return next;
-    return "/";
+    // A public learner's home is the mock exams; the dashboard is the learning center's.
+    return homePathFor(role);
 }
 
 const NOTICE_COPY: Record<string, { tone: AlertTone; message: string }> = {
@@ -113,11 +115,13 @@ export default function LoginPage() {
     }, []);
 
     const completeLogin = useCallback(async () => {
+        let role: unknown;
         try {
-            await usersApi.getMe().catch(() => null);
+            const me = await usersApi.getMe().catch(() => null);
+            role = (me as { role?: unknown } | null)?.role;
         } catch { /* identity probe is best-effort */ }
         void invalidateMe(queryClient);
-        router.push(getRedirectTarget());
+        router.push(getRedirectTarget(role));
     }, [queryClient, router]);
 
     const handleSubmit = async (e?: React.FormEvent) => {

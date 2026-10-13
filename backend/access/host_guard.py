@@ -11,7 +11,42 @@ from dataclasses import dataclass
 
 from django.http import JsonResponse
 
+from access import constants as acc_const
 from exams.metrics import incr as exams_metric_incr
+
+#: What a public learner (role public_student) may reach. Everything else under /api/ is the learning
+#: center's and answers 403 {"code": "centre_only"}. An ALLOWLIST on purpose: many student endpoints
+#: check no role at all and DRF's default lets any signed-in user in, so this — not the role — is what
+#: keeps a new app closed to public learners until somebody adds it here
+#: (users/tests/test_public_student_surfaces.py pins the list).
+PUBLIC_STUDENT_API_PREFIXES = (
+    "/api/auth/",
+    "/api/users/me/",
+    "/api/users/exam-dates/",
+    "/api/users/register/",
+    "/api/users/google/",
+    "/api/users/telegram/",
+    "/api/mocks/",
+    "/api/events/",
+    "/api/notifications/",
+    "/api/realtime/",
+    "/api/annotations/",  # the exam runner's highlighter: the learner's own rows only
+    "/api/question-reports/",  # "report an error" in the mock runner
+    "/api/health/",
+    "/api/schema/",
+    "/api/csp-report/",
+)
+#: Inside an allowed app, the parts that still belong to the learning center.
+PUBLIC_STUDENT_DENIED_PREFIXES = ("/api/mocks/sessions/",)
+
+
+def public_student_may(path: str) -> bool:
+    """May a public learner reach this path? Non-API paths are not this guard's business."""
+    if not path.startswith("/api/"):
+        return True
+    if path.startswith(PUBLIC_STUDENT_DENIED_PREFIXES):
+        return False
+    return path.startswith(PUBLIC_STUDENT_API_PREFIXES)
 
 
 @dataclass(frozen=True)
@@ -127,12 +162,18 @@ class SubdomainAPIGuardMiddleware:
             if u and getattr(u, "is_authenticated", False)
             else ""
         )
-        if kind == "admin" and role in ("student",):
+        if role == acc_const.ROLE_PUBLIC_STUDENT and not public_student_may(path):
+            exams_metric_incr("forbidden_admin_route_total")
+            return JsonResponse(
+                {"detail": "This is available to learning center students only.", "code": "centre_only"},
+                status=403,
+            )
+        if kind == "admin" and role in acc_const.LEARNER_ROLES:
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "You cannot access admin console."}, status=403
             )
-        if kind == "questions" and role == "student":
+        if kind == "questions" and role in acc_const.LEARNER_ROLES:
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "Students cannot access questions console."}, status=403

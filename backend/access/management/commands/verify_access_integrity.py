@@ -76,7 +76,7 @@ class Command(BaseCommand):
                 )
             )
 
-        for u in User.objects.filter(role=C.ROLE_STUDENT).exclude(subject__isnull=True).exclude(subject="").iterator():
+        for u in User.objects.filter(role__in=C.LEARNER_ROLES).exclude(subject__isnull=True).exclude(subject="").iterator():
             n += 1
             exit_code = 1
             self.stderr.write(

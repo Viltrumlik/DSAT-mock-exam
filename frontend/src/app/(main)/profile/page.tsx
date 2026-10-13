@@ -29,8 +29,10 @@ import {
   type SettingsSectionKey,
   type TelegramConfig,
 } from "@/features/profile/types";
-import { invalidateMe } from "@/hooks/useMe";
+import { invalidateMe, useMe } from "@/hooks/useMe";
 import { classesApi, usersApi } from "@/lib/api";
+import { emptyNormalizedList } from "@/lib/criticalApiContract";
+import { isPublicStudent } from "@/lib/roles";
 import { displayEmail } from "@/lib/email";
 
 type ProfileTab = "overview" | "classes" | "settings";
@@ -75,8 +77,12 @@ export default function ProfilePage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const tabsRef = useRef<HTMLDivElement>(null);
+  // A public learner's profile is Settings alone: Overview and Classes are the learning
+  // center's (points, homework, classes), and every one of their requests would be refused.
+  const { me: sessionMe } = useMe();
+  const isPublic = isPublicStudent((sessionMe as { role?: string } | undefined)?.role);
 
-  const [tab, setTab] = useState<ProfileTab>("overview");
+  const [tab, setTab] = useState<ProfileTab>(isPublic ? "settings" : "overview");
   const [section, setSection] = useState<SettingsSectionKey>("account");
 
   const [me, setMe] = useState<ProfileMe | null>(null);
@@ -101,7 +107,7 @@ export default function ProfilePage() {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get("tab") as ProfileTab | null;
     const wantedSection = params.get("section") as SettingsSectionKey | null;
-    if (wantedTab && TAB_KEYS.includes(wantedTab)) setTab(wantedTab);
+    if (wantedTab && TAB_KEYS.includes(wantedTab) && (!isPublic || wantedTab === "settings")) setTab(wantedTab);
     if (wantedSection && SETTINGS_SECTIONS.includes(wantedSection)) setSection(wantedSection);
 
     // Back from Telegram's link flow, which lands on /profile?tg_linked=1 or ?tg_error=….
@@ -142,7 +148,7 @@ export default function ProfilePage() {
     try {
       const [meData, classData, tgWidget, examDatesRaw] = await Promise.all([
         usersApi.getMe(),
-        classesApi.list(),
+        isPublic ? Promise.resolve(emptyNormalizedList()) : classesApi.list(),
         usersApi.getTelegramWidgetConfig().catch(() => null),
         usersApi.listExamDates().catch(() => []),
       ]);
@@ -161,7 +167,7 @@ export default function ProfilePage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isPublic]);
 
   const loadRewards = useCallback(() => into(setRewards, () => rewardsApi.me()), []);
   // One request for every class's homework, where this used to ask for each class's list and
@@ -190,10 +196,11 @@ export default function ProfilePage() {
 
   useEffect(() => {
     void loadProfile();
+    if (isPublic) return; // Overview's panels, which a public learner has no tab for.
     void loadRewards();
     void loadHomework();
     void loadAttempts();
-  }, [loadProfile, loadRewards, loadHomework, loadAttempts]);
+  }, [isPublic, loadProfile, loadRewards, loadHomework, loadAttempts]);
 
   // The Classes tab's own requests wait until someone opens it.
   const classesOpened = tab === "classes";
@@ -234,12 +241,15 @@ export default function ProfilePage() {
   };
 
   const tabs: TabItem[] = useMemo(
-    () => [
-      { id: "overview", label: "Overview", icon: User },
-      { id: "classes", label: "Classes", icon: School, count: classes.length },
-      { id: "settings", label: "Settings", icon: Settings2 },
-    ],
-    [classes.length],
+    () =>
+      isPublic
+        ? [{ id: "settings", label: "Settings", icon: Settings2 }]
+        : [
+            { id: "overview", label: "Overview", icon: User },
+            { id: "classes", label: "Classes", icon: School, count: classes.length },
+            { id: "settings", label: "Settings", icon: Settings2 },
+          ],
+    [isPublic, classes.length],
   );
 
   /* ── Render ──────────────────────────────────────────────────────────────────────── */

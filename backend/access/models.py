@@ -134,7 +134,7 @@ class UserPermission(models.Model):
         role = normalized_role(self.user)
         if (
             self.granted
-            and role == constants.ROLE_STUDENT
+            and role in constants.LEARNER_ROLES
             and self.permission.codename in constants.PERMISSIONS_STUDENT_OVERRIDE_DENIED
         ):
             raise ValidationError(

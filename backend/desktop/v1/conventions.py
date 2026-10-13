@@ -152,6 +152,12 @@ class V1APIView(APIView):
         if not enabled():
             raise disabled()
         super().initial(request, *args, **kwargs)
+        # The app is the learning center's; a learner who left it keeps their tokens until the
+        # next sign-in, so every v1 call asks again (plan 2026-10-13).
+        from users.audience import NATIVE_APP_REFUSAL, is_public_learner
+
+        if is_public_learner(request.user):
+            raise forbidden(NATIVE_APP_REFUSAL)
 
     def handle_exception(self, exc):
         if isinstance(exc, V1Error):

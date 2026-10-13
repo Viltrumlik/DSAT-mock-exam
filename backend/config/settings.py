@@ -286,6 +286,11 @@ LCUP_BASE_URL = os.getenv("LCUP_BASE_URL", "https://master-sat.lc-up.com").strip
 LCUP_DOMAIN = os.getenv("LCUP_DOMAIN", "").strip()
 LCUP_MOBILE = os.getenv("LCUP_MOBILE", "").strip()
 LCUP_PASSWORD = os.getenv("LCUP_PASSWORD", "")
+
+# Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
+# Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"
+# and the sync moves linked learners between the two roles (users.audience, lcup.audience).
+PUBLIC_SPLIT_ENABLED = os.getenv("PUBLIC_SPLIT_ENABLED", "False").lower() == "true"
 # Past papers ship BOTH modules in the open response (no network wait at the module boundary,
 # fully offline sittings). Past papers are not adaptive and carry no answer key, so the only cost
 # is that a determined student could pre-read module 2 of a practice paper. Off: module 2 comes

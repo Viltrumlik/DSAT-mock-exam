@@ -30,6 +30,9 @@ from users.permissions import IsAuthenticatedAndNotFrozen
 from . import constants, push as push_service, services
 from .models import ApnsDevice, Notification, NotificationPreference, PushSubscription
 from .serializers import (
+    AUDIENCE_ALL_STUDENTS,
+    AUDIENCE_CENTRE_STUDENTS,
+    AUDIENCE_PUBLIC_STUDENTS,
     AUDIENCE_STAFF,
     AUDIENCE_STUDENTS,
     AUDIENCE_TEACHERS,
@@ -158,6 +161,9 @@ class NotificationPreferencesView(APIView):
 #: remembering to edit this map.
 _AUDIENCE_ROLES = {
     AUDIENCE_STUDENTS: (acc_const.ROLE_STUDENT,),
+    AUDIENCE_CENTRE_STUDENTS: (acc_const.ROLE_STUDENT,),
+    AUDIENCE_PUBLIC_STUDENTS: (acc_const.ROLE_PUBLIC_STUDENT,),
+    AUDIENCE_ALL_STUDENTS: (acc_const.ROLE_STUDENT, acc_const.ROLE_PUBLIC_STUDENT),
     AUDIENCE_TEACHERS: (acc_const.ROLE_TEACHER, acc_const.ROLE_SUPPORT_TEACHER),
     AUDIENCE_STAFF: (
         acc_const.ROLE_TEACHER,

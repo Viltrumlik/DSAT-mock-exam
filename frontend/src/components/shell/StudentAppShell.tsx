@@ -7,8 +7,9 @@ import { authApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
-import { studentNav, reviewNavSection } from "./navConfig";
-import { StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
+import { isPublicStudent } from "@/lib/roles";
+import { publicStudentNav, studentNav, reviewNavSection } from "./navConfig";
+import { EventsHeaderButton, EventsMenuRow, StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
 import { StudentPrompts } from "./StudentPrompts";
 
@@ -27,9 +28,14 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
 
   // Content reviewers (test_auditor + admins) get a Review Center entry at the top of the
-  // student sidebar. Everyone else sees the standard student IA.
-  const isReviewer = isReviewerRole(m?.role);
-  const nav = isReviewer ? [reviewNavSection, ...studentNav] : studentNav;
+  // student sidebar. A public learner gets the student IA cut to mock exams, events and the
+  // profile (owner, 2026-10-13). Everyone else sees the standard student IA.
+  const isPublic = isPublicStudent(m?.role);
+  const isReviewer = !isPublic && isReviewerRole(m?.role);
+  const nav = isPublic ? publicStudentNav(studentNav) : isReviewer ? [reviewNavSection, ...studentNav] : studentNav;
+  // A public learner earns no points and takes no surveys: Events is all their header holds.
+  const learnerHeader = isPublic ? <EventsHeaderButton /> : <StudentHeaderExtras />;
+  const learnerMenuRows = isPublic ? <EventsMenuRow /> : <StudentAccountMenuRows />;
 
   // Immersive, sidebar-less takeovers (like the pastpaper /exam & /review routes):
   //  - the assessment runner (/assessments/attempt/<id>) — its `fixed inset-0 z-50`
@@ -71,8 +77,8 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         onSignOut={() => authApi.logout(queryClient)}
         // Reviewers and staff browse the student shell but earn nothing, so a points pill
         // reading zero on every page would be noise rather than information.
-        headerSlot={isAuthenticated && !isReviewer ? <StudentHeaderExtras /> : undefined}
-        accountMenu={isAuthenticated && !isReviewer ? <StudentAccountMenuRows /> : undefined}
+        headerSlot={isAuthenticated && !isReviewer ? learnerHeader : undefined}
+        accountMenu={isAuthenticated && !isReviewer ? learnerMenuRows : undefined}
         // Gated on being signed in: the summary endpoint 401s for an anonymous visitor, and
         // a bell nobody can fill is the decoration this was rebuilt to remove.
         notifications={isAuthenticated}
@@ -90,7 +96,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
               and the school reported the same failure as the first — students do not see it.
               Production put a number on it: twelve push subscriptions in the whole school.
               A modal interrupts once and is then remembered; see StudentPrompts. */}
-          {isAuthenticated && !isReviewer ? <StudentPrompts /> : null}
+          {isAuthenticated && !isReviewer ? <StudentPrompts surveys={!isPublic} /> : null}
           {children}
         </div>
       </AppShell>

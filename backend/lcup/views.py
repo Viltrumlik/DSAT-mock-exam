@@ -204,7 +204,9 @@ class StudentListView(_AdminView):
 class StudentLinkView(_AdminView):
     def post(self, request, pk):
         link = get_object_or_404(LcupStudentLink, pk=pk)
-        user = User.objects.filter(pk=_int(request.data.get("user_id")), role=acc_const.ROLE_STUDENT).first()
+        # A public account too: a returning student's old account is linked, then the sync's
+        # audience stage makes it a learning-center one again.
+        user = User.objects.filter(pk=_int(request.data.get("user_id")), role__in=acc_const.LEARNER_ROLES).first()
         if user is None:
             return _bad("Choose a student account.")
         if LcupStudentLink.objects.filter(user=user).exclude(pk=link.pk).exists():

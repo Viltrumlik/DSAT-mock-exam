@@ -136,6 +136,9 @@ def _role_permissions_map() -> dict[str, FrozenSet[str]]:
             }
         ),
         constants.ROLE_STUDENT: frozenset({constants.PERM_SUBMIT_TEST}),
+        # A public learner sits mocks only, and mocks check no permission: none at all, so no
+        # submit_test-gated path (past papers, the desktop app) opens to them.
+        constants.ROLE_PUBLIC_STUDENT: frozenset(),
     }
 
 
@@ -488,13 +491,13 @@ def get_effective_permission_codenames(user) -> FrozenSet[str]:
 
     UserPermission = apps.get_model("access", "UserPermission")
     role = normalized_role(user)
-    granted: set[str] = set(_role_permissions_map().get(role, frozenset({constants.PERM_SUBMIT_TEST})))
+    granted: set[str] = set(_role_permissions_map().get(role, frozenset()))
 
     overrides = UserPermission.objects.filter(user_id=user.pk).select_related("permission")
     for ov in overrides:
         if ov.granted:
             if (
-                role == constants.ROLE_STUDENT
+                role in constants.LEARNER_ROLES
                 and ov.permission.codename in constants.PERMISSIONS_STUDENT_OVERRIDE_DENIED
             ):
                 continue
@@ -524,7 +527,7 @@ def can_edit_tests(user, platform_subject: str) -> bool:
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
-    if normalized_role(user) == constants.ROLE_STUDENT:
+    if normalized_role(user) in constants.LEARNER_ROLES:
         return False
     if is_global_scope_staff(user):
         # Use authorize() so test_admin special-cases and subject contract are consistent.
@@ -549,7 +552,7 @@ def can_view_tests(user, platform_subject: str) -> bool:
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
-    if normalized_role(user) == constants.ROLE_STUDENT:
+    if normalized_role(user) in constants.LEARNER_ROLES:
         return False
     if is_global_scope_staff(user):
         return constants.PERM_MANAGE_TESTS in perms or constants.PERM_ASSIGN_ACCESS in perms
@@ -574,7 +577,7 @@ def can_assign_tests(user, platform_subject: str) -> bool:
     perms = get_effective_permission_codenames(user)
     if constants.WILDCARD in perms:
         return True
-    if normalized_role(user) == constants.ROLE_STUDENT:
+    if normalized_role(user) in constants.LEARNER_ROLES:
         return False
     # Use authorize so subject contract + role-specific rules stay centralized.
     return authorize(user, constants.PERM_ASSIGN_ACCESS, subject=platform_subject)
@@ -594,7 +597,7 @@ def access_level_for_practice_test(user, practice_test: object) -> Literal["none
     if subj not in (constants.SUBJECT_MATH_PLATFORM, constants.SUBJECT_ENGLISH_PLATFORM):
         _log_invalid_practice_test_subject(practice_test)
         return "none"
-    if normalized_role(user) == constants.ROLE_STUDENT:
+    if normalized_role(user) in constants.LEARNER_ROLES:
         return "none"
     if can_edit_tests(user, subj):
         return "edit"

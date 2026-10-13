@@ -17,6 +17,7 @@
 /** Every role the platform issues. Mirrors `CANONICAL_ROLES`. */
 export const CANONICAL_ROLES = [
   "student",
+  "public_student",
   "teacher",
   "support_teacher",
   "test_admin",
@@ -43,3 +44,39 @@ export function requiresSubject(role: string | null | undefined): boolean {
 export function canEnterTeacherPortal(role: string | null | undefined): boolean {
   return TEACHER_PORTAL_ROLES.includes(String(role ?? ""));
 }
+
+/** What the admin console calls each role. */
+export const ROLE_LABELS: Record<CanonicalRole, string> = {
+  student: "Student",
+  public_student: "Public student",
+  teacher: "Teacher",
+  support_teacher: "Support teacher",
+  test_admin: "Test admin",
+  test_auditor: "Test auditor",
+  admin: "Admin",
+  super_admin: "Super admin",
+};
+
+const norm = (r: unknown) => String(r ?? "").trim().toLowerCase();
+
+/**
+ * A learner who signed up on the site and is not (or no longer) at the learning center. They see
+ * mock exams and events, plus their profile — nothing else (owner, 2026-10-13). Mirrors
+ * `ROLE_PUBLIC_STUDENT`; the backend's host guard is the real gate.
+ */
+export const isPublicStudent = (r: unknown) => norm(r) === "public_student";
+
+/** Roles whose home is the student site: the learning center's students and public learners. */
+export const isStudentSiteRole = (r: unknown) => norm(r) === "student" || isPublicStudent(r);
+
+export const PUBLIC_STUDENT_HOME = "/mock-exam";
+
+/** The runner is `/exam/<id>`; the backend decides which attempts it serves a public learner. */
+const PUBLIC_STUDENT_PATH_PREFIXES = ["/mock-exam", "/exam", "/events", "/profile"] as const;
+
+export function isPublicStudentPath(p: string): boolean {
+  return PUBLIC_STUDENT_PATH_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`));
+}
+
+/** Where a role lands after signing in, and where the shell sends it home. */
+export const homePathFor = (r: unknown) => (isPublicStudent(r) ? PUBLIC_STUDENT_HOME : "/");

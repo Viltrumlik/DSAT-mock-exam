@@ -366,7 +366,8 @@ export function subjectLabel(subject: string | null | undefined): string {
 /** The account's role as a person would say it. */
 export function roleLabel(role: string | null | undefined): string {
   const r = (role ?? "").toLowerCase();
-  if (r === "student" || r === "") return "Student";
+  // A public learner is a student to themselves; "public" is the admin's word, not theirs.
+  if (r === "student" || r === "public_student" || r === "") return "Student";
   if (r === "support_teacher") return "Support teacher";
   if (r === "teacher") return "Teacher";
   if (r === "test_admin" || r === "test_auditor") return "Content team";
