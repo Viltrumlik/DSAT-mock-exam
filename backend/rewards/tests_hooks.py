@@ -822,16 +822,26 @@ class HomeworkReceiverTests(HomeworkHookFixture):
         # = 25% of the set, and the set is the whole bundle. 15 × 25% = 3.75 → 4.
         self.assertEqual(_paid(self.student), (4, 4))
 
-    def test_a_farmed_vocabulary_run_is_discounted_by_its_coverage(self):
-        """Speed only reports the prompts answered before its 60-second clock expires, so two
-        of twenty words answered correctly stores ``accuracy = 100``. Coverage is what stops
-        that being worth a full quarter of the set."""
+    def test_a_farmed_vocabulary_run_masters_nothing(self):
+        """Speed only reports the prompts answered before its 60-second clock expires, so one
+        of four words answered correctly stores ``accuracy = 100``. A game is mastered only by
+        a clean run over EVERY word (``VocabStudySession.is_perfect``), so that run is Speed
+        not mastered yet — not a coverage-discounted share of it, which is what this test
+        pinned before the per-game grade was retired."""
         link = self.add_vocab(words=4)
 
         self.study(link, VocabStudySession.MODE_SPEED, accuracy=100.0, distinct_words=1)
 
-        # 100 × 0.25 coverage ÷ 4 modes = 6.25% of the bundle → 15 × 6.25% = 0.9375 → 1.
-        self.assertEqual(_paid(self.student), (1, 1))
+        # Settled at 0% — a priced row rather than a missing one, so the receiver demonstrably
+        # fired and it is the mastery rule that paid nothing.
+        self.assertEqual(self.homework_award().points, 0)
+        self.assertEqual(_paid(self.student), (0, 0))
+
+        # Racing the same game again, clean over the whole set, masters it: a quarter of the
+        # set, 15 × 25% = 3.75 → 4.
+        self.study(link, VocabStudySession.MODE_SPEED, accuracy=100.0, distinct_words=4)
+
+        self.assertEqual(_paid(self.student), (4, 4))
 
     def test_finishing_a_pastpaper_section_settles_the_bundle(self):
         test = self.add_pastpaper()

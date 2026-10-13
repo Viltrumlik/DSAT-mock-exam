@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+
+import django.apps
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from rest_framework.test import APIClient
@@ -12,9 +15,33 @@ from rewards.services import award, revoke
 
 User = get_user_model()
 
+#: Every migration that writes a ``RewardRule`` row, with the function that writes it.
+_RULE_MIGRATIONS = (
+    ("0002_seed_reward_rules", "seed"),
+    ("0006_rewardrule_grants_xp", "seed"),
+    ("0009_survey_stops_granting_xp", "stop_granting_xp"),
+    ("0010_support_session_group_ladder", "set_solo_price"),
+    ("0011_event_attended", "seed"),
+)
+
 
 def _u(email):
     return User.objects.create_user(email, "secret123")
+
+
+def _seed_rules():
+    """The rule rows a migrated database starts with.
+
+    The fast test settings (``settings_test_nomigrations``) skip migrations, so without this
+    the rules table is empty and the view under test serves ``[]``. The migrations' own
+    functions are replayed rather than their numbers restated here, so these tests still pin
+    what a fresh database is seeded with — the same approach as ``events.tests_attendance``'s
+    ``RewardRuleSeedTests``. Every one of them is safe to re-run, so under settings that did
+    migrate this changes nothing.
+    """
+    for module, fn in _RULE_MIGRATIONS:
+        migration = importlib.import_module(f"rewards.migrations.{module}")
+        getattr(migration, fn)(django.apps.apps, None)
 
 
 class MyRewardsViewTests(TestCase):
@@ -87,6 +114,7 @@ class MyRewardsViewTests(TestCase):
 
 class RewardRulesViewTests(TestCase):
     def setUp(self):
+        _seed_rules()
         self.client = APIClient()
         self.student = _u("api_rules@t.com")
 
