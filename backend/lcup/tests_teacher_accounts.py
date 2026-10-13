@@ -11,6 +11,7 @@ from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from access.models import UserAccess
 from lcup.models import AccountClaim, GroupLinkStatus, LcupGroupLink, LcupState, LcupTeacherLink, LinkStatus
@@ -130,3 +131,24 @@ class TeacherClaimLoginTests(TestCase):
             HTTP_REFERER="https://teacher.mastersat.uz/login",
         )
         self.assertEqual(response.status_code, 200, response.content)
+
+    def test_the_teacher_chooses_a_first_password_on_the_portal_and_nothing_else_of_lcup_opens(self):
+        # The completion gate asks for the password on whichever console the person is on; the
+        # teacher portal's host guard must let that one lc-up endpoint through, and only that one.
+        LcupState.objects.update_or_create(pk=1, defaults={"initial_review_done_at": timezone.now()})
+        run_sync(FakeLcupClient(lcup_data()), now=timezone.now())
+        sayyora = User.objects.get(username=SAYYORA_PHONE)
+        api = APIClient()
+        api.cookies["lms_access"] = str(RefreshToken.for_user(sayyora).access_token)
+
+        chosen = api.post(
+            "/api/lcup/claim/password/",
+            {"password": "Kitob-va-Qalam-2026"},
+            format="json",
+            HTTP_HOST="teacher.mastersat.uz",
+            HTTP_ORIGIN="https://teacher.mastersat.uz",
+        )
+        self.assertEqual(chosen.status_code, 204, chosen.content)
+        sayyora.refresh_from_db()
+        self.assertTrue(sayyora.check_password("Kitob-va-Qalam-2026"))
+        self.assertEqual(api.get("/api/lcup/status/", HTTP_HOST="teacher.mastersat.uz").status_code, 403)

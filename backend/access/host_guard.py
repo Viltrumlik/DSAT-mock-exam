@@ -351,6 +351,10 @@ class SubdomainAPIGuardMiddleware:
             # in the browser (and takes it back) from the portal's midterm page.
             if path.startswith("/api/desktop/exemptions/"):
                 return self.get_response(request)
+            # lc-up: a teacher account the sync created chooses its first password here, behind the
+            # completion gate. Only that one endpoint; the rest of /api/lcup/ is the admin's.
+            if path == "/api/lcup/claim/password/":
+                return self.get_response(request)
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "This endpoint is not available on the teacher portal."},
