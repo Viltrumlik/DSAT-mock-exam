@@ -89,3 +89,128 @@ class BalanceAndEnrollmentTests(TestCase):
         self.assertIsNone(create_account_for(link, now=self.now))
         link.refresh_from_db()
         self.assertEqual(link.status, LinkStatus.NEEDS_REVIEW)
+
+
+@override_settings(LCUP_ENABLED=True, PUBLIC_SPLIT_ENABLED=True)
+class AudienceStageTests(TestCase):
+    """Linked learners follow lc-up: in a live group → student; out of every group → public,
+    frozen first when lc-up shows a debt; the freeze lifts once the balance is back to zero."""
+
+    def setUp(self):
+        self.now = timezone.now()
+        LcupState.objects.update_or_create(pk=1, defaults={"initial_review_done_at": self.now})
+
+    def sync(self, data):
+        return run_sync(FakeLcupClient(data), now=self.now)
+
+    def linked(self, lcup_id, username, role=C.ROLE_STUDENT):
+        u = User.objects.create_user(None, password=None, username=username, role=role)
+        LcupStudentLink.objects.update_or_create(
+            lcup_student_id=lcup_id, defaults={"name": username, "user": u, "status": LinkStatus.CONFIRMED}
+        )
+        return u
+
+    def data(self, balance_102="0", left_102=False):
+        d = lcup_data()
+        for row in d[f"{API}/students"]:
+            row["balance"] = balance_102 if row["id"] == 102 else "0"
+        if left_102:
+            # lc-up lists a leaver with left_at. (An emptied member list is not believed at all.)
+            for group in (10, 11):
+                for m in d[f"{API}/groups/{group}/students"]:
+                    if m["student_id"] == 102:
+                        m["left_at"] = "2026-10-10 09:00:00"
+        return d
+
+    def test_leaving_without_debt_makes_a_public_learner(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data())
+        run = self.sync(self.data(left_102=True))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen), (C.ROLE_PUBLIC_STUDENT, False))
+        self.assertEqual(run.counts["became_public"], 1)
+
+    def test_leaving_with_debt_freezes_and_paying_lifts_it(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data(balance_102="-150000"))
+        run = self.sync(self.data(balance_102="-150000", left_102=True))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen, u.frozen_reason), (C.ROLE_PUBLIC_STUDENT, True, "lcup_debt"))
+        self.assertEqual(run.counts["frozen_for_debt"], 1)
+        run = self.sync(self.data(balance_102="0", left_102=True))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen, u.frozen_reason), (C.ROLE_PUBLIC_STUDENT, False, ""))
+        self.assertEqual(run.counts["debt_cleared"], 1)
+
+    def test_an_unknown_balance_is_not_debt(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data())
+        self.sync(self.data(balance_102=None, left_102=True))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen), (C.ROLE_PUBLIC_STUDENT, False))
+
+    def test_an_admins_freeze_is_never_lifted_by_the_sync(self):
+        u = self.linked(102, "aziz", role=C.ROLE_PUBLIC_STUDENT)
+        User.objects.filter(pk=u.pk).update(is_frozen=True, frozen_reason="")
+        self.sync(self.data(left_102=True))
+        u.refresh_from_db()
+        self.assertTrue(u.is_frozen)
+
+    def test_an_active_student_in_debt_is_never_frozen(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data(balance_102="-150000"))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen), (C.ROLE_STUDENT, False))
+
+    def test_coming_back_makes_them_centre_again(self):
+        u = self.linked(102, "aziz", role=C.ROLE_PUBLIC_STUDENT)
+        run = self.sync(self.data())
+        u.refresh_from_db()
+        self.assertEqual(u.role, C.ROLE_STUDENT)
+        self.assertEqual(run.counts["became_centre"], 1)
+
+    def test_coming_back_with_a_debt_freeze_lifts_it(self):
+        u = self.linked(102, "aziz", role=C.ROLE_PUBLIC_STUDENT)
+        User.objects.filter(pk=u.pk).update(is_frozen=True, frozen_reason="lcup_debt")
+        self.sync(self.data(balance_102="-150000"))
+        u.refresh_from_db()
+        self.assertEqual((u.role, u.is_frozen), (C.ROLE_STUDENT, False))
+
+    def test_a_run_with_errors_changes_no_role(self):
+        from lcup.client import LcupUnavailable
+
+        u = self.linked(102, "aziz")
+        self.sync(self.data())
+        d = self.data(left_102=True)
+        d[f"{API}/teachers"] = LcupUnavailable("503")
+        run = self.sync(d)
+        u.refresh_from_db()
+        self.assertEqual(u.role, C.ROLE_STUDENT)
+        self.assertIn("role changes held: this sync had errors", run.alerts)
+
+    def test_too_many_leavers_at_once_are_held(self):
+        from unittest import mock
+
+        u = self.linked(102, "aziz")
+        self.sync(self.data())
+        with mock.patch("lcup.audience.MAX_DEMOTIONS_PER_RUN", 0):
+            run = self.sync(self.data(left_102=True))
+        u.refresh_from_db()
+        self.assertEqual(u.role, C.ROLE_STUDENT)
+        self.assertTrue(any(a.startswith("role changes held") for a in run.alerts), run.alerts)
+        self.assertEqual(run.counts["demotions_held"], 1)
+
+    def test_a_dry_run_reports_but_changes_no_role(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data())
+        run = run_sync(FakeLcupClient(self.data(left_102=True)), now=self.now, dry_run=True)
+        u.refresh_from_db()
+        self.assertEqual(u.role, C.ROLE_STUDENT)
+        self.assertEqual(run.counts["became_public"], 1)
+
+    @override_settings(PUBLIC_SPLIT_ENABLED=False)
+    def test_with_the_switch_off_nothing_moves(self):
+        u = self.linked(102, "aziz")
+        self.sync(self.data(left_102=True))
+        u.refresh_from_db()
+        self.assertEqual(u.role, C.ROLE_STUDENT)

@@ -28,6 +28,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 
 from classes.models import Branch, ClassroomMembership
 
+from . import audience
 from .accounts import create_account_for
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
@@ -360,6 +361,8 @@ def _run_stages(client, run: _Run) -> None:
         # theirs exists (owner, 2026-10-13); matching would hand them the old one.
         _stage(run, "match_students", lambda: _match_students(run))
     _stage(run, "accounts", lambda: _accounts(run))
+    # Before rosters: a returning student is a student again when the roster adds them back.
+    _stage(run, "audience", lambda: audience.apply(run))
     _stage(run, "rosters", lambda: _rosters(run))
 
 
