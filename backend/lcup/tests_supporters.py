@@ -88,6 +88,20 @@ class SupporterSyncTests(TestCase):
         self.assertNotEqual(link.status, LinkStatus.IGNORED)
         self.assertNotEqual(link.match_reason, SUPPORTER_REASON)
 
+    def test_a_row_with_no_flag_at_all_keeps_a_settled_supporter(self):
+        # lc-up's External API leaves is_supporter out of /teachers (seen on prod 2026-10-13), so
+        # the supporters are settled by hand; a sync that sends no flag must not undo that.
+        LcupTeacherLink.objects.create(
+            lcup_teacher_id=2003, name="Husanov Mahkam", phone="998906666666", user=self.support,
+            status=LinkStatus.IGNORED, match_reason=SUPPORTER_REASON,
+        )
+        row = {k: v for k, v in SUPPORTER.items() if k != "is_supporter"}
+        d = lcup_data()
+        d[f"{API}/teachers"] = d[f"{API}/teachers"] + [row]
+        self.sync(d)
+        link = self.link()
+        self.assertEqual((link.status, link.match_reason, link.user_id), (LinkStatus.IGNORED, SUPPORTER_REASON, self.support.pk))
+
     def test_an_admins_ignore_is_left_alone(self):
         self.sync(lcup_data())
         LcupTeacherLink.objects.filter(lcup_teacher_id=2002).update(status=LinkStatus.IGNORED, match_reason="")

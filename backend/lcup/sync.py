@@ -134,8 +134,10 @@ def _teachers(client, run: _Run) -> None:
             _settle_supporter(link)
             run.counts["teachers_support"] += 1
             continue
-        if link.status == LinkStatus.IGNORED and link.match_reason == SUPPORTER_REASON:
-            # lc-up made them an ordinary teacher again: match them afresh.
+        if link.status == LinkStatus.IGNORED and link.match_reason == SUPPORTER_REASON and "is_supporter" in row:
+            # lc-up says outright they are an ordinary teacher again: match them afresh. A row that
+            # carries no flag at all (the External API leaves it out) is no news: the admin's
+            # "support teacher" stands.
             link.status, link.match_reason, link.user = LinkStatus.UNMATCHED, "", None
         if link.status in _SETTLED or (link.status == LinkStatus.AUTO and link.user_id):
             continue
