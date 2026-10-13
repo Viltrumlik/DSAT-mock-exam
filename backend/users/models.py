@@ -423,6 +423,7 @@ class RoleChange(models.Model):
     reason = models.CharField(max_length=32, db_index=True)
     source = models.CharField(max_length=16)
     lcup_run_id = models.PositiveIntegerField(null=True, blank=True)
+    #: ``[[membership_id, status_before], ...]``: the seats this change removed, for a revert.
     removed_membership_ids = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     reverted_at = models.DateTimeField(null=True, blank=True)

@@ -75,7 +75,9 @@ def _sync_caller_copy(user, fresh) -> None:
     user.role, user.is_frozen, user.frozen_reason = fresh.role, fresh.is_frozen, fresh.frozen_reason
 
 
-def _remove_student_seats(user) -> list[int]:
+def _remove_student_seats(user) -> list[list]:
+    """Remove every student seat; returns ``[[membership_id, status_before], ...]`` so a revert can
+    put back an INVITED seat as INVITED, not ACTIVE."""
     from classes.models import ClassroomMembership
 
     removed = []
@@ -83,9 +85,9 @@ def _remove_student_seats(user) -> list[int]:
         status=ClassroomMembership.STATUS_REMOVED
     )
     for seat in seats:  # .save(), never .update(): the audit, Telegram and library signals must fire
+        removed.append([seat.pk, seat.status])
         seat.status = ClassroomMembership.STATUS_REMOVED
         seat.save()
-        removed.append(seat.pk)
     return removed
 
 

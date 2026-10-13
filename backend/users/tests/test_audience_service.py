@@ -26,7 +26,7 @@ class AudienceServiceTests(TestCase):
         self.assertEqual(self.s.role, C.ROLE_PUBLIC_STUDENT)
         self.assertEqual(self.m.status, ClassroomMembership.STATUS_REMOVED)
         self.assertEqual((change.from_role, change.to_role, change.lcup_run_id), ("student", "public_student", 7))
-        self.assertEqual(change.removed_membership_ids, [self.m.pk])
+        self.assertEqual(change.removed_membership_ids, [[self.m.pk, "ACTIVE"]])
         self.assertFalse(self.s.is_frozen)
 
     def test_leaving_with_debt_freezes_with_the_debt_reason(self):
