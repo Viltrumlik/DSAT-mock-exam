@@ -19,7 +19,7 @@ from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from access.constants import ROLE_ADMIN, ROLE_SUPER_ADMIN, ROLE_TEACHER
+from access.constants import ROLE_ADMIN, ROLE_PUBLIC_STUDENT, ROLE_SUPER_ADMIN, ROLE_TEACHER
 from access.engine.assignment_service import AssignmentService
 from access.models import ResourceAccessGrant
 from access.resources import RT_MIDTERM_V2
@@ -136,7 +136,8 @@ class MidtermGrantView(APIView):
             return Response({"detail": "user_ids must be integers."}, status=400)
         if not user_ids:
             return Response({"detail": "user_ids is required."}, status=400)
-        students = list(User.objects.filter(pk__in=user_ids))
+        # A public account takes no learning-center content (plan 2026-10-13).
+        students = list(User.objects.filter(pk__in=user_ids).exclude(role=ROLE_PUBLIC_STUDENT))
         expires_at = request.data.get("expires_at") or None
         granted = []
         for student in students:

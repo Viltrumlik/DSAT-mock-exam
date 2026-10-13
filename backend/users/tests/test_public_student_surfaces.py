@@ -161,3 +161,152 @@ class DesktopTests(TestCase):
         resp = HomeView.as_view()(request)
         self.assertEqual(resp.status_code, 403)
         self.assertEqual(resp.data["code"], "forbidden")
+
+
+class SurfaceTests(TestCase):
+    """Each surface refuses a public learner on its own, behind the gate."""
+
+    def setUp(self):
+        self.pub = User.objects.create_user("p@example.com", password="x", username="pubsurf", role=C.ROLE_PUBLIC_STUDENT)
+        self.stu = User.objects.create_user("s@example.com", password="x", username="stusurf", role=C.ROLE_STUDENT)
+
+    def test_join_by_code_refuses_a_public_learner(self):
+        from classes.views import JoinClassView
+
+        request = APIRequestFactory().post("/api/classes/join/", {"join_code": "ANY"}, format="json")
+        force_authenticate(request, user=self.pub)
+        resp = JoinClassView.as_view()(request)
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.data["code"], "centre_only")
+
+    def test_mock_sessions_refuse_a_public_learner(self):
+        from mocks import sessions
+
+        place, reason = sessions.request_place(self.pub, "123456")
+        self.assertIsNone(place)
+        self.assertEqual(reason, sessions.REASON_CENTRE_ONLY)
+        self.assertIn(reason, sessions.REASON_DETAIL)
+
+    def test_my_mock_sessions_is_empty_for_a_public_learner(self):
+        from mocks.views_session import MyMockSessionsView
+
+        request = APIRequestFactory().get("/api/mocks/sessions/mine/")
+        force_authenticate(request, user=self.pub)
+        self.assertEqual(MyMockSessionsView.as_view()(request).data, {"results": []})
+
+    def test_a_public_learner_lists_and_takes_every_published_mock(self):
+        from mocks.tests_scoring import make_mock
+
+        mock, _mods = make_mock()
+        api = APIClient()
+        listed = api.get("/api/mocks/mine/", **bearer(self.pub))
+        self.assertEqual(listed.status_code, 200, listed.content)
+        self.assertIn(mock.pk, [row["mock_id"] for row in listed.json()["results"]])
+        made = api.post("/api/mocks/attempts/", {"mock": mock.pk}, format="json", **bearer(self.pub))
+        self.assertEqual(made.status_code, 201, made.content)
+        started = api.post(f"/api/mocks/attempts/{made.json()['id']}/start/", {}, format="json", **bearer(self.pub))
+        self.assertEqual(started.json()["current_state"], "MODULE_1_ACTIVE")
+
+    def test_a_frozen_public_learner_cannot_start_a_mock(self):
+        from mocks.tests_scoring import make_mock
+
+        mock, _mods = make_mock()
+        User.objects.filter(pk=self.pub.pk).update(is_frozen=True)
+        resp = APIClient().post("/api/mocks/attempts/", {"mock": mock.pk}, format="json", **bearer(self.pub))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_practice_packs_are_none_for_a_public_learner(self):
+        from exams.views import PracticeTestPackStudentListView
+
+        from django.db.models.query import EmptyQuerySet
+
+        # Without the check a public learner fell through to the staff branch: every pack,
+        # published or not.
+        view = PracticeTestPackStudentListView()
+        view.request = type("R", (), {"user": self.pub})()
+        self.assertIsInstance(view.get_queryset(), EmptyQuerySet)
+
+    def test_telegram_may_remove_a_public_learner_from_a_class_group(self):
+        from classes.telegram_group import may_enforce_against
+
+        self.assertTrue(may_enforce_against(self.pub, "member"))
+        self.assertTrue(may_enforce_against(self.stu, "member"))
+
+    def test_grants_skip_public_targets(self):
+        from access.views import EngineGrantSubjectView
+
+        admin = User.objects.create_user("a@example.com", password="x", username="adm", role=C.ROLE_SUPER_ADMIN)
+        request = APIRequestFactory().post(
+            "/api/access/grants/subject/", {"user_ids": [self.pub.pk, self.stu.pk], "subject": "math"}, format="json"
+        )
+        force_authenticate(request, user=admin)
+        resp = EngineGrantSubjectView.as_view()(request)
+        self.assertEqual(resp.status_code, 201, resp.data)
+        from access.models import UserAccess
+
+        self.assertTrue(UserAccess.objects.filter(user=self.stu, subject="math").exists())
+        self.assertFalse(UserAccess.objects.filter(user=self.pub).exists())
+
+    def test_the_single_grant_refuses_a_public_target(self):
+        from access.models import UserAccess
+
+        admin = User.objects.create_user("a@example.com", password="x", username="adm", role=C.ROLE_SUPER_ADMIN)
+        api = APIClient()
+        api.force_authenticate(admin)
+        resp = api.post("/api/access/grant/", {"user_id": self.pub.pk, "subject": "math"}, format="json")
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertFalse(UserAccess.objects.filter(user=self.pub).exists())
+
+
+class EventsTests(TestCase):
+    """A public learner may hold a seat at an event; attending earns XP for a centre student only."""
+
+    def setUp(self):
+        from rewards import constants as RC
+        from rewards.models import RewardRule
+
+        from events.models import Event
+
+        self.staff = User.objects.create_user("ops@example.com", password="x", username="evops", role=C.ROLE_ADMIN)
+        self.pub = User.objects.create_user("p@example.com", password="x", username="evpub", role=C.ROLE_PUBLIC_STUDENT)
+        self.stu = User.objects.create_user("s@example.com", password="x", username="evstu", role=C.ROLE_STUDENT)
+        self.now = timezone.now()
+        self.event = Event.objects.create(
+            title="Career talk", starts_at=self.now + timedelta(days=1),
+            ends_at=self.now + timedelta(days=1, hours=2), seats=20, status=Event.STATUS_PUBLISHED,
+            published_at=self.now - timedelta(days=2), created_by=self.staff,
+        )
+        RewardRule.objects.get_or_create(event=RC.EVENT_ATTENDED, defaults={"points": 10, "grants_xp": True})
+
+    def test_a_public_learner_may_sign_up(self):
+        from events import services
+
+        self.assertTrue(services.is_signupable_student(self.pub))
+        self.assertIn(self.pub, services.active_students())
+        services.sign_up(self.event, self.pub, now=self.now)
+
+    def test_attendance_awards_a_centre_student_only(self):
+        from events import services
+        from events.models import EventRegistration
+        from rewards import constants as RC
+        from rewards.models import PointAward
+
+        during = self.event.starts_at + timedelta(minutes=5)
+        rows = {u.pk: services.sign_up(self.event, u, now=self.now) for u in (self.pub, self.stu)}
+        for row in rows.values():
+            services.mark_attendance(row, EventRegistration.ATTENDANCE_ATTENDED, actor=self.staff, now=during)
+        self.assertFalse(PointAward.objects.filter(idempotency_key=RC.event_attendance_key(rows[self.pub.pk].pk)).exists())
+        self.assertEqual(PointAward.objects.filter(idempotency_key=RC.event_attendance_key(rows[self.stu.pk].pk)).count(), 1)
+
+
+class BroadcastTests(TestCase):
+    def test_the_new_audiences_pick_the_right_people(self):
+        from notifications.serializers import AUDIENCE_CHOICES
+        from notifications.views import _AUDIENCE_ROLES
+
+        for audience in ("centre_students", "public_students", "all_students"):
+            self.assertIn(audience, AUDIENCE_CHOICES)
+        self.assertEqual(set(_AUDIENCE_ROLES["centre_students"]), {C.ROLE_STUDENT})
+        self.assertEqual(set(_AUDIENCE_ROLES["public_students"]), {C.ROLE_PUBLIC_STUDENT})
+        self.assertEqual(set(_AUDIENCE_ROLES["all_students"]), set(C.LEARNER_ROLES))
+        self.assertEqual(set(_AUDIENCE_ROLES["students"]), {C.ROLE_STUDENT})

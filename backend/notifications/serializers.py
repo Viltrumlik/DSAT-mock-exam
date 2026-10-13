@@ -25,8 +25,16 @@ AUDIENCE_ALL = "all"
 AUDIENCE_STUDENTS = "students"
 AUDIENCE_TEACHERS = "teachers"
 AUDIENCE_STAFF = "staff"
+#: Public vs learning center (plan 2026-10-13). ``students`` predates the split and keeps
+#: meaning the learning center's, so a saved habit never reaches the public by surprise.
+AUDIENCE_CENTRE_STUDENTS = "centre_students"
+AUDIENCE_PUBLIC_STUDENTS = "public_students"
+AUDIENCE_ALL_STUDENTS = "all_students"
 
-AUDIENCE_CHOICES = (AUDIENCE_ALL, AUDIENCE_STUDENTS, AUDIENCE_TEACHERS, AUDIENCE_STAFF)
+AUDIENCE_CHOICES = (
+    AUDIENCE_ALL, AUDIENCE_STUDENTS, AUDIENCE_TEACHERS, AUDIENCE_STAFF,
+    AUDIENCE_CENTRE_STUDENTS, AUDIENCE_PUBLIC_STUDENTS, AUDIENCE_ALL_STUDENTS,
+)
 
 
 class NotificationBroadcastSerializer(serializers.Serializer):

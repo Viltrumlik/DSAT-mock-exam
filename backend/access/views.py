@@ -32,6 +32,14 @@ from access.subject_mapping import domain_subject_to_platform
 User = get_user_model()
 logger = logging.getLogger("security.access")
 
+#: A public learner takes no learning-center content (plan 2026-10-13). A single named target is
+#: refused out loud; a bulk grant drops them, since the picker may list everyone.
+PUBLIC_TARGET_REFUSAL = "Public accounts cannot be given learning center content."
+
+
+def _centre_targets(users):
+    return [u for u in users if normalized_role(u) != C.ROLE_PUBLIC_STUDENT]
+
 
 class GrantAccessView(APIView):
     """
@@ -43,7 +51,7 @@ class GrantAccessView(APIView):
 
     def post(self, request):
         actor_role = normalized_role(request.user)
-        if actor_role == C.ROLE_STUDENT:
+        if actor_role in C.LEARNER_ROLES:
             return Response({"detail": "Forbidden."}, status=status.HTTP_403_FORBIDDEN)
 
         subject = str(request.data.get("subject") or "").strip().lower()
@@ -124,6 +132,8 @@ class GrantAccessView(APIView):
             target = User.objects.get(pk=uid)
         except User.DoesNotExist:
             return Response({"detail": "User not found."}, status=status.HTTP_404_NOT_FOUND)
+        if normalized_role(target) == C.ROLE_PUBLIC_STUDENT:
+            return Response({"detail": PUBLIC_TARGET_REFUSAL}, status=status.HTTP_400_BAD_REQUEST)
 
         with transaction.atomic():
             grant, was_created = UserAccess.objects.get_or_create(
@@ -380,7 +390,7 @@ class EngineGrantSubjectView(APIView):
         allowed = _actor_allowed_domains(request.user)
         if allowed is not None and subject not in allowed:
             return Response({"detail": "You may only grant your own subject."}, status=403)
-        users = list(User.objects.filter(pk__in=user_ids))
+        users = _centre_targets(User.objects.filter(pk__in=user_ids))
         try:
             result = AssignmentService.bulk_assign_subject(
                 users, subject, actor=request.user,
@@ -414,7 +424,7 @@ class EngineGrantResourceView(APIView):
         ok, serr = _targets_within_actor_scope(request.user, targets)
         if not ok:
             return Response({"detail": serr}, status=403)
-        users = list(User.objects.filter(pk__in=user_ids))
+        users = _centre_targets(User.objects.filter(pk__in=user_ids))
         try:
             result = AssignmentService.bulk_assign_targets(
                 users, targets, actor=request.user,

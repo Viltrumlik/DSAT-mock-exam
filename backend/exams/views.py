@@ -471,6 +471,10 @@ class PracticeTestPackStudentListView(generics.ListAPIView):
         user = self.request.user
         if not user.is_authenticated:
             return base.none()
+        # Packs are learning-center content; a public learner would otherwise fall through to
+        # the staff branch below and see every pack, published or not.
+        if normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT:
+            return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
             return base.filter(is_published=True)
         return base
@@ -492,6 +496,10 @@ class PracticeTestPackStudentDetailView(generics.RetrieveAPIView):
         )
         user = self.request.user
         if not user.is_authenticated:
+            return base.none()
+        # Packs are learning-center content; a public learner would otherwise fall through to
+        # the staff branch below and see every pack, published or not.
+        if normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT:
             return base.none()
         if normalized_role(user) == acc_const.ROLE_STUDENT:
             return base.filter(is_published=True)
@@ -1851,6 +1859,8 @@ class AdminMockExamViewSet(viewsets.ModelViewSet):
                 required_domains.add(d)
 
         def _may_receive_mock_portal(u) -> bool:
+            if normalized_role(u) == acc_const.ROLE_PUBLIC_STUDENT:
+                return False
             if normalized_role(u) != acc_const.ROLE_STUDENT:
                 return True
             if not required_domains:

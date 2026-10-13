@@ -15,10 +15,10 @@ from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from config.reliability import idempotency_key_from_request
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .access import can_start_mock
 from .idempotency import consume_idempotency_key
@@ -73,7 +73,8 @@ def _is_background_save(request) -> bool:
 
 
 class MockAttemptViewSet(viewsets.GenericViewSet):
-    permission_classes = [IsAuthenticated]
+    # Mocks are the one paper a public learner sits, so a frozen account (debt) is stopped here.
+    permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = MockAttemptSerializer
     lookup_value_regex = r"\d+"
 

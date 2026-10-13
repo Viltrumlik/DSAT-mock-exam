@@ -23,6 +23,9 @@ import logging
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from access import constants as acc_const
+from access.services import normalized_role
+
 from .models import MockAttempt, MockSession, MockSessionParticipant
 
 logger = logging.getLogger(__name__)
@@ -33,8 +36,10 @@ REASON_NOT_TODAY = "session_not_today"
 REASON_ALREADY_STARTED = "session_already_started"
 REASON_CLOSED = "session_closed"
 REASON_REJECTED = "session_rejected"
+REASON_CENTRE_ONLY = "centre_only"
 
 REASON_DETAIL = {
+    REASON_CENTRE_ONLY: "Mock sessions are for learning center students.",
     REASON_BAD_CODE: "That code doesn't match a sitting today. Check it with your teacher.",
     REASON_NOT_TODAY: "That code was for a different day.",
     REASON_ALREADY_STARTED: "This sitting has already started, so no one else can join it.",
@@ -68,6 +73,8 @@ def request_place(user, code, *, today=None) -> tuple[MockSessionParticipant | N
     so a student refreshing the page does not fill the teacher's queue with duplicates.
     A previously REJECTED student stays rejected — re-typing the code is not an appeal.
     """
+    if normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT:
+        return None, REASON_CENTRE_ONLY
     session = find_session_by_code(code, today=today)
     if session is None:
         return None, REASON_BAD_CODE
