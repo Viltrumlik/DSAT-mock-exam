@@ -32,6 +32,7 @@ from access.services import (
 )
 
 from .activity import blocking_protected_relations, with_activity_counts
+from .audience import NATIVE_APP_REFUSAL, refused_on_native_app, self_signup_role
 from .email_utils import normalize_email
 from .profile_completeness import missing_profile_fields
 from .email_verification import (
@@ -1394,6 +1395,8 @@ def _console_refusal_for(request, user):
             {"detail": "Teachers must sign in at the Teacher Portal: https://teacher.mastersat.uz"},
             status=status.HTTP_403_FORBIDDEN,
         )
+    if refused_on_native_app(request, user):
+        return Response({"detail": NATIVE_APP_REFUSAL}, status=status.HTTP_403_FORBIDDEN)
     return None
 
 
@@ -1480,7 +1483,7 @@ class GoogleAuthView(APIView):
                 username=username,
                 first_name=first_name,
                 last_name=last_name,
-                role=acc_const.ROLE_STUDENT,
+                role=self_signup_role(),
                 password=__import__("secrets").token_urlsafe(32),
             )
         else:
@@ -1736,7 +1739,7 @@ def _create_telegram_user(*, email: str, base_username: str, first_name: str, la
                     username=_unique_username(base_username),
                     first_name=first_name,
                     last_name=last_name,
-                    role=acc_const.ROLE_STUDENT,
+                    role=self_signup_role(),
                     password=secrets.token_urlsafe(32),
                 )
         except IntegrityError as exc:

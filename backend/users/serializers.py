@@ -609,7 +609,9 @@ class UserSerializer(serializers.ModelSerializer):
         if data.get("is_admin") is True:
             return acc_const.ROLE_ADMIN
         if data.get("is_admin") is False:
-            return acc_const.ROLE_STUDENT
+            # The legacy flag only ever chose a role at creation. On an edit it must not flip a
+            # public learner into a learning-center student behind everyone's back.
+            return None if getattr(self, "instance", None) is not None else acc_const.ROLE_STUDENT
         return None
 
     #: Privilege rank used to forbid assigning a role the actor does not outrank.
@@ -618,6 +620,7 @@ class UserSerializer(serializers.ModelSerializer):
     #: assign_access mint it. Pinned by a test that walks CANONICAL_ROLES.
     _ROLE_RANK = {
         acc_const.ROLE_STUDENT: 1,
+        acc_const.ROLE_PUBLIC_STUDENT: 1,
         acc_const.ROLE_SUPPORT_TEACHER: 2,
         acc_const.ROLE_TEACHER: 2,
         acc_const.ROLE_TEST_ADMIN: 3,
@@ -665,7 +668,13 @@ class UserSerializer(serializers.ModelSerializer):
             return rc
 
         if instance is None:
-            return acc_const.ROLE_STUDENT
+            # Signing up on the site is a public learner once the split is on; an administrator
+            # creating an account without naming a role still makes a learning-center student.
+            if self._actor_is_authenticated():
+                return acc_const.ROLE_STUDENT
+            from .audience import self_signup_role
+
+            return self_signup_role()
         return None
 
     def create(self, validated_data):
@@ -696,7 +705,7 @@ class UserSerializer(serializers.ModelSerializer):
             acc_const.ROLE_SUPER_ADMIN,
         ):
             validated_data["subject"] = None
-        elif role == acc_const.ROLE_STUDENT:
+        elif role in acc_const.LEARNER_ROLES:
             validated_data["subject"] = None
 
         password = validated_data.pop("password", None)
@@ -737,6 +746,7 @@ class UserSerializer(serializers.ModelSerializer):
                 acc_const.ROLE_TEST_AUDITOR,
                 acc_const.ROLE_SUPER_ADMIN,
                 acc_const.ROLE_STUDENT,
+                acc_const.ROLE_PUBLIC_STUDENT,
             ):
                 validated_data["subject"] = None
 

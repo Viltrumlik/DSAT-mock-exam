@@ -33,6 +33,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from midterms.views_teacher import IsTeacherOrStaff, _display_name
+from users.audience import NATIVE_APP_REFUSAL, is_public_learner
 from users.auth_cookies import is_native_client, set_auth_cookies
 from users.models import RefreshSession
 from users.views import _console_refusal_for, _session_fingerprint
@@ -56,6 +57,10 @@ class AuthCodeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        # Refused here, in the browser, rather than at the exchange: the student is still on
+        # the site and reads the answer there, instead of in an app that just failed to open.
+        if is_public_learner(request.user):
+            return Response({"detail": NATIVE_APP_REFUSAL}, status=status.HTTP_403_FORBIDDEN)
         challenge = str(request.data.get("challenge") or "").strip()
         if not _CHALLENGE_RE.match(challenge):
             return Response({"detail": "Invalid challenge."}, status=status.HTTP_400_BAD_REQUEST)

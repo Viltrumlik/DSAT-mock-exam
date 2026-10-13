@@ -71,7 +71,7 @@ def _release_blocked_reason(incumbent) -> str | None:
     if incumbent.email_verified:
         # They proved control. A later claimant cannot outrank that.
         return "incumbent_verified"
-    if str(getattr(incumbent, "role", "") or "").strip().lower() != acc_const.ROLE_STUDENT:
+    if str(getattr(incumbent, "role", "") or "").strip().lower() not in acc_const.LEARNER_ROLES:
         # Staff addresses are never transferable. Registration already discloses which
         # addresses exist, so a guessable info@/admin@ plus this rule would otherwise be
         # a route into an account that grants Django-admin access.

@@ -100,6 +100,10 @@ class User(AbstractUser):
         blank=True,
     )
     is_frozen = models.BooleanField(default=False, db_index=True)
+    #: Why the account is frozen. "" = an administrator froze it (the lc-up sync never touches those);
+    #: "lcup_debt" = the learner left the learning center owing money, lifted automatically once lc-up
+    #: shows the balance paid (users.audience).
+    frozen_reason = models.CharField(max_length=24, blank=True, default="", db_default="")
     # Canonical RBAC + scope fields
     role = models.CharField(
         max_length=30,
@@ -272,7 +276,7 @@ class User(AbstractUser):
         elif role == auth_const.ROLE_SUPER_ADMIN:
             if subj is not None:
                 raise ValidationError({"subject": "super_admin accounts must not have a subject set."})
-        elif role == auth_const.ROLE_STUDENT:
+        elif role in (auth_const.ROLE_STUDENT, auth_const.ROLE_PUBLIC_STUDENT):
             if subj is not None:
                 raise ValidationError({"subject": "Student accounts must not have a subject set."})
         elif subj is not None:
@@ -404,3 +408,27 @@ class EmailClaim(models.Model):
             and self.attempts < self.MAX_ATTEMPTS
             and self.expires_at > timezone.now()
         )
+
+
+class RoleChange(models.Model):
+    """Every move between the learner roles and every automatic freeze or unfreeze: who, from what to
+    what, why, and which classroom seats it removed — so ``split_public_students --revert`` can put
+    back exactly what the split changed, and /ops can count who joined or left (users.audience)."""
+
+    user = models.ForeignKey("users.User", on_delete=models.CASCADE, related_name="role_changes")
+    from_role = models.CharField(max_length=32)
+    to_role = models.CharField(max_length=32)
+    froze = models.BooleanField(default=False)
+    unfroze = models.BooleanField(default=False)
+    reason = models.CharField(max_length=32, db_index=True)
+    source = models.CharField(max_length=16)
+    lcup_run_id = models.PositiveIntegerField(null=True, blank=True)
+    removed_membership_ids = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    reverted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"{self.user_id}: {self.from_role} → {self.to_role} ({self.reason})"
