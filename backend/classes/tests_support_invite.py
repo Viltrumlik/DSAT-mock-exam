@@ -14,6 +14,7 @@ The rules the school asked for, and the seams where each could go wrong:
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -32,6 +33,16 @@ User = get_user_model()
 
 class SupportInviteTests(TestCase):
     def setUp(self):
+        # An invitation queues the guest's push and their email on commit, and ``.delay()``
+        # needs a broker no test run has: the push raises, the email swallows it after trying
+        # localhost. The bell row is what these tests read; neither send is under test.
+        for target in (
+            "notifications.tasks.send_push_for_notification.delay",
+            "classes.mail_support.send_support_invitation_email_task.delay",
+        ):
+            patcher = mock.patch(target)
+            patcher.start()
+            self.addCleanup(patcher.stop)
         self.client = APIClient()
         self.admin = User.objects.create_user("inv_admin@t.com", "secret123", role=C.ROLE_ADMIN)
         self.support = User.objects.create_user(

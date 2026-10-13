@@ -22,6 +22,8 @@ perfectly cheerful 200.
 
 from __future__ import annotations
 
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
@@ -145,7 +147,10 @@ class NothingAutomaticPaysClassworkTests(ClassworkFixture):
         )
         for q in questions:
             AssessmentAnswer.objects.create(attempt=attempt, question=q, answer="A")
-        with self.captureOnCommitCallbacks(execute=True):
+        # Grading notifies the student, and the push it queues on commit calls ``.delay()``,
+        # which needs a broker no test run has. The points are under test here, not the push.
+        with mock.patch("notifications.tasks.send_push_for_notification.delay"), \
+                self.captureOnCommitCallbacks(execute=True):
             grade_attempt(attempt_id=attempt.pk)
         return attempt
 

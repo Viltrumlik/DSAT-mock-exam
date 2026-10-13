@@ -88,10 +88,21 @@ class DueLessonDatesTests(AutoSessionFixture):
         # Tuesday: an ODD class does not meet. Monday is still due from the backfill.
         self.assertEqual(self.dates(now=at(MONDAY + timedelta(days=1), 12)), [MONDAY])
 
-    def test_missed_lesson_days_are_backfilled(self):
-        # Friday lunchtime, nobody has opened the page all week.
+    def test_a_lesson_whose_register_has_closed_is_not_backfilled(self):
+        """Friday lunchtime, nobody has opened the page all week.
+
+        Monday's and Wednesday's registers shut two hours after those lessons ended
+        (``attendance_window``), so opening them now would only add drafts nobody below a
+        global admin can write in. The default reach is one day, and Thursday is not a
+        lesson day.
+        """
+        friday = MONDAY + timedelta(days=4)
+        self.assertEqual(self.dates(now=at(friday, 12)), [friday])
+
+    def test_a_wider_backfill_still_reaches_back_when_asked(self):
+        # ``ensure_attendance_sessions --backfill-days`` passes this straight through.
         self.assertEqual(
-            self.dates(now=at(MONDAY + timedelta(days=4), 12)),
+            self.dates(now=at(MONDAY + timedelta(days=4), 12), backfill_days=4),
             [MONDAY, MONDAY + timedelta(days=2), MONDAY + timedelta(days=4)],
         )
 
@@ -128,8 +139,9 @@ class DueLessonDatesTests(AutoSessionFixture):
 
     def test_an_even_class_meets_on_the_other_days(self):
         even = self.make_class(lesson_days=Classroom.DAYS_EVEN)
+        # Reaching back to Monday on purpose: this is about which weekdays, not how far back.
         self.assertEqual(
-            self.dates(even, now=at(MONDAY + timedelta(days=3), 12)),
+            self.dates(even, now=at(MONDAY + timedelta(days=3), 12), backfill_days=3),
             [MONDAY + timedelta(days=1), MONDAY + timedelta(days=3)],
         )
 
@@ -175,15 +187,21 @@ class SessionsEndpointTests(AutoSessionFixture):
         super().setUp()
         self.client = APIClient()
         self.client.force_authenticate(self.owner)
+        # Monday 12:00, inside the 09:00 lesson's marking window (it shuts at 13:00). The views
+        # take no ``now``, so freeze the clock they read. The real one used to be good enough
+        # for the listing test, when a 14-day backfill always held a started lesson. A one-day
+        # backfill holds none on a Sunday, or on a Monday before 09:00, and the POSTs below
+        # are refused outside their lesson's window.
+        patcher = mock.patch("django.utils.timezone.now", return_value=at(MONDAY, 12))
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def url(self, classroom=None):
         return f"/api/classes/{(classroom or self.classroom).id}/attendance/sessions/"
 
     def test_listing_opens_the_register_for_a_lesson_that_has_started(self):
         # Materialisation runs on read as well as from cron, so a school with no scheduler
-        # still gets today's register when the teacher opens the page. This one runs against
-        # the real clock on purpose — it is the path a teacher actually takes. An ODD class
-        # meets three times a week, so a 14-day window always contains a started lesson.
+        # still gets today's register when the teacher opens the page.
         self.assertEqual(AttendanceSession.objects.count(), 0)
         body = self.client.get(self.url()).json()
         self.assertGreater(len(body["sessions"]), 0)
@@ -213,7 +231,7 @@ class SessionsEndpointTests(AutoSessionFixture):
 
     def test_a_title_sent_by_an_old_client_is_ignored(self):
         r = self.client.post(
-            self.url(), {"date": "2026-06-03", "title": "Week 2 revision"}, format="json"
+            self.url(), {"date": "2026-06-01", "title": "Week 2 revision"}, format="json"
         )
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.json()["title"], "")
