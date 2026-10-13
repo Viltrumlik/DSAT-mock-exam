@@ -1103,6 +1103,14 @@ class ClientAuthTelemetryIngestView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+_KIND_FILTERS = {
+    "centre": Q(role=acc_const.ROLE_STUDENT, is_frozen=False),
+    "public": Q(role=acc_const.ROLE_PUBLIC_STUDENT, is_frozen=False),
+    "frozen_debt": Q(is_frozen=True, frozen_reason="lcup_debt"),
+    "frozen_admin": Q(is_frozen=True, role__in=acc_const.LEARNER_ROLES) & ~Q(frozen_reason="lcup_debt"),
+}
+
+
 class UserListView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [HasManageUsersOrAssignTestAccess]
@@ -1151,6 +1159,11 @@ class UserListView(generics.ListAPIView):
         role = (self.request.query_params.get("role") or "").strip().lower()
         if role:
             qs = qs.filter(role=role)
+        # `?kind=` is the /ops split (users.audience.kind_of), and like `?role=` an unknown value
+        # narrows to nothing rather than being ignored.
+        kind = (self.request.query_params.get("kind") or "").strip().lower()
+        if kind:
+            qs = qs.filter(_KIND_FILTERS[kind]) if kind in _KIND_FILTERS else qs.none()
         return qs
 
 class UserCreateView(generics.CreateAPIView):
@@ -1259,13 +1272,15 @@ class UserBulkActionView(APIView):
                 continue
             try:
                 with transaction.atomic():
+                    # A staff freeze is the staff's: clearing frozen_reason keeps the lc-up
+                    # sync from lifting it as "debt paid".
                     if action == "freeze":
-                        target.is_frozen = True
-                        target.save(update_fields=["is_frozen"])
+                        target.is_frozen, target.frozen_reason = True, ""
+                        target.save(update_fields=["is_frozen", "frozen_reason"])
                         results.append({"id": uid, "ok": True, "is_frozen": True})
                     elif action == "unfreeze":
-                        target.is_frozen = False
-                        target.save(update_fields=["is_frozen"])
+                        target.is_frozen, target.frozen_reason = False, ""
+                        target.save(update_fields=["is_frozen", "frozen_reason"])
                         results.append({"id": uid, "ok": True, "is_frozen": False})
                     else:  # delete
                         email = target.email

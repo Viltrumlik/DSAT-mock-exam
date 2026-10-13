@@ -372,6 +372,13 @@ class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     is_admin = serializers.BooleanField(write_only=True, required=False)
     role = serializers.CharField(required=False)
+    #: centre / public / frozen_debt / frozen_admin / staff — how /ops groups the account.
+    kind = serializers.SerializerMethodField()
+
+    def get_kind(self, obj) -> str:
+        from .audience import kind_of
+
+        return kind_of(obj)
     subject = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     class_teacher_eligible = serializers.SerializerMethodField()
     bulk_assign_profile = serializers.SerializerMethodField()
@@ -499,6 +506,8 @@ class UserSerializer(serializers.ModelSerializer):
             "is_admin",
             "is_active",
             "is_frozen",
+            "frozen_reason",
+            "kind",
             "date_joined",
             "last_login",
             "email_verified",
@@ -532,6 +541,8 @@ class UserSerializer(serializers.ModelSerializer):
             "email_verified_at",
             "email_released_at",
             "previous_email",
+            # Only the lc-up sync sets "lcup_debt"; a staff freeze or unfreeze clears it (update).
+            "frozen_reason",
         ]
 
     def _normalize_role(self, raw: str | None) -> str | None:
@@ -751,6 +762,9 @@ class UserSerializer(serializers.ModelSerializer):
                 validated_data["subject"] = None
 
         password = validated_data.pop("password", None)
+        if "is_frozen" in validated_data and bool(validated_data["is_frozen"]) != bool(instance.is_frozen):
+            # A freeze a person sets or lifts is theirs: the sync must never lift it as "debt paid".
+            validated_data["frozen_reason"] = ""
         user = super().update(instance, validated_data)
         if password:
             user.set_password(password)
