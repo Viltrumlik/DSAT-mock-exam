@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import api, { classesApi } from "@/lib/api";
-import { requiresSubject } from "@/lib/roles";
+import { useQuery } from "@tanstack/react-query";
+import {
+  CANONICAL_ROLES,
+  ROLE_LABELS as CANONICAL_ROLE_LABELS,
+  requiresSubject,
+  type CanonicalRole,
+} from "@/lib/roles";
+import { usersAdminApi, type LearnerKind } from "@/lib/usersAdminApi";
 import {
   Search,
   UserCheck,
@@ -34,6 +41,10 @@ type UserRecord = {
   role: string;
   is_active: boolean;
   is_frozen: boolean;
+  /** centre / public / frozen_debt / frozen_admin / staff (users.audience.kind_of). */
+  kind?: string;
+  /** "lcup_debt" when the lc-up sync froze the account for a debt; "" for anything else. */
+  frozen_reason?: string;
   subject?: string | null;
   date_joined?: string;
   last_login?: string | null;
@@ -59,7 +70,28 @@ function activeClassrooms(u: UserRecord): { id: number; name: string; subject?: 
   );
 }
 
-type RoleFilter = "all" | "student" | "teacher" | "support_teacher" | "test_admin" | "test_auditor" | "admin" | "super_admin";
+type RoleFilter = "all" | CanonicalRole;
+
+/** The public vs learning-center split (owner, 2026-10-13), filtered by the server (`?kind=`). */
+type KindFilter = "all" | LearnerKind;
+
+const KIND_LABELS: Record<string, string> = {
+  centre: "Learning center",
+  public: "Public",
+  frozen_debt: "Frozen — debt",
+  frozen_admin: "Frozen — admin",
+};
+
+const KIND_COLORS: Record<string, string> = {
+  centre: "bg-blue-100 text-blue-800",
+  public: "bg-sky-100 text-sky-800",
+  frozen_debt: "bg-amber-100 text-amber-800",
+  frozen_admin: "bg-slate-100 text-slate-700",
+};
+
+const isRoleFilter = (v: string | null): v is RoleFilter =>
+  v === "all" || (CANONICAL_ROLES as readonly string[]).includes(v ?? "");
+const isKindFilter = (v: string | null): v is KindFilter => v === "all" || (v ?? "") in KIND_LABELS;
 
 /** Normalized full name, used to group duplicate registrations. */
 function fullNameKey(u: UserRecord): string {
@@ -90,20 +122,13 @@ const ACTION_PAST: Record<BulkAction, string> = {
   delete: "deleted",
 };
 
-const ALL_ROLES = ["student", "teacher", "support_teacher", "test_admin", "test_auditor", "admin", "super_admin"] as const;
+const ALL_ROLES = CANONICAL_ROLES;
 
-const ROLE_LABELS: Record<string, string> = {
-  student: "Student",
-  teacher: "Teacher",
-  support_teacher: "Support teacher",
-  test_admin: "Test admin",
-  test_auditor: "Test auditor",
-  admin: "Admin",
-  super_admin: "Super admin",
-};
+const ROLE_LABELS: Record<string, string> = CANONICAL_ROLE_LABELS;
 
 const ROLE_COLORS: Record<string, string> = {
   student: "bg-blue-100 text-blue-800",
+  public_student: "bg-sky-100 text-sky-800",
   teacher: "bg-teal-100 text-teal-800",
   support_teacher: "bg-emerald-100 text-emerald-800",
   test_admin: "bg-amber-100 text-amber-800",
@@ -490,6 +515,11 @@ export default function OpsUsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
+  const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  // `?role=` / `?kind=` are read once before the first load, so a dashboard link lands on its
+  // list instead of loading everyone and then reloading.
+  const [filtersReady, setFiltersReady] = useState(false);
+  const population = useQuery({ queryKey: ["users", "population"], queryFn: usersAdminApi.population });
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "frozen">("all");
   const [verifiedFilter, setVerifiedFilter] = useState<"all" | "verified" | "unverified">("all");
   // Duplicate registrations are the reason this screen grew a verified column: prod has
@@ -513,6 +543,7 @@ export default function OpsUsersPage() {
           limit: 500,
           offset: 0,
           ...(roleFilter !== "all" ? { role: roleFilter } : {}),
+          ...(kindFilter !== "all" ? { kind: kindFilter } : {}),
         },
       });
       const items: UserRecord[] = Array.isArray(r.data)
@@ -535,9 +566,19 @@ export default function OpsUsersPage() {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const role = params.get("role");
+    const kind = params.get("kind");
+    if (isRoleFilter(role)) setRoleFilter(role);
+    if (isKindFilter(kind)) setKindFilter(kind);
+    setFiltersReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!filtersReady) return;
     loadUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleFilter]);
+  }, [roleFilter, kindFilter, filtersReady]);
 
   const handleSaved = (updated: UserRecord) => {
     setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
@@ -716,6 +757,13 @@ export default function OpsUsersPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Click any user row to edit their role, status, or subject.
           </p>
+          {/* Nothing rather than zeros while it loads or if it fails: a count is a claim. */}
+          {population.data ? (
+            <p className="mt-1 text-sm text-muted-foreground tabular-nums">
+              Learning center {population.data.centre} · Public {population.data.public} · Frozen — debt{" "}
+              {population.data.frozen_debt}
+            </p>
+          ) : null}
         </div>
         <button
           type="button"
@@ -760,12 +808,25 @@ export default function OpsUsersPage() {
         >
           <option value="all">All roles</option>
           <option value="student">Students</option>
+          <option value="public_student">Public students</option>
           <option value="teacher">Teachers</option>
           <option value="test_admin">Test admins</option>
           <option value="support_teacher">Support teachers</option>
           <option value="test_auditor">Test auditors</option>
           <option value="admin">Admins</option>
           <option value="super_admin">Super admins</option>
+        </select>
+        <select
+          value={kindFilter}
+          aria-label="Kind"
+          onChange={(e) => { setKindFilter(e.target.value as KindFilter); setPage(1); }}
+          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+        >
+          <option value="all">All kinds</option>
+          <option value="centre">Learning center</option>
+          <option value="public">Public</option>
+          <option value="frozen_debt">Frozen — debt</option>
+          <option value="frozen_admin">Frozen — admin</option>
         </select>
         <select
           value={statusFilter}
@@ -883,6 +944,9 @@ export default function OpsUsersPage() {
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden sm:table-cell">
                     Role
                   </th>
+                  <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden sm:table-cell">
+                    Kind
+                  </th>
                   <th className="text-left px-4 py-3 text-[10px] font-bold text-muted-foreground uppercase tracking-widest whitespace-nowrap hidden md:table-cell">
                     Subject
                   </th>
@@ -983,6 +1047,16 @@ export default function OpsUsersPage() {
                         <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", roleColor)}>
                           {roleLabel}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap hidden sm:table-cell">
+                        {/* Staff have no kind: the split is about learners. */}
+                        {u.kind && KIND_LABELS[u.kind] ? (
+                          <span className={cn("inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide", KIND_COLORS[u.kind])}>
+                            {KIND_LABELS[u.kind]}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-sm text-muted-foreground hidden md:table-cell">
                         {u.subject ?? "—"}

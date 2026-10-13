@@ -26,6 +26,7 @@ import {
   Images,
   Smartphone,
   RefreshCw,
+  Megaphone,
 } from "lucide-react";
 
 /**
@@ -160,6 +161,15 @@ const OPS_NAV = [
     href: "/ops/mobile",
     label: "Mobile app",
     icon: Smartphone,
+    exact: false,
+    superAdminOnly: true,
+  },
+  {
+    // One announcement to the learning center's students, the public learners, or everyone.
+    // Super admins only, like the endpoint: a broadcast cannot be recalled.
+    href: "/ops/broadcast",
+    label: "Broadcast",
+    icon: Megaphone,
     exact: false,
     superAdminOnly: true,
   },
