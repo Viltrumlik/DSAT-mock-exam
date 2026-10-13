@@ -47,8 +47,11 @@ def refused_on_native_app(request, user) -> bool:
     """True when ``user`` is a public learner and ``request`` comes from the iOS or Windows app."""
     from .auth_cookies import NATIVE_CLIENT_HEADER
 
-    client = str(request.headers.get(NATIVE_CLIENT_HEADER, "") or "").strip().lower()
-    return is_public_learner(user) and client.startswith(_CENTRE_APP_CLIENTS)
+    if not is_public_learner(user):
+        return False
+    headers = getattr(request, "headers", None) or {}
+    client = str(headers.get(NATIVE_CLIENT_HEADER, "") or "").strip().lower()
+    return client.startswith(_CENTRE_APP_CLIENTS)
 
 
 def kind_of(user) -> str:
