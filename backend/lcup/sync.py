@@ -33,6 +33,7 @@ from . import audience
 from .accounts import create_account_for, create_teacher_account_for
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
+from .follow import archive_class, follow_details, follow_teachers, reopen_class
 from .matching import SUPPORTER_REASON, match_student, match_supporter, match_teacher, subject_from, suggest_classroom
 from .models import (
     GroupLinkStatus,
@@ -189,24 +190,33 @@ def _groups(client, run: _Run) -> None:
 
     for row in rows:
         link, _ = LcupGroupLink.objects.get_or_create(lcup_group_id=row["id"], defaults={"name": (row.get("name") or "")[:200]})
+        # What lc-up said last run: the paired class follows what changed since (follow.py).
+        previous = link.snapshot or {}
+        was_deleted = link.deleted_in_lcup_at is not None
+        paired = bool(link.classroom_id) and link.status == GroupLinkStatus.CONFIRMED
         link.name = (row.get("name") or "")[:200]
         link.snapshot = row
         link.last_seen_at = run.now
         if row.get("deleted_at"):
-            if link.deleted_in_lcup_at is None:
+            if not was_deleted:
                 link.deleted_in_lcup_at = run.now
                 # Only a paired group's deletion means anything here; lc-up keeps years of old ones.
-                if link.classroom_id:
-                    run.alerts.append(
-                        f"lc-up group deleted: {link.name}; its class {link.classroom.name} no longer follows lc-up"
-                    )
+                if paired and archive_class(link, run.now, run.alerts):
+                    run.counts["classes_archived"] += 1
             link.save()
             continue
         link.deleted_in_lcup_at = None
+        if was_deleted and paired and reopen_class(link, run.alerts):
+            run.counts["classes_restored"] += 1
         link.save()
         if run.review_done and link.status != GroupLinkStatus.IGNORED:
             # Before teachers_for(row): a new group with a new teacher gets its class this run.
             _teacher_accounts(row, run)
+        if paired:
+            run.counts["classes_updated"] += int(bool(follow_details(link.classroom, previous, row, run.alerts)))
+            for key, n in follow_teachers(link, previous, row, run.alerts).items():
+                run.counts[key] += n
+            continue
         if link.classroom_id or link.status not in (GroupLinkStatus.SUGGESTED, GroupLinkStatus.NEEDS_TEACHER):
             continue
 

@@ -179,9 +179,8 @@ class SyncTests(TestCase):
         data = lcup_data()
         data[f"{API}/groups"][0]["deleted_at"] = "2026-10-12 10:00:00"
         run = self.run_sync(data)
-        self.assertIn(
-            "lc-up group deleted: Junior G21 | Math | Vali; its class Junior G21 Math no longer follows lc-up", run.alerts
-        )
+        # Its class is archived too (tests_follow.py has the rest of that).
+        self.assertIn("lc-up group deleted: Junior G21 | Math | Vali; its class Junior G21 Math was archived", run.alerts)
         self.assertEqual(self.run_sync(data).alerts, [])  # said once, not every 15 minutes
 
     def test_after_the_review_accounts_and_missing_classes_are_created(self):

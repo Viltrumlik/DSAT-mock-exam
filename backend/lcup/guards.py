@@ -19,7 +19,10 @@ from .models import AccountClaim, GroupLinkStatus, LcupGroupLink
 def is_lcup_managed(classroom) -> bool:
     if not lcup_enabled() or classroom is None:
         return False
-    return LcupGroupLink.objects.filter(classroom=classroom, status=GroupLinkStatus.CONFIRMED).exists()
+    # A deleted group's class no longer follows lc-up, so its roster is ours to edit again.
+    return LcupGroupLink.objects.filter(
+        classroom=classroom, status=GroupLinkStatus.CONFIRMED, deleted_in_lcup_at__isnull=True
+    ).exists()
 
 
 def lcup_managed_response() -> Response:

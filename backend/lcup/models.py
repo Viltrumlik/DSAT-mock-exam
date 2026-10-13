@@ -117,6 +117,9 @@ class LcupGroupLink(models.Model):
     suggestion_score = models.FloatField(default=0)
     suggestion_reasons = models.JSONField(default=list, blank=True)
     deleted_in_lcup_at = models.DateTimeField(null=True, blank=True)
+    #: When the sync archived ``classroom`` because lc-up deleted the group. A restore in lc-up
+    #: reopens only a class archived this way — never one an admin had archived already.
+    class_archived_at = models.DateTimeField(null=True, blank=True)
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
