@@ -11,6 +11,12 @@ import unicodedata
 
 _NON_DIGIT = re.compile(r"\D+")
 _APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "ʻ": "'", "ʼ": "'", "`": "'"})
+# Uzbek/Russian surname endings, matched case-insensitively and without apostrophes ("Azamato'va" is
+# "-ova"). "-jonov", "-yeva" and the like already end in "-ov"/"-eva"; they are listed so the rule reads
+# the way people describe it.
+_SURNAME_SUFFIXES = (
+    "ov", "ova", "ev", "eva", "yev", "yeva", "iy", "aya", "off", "jonov", "jonova", "xonov", "xonova",
+)
 
 
 def normalize_phone(raw) -> str | None:
@@ -26,12 +32,23 @@ def _clean(full) -> str:
     return " ".join(unicodedata.normalize("NFKC", str(full or "")).translate(_APOSTROPHES).split())
 
 
+def _has_surname_suffix(word: str) -> bool:
+    return word.replace("'", "").casefold().endswith(_SURNAME_SUFFIXES)
+
+
 def split_lcup_name(full) -> tuple[str, str]:
-    """lc-up writes "Last First [Patronymic]"; ours keeps first and last apart."""
+    """lc-up has no fixed order ("Karimova Malika", "Muhammadyor Holiqjonov"); ours keeps first and last apart.
+
+    The surname is the one word with a surname ending, wherever it stands. When no word or several words
+    have one, the first word is the surname. The other words, in their order, are the first name, so a
+    patronymic ("Ali o'g'li", "qizi") stays with it.
+    """
     parts = _clean(full).split(" ")
     if len(parts) < 2:
         return (parts[0], "")
-    return (" ".join(parts[1:]), parts[0])
+    suffixed = [i for i, word in enumerate(parts) if _has_surname_suffix(word)]
+    at = suffixed[0] if len(suffixed) == 1 else 0
+    return (" ".join(parts[:at] + parts[at + 1:]), parts[at])
 
 
 def name_tokens(full) -> frozenset[str]:
