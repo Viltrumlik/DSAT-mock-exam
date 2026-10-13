@@ -17,6 +17,7 @@ the integration may be able to send it by accident.
 
 from __future__ import annotations
 
+import re
 import time
 
 import requests
@@ -45,6 +46,23 @@ class LcupAuthError(LcupError):
 
 class LcupUnavailable(LcupError):
     """lc-up could not be reached, or kept answering 5xx/429 after the retries."""
+
+
+def _refusal_reason(resp) -> str:
+    """lc-up's own words for a refused login, for the admin's run log. Any long number is masked:
+    the message may quote back the phone we sent."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return ""
+    if not isinstance(body, dict):
+        return ""
+    message = body.get("message") if isinstance(body.get("message"), str) else ""
+    fields = sorted(body["errors"]) if isinstance(body.get("errors"), dict) else []
+    reason = re.sub(r"\d{5,}", "…", message.strip())[:160]
+    if fields:
+        reason = f"{reason} [{', '.join(fields)}]".strip()
+    return f": {reason}" if reason else ""
 
 
 def _retry_after(resp, attempt: int) -> float:
@@ -128,7 +146,7 @@ class LcupClient:
         resp = self._send("POST", "/api/dev/login", json=self._creds, token=None)
         if resp.status_code != 200:
             self.cache.delete(TOKEN_KEY)
-            raise LcupAuthError(f"lc-up refused the login ({resp.status_code})")
+            raise LcupAuthError(f"lc-up refused the login ({resp.status_code}){_refusal_reason(resp)}")
         token = ((resp.json() or {}).get("data") or {}).get("access_token")
         if not isinstance(token, str) or not token:
             raise LcupAuthError("lc-up login returned no access_token")

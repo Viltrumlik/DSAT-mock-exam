@@ -132,7 +132,14 @@ class SyncTests(TestCase):
         self.assertEqual((g21.status, g21.suggestion_id, g21.classroom_id), (GroupLinkStatus.SUGGESTED, self.room.pk, None))
         self.assertEqual(LcupGroupLink.objects.get(lcup_group_id=11).status, GroupLinkStatus.NEEDS_TEACHER)
         self.assertIsNotNone(LcupGroupLink.objects.get(lcup_group_id=12).deleted_in_lcup_at)
-        self.assertIn("lc-up group deleted: Junior G9 | Math | Old", run.alerts)
+        # A group deleted before it was ever paired concerns no class: recorded, not alerted.
+        self.assertFalse([a for a in run.alerts if "Junior G9" in a], run.alerts)
+        self.assertEqual(
+            {k: run.counts[k] for k in ("groups", "groups_live", "groups_suggested", "groups_needs_teacher")},
+            {"groups": 4, "groups_live": 3, "groups_suggested": 2, "groups_needs_teacher": 1},
+        )
+        self.assertEqual(run.counts["groups_new_class_after_review"], 1)  # G3: a linked teacher, no candidate class
+        self.assertEqual(run.counts["students_unmatched"], 1)  # Aziz: an account after the review
         # A group with a linked teacher but no candidate waits for the initial review.
         self.assertIsNone(LcupGroupLink.objects.get(lcup_group_id=13).classroom_id)
 
@@ -151,6 +158,31 @@ class SyncTests(TestCase):
         run = self.run_sync()
         self.assertEqual(self.active_students(), {self.s1.pk})
         self.assertEqual(run.counts["added"], 1)
+
+    def test_a_student_with_no_phone_links_by_exact_name_once_the_group_is_paired(self):
+        aziz = User.objects.create_user(
+            None, password=None, username="aziz", role="student", first_name="Aziz", last_name="Tursunov"
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=aziz, role="STUDENT")
+        self.run_sync()
+        self.assertEqual(LcupStudentLink.objects.get(lcup_student_id=102).status, LinkStatus.UNMATCHED)
+        self.confirm_g21()
+        run = self.run_sync()
+        link = LcupStudentLink.objects.get(lcup_student_id=102)
+        self.assertEqual((link.status, link.user_id), (LinkStatus.AUTO, aziz.pk))
+        self.assertEqual(run.counts["students_auto_linked"], 1)
+        self.assertEqual(self.active_students(), {self.s1.pk, aziz.pk})
+
+    def test_a_paired_group_deleted_in_lcup_is_an_alert(self):
+        self.run_sync()
+        self.confirm_g21()
+        data = lcup_data()
+        data[f"{API}/groups"][0]["deleted_at"] = "2026-10-12 10:00:00"
+        run = self.run_sync(data)
+        self.assertIn(
+            "lc-up group deleted: Junior G21 | Math | Vali; its class Junior G21 Math no longer follows lc-up", run.alerts
+        )
+        self.assertEqual(self.run_sync(data).alerts, [])  # said once, not every 15 minutes
 
     def test_after_the_review_accounts_and_missing_classes_are_created(self):
         self.run_sync()

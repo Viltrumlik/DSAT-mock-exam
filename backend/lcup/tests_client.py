@@ -2,8 +2,9 @@ import itertools
 
 import requests
 from django.core.cache.backends.locmem import LocMemCache
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
+from lcup.conf import credentials
 from lcup.client import (
     LOCK_KEY,
     SLOT_KEYS,
@@ -29,6 +30,11 @@ class FakeResponse:
 
     def json(self):
         return self._body
+
+
+class HtmlResponse(FakeResponse):
+    def json(self):
+        raise ValueError("not JSON")
 
 
 class StubSession:
@@ -112,6 +118,22 @@ class TokenTests(SimpleTestCase):
             client.get("/api/external/v1/me")
         self.assertIsNone(client.cache.get(TOKEN_KEY))
 
+    def test_a_refused_login_says_why_without_repeating_any_number(self):
+        body = {"message": "The mobile number 998900000000 is invalid.", "errors": {"mobile_number": ["invalid"]}}
+        client, _, _ = make([FakeResponse(422, body)])
+        with self.assertRaises(LcupAuthError) as caught:
+            client.get("/api/external/v1/me")
+        text = str(caught.exception)
+        self.assertIn("(422)", text)
+        self.assertIn("is invalid", text)
+        self.assertIn("mobile_number", text)
+        self.assertNotIn("998900000000", text)
+
+    def test_a_refused_login_with_no_json_body_still_raises_cleanly(self):
+        client, _, _ = make([HtmlResponse(500)])
+        with self.assertRaisesMessage(LcupAuthError, "lc-up refused the login (500)"):
+            client.get("/api/external/v1/me")
+
     def test_waits_for_another_process_that_holds_the_login_lock(self):
         cache = fresh_cache()
         cache.add(LOCK_KEY, "1", timeout=30)
@@ -168,3 +190,15 @@ class SafetyTests(SimpleTestCase):
         client, _, sleeps = make([login_ok(), ok()], cache=cache)
         client.get("/api/external/v1/me")
         self.assertAlmostEqual(sleeps[0], 17 * 60 - 1000 + 0.05, places=2)
+
+
+class CredentialsTests(SimpleTestCase):
+    @override_settings(
+        LCUP_BASE_URL="https://lcup.test/", LCUP_DOMAIN=" centre ", LCUP_MOBILE="+998 90 123-45-67", LCUP_PASSWORD=" p w "
+    )
+    def test_the_phone_goes_to_lcup_as_digits_only(self):
+        # lc-up's login answers 422 to "+998…"; people write phones every which way.
+        self.assertEqual(
+            credentials(),
+            {"base_url": "https://lcup.test", "domain": "centre", "mobile": "998901234567", "password": " p w "},
+        )

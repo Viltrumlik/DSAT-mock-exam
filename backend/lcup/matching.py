@@ -2,10 +2,12 @@
 
 **An automatic link needs two signals; one signal only proposes.** A phone alone can belong to a
 parent who registered two children, and a name alone repeats across a school. So a student links
-automatically only on phone *and* a shared name token; a phone with a different name, a name
-inside the paired class, or a phone lc-up itself gives to two children all go to the admin's
-review queue with the candidates attached. Teachers are fewer and their phones are their own, so a
-unique phone is enough for them.
+automatically on phone *and* a shared name token, or — since most of our students never gave us a
+phone — on their exact full name inside the class an admin paired with the lc-up group, when they
+are the only such student there and their account carries no other phone. A phone with a different
+name, a close-but-not-exact name in the paired class, or a phone lc-up itself gives to two children
+all go to the admin's review queue with the candidates attached. Teachers are fewer and their
+phones are their own, so a unique phone is enough for them.
 
 A user already linked to another lc-up record is never a candidate: one account, one lc-up row.
 """
@@ -99,6 +101,12 @@ def _names_close(a: frozenset, b: frozenset) -> bool:
     return bool(a) and (a == b or len(a & b) >= 2)
 
 
+def _exact_name_without_another_phone(user, tokens: frozenset) -> bool:
+    # Two words at least ("Malika" alone repeats), every word the same, and no phone of their own:
+    # a phone equal to lc-up's was matched above, so any phone here is someone else's number.
+    return len(tokens) >= 2 and name_tokens(_full_name(user)) == tokens and not (user.phone_number or "").strip()
+
+
 def match_student(link, *, shared_phones: set[str], class_user_ids: set[int]) -> MatchResult:
     pool = User.objects.filter(role=acc_const.ROLE_STUDENT).filter(
         Q(lcup_student_link__isnull=True) | Q(lcup_student_link=link)
@@ -123,6 +131,13 @@ def match_student(link, *, shared_phones: set[str], class_user_ids: set[int]) ->
         )
     if class_user_ids:
         in_class = [u for u in pool.filter(pk__in=class_user_ids) if _names_close(tokens, name_tokens(_full_name(u)))]
+        if len(in_class) == 1 and _exact_name_without_another_phone(in_class[0], tokens):
+            return MatchResult(
+                in_class[0].pk,
+                LinkStatus.AUTO,
+                "exact name in paired class",
+                [_candidate(in_class[0], "exact name in paired class")],
+            )
         if len(in_class) == 1:
             return MatchResult(
                 None, LinkStatus.NEEDS_REVIEW, "name in paired class", [_candidate(in_class[0], "name in paired class")]

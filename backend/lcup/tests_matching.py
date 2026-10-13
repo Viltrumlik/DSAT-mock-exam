@@ -79,13 +79,48 @@ class StudentMatchTests(TestCase):
         result = match_student(link, shared_phones={"998901234567"}, class_user_ids=set())
         self.assertEqual((result.status, result.reason), (LinkStatus.NEEDS_REVIEW, "phone shared by siblings in lc-up"))
 
-    def test_name_in_the_paired_class_goes_to_review(self):
+    def test_the_exact_name_in_the_paired_class_links_automatically(self):
+        # Most of our students never gave us a phone: the class an admin paired is the second signal.
         s = student("s1", first="Malika", last="Karimova")
-        student("s2", first="Aziza", last="Tursunova")
+        other = student("s2", first="Aziza", last="Tursunova")
         link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika", phone="998907777777")
+        result = match_student(link, shared_phones=set(), class_user_ids={s.pk, other.pk})
+        self.assertEqual(
+            (result.status, result.user_id, result.reason), (LinkStatus.AUTO, s.pk, "exact name in paired class")
+        )
+
+    def test_a_close_name_in_the_paired_class_goes_to_review(self):
+        s = student("s1", first="Malika", last="Karimova")
+        link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika Akmal qizi", phone="998907777777")
         result = match_student(link, shared_phones=set(), class_user_ids={s.pk})
         self.assertEqual((result.status, result.reason), (LinkStatus.NEEDS_REVIEW, "name in paired class"))
         self.assertEqual([c["user_id"] for c in result.candidates], [s.pk])
+
+    def test_an_exact_name_whose_account_has_another_phone_goes_to_review(self):
+        s = student("s1", phone="998901111111", first="Malika", last="Karimova")
+        link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika", phone="998907777777")
+        result = match_student(link, shared_phones=set(), class_user_ids={s.pk})
+        self.assertEqual((result.status, result.user_id), (LinkStatus.NEEDS_REVIEW, None))
+        self.assertEqual([c["user_id"] for c in result.candidates], [s.pk])
+
+    def test_a_one_word_name_is_never_enough(self):
+        s = student("s1", first="Malika")
+        link = LcupStudentLink.objects.create(lcup_student_id=1, name="Malika", phone="998907777777")
+        result = match_student(link, shared_phones=set(), class_user_ids={s.pk})
+        self.assertEqual((result.status, result.user_id), (LinkStatus.NEEDS_REVIEW, None))
+
+    def test_two_namesakes_in_the_paired_class_go_to_review(self):
+        a = student("s1", first="Malika", last="Karimova")
+        b = student("s2", first="Malika", last="Karimova")
+        link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika", phone="998907777777")
+        result = match_student(link, shared_phones=set(), class_user_ids={a.pk, b.pk})
+        self.assertEqual((result.status, result.reason), (LinkStatus.NEEDS_REVIEW, "several names in paired class"))
+        self.assertEqual(sorted(c["user_id"] for c in result.candidates), sorted([a.pk, b.pk]))
+
+    def test_the_exact_name_outside_the_paired_class_is_no_match(self):
+        student("s1", first="Malika", last="Karimova")
+        link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika", phone="998907777777")
+        self.assertEqual(match_student(link, shared_phones=set(), class_user_ids=set()).status, LinkStatus.UNMATCHED)
 
     def test_no_match(self):
         link = LcupStudentLink.objects.create(lcup_student_id=1, name="Karimova Malika", phone="998907777777")
