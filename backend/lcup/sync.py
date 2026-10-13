@@ -25,12 +25,13 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.dateparse import parse_date, parse_datetime
 
+from access import constants as acc_const
 from classes.models import Branch, ClassroomMembership
 
 from .accounts import create_account_for
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
-from .matching import match_student, match_teacher, suggest_classroom
+from .matching import SUPPORTER_REASON, match_student, match_supporter, match_teacher, suggest_classroom
 from .models import (
     GroupLinkStatus,
     LcupFilialLink,
@@ -127,10 +128,34 @@ def _teachers(client, run: _Run) -> None:
                 "last_seen_at": run.now,
             },
         )
+        if _is_supporter(row):
+            _settle_supporter(link)
+            run.counts["teachers_support"] += 1
+            continue
+        if link.status == LinkStatus.IGNORED and link.match_reason == SUPPORTER_REASON:
+            # lc-up made them an ordinary teacher again: match them afresh.
+            link.status, link.match_reason, link.user = LinkStatus.UNMATCHED, "", None
         if link.status in _SETTLED or (link.status == LinkStatus.AUTO and link.user_id):
             continue
         _apply_match(link, match_teacher(link), run, "teachers")
     run.counts["teachers"] = len(rows)
+
+
+def _is_supporter(row) -> bool:
+    return row.get("is_supporter") in (True, 1, "1", "true", "True")
+
+
+def _settle_supporter(link) -> None:
+    """A support teacher is no lc-up group teacher: settle the link as ignored, on our support
+    teacher account when one is found (or already linked), never on a teacher's."""
+    user = link.user if link.user is not None and link.user.role == acc_const.ROLE_SUPPORT_TEACHER else match_supporter(link)
+    if link.status == LinkStatus.IGNORED and link.match_reason == SUPPORTER_REASON and link.user_id == getattr(user, "pk", None):
+        return
+    link.user = user
+    link.status = LinkStatus.IGNORED
+    link.match_reason = SUPPORTER_REASON
+    link.candidates = []
+    link.save(update_fields=["user", "status", "match_reason", "candidates"])
 
 
 def _groups(client, run: _Run) -> None:

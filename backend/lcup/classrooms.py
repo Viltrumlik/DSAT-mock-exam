@@ -30,13 +30,14 @@ def teachers_for(snapshot: dict) -> list:
     """Our users linked to the group's lc-up teachers, in lc-up's order (the first owns the class)."""
     from users.models import User
 
-    from .models import LcupTeacherLink
+    from .models import LcupTeacherLink, LinkStatus
 
     lcup_ids = [t.get("id") for t in snapshot.get("teachers") or [] if t.get("id") is not None]
+    # An ignored link (an admin's "Ignore", or a support teacher) never makes anyone a class's teacher.
     user_by_lcup = dict(
-        LcupTeacherLink.objects.filter(lcup_teacher_id__in=lcup_ids, user__isnull=False).values_list(
-            "lcup_teacher_id", "user_id"
-        )
+        LcupTeacherLink.objects.filter(lcup_teacher_id__in=lcup_ids, user__isnull=False)
+        .exclude(status=LinkStatus.IGNORED)
+        .values_list("lcup_teacher_id", "user_id")
     )
     user_ids = [user_by_lcup[i] for i in lcup_ids if i in user_by_lcup]
     users = User.objects.in_bulk(user_ids)

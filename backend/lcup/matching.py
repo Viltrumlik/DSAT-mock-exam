@@ -80,6 +80,21 @@ def phone_owners(queryset, phone: str) -> list:
     return [u for u in narrowed if normalize_phone(u.phone_number) == phone]
 
 
+#: Why a teacher link is settled as a support teacher. lc-up keeps a support teacher in the
+#: ordinary teacher role with ``is_supporter: true`` (owner, 2026-10-13); here they are a
+#: ``support_teacher`` who leads no lc-up group, so they are never matched as a group teacher.
+SUPPORTER_REASON = "support teacher in lc-up"
+
+
+def match_supporter(link):
+    """Our support teacher account for an lc-up supporter, by phone (one owner only), else None."""
+    pool = User.objects.filter(role=acc_const.ROLE_SUPPORT_TEACHER).filter(
+        Q(lcup_teacher_link__isnull=True) | Q(lcup_teacher_link=link)
+    )
+    owners = phone_owners(pool, link.phone)
+    return owners[0] if len(owners) == 1 else None
+
+
 def match_teacher(link) -> MatchResult:
     pool = User.objects.filter(role__in=acc_const.TEACHER_PORTAL_ROLES).filter(
         Q(lcup_teacher_link__isnull=True) | Q(lcup_teacher_link=link)
