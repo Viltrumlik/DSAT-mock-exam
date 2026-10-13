@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
@@ -201,6 +202,17 @@ def _groups(client, run: _Run) -> None:
     ).count()
 
 
+def _money(value) -> Decimal | None:
+    """lc-up's balance as a Decimal; None when it is missing or not a number (unknown ≠ 0)."""
+    if value is None or str(value).strip() == "":
+        return None
+    try:
+        amount = Decimal(str(value).strip())
+    except InvalidOperation:
+        return None
+    return amount if amount.is_finite() else None
+
+
 def _students(client, run: _Run) -> None:
     rows = client.fetch_all(f"{API}/students")
     seen = []
@@ -213,6 +225,8 @@ def _students(client, run: _Run) -> None:
                 "lcup_filial_id": row.get("filial_id"),
                 "deleted_in_lcup": False,
                 "last_seen_at": run.now,
+                "balance": _money(row.get("balance")),
+                "balance_seen_at": run.now,
             },
         )
         seen.append(row["id"])
@@ -301,7 +315,16 @@ def _match_students(run: _Run) -> None:
 def _accounts(run: _Run) -> None:
     if not run.review_done:
         return
+    # Matching no longer runs after the review, so its shared-phone rule lives here too:
+    # siblings on one parent's phone are never auto-created, they wait for the admin.
+    phones = Counter(LcupStudentLink.objects.exclude(phone="").values_list("phone", flat=True))
     for link in LcupStudentLink.objects.filter(pk__in=live_student_ids(), status=LinkStatus.UNMATCHED, user__isnull=True):
+        if phones[link.phone] >= 2:
+            link.status = LinkStatus.NEEDS_REVIEW
+            link.match_reason = "phone shared by several lc-up students"
+            link.save(update_fields=["status", "match_reason"])
+            run.counts["students_needs_review"] += 1
+            continue
         if create_account_for(link, now=run.now):
             run.counts["accounts_created"] += 1
 
@@ -332,7 +355,10 @@ def _run_stages(client, run: _Run) -> None:
     _stage(run, "groups", lambda: _groups(client, run))
     _stage(run, "students", lambda: _students(client, run))
     _memberships(client, run)
-    _stage(run, "match_students", lambda: _match_students(run))
+    if not run.review_done:
+        # Afterwards a new lc-up student always gets a new account, even if an old one of
+        # theirs exists (owner, 2026-10-13); matching would hand them the old one.
+        _stage(run, "match_students", lambda: _match_students(run))
     _stage(run, "accounts", lambda: _accounts(run))
     _stage(run, "rosters", lambda: _rosters(run))
 

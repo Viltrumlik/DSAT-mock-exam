@@ -91,6 +91,10 @@ class LcupStudentLink(models.Model):
     match_reason = models.CharField(max_length=200, blank=True, default="")
     deleted_in_lcup = models.BooleanField(default=False)
     last_seen_at = models.DateTimeField(null=True, blank=True)
+    #: lc-up's balance as last seen; negative means the student owes the center. None = unknown
+    #: (never seen, or lc-up sent something that is not a number), never mistaken for 0.
+    balance = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
+    balance_seen_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self) -> str:
         return self.name
