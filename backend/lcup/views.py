@@ -28,6 +28,7 @@ from .accounts import create_account_for, reissue_claim
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .claims import set_initial_password
 from .conf import lcup_enabled
+from .matching import SUPPORTER_REASON
 from .models import (
     AccountClaim,
     GroupLinkStatus,
@@ -253,8 +254,11 @@ class TeacherLinkView(_AdminView):
         if LcupTeacherLink.objects.filter(user=user).exclude(pk=link.pk).exists():
             return _bad("That account is already linked to another lc-up teacher.")
         link.user = user
-        link.status = LinkStatus.CONFIRMED
-        link.match_reason = "linked by an admin"
+        # A support teacher stays one: the admin names their account, the sync still never
+        # makes them a group teacher.
+        if link.match_reason != SUPPORTER_REASON:
+            link.status = LinkStatus.CONFIRMED
+            link.match_reason = "linked by an admin"
         link.save(update_fields=["user", "status", "match_reason"])
         return Response(person_row(link, lcup_id=link.lcup_teacher_id))
 
