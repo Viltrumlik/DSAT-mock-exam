@@ -191,6 +191,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   final GlobalKey _stackKey = GlobalKey(debugLabel: 'runner.stack');
   final GlobalKey _topChromeKey = GlobalKey(debugLabel: 'runner.topChrome');
   final GlobalKey _islandKey = GlobalKey(debugLabel: 'runner.island');
+  final GlobalKey _calculatorIslandKey = GlobalKey(debugLabel: 'runner.calculatorIsland');
   final GlobalKey _moreButtonKey = GlobalKey(debugLabel: 'runner.moreButton');
   final GlobalKey _moreMenuKey = GlobalKey(debugLabel: 'runner.moreMenu');
   final GlobalKey _toolbarKey = GlobalKey(debugLabel: 'runner.toolbar');
@@ -204,6 +205,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
   SaveAndExitResult? _savedOffline;
   bool _exitHandled = false;
   bool _islandFocused = false;
+  bool _calculatorFocused = false;
   Uint8List? _frozen;
   bool _freezing = false;
   int? _moduleId;
@@ -376,12 +378,9 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     _fsGrace = Timer(fullscreenWarningGrace, () {
       _fsGrace = null;
       if (!mounted || !(_fsEnforced && !widget.window!.isFullscreen.value)) return;
-      // Nothing floats over the warning, and the keyboard leaves the question card.
+      // Nothing floats over the warning, and the keyboard leaves the islands.
       tools.closeTransient();
-      if (_islandFocused) {
-        _islandFocused = false;
-        unawaited(content.releaseFocus());
-      }
+      _releaseIslands();
       setState(() {
         _fsWarning = true;
         _fsSecondsLeft = fullscreenWarningSeconds;
@@ -492,9 +491,18 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
         factory: widget.islandFactory,
         onDiagnostic: widget.onDiagnostic,
         onKey: (key) {
-          if (key == 'Escape') unawaited(_desmos?.host?.releaseFocus());
+          if (key != 'Escape') return;
+          _calculatorFocused = false;
+          unawaited(_desmos?.host?.releaseFocus());
+          _rootFocus.requestFocus();
         },
+        onFocus: (inIsland) => _calculatorFocused = inIsland,
       );
+    }
+    if (!tools.calculatorOpen && _calculatorFocused) {
+      // A hidden Desmos must not keep the keyboard.
+      _calculatorFocused = false;
+      unawaited(_desmos?.host?.releaseFocus());
     }
     _syncFreeze();
     setState(() {});
@@ -811,29 +819,55 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
     if (_fsWarning) return;
     final p = e.position;
     if (tools.moreOpen && !_inside(_moreButtonKey, p) && !_inside(_moreMenuKey, p)) tools.closeMore();
-    final inIsland = _inside(_islandKey, p) && session.phase == ExamPhase.running && _frozen == null;
+    // What the press landed on is a hit test, not the card's rectangle: in texture mode the
+    // calculator, Notes and the reference sheet draw OVER the card (until 0.2.6 every click on
+    // Desmos handed the keyboard to the question card, and Desmos could never be typed into).
+    final hit = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(hit, p, View.of(context).viewId);
+    final inIsland = _hits(hit, _islandKey) && session.phase == ExamPhase.running && _frozen == null;
+    final inCalculator = !inIsland && _hits(hit, _calculatorIslandKey) && _desmos?.status == DesmosStatus.ready;
     if (tools.toolbar != null && !inIsland && !_inside(_toolbarKey, p)) tools.dismissToolbar();
-    if (inIsland) {
-      // Texture mode: route the keyboard to the page (the SPR input, island shortcuts). A
-      // focused text field (Notes) lets go, as a browser's would.
+    if (inIsland || inCalculator) {
+      // Texture mode: route the keyboard to the page (the SPR input and island shortcuts, or
+      // Desmos). A focused text field (Notes) lets go, as a browser's would. The island losing
+      // the keyboard only blurs its page: the plugin's release is global and would pull the
+      // keyboard straight back out of the island taking it.
       if (!tools.reportOpen) _rootFocus.requestFocus();
-      _islandFocused = true;
-      unawaited(content.focus());
+      if (inIsland) {
+        if (_calculatorFocused) _desmos?.host?.post(const FocusReleaseMessage());
+        _calculatorFocused = false;
+        _islandFocused = true;
+        unawaited(content.focus());
+      } else {
+        if (_islandFocused) content.post(const FocusReleaseMessage());
+        _islandFocused = false;
+        _calculatorFocused = true;
+        unawaited(_desmos!.host!.focus());
+      }
       return;
     }
     if (tools.reportOpen) return; // the dialog keeps its own focus scope
+    _releaseIslands();
+    // A press outside a text field blurs it, as a browser does, so shortcuts work again.
+    if (!hit.path.any((entry) => entry.target is RenderEditable)) _rootFocus.requestFocus();
+  }
+
+  /// Whether the hit test reached the widget under [key] (nothing drawn over it took the press).
+  bool _hits(HitTestResult hit, GlobalKey key) {
+    final target = key.currentContext?.findRenderObject();
+    return target != null && hit.path.any((entry) => identical(entry.target, target));
+  }
+
+  /// The keyboard goes back to the frame from whichever island has it.
+  void _releaseIslands() {
     if (_islandFocused) {
       _islandFocused = false;
       unawaited(content.releaseFocus());
     }
-    // A press outside a text field blurs it, as a browser does, so shortcuts work again.
-    if (!_pointerOnTextField(p)) _rootFocus.requestFocus();
-  }
-
-  bool _pointerOnTextField(Offset global) {
-    final result = HitTestResult();
-    WidgetsBinding.instance.hitTestInView(result, global, View.of(context).viewId);
-    return result.path.any((entry) => entry.target is RenderEditable);
+    if (_calculatorFocused) {
+      _calculatorFocused = false;
+      unawaited(_desmos?.host?.releaseFocus());
+    }
   }
 
   // ---- build --------------------------------------------------------------------------------
@@ -989,6 +1023,7 @@ class ExamRunnerScreenState extends State<ExamRunnerScreen> {
       out.add(
         DesmosPanel(
           key: const ValueKey('calculator'),
+          islandKey: _calculatorIslandKey,
           controller: _desmos!,
           tools: tools,
           scientificOnly: s.scientificOnly,

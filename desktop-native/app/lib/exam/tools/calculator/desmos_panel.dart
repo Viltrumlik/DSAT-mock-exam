@@ -26,6 +26,7 @@ class DesmosPanel extends StatefulWidget {
     required this.scientificOnly,
     this.nativeScientificOnly = true,
     this.animate = true,
+    this.islandKey,
   });
 
   final DesmosController controller;
@@ -35,6 +36,10 @@ class DesmosPanel extends StatefulWidget {
 
   /// Goldens freeze the spinner.
   final bool animate;
+
+  /// On the Desmos island itself, so the runner can tell a press on Desmos (which floats over
+  /// the question card) from a press on the card.
+  final GlobalKey? islandKey;
 
   @override
   State<DesmosPanel> createState() => _DesmosPanelState();
@@ -114,7 +119,11 @@ class _DesmosPanelState extends State<DesmosPanel> {
       body = Stack(
         fit: StackFit.expand,
         children: [
-          if (host != null) KeyedSubtree(key: const ValueKey('calc.island'), child: host.build(context)),
+          if (host != null)
+            KeyedSubtree(
+              key: const ValueKey('calc.island'),
+              child: KeyedSubtree(key: widget.islandKey, child: host.build(context)),
+            ),
           if (status != DesmosStatus.ready)
             ColoredBox(
               key: const ValueKey('calc.loading'),
