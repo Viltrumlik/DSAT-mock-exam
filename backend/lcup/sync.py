@@ -94,6 +94,8 @@ def _apply_match(link, result, run: _Run, kind: str) -> None:
         run.counts[f"{kind}_auto_linked"] += 1
     elif result.status == LinkStatus.NEEDS_REVIEW:
         run.counts[f"{kind}_needs_review"] += 1
+    elif result.status == LinkStatus.UNMATCHED:
+        run.counts[f"{kind}_unmatched"] += 1
 
 
 # ── stages ────────────────────────────────────────────────────────────────
@@ -143,7 +145,11 @@ def _groups(client, run: _Run) -> None:
         if row.get("deleted_at"):
             if link.deleted_in_lcup_at is None:
                 link.deleted_in_lcup_at = run.now
-                run.alerts.append(f"lc-up group deleted: {link.name}")
+                # Only a paired group's deletion means anything here; lc-up keeps years of old ones.
+                if link.classroom_id:
+                    run.alerts.append(
+                        f"lc-up group deleted: {link.name}; its class {link.classroom.name} no longer follows lc-up"
+                    )
             link.save()
             continue
         link.deleted_in_lcup_at = None
@@ -183,6 +189,16 @@ def _groups(client, run: _Run) -> None:
                 continue  # create_classroom_for saved the link
         link.save(update_fields=["suggestion", "suggestion_score", "suggestion_reasons", "status"])
     run.counts["groups"] = len(rows)
+    # What a dry run can only report through its counts: where every live group stands.
+    live = LcupGroupLink.objects.filter(
+        lcup_group_id__in=[row["id"] for row in rows if not row.get("deleted_at")], deleted_in_lcup_at__isnull=True
+    )
+    run.counts["groups_live"] = live.count()
+    for status, n in Counter(live.values_list("status", flat=True)).items():
+        run.counts[f"groups_{status}"] = n
+    run.counts["groups_new_class_after_review"] = live.filter(
+        status=GroupLinkStatus.SUGGESTED, suggestion__isnull=True, classroom__isnull=True
+    ).count()
 
 
 def _students(client, run: _Run) -> None:
