@@ -187,6 +187,7 @@ INSTALLED_APPS = [
     'annotations.apps.AnnotationsConfig',
     'mobile.apps.MobileConfig',
     'desktop.apps.DesktopConfig',
+    'lcup.apps.LcupConfig',
 ]
 
 MIDDLEWARE = [
@@ -276,6 +277,15 @@ DESKTOP_PROOF_KEYS = _parse_desktop_keys(os.getenv("DESKTOP_PROOF_KEYS", ""))
 # off again is the kill switch — the app keeps its answers on the laptop and retries, because a
 # 5xx is "try later" to its outbox. Nothing outside v1 reads this. Literal "true" only.
 DESKTOP_V1_ENABLED = os.getenv("DESKTOP_V1_ENABLED", "False").lower() == "true"
+
+# lc-up, the centre's CRM (backend/lcup): groups, members and accounts follow it. Off by default —
+# with it off nothing calls lc-up, the claim sign-in backend refuses everyone and the roster
+# guards do not apply. Literal "true" only, like DESKTOP_V1_ENABLED.
+LCUP_ENABLED = os.getenv("LCUP_ENABLED", "False").lower() == "true"
+LCUP_BASE_URL = os.getenv("LCUP_BASE_URL", "https://master-sat.lc-up.com").strip()
+LCUP_DOMAIN = os.getenv("LCUP_DOMAIN", "").strip()
+LCUP_MOBILE = os.getenv("LCUP_MOBILE", "").strip()
+LCUP_PASSWORD = os.getenv("LCUP_PASSWORD", "")
 # Past papers ship BOTH modules in the open response (no network wait at the module boundary,
 # fully offline sittings). Past papers are not adaptive and carry no answer key, so the only cost
 # is that a determined student could pre-read module 2 of a practice paper. Off: module 2 comes
@@ -585,6 +595,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "classes.tasks.open_todays_attendance_registers",
         "schedule": crontab(minute="*/10"),
     },
+    # lc-up: groups, members and accounts follow the centre's CRM (backend/lcup). Returns at once
+    # while LCUP_ENABLED is off.
+    "lcup-sync": {
+        "task": "lcup.tasks.sync",
+        "schedule": crontab(minute="*/15"),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
@@ -757,6 +773,9 @@ AUTH_USER_MODEL = 'users.User'
 AUTHENTICATION_BACKENDS = [
     'users.backends.EmailOrUsernameModelBackend',
     'django.contrib.auth.backends.ModelBackend',
+    # Last on purpose: a real password is always tried first. Refuses everyone while
+    # LCUP_ENABLED is off (backend/lcup/auth_backend.py).
+    'lcup.auth_backend.LcupClaimBackend',
 ]
 
 SIMPLE_JWT = {

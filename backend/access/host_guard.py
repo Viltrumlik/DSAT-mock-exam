@@ -199,6 +199,10 @@ class SubdomainAPIGuardMiddleware:
             # sign-in endpoints are on the apex only.
             if path.startswith("/api/desktop/exemptions/"):
                 return self.get_response(request)
+            # lc-up CRM link: pairing, review queues and sync are run from /ops/lcup. The student's
+            # first-password step is on the apex, which needs no entry.
+            if path.startswith("/api/lcup/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

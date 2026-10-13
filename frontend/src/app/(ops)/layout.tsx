@@ -25,6 +25,7 @@ import {
   CirclePlay,
   Images,
   Smartphone,
+  RefreshCw,
 } from "lucide-react";
 
 /**
@@ -90,6 +91,14 @@ const OPS_NAV = [
     href: "/ops/branches",
     label: "Branches",
     icon: Building2,
+    exact: false,
+  },
+  {
+    // The centre's CRM. Groups and their members follow it; this is where an admin pairs lc-up
+    // groups with our classes and settles the students the sync could not match on its own.
+    href: "/ops/lcup",
+    label: "lc-up",
+    icon: RefreshCw,
     exact: false,
   },
   {

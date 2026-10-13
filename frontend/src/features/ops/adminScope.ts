@@ -26,6 +26,9 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   "/ops/access",
   "/ops/users",
   "/ops/events",
+  // lc-up (the centre's CRM): the owner decided on 2026-10-12 that admins and super admins run
+  // the pairing and review in /ops/lcup.
+  "/ops/lcup",
 ];
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */

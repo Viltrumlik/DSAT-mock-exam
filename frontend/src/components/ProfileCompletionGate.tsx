@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { LogOut, MailCheck, ShieldCheck } from "lucide-react";
+import { KeyRound, LogOut, MailCheck, ShieldCheck } from "lucide-react";
+import { lcupApi } from "@/features/lcup/lcupApi";
 import { invalidateMe } from "@/hooks/useMe";
 import { authApi, usersApi } from "@/lib/api";
 import { displayEmail } from "@/lib/email";
@@ -18,6 +19,10 @@ const NAME_FIELDS = [
 
 const MIN_LEN = 3;
 const RESEND_COOLDOWN_SECONDS = 60;
+/** The server's validators decide; this only catches the obvious before a round-trip. */
+const MIN_PASSWORD_LEN = 8;
+/** An account the lc-up sync created has its phone as username, and signs in with it. */
+const PHONE_USERNAME = /^998\d{9}$/;
 
 export type GateCurrent = {
   first_name: string;
@@ -63,10 +68,17 @@ export function ProfileCompletionGate({
   const queryClient = useQueryClient();
   const nameIncomplete = NAME_FIELDS.some((f) => missingFields.includes(f.key));
   const emailMissing = missingFields.includes("email");
+  // An account the lc-up sync created, signed in with its one-time code: its own password comes
+  // before anything else (backend/lcup/claims.py lists "password" first).
+  const passwordMissing = missingFields.includes("password");
 
   // Start on the name step when anything there is missing; otherwise go straight to the
   // email round-trip. The name step stays reachable from the email step regardless.
-  const [step, setStep] = useState<"profile" | "email">(nameIncomplete ? "profile" : "email");
+  const [step, setStep] = useState<"password" | "profile" | "email">(
+    passwordMissing ? "password" : nameIncomplete ? "profile" : "email",
+  );
+  const [password, setPassword] = useState("");
+  const [passwordAgain, setPasswordAgain] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>(() => ({
     first_name: current.first_name,
     last_name: current.last_name,
@@ -87,6 +99,30 @@ export function ProfileCompletionGate({
     const t = window.setTimeout(() => setCooldown((s) => s - 1), 1000);
     return () => window.clearTimeout(t);
   }, [cooldown]);
+
+  const savePassword = useCallback(async () => {
+    if (password.length < MIN_PASSWORD_LEN) {
+      setError(`Use at least ${MIN_PASSWORD_LEN} characters.`);
+      return;
+    }
+    if (password !== passwordAgain) {
+      setError("The two passwords are different.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await lcupApi.setInitialPassword(password);
+      await invalidateMe(queryClient);
+      setPassword("");
+      setPasswordAgain("");
+      setStep(nameIncomplete ? "profile" : "email");
+    } catch (err) {
+      setError(apiError(err, "Could not save the password. Try a longer one."));
+    } finally {
+      setBusy(false);
+    }
+  }, [password, passwordAgain, nameIncomplete, queryClient]);
 
   const saveNames = useCallback(async () => {
     const payload: Record<string, string> = {};
@@ -168,9 +204,11 @@ export function ProfileCompletionGate({
       onClose={() => undefined}
       hideClose
       size="sm"
-      title={step === "profile" ? "Complete your profile" : "Confirm your email"}
+      title={step === "password" ? "Choose your password" : step === "profile" ? "Complete your profile" : "Confirm your email"}
       description={
-        step === "profile"
+        step === "password"
+          ? "You signed in with a one-time code. Choose your own password — from now on you sign in with your phone number and this password."
+          : step === "profile"
           ? "Check these are right — they name you on results and certificates. You can change them."
           : emailStep === "address"
             ? "We'll send a 6-digit code to make sure this address reaches you."
@@ -180,7 +218,35 @@ export function ProfileCompletionGate({
       <div className="space-y-4">
         {error ? <Alert tone="danger">{error}</Alert> : null}
 
-        {step === "profile" ? (
+        {step === "password" ? (
+          <>
+            <Field label="New password" htmlFor="pc-password">
+              <Input
+                id="pc-password"
+                type="password"
+                autoComplete="new-password"
+                autoFocus
+                value={password}
+                onChange={(e) => { setError(null); setPassword(e.target.value); }}
+                leftIcon={<KeyRound />}
+              />
+            </Field>
+            <Field label="Type it again" htmlFor="pc-password-again">
+              <Input
+                id="pc-password-again"
+                type="password"
+                autoComplete="new-password"
+                value={passwordAgain}
+                onChange={(e) => { setError(null); setPasswordAgain(e.target.value); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !busy) void savePassword(); }}
+                leftIcon={<KeyRound />}
+              />
+            </Field>
+            <Button onClick={() => void savePassword()} disabled={busy} className="w-full">
+              {busy ? <Spinner /> : "Save password"}
+            </Button>
+          </>
+        ) : step === "profile" ? (
           <>
             {NAME_FIELDS.map((f, i) => (
               <Field key={f.key} label={f.label} htmlFor={`pc-${f.key}`}>
@@ -192,6 +258,11 @@ export function ProfileCompletionGate({
                   onChange={(e) => { setError(null); setDraft((d) => ({ ...d, [f.key]: e.target.value })); }}
                   onKeyDown={(e) => { if (e.key === "Enter" && !busy) void saveNames(); }}
                 />
+                {f.key === "username" && PHONE_USERNAME.test(draft.username ?? "") ? (
+                  <p className="mt-1 text-[13px] text-muted-foreground">
+                    You sign in with this phone number. If you change it, sign in with your email or Google instead.
+                  </p>
+                ) : null}
               </Field>
             ))}
             <Button onClick={() => void saveNames()} disabled={busy} className="w-full">

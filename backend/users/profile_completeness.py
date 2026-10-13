@@ -23,6 +23,17 @@ REQUIRED_PROFILE_FIELDS = ("first_name", "last_name", "username", "email")
 #: Matches the min length the serializers already enforce on these fields.
 MIN_IDENTITY_LEN = 3
 
+#: Requirements other apps add without this module knowing them — lc-up adds ``"password"`` for an
+#: account its sync created that has not chosen one yet. Each callable takes the user and returns
+#: field names; they are asked FIRST, in registration order.
+_EXTRA_REQUIREMENTS: list = []
+
+
+def register_requirement(fn):
+    if fn not in _EXTRA_REQUIREMENTS:
+        _EXTRA_REQUIREMENTS.append(fn)
+    return fn
+
 
 def _too_short(value) -> bool:
     return len(str(value or "").strip()) < MIN_IDENTITY_LEN
@@ -54,7 +65,13 @@ def missing_profile_fields(user) -> list[str]:
         missing.append("username")
     if not email_is_usable(user):
         missing.append("email")
-    return missing
+
+    extra: list[str] = []
+    for requirement in _EXTRA_REQUIREMENTS:
+        for name in requirement(user):
+            if name not in extra and name not in missing:
+                extra.append(name)
+    return extra + missing
 
 
 def is_profile_complete(user) -> bool:
@@ -67,4 +84,5 @@ __all__ = [
     "email_is_usable",
     "is_profile_complete",
     "missing_profile_fields",
+    "register_requirement",
 ]

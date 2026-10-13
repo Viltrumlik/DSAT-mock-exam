@@ -60,6 +60,12 @@ class MemberManageView(_ClassroomScopedView):
         if new_status is not None:
             if new_status not in (ClassroomMembership.STATUS_ACTIVE, ClassroomMembership.STATUS_REMOVED):
                 return Response({"detail": "Invalid status."}, status=http.HTTP_400_BAD_REQUEST)
+            if membership.role == ClassroomMembership.ROLE_STUDENT:
+                from lcup.guards import is_lcup_managed, lcup_managed_response
+
+                # Students of a class paired with lc-up come and go there; the sync would undo this.
+                if is_lcup_managed(classroom):
+                    return lcup_managed_response()
             target_is_staff = membership.role in ClassroomMembership.STAFF_ROLES
             allowed = caps.can_assign_ta if target_is_staff else caps.can_manage_roster
             if not allowed:
@@ -90,9 +96,16 @@ class ClassroomRosterView(_ClassroomScopedView):
         include_removed = str(request.query_params.get("include_removed", "")).strip().lower() in _TRUTHY
         if not include_removed:
             memberships = memberships.exclude(status=ClassroomMembership.STATUS_REMOVED)
-        return Response(
-            ClassroomMembershipSerializer(memberships, many=True, context={"request": request}).data
-        )
+        from lcup.guards import pending_claim_user_ids
+
+        memberships = list(memberships)
+        context = {
+            "request": request,
+            # Accounts the lc-up sync created whose owner has not signed in yet: one query for
+            # the whole roster, read per row by the serializer.
+            "lcup_pending_user_ids": pending_claim_user_ids(m.user_id for m in memberships),
+        }
+        return Response(ClassroomMembershipSerializer(memberships, many=True, context=context).data)
 
     def post(self, request, classroom_pk):
         classroom = self.get_classroom()
@@ -103,6 +116,10 @@ class ClassroomRosterView(_ClassroomScopedView):
                 {"detail": "Only administrators can add a student without a join code."},
                 status=http.HTTP_403_FORBIDDEN,
             )
+        from lcup.guards import is_lcup_managed, lcup_managed_response
+
+        if is_lcup_managed(classroom):
+            return lcup_managed_response()
 
         user_id = request.data.get("user_id")
         if not user_id:

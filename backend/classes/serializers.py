@@ -300,10 +300,16 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
 
 class ClassroomMembershipSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
+    #: An account the lc-up sync created whose owner has not signed in yet. The roster view puts
+    #: the set in the context with one query; anywhere else this is simply False.
+    lcup_claim_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassroomMembership
-        fields = ["id", "role", "status", "joined_at", "user"]
+        fields = ["id", "role", "status", "joined_at", "user", "lcup_claim_pending"]
+
+    def get_lcup_claim_pending(self, obj) -> bool:
+        return obj.user_id in self.context.get("lcup_pending_user_ids", ())
 
     def get_user(self, obj):
         u = obj.user
