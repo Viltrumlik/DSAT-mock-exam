@@ -2,7 +2,7 @@
 // FakeExamSession + FakeIslandHost).
 import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide KeyMessage;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/core/api/v1_api.dart';
 import 'package:mastersat_app/core/models/models.dart';
@@ -791,6 +791,54 @@ void main() {
       expect(h.desmosHosts, hasLength(1), reason: 'the island is kept until the runner closes');
       expect(tester.getSize(find.byKey(const ValueKey('panel.calculator'))), const Size(460, 560));
       expect(desmos.visible, isTrue);
+    });
+
+    testWidgets('a click on Desmos gives it the keyboard, though it floats over the card', (tester) async {
+      final h = await math(tester);
+      await h.tap(find.text('Calculator'));
+      await tester.pump();
+      await tester.pump();
+      final desmos = h.desmosHosts.single;
+      final calc = tester.getRect(find.byKey(const ValueKey('calc.island')));
+      final card = tester.getRect(
+        find.ancestor(of: find.textContaining('Content island'), matching: find.byType(ColoredBox)).first,
+      );
+      expect(card.contains(calc.center), isTrue, reason: 'the calculator draws over the card');
+
+      // The card first: its page takes the keyboard.
+      await tester.tapAt(Offset(calc.right + 100, calc.center.dy));
+      await tester.pump();
+      expect(h.content.focused, isTrue);
+      expect(desmos.focused, isFalse);
+
+      // Then Desmos: it takes the keyboard; the card's page only blurs (0.2.5 focused the card).
+      h.content.focused = false;
+      final blurs = h.content.postedOf<FocusReleaseMessage>().length;
+      await tester.tapAt(calc.center);
+      await tester.pump();
+      expect(desmos.focused, isTrue);
+      expect(h.content.focused, isFalse);
+      expect(h.content.postedOf<FocusReleaseMessage>(), hasLength(blurs + 1));
+
+      // The frame takes it back.
+      await tester.tapAt(const Offset(40, 30));
+      await tester.pump();
+      expect(desmos.focused, isFalse);
+
+      // Escape inside Desmos gives it back too, and closing the calculator never leaves the
+      // keyboard in a hidden Desmos.
+      await tester.tapAt(calc.center);
+      await tester.pump();
+      expect(desmos.focused, isTrue);
+      desmos.emit(const KeyMessage(key: 'Escape'));
+      await tester.pump();
+      expect(desmos.focused, isFalse);
+      await tester.tapAt(calc.center);
+      await tester.pump();
+      desmos.emit(const FocusMessage(inIsland: true));
+      await tester.pump();
+      await h.tap(find.byKey(const ValueKey('panel.close.Calculator')));
+      expect(desmos.focused, isFalse);
     });
 
     testWidgets('graph changes are saved through the session', (tester) async {

@@ -30,6 +30,7 @@ class DesmosController extends ChangeNotifier {
     this.readyTimeout = const Duration(seconds: 35),
     this.onDiagnostic,
     this.onKey,
+    this.onFocus,
   });
 
   final ExamSession session;
@@ -42,6 +43,9 @@ class DesmosController extends ChangeNotifier {
 
   /// `key` from the Desmos island — Escape only (shortcuts are off while Desmos has focus).
   final void Function(String key)? onKey;
+
+  /// `focus{inIsland}` from the Desmos island: whether its page has the keyboard.
+  final void Function(bool inIsland)? onFocus;
 
   IslandHost? _host;
   StreamSubscription<IslandEvent>? _sub;
@@ -150,6 +154,8 @@ class DesmosController extends ChangeNotifier {
             onDiagnostic?.call('desmos:$where', message);
           case KeyMessage(:final key):
             onKey?.call(key);
+          case FocusMessage(:final inIsland):
+            onFocus?.call(inIsland);
           default:
             break;
         }
