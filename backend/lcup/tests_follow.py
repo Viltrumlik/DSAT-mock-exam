@@ -16,7 +16,7 @@ from django.utils import timezone
 from access.models import UserAccess
 from classes.models import Branch, Classroom, ClassroomMembership, Region
 from lcup.guards import is_lcup_managed
-from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState
+from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState, LcupTeacherLink, LinkStatus
 from lcup.sync import run_sync
 from lcup.testing import FakeLcupClient
 from lcup.tests_sync import API, lcup_data
@@ -211,23 +211,49 @@ class TeachersFollowTests(FollowFixture):
         self.sync(data)
         self.assertEqual(self.row(self.sayyora).status, M.STATUS_ACTIVE)
 
-    def test_a_linked_teacher_of_ours_lcup_never_listed_here_stays(self):
-        # Prod: one teacher sits in six classes whose lc-up groups do not list them.
-        M.objects.create(classroom=self.room, user=self.sayyora, role=M.ROLE_TEACHER)
-        self.sync()
-        self.sync()
-        self.assertEqual(self.row(self.sayyora).status, M.STATUS_ACTIVE)
-
-    def test_our_tas_and_unlinked_teachers_stay_through_a_swap(self):
-        support = User.objects.create_user(None, password=None, username="sup", role="support_teacher", subject="math")
+    def test_every_teacher_and_admin_lcup_does_not_list_leaves_the_class(self):
+        # Owner 2026-10-14: "teacherlarni ham to'liq sync qiling" — everyone, admins too. On prod a
+        # linked teacher sat in six classes lc-up never listed them in, an admin account in 18.
         ours = User.objects.create_user(None, password=None, username="ours", role="teacher", subject="math")
-        M.objects.create(classroom=self.room, user=support, role=M.ROLE_TA)
+        admin = User.objects.create_user(None, password=None, username="adm", role="admin")
+        M.objects.create(classroom=self.room, user=self.sayyora, role=M.ROLE_TEACHER)  # linked to lc-up 2002
         M.objects.create(classroom=self.room, user=ours, role=M.ROLE_TEACHER)
+        M.objects.create(classroom=self.room, user=admin, role=M.ROLE_ADMIN, status=M.STATUS_INVITED)
+        run = self.sync()
+        for user in (self.sayyora, ours, admin):
+            self.assertEqual(self.row(user).status, M.STATUS_REMOVED, user.username)
+        self.assertEqual(self.row(self.vali).status, M.STATUS_ACTIVE)
+        self.assertEqual(run.counts["teachers_removed"], 3)
+
+    def test_tas_stay_they_are_our_support_teachers(self):
+        support = User.objects.create_user(None, password=None, username="sup", role="support_teacher", subject="math")
+        M.objects.create(classroom=self.room, user=support, role=M.ROLE_TA)
         data = lcup_data()
         self.set_teachers(data, 2002)
         self.sync(data)
         self.assertEqual((self.row(support).role, self.row(support).status), (M.ROLE_TA, M.STATUS_ACTIVE))
-        self.assertEqual(self.row(ours).status, M.STATUS_ACTIVE)
+
+    def test_the_owners_seat_is_an_admin_seat(self):
+        # Prod: the admin account held the ADMIN seat and lc-up's teacher a TEACHER one; with the
+        # admin gone the class still has an owner.
+        admin = User.objects.create_user(None, password=None, username="adm", role="admin")
+        M.objects.filter(classroom=self.room, user=self.vali).update(role=M.ROLE_TEACHER)
+        M.objects.create(classroom=self.room, user=admin, role=M.ROLE_ADMIN)
+        self.sync()
+        self.assertEqual(self.row(admin).status, M.STATUS_REMOVED)
+        self.assertEqual((self.fresh_room().teacher_id, self.row(self.vali).role), (self.vali.pk, M.ROLE_ADMIN))
+
+    def test_lcup_teachers_with_no_account_of_ours_remove_nobody(self):
+        # lc-up's only teacher is not linked yet (in review): the class must not be left with no teacher.
+        data = lcup_data()
+        # A phone nobody of ours has: the link stays unmatched (and before the review no account is made).
+        next(row for row in data[f"{API}/teachers"] if row["id"] == 2002)["phone"] = "998909999999"
+        LcupTeacherLink.objects.filter(lcup_teacher_id=2002).update(user=None, status=LinkStatus.UNMATCHED)
+        self.set_teachers(data, 2002)
+        run = self.sync(data)
+        self.assertEqual(self.row(self.vali).status, M.STATUS_ACTIVE)
+        self.assertEqual(self.fresh_room().teacher_id, self.vali.pk)
+        self.assertTrue(any("no account" in a for a in run.alerts), run.alerts)
 
     def test_a_student_row_is_never_made_a_teacher(self):
         M.objects.create(classroom=self.room, user=self.sayyora, role=M.ROLE_STUDENT)
