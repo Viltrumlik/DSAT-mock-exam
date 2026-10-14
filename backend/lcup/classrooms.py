@@ -12,9 +12,11 @@ as shorter than it is would close the register while the class is still in the r
 from __future__ import annotations
 
 import math
+import re
 from datetime import datetime
 
 from django.db import transaction
+from django.utils.dateparse import parse_date
 
 from access import constants as acc_const
 from access.models import UserAccess
@@ -56,6 +58,25 @@ def classroom_name(name) -> str:
     return " ".join(str(name or "").split())[:120]
 
 
+_ROOM_WORD = re.compile(r"^(xona|room)\s+", re.IGNORECASE)
+
+
+def room_number_from(snapshot: dict) -> str:
+    """lc-up's room as our room number: "Xona 301" → "301" (the class shows it as "Room 301");
+    a room named another way is kept whole. "" when lc-up gives none."""
+    room = snapshot.get("room")
+    name = room.get("name") if isinstance(room, dict) else room
+    return _ROOM_WORD.sub("", " ".join(str(name or "").split()))[:30]
+
+
+def start_date_from(snapshot: dict):
+    """lc-up's course start date for the group, or None (also for a date that does not exist)."""
+    try:
+        return parse_date(str(snapshot.get("course_start_date") or "")[:10])
+    except ValueError:
+        return None
+
+
 def _lesson_hours(snapshot: dict) -> int:
     try:
         start = datetime.strptime(str(snapshot.get("start_time") or "")[:5], "%H:%M")
@@ -87,6 +108,8 @@ def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
             lesson_days=days,
             lesson_time=str(snapshot.get("start_time") or "")[:5],
             lesson_hours=_lesson_hours(snapshot),
+            room_number=room_number_from(snapshot),
+            start_date=start_date_from(snapshot),
             branch=branch,
             created_by=owner,
             teacher=owner,
