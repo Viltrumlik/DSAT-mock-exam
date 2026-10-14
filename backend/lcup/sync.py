@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
@@ -31,12 +32,16 @@ from classes.models import Branch, Classroom, ClassroomMembership
 
 from . import audience
 from .accounts import create_account_for, create_teacher_account_for
+from .attendance import apply_day, plan_day, push_day, push_held_reason
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
+from .conf import attendance_pull_enabled, attendance_push_enabled, attendance_push_from
 from .follow import archive_class, follow_details, follow_teachers, reopen_class
 from .matching import SUPPORTER_REASON, match_student, match_supporter, match_teacher, subject_from, suggest_classroom
 from .models import (
     GroupLinkStatus,
+    LcupAbsenceReason,
+    LcupAttendancePush,
     LcupFilialLink,
     LcupGroupLink,
     LcupMembership,
@@ -58,8 +63,11 @@ _SETTLED = (LinkStatus.CONFIRMED, LinkStatus.IGNORED, LinkStatus.CREATED)
 
 
 class _Run:
-    def __init__(self, now):
+    def __init__(self, now, *, dry_run: bool = False):
         self.now = now
+        #: A dry run is rolled back afterwards — but a POST to lc-up cannot be, so nothing that
+        #: sends may run when this is set (see ``_attendance``).
+        self.dry_run = dry_run
         self.counts: defaultdict[str, int] = defaultdict(int)
         self.errors: list[dict] = []
         self.alerts: list[str] = []
@@ -425,11 +433,107 @@ def _run_stages(client, run: _Run) -> None:
     # Before rosters: a returning student is a student again when the roster adds them back.
     _stage(run, "audience", lambda: audience.apply(run))
     _stage(run, "rosters", lambda: _rosters(run))
+    _stage(run, "reasons", lambda: _reasons(client, run))
+    # After rosters, so a mark lands on the class as lc-up now has it. One atomic block per
+    # register inside, and the push after its block commits — not one stage-wide savepoint.
+    _attendance(client, run)
+
+
+# ── attendance (lc-up Part 2) ─────────────────────────────────────────────
+
+#: How many days back a run looks: a correction made in lc-up the next morning still arrives.
+ATTENDANCE_LOOKBACK_DAYS = 3
+
+
+def _reasons(client, run: _Run) -> None:
+    rows = client.get(f"{API}/attendance/reasons").get("data") or []
+    for r in rows:
+        if r.get("id") is None:
+            continue
+        LcupAbsenceReason.objects.update_or_create(
+            lcup_reason_id=r["id"],
+            defaults={
+                "title": str(r.get("title") or "").strip()[:120],
+                "color": str(r.get("color") or "")[:20],
+                "last_seen_at": run.now,
+            },
+        )
+    run.counts["absence_reasons"] = len(rows)
+
+
+def _attendance(client, run: _Run) -> None:
+    """Closed registers of the last few days agree with lc-up; after the cutover, what lc-up lacks
+    is sent once (``lcup.attendance``). A register still open is the teacher's and is not read."""
+    from classes import attendance_window
+
+    if not attendance_pull_enabled():
+        return
+    today = timezone.localdate(run.now)
+    days = [today - timedelta(days=n) for n in range(ATTENDANCE_LOOKBACK_DAYS, -1, -1)]
+    try:
+        rows = client.fetch_all(
+            f"{API}/attendance", {"from": days[0].isoformat(), "to": today.isoformat(), "include_deleted": "true"}
+        )
+    except LcupAuthError:
+        raise
+    except Exception as exc:
+        run.error("attendance", exc)
+        return
+    by_group_day = defaultdict(list)
+    for r in rows:
+        by_group_day[(r.get("group_id"), str(r.get("date") or "")[:10])].append(r)
+
+    push_on, push_from = attendance_push_enabled(), attendance_push_from()
+    links = (
+        LcupGroupLink.objects.filter(status=GroupLinkStatus.CONFIRMED, classroom__isnull=False, deleted_in_lcup_at__isnull=True)
+        .exclude(pk__in=run.skipped_groups)
+        .select_related("classroom")
+    )
+    for link in links:
+        held = push_held_reason(link)
+        for day in days:
+            if attendance_window.marking_state(link.classroom, day, now=run.now) != attendance_window.STATE_LOCKED:
+                continue
+            gap_fill = bool(push_on and push_from and day >= push_from)
+            try:
+                with transaction.atomic():
+                    plan = plan_day(link, day, by_group_day.get((link.lcup_group_id, day.isoformat()), []), gap_fill=gap_fill)
+                    for key, value in apply_day(plan).items():
+                        run.counts[key] += value
+            except LcupAuthError:
+                raise
+            except Exception as exc:
+                run.error(f"attendance:{link.lcup_group_id}:{day}", exc)
+                continue
+            if not plan.push:
+                continue
+            if held:
+                run.alerts.append(held)
+                continue
+            if run.dry_run:
+                run.counts["att_would_push"] += len(plan.push)
+                continue
+            _report_push(run, link, day, push_day(client, plan, now=run.now))
+
+
+def _report_push(run: _Run, link, day, push) -> None:
+    if push is None:
+        return
+    where = f"{link.name} {day.isoformat()}"
+    if push.state == LcupAttendancePush.STATE_SENT:
+        run.counts["att_pushed"] += len(push.records) - len(push.failures)
+        if push.failures:
+            codes = ", ".join(sorted({f["code"] or "unknown" for f in push.failures}))
+            run.alerts.append(f"lc-up did not take {len(push.failures)} attendance mark(s) for {where}: {codes}")
+    elif push.state == LcupAttendancePush.STATE_REFUSED:
+        run.alerts.append(f"lc-up refused attendance for {where}: its attendance window is closed")
+    else:
+        run.alerts.append(f"attendance push for {where} failed (attempt {push.attempts}): {push.error}")
 
 
 def run_sync(client, *, dry_run: bool = False, now=None) -> LcupSyncRun:
     started = timezone.now()
-    run = _Run(now or started)
+    run = _Run(now or started, dry_run=dry_run)
     try:
         if dry_run:
             with transaction.atomic():
