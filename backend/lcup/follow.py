@@ -1,19 +1,18 @@
 """A paired class follows its lc-up group (owner, 2026-10-13: groups fully automatic).
 
-lc-up is the master for its groups, so what lc-up CHANGES reaches the class: the name, days, time,
-level and filial, who teaches it, and — when the group is deleted — the class itself, which is
-archived (``is_active=False``, the soft archive a teacher already has; nothing is deleted) and
-reopened if lc-up restores the group.
+lc-up is the master for its groups, so the class follows it: its details, who teaches it, and —
+when the group is deleted — the class itself, which is archived (``is_active=False``, the soft
+archive a teacher already has; nothing is deleted) and reopened if lc-up restores the group.
 
-**Changes, never the state.** Details and teacher removals compare lc-up's previous snapshot of the
-group with this one. A class that already differed from lc-up when the admin paired it stays as it
-is until lc-up itself changes something — on prod that difference was real (2026-10-13: three class
-names, and nine teachers of ours sitting in classes whose lc-up groups do not list them).
+**Details are lc-up's, always** (owner, 2026-10-14): name, subject and level (from the course), days,
+time, lesson length and filial are made lc-up's on every run, even where the class differed before.
 
-Teachers are reconciled on one side only: everyone lc-up lists who is linked to an account of ours
-teaches the class. Removal needs lc-up to have taken them off, and never touches a TA — support
-teachers are ours, not lc-up's — nor a teacher lc-up never had there. A group that suddenly lists no
-teacher at all is not believed, the way an empty member list is not (``sync``).
+**Teachers are removed on a change only.** Everyone lc-up lists who is linked to an account of ours
+teaches the class, but a teacher leaves only when lc-up takes them off the group: on prod nine
+teachers of ours sit in classes whose lc-up groups never listed them (2026-10-13), and lc-up having
+never listed someone is no news. A TA — support teachers are ours, not lc-up's — is never touched,
+and a group that suddenly lists no teacher at all is not believed, the way an empty member list is
+not (``sync``).
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from access import constants as acc_const
 from access.models import UserAccess
 from classes.models import Classroom, ClassroomMembership
 
-from .classrooms import _lesson_hours, branch_for, teachers_for
+from .classrooms import _lesson_hours, branch_for, classroom_name, teachers_for
 from .matching import days_from, level_from, subject_from
 from .models import LcupTeacherLink, LinkStatus
 
@@ -32,6 +31,7 @@ M = ClassroomMembership
 _MANAGERS = (M.ROLE_ADMIN, M.ROLE_OWNER, M.ROLE_TEACHER)
 _LABELS = {
     "name": "name",
+    "subject": "subject",
     "lesson_days": "days",
     "lesson_time": "time",
     "lesson_hours": "lesson length",
@@ -56,45 +56,50 @@ def _teacher_ids(snapshot: dict) -> set[int]:
 
 
 def follow_details(room: Classroom, previous: dict, current: dict, alerts: list) -> list[str]:
-    """Apply what lc-up changed in the group's details to ``room``; the fields changed."""
-    if not previous:
-        return []
-    updates = {}
-    name = str(current.get("name") or "").strip()
-    if name and name != str(previous.get("name") or "").strip():
-        updates["name"] = name[:120]
-    if _days(current) != _days(previous):
-        days = days_from(current)
-        if days is None:
-            alerts.append(
-                f"lc-up lesson days of {room.name} are neither Mon/Wed/Fri nor Tue/Thu/Sat; the class keeps its days"
-            )
-        else:
-            updates["lesson_days"] = days
-    start, _ = _times(current)
-    if start and start != _times(previous)[0]:
-        updates["lesson_time"] = start
-    if _times(current) != _times(previous):
-        updates["lesson_hours"] = _lesson_hours(current)
-    if current.get("filial_id") != previous.get("filial_id"):
-        branch = branch_for(current)
-        if branch is not None:
-            updates["branch"] = branch
-    level = level_from(current)
-    # English has no Foundation: a level the class's subject has not is not taken.
-    if level and level != level_from(previous) and level in Classroom.LEVELS_BY_SUBJECT.get(room.subject, ()):
-        updates["level"] = level
-    subject = subject_from(current)
-    if subject and subject != subject_from(previous) and subject != room.subject:
-        # A class's subject decides its content and its teachers' access: a person moves it.
-        alerts.append(f"lc-up moved {room.name} to another subject; the class keeps its subject")
+    """Make the class's details lc-up's — every run, whatever they were before (owner, 2026-10-14:
+    "guruh ma'lumotlari doimiy sync bo'lishi kerak … hatto courselar ham"). The fields changed.
 
-    changed = [field for field, value in updates.items() if getattr(room, field) != value]
-    if changed:
-        for field in changed:
-            setattr(room, field, updates[field])
-        room.save(update_fields=[*changed, "updated_at"])
-        alerts.append(f"class {room.name} updated from lc-up: {', '.join(_LABELS[f] for f in changed)}")
+    Only what lc-up states and we can hold is taken: days that are neither Mon/Wed/Fri nor
+    Tue/Thu/Sat, a filial no branch is mapped to, or a level the subject has not (English has no
+    Foundation) leave that field as it is.
+    """
+    want = {}
+    name = classroom_name(current.get("name"))
+    if name:
+        want["name"] = name
+    subject = subject_from(current)  # the course decides, the group name is the fallback
+    if subject:
+        want["subject"] = subject
+    days = days_from(current)
+    if days:
+        want["lesson_days"] = days
+    elif previous and _days(current) != _days(previous):
+        # Said when lc-up changes them, not every 15 minutes.
+        alerts.append(f"lc-up lesson days of {room.name} are neither Mon/Wed/Fri nor Tue/Thu/Sat; the class keeps its days")
+    start, finish = _times(current)
+    if start:
+        want["lesson_time"] = start
+    if start and finish:
+        want["lesson_hours"] = _lesson_hours(current)
+    branch = branch_for(current)
+    if branch is not None:
+        want["branch"] = branch
+    level = level_from(current)
+    if level and level in Classroom.LEVELS_BY_SUBJECT.get(want.get("subject", room.subject), ()):
+        want["level"] = level
+
+    changed = [field for field, value in want.items() if getattr(room, field) != value]
+    if not changed:
+        return []
+    for field in changed:
+        setattr(room, field, want[field])
+    room.save(update_fields=[*changed, "updated_at"])
+    if "subject" in changed:
+        # The class's content is now the other subject's: everyone in it gets the class-scoped
+        # access for it, as on joining. The old grant stays — it opens only this class's own work.
+        for user_id in M.objects.filter(classroom=room).exclude(status=M.STATUS_REMOVED).values_list("user_id", flat=True):
+            _grant_class_access(room, user_id)
+    alerts.append(f"class {room.name} updated from lc-up: {', '.join(_LABELS[f] for f in changed)}")
     return changed
 
 

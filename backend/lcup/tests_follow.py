@@ -1,9 +1,9 @@
-"""A paired class follows its lc-up group (owner, 2026-10-13): what lc-up changes reaches the class
-— details, teachers — and a deleted group archives its class.
+"""A paired class follows its lc-up group (owner, 2026-10-13/14): details and course always lc-up's,
+teachers lc-up adds or takes off, and a deleted group archives its class.
 
-It follows CHANGES, never the state: a class that already differed from lc-up when it was paired
-(another name, a teacher of ours lc-up does not list) is left exactly as it is until lc-up itself
-changes something.
+Details are made lc-up's on every run, even where the class differed when it was paired ("guruh
+ma'lumotlari doimiy sync bo'lishi kerak … hatto courselar ham"). Teachers are removed on a change
+only: a teacher of ours lc-up never listed stays.
 """
 
 from __future__ import annotations
@@ -74,7 +74,6 @@ class DetailsFollowTests(FollowFixture):
         self.assertEqual(
             (room.lesson_days, room.lesson_time, room.lesson_hours, room.level), ("EVEN", "16:00", 3, "middle")
         )
-        self.assertEqual(room.name, "Junior G21 Math")  # the name did not change in lc-up
 
     def test_a_filial_change_moves_the_class(self):
         chilonzor = Branch.objects.create(region=Region.objects.create(name="Tashkent"), name="Chilonzor")
@@ -84,11 +83,26 @@ class DetailsFollowTests(FollowFixture):
         self.sync(data)
         self.assertEqual(self.fresh_room().branch_id, chilonzor.pk)
 
-    def test_what_lcup_did_not_change_is_left_alone(self):
-        # Ours is "Junior G21 Math", lc-up's "Junior G21 | Math | Vali" — as on prod; nothing changed.
+    def test_the_class_takes_lcups_details_even_where_it_differed_before(self):
+        # Ours was "Junior G21 Math", lc-up's "Junior G21 | Math | Vali" — as on prod. lc-up wins.
         run = self.sync()
-        self.assertEqual(self.fresh_room().name, "Junior G21 Math")
+        self.assertEqual(self.fresh_room().name, "Junior G21 | Math | Vali")
+        self.assertEqual(run.counts["classes_updated"], 1)
+
+    def test_double_spaces_in_lcups_name_are_not_copied(self):
+        # Prod: lc-up has "Middle  G22 | Math | Muhlisa"; the class keeps one space.
+        Classroom.objects.filter(pk=self.room.pk).update(name="Junior G21 | Math | Vali")
+        data = lcup_data()
+        self.g21(data)["name"] = "Junior  G21 |  Math | Vali "
+        run = self.sync(data)
+        self.assertEqual(self.fresh_room().name, "Junior G21 | Math | Vali")
         self.assertEqual(run.counts["classes_updated"], 0)
+
+    def test_a_class_already_like_lcup_is_not_touched(self):
+        self.sync()
+        run = self.sync()
+        self.assertEqual(run.counts["classes_updated"], 0)
+        self.assertFalse([a for a in run.alerts if "updated from lc-up" in a], run.alerts)
 
     def test_days_that_are_not_odd_or_even_are_an_alert_not_a_change(self):
         data = lcup_data()
@@ -97,11 +111,17 @@ class DetailsFollowTests(FollowFixture):
         self.assertEqual(self.fresh_room().lesson_days, "ODD")
         self.assertTrue(any("days" in a and "Junior G21 Math" in a for a in run.alerts), run.alerts)
 
-    def test_a_subject_change_is_only_an_alert(self):
+    def test_a_course_change_moves_the_class_to_its_subject_and_level(self):
+        pupil = User.objects.create_user(None, password=None, username="pupil", role="student")
+        M.objects.create(classroom=self.room, user=pupil, role=M.ROLE_STUDENT)
         data = lcup_data()
-        self.g21(data)["course"] = {"id": 302, "name": "Junior English"}
+        self.g21(data)["course"] = {"id": 304, "name": "Middle English"}
         run = self.sync(data)
-        self.assertEqual(self.fresh_room().subject, "MATH")
+        room = self.fresh_room()
+        self.assertEqual((room.subject, room.level), ("ENGLISH", "middle"))
+        # Everyone in the class can open the new subject's work in it.
+        self.assertTrue(UserAccess.objects.filter(user=pupil, subject="english", classroom=room).exists())
+        self.assertTrue(UserAccess.objects.filter(user=self.vali, subject="english", classroom=room).exists())
         self.assertTrue(any("subject" in a for a in run.alerts), run.alerts)
 
     def test_a_level_the_subject_has_not_is_not_taken(self):

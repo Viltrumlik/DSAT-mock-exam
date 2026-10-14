@@ -28,6 +28,13 @@ the sync archived, so a restore reopens only those.
 
 ## Global constraints
 
+> **Changed 2026-10-14 by the owner:** "guruh ma'lumotlari doimiy sync bo'lishi kerak lc-up bilan agar lc-up
+> o'zgartirilgan bo'lsa bu yerda ham o'zgarishi kerak hatto courselar ham" (group details must always be in sync with
+> lc-up; if lc-up changes them they must change here too, even courses). So **details, subject and level are lc-up's on
+> every run (state, not change)**, and a course change moves the class's subject too (members get the new subject's
+> class-scoped access). Runs of spaces in lc-up names are collapsed. Teacher *removal* stays change-based. On prod the
+> first run changes one class: 59, "Foundation G11 | Math | Sindor" -> "Junior G26 | Math | Sindor", foundation -> junior.
+
 - **Change, not state.** Details and teacher *removals* act on what lc-up changed between the previous
   snapshot and this one, never on how the class differs from lc-up today. On prod (checked 2026-10-13)
   9 class/teacher pairs and 3 class names differ from lc-up already (e.g. user 44 teaches in 6 classes lc-up

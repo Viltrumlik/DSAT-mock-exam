@@ -51,6 +51,11 @@ def branch_for(snapshot: dict):
     return link.branch if link else None
 
 
+def classroom_name(name) -> str:
+    """lc-up's group name as a class name: runs of spaces collapsed ("Middle  G22" is a typo there)."""
+    return " ".join(str(name or "").split())[:120]
+
+
 def _lesson_hours(snapshot: dict) -> int:
     try:
         start = datetime.strptime(str(snapshot.get("start_time") or "")[:5], "%H:%M")
@@ -76,7 +81,7 @@ def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
     domain = acc_const.DOMAIN_MATH if subject == Classroom.SUBJECT_MATH else acc_const.DOMAIN_ENGLISH
     with transaction.atomic():
         room = Classroom.objects.create(
-            name=(link.name or snapshot.get("name") or "lc-up group")[:120],
+            name=classroom_name(link.name or snapshot.get("name")) or "lc-up group",
             subject=subject,
             level=level_from(snapshot),
             lesson_days=days,
