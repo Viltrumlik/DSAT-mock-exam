@@ -105,3 +105,34 @@ class PushTests(ReconcileFixture):
             push.failures,
             [{"user_id": self.s2.pk, "student_id": 102, "code": "blocked_debt", "message": "Qarzdorlik sababli bloklangan"}],
         )
+
+
+@override_settings(ALLOWED_HOSTS=["testserver", "admin.mastersat.uz"])
+class PushListViewTests(ReconcileFixture):
+    def test_an_admin_sees_each_push_and_the_students_lcup_did_not_take(self):
+        from rest_framework.test import APIClient
+
+        from users.models import User
+
+        LcupAttendancePush.objects.create(
+            group=self.link, date=DAY, state=LcupAttendancePush.STATE_SENT, attempts=1,
+            records=[{"user_id": self.s1.pk, "student_id": 101, "status": "present"},
+                     {"user_id": self.s2.pk, "student_id": 102, "status": "absent"}],
+            summary={"saved": 1, "failed": 1},
+            failures=[{"user_id": self.s2.pk, "student_id": 102, "code": "blocked_debt", "message": "x"}],
+        )
+        api = APIClient()
+        api.force_authenticate(User.objects.create_user(None, password=None, username="boss", role="admin"))
+        body = api.get("/api/lcup/attendance/pushes/", HTTP_HOST="admin.mastersat.uz").json()
+        self.assertEqual(len(body), 1)
+        push = body[0]
+        self.assertEqual((push["group"], push["date"], push["state"], push["marks"]), (self.link.name, DAY.isoformat(), "sent", 2))
+        self.assertEqual(push["failures"][0]["code"], "blocked_debt")
+        self.assertEqual(push["failures"][0]["student"]["id"], self.s2.pk)
+
+    def test_a_teacher_is_refused(self):
+        from rest_framework.test import APIClient
+
+        api = APIClient()
+        api.force_authenticate(self.teacher)
+        self.assertEqual(api.get("/api/lcup/attendance/pushes/", HTTP_HOST="admin.mastersat.uz").status_code, 403)

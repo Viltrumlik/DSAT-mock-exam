@@ -12,6 +12,7 @@ export const lcupKeys = {
   teachers: [...ROOT, "teachers"] as const,
   unlinked: [...ROOT, "unlinked"] as const,
   accounts: [...ROOT, "accounts"] as const,
+  attendancePushes: [...ROOT, "attendance-pushes"] as const,
 };
 
 /** Polled: a queued sync finishes in the worker, and the run list is where it shows up. */
@@ -33,6 +34,10 @@ export function useLcupTeachers() {
 
 export function useLcupUnlinked() {
   return useQuery({ queryKey: lcupKeys.unlinked, queryFn: () => lcupApi.unlinkedMembers() });
+}
+
+export function useLcupAttendancePushes() {
+  return useQuery({ queryKey: lcupKeys.attendancePushes, queryFn: () => lcupApi.attendancePushes() });
 }
 
 export function useLcupAccounts() {

@@ -7,6 +7,7 @@ import { useOrgClassrooms } from "@/features/org/orgHooks";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import {
   lcupApi,
+  type AttendancePushState,
   type ClaimState,
   type GroupLinkStatus,
   type LcupGroup,
@@ -17,6 +18,7 @@ import {
 } from "./lcupApi";
 import {
   useLcupAccounts,
+  useLcupAttendancePushes,
   useLcupAction,
   useLcupGroups,
   useLcupStatus,
@@ -503,5 +505,56 @@ export function AccountsPanel() {
         })}
       </ul>
     </div>
+  );
+}
+
+const PUSH_BADGE: Record<AttendancePushState, { label: string; variant: BadgeVariant }> = {
+  sent: { label: "Sent", variant: "success" },
+  failed: { label: "Will retry", variant: "warning" },
+  refused: { label: "Refused by lc-up", variant: "danger" },
+};
+
+/** What was sent to lc-up — once per register, when it closes — and what lc-up did not take. */
+export function AttendancePushesPanel() {
+  const q = useLcupAttendancePushes();
+  if (q.isLoading) return <Loading />;
+  if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  if (!q.data.length) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Nothing sent to lc-up yet. A register is sent once it closes — two hours after its lesson — and only
+        the marks lc-up does not already have.
+      </p>
+    );
+  }
+  return (
+    <ul className="space-y-2">
+      {q.data.map((push) => {
+        const badge = PUSH_BADGE[push.state];
+        return (
+          <li key={push.id} className={CARD}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-foreground">{push.group}</span>
+              <span className="text-xs text-muted-foreground">{push.date}</span>
+              <Badge variant={badge.variant}>{badge.label}</Badge>
+              <span className="text-xs text-muted-foreground">
+                {push.marks} mark{push.marks === 1 ? "" : "s"}
+                {push.summary.saved != null ? ` · ${push.summary.saved} saved` : ""}
+              </span>
+            </div>
+            {push.error ? <p className="mt-2 text-xs text-muted-foreground">{push.error}</p> : null}
+            {push.failures.length ? (
+              <ul className="mt-2 space-y-1 text-xs">
+                {push.failures.map((failure, index) => (
+                  <li key={`${push.id}-${index}`} className="text-foreground">
+                    {failure.student?.name ?? "A student"} — lc-up did not take this mark ({failure.code || "unknown"})
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
