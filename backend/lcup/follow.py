@@ -7,12 +7,12 @@ archive a teacher already has; nothing is deleted) and reopened if lc-up restore
 **Details are lc-up's, always** (owner, 2026-10-14): name, subject and level (from the course), days,
 time, lesson length and filial are made lc-up's on every run, even where the class differed before.
 
-**Teachers are removed on a change only.** Everyone lc-up lists who is linked to an account of ours
-teaches the class, but a teacher leaves only when lc-up takes them off the group: on prod nine
-teachers of ours sit in classes whose lc-up groups never listed them (2026-10-13), and lc-up having
-never listed someone is no news. A TA — support teachers are ours, not lc-up's — is never touched,
-and a group that suddenly lists no teacher at all is not believed, the way an empty member list is
-not (``sync``).
+**Teachers are lc-up's, always** (owner, 2026-10-14: "teacherlarni ham to'liq sync qiling", and
+asked, admins too). Everyone lc-up lists who is linked to an account of ours teaches the class, and
+every other teacher or admin seat is taken out — on the first run that was 45 seats of 11 people,
+the centre's own admin account among them. A TA — support teachers are ours, not lc-up's — is never
+touched. Nobody is taken out while lc-up lists no teacher at all (not believed, the way an empty
+member list is not) or none of its teachers has an account of ours yet.
 """
 
 from __future__ import annotations
@@ -124,16 +124,24 @@ def _grant_class_access(room: Classroom, user_id: int) -> None:
 
 
 def follow_teachers(link, previous: dict, current: dict, alerts: list) -> dict:
-    """Make the class's teachers lc-up's: add who lc-up lists, remove who lc-up took off."""
+    """Make the class's teaching staff lc-up's: lc-up's teachers teach it, every other teacher and
+    admin seat is taken out (owner, 2026-10-14). TAs — our support teachers — stay."""
     counts = {"teachers_added": 0, "teachers_removed": 0}
     room = link.classroom
     was, now = _teacher_ids(previous), _teacher_ids(current)
-    if was and not now:
-        alerts.append(f"lc-up lists no teacher for {link.name}; the teachers of {room.name} are kept")
+    changed = was != now  # an alert is said when lc-up changes something, not every 15 minutes
+    if not now:
+        if changed:
+            alerts.append(f"lc-up lists no teacher for {link.name}; the teachers of {room.name} are kept")
+        return counts
+    desired = teachers_for(current)
+    if not desired:
+        # lc-up's teacher is not linked yet (in review, or no phone): taking the others out would
+        # leave the class with nobody to teach it.
+        if changed:
+            alerts.append(f"lc-up's teachers of {link.name} have no account of ours yet; the teachers of {room.name} are kept")
         return counts
 
-    desired = teachers_for(current)
-    lcup_id_of = dict(LcupTeacherLink.objects.filter(user__in=desired).values_list("user_id", "lcup_teacher_id"))
     with transaction.atomic():
         teaching = []
         for user in desired:
@@ -141,7 +149,7 @@ def follow_teachers(link, previous: dict, current: dict, alerts: list) -> dict:
             if row is None:
                 M.objects.create(classroom=room, user=user, role=M.ROLE_TEACHER, status=M.STATUS_ACTIVE)
             elif row.role == M.ROLE_STUDENT:
-                if lcup_id_of.get(user.pk) not in was:  # said when lc-up lists them, not every run
+                if changed:
                     alerts.append(f"lc-up lists a student of {room.name} as its teacher; not made a teacher")
                 continue
             elif row.role == M.ROLE_TA or row.status == M.STATUS_REMOVED:
@@ -154,31 +162,28 @@ def follow_teachers(link, previous: dict, current: dict, alerts: list) -> dict:
             _grant_class_access(room, user.pk)
             counts["teachers_added"] += 1
             teaching.append(user)
+        if not teaching:
+            return counts
 
-        gone = set(
-            LcupTeacherLink.objects.filter(lcup_teacher_id__in=was - now, user__isnull=False)
-            .exclude(status=LinkStatus.IGNORED)
-            .values_list("user_id", flat=True)
-        ) - {u.pk for u in desired}
+        keep = {u.pk for u in teaching}
         # save(), never update(): leaving a class has side effects (its Telegram group, the audit row).
-        for row in M.objects.filter(classroom=room, user_id__in=gone, role__in=_MANAGERS, status=M.STATUS_ACTIVE):
+        for row in (
+            M.objects.filter(classroom=room, role__in=_MANAGERS)
+            .exclude(status=M.STATUS_REMOVED)
+            .exclude(user_id__in=keep)
+        ):
             row.status = M.STATUS_REMOVED
             row.save(update_fields=["status"])
             counts["teachers_removed"] += 1
 
-        if room.teacher_id is None or room.teacher_id in gone:
-            # lc-up's first teacher owns the class, as when the sync creates one (classrooms.py).
-            owner = teaching[0] if teaching else None
-            if owner is not None:
-                row = M.objects.get(classroom=room, user=owner)
-                if row.role == M.ROLE_TEACHER:
-                    row.role = M.ROLE_ADMIN
-                    row.save(update_fields=["role"])
-            elif room.teacher_id is not None:
-                alerts.append(f"{room.name} has no lc-up teacher with an account of ours; it has no owner now")
-            if (owner.pk if owner else None) != room.teacher_id:
-                room.teacher = owner
-                room.save(update_fields=["teacher", "updated_at"])
+        # lc-up's first teacher owns the class, on an ADMIN seat, as when the sync creates one.
+        if room.teacher_id not in keep:
+            room.teacher = teaching[0]
+            room.save(update_fields=["teacher", "updated_at"])
+        owner_row = M.objects.get(classroom=room, user_id=room.teacher_id)
+        if owner_row.role == M.ROLE_TEACHER:
+            owner_row.role = M.ROLE_ADMIN
+            owner_row.save(update_fields=["role"])
     return counts
 
 
