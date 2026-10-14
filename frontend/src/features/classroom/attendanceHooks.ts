@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { attendanceApi, type AttendanceStatus } from "./attendanceApi";
+import { attendanceApi, type AttendanceMarkEntry } from "./attendanceApi";
 
 const enabledId = (id: number) => Number.isFinite(id) && id > 0;
 const keys = {
@@ -60,8 +60,7 @@ function invalidateSession(qc: ReturnType<typeof useQueryClient>, classId: numbe
 export function useMarkAttendance(classId: number, sessionId: number) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (records: { student_id: number; status: AttendanceStatus; note?: string }[]) =>
-      attendanceApi.mark(classId, sessionId, records),
+    mutationFn: (records: AttendanceMarkEntry[]) => attendanceApi.mark(classId, sessionId, records),
     onSuccess: () => invalidateSession(qc, classId, sessionId),
   });
 }

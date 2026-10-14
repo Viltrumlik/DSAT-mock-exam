@@ -5,9 +5,10 @@ teacher's own roster change sets off happens here too: the membership audit row,
 library grant on joining, and — on removal — leaving the class's Telegram group. That last one is
 why removals are guarded so hard.
 
-**Who may be removed: only students we know lc-up has.** A member with no lc-up link might be a
-student still waiting in the admin's review queue; removing them would throw out someone lc-up
-does list, under a name we have not matched yet. Staff rows are never touched at all.
+**Who may be removed.** A linked student who has left the lc-up group, and — since the owner made
+the roster a mirror of lc-up (2026-10-14) — a student with no lc-up link at all. The second is held
+while lc-up has a live member here with no account of ours, who may be that same person still
+waiting in the admin's review queue. Staff rows are never touched here (``follow`` owns them).
 
 **Too many removals at once are held, not applied.** lc-up answering with half a list — a bug, a
 partial outage — would otherwise empty a class and its Telegram group in one sync. Above
@@ -42,6 +43,9 @@ class RosterPlan:
     to_add: set[int] = field(default_factory=set)
     to_reactivate: set[int] = field(default_factory=set)
     to_remove: set[int] = field(default_factory=set)
+    #: Active students with no lc-up link. Not capped: the caps guard against lc-up answering with
+    #: half a member list, and this reads no member list at all.
+    to_remove_unlinked: set[int] = field(default_factory=set)
     blocked_removals: bool = False
 
 
@@ -71,6 +75,11 @@ def plan_group(link) -> RosterPlan:
     linked = set(LcupStudentLink.objects.filter(user_id__in=current).values_list("user_id", flat=True))
     plan.to_remove = (current & linked) - desired
     plan.blocked_removals = len(plan.to_remove) > per_class_removal_cap(len(current))
+    # The roster mirrors lc-up (owner, 2026-10-14: "o'quvchi lc-upda bo'lmasa bizdan ham chiqib
+    # ketsin"), so a student with no lc-up link at all leaves too — unless lc-up has a live member
+    # here with no account of ours yet, who may be this very person waiting in the review queue.
+    if not link.memberships.filter(left_at__isnull=True, student__user__isnull=True).exists():
+        plan.to_remove_unlinked = current - linked
     return plan
 
 
@@ -82,7 +91,7 @@ def _grant_subject_access(room, user_id: int) -> None:
 
 
 def apply_plan(link, plan: RosterPlan, *, allow_removals: bool) -> dict:
-    counts = {"added": 0, "reactivated": 0, "removed": 0}
+    counts = {"added": 0, "reactivated": 0, "removed": 0, "removed_unlinked": 0}
     room = link.classroom
     if room is None:
         return counts
@@ -105,4 +114,10 @@ def apply_plan(link, plan: RosterPlan, *, allow_removals: bool) -> dict:
                 row.status = _REMOVED
                 row.save(update_fields=["status"])
                 counts["removed"] += 1
+        for row in ClassroomMembership.objects.filter(
+            classroom=room, user_id__in=plan.to_remove_unlinked, role=_STUDENT, status=_ACTIVE
+        ):
+            row.status = _REMOVED
+            row.save(update_fields=["status"])
+            counts["removed_unlinked"] += 1
     return counts

@@ -47,7 +47,7 @@ class RosterTests(TestCase):
         self.linked(s)
         plan = plan_group(self.group)
         self.assertEqual(plan.to_add, {s.pk})
-        self.assertEqual(apply_plan(self.group, plan, allow_removals=True), {"added": 1, "reactivated": 0, "removed": 0})
+        self.assertEqual(apply_plan(self.group, plan, allow_removals=True), {"added": 1, "reactivated": 0, "removed": 0, "removed_unlinked": 0})
         self.assertEqual(self.status_of(s), ACTIVE)
         self.assertTrue(ClassroomMembershipEvent.objects.filter(classroom=self.room, student=s).exists())
 
@@ -84,10 +84,33 @@ class RosterTests(TestCase):
         apply_plan(self.group, plan, allow_removals=True)
         self.assertEqual(self.status_of(s), REMOVED)
 
-    def test_keeps_a_member_who_is_not_linked_to_lcup(self):
+    def test_a_member_lcup_does_not_have_leaves(self):
+        # Owner 2026-10-14: "o'quvchi lc-upda bo'lmasa bizdan ham chiqib ketsin".
         s = self.student("unlinked")
         self.ours(s)
-        self.assertEqual(plan_group(self.group).to_remove, set())
+        plan = plan_group(self.group)
+        self.assertEqual((plan.to_remove, plan.to_remove_unlinked), (set(), {s.pk}))
+        self.assertEqual(apply_plan(self.group, plan, allow_removals=True)["removed_unlinked"], 1)
+        self.assertEqual(self.status_of(s), REMOVED)
+
+    def test_an_unlinked_member_stays_while_an_lcup_member_has_no_account_here(self):
+        # That lc-up student may be this very person, waiting in the review queue.
+        s = self.student("unlinked")
+        self.ours(s)
+        waiting = LcupStudentLink.objects.create(lcup_student_id=999, name="Waiting Student")
+        LcupMembership.objects.create(group=self.group, student=waiting, lcup_status="active")
+        self.assertEqual(plan_group(self.group).to_remove_unlinked, set())
+
+    def test_unlinked_members_leave_whatever_the_caps(self):
+        # The caps guard against lc-up sending half a member list; this removal reads no list.
+        stray = [self.student(f"u{i}") for i in range(10)]
+        for s in stray:
+            self.ours(s)
+        plan = plan_group(self.group)
+        self.assertEqual(len(plan.to_remove_unlinked), 10)
+        self.assertFalse(plan.blocked_removals)
+        apply_plan(self.group, plan, allow_removals=False)
+        self.assertTrue(all(self.status_of(s) == REMOVED for s in stray))
 
     def test_never_touches_a_staff_row(self):
         self.linked(self.teacher)
@@ -115,7 +138,7 @@ class RosterTests(TestCase):
         self.ours(leaver)
         self.linked(joiner)
         counts = apply_plan(self.group, plan_group(self.group), allow_removals=False)
-        self.assertEqual(counts, {"added": 1, "reactivated": 0, "removed": 0})
+        self.assertEqual(counts, {"added": 1, "reactivated": 0, "removed": 0, "removed_unlinked": 0})
         self.assertEqual(self.status_of(leaver), ACTIVE)
 
     def test_cap(self):

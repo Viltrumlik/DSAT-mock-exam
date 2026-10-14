@@ -100,6 +100,22 @@ export interface LcupAccount {
   reissued_count: number;
 }
 
+export type AttendancePushState = "sent" | "failed" | "refused";
+
+/** One register sent to lc-up (lc-up Part 2): what lc-up took, and the students it did not. */
+export interface LcupAttendancePush {
+  id: number;
+  group: string;
+  date: string;
+  state: AttendancePushState;
+  attempts: number;
+  marks: number;
+  summary: { saved?: number; deleted?: number; unchanged?: number; failed?: number };
+  failures: { student: LcupUserRef | null; code: string; message: string }[];
+  error: string;
+  sent_at: string | null;
+}
+
 export const lcupApi = {
   async status(): Promise<LcupStatus> {
     const { data } = await api.get<LcupStatus>("/lcup/status/");
@@ -170,6 +186,10 @@ export const lcupApi = {
   },
   async accounts(): Promise<LcupAccount[]> {
     const { data } = await api.get<LcupAccount[]>("/lcup/accounts/");
+    return data;
+  },
+  async attendancePushes(): Promise<LcupAttendancePush[]> {
+    const { data } = await api.get<LcupAttendancePush[]>("/lcup/attendance/pushes/");
     return data;
   },
   async reissue(userId: number): Promise<LcupAccount> {

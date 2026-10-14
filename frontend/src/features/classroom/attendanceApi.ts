@@ -37,6 +37,22 @@ export interface RosterRow {
   name: string;
   status: AttendanceStatus | null;
   note: string;
+  /** Which of lc-up's reasons an EXCUSED mark names (classes paired with lc-up only). */
+  reason_id?: number | null;
+}
+
+/** One of lc-up's reasons for an excused absence. A class paired with lc-up lists them, and an
+ *  EXCUSED mark there must name one — lc-up receives it as an absence with that reason. */
+export interface ExcuseReason {
+  id: number;
+  title: string;
+}
+
+export interface AttendanceMarkEntry {
+  student_id: number;
+  status: AttendanceStatus;
+  note?: string;
+  reason_id?: number;
 }
 
 export interface AttendanceSummary {
@@ -63,9 +79,12 @@ export const attendanceApi = {
     (await api.get(`${base(classId)}/sessions/`)).data,
   createSession: async (classId: number, data: { date: string; lesson_index?: number | null }): Promise<AttendanceSessionBrief> =>
     (await api.post(`${base(classId)}/sessions/`, data)).data,
-  getSession: async (classId: number, sessionId: number): Promise<AttendanceSessionBrief & { roster: RosterRow[] }> =>
+  getSession: async (
+    classId: number,
+    sessionId: number,
+  ): Promise<AttendanceSessionBrief & { roster: RosterRow[]; excuse_reasons?: ExcuseReason[] }> =>
     (await api.get(`${base(classId)}/sessions/${sessionId}/`)).data,
-  mark: async (classId: number, sessionId: number, records: { student_id: number; status: AttendanceStatus; note?: string }[]) =>
+  mark: async (classId: number, sessionId: number, records: AttendanceMarkEntry[]) =>
     (await api.post(`${base(classId)}/sessions/${sessionId}/mark/`, { records })).data,
   markAllPresent: async (classId: number, sessionId: number) =>
     (await api.post(`${base(classId)}/sessions/${sessionId}/mark-all-present/`, {})).data,

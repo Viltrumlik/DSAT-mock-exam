@@ -10,9 +10,9 @@ exactly one process logs in and the rest wait for its token.
 user (we stop at 55) and 2 requests at once per centre (two cache slots). 429/503 answers carry
 ``Retry-After`` and are honoured.
 
-**There is no generic ``post()``.** The only write this client can make is the login. lc-up's
-``POST /attendance`` charges a student's fee and messages their parents; nothing in this part of
-the integration may be able to send it by accident.
+**There is no generic ``post()``.** The only writes are the login and :meth:`LcupClient.post_attendance`.
+lc-up's ``POST /attendance`` charges a student's fee and messages their parents, so it is one named
+method, behind its own switch (``LCUP_ATTENDANCE_PUSH_ENABLED``), that nothing can reach by accident.
 """
 
 from __future__ import annotations
@@ -34,6 +34,8 @@ TIMEOUT = (5, 20)
 MAX_RETRIES = 3
 MAX_RETRY_AFTER = 60
 LOGIN_WAIT_SECONDS = 30
+ATTENDANCE_PATH = "/api/external/v1/attendance"
+MAX_ATTENDANCE_RECORDS = 100
 
 
 class LcupError(Exception):
@@ -46,6 +48,10 @@ class LcupAuthError(LcupError):
 
 class LcupUnavailable(LcupError):
     """lc-up could not be reached, or kept answering 5xx/429 after the retries."""
+
+
+class LcupWindowClosed(LcupError):
+    """lc-up refused an attendance write: the centre's window for that day is closed (403)."""
 
 
 def _refusal_reason(resp) -> str:
@@ -85,10 +91,26 @@ class LcupClient:
     # ── public ────────────────────────────────────────────────────────────
 
     def get(self, path: str, params: dict | None = None) -> dict:
+        return self._call("GET", path, params=params)
+
+    def post_attendance(self, group_id: int, day, records: list[dict]) -> dict:
+        """Mark one lc-up group's attendance for one day — lc-up's ``data`` back (summary +
+        per-student results). **This charges the day's fee and messages the parents' bot**, so it
+        refuses while the push switch is off, and lc-up's 403 (the centre's window for that day is
+        closed) is final: :class:`LcupWindowClosed`, never retried. A repeat is safe on lc-up's
+        side — it updates, it does not charge twice — which is what makes retrying a 409 sound."""
+        if not conf.attendance_push_enabled():
+            raise LcupError("attendance push is switched off")
+        if len(records) > MAX_ATTENDANCE_RECORDS:
+            raise LcupError(f"lc-up takes at most {MAX_ATTENDANCE_RECORDS} attendance records at once")
+        body = {"group_id": group_id, "date": day.isoformat(), "records": records}
+        return (self._call("POST", ATTENDANCE_PATH, json=body, forbidden=LcupWindowClosed) or {}).get("data") or {}
+
+    def _call(self, method: str, path: str, *, params=None, json=None, forbidden=LcupError) -> dict:
         token = self._token()
         refreshed = False
         for attempt in range(MAX_RETRIES + 1):
-            resp = self._send("GET", path, params=params, token=token)
+            resp = self._send(method, path, params=params, json=json, token=token)
             if resp.status_code == 401:
                 if refreshed:
                     raise LcupAuthError("lc-up refused a freshly issued token")
@@ -100,6 +122,8 @@ class LcupClient:
                     raise LcupUnavailable(f"lc-up answered {resp.status_code} on {path}")
                 self.sleep(_retry_after(resp, attempt))
                 continue
+            if resp.status_code == 403:
+                raise forbidden(f"lc-up answered 403 on {path}")
             if resp.status_code >= 400:
                 raise LcupError(f"lc-up answered {resp.status_code} on {path}")
             return resp.json()

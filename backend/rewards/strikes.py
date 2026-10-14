@@ -20,6 +20,8 @@ and cheap — a student has a few hundred attendance records, not a few million.
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -150,6 +152,8 @@ def _notify_streak_reset(student, reset_row, previous_balance: int) -> None:
     will actually ask. It only ever shows the current number, so without this the strikes they
     had banked simply vanish between one page load and the next.
     """
+    if _SILENT.get():
+        return
     saved = "strike" if int(previous_balance) == 1 else "strikes"
     title = "Your attendance streak starts again"
     body = (
@@ -250,6 +254,53 @@ def state(student) -> dict:
     }
 
 
+#: Set inside :func:`deferred`: the students whose streak waits to be recomputed on leaving it.
+_PENDING: ContextVar[set | None] = ContextVar("strikes_pending", default=None)
+#: Set inside :func:`silenced`: a reset is still ledgered but nobody is told.
+_SILENT: ContextVar[bool] = ContextVar("strikes_silent", default=False)
+
+
+def note(student_id) -> bool:
+    """Inside :func:`deferred`, remember ``student_id`` for later and say so (True); else False."""
+    pending = _PENDING.get()
+    if pending is None:
+        return False
+    pending.add(student_id)
+    return True
+
+
+@contextmanager
+def silenced():
+    token = _SILENT.set(True)
+    try:
+        yield
+    finally:
+        _SILENT.reset(token)
+
+
+@contextmanager
+def deferred():
+    """For a bulk rewrite of registers — the lc-up history import (lcup/attendance.py).
+
+    Inside, a register change only notes the student (and the block yields that set, so a caller
+    can add students whose marks it deleted: a delete fires no strike hook). On leaving, each
+    noted student is recomputed once, **silenced**: a streak that resets is written to the ledger,
+    because it is true, but months of old lessons copied in one go must not hand a student a stack
+    of "your streak starts again" notices about lessons long past. Nothing runs if the block raised.
+    """
+    from django.contrib.auth import get_user_model
+
+    pending: set = set()
+    token = _PENDING.set(pending)
+    try:
+        yield pending
+    finally:
+        _PENDING.reset(token)
+    with silenced():
+        for student in get_user_model().objects.filter(pk__in=pending).order_by("pk"):
+            recompute(student)
+
+
 def sync_from_attendance(record, *, actor=None) -> None:
     """Hook entry point: one attendance mark changed, so re-derive that student's streak.
 
@@ -259,4 +310,6 @@ def sync_from_attendance(record, *, actor=None) -> None:
     No FINALIZED gate: see :func:`_attended_history` for why one here left every strike in
     production at zero. A mark is the fact; finalizing is paperwork the school does not do.
     """
+    if note(record.student_id):
+        return
     recompute(record.student, actor=actor)

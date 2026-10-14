@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Tabs } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
-import { AccountsPanel, GroupsPanel, StatusPanel, StudentsPanel, TeachersPanel } from "@/features/lcup/LcupPanels";
+import { AccountsPanel, AttendancePushesPanel, GroupsPanel, StatusPanel, StudentsPanel, TeachersPanel } from "@/features/lcup/LcupPanels";
 
 /**
  * The lc-up link: the centre's CRM is the master for groups and who is in them, and our classes
@@ -18,6 +18,7 @@ const TABS = [
   { value: "students", label: "Students" },
   { value: "teachers", label: "Teachers" },
   { value: "accounts", label: "Accounts" },
+  { value: "attendance", label: "Attendance" },
 ];
 
 export default function OpsLcupPage() {
@@ -35,6 +36,7 @@ export default function OpsLcupPage() {
       {tab === "students" ? <StudentsPanel /> : null}
       {tab === "teachers" ? <TeachersPanel /> : null}
       {tab === "accounts" ? <AccountsPanel /> : null}
+      {tab === "attendance" ? <AttendancePushesPanel /> : null}
     </div>
   );
 }

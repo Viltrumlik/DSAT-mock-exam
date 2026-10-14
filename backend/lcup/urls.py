@@ -21,4 +21,5 @@ urlpatterns = [
     path("accounts/", views.AccountListView.as_view(), name="lcup-accounts"),
     path("accounts/<int:user_id>/reissue/", views.AccountReissueView.as_view(), name="lcup-account-reissue"),
     path("claim/password/", views.ClaimPasswordView.as_view(), name="lcup-claim-password"),
+    path("attendance/pushes/", views.AttendancePushListView.as_view(), name="lcup-attendance-pushes"),
 ]

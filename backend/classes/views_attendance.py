@@ -170,11 +170,20 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
                 "name": _display_name(m.user),
                 "status": r.status if r else None,
                 "note": r.note if r else "",
+                "reason_id": r.lcup_reason_id if r else None,
             })
         return Response({
             **_session_brief(session, classroom=classroom, user=request.user),
             "roster": roster,
+            # lc-up's reasons an EXCUSED mark in this class must name; [] for a class lc-up does not run.
+            "excuse_reasons": _excuse_reasons(classroom),
         })
+
+
+def _excuse_reasons(classroom) -> list[dict]:
+    from lcup.attendance_guard import excuse_reasons
+
+    return excuse_reasons(classroom)
 
 
 def _window_refusal(request, classroom, session):
@@ -213,6 +222,13 @@ class AttendanceMarkView(_ClassroomScopedView):
         # simply posts every student id it knows, must not be able to mark somebody for a
         # lesson held before they joined. The view is the security boundary, not the UI.
         allowed = {m.user_id for m in _active_students(classroom, on_date=session.date)}
+        # A class paired with lc-up sends an excused absence to lc-up as an absence WITH one of its
+        # reasons (owner, 2026-10-12), so the mark must name one — checked before anything is written.
+        reasons = {r["id"] for r in _excuse_reasons(classroom)}
+        if reasons and any(
+            e.get("status") == AttendanceRecord.STATUS_EXCUSED and e.get("reason_id") not in reasons for e in entries
+        ):
+            return Response({"detail": "Choose a reason for the excused absence."}, status=status.HTTP_400_BAD_REQUEST)
         updated = 0
         for e in entries:
             sid = e.get("student_id")
@@ -221,7 +237,12 @@ class AttendanceMarkView(_ClassroomScopedView):
                 continue
             AttendanceRecord.objects.update_or_create(
                 session=session, student_id=sid,
-                defaults={"status": st, "note": (e.get("note") or "").strip(), "marked_by": request.user},
+                defaults={
+                    "status": st,
+                    "note": (e.get("note") or "").strip(),
+                    "marked_by": request.user,
+                    "lcup_reason_id": e.get("reason_id") if reasons and st == AttendanceRecord.STATUS_EXCUSED else None,
+                },
             )
             updated += 1
         return Response({"status": "marked", "updated": updated})

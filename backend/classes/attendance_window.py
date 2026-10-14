@@ -97,20 +97,37 @@ def can_mark(classroom, day, *, now=None, user=None) -> bool:
     ``user`` is optional so callers that have already resolved the override (or are asking
     about the register rather than about a person) can leave it out.
     """
-    if user is not None and _may_override(user):
+    state = marking_state(classroom, day, now=now)
+    if state == STATE_OPEN:
         return True
-    return marking_state(classroom, day, now=now) == STATE_OPEN
+    return user is not None and _may_override(user) and not _lcup_owns(classroom, state)
 
 
 def refusal(classroom, day, *, now=None) -> str | None:
     """The sentence to hand a teacher who cannot write this register, or ``None``."""
-    return _REASON.get(marking_state(classroom, day, now=now))
+    state = marking_state(classroom, day, now=now)
+    if _lcup_owns(classroom, state):
+        from lcup.attendance_guard import LOCKED_REASON
+
+        return LOCKED_REASON
+    return _REASON.get(state)
 
 
 def _may_override(user) -> bool:
     from .capabilities import is_global_admin
 
     return is_global_admin(user)
+
+
+def _lcup_owns(classroom, state) -> bool:
+    """A CLOSED register of a class paired with lc-up, while lc-up is its source (the lc-up
+    attendance pull, 2026-10-14: "lc-up ustun"). Nobody writes it here — not even the override —
+    because the next sync would put lc-up's marks back; the correction belongs in lc-up."""
+    if state != STATE_LOCKED:
+        return False
+    from lcup.attendance_guard import follows_lcup
+
+    return follows_lcup(classroom)
 
 
 def window_payload(classroom, day, *, now=None, user=None) -> dict:
@@ -124,12 +141,13 @@ def window_payload(classroom, day, *, now=None, user=None) -> dict:
     now = now or timezone.now()
     opens_at, closes_at = marking_window(classroom, day)
     state = marking_state(classroom, day, now=now)
-    override = user is not None and _may_override(user)
+    lcup_owns = _lcup_owns(classroom, state)
+    override = user is not None and _may_override(user) and not lcup_owns
     return {
         "state": state,
         "opens_at": opens_at.isoformat(),
         "closes_at": closes_at.isoformat(),
         "can_mark": state == STATE_OPEN or override,
         "is_override": override and state != STATE_OPEN,
-        "reason": _REASON.get(state),
+        "reason": refusal(classroom, day, now=now),
     }

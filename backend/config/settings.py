@@ -286,6 +286,12 @@ LCUP_BASE_URL = os.getenv("LCUP_BASE_URL", "https://master-sat.lc-up.com").strip
 LCUP_DOMAIN = os.getenv("LCUP_DOMAIN", "").strip()
 LCUP_MOBILE = os.getenv("LCUP_MOBILE", "").strip()
 LCUP_PASSWORD = os.getenv("LCUP_PASSWORD", "")
+# Attendance (docs/superpowers/plans/2026-10-14-lcup-attendance.md). PULL: closed registers of paired
+# classes take lc-up's marks and become read-only here. PUSH: what lc-up lacks is sent to lc-up —
+# which charges the day's fee and messages parents — but never for a day before PUSH_FROM.
+LCUP_ATTENDANCE_PULL_ENABLED = os.getenv("LCUP_ATTENDANCE_PULL_ENABLED", "False").lower() == "true"
+LCUP_ATTENDANCE_PUSH_ENABLED = os.getenv("LCUP_ATTENDANCE_PUSH_ENABLED", "False").lower() == "true"
+LCUP_ATTENDANCE_PUSH_FROM = os.getenv("LCUP_ATTENDANCE_PUSH_FROM", "").strip()
 
 # Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"

@@ -140,6 +140,56 @@ class LcupMembership(models.Model):
         constraints = [models.UniqueConstraint(fields=["group", "student"], name="lcup_membership_unique")]
 
 
+class LcupAbsenceReason(models.Model):
+    """lc-up's reasons for an excused absence ("Kasal", …), synced each run. An EXCUSED mark in a
+    paired class names one of these; lc-up receives it as ``reason_id`` on an ``absent``."""
+
+    lcup_reason_id = models.PositiveIntegerField(unique=True)
+    title = models.CharField(max_length=120)
+    color = models.CharField(max_length=20, blank=True, default="")
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["lcup_reason_id"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class LcupAttendancePush(models.Model):
+    """One ``POST /attendance`` for one lc-up group and day — the outbox and its audit trail.
+
+    Unique per (group, date): lc-up charges the fee for what it receives, and the owner's rule is
+    one push per register, sent when it closes. ``failed`` is a transient error and is retried on
+    later runs; ``refused`` (lc-up's window was closed) and ``sent`` are final."""
+
+    STATE_SENT = "sent"
+    STATE_FAILED = "failed"
+    STATE_REFUSED = "refused"
+    STATE_CHOICES = [(STATE_SENT, "Sent"), (STATE_FAILED, "Failed"), (STATE_REFUSED, "Refused")]
+
+    group = models.ForeignKey(LcupGroupLink, on_delete=models.CASCADE, related_name="attendance_pushes")
+    date = models.DateField()
+    state = models.CharField(max_length=10, choices=STATE_CHOICES, default=STATE_FAILED, db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    #: What was sent: [{user_id, student_id, status, reason_id?}].
+    records = models.JSONField(default=list, blank=True)
+    #: lc-up's own summary: {saved, deleted, unchanged, failed}.
+    summary = models.JSONField(default=dict, blank=True)
+    #: The students lc-up did not take: [{user_id, student_id, code, message}].
+    failures = models.JSONField(default=list, blank=True)
+    error = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-date", "-id"]
+        constraints = [models.UniqueConstraint(fields=["group", "date"], name="lcup_attendance_push_once")]
+
+    def __str__(self) -> str:
+        return f"{self.group_id} {self.date} {self.state}"
+
+
 class AccountClaim(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lcup_claim")
     phone = models.CharField(max_length=20, db_index=True)

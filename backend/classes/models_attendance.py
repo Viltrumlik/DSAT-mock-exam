@@ -71,6 +71,9 @@ class AttendanceRecord(models.Model):
     )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, db_index=True)
     note = models.CharField(max_length=240, blank=True)
+    #: For an EXCUSED mark in a class paired with lc-up: which of lc-up's absence reasons
+    #: (``lcup.LcupAbsenceReason.lcup_reason_id``). lc-up receives it as ``reason_id``.
+    lcup_reason_id = models.PositiveIntegerField(null=True, blank=True)
     marked_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="marked_attendance_records"
     )

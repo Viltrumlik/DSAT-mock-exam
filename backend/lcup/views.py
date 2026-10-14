@@ -330,3 +330,38 @@ class ClaimPasswordView(APIView):
         except ValidationError as exc:
             return Response({"password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ── attendance pushes (lc-up Part 2) ──────────────────────────────────────
+
+
+class AttendancePushListView(_AdminView):
+    """The last 100 registers sent to lc-up: what lc-up said, and the students it did not take."""
+
+    def get(self, request):
+        from users.models import User
+
+        from .models import LcupAttendancePush
+
+        pushes = list(LcupAttendancePush.objects.select_related("group").order_by("-date", "-id")[:100])
+        user_ids = {f.get("user_id") for p in pushes for f in (p.failures or []) if f.get("user_id")}
+        people = {u.pk: user_ref(u) for u in User.objects.filter(pk__in=user_ids)}
+        return Response([
+            {
+                "id": p.pk,
+                "group": p.group.name,
+                "date": p.date.isoformat(),
+                "state": p.state,
+                "attempts": p.attempts,
+                "marks": len(p.records or []),
+                "summary": p.summary or {},
+                "failures": [
+                    {"student": people.get(f.get("user_id")), "code": f.get("code") or "", "message": f.get("message") or ""}
+                    for f in (p.failures or [])
+                ],
+                "error": p.error,
+                "sent_at": p.sent_at,
+            }
+            for p in pushes
+        ])
+
