@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarPlus, CheckCircle2, Lock, TrendingUp, TrendingDown, Minus, Users } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { Card, CardHeader, Button, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard } from "../ui";
+import { Card, CardHeader, Button, Input, Pill, EmptyState, LoadingState, ErrorState, StatCard, Select } from "../ui";
 import type { PillTone } from "../ui";
 import { capabilitiesFor } from "../capabilities";
 import type { ClassroomWithRole } from "../types";
@@ -174,21 +174,33 @@ function AttendanceStaff({ classroom }: { classroom: ClassroomWithRole }) {
   );
 }
 
-function RosterMarker({ classId, sessionId }: { classId: number; sessionId: number }) {
+export function RosterMarker({ classId, sessionId }: { classId: number; sessionId: number }) {
   const { data, isLoading, isError, refetch } = useAttendanceSession(classId, sessionId);
   const mark = useMarkAttendance(classId, sessionId);
   const markAll = useMarkAllPresent(classId, sessionId);
   const finalize = useFinalizeSession(classId, sessionId);
   const [local, setLocal] = useState<Record<number, AttendanceStatus | null>>({});
+  // A class paired with lc-up sends an EXCUSED mark to lc-up as an absence WITH one of its
+  // reasons, so there each E names one. `excuse_reasons` is empty for every other class.
+  const [reasons, setReasons] = useState<Record<number, number | null>>({});
 
   useEffect(() => {
-    if (data?.roster) setLocal(Object.fromEntries(data.roster.map((r) => [r.student_id, r.status])));
+    if (data?.roster) {
+      setLocal(Object.fromEntries(data.roster.map((r) => [r.student_id, r.status])));
+      setReasons(Object.fromEntries(data.roster.map((r) => [r.student_id, r.reason_id ?? null])));
+    }
   }, [data]);
 
+  const excuseReasons = data?.excuse_reasons ?? [];
+  const needsReason = excuseReasons.length > 0;
   const dirty = useMemo(() => {
     if (!data?.roster) return false;
-    return data.roster.some((r) => local[r.student_id] !== r.status);
-  }, [data, local]);
+    return data.roster.some(
+      (r) =>
+        local[r.student_id] !== r.status ||
+        (needsReason && local[r.student_id] === "EXCUSED" && (reasons[r.student_id] ?? null) !== (r.reason_id ?? null)),
+    );
+  }, [data, local, reasons, needsReason]);
 
   if (isLoading) return <Card><LoadingState label="Loading roster…" /></Card>;
   if (isError || !data) return <Card><ErrorState onRetry={() => refetch()} /></Card>;
@@ -200,10 +212,18 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
   const markWindow = data.marking ?? null;
   const writable = markWindow ? markWindow.can_mark : true;
 
+  const missingReason =
+    needsReason && data.roster.some((r) => local[r.student_id] === "EXCUSED" && !reasons[r.student_id]);
+
   async function save() {
     const records = Object.entries(local)
       .filter(([, st]) => st)
-      .map(([sid, st]) => ({ student_id: Number(sid), status: st as AttendanceStatus }));
+      .map(([sid, st]) => {
+        const reasonId = reasons[Number(sid)];
+        return needsReason && st === "EXCUSED" && reasonId
+          ? { student_id: Number(sid), status: st as AttendanceStatus, reason_id: reasonId }
+          : { student_id: Number(sid), status: st as AttendanceStatus };
+      });
     if (records.length) await mark.mutateAsync(records);
   }
 
@@ -244,28 +264,47 @@ function RosterMarker({ classId, sessionId }: { classId: number; sessionId: numb
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" disabled={!writable} loading={markAll.isPending} onClick={() => markAll.mutate()}>Mark all present</Button>
-        <Button size="sm" loading={mark.isPending} disabled={!dirty || !writable} onClick={save} icon={CheckCircle2}>Save</Button>
+        <Button size="sm" loading={mark.isPending} disabled={!dirty || !writable || missingReason} onClick={save} icon={CheckCircle2}>Save</Button>
         {!finalized && <Button size="sm" variant="ghost" loading={finalize.isPending} onClick={() => finalize.mutate()} icon={Lock}>Finalize</Button>}
       </div>
 
       <div className="mt-4 divide-y divide-border">
         {data.roster.map((r: RosterRow) => (
-          <div key={r.student_id} className="flex items-center justify-between gap-3 py-2.5">
-            <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
-            <div className="flex shrink-0 gap-1">
-              {STATUSES.map((st) => {
-                const selected = local[r.student_id] === st;
-                return (
-                  <button key={st} title={META[st].label} disabled={!writable}
-                    onClick={() => setLocal((p) => ({ ...p, [r.student_id]: st }))}
-                    className={cn("h-8 w-8 rounded-lg border text-xs font-bold transition-colors",
-                      selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2",
-                      !writable && "cursor-not-allowed opacity-50 hover:bg-transparent")}>
-                    {META[st].letter}
-                  </button>
-                );
-              })}
+          <div key={r.student_id} className="py-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
+              <div className="flex shrink-0 gap-1">
+                {STATUSES.map((st) => {
+                  const selected = local[r.student_id] === st;
+                  return (
+                    <button key={st} title={META[st].label} disabled={!writable}
+                      onClick={() => setLocal((p) => ({ ...p, [r.student_id]: st }))}
+                      className={cn("h-8 w-8 rounded-lg border text-xs font-bold transition-colors",
+                        selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2",
+                        !writable && "cursor-not-allowed opacity-50 hover:bg-transparent")}>
+                      {META[st].letter}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+            {needsReason && local[r.student_id] === "EXCUSED" && (
+              <div className="mt-2 sm:ml-auto sm:w-64">
+                <Select
+                  aria-label={`Reason for ${r.name}`}
+                  value={reasons[r.student_id] ?? ""}
+                  disabled={!writable}
+                  onChange={(e) =>
+                    setReasons((p) => ({ ...p, [r.student_id]: e.target.value ? Number(e.target.value) : null }))
+                  }
+                >
+                  <option value="">Choose a reason</option>
+                  {excuseReasons.map((reason) => (
+                    <option key={reason.id} value={reason.id}>{reason.title}</option>
+                  ))}
+                </Select>
+              </div>
+            )}
           </div>
         ))}
         {data.roster.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No students enrolled yet.</p>}
