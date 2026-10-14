@@ -176,6 +176,8 @@ def sync_attendance_strikes(session, *, actor=None) -> None:
     for student_id in set(session.records.values_list("student_id", flat=True)):
         from django.contrib.auth import get_user_model
 
+        if strikes.note(student_id):  # inside strikes.deferred(): recomputed once on leaving it
+            continue
         student = get_user_model().objects.filter(pk=student_id).first()
         if student is not None:
             strikes.recompute(student, actor=actor)

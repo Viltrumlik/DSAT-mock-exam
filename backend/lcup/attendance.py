@@ -23,9 +23,9 @@ REMOVED, for someone who has since left the group.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
 
@@ -66,6 +66,8 @@ class DayPlan:
     day: date
     #: lc-up has at least one live mark for this group and day.
     recorded: bool = False
+    #: user ids lc-up lists that day — each needs a seat dated no later than the lesson.
+    listed: set = field(default_factory=set)
     #: user id → (status, reason id): lc-up's marks ours does not already equal.
     mirror: dict = field(default_factory=dict)
     #: user ids whose mark of ours goes.
@@ -99,6 +101,7 @@ def plan_day(link, day: date, rows: list[dict], *, gap_fill: bool) -> DayPlan:
         if uid is None:
             continue  # a student with no account here (left before we knew them) — nothing to hold it
         in_lcup.add(uid)
+        plan.listed.add(uid)
         want = ours_status(r)
         have = ours.get(uid)
         if have is None or _as_marked(have) != want:
@@ -155,8 +158,11 @@ def apply_day(plan: DayPlan) -> Counter:
         session = AttendanceSession.objects.create(classroom=room, date=plan.day, created_by=None)
         counts["att_registers_created"] += 1
 
-    for uid, (status, reason_id) in plan.mirror.items():
+    # Every student lc-up lists, not only those whose mark changes: a mark that already agreed may
+    # still be refused its XP by a join date that came later than the lesson.
+    for uid in plan.listed:
         _seat_from(room, uid, plan.day)
+    for uid, (status, reason_id) in plan.mirror.items():
         _, created = R.objects.update_or_create(
             session=session, student_id=uid, defaults={"status": status, "lcup_reason_id": reason_id, "marked_by": None}
         )
@@ -229,3 +235,90 @@ def push_day(client, plan: DayPlan, *, now):
         ]
     push.save()
     return push
+
+
+# ── the one-time history import ───────────────────────────────────────────
+
+#: lc-up takes at most 92 days per attendance request.
+HISTORY_WINDOW_DAYS = 90
+
+
+def _course_start(link):
+    raw = str((link.snapshot or {}).get("course_start_date") or "")[:10]
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _attendance_xp() -> int:
+    from django.db.models import Sum
+
+    from rewards.models import PointAward
+
+    return PointAward.objects.filter(source_type="attendance_record").aggregate(t=Sum("xp"))["t"] or 0
+
+
+def import_history(client, *, until: date, dry_run: bool = False) -> dict:
+    """Make every paired group's registers lc-up's, from the earliest course start to ``until``
+    (history mode — nothing is ever sent). XP follows through the ordinary hooks, and every record
+    in the window is re-settled afterwards, so a mark the old join date refused is paid now. Strike
+    resets are ledgered but not announced (``strikes.deferred``). ``dry_run`` does it all inside a
+    transaction that is rolled back — the report is how the owner sees the numbers first."""
+    from django.db import transaction
+
+    from classes.models_attendance import AttendanceRecord
+    from rewards import strikes
+    from rewards.hooks import sync_attendance_record
+
+    from .client import ATTENDANCE_PATH
+    from .models import GroupLinkStatus, LcupGroupLink
+
+    links = list(
+        LcupGroupLink.objects.filter(status=GroupLinkStatus.CONFIRMED, classroom__isnull=False, deleted_in_lcup_at__isnull=True)
+        .select_related("classroom")
+        .order_by("pk")
+    )
+    starts = [d for d in (_course_start(link) for link in links) if d]
+    first = min(starts) if starts else until - timedelta(days=HISTORY_WINDOW_DAYS - 1)
+    rows, lo = [], first
+    while lo <= until:
+        hi = min(lo + timedelta(days=HISTORY_WINDOW_DAYS - 1), until)
+        rows += client.fetch_all(ATTENDANCE_PATH, {"from": lo.isoformat(), "to": hi.isoformat(), "include_deleted": "true"})
+        lo = hi + timedelta(days=1)
+    by_group_day = defaultdict(list)
+    for r in rows:
+        by_group_day[(r.get("group_id"), str(r.get("date") or "")[:10])].append(r)
+
+    counts, touched = Counter(), set()
+    with transaction.atomic():
+        xp_before = _attendance_xp()
+        with strikes.deferred() as pending:
+            for link in links:
+                days = sorted(d for (g, d) in by_group_day if g == link.lcup_group_id)
+                for day_text in days:
+                    day = date.fromisoformat(day_text)
+                    if day < first or day > until:
+                        continue
+                    plan = plan_day(link, day, by_group_day[(link.lcup_group_id, day_text)], gap_fill=False)
+                    counts.update(apply_day(plan))
+                    pending.update(plan.delete)  # a delete fires no strike hook
+                    touched |= set(plan.mirror) | plan.delete
+            for record in AttendanceRecord.objects.filter(
+                session__classroom__in=[link.classroom for link in links], session__date__range=(first, until)
+            ).select_related("session", "student"):
+                sync_attendance_record(record)
+        report = {
+            "dry_run": dry_run,
+            "groups": len(links),
+            "from": first.isoformat(),
+            "until": until.isoformat(),
+            "lcup_rows": len(rows),
+            "counts": dict(counts),
+            "students_touched": len(touched),
+            "xp_before": xp_before,
+            "xp_after": _attendance_xp(),
+        }
+        if dry_run:
+            transaction.set_rollback(True)
+    return report
