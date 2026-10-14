@@ -204,6 +204,41 @@ describe("debtors", () => {
     expect(post).toHaveBeenCalledWith("/lcup/finance/exempt/3/", { exempt: false });
   });
 
+  it("narrows the list from the filter panel, counting each choice against the other filters", async () => {
+    await mount(<DebtorsPanel />, {
+      "/lcup/finance/debtors/": [
+        debtor({ link_id: 1, name: "Aziz Tursunov", debt: 900_000 }),
+        debtor({
+          link_id: 2,
+          lcup_student_id: 102,
+          name: "Bobur Aliev",
+          user: { id: 10, name: "Bobur Aliev", username: "bobur" },
+          groups: ["Senior G5 | English"],
+          teachers: ["Dilnoza Rahimova"],
+          debt: 300_000,
+        }),
+      ],
+    });
+    const panel = host.querySelector('aside[aria-label="Filters"]')!;
+    const choice = (label: string) =>
+      [...panel.querySelectorAll("button")].find((b) => b.textContent?.startsWith(label)) as HTMLButtonElement;
+
+    expect(choice("Senior G5 | English").textContent).toBe("Senior G5 | English1");
+    await click(choice("Senior G5 | English"));
+
+    expect(choice("Senior G5 | English").getAttribute("aria-pressed")).toBe("true");
+    expect(host.textContent).toContain("1 student · 300,000 UZS owed");
+    const rows = [...host.querySelectorAll("tbody tr")].map((tr) => tr.textContent ?? "");
+    expect(rows.some((r) => r.includes("Bobur Aliev"))).toBe(true);
+    expect(rows.some((r) => r.includes("Aziz Tursunov"))).toBe(false);
+    // The teacher facet now counts within the chosen group.
+    expect(choice("Vali Karimov").textContent).toBe("Vali Karimov0");
+    expect(choice("Dilnoza Rahimova").textContent).toBe("Dilnoza Rahimova1");
+
+    await click(button("Clear all filters"));
+    expect(host.textContent).toContain("2 students · 1,200,000 UZS owed");
+  });
+
   it("shows an error, not the empty state, when the list does not load", async () => {
     await mount(<DebtorsPanel />, { "/lcup/finance/debtors/": new Error("boom") });
     expect(host.textContent).toContain("This did not load");

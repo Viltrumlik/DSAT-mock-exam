@@ -551,18 +551,20 @@ function payMonth(month: string): string {
  * The student's own money at the learning center, as lc-up keeps it: what they owe or have in
  * credit, the monthly price of their groups, and their latest payments. Only their own — teachers
  * never see amounts. An account lc-up does not know has nothing to show, and says so.
+ *
+ * Plain on purpose (owner, 2026-10-14): a few lines and a list — no tinted box, no coloured edge.
  */
 function PaymentsPanel() {
   const { data, isLoading, isError, refetch } = useMyFinance();
   return (
-    <Panel index={4} className="overflow-hidden" aria-label="Payments">
-      <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", TONE.violet.edge)} />
+    <Panel index={4} aria-label="Payments">
       <PanelHeader icon={Wallet} tone="violet" title="Payments" description="Your balance and payments at the learning center." />
       <div className="mt-4">
         {isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="squircle h-[76px] [--sq:10px]" />
-            <Skeleton className="squircle h-[44px] [--sq:9px]" />
+            <Skeleton className="h-4 w-2/3 rounded-sm" />
+            <Skeleton className="h-4 w-1/2 rounded-sm" />
+            <Skeleton className="h-4 w-3/4 rounded-sm" />
           </div>
         ) : isError ? (
           <ErrorState
@@ -571,7 +573,7 @@ function PaymentsPanel() {
             onRetry={() => void refetch()}
           />
         ) : !data || !data.linked ? (
-          <p className={cn("squircle px-4 py-3 text-[13px] font-medium text-muted-foreground [--sq:9px]", TONE.violet.well)}>
+          <p className="text-[13px] text-muted-foreground">
             Your payments will show here once your learning center links your account.
           </p>
         ) : (
@@ -582,68 +584,75 @@ function PaymentsPanel() {
   );
 }
 
+/** One line of the summary: the label on the left, the figure on the right. */
+function PaymentsLine({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
+  return (
+    <div className={cn("flex items-baseline justify-between gap-3", className)}>
+      <dt className="min-w-0 truncate text-muted-foreground">{label}</dt>
+      <dd className="ds-num shrink-0 font-semibold text-foreground">{children}</dd>
+    </div>
+  );
+}
+
 function PaymentsBody({ finance }: { finance: MyFinance }) {
   const owes = (finance.debt ?? 0) > 0;
-  const tone: Tone = owes ? "rose" : "emerald";
   const shown = finance.payments.slice(0, 5);
   return (
     <>
-      {finance.balance != null ? (
-        <div className={cn("squircle p-4 [--sq:10px]", TONE[tone].well)}>
-          <Eyebrow className={TONE[tone].text}>{owes ? "You owe" : finance.balance > 0 ? "In credit" : "All paid"}</Eyebrow>
-          <p className={cn("ds-num mt-1 text-[26px] font-extrabold leading-tight", TONE[tone].text)}>
-            {formatUzs(owes ? finance.debt ?? 0 : finance.balance)}
-          </p>
-          {owes ? (
-            <p className="mt-1 text-[12.5px] font-medium text-muted-foreground">
-              Payments are due by the {ordinal(finance.freeze_day)} of each month. Pay at your learning center.
-            </p>
-          ) : null}
-        </div>
+      <dl className="space-y-1 text-[13px]">
+        {finance.balance != null ? (
+          owes ? (
+            <PaymentsLine label="You owe">
+              <span className="text-danger">{formatUzs(finance.debt ?? 0)}</span>
+            </PaymentsLine>
+          ) : finance.balance > 0 ? (
+            <PaymentsLine label="In credit">{formatUzs(finance.balance)}</PaymentsLine>
+          ) : (
+            <PaymentsLine label="Balance">All paid</PaymentsLine>
+          )
+        ) : null}
+        {finance.monthly_cost > 0 ? (
+          <>
+            <PaymentsLine label="Monthly price">{formatUzs(finance.monthly_cost)}</PaymentsLine>
+            {finance.groups.length > 1
+              ? finance.groups.map((g) => (
+                  <PaymentsLine key={g.name} label={g.name} className="pl-3 text-[12.5px]">
+                    {formatUzs(g.monthly_cost)}
+                  </PaymentsLine>
+                ))
+              : null}
+          </>
+        ) : null}
+      </dl>
+      {owes && finance.balance != null ? (
+        <p className="mt-2 text-[12.5px] text-muted-foreground">
+          Payments are due by the {ordinal(finance.freeze_day)} of each month. Pay at your learning center.
+        </p>
       ) : null}
 
-      {finance.monthly_cost > 0 ? (
-        <dl className="mt-3 space-y-1 text-[13px]">
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="font-semibold text-muted-foreground">Monthly price</dt>
-            <dd className="ds-num font-extrabold text-foreground">{formatUzs(finance.monthly_cost)}</dd>
-          </div>
-          {finance.groups.length > 1
-            ? finance.groups.map((g) => (
-                <div key={g.name} className="flex items-baseline justify-between gap-3 pl-3 text-[12.5px]">
-                  <dt className="truncate text-muted-foreground">{g.name}</dt>
-                  <dd className="ds-num shrink-0 font-semibold text-foreground">{formatUzs(g.monthly_cost)}</dd>
-                </div>
-              ))
-            : null}
-        </dl>
-      ) : null}
-
-      <div className="mt-4">
-        <Eyebrow>Recent payments</Eyebrow>
-        {shown.length === 0 ? (
-          <p className="mt-2 text-[13px] font-medium text-muted-foreground">No payments recorded yet.</p>
-        ) : (
-          <ul className="mt-2 space-y-1.5">
-            {shown.map((p) => {
-              const refund = p.kind === "refund";
-              return (
-                <li key={p.id} className="flex items-baseline justify-between gap-3 text-[13px]">
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    <span className="font-semibold text-foreground">{payDay(p.date)}</span>
-                    {" · "}
-                    {[refund ? "Refund" : METHOD_LABEL[p.method] ?? p.method, payMonth(p.month)].filter(Boolean).join(" · ")}
-                  </span>
-                  <span className={cn("ds-num shrink-0 font-extrabold", refund ? TONE.rose.text : "text-foreground")}>
-                    {refund ? "−" : ""}
-                    {formatUzs(p.amount)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
+      <h4 className="mt-4 text-[13px] font-semibold text-foreground">Recent payments</h4>
+      {shown.length === 0 ? (
+        <p className="mt-1 text-[13px] text-muted-foreground">No payments recorded yet.</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-border text-[13px]">
+          {shown.map((p) => {
+            const refund = p.kind === "refund";
+            return (
+              <li key={p.id} className="flex items-baseline justify-between gap-3 py-1.5">
+                <span className="min-w-0 truncate text-muted-foreground">
+                  <span className="text-foreground">{payDay(p.date)}</span>
+                  {" · "}
+                  {[refund ? "Refund" : METHOD_LABEL[p.method] ?? p.method, payMonth(p.month)].filter(Boolean).join(" · ")}
+                </span>
+                <span className="ds-num shrink-0 font-semibold text-foreground">
+                  {refund ? "−" : ""}
+                  {formatUzs(p.amount)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </>
   );
 }

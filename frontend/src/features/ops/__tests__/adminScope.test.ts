@@ -25,6 +25,13 @@ describe("isAdminOpsPath", () => {
     expect(isAdminOpsPath("/ops/users/5/edit")).toBe(true);
   });
 
+  it("opens the three People sections that replaced Users, and keeps Users for its redirect", () => {
+    for (const path of ["/ops/students", "/ops/public", "/ops/staff", "/ops/users", "/ops/students/42"]) {
+      expect(isAdminOpsPath(path)).toBe(true);
+    }
+    expect(isAdminOpsPath("/ops/publicity")).toBe(false);
+  });
+
   it("keeps every other section out, however it is reached", () => {
     for (const path of [
       "/ops/journals",

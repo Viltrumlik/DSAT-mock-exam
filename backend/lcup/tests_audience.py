@@ -214,3 +214,26 @@ class AudienceStageTests(TestCase):
         self.sync(self.data(left_102=True))
         u.refresh_from_db()
         self.assertEqual(u.role, C.ROLE_STUDENT)
+
+    def test_a_seat_decides_for_accounts_lcup_does_not_know(self):
+        # The seat rule (owner, 2026-10-14): a walk-in taken out of their only class is public by the
+        # next sync, and a public learner an admin seats in a class is a student again.
+        from classes.models import Classroom, ClassroomMembership
+
+        t = User.objects.create_user(None, password=None, username="tt", role="teacher", subject="math")
+        room = Classroom.objects.create(name="Own class", subject="MATH", created_by=t, teacher=t)
+        walkin = User.objects.create_user(None, password=None, username="walkin", role=C.ROLE_STUDENT)
+        seat = ClassroomMembership.objects.create(classroom=room, user=walkin, role="STUDENT")
+        newcomer = User.objects.create_user(None, password=None, username="newcomer", role=C.ROLE_PUBLIC_STUDENT)
+        self.sync(self.data())
+        walkin.refresh_from_db()
+        self.assertEqual(walkin.role, C.ROLE_STUDENT)
+
+        seat.status = ClassroomMembership.STATUS_REMOVED
+        seat.save()
+        ClassroomMembership.objects.create(classroom=room, user=newcomer, role="STUDENT")
+        run = self.sync(self.data())
+        walkin.refresh_from_db()
+        newcomer.refresh_from_db()
+        self.assertEqual((walkin.role, newcomer.role), (C.ROLE_PUBLIC_STUDENT, C.ROLE_STUDENT))
+        self.assertEqual((run.counts["became_public"], run.counts["became_centre"]), (1, 1))

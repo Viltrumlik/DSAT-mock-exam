@@ -1,228 +1,20 @@
 "use client";
 
 import { useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import AuthGuard from "@/components/AuthGuard";
 import { OverlayFaceProvider } from "@/components/ui/OverlayFace";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { cn } from "@/lib/cn";
 import { useMe } from "@/hooks/useMe";
-import { ADMIN_OPS_SECTIONS, isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
-import {
-  Loader2,
-  LayoutDashboard,
-  Users,
-  School,
-  KeyRound,
-  ClipboardList,
-  ShoppingBag,
-  Building2,
-  CalendarClock,
-  CalendarDays,
-  LifeBuoy,
-  NotebookText,
-  Timer,
-  CirclePlay,
-  Images,
-  Smartphone,
-  RefreshCw,
-  Megaphone,
-  Wallet,
-} from "lucide-react";
+import { isAdminOpsPath, isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { OpsShell } from "@/features/ops/shell/OpsShell";
 
 /**
- * Operational console navigation.
- * Serves admin.mastersat.uz.
+ * The operational console (admin.mastersat.uz), framed like Django admin — see
+ * features/ops/shell for the sidebar, the top bar and who sees which section.
  *
- * Admin operations nav is shown to all staff, except that an `admin` sees only the school's
- * seven sections (features/ops/adminScope). The teacher workspace lives on its own
- * subdomain (teacher.mastersat.uz) and is reached from there, not from here — this console
- * is governance only.
- */
-const OPS_NAV = [
-  {
-    href: "/ops",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    exact: true,
-  },
-  {
-    href: "/ops/classrooms",
-    label: "Classrooms",
-    icon: School,
-    exact: false,
-  },
-  {
-    href: "/ops/journals",
-    label: "Journals",
-    icon: NotebookText,
-    exact: false,
-  },
-  // Reports only — midterm *authoring* still lives in the Builder console. This is the
-  // read-only pass/fail record for a classroom.
-  {
-    href: "/ops/midterms",
-    label: "Midterms",
-    icon: Timer,
-    exact: false,
-  },
-  // Invigilated full-mock sittings: mint the sitting + its code here, then a teacher runs
-  // the room on the day (lets students in, presses Start).
-  {
-    href: "/ops/mock-sessions",
-    label: "Mock sittings",
-    icon: CirclePlay,
-    exact: false,
-  },
-  // Operational assignment management + midterm authoring moved out of the admin panel
-  // (authoring lives in the Builder console). Admin keeps governance (Classrooms) +
-  // Access/Users/Audit.
-  // Authoring is super_admin's alone (the API enforces it on every endpoint; this only
-  // avoids showing a page the server would refuse).
-  {
-    href: "/ops/surveys",
-    label: "Surveys",
-    icon: ClipboardList,
-    exact: false,
-    superAdminOnly: true,
-  },
-  {
-    // Regions, branches, and which branch each classroom meets at. Without this the branch
-    // leaderboard has nothing to group by — a student's branch is derived from their
-    // classroom, so an unassigned classroom puts its whole roster on no branch board.
-    href: "/ops/branches",
-    label: "Branches",
-    icon: Building2,
-    exact: false,
-  },
-  {
-    // The centre's CRM. Groups and their members follow it; this is where an admin pairs lc-up
-    // groups with our classes and settles the students the sync could not match on its own.
-    href: "/ops/lcup",
-    label: "lc-up",
-    icon: RefreshCw,
-    exact: false,
-  },
-  {
-    // Money as lc-up keeps it: who owes, who is frozen for it, and what came in each month.
-    // Its own page, not a tab of lc-up — the owner wanted the two apart.
-    href: "/ops/finance",
-    label: "Finance",
-    icon: Wallet,
-    exact: false,
-  },
-  {
-    // Who teaches support, and which hours they are available. The endpoints for an admin to
-    // set somebody else's hours already existed; there was simply no page that used them, so
-    // the only way to change a support teacher's calendar was to be that teacher.
-    href: "/ops/support",
-    label: "Support",
-    icon: LifeBuoy,
-    exact: false,
-  },
-  {
-    // Stock, prices and the collection queue. Not super_admin-only: handing a prize over is
-    // a desk job, and the API gate is the same one that guards moving a student's coins.
-    href: "/ops/shop",
-    label: "Shop",
-    icon: ShoppingBag,
-    exact: false,
-  },
-  {
-    // The ring of circles across the top of every student's dashboard. Sits next to Shop
-    // because it is the same kind of job — an admin-authored list with a picture that
-    // students see — and because both are desk work rather than governance.
-    href: "/ops/stories",
-    label: "Stories",
-    icon: Images,
-    exact: false,
-  },
-  {
-    // Workshops, talks and open days: the desk publishes them and marks who came. Next to
-    // Stories because it is the same kind of job — an admin-authored list with a picture that
-    // students see.
-    href: "/ops/events",
-    label: "Events",
-    icon: CalendarDays,
-    exact: false,
-  },
-  {
-    href: "/ops/access",
-    label: "Access",
-    icon: KeyRound,
-    exact: false,
-  },
-  {
-    href: "/ops/users",
-    label: "Users",
-    icon: Users,
-    exact: false,
-  },
-  {
-    href: "/ops/exam-dates",
-    label: "Exam dates",
-    icon: CalendarClock,
-    exact: false,
-  },
-  {
-    // The iOS app: which builds may still be used, and what is crashing on phones. Super
-    // admins only — raising the minimum version stops every older app at an update screen.
-    href: "/ops/mobile",
-    label: "Mobile app",
-    icon: Smartphone,
-    exact: false,
-    superAdminOnly: true,
-  },
-  {
-    // One announcement to the learning center's students, the public learners, or everyone.
-    // Super admins only, like the endpoint: a broadcast cannot be recalled.
-    href: "/ops/broadcast",
-    label: "Broadcast",
-    icon: Megaphone,
-    exact: false,
-    superAdminOnly: true,
-  },
-] as const;
-
-function isNavActive(pathname: string, href: string, exact: boolean): boolean {
-  if (exact) return pathname === href;
-  return pathname === href || pathname.startsWith(href + "/");
-}
-
-function NavItem({
-  href,
-  label,
-  icon: Icon,
-  exact,
-  pathname,
-}: {
-  href: string;
-  label: string;
-  icon: React.ElementType;
-  exact: boolean;
-  pathname: string;
-  superAdminOnly?: boolean;
-}) {
-  const active = isNavActive(pathname, href, exact);
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "flex items-center gap-2.5 rounded-xl px-3 py-2 text-sm font-bold transition-colors",
-        active
-          ? "bg-surface-2 text-foreground"
-          : "text-muted-foreground hover:bg-surface-2 hover:text-foreground",
-      )}
-    >
-      <Icon className="h-4 w-4 shrink-0" aria-hidden />
-      {label}
-    </Link>
-  );
-}
-
-/**
- * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its dialogs
- * and toasts are too, rather than being the one sans thing in it. See OverlayFace.
+ * The console is set in the body's Georgia — it never took the app shell's `ds-app` — so its
+ * dialogs and toasts are too, rather than being the one sans thing in it. See OverlayFace.
  */
 export default function OpsLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -237,61 +29,27 @@ function OpsConsole({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const { me } = useMe();
 
-  const role = String(me?.role ?? "").trim().toLowerCase();
-  const isSuperAdmin = role === "super_admin" || Boolean(me?.is_superuser);
-  // An admin sees the school's seven sections and nothing else — see features/ops/adminScope.
-  const scopedAdmin = isScopedOpsAdmin(me);
-  const navItems = OPS_NAV.filter((item) => {
-    if ("superAdminOnly" in item && item.superAdminOnly && !isSuperAdmin) return false;
-    return !scopedAdmin || ADMIN_OPS_SECTIONS.includes(item.href);
-  });
-
+  // An admin sees the school's sections and nothing else — see features/ops/adminScope.
   // Hiding the link alone would leave the page one typed address away, and every ops page
   // renders inside this layout — so this is the one place that can close them all. The
   // page is never mounted, so none of its requests go out either. AuthGuard renders nothing
   // until `me` has loaded, so there is no first paint before the role is known.
-  const blocked = scopedAdmin && !isAdminOpsPath(pathname);
+  const blocked = isScopedOpsAdmin(me) && !isAdminOpsPath(pathname);
   useEffect(() => {
     if (blocked) router.replace("/ops");
   }, [blocked, router]);
 
   return (
     <AuthGuard adminOnly>
-      <div className="app-bg min-h-screen text-foreground">
-        <div className="mx-auto w-full max-w-7xl px-3 py-4 md:px-6">
-          <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-            {/* Sidebar */}
-            <aside className="rounded-2xl border border-border bg-card p-3 shadow-sm lg:self-start lg:sticky lg:top-4">
-              {/* Console identity — compact */}
-              <div className="mb-3 border-b border-border px-2 pb-3">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.1em] text-primary">
-                  Admin console
-                </p>
-                <p className="mt-0.5 text-sm font-extrabold text-foreground">MasterSAT</p>
-              </div>
-
-              {/* Operations nav */}
-              <nav className="flex flex-col gap-0.5" aria-label="Operations">
-                {navItems.map((item) => (
-                  <NavItem key={item.href} {...item} pathname={pathname} />
-                ))}
-              </nav>
-
-            </aside>
-
-            {/* Main content */}
-            <main className="min-w-0">
-              {blocked ? (
-                <div className="flex justify-center py-16">
-                  <Loader2 className="h-6 w-6 animate-spin text-primary/60" aria-label="Redirecting" />
-                </div>
-              ) : (
-                children
-              )}
-            </main>
+      <OpsShell pathname={pathname} me={me}>
+        {blocked ? (
+          <div className="flex justify-center py-16">
+            <Loader2 className="h-6 w-6 animate-spin text-primary/60" aria-label="Redirecting" />
           </div>
-        </div>
-      </div>
+        ) : (
+          children
+        )}
+      </OpsShell>
     </AuthGuard>
   );
 }

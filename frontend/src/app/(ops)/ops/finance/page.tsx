@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Tabs } from "@/components/ui";
-import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import {
   DebtorsPanel,
   FinanceOverviewPanel,
@@ -28,12 +27,14 @@ export default function OpsFinancePage() {
   const [tab, setTab] = useState("overview");
   const [month, setMonth] = useState(currentMonth);
   return (
-    <div className="space-y-5">
-      <OpsPageHeader
-        section="Finance"
-        title="Finance"
-        description="Debts, freezes and payments as lc-up records them. Balances follow the latest sync; exempt a student from the monthly debt freeze when they should not be frozen, for example on a grant."
-      />
+    <div className="space-y-3">
+      <header>
+        <h1 className="text-lg font-semibold text-foreground">Finance</h1>
+        <p className="text-[13px] text-muted-foreground">
+          Debts, freezes and payments as lc-up records them. Balances follow the latest sync; exempt a student from the
+          monthly debt freeze when they should not be frozen, for example on a grant.
+        </p>
+      </header>
       <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="Finance sections" />
       {/* Debtors are "right now" — only the overview and the payments belong to a month. */}
       {tab !== "debtors" ? <MonthPicker value={month} onChange={setMonth} /> : null}

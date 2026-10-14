@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { Tabs } from "@/components/ui";
-import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { AccountsPanel, AttendancePushesPanel, GroupsPanel, StatusPanel, StudentsPanel, TeachersPanel } from "@/features/lcup/LcupPanels";
 
 /**
@@ -24,12 +23,14 @@ const TABS = [
 export default function OpsLcupPage() {
   const [tab, setTab] = useState("status");
   return (
-    <div className="space-y-5">
-      <OpsPageHeader
-        section="lc-up"
-        title="lc-up"
-        description="Groups and their members follow the centre's CRM. Pair lc-up groups with our classes, link students and teachers the sync could not match, and keep an eye on each sync."
-      />
+    <div className="space-y-3">
+      <header>
+        <h1 className="text-lg font-semibold text-foreground">lc-up</h1>
+        <p className="text-[13px] text-muted-foreground">
+          Groups and their members follow the centre&apos;s CRM. Pair lc-up groups with our classes, link students and
+          teachers the sync could not match, and keep an eye on each sync.
+        </p>
+      </header>
       <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="lc-up sections" />
       {tab === "status" ? <StatusPanel /> : null}
       {tab === "groups" ? <GroupsPanel /> : null}

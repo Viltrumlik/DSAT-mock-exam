@@ -18,6 +18,7 @@ from .views import (
     ExamDateOptionAdminDetailView,
 )
 from .prometheus_security import AdminSecurityPrometheusMetricsView
+from .views_people import PeopleListView
 from .views_population import PopulationView
 
 urlpatterns = [
@@ -35,6 +36,7 @@ urlpatterns = [
     path('admin/security/metrics/prometheus/', AdminSecurityPrometheusMetricsView.as_view(), name='admin-security-metrics'),
     path('admin/list/', UserListView.as_view(), name='admin-user-list'),
     path('admin/population/', PopulationView.as_view(), name='users-admin-population'),
+    path('admin/people/', PeopleListView.as_view(), name='users-admin-people'),
     path('admin/bulk/', UserBulkActionView.as_view(), name='admin-user-bulk'),
     path('', UserListView.as_view(), name='user-list'),
     path('create/', UserCreateView.as_view(), name='user-create'),
