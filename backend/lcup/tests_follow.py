@@ -8,13 +8,15 @@ only: a teacher of ours lc-up never listed stays.
 
 from __future__ import annotations
 
+from datetime import date
+
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from access.models import UserAccess
 from classes.models import Branch, Classroom, ClassroomMembership, Region
 from lcup.guards import is_lcup_managed
-from lcup.models import GroupLinkStatus, LcupGroupLink
+from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState
 from lcup.sync import run_sync
 from lcup.testing import FakeLcupClient
 from lcup.tests_sync import API, lcup_data
@@ -57,6 +59,38 @@ class FollowFixture(TestCase):
 
 
 class DetailsFollowTests(FollowFixture):
+    def test_the_room_and_the_start_date_are_lcups(self):
+        # lc-up names its rooms "Xona 301"; the class shows "Room 301", so only the number is kept.
+        Classroom.objects.filter(pk=self.room.pk).update(room_number="5")
+        data = lcup_data()
+        self.g21(data).update(room={"id": 3140, "name": "Xona 301"}, course_start_date="2026-09-29")
+        run = self.sync(data)
+        room = self.fresh_room()
+        self.assertEqual((room.room_number, room.start_date), ("301", date(2026, 9, 29)))
+        self.assertTrue(any("room" in a and "start date" in a for a in run.alerts), run.alerts)
+
+    def test_a_room_lcup_names_another_way_is_kept_whole(self):
+        data = lcup_data()
+        self.g21(data)["room"] = {"id": 7, "name": "Lab A"}
+        self.sync(data)
+        self.assertEqual(self.fresh_room().room_number, "Lab A")
+
+    def test_a_group_with_no_room_leaves_the_class_room_alone(self):
+        Classroom.objects.filter(pk=self.room.pk).update(room_number="5")
+        data = lcup_data()
+        self.g21(data)["room"] = None
+        self.sync(data)
+        self.assertEqual(self.fresh_room().room_number, "5")
+
+    def test_a_class_the_sync_creates_gets_the_room_and_start_date(self):
+        LcupState.objects.update_or_create(pk=1, defaults={"initial_review_done_at": self.now})
+        data = lcup_data()
+        g13 = next(row for row in data[f"{API}/groups"] if row["id"] == 13)
+        g13.update(room={"id": 3141, "name": "Xona 302"}, course_start_date="2026-10-01")
+        self.sync(data)
+        created = LcupGroupLink.objects.get(lcup_group_id=13).classroom
+        self.assertEqual((created.room_number, created.start_date), ("302", date(2026, 10, 1)))
+
     def test_a_rename_in_lcup_renames_the_class(self):
         data = lcup_data()
         self.g21(data)["name"] = "Junior G22 | Math | Vali"

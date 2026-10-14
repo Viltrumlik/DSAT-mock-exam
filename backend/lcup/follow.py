@@ -23,7 +23,14 @@ from access import constants as acc_const
 from access.models import UserAccess
 from classes.models import Classroom, ClassroomMembership
 
-from .classrooms import _lesson_hours, branch_for, classroom_name, teachers_for
+from .classrooms import (
+    _lesson_hours,
+    branch_for,
+    classroom_name,
+    room_number_from,
+    start_date_from,
+    teachers_for,
+)
 from .matching import days_from, level_from, subject_from
 from .models import LcupTeacherLink, LinkStatus
 
@@ -36,6 +43,8 @@ _LABELS = {
     "lesson_time": "time",
     "lesson_hours": "lesson length",
     "branch": "filial",
+    "room_number": "room",
+    "start_date": "start date",
     "level": "level",
 }
 
@@ -84,6 +93,12 @@ def follow_details(room: Classroom, previous: dict, current: dict, alerts: list)
     branch = branch_for(current)
     if branch is not None:
         want["branch"] = branch
+    room_number = room_number_from(current)
+    if room_number:
+        want["room_number"] = room_number
+    start_date = start_date_from(current)
+    if start_date:
+        want["start_date"] = start_date
     level = level_from(current)
     if level and level in Classroom.LEVELS_BY_SUBJECT.get(want.get("subject", room.subject), ()):
         want["level"] = level
