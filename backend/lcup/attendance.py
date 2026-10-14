@@ -170,3 +170,62 @@ def apply_day(plan: DayPlan) -> Counter:
         session.status = AttendanceSession.STATUS_FINALIZED
         session.save(update_fields=["status", "updated_at"])
     return counts
+
+
+# ── the push ──────────────────────────────────────────────────────────────
+
+#: A transient failure (lc-up busy or down) is tried again on later runs, this many times in all.
+MAX_PUSH_ATTEMPTS = 5
+
+
+def push_held_reason(link) -> str | None:
+    """Why ``link``'s registers are not sent at all, or None. lc-up bills every student it lists;
+    one we have no account for cannot be in what we send, so their fee would quietly be missed."""
+    if link.memberships.filter(left_at__isnull=True, student__user__isnull=True).exists():
+        return f"attendance push held for {link.name}: an lc-up student of this group has no account here"
+    return None
+
+
+def push_day(client, plan: DayPlan, *, now):
+    """Send ``plan.push`` to lc-up — once for this group and day — and record it. None when there
+    is nothing to send, the switch is off, the day is before the cutover, the group is held, or the
+    register was already sent (or refused, or tried ``MAX_PUSH_ATTEMPTS`` times)."""
+    from .client import LcupError, LcupWindowClosed
+    from .conf import attendance_push_enabled, attendance_push_from
+
+    if not plan.push or not attendance_push_enabled():
+        return None
+    start = attendance_push_from()
+    if start is None or plan.day < start or push_held_reason(plan.link):
+        return None
+    push, _ = LcupAttendancePush.objects.get_or_create(group=plan.link, date=plan.day)
+    if push.state in (LcupAttendancePush.STATE_SENT, LcupAttendancePush.STATE_REFUSED) or push.attempts >= MAX_PUSH_ATTEMPTS:
+        return None
+
+    records = [{"user_id": uid, **item} for uid, item in sorted(plan.push.items())]
+    push.records = records
+    push.attempts += 1
+    try:
+        answer = client.post_attendance(
+            plan.link.lcup_group_id, plan.day, [{k: v for k, v in r.items() if k != "user_id"} for r in records]
+        )
+    except LcupWindowClosed as exc:
+        push.state, push.error = LcupAttendancePush.STATE_REFUSED, str(exc)[:300]
+    except LcupError as exc:
+        push.state, push.error = LcupAttendancePush.STATE_FAILED, f"{type(exc).__name__}: {exc}"[:300]
+    else:
+        user_of = {r["student_id"]: r["user_id"] for r in records}
+        push.state, push.error, push.sent_at = LcupAttendancePush.STATE_SENT, "", now
+        push.summary = answer.get("summary") or {}
+        push.failures = [
+            {
+                "user_id": user_of.get(res.get("student_id")),
+                "student_id": res.get("student_id"),
+                "code": str((res.get("error") or {}).get("code") or ""),
+                "message": str((res.get("error") or {}).get("message") or "")[:200],
+            }
+            for res in answer.get("results") or []
+            if res.get("result") == "failed"
+        ]
+    push.save()
+    return push
