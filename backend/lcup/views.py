@@ -1,5 +1,6 @@
-"""``/api/lcup/`` — the admin console for the lc-up link (``/ops/lcup``), and the one endpoint a
-student uses: choosing the first password of an account the sync created.
+"""``/api/lcup/`` — the admin console for the lc-up link (``/ops/lcup``), and the two endpoints a
+student uses: choosing the first password of an account the sync created, and typing their phone
+on one of several same-name accounts (``phone_confirm``).
 
 Everything an admin does here goes through the same services the sync uses (``accounts``,
 ``classrooms``), so a link made by hand and a link made by the sync are the same thing.
@@ -10,6 +11,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -25,6 +27,7 @@ from users.models import User
 
 from . import tasks
 from .accounts import create_account_for, reissue_claim
+from .auth_backend import _audit
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .claims import set_initial_password
 from .conf import lcup_enabled
@@ -40,6 +43,7 @@ from .models import (
     LcupTeacherLink,
     LinkStatus,
 )
+from .phone_confirm import NOTHING_TO_CONFIRM, PhoneRefused, confirm_phone, dismiss_prompt, supersede_prompts
 from .serializers import claim_row, group_row, person_row, room_ref, run_row, user_ref
 from .sync import live_student_ids
 
@@ -211,10 +215,17 @@ class StudentLinkView(_AdminView):
             return _bad("Choose a student account.")
         if LcupStudentLink.objects.filter(user=user).exclude(pk=link.pk).exists():
             return _bad("That account is already linked to another lc-up student.")
-        link.user = user
-        link.status = LinkStatus.CONFIRMED
-        link.match_reason = "linked by an admin"
-        link.save(update_fields=["user", "status", "match_reason"])
+        moved = link.user_id != user.pk
+        with transaction.atomic():
+            link.user = user
+            link.status = LinkStatus.CONFIRMED
+            link.match_reason = "linked by an admin"
+            link.save(update_fields=["user", "status", "match_reason"])
+            # The admin has decided: the student's same-name accounts are not asked for a phone any
+            # more, and the groups and attendance follow the new account now.
+            supersede_prompts(link, now=timezone.now())
+            if moved:
+                transaction.on_commit(lambda: tasks.follow_student.delay(link.pk))
         return Response(person_row(link, lcup_id=link.lcup_student_id))
 
 
@@ -330,6 +341,34 @@ class ClaimPasswordView(APIView):
         except ValidationError as exc:
             return Response({"password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class ClaimPhoneView(APIView):
+    """A same-name account's phone, asked for by the completion gate (``phone_confirm``): typed on
+    the account the student uses, it makes that account the one lc-up is linked to.
+    ``{"not_me": true}`` is a namesake's answer."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        now = timezone.now()
+        if request.data.get("not_me") is True:
+            if not dismiss_prompt(request.user, now=now):
+                return _bad(NOTHING_TO_CONFIRM, status.HTTP_403_FORBIDDEN)
+            _audit(request.user, "lcup_phone_not_me", request)
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        phone = request.data.get("phone")
+        try:
+            moved = confirm_phone(request.user, phone if isinstance(phone, str) else "", now=now)
+        except PhoneRefused as refused:
+            if refused.status in (status.HTTP_403_FORBIDDEN, status.HTTP_409_CONFLICT, status.HTTP_429_TOO_MANY_REQUESTS):
+                return _bad(refused.detail, refused.status)
+            body = {"phone": [refused.detail]}
+            if refused.hint:
+                body["hint"] = refused.hint
+            return Response(body, status=refused.status)
+        _audit(request.user, "lcup_phone_confirmed", request, moved=moved)
+        return Response({"moved": moved})
 
 
 # ── attendance pushes (lc-up Part 2) ──────────────────────────────────────

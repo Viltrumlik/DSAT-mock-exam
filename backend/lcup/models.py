@@ -222,6 +222,37 @@ class AccountClaim(models.Model):
             setattr(self, field, value)
 
 
+class LcupPhonePrompt(models.Model):
+    """One of a student's same-name accounts, asked for the phone the student gave the centre.
+
+    Some students have two or three accounts here and the sync linked the one they do not use. The
+    owner's fix (2026-10-14): ask each such account, and the one the number is typed on becomes the
+    linked one (``phone_confirm``). Once any account of the student answers, the others' prompts are
+    superseded — the form goes from all of them.
+    """
+
+    PENDING = "pending"
+    CONFIRMED = "confirmed"
+    NOT_ME = "not_me"
+    SUPERSEDED = "superseded"
+    STATES = [
+        (PENDING, "Waiting for the phone"),
+        (CONFIRMED, "Confirmed on this account"),
+        (NOT_ME, "Another person of the same name"),
+        (SUPERSEDED, "Settled on another account"),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="lcup_phone_prompt")
+    student = models.ForeignKey(LcupStudentLink, on_delete=models.CASCADE, related_name="phone_prompts")
+    state = models.CharField(max_length=12, choices=STATES, default=PENDING, db_index=True)
+    failed_attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"{self.user_id} {self.state}"
+
+
 class LcupSyncRun(models.Model):
     # Not auto_now_add: a dry run's row is written after its rolled-back transaction, and must
     # still say when the run began.
