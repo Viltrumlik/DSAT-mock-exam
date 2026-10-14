@@ -34,7 +34,9 @@ def apply(run) -> None:
     for link in links:
         u = link.user
         if link.pk in live and not link.deleted_in_lcup:
-            if u.role != C.ROLE_STUDENT or (u.is_frozen and u.frozen_reason == A.FROZEN_LCUP_DEBT):
+            # A centre student frozen for debt stays frozen here: the month's debt freeze
+            # (``finance``) froze them and lifts it once the balance is paid.
+            if u.role != C.ROLE_STUDENT:
                 joining.append(u)
         elif u.role == C.ROLE_STUDENT:
             leaving.append((u, link.balance is not None and link.balance < 0))

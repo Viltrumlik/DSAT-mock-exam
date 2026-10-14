@@ -25,7 +25,7 @@ from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership
 from users.models import User
 
-from . import tasks
+from . import finance, tasks
 from .accounts import create_account_for, reissue_claim
 from .auth_backend import _audit
 from .classrooms import branch_for, create_classroom_for, teachers_for
@@ -369,6 +369,46 @@ class ClaimPhoneView(APIView):
             return Response(body, status=refused.status)
         _audit(request.user, "lcup_phone_confirmed", request, moved=moved)
         return Response({"moved": moved})
+
+
+# ── finance (lc-up Part 3) ────────────────────────────────────────────────
+
+
+class StudentFinanceView(APIView):
+    """A learner's own balance, monthly cost and payments. ``IsAuthenticated`` alone, on purpose: a
+    student frozen for debt must still be able to see what they owe (the frozen screen reads this)."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        return Response(finance.student_finance(request.user))
+
+
+class FinanceSummaryView(_AdminView):
+    def get(self, request):
+        return Response(finance.summary(finance.parse_month(request.query_params.get("month"), now=timezone.now())))
+
+
+class FinanceDebtorsView(_AdminView):
+    def get(self, request):
+        return Response(finance.debtors())
+
+
+class FinancePaymentsView(_AdminView):
+    def get(self, request):
+        return Response(finance.payments_in(finance.parse_month(request.query_params.get("month"), now=timezone.now())))
+
+
+class FinanceExemptView(_AdminView):
+    """Never freeze this student for debt (a grant, an agreement) — or freeze as usual again."""
+
+    def post(self, request, pk):
+        link = get_object_or_404(LcupStudentLink.objects.select_related("user"), pk=pk)
+        exempt = request.data.get("exempt")
+        if not isinstance(exempt, bool):
+            return _bad("Send exempt: true or false.")
+        finance.set_exempt(link, exempt, by=request.user, now=timezone.now())
+        return Response({"link_id": link.pk, "exempt": exempt})
 
 
 # ── attendance pushes (lc-up Part 2) ──────────────────────────────────────

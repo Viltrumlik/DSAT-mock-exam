@@ -29,6 +29,20 @@ def attendance_push_from():
         return None
 
 
+def debt_freeze_enabled() -> bool:
+    return bool(getattr(settings, "LCUP_DEBT_FREEZE_ENABLED", False))
+
+
+def debt_freeze_day() -> int:
+    """From this day of each month a student whose lc-up balance is below zero is frozen (owner:
+    "har oyning 6-sanasigacha qarz to'lanmasa muzlatilsin 6-kuni")."""
+    try:
+        day = int(getattr(settings, "LCUP_DEBT_FREEZE_DAY", 6))
+    except (TypeError, ValueError):
+        day = 6
+    return min(max(day, 1), 28)
+
+
 def credentials() -> dict:
     return {
         "base_url": (getattr(settings, "LCUP_BASE_URL", "") or "").strip().rstrip("/"),

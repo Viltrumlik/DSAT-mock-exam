@@ -35,6 +35,8 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from users.audience import FROZEN_LCUP_DEBT
+
 from . import attendance as attendance_service
 from . import attendance_auto
 from . import attendance_window
@@ -171,6 +173,8 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
                 "status": r.status if r else None,
                 "note": r.note if r else "",
                 "reason_id": r.lcup_reason_id if r else None,
+                # The register is the teaching team's: the badge, never the amount.
+                "frozen_for_debt": bool(m.user.is_frozen and m.user.frozen_reason == FROZEN_LCUP_DEBT),
             })
         return Response({
             **_session_brief(session, classroom=classroom, user=request.user),

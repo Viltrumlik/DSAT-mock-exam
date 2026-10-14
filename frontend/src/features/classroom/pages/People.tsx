@@ -244,6 +244,10 @@ export function People({ classroom }: { classroom: ClassroomWithRole }) {
                     // An account made from lc-up, not claimed yet: phone + last 4 digits signs them in.
                     <p className="truncate text-xs text-muted-foreground">Not signed in yet</p>
                   ) : null}
+                  {m.frozen_for_debt ? (
+                    // Frozen for an unpaid month: the teacher may remind them; the amount is not theirs to see.
+                    <p className="truncate text-xs font-semibold text-rose-600 dark:text-rose-400">Frozen — unpaid</p>
+                  ) : null}
                 </div>
                 <Actions m={m} />
               </div>

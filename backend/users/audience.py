@@ -132,6 +132,21 @@ def make_centre(user, *, reason, source, run_id=None) -> RoleChange:
 
 
 @transaction.atomic
+def freeze_for_debt(user, *, reason, source, run_id=None) -> RoleChange | None:
+    """Freeze a learner who owes the centre (lc-up's balance below zero after the month's due day).
+    An account already frozen — for debt, or by an administrator — is left as it is."""
+    u = _locked(user)
+    if u.is_frozen:
+        return None
+    u.is_frozen, u.frozen_reason = True, FROZEN_LCUP_DEBT
+    u.save(update_fields=["is_frozen", "frozen_reason"])
+    _sync_caller_copy(user, u)
+    return RoleChange.objects.create(
+        user=u, from_role=u.role, to_role=u.role, froze=True, reason=reason, source=source, lcup_run_id=run_id,
+    )
+
+
+@transaction.atomic
 def clear_debt_freeze(user, *, source, run_id=None) -> RoleChange | None:
     """Lift a debt freeze (the balance is paid). Any other freeze is an administrator's: untouched."""
     u = _locked(user)

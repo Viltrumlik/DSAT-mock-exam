@@ -39,6 +39,8 @@ export interface RosterRow {
   note: string;
   /** Which of lc-up's reasons an EXCUSED mark names (classes paired with lc-up only). */
   reason_id?: number | null;
+  /** Frozen because this month is unpaid (lc-up): a badge for the teacher, never an amount. */
+  frozen_for_debt?: boolean;
 }
 
 /** One of lc-up's reasons for an excused absence. A class paired with lc-up lists them, and an

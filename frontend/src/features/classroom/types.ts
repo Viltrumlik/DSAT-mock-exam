@@ -56,6 +56,8 @@ export interface Member {
    * manage the roster (backend: classes.views ``people``); absent everywhere else.
    */
   lcup_claim_pending?: boolean;
+  /** Frozen because this month is unpaid (lc-up). Roster managers only; never an amount. */
+  frozen_for_debt?: boolean;
   role: RawRole;
   joined_at?: string;
 }

@@ -5,15 +5,12 @@ import {
   ArrowRight,
   BookOpen,
   Calculator,
-  CalendarClock,
   Check,
   ClipboardCheck,
   Coins,
-  CreditCard,
   Flame,
   ListChecks,
   PartyPopper,
-  Receipt,
   Target,
   Trophy,
   Wallet,
@@ -22,6 +19,8 @@ import type { LucideIcon } from "lucide-react";
 
 import { ExplainButton, Skeleton } from "@/components/ui";
 import { ErrorState } from "@/features/classroom/ui";
+import { formatUzs, type MyFinance } from "@/features/finance/financeApi";
+import { useMyFinance } from "@/features/finance/financeHooks";
 import { POINTS_EXPLAINER, STRIKE_EXPLAINER, XP_EXPLAINER, type Explainer } from "@/features/rewards/explainers";
 import type { MyRewards } from "@/features/rewards/rewardsApi";
 import { cn } from "@/lib/cn";
@@ -532,50 +531,120 @@ function HomeworkPanel({ homework, onRetry }: { homework: Load<HomeworkRow[]>; o
 
 /* ── Payments ────────────────────────────────────────────────────────────────────────── */
 
-const PAYMENT_PREVIEW: { icon: LucideIcon; label: string }[] = [
-  { icon: CreditCard, label: "Pay for your course online" },
-  { icon: CalendarClock, label: "See when your next payment is due" },
-  { icon: Receipt, label: "Keep every receipt in one place" },
-];
+/** lc-up names the methods in Uzbek; the student's page is English (owner, 2026-10-14). */
+const METHOD_LABEL: Record<string, string> = { "Naqd pul": "Cash", "Plastik karta": "Card", "Bank hisobi": "Bank transfer" };
+
+function ordinal(n: number): string {
+  const tail = n % 100 >= 11 && n % 100 <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
+  return `${n}${tail}`;
+}
+
+function payDay(iso: string): string {
+  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function payMonth(month: string): string {
+  return month ? new Date(`${month}-01T00:00:00`).toLocaleDateString("en-US", { month: "long", year: "numeric" }) : "";
+}
 
 /**
- * Payments, before there is anything to pay here. The owner asked for the block now with
- * "Coming soon" inside it, so the place exists before the feature does. It shows what is coming
- * and no figures at all: a made-up amount on a student's own profile would read as a real bill.
+ * The student's own money at the learning center, as lc-up keeps it: what they owe or have in
+ * credit, the monthly price of their groups, and their latest payments. Only their own — teachers
+ * never see amounts. An account lc-up does not know has nothing to show, and says so.
  */
 function PaymentsPanel() {
+  const { data, isLoading, isError, refetch } = useMyFinance();
   return (
-    <Panel index={4} className="overflow-hidden" aria-label="Payments — coming soon">
+    <Panel index={4} className="overflow-hidden" aria-label="Payments">
       <span aria-hidden className={cn("absolute inset-x-0 top-0 h-1 bg-gradient-to-r", TONE.violet.edge)} />
-      <PanelHeader
-        icon={Wallet}
-        tone="violet"
-        title="Payments"
-        description="Your course payments, on your profile."
-        actions={
-          <span className={cn("inline-flex items-center rounded-full px-3 py-1 text-[12px] font-extrabold", TONE.violet.soft)}>
-            Coming soon
-          </span>
-        }
-      />
-      <ul className="mt-4 space-y-2">
-        {PAYMENT_PREVIEW.map(({ icon: Icon, label }) => (
-          <li
-            key={label}
-            className={cn(
-              "squircle flex items-center gap-3 border border-dashed border-[color-mix(in_oklab,var(--chart-6)_30%,transparent)] px-3.5 py-2.5 [--sq:9px]",
-              TONE.violet.well,
-            )}
-          >
-            <Icon className={cn("h-4 w-4 shrink-0", TONE.violet.text)} aria-hidden />
-            <span className="text-[13px] font-semibold text-foreground">{label}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="mt-3 text-[12.5px] font-medium text-muted-foreground">
-        Until then, payments are made at your learning center as usual.
-      </p>
+      <PanelHeader icon={Wallet} tone="violet" title="Payments" description="Your balance and payments at the learning center." />
+      <div className="mt-4">
+        {isLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="squircle h-[76px] [--sq:10px]" />
+            <Skeleton className="squircle h-[44px] [--sq:9px]" />
+          </div>
+        ) : isError ? (
+          <ErrorState
+            title="Your payments didn't load."
+            message="Nothing has changed — try again in a moment."
+            onRetry={() => void refetch()}
+          />
+        ) : !data || !data.linked ? (
+          <p className={cn("squircle px-4 py-3 text-[13px] font-medium text-muted-foreground [--sq:9px]", TONE.violet.well)}>
+            Your payments will show here once your learning center links your account.
+          </p>
+        ) : (
+          <PaymentsBody finance={data} />
+        )}
+      </div>
     </Panel>
+  );
+}
+
+function PaymentsBody({ finance }: { finance: MyFinance }) {
+  const owes = (finance.debt ?? 0) > 0;
+  const tone: Tone = owes ? "rose" : "emerald";
+  const shown = finance.payments.slice(0, 5);
+  return (
+    <>
+      {finance.balance != null ? (
+        <div className={cn("squircle p-4 [--sq:10px]", TONE[tone].well)}>
+          <Eyebrow className={TONE[tone].text}>{owes ? "You owe" : finance.balance > 0 ? "In credit" : "All paid"}</Eyebrow>
+          <p className={cn("ds-num mt-1 text-[26px] font-extrabold leading-tight", TONE[tone].text)}>
+            {formatUzs(owes ? finance.debt ?? 0 : finance.balance)}
+          </p>
+          {owes ? (
+            <p className="mt-1 text-[12.5px] font-medium text-muted-foreground">
+              Payments are due by the {ordinal(finance.freeze_day)} of each month. Pay at your learning center.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {finance.monthly_cost > 0 ? (
+        <dl className="mt-3 space-y-1 text-[13px]">
+          <div className="flex items-baseline justify-between gap-3">
+            <dt className="font-semibold text-muted-foreground">Monthly price</dt>
+            <dd className="ds-num font-extrabold text-foreground">{formatUzs(finance.monthly_cost)}</dd>
+          </div>
+          {finance.groups.length > 1
+            ? finance.groups.map((g) => (
+                <div key={g.name} className="flex items-baseline justify-between gap-3 pl-3 text-[12.5px]">
+                  <dt className="truncate text-muted-foreground">{g.name}</dt>
+                  <dd className="ds-num shrink-0 font-semibold text-foreground">{formatUzs(g.monthly_cost)}</dd>
+                </div>
+              ))
+            : null}
+        </dl>
+      ) : null}
+
+      <div className="mt-4">
+        <Eyebrow>Recent payments</Eyebrow>
+        {shown.length === 0 ? (
+          <p className="mt-2 text-[13px] font-medium text-muted-foreground">No payments recorded yet.</p>
+        ) : (
+          <ul className="mt-2 space-y-1.5">
+            {shown.map((p) => {
+              const refund = p.kind === "refund";
+              return (
+                <li key={p.id} className="flex items-baseline justify-between gap-3 text-[13px]">
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    <span className="font-semibold text-foreground">{payDay(p.date)}</span>
+                    {" · "}
+                    {[refund ? "Refund" : METHOD_LABEL[p.method] ?? p.method, payMonth(p.month)].filter(Boolean).join(" · ")}
+                  </span>
+                  <span className={cn("ds-num shrink-0 font-extrabold", refund ? TONE.rose.text : "text-foreground")}>
+                    {refund ? "−" : ""}
+                    {formatUzs(p.amount)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </>
   );
 }
 

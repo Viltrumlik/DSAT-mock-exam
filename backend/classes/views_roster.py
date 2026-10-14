@@ -97,6 +97,7 @@ class ClassroomRosterView(_ClassroomScopedView):
         if not include_removed:
             memberships = memberships.exclude(status=ClassroomMembership.STATUS_REMOVED)
         from lcup.guards import pending_claim_user_ids
+        from users.audience import FROZEN_LCUP_DEBT
 
         memberships = list(memberships)
         context = {
@@ -104,6 +105,10 @@ class ClassroomRosterView(_ClassroomScopedView):
             # Accounts the lc-up sync created whose owner has not signed in yet: one query for
             # the whole roster, read per row by the serializer.
             "lcup_pending_user_ids": pending_claim_user_ids(m.user_id for m in memberships),
+            # Frozen for an unpaid month: the badge only, never the amount.
+            "frozen_for_debt_user_ids": {
+                m.user_id for m in memberships if m.user.is_frozen and m.user.frozen_reason == FROZEN_LCUP_DEBT
+            },
         }
         return Response(ClassroomMembershipSerializer(memberships, many=True, context=context).data)
 

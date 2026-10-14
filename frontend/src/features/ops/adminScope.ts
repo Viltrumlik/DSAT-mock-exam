@@ -29,6 +29,8 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   // lc-up (the centre's CRM): the owner decided on 2026-10-12 that admins and super admins run
   // the pairing and review in /ops/lcup.
   "/ops/lcup",
+  // lc-up money (debtors, the debt freeze, payments): admins and super admins, on its own page.
+  "/ops/finance",
 ];
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */
