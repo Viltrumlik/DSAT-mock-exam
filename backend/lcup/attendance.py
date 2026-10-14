@@ -263,11 +263,13 @@ def import_history(client, *, until: date, dry_run: bool = False) -> dict:
     """Make every paired group's registers lc-up's, from the earliest course start to ``until``
     (history mode — nothing is ever sent). XP follows through the ordinary hooks, and every record
     in the window is re-settled afterwards, so a mark the old join date refused is paid now. Strike
-    resets are ledgered but not announced (``strikes.deferred``). ``dry_run`` does it all inside a
+    resets are ledgered but not announced (``strikes.deferred``), and no reward notice goes out either
+    (``core.quiet``). ``dry_run`` does it all inside a
     transaction that is rolled back — the report is how the owner sees the numbers first."""
     from django.db import transaction
 
     from classes.models_attendance import AttendanceRecord
+    from core.quiet import quiet_delivery
     from rewards import strikes
     from rewards.hooks import sync_attendance_record
 
@@ -291,7 +293,9 @@ def import_history(client, *, until: date, dry_run: bool = False) -> dict:
         by_group_day[(r.get("group_id"), str(r.get("date") or "")[:10])].append(r)
 
     counts, touched = Counter(), set()
-    with transaction.atomic():
+    # Quiet: months of old lessons copied in one go must not ring each student's bell once per
+    # lesson ("you earned 5 points" for July). The ledger is written all the same.
+    with quiet_delivery(), transaction.atomic():
         xp_before = _attendance_xp()
         with strikes.deferred() as pending:
             for link in links:

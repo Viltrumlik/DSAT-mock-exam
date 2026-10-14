@@ -91,3 +91,12 @@ class HistoryImportTests(ReconcileFixture):
         self.assertTrue(report["dry_run"])
         self.assertEqual(report["counts"]["att_marks_added"], 3)
         self.assertEqual(AttendanceSession.objects.count(), 0)
+
+    def test_students_are_not_notified_about_old_lessons(self):
+        from notifications.models import Notification
+
+        with self.captureOnCommitCallbacks(execute=True):
+            import_history(self.lcup(), until=DAY)
+        self.assertEqual(attendance_xp(), 8)  # paid
+        self.assertFalse(Notification.objects.filter(recipient__in=[self.s1, self.s2]).exists())  # but quietly
+
