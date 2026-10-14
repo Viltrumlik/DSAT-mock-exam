@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { KeyRound, LogOut, MailCheck, ShieldCheck } from "lucide-react";
+import { KeyRound, LogOut, MailCheck, Phone, ShieldCheck } from "lucide-react";
 import { lcupApi } from "@/features/lcup/lcupApi";
 import { invalidateMe } from "@/hooks/useMe";
 import { authApi, usersApi } from "@/lib/api";
@@ -71,14 +71,18 @@ export function ProfileCompletionGate({
   // An account the lc-up sync created, signed in with its one-time code: its own password comes
   // before anything else (backend/lcup/claims.py lists "password" first).
   const passwordMissing = missingFields.includes("password");
+  // One of a student's same-name accounts: the number the administrator holds decides which account
+  // lc-up follows (backend/lcup/phone_confirm.py). Asked after the password, before the names.
+  const phoneMissing = missingFields.includes("lcup_phone");
 
   // Start on the name step when anything there is missing; otherwise go straight to the
   // email round-trip. The name step stays reachable from the email step regardless.
-  const [step, setStep] = useState<"password" | "profile" | "email">(
-    passwordMissing ? "password" : nameIncomplete ? "profile" : "email",
+  const [step, setStep] = useState<"password" | "phone" | "profile" | "email">(
+    passwordMissing ? "password" : phoneMissing ? "phone" : nameIncomplete ? "profile" : "email",
   );
   const [password, setPassword] = useState("");
   const [passwordAgain, setPasswordAgain] = useState("");
+  const [phone, setPhone] = useState("");
   const [draft, setDraft] = useState<Record<string, string>>(() => ({
     first_name: current.first_name,
     last_name: current.last_name,
@@ -116,13 +120,50 @@ export function ProfileCompletionGate({
       await invalidateMe(queryClient);
       setPassword("");
       setPasswordAgain("");
-      setStep(nameIncomplete ? "profile" : "email");
+      setStep(phoneMissing ? "phone" : nameIncomplete ? "profile" : "email");
     } catch (err) {
       setError(apiError(err, "Could not save the password. Try a longer one."));
     } finally {
       setBusy(false);
     }
-  }, [password, passwordAgain, nameIncomplete, queryClient]);
+  }, [password, passwordAgain, phoneMissing, nameIncomplete, queryClient]);
+
+  // After the phone, only what is still missing; with nothing left, the refreshed `me` closes the gate.
+  const afterPhone = useCallback(async () => {
+    await invalidateMe(queryClient);
+    if (nameIncomplete) setStep("profile");
+    else if (emailMissing) setStep("email");
+  }, [nameIncomplete, emailMissing, queryClient]);
+
+  const savePhone = useCallback(async () => {
+    if (!phone.trim()) {
+      setError("Telefon raqamingizni kiriting.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await lcupApi.confirmPhone(phone.trim());
+      await afterPhone();
+    } catch (err) {
+      setError(apiError(err, "Raqamni saqlab bo'lmadi. Qaytadan urinib ko'ring."));
+    } finally {
+      setBusy(false);
+    }
+  }, [phone, afterPhone]);
+
+  const sayNotMe = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await lcupApi.notMe();
+      await afterPhone();
+    } catch (err) {
+      setError(apiError(err, "Saqlab bo'lmadi. Qaytadan urinib ko'ring."));
+    } finally {
+      setBusy(false);
+    }
+  }, [afterPhone]);
 
   const saveNames = useCallback(async () => {
     const payload: Record<string, string> = {};
@@ -204,10 +245,20 @@ export function ProfileCompletionGate({
       onClose={() => undefined}
       hideClose
       size="sm"
-      title={step === "password" ? "Choose your password" : step === "profile" ? "Complete your profile" : "Confirm your email"}
+      title={
+        step === "password"
+          ? "Choose your password"
+          : step === "phone"
+            ? "Telefon raqamingiz"
+            : step === "profile"
+              ? "Complete your profile"
+              : "Confirm your email"
+      }
       description={
         step === "password"
           ? "You signed in with a one-time code. Choose your own password — from now on you sign in with your phone number and this password."
+          : step === "phone"
+          ? "O'zingizning raqamingizni kiriting — administratorga bergan raqamingizni. Raqamni qaysi akkauntda yozsangiz, o'sha akkaunt asosiy bo'ladi va guruhlaringiz unga o'tadi."
           : step === "profile"
           ? "Check these are right — they name you on results and certificates. You can change them."
           : emailStep === "address"
@@ -245,6 +296,37 @@ export function ProfileCompletionGate({
             <Button onClick={() => void savePassword()} disabled={busy} className="w-full">
               {busy ? <Spinner /> : "Save password"}
             </Button>
+          </>
+        ) : step === "phone" ? (
+          <>
+            <Field label="Telefon raqami" htmlFor="pc-phone">
+              <Input
+                id="pc-phone"
+                type="tel"
+                inputMode="tel"
+                autoComplete="tel"
+                autoFocus
+                value={phone}
+                onChange={(e) => { setError(null); setPhone(e.target.value); }}
+                onKeyDown={(e) => { if (e.key === "Enter" && !busy) void savePhone(); }}
+                placeholder="+998 90 123 45 67"
+                leftIcon={<Phone />}
+              />
+            </Field>
+            <Button onClick={() => void savePhone()} disabled={busy} className="w-full">
+              {busy ? <Spinner /> : "Tasdiqlash"}
+            </Button>
+            <p className="text-[13px] text-muted-foreground">
+              Shu ism-familiyali boshqa o&apos;quvchi bo&apos;lsangiz:{" "}
+              <button
+                type="button"
+                onClick={() => void sayNotMe()}
+                disabled={busy}
+                className="font-semibold text-muted-foreground underline underline-offset-2 disabled:opacity-50"
+              >
+                Bu men emasman
+              </button>
+            </p>
           </>
         ) : step === "profile" ? (
           <>

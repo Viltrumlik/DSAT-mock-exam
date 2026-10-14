@@ -259,13 +259,16 @@ def _attendance_xp() -> int:
     return PointAward.objects.filter(source_type="attendance_record").aggregate(t=Sum("xp"))["t"] or 0
 
 
-def import_history(client, *, until: date, dry_run: bool = False) -> dict:
+def import_history(client, *, until: date, dry_run: bool = False, groups=None) -> dict:
     """Make every paired group's registers lc-up's, from the earliest course start to ``until``
     (history mode — nothing is ever sent). XP follows through the ordinary hooks, and every record
     in the window is re-settled afterwards, so a mark the old join date refused is paid now. Strike
     resets are ledgered but not announced (``strikes.deferred``), and no reward notice goes out either
     (``core.quiet``). ``dry_run`` does it all inside a
-    transaction that is rolled back — the report is how the owner sees the numbers first."""
+    transaction that is rolled back — the report is how the owner sees the numbers first.
+
+    ``groups`` narrows it to those group links, read from lc-up one group at a time — how a
+    student's marks follow them to the account they confirmed (``phone_confirm.follow_link``)."""
     from django.db import transaction
 
     from classes.models_attendance import AttendanceRecord
@@ -276,18 +279,24 @@ def import_history(client, *, until: date, dry_run: bool = False) -> dict:
     from .client import ATTENDANCE_PATH
     from .models import GroupLinkStatus, LcupGroupLink
 
-    links = list(
-        LcupGroupLink.objects.filter(status=GroupLinkStatus.CONFIRMED, classroom__isnull=False, deleted_in_lcup_at__isnull=True)
-        .select_related("classroom")
-        .order_by("pk")
+    links = LcupGroupLink.objects.filter(
+        status=GroupLinkStatus.CONFIRMED, classroom__isnull=False, deleted_in_lcup_at__isnull=True
     )
+    if groups is not None:
+        links = links.filter(pk__in=[g.pk for g in groups])
+    links = list(links.select_related("classroom").order_by("pk"))
     starts = [d for d in (_course_start(link) for link in links) if d]
     first = min(starts) if starts else until - timedelta(days=HISTORY_WINDOW_DAYS - 1)
-    rows, lo = [], first
-    while lo <= until:
-        hi = min(lo + timedelta(days=HISTORY_WINDOW_DAYS - 1), until)
-        rows += client.fetch_all(ATTENDANCE_PATH, {"from": lo.isoformat(), "to": hi.isoformat(), "include_deleted": "true"})
-        lo = hi + timedelta(days=1)
+    # All groups in one read, or — narrowed — each group on its own (lc-up filters by ``group_id``).
+    scopes = [{}] if groups is None else [{"group_id": link.lcup_group_id} for link in links]
+    rows = []
+    for scope in scopes:
+        lo = first
+        while lo <= until:
+            hi = min(lo + timedelta(days=HISTORY_WINDOW_DAYS - 1), until)
+            params = {**scope, "from": lo.isoformat(), "to": hi.isoformat(), "include_deleted": "true"}
+            rows += client.fetch_all(ATTENDANCE_PATH, params)
+            lo = hi + timedelta(days=1)
     by_group_day = defaultdict(list)
     for r in rows:
         by_group_day[(r.get("group_id"), str(r.get("date") or "")[:10])].append(r)

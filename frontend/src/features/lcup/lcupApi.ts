@@ -201,4 +201,15 @@ export const lcupApi = {
   async setInitialPassword(password: string): Promise<void> {
     await api.post("/lcup/claim/password/", { password });
   },
+
+  /** On one of several same-name accounts: the number the administrator holds makes THIS account
+   *  the one lc-up is linked to (`moved` when it was another one before). */
+  async confirmPhone(phone: string): Promise<{ moved: boolean }> {
+    const { data } = await api.post<{ moved: boolean }>("/lcup/claim/phone/", { phone });
+    return data;
+  },
+  /** Another person with the same name: the phone question goes from this account. */
+  async notMe(): Promise<void> {
+    await api.post("/lcup/claim/phone/", { not_me: true });
+  },
 };
