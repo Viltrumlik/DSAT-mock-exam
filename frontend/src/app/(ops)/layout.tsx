@@ -27,6 +27,7 @@ import {
   Smartphone,
   RefreshCw,
   Megaphone,
+  Wallet,
 } from "lucide-react";
 
 /**
@@ -100,6 +101,14 @@ const OPS_NAV = [
     href: "/ops/lcup",
     label: "lc-up",
     icon: RefreshCw,
+    exact: false,
+  },
+  {
+    // Money as lc-up keeps it: who owes, who is frozen for it, and what came in each month.
+    // Its own page, not a tab of lc-up — the owner wanted the two apart.
+    href: "/ops/finance",
+    label: "Finance",
+    icon: Wallet,
     exact: false,
   },
   {

@@ -30,7 +30,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from access import constants as acc_const
 from classes.models import Branch, Classroom, ClassroomMembership
 
-from . import audience
+from . import audience, finance
 from .accounts import create_account_for, create_teacher_account_for
 from .attendance import apply_day, plan_day, push_day, push_held_reason
 from .classrooms import branch_for, create_classroom_for, teachers_for
@@ -424,6 +424,7 @@ def _run_stages(client, run: _Run) -> None:
     _stage(run, "teachers", lambda: _teachers(client, run))
     _stage(run, "groups", lambda: _groups(client, run))
     _stage(run, "students", lambda: _students(client, run))
+    _stage(run, "payments", lambda: finance.sync_payments(client, run))
     _memberships(client, run)
     if not run.review_done:
         # Afterwards a new lc-up student always gets a new account, even if an old one of
@@ -432,6 +433,8 @@ def _run_stages(client, run: _Run) -> None:
     _stage(run, "accounts", lambda: _accounts(run))
     # Before rosters: a returning student is a student again when the roster adds them back.
     _stage(run, "audience", lambda: audience.apply(run))
+    # After the balances (students) and the roles (audience): an unpaid month freezes, a paid one lifts.
+    _stage(run, "debt_freeze", lambda: finance.apply_freeze(run))
     _stage(run, "rosters", lambda: _rosters(run))
     _stage(run, "reasons", lambda: _reasons(client, run))
     # After rosters, so a mark lands on the class as lc-up now has it. One atomic block per

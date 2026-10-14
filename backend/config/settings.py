@@ -292,6 +292,10 @@ LCUP_PASSWORD = os.getenv("LCUP_PASSWORD", "")
 LCUP_ATTENDANCE_PULL_ENABLED = os.getenv("LCUP_ATTENDANCE_PULL_ENABLED", "False").lower() == "true"
 LCUP_ATTENDANCE_PUSH_ENABLED = os.getenv("LCUP_ATTENDANCE_PUSH_ENABLED", "False").lower() == "true"
 LCUP_ATTENDANCE_PUSH_FROM = os.getenv("LCUP_ATTENDANCE_PUSH_FROM", "").strip()
+# Finance (docs/superpowers/plans/2026-10-14-lcup-finance.md): from DAY of each month a student whose
+# lc-up balance is below zero is frozen; paying lifts it. Off by default; off lets go every student it froze.
+LCUP_DEBT_FREEZE_ENABLED = os.getenv("LCUP_DEBT_FREEZE_ENABLED", "False").lower() == "true"
+LCUP_DEBT_FREEZE_DAY = int(os.getenv("LCUP_DEBT_FREEZE_DAY", "6") or 6)
 
 # Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"

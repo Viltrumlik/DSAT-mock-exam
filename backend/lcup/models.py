@@ -42,6 +42,9 @@ class LcupState(models.Model):
     initial_review_done_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: When lc-up's whole payment history was first copied in (``finance.sync_payments``). Until
+    #: then a run reads every month since the earliest course; afterwards only the last few days.
+    payments_backfilled_at = models.DateTimeField(null=True, blank=True)
 
     @classmethod
     def get(cls) -> "LcupState":
@@ -95,6 +98,11 @@ class LcupStudentLink(models.Model):
     #: (never seen, or lc-up sent something that is not a number), never mistaken for 0.
     balance = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     balance_seen_at = models.DateTimeField(null=True, blank=True)
+    #: Set by an admin (a grant, an agreement): the debt freeze never applies to this student.
+    debt_freeze_exempt_at = models.DateTimeField(null=True, blank=True)
+    debt_freeze_exempt_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -251,6 +259,36 @@ class LcupPhonePrompt(models.Model):
 
     def __str__(self) -> str:
         return f"{self.user_id} {self.state}"
+
+
+class LcupPayment(models.Model):
+    """A payment (or refund) as lc-up records it. lc-up is the ledger; this copy is what the student's
+    Payments page and /ops/finance read, refreshed by every sync (``finance.sync_payments``)."""
+
+    lcup_payment_id = models.PositiveIntegerField(unique=True)
+    student = models.ForeignKey(
+        LcupStudentLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="payments"
+    )
+    lcup_student_id = models.PositiveIntegerField(db_index=True)
+    group = models.ForeignKey(LcupGroupLink, null=True, blank=True, on_delete=models.SET_NULL, related_name="payments")
+    lcup_group_id = models.PositiveIntegerField(null=True, blank=True)
+    #: lc-up's ``type``: payment | refund | extra.
+    kind = models.CharField(max_length=16)
+    #: In so'm, as lc-up gives it (always positive; ``kind`` says which way it went).
+    amount = models.BigIntegerField()
+    method = models.CharField(max_length=60, blank=True, default="")
+    paid_on = models.DateField(db_index=True)
+    #: The month it pays for, "YYYY-MM".
+    month = models.CharField(max_length=7, blank=True, default="", db_index=True)
+    note = models.CharField(max_length=300, blank=True, default="")
+    created_in_lcup = models.DateTimeField(null=True, blank=True)
+    synced_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-paid_on", "-lcup_payment_id"]
+
+    def __str__(self) -> str:
+        return f"{self.lcup_payment_id} {self.kind} {self.amount}"
 
 
 class LcupSyncRun(models.Model):

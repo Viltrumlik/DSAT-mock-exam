@@ -3,6 +3,8 @@
 import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Snowflake } from "lucide-react";
+import { formatUzs } from "@/features/finance/financeApi";
+import { useMyFinance } from "@/features/finance/financeHooks";
 import { authApi } from "@/lib/api";
 
 /**
@@ -16,6 +18,11 @@ import { authApi } from "@/lib/api";
 export function FrozenOverlay() {
   const queryClient = useQueryClient();
   const btnRef = useRef<HTMLButtonElement>(null);
+  // Frozen for an unpaid month (lc-up's debt freeze) says what is owed and how it ends; any other
+  // freeze is an administrator's and keeps its own words. The endpoint stays open to a frozen learner.
+  const { data } = useMyFinance();
+  const finance = data && data.linked ? data : null;
+  const forDebt = !!finance?.frozen_for_debt;
 
   // Lock page scroll + keep focus trapped on the overlay (can't Tab underneath).
   useEffect(() => {
@@ -50,10 +57,27 @@ export function FrozenOverlay() {
           <Snowflake className="h-8 w-8" />
         </div>
         <h1 className="text-2xl font-black text-slate-900">Your account is frozen</h1>
-        <p className="mt-3 font-medium leading-relaxed text-slate-600">
-          Your access has been temporarily frozen by an administrator. You can’t use the
-          platform right now. Please contact your administrator to restore your access.
-        </p>
+        {forDebt ? (
+          <>
+            <p className="mt-3 font-medium leading-relaxed text-slate-600">
+              This month’s payment hasn’t been made, so your access is paused.
+            </p>
+            {(finance?.debt ?? 0) > 0 ? (
+              <p className="mt-4 rounded-2xl bg-rose-50 px-4 py-3 text-lg font-black text-rose-700">
+                You owe {formatUzs(finance?.debt ?? 0)}
+              </p>
+            ) : null}
+            <p className="mt-4 text-sm font-medium leading-relaxed text-slate-600">
+              Pay at your learning center. Your account unlocks by itself within 15 minutes of the
+              payment being recorded.
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 font-medium leading-relaxed text-slate-600">
+            Your access has been temporarily frozen by an administrator. You can’t use the
+            platform right now. Please contact your administrator to restore your access.
+          </p>
+        )}
         <button
           ref={btnRef}
           type="button"

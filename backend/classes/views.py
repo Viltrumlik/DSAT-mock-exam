@@ -1132,8 +1132,12 @@ class ClassroomViewSet(ModelViewSet):
         # not their classmates': only someone who manages the roster gets the flag.
         if has_cap(request.user, classroom, "can_manage_roster"):
             from lcup.guards import pending_claim_user_ids
+            from users.audience import FROZEN_LCUP_DEBT
 
             context["lcup_pending_user_ids"] = pending_claim_user_ids(m.user_id for m in memberships)
+            context["frozen_for_debt_user_ids"] = {
+                m.user_id for m in memberships if m.user.is_frozen and m.user.frozen_reason == FROZEN_LCUP_DEBT
+            }
         return Response(ClassroomMembershipSerializer(memberships, many=True, context=context).data)
 
     @action(

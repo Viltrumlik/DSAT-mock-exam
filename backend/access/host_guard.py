@@ -32,6 +32,7 @@ PUBLIC_STUDENT_API_PREFIXES = (
     "/api/realtime/",
     "/api/annotations/",  # the exam runner's highlighter: the learner's own rows only
     "/api/question-reports/",  # "report an error" in the mock runner
+    "/api/lcup/me/finance/",  # a leaver frozen for debt still sees what they owe
     "/api/health/",
     "/api/schema/",
     "/api/csp-report/",

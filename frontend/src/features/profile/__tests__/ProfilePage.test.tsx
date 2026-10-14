@@ -21,6 +21,7 @@ const profile = vi.hoisted(() => ({
 }));
 const attempts = vi.hoisted(() => ({ getAttempts: vi.fn() }));
 const rewards = vi.hoisted(() => ({ me: vi.fn() }));
+const finance = vi.hoisted(() => ({ mine: vi.fn() }));
 const toast = vi.hoisted(() => ({ push: vi.fn() }));
 const theme = vi.hoisted(() => ({ setTheme: vi.fn() }));
 const session = vi.hoisted(() => ({ role: "student" }));
@@ -32,6 +33,10 @@ vi.mock("@/features/profile/profileApi", async (importOriginal) => ({
 }));
 vi.mock("@/features/examsStudent/api", () => ({ examsStudentApi: attempts }));
 vi.mock("@/features/rewards/rewardsApi", () => ({ rewardsApi: rewards }));
+vi.mock("@/features/finance/financeApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/finance/financeApi")>()),
+  financeApi: finance,
+}));
 vi.mock("@/hooks/useMe", () => ({ invalidateMe: vi.fn(), useMe: () => ({ me: { role: session.role } }) }));
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => toast }));
 vi.mock("next-themes", () => ({ useTheme: () => ({ theme: "system", setTheme: theme.setTheme }) }));
@@ -142,6 +147,20 @@ beforeEach(() => {
     ],
   });
   rewards.me.mockResolvedValue({ points: 342, coins: 12, xp: 1480, strikes: 4, current_streak: 6, best_streak: 11, history: [] });
+  finance.mine.mockReset().mockResolvedValue({
+    linked: true,
+    balance: -150000,
+    debt: 150000,
+    updated_at: inDays(0),
+    frozen_for_debt: false,
+    freeze_day: 6,
+    monthly_cost: 500000,
+    groups: [{ name: "Math Junior G2", monthly_cost: 500000 }],
+    payments: [
+      { id: 2, date: "2026-10-07", amount: 500000, kind: "payment", method: "Plastik karta", month: "2026-10", group: "Math Junior G2" },
+      { id: 1, date: "2026-09-20", amount: 100000, kind: "refund", method: "Naqd pul", month: "2026-09", group: "Math Junior G2" },
+    ],
+  });
   profile.sessions.mockResolvedValue([
     { id: 1, created_at: inDays(0), last_seen_at: inDays(0), ip: "84.54.71.12", user_agent: CHROME_WINDOWS, is_current: true },
     { id: 2, created_at: inDays(-1), last_seen_at: inDays(-1), ip: "84.54.90.3", user_agent: SAFARI_IPHONE, is_current: false },
@@ -212,13 +231,50 @@ describe("Overview", () => {
     expect(text()).not.toContain("Midterm 2");
   });
 
-  it("holds Payments' place, coming soon, with no amounts in it", async () => {
+  it("shows the student's own debt, monthly price and latest payments from lc-up", async () => {
     await renderPage();
-    const payments = host.querySelector('[aria-label="Payments — coming soon"]');
+    await flush(() => text().includes("You owe"));
+    const payments = host.querySelector('[aria-label="Payments"]')?.textContent ?? "";
 
-    expect(payments?.textContent).toContain("Coming soon");
-    expect(payments?.textContent).not.toMatch(/\d/);
-    expect(payments?.querySelector("a, button")).toBeNull();
+    expect(payments).toContain("You owe");
+    expect(payments).toContain("150,000 UZS");
+    expect(payments).toContain("Payments are due by the 6th of each month");
+    expect(payments).toContain("Monthly price");
+    expect(payments).toContain("500,000 UZS");
+    expect(payments).toContain("Card"); // lc-up's "Plastik karta", in English
+    expect(payments).toContain("Refund");
+    expect(payments).toContain("−100,000 UZS");
+  });
+
+  it("says All paid, with no due-date warning, when nothing is owed", async () => {
+    finance.mine.mockResolvedValue({
+      linked: true, balance: 0, debt: 0, updated_at: null, frozen_for_debt: false, freeze_day: 6,
+      monthly_cost: 500000, groups: [], payments: [],
+    });
+    await renderPage();
+    await flush(() => text().includes("All paid"));
+    const payments = host.querySelector('[aria-label="Payments"]')?.textContent ?? "";
+
+    expect(payments).toContain("All paid");
+    expect(payments).not.toContain("due by");
+    expect(payments).toContain("No payments recorded yet.");
+  });
+
+  it("tells an account lc-up does not know that its payments will show once linked", async () => {
+    finance.mine.mockResolvedValue({ linked: false });
+    await renderPage();
+    await flush(() => text().includes("links your account"));
+
+    expect(text()).toContain("Your payments will show here once your learning center links your account.");
+  });
+
+  it("shows an error, not an empty state, when the payments do not load", async () => {
+    finance.mine.mockRejectedValue(new Error("down"));
+    await renderPage();
+    await flush(() => text().includes("didn't load"));
+
+    expect(text()).toContain("Your payments didn't load.");
+    expect(text()).not.toContain("No payments recorded yet.");
   });
 
   it("opens the step a checklist item names", async () => {

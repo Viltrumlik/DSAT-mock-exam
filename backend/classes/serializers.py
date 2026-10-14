@@ -303,13 +303,19 @@ class ClassroomMembershipSerializer(serializers.ModelSerializer):
     #: An account the lc-up sync created whose owner has not signed in yet. The roster view puts
     #: the set in the context with one query; anywhere else this is simply False.
     lcup_claim_pending = serializers.SerializerMethodField()
+    #: Frozen because the month is unpaid (lc-up). Like the flag above, only someone who manages the
+    #: roster is given it — and never the amount (owner: teachers see the badge, not the money).
+    frozen_for_debt = serializers.SerializerMethodField()
 
     class Meta:
         model = ClassroomMembership
-        fields = ["id", "role", "status", "joined_at", "user", "lcup_claim_pending"]
+        fields = ["id", "role", "status", "joined_at", "user", "lcup_claim_pending", "frozen_for_debt"]
 
     def get_lcup_claim_pending(self, obj) -> bool:
         return obj.user_id in self.context.get("lcup_pending_user_ids", ())
+
+    def get_frozen_for_debt(self, obj) -> bool:
+        return obj.user_id in self.context.get("frozen_for_debt_user_ids", ())
 
     def get_user(self, obj):
         u = obj.user
