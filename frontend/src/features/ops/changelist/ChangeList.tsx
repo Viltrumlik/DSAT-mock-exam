@@ -413,6 +413,8 @@ export function ChangeList<R extends { id: number }>({
                               {i === 0 && href ? (
                                 <Link
                                   href={href}
+                                  // A page of 50–100 rows would otherwise prefetch every change form on view.
+                                  prefetch={false}
                                   onClick={(e) => e.stopPropagation()}
                                   className="block max-w-full truncate rounded-sm text-left font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
                                 >
