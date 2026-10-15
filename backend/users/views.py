@@ -76,6 +76,7 @@ from django.core.cache import cache
 from time import monotonic
 
 from .security_audit import log_security_event
+from . import admin_audit
 from .security_risk import clear_security_step_up, record_failed_refresh_attempt
 from .telegram_oidc import (
     TelegramOIDCError,
@@ -1195,8 +1196,13 @@ class UserUpdateView(generics.UpdateAPIView):
         return manageable_users_queryset(self.request.user)
 
     def perform_update(self, serializer):
+        before = admin_audit.snapshot(serializer.instance)
         super().perform_update(serializer)
         inst = serializer.instance
+        admin_audit.log_admin_update(
+            request=self.request, user=inst, before=before,
+            password_changed=bool(serializer.validated_data.get("password")),
+        )
         actor = self.request.user
         logger.info(
             "user_updated target_id=%s role=%s subject=%s actor_id=%s is_superuser=%s",
@@ -1271,16 +1277,25 @@ class UserBulkActionView(APIView):
                 skipped += 1
                 continue
             try:
+                # Recorded only when the state actually changed, and after the commit: a failed audit
+                # write inside the block would mark it for rollback and silently undo the freeze.
+                audit = None
                 with transaction.atomic():
                     # A staff freeze is the staff's: clearing frozen_reason keeps the lc-up
                     # sync from lifting it as "debt paid".
                     if action == "freeze":
+                        was = target.is_frozen
                         target.is_frozen, target.frozen_reason = True, ""
                         target.save(update_fields=["is_frozen", "frozen_reason"])
+                        if not was:
+                            audit = (admin_audit.ADMIN_FREEZE, {})
                         results.append({"id": uid, "ok": True, "is_frozen": True})
                     elif action == "unfreeze":
+                        was, was_reason = target.is_frozen, target.frozen_reason
                         target.is_frozen, target.frozen_reason = False, ""
                         target.save(update_fields=["is_frozen", "frozen_reason"])
+                        if was:
+                            audit = (admin_audit.ADMIN_UNFREEZE, {"was_reason": was_reason or ""})
                         results.append({"id": uid, "ok": True, "is_frozen": False})
                     else:  # delete
                         email = target.email
@@ -1293,6 +1308,8 @@ class UserBulkActionView(APIView):
                             is_super,
                         )
                         results.append({"id": uid, "ok": True, "deleted": True})
+                if audit:
+                    admin_audit.log_admin_action(request=request, user_id=uid, event_type=audit[0], **audit[1])
                 affected += 1
             except ProtectedError:
                 # A user who authored a classroom, assignment, journal or question bank
