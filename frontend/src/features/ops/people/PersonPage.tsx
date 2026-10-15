@@ -8,14 +8,16 @@ import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { peopleKeys, type PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { listHrefFrom } from "@/features/ops/changelist/backLink";
-import { formatLastSeen, statusLabel } from "@/features/ops/users/peopleColumns";
+import { formatLastSeen } from "@/features/ops/users/peopleColumns";
 import { ConfirmBulkModal, type BulkResult } from "@/features/ops/users/ConfirmBulkModal";
 import { ConfirmDialog } from "./ConfirmDialog";
-import { isNotFound, personActions, personKeys, usePerson, type PersonCore } from "./personApi";
+import { LIST_LABEL, statusText } from "./format";
+import { isNotFound, personActions, personKeys, usePerson } from "./personApi";
 import { PersonForm } from "./PersonForm";
+import { activeTab, panelId, TabBar, tabHref, tabId, tabsFor, type TabKey } from "./PersonTabs";
+import { SummaryCard } from "./SummaryCard";
 import { GroupsSection } from "./sections/GroupsSection";
 import { LcupSection } from "./sections/LcupSection";
-import { DuplicatesSection, LIST_LABEL } from "./sections/DuplicatesSection";
 import { StaffClassesSection } from "./sections/StaffClassesSection";
 import { AttendanceSection } from "./sections/AttendanceSection";
 import { ResultsSection } from "./sections/ResultsSection";
@@ -23,10 +25,11 @@ import { SecuritySection } from "./sections/SecuritySection";
 import { HistorySection } from "./sections/HistorySection";
 
 /**
- * One person's change form, after Django admin: the title row with the actions, the form
- * (Profile) beside Groups and lc-up (or a staff member's Classes), then the parts that load on
- * their own — Attendance, Results, Security, History — and the same-name accounts.
- * Back and the breadcrumb return to the list it was opened from (`?_changelist_filters=`).
+ * One person's change form, after Django admin: the title row with the actions, then tabs — the
+ * Overview (the form beside a read-only Summary) and one tab per subject: Groups, Payments,
+ * Attendance, Results, Security, History, or a staff member's Classes. A tab's part is fetched when
+ * the tab opens. Back and the breadcrumb return to the list it was opened from
+ * (`?_changelist_filters=`), whichever tab is open.
  */
 
 function ActionButton({ children, ...rest }: { children: ReactNode } & ButtonHTMLAttributes<HTMLButtonElement>) {
@@ -39,12 +42,6 @@ function ActionButton({ children, ...rest }: { children: ReactNode } & ButtonHTM
       {children}
     </button>
   );
-}
-
-function statusText(person: PersonCore): string {
-  if (person.frozen_reason === "debt") return "Frozen — unpaid (lifts when paid)";
-  if (person.frozen_reason === "admin") return "Frozen — by admin";
-  return statusLabel(person.status, person.is_frozen);
 }
 
 export function PersonPage({ section, id }: { section: PeopleSection; id: number }) {
@@ -98,6 +95,11 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
   }
   if (!person || person.section !== section) return null;
 
+  const tabs = tabsFor(person);
+  const tab = activeTab(search, tabs);
+  const openTab = (key: TabKey) =>
+    router.replace(tabHref(`/ops/${section}/${id}`, new URLSearchParams(search.toString()), key), { scroll: false });
+
   const bulk = async (action: "freeze" | "unfreeze" | "delete") => {
     setBusy(true);
     try {
@@ -139,10 +141,8 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
     }
   };
 
-  const learner = person.staff === null;
-
   return (
-    <div className="mx-auto w-full max-w-[1400px] space-y-4 p-4 md:p-6">
+    <div className="mx-auto w-full max-w-6xl space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <nav aria-label="Breadcrumb" className="text-xs text-muted-foreground">
@@ -171,26 +171,24 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         </div>
       </div>
 
-      <div className="grid items-start gap-4 lg:grid-cols-2">
-        <PersonForm key={person.id} person={person} onSaved={refresh} />
-        <div className="min-w-0 space-y-4">
-          {learner ? (
-            <>
-              <GroupsSection person={person} onChanged={refresh} />
-              {person.lcup ? <LcupSection lcup={person.lcup} /> : null}
-            </>
-          ) : (
-            <StaffClassesSection staff={person.staff!} />
-          )}
-        </div>
-      </div>
+      <TabBar tabs={tabs} active={tab} onSelect={openTab} />
 
-      {/* Attendance is taken in classes; a public user sits in none. */}
-      {section === "students" ? <AttendanceSection id={id} /> : null}
-      {learner ? <ResultsSection id={id} section={section} /> : null}
-      <SecuritySection id={id} />
-      <HistorySection id={id} />
-      {learner ? <DuplicatesSection duplicates={person.duplicates} /> : null}
+      {/* Only the open tab is rendered, so only its part is fetched. */}
+      <div role="tabpanel" id={panelId(tab)} aria-labelledby={tabId(tab)} className="min-w-0">
+        {tab === "overview" ? (
+          <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <PersonForm key={person.id} person={person} onSaved={refresh} />
+            <SummaryCard person={person} />
+          </div>
+        ) : null}
+        {tab === "groups" ? <GroupsSection person={person} onChanged={refresh} /> : null}
+        {tab === "payments" && person.lcup ? <LcupSection lcup={person.lcup} /> : null}
+        {tab === "attendance" ? <AttendanceSection id={id} /> : null}
+        {tab === "results" ? <ResultsSection id={id} section={section} /> : null}
+        {tab === "security" ? <SecuritySection id={id} /> : null}
+        {tab === "history" ? <HistorySection id={id} /> : null}
+        {tab === "classes" && person.staff ? <StaffClassesSection staff={person.staff} /> : null}
+      </div>
 
       {confirm === "delete" ? (
         <ConfirmBulkModal

@@ -4,14 +4,13 @@ import { useId, useState, type FormEvent, type ReactNode } from "react";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { CANONICAL_ROLES, ROLE_LABELS, requiresSubject } from "@/lib/roles";
-import { formatDate } from "@/features/ops/users/peopleColumns";
-import { Fieldset, Row } from "./Fieldset";
-import { formatDay } from "./format";
+import { Fieldset } from "./Fieldset";
 import type { PersonCore } from "./personApi";
 
 /**
- * The person's own fields (`PATCH /users/<id>/update/`), inline on their change form. The save,
- * role/subject and error rules are the old ops row editor's (EditUserModal), unchanged except:
+ * The person's own fields (`PATCH /users/<id>/update/`) — only what an admin can change; the
+ * read-only facts are the Overview's Summary card. The save, role/subject and error rules are the
+ * old ops row editor's (EditUserModal), unchanged except:
  * - both name parts always go — the core sends them separately, so they are never guessed;
  * - no frozen flag — freezing is the page header's action, and a stale flag here would undo it.
  */
@@ -32,16 +31,6 @@ function firstFieldError(data: unknown): string | null {
     if (typeof v === "string") return v;
   }
   return null;
-}
-
-/** "EN 650 · Math 700 · Total 1350" — only the parts the student has set. */
-function targetsText(sat: PersonCore["sat"]): string {
-  const parts = [
-    sat.target_english != null ? `EN ${sat.target_english}` : null,
-    sat.target_math != null ? `Math ${sat.target_math}` : null,
-    sat.target_score != null ? `Total ${sat.target_score}` : null,
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
 function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
@@ -111,8 +100,6 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
   };
 
   const id = (name: string) => `${uid}-${name}`;
-  // The SAT goal and lc-up's account creation are a learner's; a staff member has neither.
-  const learner = person.section !== "staff";
 
   return (
     <Fieldset title="Profile">
@@ -197,21 +184,6 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               </button>
             </div>
           </Field>
-        </div>
-
-        <div>
-          {learner ? (
-            <>
-              <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
-              <Row label="Targets">
-                {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· Set by the student</span>
-              </Row>
-            </>
-          ) : null}
-          <Row label="Joined">{formatDate(person.date_joined)}</Row>
-          <Row label="Email verified">{person.email_verified ? "Yes" : "No"}</Row>
-          <Row label="Telegram">{person.telegram_linked ? "Linked" : "Not linked"}</Row>
-          {learner ? <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row> : null}
         </div>
 
         <div className="space-y-2 border-t border-border pt-3">
