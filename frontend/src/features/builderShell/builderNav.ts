@@ -71,6 +71,8 @@ export const BUILDER_CONSOLE: ConsoleConfig = {
   groups: BUILDER_NAV_GROUPS,
   // The builder has no admin scoping: AuthGuard `adminOnly` decides who is here at all.
   visible: visibleByRole,
+  // Rounded and roomy, not the dense Django-admin frame (owner 2026-10-15: "avvalgidek chiroyli").
+  soft: true,
 };
 
 /**
