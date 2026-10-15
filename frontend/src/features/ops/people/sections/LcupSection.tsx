@@ -95,13 +95,14 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
           <p className="rounded-lg bg-surface-2 px-4 py-3 text-muted-foreground">No payments yet.</p>
         ) : (
           <>
-            <Table head={["Date", "Kind", { label: "Amount", className: "text-right" }, { label: "Month", className: WIDE_ONLY }, { label: "Group", className: WIDE_ONLY }]}>
+            {/* A phone keeps Date and Amount (a refund's "−" says its kind); the badge needs the room. */}
+            <Table head={["Date", { label: "Kind", className: WIDE_ONLY }, { label: "Amount", className: "text-right" }, { label: "Month", className: WIDE_ONLY }, { label: "Group", className: WIDE_ONLY }]}>
               {payments.map((p) => {
                 const kind = KIND[p.kind] ?? { label: p.kind, variant: "neutral" as BadgeVariant };
                 return (
                   <tr key={p.id}>
                     <Td className="tabular-nums text-muted-foreground">{formatDay(p.date)}</Td>
-                    <Td>
+                    <Td className={WIDE_ONLY}>
                       <Badge variant={kind.variant}>{kind.label}</Badge>
                     </Td>
                     <Td className={`text-right font-semibold tabular-nums ${p.kind === "refund" ? "text-warning-foreground" : "text-foreground"}`}>

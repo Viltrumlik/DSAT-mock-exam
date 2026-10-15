@@ -277,7 +277,8 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
   return (
     <>
       {full.length > 0 ? (
-        <div className="grid items-start gap-4 lg:grid-cols-2">
+        // One card takes the full width; two columns only when there is a second to sit beside it.
+        <div className={cn("grid items-start gap-4", full.length > 1 && "lg:grid-cols-2")}>
           {full.map((k) => (
             <Fragment key={k.title}>{k.card()}</Fragment>
           ))}
@@ -286,12 +287,10 @@ function ResultCards({ kinds: list }: { kinds: Kind[] }) {
       {empty.length > 0 ? (
         <div data-testid="results-empty" className="rounded-xl border border-dashed border-border px-5 py-4">
           <p className="text-xs font-medium text-muted-foreground">Nothing yet</p>
-          <ul className="mt-2 flex flex-wrap gap-2">
+          {/* Plain words, not chips: a filled pill reads as a button to press. */}
+          <ul className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5">
             {empty.map(({ title, icon: Icon }) => (
-              <li
-                key={title}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 text-sm text-muted-foreground"
-              >
+              <li key={title} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
                 <Icon aria-hidden className="h-3.5 w-3.5" />
                 {title}
               </li>
