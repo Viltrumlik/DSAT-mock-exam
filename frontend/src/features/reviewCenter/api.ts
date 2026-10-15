@@ -42,7 +42,8 @@ export async function listCatalog(type: ReviewContentType): Promise<ReviewCatalo
       }));
     }
     case "pastpaper": {
-      const sections = await examsAdminApi.getStandaloneSections();
+      // Past papers only: practice tests are their own library and never listed among them.
+      const sections = await examsAdminApi.getStandaloneSections("pastpaper");
       return sections.map((s) => ({
         id: s.id,
         title: s.title || s.label || `Section ${s.id}`,
