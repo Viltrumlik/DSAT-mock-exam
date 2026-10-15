@@ -1,241 +1,248 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import { Database, ListChecks, Upload, Search, RefreshCw, Plus } from "lucide-react";
+import { Suspense, useState } from "react";
+import { ListChecks, Loader2, Plus, Upload } from "lucide-react";
 
-import { useQbQuestions } from "@/domains/questionBank/hooks";
-import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
-import { difficultyLabel } from "@/domains/questionBank/utils";
-import type { QbQuestionFilters } from "@/domains/questionBank/types";
-import { useDebounce } from "@/hooks/useDebounce";
+import { useToast } from "@/components/ToastProvider";
+import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
+import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
+import { formatDate, Truncated } from "@/features/ops/users/peopleColumns";
+import { QB_FILTER_KEYS, useQbChangeList } from "@/domains/questionBank/changelist";
+import { useQbBulk } from "@/domains/questionBank/hooks";
+import { STATUS_LABELS, difficultyLabel } from "@/domains/questionBank/utils";
+import type { QbQuestionListItem } from "@/domains/questionBank/types";
 
-const PAGE_SIZE = 50;
+/**
+ * The Question Bank — the single source of truth for SAT questions — as the /ops console's
+ * changelist (owner 2026-10-15: "question builderni opsga styledan ko'chirib"): search, filters with
+ * a count beside every choice, sortable columns, Approve on a selection, and the state in the
+ * address. Only Approved questions are selectable by consumers and counted in analytics.
+ */
 
-const STATUS_OPTIONS = ["IMPORTED", "TRIAGE", "APPROVED", "REJECTED", "ARCHIVED"] as const;
-const SUBJECT_OPTIONS = ["ENGLISH", "MATH"] as const;
-const DIFFICULTY_OPTIONS = ["EASY", "MEDIUM", "HARD"] as const;
+const SUBJECT_LABELS: Record<string, string> = { ENGLISH: "English", MATH: "Math" };
+
+const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
+  {
+    key: "qb_id",
+    label: "QB-ID",
+    sortKey: "qb_id",
+    render: (q) => (
+      <Link
+        href={`/builder/question-bank/${q.id}`}
+        className="rounded-sm font-mono text-[12px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
+      >
+        {q.qb_id}
+      </Link>
+    ),
+  },
+  {
+    key: "question",
+    label: "Question",
+    render: (q) =>
+      q.question_text ? (
+        <Link href={`/builder/question-bank/${q.id}`} className="block hover:underline" title={q.question_text}>
+          <Truncated text={q.question_text} className="max-w-[28rem]" />
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">(no text)</span>
+      ),
+  },
+  { key: "subject", label: "Subject", render: (q) => SUBJECT_LABELS[q.subject] ?? q.subject },
+  {
+    key: "domain",
+    label: "Domain › Skill",
+    render: (q) =>
+      q.domain_name ? (
+        <Truncated
+          text={q.skill_name ? `${q.domain_name} › ${q.skill_name}` : q.domain_name}
+          className="max-w-[16rem] text-muted-foreground"
+        />
+      ) : (
+        <span className="italic text-muted-foreground">Unclassified</span>
+      ),
+  },
+  {
+    key: "difficulty",
+    label: "Difficulty",
+    render: (q) => <span className="text-muted-foreground">{difficultyLabel(q.difficulty)}</span>,
+  },
+  {
+    key: "status",
+    label: "Status",
+    // Plain text, as on the /ops lists; only what still needs a decision stands out.
+    render: (q) => (
+      <span className={q.status === "TRIAGE" || q.status === "IMPORTED" ? "text-foreground" : "text-muted-foreground"}>
+        {STATUS_LABELS[q.status] ?? q.status}
+      </span>
+    ),
+  },
+  {
+    key: "created",
+    label: "Created",
+    sortKey: "created",
+    render: (q) => <span className="tabular-nums text-muted-foreground">{formatDate(q.created_at)}</span>,
+  },
+];
+
+/** Approve only: rejecting stays in the Triage Queue, where a question is looked at before it goes. */
+type Pending = { ids: number[]; resolve: (done: boolean) => void };
+
+const HEADER_LINK =
+  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 export default function QuestionBankListPage() {
-  const [subject, setSubject] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
-  const [difficulty, setDifficulty] = useState<string>("");
-  const [searchRaw, setSearchRaw] = useState("");
-  const [offset, setOffset] = useState(0);
-  const search = useDebounce(searchRaw, 300);
-
-  const filters: QbQuestionFilters = useMemo(
-    () => ({
-      subject: subject || undefined,
-      status: status || undefined,
-      difficulty: difficulty || undefined,
-      search: search || undefined,
-      limit: PAGE_SIZE,
-      offset,
-    }),
-    [subject, status, difficulty, search, offset],
+  // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
+  return (
+    <Suspense fallback={null}>
+      <QuestionBankChangeList />
+    </Suspense>
   );
+}
 
-  const { data, isLoading, error, refetch, isFetching } = useQbQuestions(filters);
-  const rows = data?.results ?? [];
-  const count = data?.count ?? 0;
-  const page = Math.floor(offset / PAGE_SIZE) + 1;
-  const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
+function QuestionBankChangeList() {
+  const { params } = useChangeListParams(QB_FILTER_KEYS);
+  const query = useQbChangeList(params);
+  const bulk = useQbBulk();
+  const { push } = useToast();
+  const [pending, setPending] = useState<Pending | null>(null);
 
-  function resetAndSet(setter: (v: string) => void) {
-    return (v: string) => {
-      setter(v);
-      setOffset(0);
-    };
-  }
+  const actions: ChangeListAction[] = [
+    {
+      key: "approve",
+      label: "Approve selected questions",
+      run: (ids) => new Promise<boolean>((resolve) => setPending({ ids, resolve })),
+    },
+  ];
+
+  const confirm = async () => {
+    if (!pending) return;
+    const { ids, resolve } = pending;
+    let done = false;
+    try {
+      const r = await bulk.mutateAsync({ action: "approve", ids });
+      const okCount = r.results.filter((x) => x.ok).length;
+      const failed = r.results.filter((x) => !x.ok);
+      const verb = "approved";
+      // The server says why a question was skipped ("Cannot approve an UNCLASSIFIED question…").
+      const why = failed[0]?.error ? ` (${failed[0].error})` : "";
+      if (okCount === 0) push({ tone: "error", message: `Nothing ${verb} — ${failed.length} skipped${why}.` });
+      else if (failed.length === 0) push({ tone: "success", message: `${okCount} question${okCount === 1 ? "" : "s"} ${verb}.` });
+      else push({ tone: "error", message: `${okCount} ${verb}, ${failed.length} skipped${why}.` });
+      done = true;
+    } catch {
+      push({ tone: "error", message: "Bulk action failed. Please try again." });
+    } finally {
+      setPending(null);
+      resolve(done);
+    }
+  };
+
+  const cancel = () => {
+    if (bulk.isPending || !pending) return;
+    pending.resolve(false);
+    setPending(null);
+  };
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
-            <Database className="h-5 w-5 text-primary" />
-            Question Bank
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The single source of truth for SAT questions. Only Approved questions are selectable by
-            consumers and counted in analytics.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/builder/question-bank/new"
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            New question
-          </Link>
-          <Link
-            href="/builder/question-bank/triage"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-            Triage Queue
-          </Link>
-          <Link
-            href="/builder/question-bank/imports"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground transition-colors hover:bg-surface-2"
-          >
-            <Upload className="h-3.5 w-3.5" />
-            Imports
-          </Link>
+    <>
+      <ChangeList<QbQuestionListItem>
+        title="Question Bank"
+        noun={{ singular: "question", plural: "questions" }}
+        columns={COLUMNS}
+        data={query.data}
+        loading={query.isPending}
+        error={query.isError}
+        fetching={query.isFetching && query.isPlaceholderData}
+        onRetry={() => void query.refetch()}
+        filterKeys={QB_FILTER_KEYS}
+        actions={actions}
+        searchPlaceholder="Search QB-ID or question text"
+        rowLabel={(q) => q.qb_id}
+        headerAction={
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/builder/question-bank/triage" className={HEADER_LINK}>
+              <ListChecks aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+              Triage Queue
+            </Link>
+            <Link href="/builder/question-bank/imports" className={HEADER_LINK}>
+              <Upload aria-hidden className="h-3.5 w-3.5 text-muted-foreground" />
+              Imports
+            </Link>
+            <Link
+              href="/builder/question-bank/new"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+            >
+              <Plus aria-hidden className="h-3.5 w-3.5" />
+              New question
+            </Link>
+          </div>
+        }
+      />
+
+      {pending ? (
+        <ConfirmApprove
+          count={pending.ids.length}
+          busy={bulk.isPending}
+          onCancel={cancel}
+          onConfirm={() => void confirm()}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function ConfirmApprove({
+  count,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  count: number;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const noun = `${count} question${count === 1 ? "" : "s"}`;
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-[var(--overlay-scrim)] p-4" onClick={onCancel}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="qb-bulk-title"
+        className="w-full max-w-sm border border-border bg-card shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+        }}
+      >
+        <h2 id="qb-bulk-title" className="border-b border-border px-4 py-2.5 text-[14px] font-semibold text-foreground">
+          Approve {noun}?
+        </h2>
+        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+          Approved questions become selectable by tests and count in analytics. A question without a domain, skill and
+          difficulty is skipped.
+        </p>
+        <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
           <button
             type="button"
-            onClick={() => void refetch()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            onClick={onCancel}
+            autoFocus
+            className="h-8 rounded-md border border-border bg-card px-3 text-[13px] font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
-            <RefreshCw className={isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} />
-            Refresh
+            Cancel
           </button>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card p-3">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={searchRaw}
-            onChange={(e) => {
-              setSearchRaw(e.target.value);
-              setOffset(0);
-            }}
-            placeholder="Search QB-ID or question text…"
-            className="w-full rounded-xl border border-border bg-background py-2 pl-9 pr-3 text-sm text-foreground outline-none focus:border-primary"
-          />
-        </div>
-        <FilterSelect value={subject} onChange={resetAndSet(setSubject)} label="All subjects" options={SUBJECT_OPTIONS} />
-        <FilterSelect value={status} onChange={resetAndSet(setStatus)} label="All statuses" options={STATUS_OPTIONS} />
-        <FilterSelect value={difficulty} onChange={resetAndSet(setDifficulty)} label="Any difficulty" options={DIFFICULTY_OPTIONS} />
-      </div>
-
-      {/* Table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-4 py-3 font-bold">QB-ID</th>
-              <th className="px-4 py-3 font-bold">Question</th>
-              <th className="px-4 py-3 font-bold">Subject</th>
-              <th className="px-4 py-3 font-bold">Domain / Skill</th>
-              <th className="px-4 py-3 font-bold">Difficulty</th>
-              <th className="px-4 py-3 font-bold">Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                  Loading…
-                </td>
-              </tr>
-            ) : error ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-rose-600">
-                  Failed to load questions.
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                  No questions match these filters.
-                </td>
-              </tr>
-            ) : (
-              rows.map((q) => (
-                <tr key={q.id} className="border-b border-border last:border-0 hover:bg-surface-2/50">
-                  <td className="px-4 py-3">
-                    <Link href={`/builder/question-bank/${q.id}`} className="font-mono text-xs font-bold text-primary hover:underline">
-                      {q.qb_id}
-                    </Link>
-                  </td>
-                  <td className="max-w-md px-4 py-3">
-                    <Link href={`/builder/question-bank/${q.id}`} className="line-clamp-2 text-foreground hover:underline">
-                      {q.question_text || <span className="text-muted-foreground">(no text)</span>}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{q.subject}</td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {q.domain_name ? (
-                      <span>
-                        {q.domain_name}
-                        {q.skill_name ? <span className="text-muted-foreground/70"> › {q.skill_name}</span> : null}
-                      </span>
-                    ) : (
-                      <span className="italic text-muted-foreground/60">Unclassified</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{difficultyLabel(q.difficulty)}</td>
-                  <td className="px-4 py-3">
-                    <QbStatusBadge status={q.status} />
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {count} question{count === 1 ? "" : "s"}
-        </span>
-        <div className="flex items-center gap-2">
           <button
             type="button"
-            disabled={offset === 0}
-            onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 font-bold text-foreground disabled:opacity-40"
+            onClick={onConfirm}
+            disabled={busy}
+            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-60"
           >
-            Previous
-          </button>
-          <span className="tabular-nums">
-            {page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            disabled={page >= totalPages}
-            onClick={() => setOffset(offset + PAGE_SIZE)}
-            className="rounded-lg border border-border bg-card px-3 py-1.5 font-bold text-foreground disabled:opacity-40"
-          >
-            Next
+            {busy ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : null}
+            Approve
           </button>
         </div>
       </div>
     </div>
-  );
-}
-
-function FilterSelect({
-  value,
-  onChange,
-  label,
-  options,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  label: string;
-  options: readonly string[];
-}) {
-  return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-bold text-foreground outline-none focus:border-primary"
-    >
-      <option value="">{label}</option>
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o.charAt(0) + o.slice(1).toLowerCase()}
-        </option>
-      ))}
-    </select>
   );
 }
