@@ -47,11 +47,15 @@ export function nameColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
     sortKey: "name",
     render: (r) => (
       // The photo beside every name, as on the person's page (owner: "rasmi ham ko'rinib turishi kerak").
-      <span className="flex max-w-[18rem] items-center gap-2" title={[r.name, r.username].filter(Boolean).join(" · ")}>
-        <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size={24} />
-        <span className="min-w-0 truncate">
-          {r.name || r.username || `User ${r.id}`}
-          {r.name && r.username ? <span className="ml-1.5 font-normal text-muted-foreground">{r.username}</span> : null}
+      // The username sits under the name, not beside it: side by side, with the photo, the column
+      // ran "Last seen" off a 1440px screen.
+      <span className="flex max-w-[15rem] items-center gap-2.5" title={[r.name, r.username].filter(Boolean).join(" · ")}>
+        <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size={28} />
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate">{r.name || r.username || `User ${r.id}`}</span>
+          {r.name && r.username ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">{r.username}</span>
+          ) : null}
         </span>
       </span>
     ),

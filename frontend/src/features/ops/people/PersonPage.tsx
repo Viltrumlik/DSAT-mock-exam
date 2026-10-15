@@ -199,6 +199,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
 
       <PersonHeader
         person={person}
+        glance={tab === "overview"}
         busy={busy}
         onToggleFreeze={() => void bulk(person.is_frozen ? "unfreeze" : "freeze")}
         onOneTimePassword={() => setDialog("otp")}
@@ -283,7 +284,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
                 <dt>Password</dt>
                 <dd className="font-semibold tabular-nums">{otpGiven.code}</dd>
               </dl>
-              <p>They choose their own password right after. Valid until {formatDate(otpGiven.expires_at)}.</p>
+              <p>They choose their own password right after. Valid until <span className="whitespace-nowrap">{formatDate(otpGiven.expires_at)}</span>.</p>
             </>
           }
           confirmLabel="Done"

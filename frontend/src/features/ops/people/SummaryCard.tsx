@@ -2,7 +2,6 @@
 
 import {
   BookOpen,
-  CalendarDays,
   Fingerprint,
   GraduationCap,
   Link2,
@@ -10,19 +9,17 @@ import {
   Send,
   Target,
   Users,
-  Wallet,
 } from "lucide-react";
 import { Badge } from "@/components/ui";
-import { formatUzs } from "@/features/finance/financeApi";
-import { formatDate } from "@/features/ops/users/peopleColumns";
 import { Fieldset, Row } from "./Fieldset";
 import { formatDay } from "./format";
 import type { PersonCore } from "./personApi";
 
 /**
  * The Overview's read-only side: the account's facts with an icon each, and the ones that carry a
- * verdict in colour (an unverified email, a debt, a missing Telegram). Nothing here is fetched: it is
- * the page's own payload.
+ * verdict in colour (an unverified email, a missing Telegram). The balance and the day they joined
+ * are in the header's figures right above, so they are not said twice. Nothing here is fetched: it
+ * is the page's own payload.
  */
 
 /** As the form's Subject select says it, so the two halves of the Overview agree. */
@@ -87,17 +84,6 @@ export function SummaryCard({ person }: { person: PersonCore }) {
               {person.past_groups.map((g) => g.name).join(", ")}
             </Row>
           ) : null}
-          {person.lcup ? (
-            <Row label="Balance" icon={Wallet}>
-              {person.lcup.balance === null ? (
-                "—"
-              ) : person.lcup.balance < 0 ? (
-                <span className="tabular-nums text-danger">Owes {formatUzs(-person.lcup.balance)}</span>
-              ) : (
-                <span className="text-success">Paid up</span>
-              )}
-            </Row>
-          ) : null}
         </>
       )}
 
@@ -106,9 +92,6 @@ export function SummaryCard({ person }: { person: PersonCore }) {
       </Row>
       <Row label="Telegram" icon={Send}>
         {person.telegram_linked ? <Badge variant="success">Linked</Badge> : <Badge variant="outline">Not linked</Badge>}
-      </Row>
-      <Row label="Joined" icon={CalendarDays}>
-        {formatDate(person.date_joined)}
       </Row>
 
       {/* A centre student always shows these; a public user only what is there — a "No" and two

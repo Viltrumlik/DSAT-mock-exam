@@ -16,13 +16,17 @@ import { cn } from "@/lib/cn";
 /** The colours a verdict may take, from the app's semantic tokens. */
 export type Tone = "primary" | "success" | "warning" | "danger" | "info" | "accent" | "neutral";
 
+/**
+ * A tone as text. Each passes WCAG AA on a card (4.5:1) at 14px: the bright `--success` (3.8:1)
+ * and `--accent` (2.8:1) are for dots and icons, so their text takes the deeper shade.
+ */
 export const TONE_TEXT: Record<Tone, string> = {
   primary: "text-primary",
-  success: "text-success",
+  success: "text-success-foreground",
   warning: "text-warning-foreground",
   danger: "text-danger",
   info: "text-info-foreground",
-  accent: "text-accent",
+  accent: "text-info-foreground",
   neutral: "text-foreground",
 };
 
@@ -162,8 +166,9 @@ export function StatTile({
         {icon ? <IconSquare icon={icon} tone={tone === "neutral" ? "primary" : tone} size="sm" /> : null}
         <span className="truncate">{label}</span>
       </div>
-      <div className={cn("mt-2 truncate text-xl font-semibold tabular-nums", TONE_TEXT[tone])}>{value}</div>
-      {sub ? <div className="mt-0.5 truncate text-xs text-muted-foreground">{sub}</div> : null}
+      {/* Wrapped, never cut: on a phone's half-width tile "650,000 UZS" lost its last digits to "…". */}
+      <div className={cn("mt-2 break-words text-lg font-semibold leading-snug tabular-nums sm:text-xl", TONE_TEXT[tone])}>{value}</div>
+      {sub ? <div className="mt-0.5 break-words text-xs text-muted-foreground">{sub}</div> : null}
     </div>
   );
 }
@@ -182,7 +187,7 @@ export type Column = string | { label: string; className?: string };
 export function Table({ head, children }: { head: Column[]; children: ReactNode }) {
   return (
     <div className="-mx-5 overflow-x-auto">
-      <table className="w-full border-separate border-spacing-0 text-sm">
+      <table className="w-full border-separate border-spacing-0 text-sm text-foreground">
         <thead>
           <tr>
             {head.map((h, i) => (
@@ -190,7 +195,7 @@ export function Table({ head, children }: { head: Column[]; children: ReactNode 
                 key={i}
                 scope="col"
                 className={cn(
-                  "h-9 whitespace-nowrap border-y border-border bg-surface-2/60 px-3 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground first:pl-5 last:pr-5",
+                  "h-9 whitespace-nowrap border-y border-border bg-surface-2/60 px-3 text-left text-xs font-semibold text-muted-foreground first:pl-5 last:pr-5",
                   typeof h === "string" ? undefined : h.className,
                 )}
               >
@@ -206,7 +211,9 @@ export function Table({ head, children }: { head: Column[]; children: ReactNode 
 }
 
 /**
- * One cell of `Table`. `wrap` lets a phone break the text onto a second line instead of cutting it
+ * One cell of `Table`; its colour is inherited, so a `TONE_TEXT` class passed in is the only one
+ * (`cn` is not tailwind-merge: a default `text-foreground` beside `text-danger` won by CSS order,
+ * and a 50% homework rate showed black). `wrap` lets a phone break the text onto a second line instead of cutting it
  * ("Excused — Kasal" lost its reason to an ellipsis); from `sm` up it stays on one line. A prop, not
  * a class: `cn` is not tailwind-merge, so a `whitespace-normal` passed in would fight the default.
  */
@@ -214,7 +221,7 @@ export function Td({ children, className, wrap = false }: { children: ReactNode;
   return (
     <td
       className={cn(
-        "h-11 border-b border-border/70 px-3 text-foreground first:pl-5 last:pr-5",
+        "h-11 border-b border-border/70 px-3 first:pl-5 last:pr-5",
         wrap ? "whitespace-normal break-words py-2 sm:whitespace-nowrap sm:py-0" : "whitespace-nowrap",
         className,
       )}

@@ -86,6 +86,7 @@ function core(over: Partial<PersonCore> = {}): PersonCore {
       status: "created",
       lcup_student_id: 1,
       exempt: false,
+      freeze_on: false,
       phone_prompt: null,
     },
     duplicates: [],
@@ -326,13 +327,15 @@ describe("the person page's tabs", () => {
 });
 
 describe("the Overview", () => {
-  it("opens with the name, the form and a Summary of what they owe", async () => {
+  it("opens with the name, the form and a Summary, the debt said once — in the figures", async () => {
     route(core());
     await renderPage();
     expect(host.querySelector("h1")?.textContent).toBe("Aziz Tursunov");
     expect(box("Profile")).not.toBeNull();
     const summary = box("Summary")!.textContent;
-    expect(summary).toContain("Owes 250,000 UZS");
+    expect(summary).not.toContain("Owes");
+    expect(summary).not.toContain("Joined");
+    expect(host.querySelector("h1")!.closest(".rounded-2xl")!.textContent).toContain("Owes250,000 UZS");
     expect(summary).toContain("Junior G21 Math");
     expect(summary).toContain("SAT exam date");
     expect(summary).toContain("Created by lc-up");
@@ -587,6 +590,15 @@ describe("the header", () => {
     expect(header.textContent).toContain("Owes250,000 UZS");
     expect(header.textContent).toContain("50%");
     expect(header.textContent).toContain("3 / 4");
+  });
+
+  it("keeps the photo and name on every tab but the figures on the Overview only", async () => {
+    route(core());
+    await renderPage("students", "tab=groups");
+    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    expect(header.textContent).toContain("Aziz Tursunov");
+    expect(header.textContent).not.toContain("Owes");
+    expect(header.textContent).not.toContain("Attendance");
   });
 
   it("gives a one-time password after a confirm, and says what to tell them", async () => {

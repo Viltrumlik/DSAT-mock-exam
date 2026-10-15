@@ -52,6 +52,12 @@ class PersonCoreTests(TestCase):
         self.assertTrue(body["lcup_created"])
         self.assertIsNone(body["staff"])
 
+    def test_the_lcup_part_says_whether_the_debt_freeze_runs(self):
+        with self.settings(LCUP_DEBT_FREEZE_ENABLED=False):
+            self.assertFalse(self.get(self.aziz.pk).json()["lcup"]["freeze_on"])
+        with self.settings(LCUP_DEBT_FREEZE_ENABLED=True):
+            self.assertTrue(self.get(self.aziz.pk).json()["lcup"]["freeze_on"])
+
     def test_the_freeze_reason_is_debt_or_admin(self):
         User.objects.filter(pk=self.aziz.pk).update(is_frozen=True, frozen_reason="lcup_debt")
         self.assertEqual(self.get(self.aziz.pk).json()["frozen_reason"], "debt")

@@ -40,10 +40,10 @@ export function StaffClassesSection({ staff }: { staff: PersonStaff }) {
                     {c.name}
                   </Link>
                 </Td>
-                <Td>{c.as === "ta" ? <Badge variant="accent">TA</Badge> : <Badge variant="primary">Teacher</Badge>}</Td>
+                <Td>{c.as === "ta" ? <Badge variant="info">TA</Badge> : <Badge variant="primary">Teacher</Badge>}</Td>
                 <Td className="font-semibold tabular-nums">{c.students}</Td>
                 <Td className={WIDE_ONLY}>
-                  {c.lcup_managed ? <Badge variant="info">Synced</Badge> : <span className="text-muted-foreground">—</span>}
+                  {c.lcup_managed ? <Badge variant="neutral">Synced</Badge> : <span className="text-muted-foreground">—</span>}
                 </Td>
               </tr>
             ))}

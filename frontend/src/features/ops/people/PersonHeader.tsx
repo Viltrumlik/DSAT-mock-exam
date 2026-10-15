@@ -8,12 +8,14 @@ import {
   Clock,
   GraduationCap,
   KeyRound,
+  LogOut,
   Mail,
   MoreHorizontal,
   Phone,
   School,
   Snowflake,
   Sun,
+  Trash2,
   Trophy,
   Users,
   Wallet,
@@ -29,29 +31,34 @@ import type { PersonCore } from "./personApi";
 /**
  * Who this is, at the top of every tab: the photo (owner, 2026-10-15: "studentning ma'lumotlari
  * yonida doim rasmi ham ko'rinib turishi kerak"), the name, how to reach them, what they are and
- * what state the account is in — each state in its own colour — and the figures the tabs below
- * hold, said once. The actions sit on the right: the everyday ones as buttons, the rare and
+ * what state the account is in — each state in its own colour. On the Overview it also says the
+ * figures the tabs below hold, once; the other tabs leave them out, so their own content starts
+ * near the top. The actions sit on the right: the everyday ones as buttons, the rare and
  * destructive ones behind "More".
  */
 
 /** Roles that may be given a one-time password here (users.views_people_detail.ONE_TIME_PASSWORD_ROLES). */
 export const ONE_TIME_PASSWORD_ROLES = new Set(["student", "public_student", "teacher", "support_teacher"]);
 
-/** Green from 85 %, amber from 70 %, red below — the same reading for attendance and homework. */
+/**
+ * Green from 85 %, amber from 60 %, red below — the same reading for attendance and homework. Red
+ * is kept for a real problem: with amber starting at 70 a 64 % attendance and 2 of 3 homeworks
+ * turned the whole glance red, and red that is everywhere stops being read.
+ */
 export function rateTone(rate: number | null | undefined): Tone {
   if (rate == null) return "neutral";
   if (rate >= 85) return "success";
-  if (rate >= 70) return "warning";
+  if (rate >= 60) return "warning";
   return "danger";
 }
 
 const ACTION =
-  "inline-flex h-9 items-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground shadow-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3.5 text-sm font-medium text-foreground shadow-sm hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
 
 function RoleBadge({ person }: { person: PersonCore }) {
   if (person.section === "students") return <Badge variant="primary">Student</Badge>;
   if (person.section === "public") return <Badge variant="info">Public user</Badge>;
-  return <Badge variant="accent">{ROLE_LABELS[person.role as keyof typeof ROLE_LABELS] ?? person.role}</Badge>;
+  return <Badge variant="info">{ROLE_LABELS[person.role as keyof typeof ROLE_LABELS] ?? person.role}</Badge>;
 }
 
 function StatusBadge({ person }: { person: PersonCore }) {
@@ -110,13 +117,18 @@ function Glance({ person }: { person: PersonCore }) {
         <StatTile label="Mock exams" value={g?.mocks_taken ?? 0} icon={Trophy} tone="primary" sub="completed" />
         <StatTile
           label="Last mock"
-          value={g?.last_mock_total ?? "—"}
+          value={g?.last_mock_total != null ? g.last_mock_total.toLocaleString("en-US") : "—"}
           icon={GraduationCap}
           tone={g?.last_mock_total ? "primary" : "neutral"}
           sub={g?.last_mock_total ? "total score" : "none yet"}
         />
         {person.lcup ? balanceTile : <StatTile label="Joined" value={formatDate(person.date_joined)} icon={CalendarCheck} />}
-        <StatTile label="Last seen" value={formatLastSeen(person.last_seen)} icon={Clock} />
+        <StatTile
+          label="Last seen"
+          value={formatLastSeen(person.last_seen)}
+          icon={Clock}
+          sub={person.lcup ? `Joined ${formatDate(person.date_joined)}` : undefined}
+        />
       </>
     );
   }
@@ -148,6 +160,7 @@ function Glance({ person }: { person: PersonCore }) {
 
 export function PersonHeader({
   person,
+  glance,
   busy,
   onToggleFreeze,
   onOneTimePassword,
@@ -155,6 +168,8 @@ export function PersonHeader({
   onDelete,
 }: {
   person: PersonCore;
+  /** Show the figures (the Overview); the other tabs hold them in full. */
+  glance: boolean;
   busy: boolean;
   onToggleFreeze: () => void;
   onOneTimePassword: () => void;
@@ -214,7 +229,9 @@ export function PersonHeader({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        {/* A phone gives the buttons a row of their own, the first one stretching, so "More" never
+            wraps onto a line by itself. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:flex-wrap">
           {canOtp ? (
             <button
               type="button"
@@ -223,8 +240,8 @@ export function PersonHeader({
               onClick={onOneTimePassword}
               className={ACTION}
             >
-              <KeyRound aria-hidden className="h-4 w-4 text-primary" />
-              One-time password
+              <KeyRound aria-hidden className="h-4 w-4 shrink-0 text-primary" />
+              <span className="truncate">One-time password</span>
             </button>
           ) : null}
           <button type="button" disabled={busy} onClick={onToggleFreeze} className={ACTION}>
@@ -242,17 +259,23 @@ export function PersonHeader({
               </button>
             }
           >
-            <DropdownMenuItem onClick={onRevoke}>Log out everywhere</DropdownMenuItem>
+            <DropdownMenuItem onClick={onRevoke}>
+              <LogOut aria-hidden className="h-4 w-4 text-muted-foreground" />
+              Log out everywhere
+            </DropdownMenuItem>
             <DropdownMenuItem destructive onClick={onDelete}>
+              <Trash2 aria-hidden className="h-4 w-4" />
               Delete account
             </DropdownMenuItem>
           </DropdownMenu>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 border-t border-border bg-surface-2/40 p-4 sm:p-5 lg:grid-cols-4">
-        <Glance person={person} />
-      </div>
+      {glance ? (
+        <div className="grid grid-cols-2 gap-3 border-t border-border bg-surface-2/40 p-4 sm:p-5 lg:grid-cols-4">
+          <Glance person={person} />
+        </div>
+      ) : null}
     </div>
   );
 }

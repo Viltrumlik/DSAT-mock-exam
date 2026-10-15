@@ -13,7 +13,8 @@ import { usePersonPart, type PersonHistory } from "../personApi";
  */
 
 const KIND: Record<PersonHistory["items"][number]["kind"], { dot: string; label: string }> = {
-  role: { dot: "bg-accent", label: "Role" },
+  // Violet, not the accent's cyan: beside the group's blue the two read as one colour.
+  role: { dot: "bg-violet-500", label: "Role" },
   group: { dot: "bg-primary", label: "Group" },
   admin: { dot: "bg-warning", label: "Admin" },
   security: { dot: "bg-muted-foreground", label: "Security" },

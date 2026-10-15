@@ -103,6 +103,7 @@ def _open_classes(user) -> list[dict]:
 
 
 def _lcup(user):
+    from lcup.conf import debt_freeze_enabled
     from lcup.finance import student_finance
     from lcup.models import LcupPhonePrompt, LcupStudentLink
 
@@ -115,6 +116,8 @@ def _lcup(user):
         "status": link.status,
         "lcup_student_id": link.lcup_student_id,
         "exempt": link.debt_freeze_exempt_at is not None,
+        # Whether the debt freeze runs at all: switched off, "freezes after day 6" would be untrue.
+        "freeze_on": debt_freeze_enabled(),
         "phone_prompt": prompt,
     }
 

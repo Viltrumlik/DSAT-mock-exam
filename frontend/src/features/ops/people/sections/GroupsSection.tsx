@@ -16,9 +16,10 @@ import type { PersonCore } from "../personApi";
  * other class can be left or joined from this page.
  */
 
-const SUBJECT: Record<string, { label: string; variant: "primary" | "accent" }> = {
+/** `info`, not `accent`: the accent badge's cyan text is 2.5:1 on its tint, too faint to read. */
+const SUBJECT: Record<string, { label: string; variant: "primary" | "info" }> = {
   MATH: { label: "Math", variant: "primary" },
-  ENGLISH: { label: "English", variant: "accent" },
+  ENGLISH: { label: "English", variant: "info" },
 };
 
 function serverDetail(err: unknown): string | null {
@@ -95,7 +96,7 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
                 <div className="flex items-center justify-between gap-2 border-t border-border pt-3">
                   {g.lcup_managed ? (
                     <>
-                      <Badge variant="info">Synced from lc-up</Badge>
+                      <Badge variant="neutral">Synced from lc-up</Badge>
                       <span className="text-xs text-muted-foreground">Change in lc-up</span>
                     </>
                   ) : (

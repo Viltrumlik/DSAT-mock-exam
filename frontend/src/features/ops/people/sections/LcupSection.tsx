@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CalendarClock, Receipt, ShieldAlert, Wallet } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui";
 import { formatUzs } from "@/features/finance/financeApi";
-import { Fieldset, Row, StatTile, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
+import { Fieldset, Row, StatTile, SubHeading, Table, Td, WIDE_ONLY, type Tone } from "../Fieldset";
 import { formatDateTime, formatDay } from "../format";
 import type { PersonLcup } from "../personApi";
 
@@ -31,6 +31,24 @@ const KIND: Record<string, { label: string; variant: BadgeVariant }> = {
   extra: { label: "Extra", variant: "info" },
 };
 
+/**
+ * What the debt freeze does to this learner, said as it is: "Not frozen" in green beside a
+ * 650,000 UZS debt read as all clear, when the freeze was switched off — or about to act.
+ */
+export function freezeTile(
+  lcup: PersonLcup,
+  owes: boolean,
+  today: number,
+): { value: string; tone: Tone; sub: string } {
+  const day = lcup.freeze_day;
+  if (lcup.frozen_for_debt) return { value: "Frozen", tone: "warning", sub: `unpaid after day ${day}` };
+  if (lcup.exempt) return { value: "Exempt", tone: "info", sub: "never frozen for debt" };
+  if (!lcup.freeze_on) return { value: "Switched off", tone: "neutral", sub: "no one is frozen for debt" };
+  if (!owes) return { value: "Not frozen", tone: "success", sub: "nothing owed" };
+  if (today >= day) return { value: "Freezes next sync", tone: "danger", sub: `still owing after day ${day}` };
+  return { value: `Freezes on day ${day}`, tone: "warning", sub: "if still unpaid by then" };
+}
+
 export function LcupSection({ lcup }: { lcup: PersonLcup }) {
   const [showAll, setShowAll] = useState(false);
   const payments = showAll ? lcup.payments : lcup.payments.slice(0, PAYMENTS_SHOWN);
@@ -53,13 +71,7 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
           tone="primary"
           sub={lcup.groups.map((g) => g.name).join(", ") || "no live group"}
         />
-        <StatTile
-          label="Debt freeze"
-          value={lcup.frozen_for_debt ? "Frozen" : lcup.exempt ? "Exempt" : "Not frozen"}
-          icon={ShieldAlert}
-          tone={lcup.frozen_for_debt ? "warning" : lcup.exempt ? "info" : "success"}
-          sub={lcup.frozen_for_debt ? `unpaid after day ${lcup.freeze_day}` : `freezes after day ${lcup.freeze_day} if unpaid`}
-        />
+        <StatTile label="Debt freeze" icon={ShieldAlert} {...freezeTile(lcup, owes, new Date().getDate())} />
       </div>
 
       <div className="mt-5">

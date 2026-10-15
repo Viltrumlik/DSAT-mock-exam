@@ -32,6 +32,8 @@ export type PersonLcup = MyFinance & {
   lcup_student_id: number;
   /** Never frozen for debt (`debt_freeze_exempt_at` is set). */
   exempt: boolean;
+  /** `LCUP_DEBT_FREEZE_ENABLED`: whether the debt freeze runs at all. */
+  freeze_on: boolean;
   /** The duplicate-accounts phone form's state, null when never asked. */
   phone_prompt: "pending" | "confirmed" | "not_me" | "superseded" | null;
 };
