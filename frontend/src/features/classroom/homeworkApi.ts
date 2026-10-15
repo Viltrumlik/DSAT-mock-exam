@@ -63,6 +63,8 @@ export interface AssignmentDetail {
     collection_name?: string;
     name?: string;
     subject?: string;
+    /** One of the centre's numbered practice tests (its `name` reads "Practice Test N"). */
+    is_practice_test?: boolean;
     state?: ContentState;
     attempt_id?: number | null;
     /** Sat before this homework was set and not since: the paper is offered again. */
@@ -290,7 +292,8 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
         })();
     const multi = sections.length > 1;
     for (const t of sections) {
-      const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
+      const isPractice = Boolean(t.is_practice_test);
+      const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || (isPractice ? "Practice Test" : "Past Paper");
       const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
       const mode = stateToMode(t.state);
       const aid = t.attempt_id ?? null;
@@ -299,7 +302,7 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
           : mode === "resume" && aid != null ? `/exam/${aid}?welcome=1`
           : `/practice-test/${t.id}`;
       out.push({
-        kind: "PASTPAPER", name, label: "Open Past Paper", href, mode, attemptId: aid,
+        kind: "PASTPAPER", name, label: isPractice ? "Open Practice Test" : "Open Past Paper", href, mode, attemptId: aid,
         // Only a fresh section starts a new attempt; resume/review follow href.
         startTestId: mode === "start" ? t.id : undefined,
         retake: mode === "start" && Boolean(t.retake),

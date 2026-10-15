@@ -889,6 +889,19 @@ export type AssignmentOptions = {
         review_status: "draft" | "needs_review" | "approved";
         is_approved: boolean;
     }[];
+    /**
+     * The centre's numbered practice tests for the class's subject, newest number first.
+     * Picking one sends its id in `practice_test_ids`, like a past paper.
+     */
+    practice_test_items?: {
+        id: number;
+        number: number | null;
+        title: string;
+        subject: string;
+        level: string;
+        access: "open" | "homework_only";
+        already_assigned: boolean;
+    }[];
     practice_test_packs: {
         id: number;
         title: string;

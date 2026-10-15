@@ -12,6 +12,7 @@ const TYPE_OPTIONS = [
   { v: "assessment", label: "Assessment" },
   { v: "midterm", label: "Midterm" },
   { v: "past paper", label: "Past Paper" },
+  { v: "practice test", label: "Practice Test" },
 ];
 
 function SummaryCard({ label, value, suffix = "" }: { label: string; value: number | null; suffix?: string }) {
@@ -115,7 +116,10 @@ export function Results({ classroom }: { classroom: ClassroomWithRole }) {
                         <span className="truncate">{r.student}</span>
                       </span>
                     </td>
-                    <td className="text-foreground">{r.content_name}</td>
+                    <td className="text-foreground">
+                      {r.content_name}
+                      {r.untimed ? <span className="ml-2 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-muted-foreground">Untimed</span> : null}
+                    </td>
                     <td className="text-muted-foreground">{r.type}</td>
                     <td className="text-foreground">{r.score ?? "—"}</td>
                     <td className="text-muted-foreground">{String(r.status).replace("_", " ")}</td>
