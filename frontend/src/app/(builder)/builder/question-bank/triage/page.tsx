@@ -180,13 +180,13 @@ export default function TriageQueuePage() {
                   <td className="px-4 py-3">
                     <input type="checkbox" checked={selected.has(q.id)} onChange={() => toggle(q.id)} aria-label={`Select ${q.qb_id}`} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="whitespace-nowrap px-4 py-3">
                     <Link href={`/builder/question-bank/${q.id}`} className="font-mono text-xs font-bold text-primary hover:underline">
                       {q.qb_id}
                     </Link>
                     <p className="mt-0.5 text-xs text-muted-foreground">{q.subject}</p>
                   </td>
-                  <td className="max-w-sm px-4 py-3">
+                  <td className="max-w-xs px-4 py-3">
                     <p className="line-clamp-2 text-foreground">{q.question_text || "(no text)"}</p>
                   </td>
                   <td className="px-4 py-3">
@@ -204,7 +204,7 @@ export default function TriageQueuePage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap justify-end gap-1.5">
+                    <div className="flex justify-end gap-1.5 whitespace-nowrap">
                       {q.suggestion ? (
                         <button
                           type="button"

@@ -749,7 +749,9 @@ export default function BuilderPastpapersPage() {
                 </span>
                 <span className="h-px flex-1 bg-border" />
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+              {/* A collection is a form's R&W and Math sections: two columns hold a pair side by side
+                  without the empty third track auto-fill left on a wide screen. */}
+              <div className="grid gap-4 md:grid-cols-2">
                 {g.items.map((section) => (
                   <SectionCard
                     key={section.id}
