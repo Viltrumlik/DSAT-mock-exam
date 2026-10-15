@@ -13,9 +13,9 @@ from typing import Iterable
 
 from django.core.files.storage import default_storage
 from django.utils import timezone
-from rest_framework.permissions import IsAuthenticated
 
 from access.permissions import RequiresSubmitTest
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .conventions import V1APIView, iso, midterm_media_ttl, not_visible, ok, pastpaper_media_ttl
 
@@ -89,7 +89,7 @@ class AttemptMediaView(V1APIView):
     """Fresh signed URLs for the images of THIS attempt's modules — for when the ones in the
     bundle expired before the app fetched them (a laptop asleep overnight)."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get_permissions(self):
         perms = super().get_permissions()

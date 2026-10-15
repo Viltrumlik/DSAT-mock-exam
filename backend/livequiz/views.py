@@ -22,6 +22,7 @@ from classes.capabilities import classroom_capabilities
 from classes.models import Classroom, ClassroomMembership
 from vocabulary.models import VocabSet
 from core.errors.api import Forbidden, NotFound
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import constants as const
 from . import question_builder, services
@@ -170,7 +171,7 @@ class SessionResultsView(APIView):
 class JoinView(APIView):
     """Type a code, get a place. The only endpoint that takes a code."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
         _require_enabled()
@@ -208,7 +209,7 @@ class SessionJoinByIdView(APIView):
     either.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request, pk):
         _require_enabled()

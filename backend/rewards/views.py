@@ -28,6 +28,7 @@ from access.services import is_global_scope_staff, normalized_role
 # Reused rather than re-implemented: it already handles the nullable username/email pair
 # that made the classroom board's sort blow up on two not-started students.
 from classes.views_rankings import _display_name
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import coins as coins_service
 from . import strikes as strikes_service
@@ -147,7 +148,7 @@ class ConvertPointsView(APIView):
     ``WalletAdminView``, which is a different operation with a different audit trail.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
         raw = request.data.get("points", None)
