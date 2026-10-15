@@ -8,6 +8,17 @@ import { Search, Plus, Filter, BookOpen, PenLine } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { StateTag, QuestionLineage } from "@/components/governance";
 import { useDebounce } from "@/hooks/useDebounce";
+import {
+  STUDIO_BOX_CAPTION,
+  STUDIO_BTN_PRIMARY,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_LINK,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+  STUDIO_SELECT,
+} from "@/components/studio/primitives";
 
 /** Maximum questions rendered to DOM at one time. Performance safety valve.
  *  When exceeded, a "Showing N of M — narrow your search" indicator is shown.
@@ -21,13 +32,6 @@ const QUESTION_TYPE_LABELS: Record<string, string> = {
   numeric: "Numeric",
   short_text: "Text",
   boolean: "T/F",
-};
-
-const QUESTION_TYPE_COLORS: Record<string, string> = {
-  multiple_choice: "bg-blue-100 text-blue-800",
-  numeric: "bg-purple-100 text-purple-800",
-  short_text: "bg-teal-100 text-teal-800",
-  boolean: "bg-orange-100 text-orange-800",
 };
 
 export default function QuestionBankPage() {
@@ -108,26 +112,26 @@ export default function QuestionBankPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Question Bank</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className={STUDIO_PAGE_TITLE}>Question Bank</h1>
+          <p className={STUDIO_PAGE_DESC}>
             Read-only view across all assessment sets. To edit a question, open it inside its
             set — questions are authored and managed from the set editor.
           </p>
         </div>
         <Link
           href="/builder/sets"
-          className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+          className={STUDIO_BTN_PRIMARY}
         >
-          <Plus className="h-4 w-4" />
+          <Plus className="h-3.5 w-3.5" />
           Add questions via set
         </Link>
       </div>
 
-      {/* Stats strip */}
+      {/* Stats strip — one hairline box, a figure per cell */}
       {!loading && !error && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-px overflow-hidden border border-border bg-border sm:grid-cols-4">
           <MiniStat label="Total" value={stats.total} />
           <MiniStat label="Active" value={stats.active} accent />
           <MiniStat label="Sets" value={stats.setCount} />
@@ -139,13 +143,13 @@ export default function QuestionBankPage() {
       <div className="flex flex-wrap items-center gap-2">
         {/* Search */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
             placeholder="Search by prompt, set name, or category…"
             value={filters.search ?? ""}
             onChange={(e) => patchFilter({ search: e.target.value })}
-            className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="h-8 w-full rounded-md border border-border bg-card pl-8 pr-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
           />
         </div>
 
@@ -153,7 +157,7 @@ export default function QuestionBankPage() {
         <select
           value={filters.subject ?? "all"}
           onChange={(e) => patchFilter({ subject: e.target.value as QuestionBankFilters["subject"] })}
-          className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
+          className={STUDIO_SELECT}
         >
           <option value="all">All subjects</option>
           <option value="math">Math</option>
@@ -165,22 +169,22 @@ export default function QuestionBankPage() {
           type="button"
           onClick={() => setShowFilters((v) => !v)}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-sm font-bold transition-colors",
+            "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
             showFilters
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-card text-muted-foreground hover:text-foreground hover:bg-surface-2",
+              ? "border-primary/30 bg-primary/10 text-primary dark:text-primary-hover"
+              : "border-border bg-card text-foreground hover:bg-surface-2",
           )}
         >
-          <Filter className="h-4 w-4" />
+          <Filter className="h-3.5 w-3.5" />
           Filters
         </button>
       </div>
 
       {/* Expanded filters */}
       {showFilters && (
-        <div className="flex flex-wrap gap-3 rounded-2xl border border-border bg-card p-4">
+        <div className="flex flex-wrap gap-3 border border-border bg-card px-3 py-2">
           <div className="flex flex-col gap-1 min-w-[140px]">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <span className="text-[12px] font-semibold text-muted-foreground">
               Question type
             </span>
             <select
@@ -188,7 +192,7 @@ export default function QuestionBankPage() {
               onChange={(e) =>
                 patchFilter({ questionType: e.target.value as QuestionBankFilters["questionType"] })
               }
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              className={STUDIO_SELECT}
             >
               <option value="all">All types</option>
               <option value="multiple_choice">Multiple choice</option>
@@ -199,7 +203,7 @@ export default function QuestionBankPage() {
           </div>
 
           <div className="flex flex-col gap-1 min-w-[140px]">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <span className="text-[12px] font-semibold text-muted-foreground">
               Status
             </span>
             <select
@@ -209,7 +213,7 @@ export default function QuestionBankPage() {
                   activeStatus: e.target.value as QuestionBankFilters["activeStatus"],
                 })
               }
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              className={STUDIO_SELECT}
             >
               <option value="all">All statuses</option>
               <option value="active">Active only</option>
@@ -218,7 +222,7 @@ export default function QuestionBankPage() {
           </div>
 
           <div className="flex flex-col gap-1 min-w-[200px] flex-1">
-            <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+            <span className="text-[12px] font-semibold text-muted-foreground">
               Assessment set
             </span>
             <select
@@ -227,7 +231,7 @@ export default function QuestionBankPage() {
                 const v = e.target.value;
                 patchFilter({ setId: v === "all" ? "all" : Number(v) });
               }}
-              className="rounded-xl border border-border bg-background px-3 py-2 text-sm font-semibold"
+              className={STUDIO_SELECT}
             >
               <option value="all">All sets</option>
               {setOptions.map(([id, title]) => (
@@ -250,7 +254,7 @@ export default function QuestionBankPage() {
                   search: "",
                 })
               }
-              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
+              className={STUDIO_BTN_SECONDARY}
             >
               Reset filters
             </button>
@@ -260,15 +264,15 @@ export default function QuestionBankPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        <div className={STUDIO_ERROR_BANNER}>
           {error}
         </div>
       )}
 
       {/* Question list */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
-          <p className="font-bold text-foreground">
+      <div className={STUDIO_CARD}>
+        <div className={cn(STUDIO_BOX_CAPTION, "flex items-center justify-between gap-2")}>
+          <p className="tabular-nums">
             {loading
               ? "Loading…"
               : isCapped
@@ -276,21 +280,21 @@ export default function QuestionBankPage() {
               : `${filtered.length} question${filtered.length === 1 ? "" : "s"}`}
           </p>
           {!loading && filtered.length !== allQuestions.length && (
-            <p className="text-xs text-muted-foreground">{allQuestions.length} total</p>
+            <p className="font-normal tabular-nums">{allQuestions.length} total</p>
           )}
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div className="flex justify-center py-8">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <BookOpen className="mx-auto mb-3 h-8 w-8 opacity-30" />
-            <p className="font-semibold">No questions match your filters.</p>
-            <p className="mt-1 text-sm">
+          <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+            <BookOpen className="mx-auto mb-2 h-6 w-6 opacity-30" />
+            <p className="font-medium">No questions match your filters.</p>
+            <p className="mt-1 text-[13px]">
               Try broadening the filters, or{" "}
-              <Link href="/builder/sets" className="font-bold text-primary hover:underline">
+              <Link href="/builder/sets" className={STUDIO_LINK}>
                 create questions inside an assessment set
               </Link>
               .
@@ -304,7 +308,7 @@ export default function QuestionBankPage() {
               ))}
             </div>
             {isCapped && (
-              <div className="border-t border-border bg-surface-2/40 px-5 py-3 text-center text-xs text-muted-foreground">
+              <div className="border-t border-border bg-surface-2/40 px-3 py-2 text-center text-[12px] text-muted-foreground">
                 Showing {RENDER_CAP} of {filtered.length} results — narrow your search to see more.
               </div>
             )}
@@ -313,7 +317,7 @@ export default function QuestionBankPage() {
       </div>
 
       {/* Governance note */}
-      <p className="text-xs text-muted-foreground text-center pb-2">
+      <p className="text-[12px] text-muted-foreground text-center pb-2">
         A question is the live source of truth: editing it here updates it everywhere it&apos;s
         used, including in assessments.
       </p>
@@ -323,26 +327,19 @@ export default function QuestionBankPage() {
 
 function QuestionCard({ question: q }: { question: QuestionWithContext }) {
   const typeLabel = QUESTION_TYPE_LABELS[q.question_type] ?? q.question_type;
-  const typeColor =
-    QUESTION_TYPE_COLORS[q.question_type] ?? "bg-slate-100 text-slate-700";
 
   return (
-    <div className="group flex items-start gap-4 px-5 py-4 hover:bg-surface-2/40 transition-colors">
+    <div className="group flex items-start gap-3 px-3 py-2 hover:bg-surface-2">
       {/* Left: prompt + meta */}
       <div className="min-w-0 flex-1">
         <p
-          className="line-clamp-2 text-sm font-semibold leading-snug text-foreground"
+          className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground"
           title={q.prompt}
         >
           {q.prompt.trim() || <em className="text-muted-foreground/50">No prompt</em>}
         </p>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
-          <span
-            className={cn(
-              "inline-flex items-center rounded-lg px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide",
-              typeColor,
-            )}
-          >
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[12px] font-medium text-muted-foreground">
             {typeLabel}
           </span>
           <QuestionLineage
@@ -351,9 +348,9 @@ function QuestionCard({ question: q }: { question: QuestionWithContext }) {
             setIsPublished={q.setIsPublished}
           />
           {q.category && (
-            <span className="text-[10px] text-muted-foreground">{q.category}</span>
+            <span className="text-[12px] text-muted-foreground">{q.category}</span>
           )}
-          <span className="text-[10px] text-muted-foreground tabular-nums">
+          <span className="text-[12px] text-muted-foreground tabular-nums">
             {q.points}pt
           </span>
         </div>
@@ -368,10 +365,10 @@ function QuestionCard({ question: q }: { question: QuestionWithContext }) {
         )}
         <Link
           href={`/builder/sets/${q.setId}?questionId=${q.id}`}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+          className={STUDIO_BTN_SECONDARY}
           title={`Open in set "${q.setTitle}"`}
         >
-          <PenLine className="h-3 w-3" />
+          <PenLine className="h-3 w-3 text-muted-foreground" />
           Open in set →
         </Link>
       </div>
@@ -391,16 +388,16 @@ function MiniStat({
   dim?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card px-4 py-3">
+    <div className="bg-card px-3 py-2">
       <p
         className={cn(
-          "text-xl font-extrabold tabular-nums",
-          accent ? "text-primary" : dim ? "text-muted-foreground" : "text-foreground",
+          "text-xl font-semibold tabular-nums",
+          accent ? "text-primary dark:text-primary-hover" : dim ? "text-muted-foreground" : "text-foreground",
         )}
       >
         {value.toLocaleString()}
       </p>
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">
+      <p className="mt-0.5 text-[12px] text-muted-foreground">
         {label}
       </p>
     </div>

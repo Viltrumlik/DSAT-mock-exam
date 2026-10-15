@@ -5,6 +5,15 @@ import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
 import { Tag, LayoutGrid, AlertTriangle } from "lucide-react";
+import {
+  STUDIO_BOX_CAPTION,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_LINK,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+} from "@/components/studio/primitives";
 
 type CategoryRow = {
   name: string;
@@ -74,10 +83,10 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Categories</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className={STUDIO_PAGE_TITLE}>Categories</h1>
+          <p className={STUDIO_PAGE_DESC}>
             Taxonomy organising questions and assessment sets. Categories are set on each
             assessment; questions inherit their set&apos;s category.
           </p>
@@ -85,15 +94,18 @@ export default function CategoriesPage() {
       </div>
 
       {/* Architecture note — category management is set-level */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <div className="border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/30">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <div>
-            <p className="text-sm font-bold text-amber-900">Category management is set-level</p>
-            <p className="text-sm text-amber-800 mt-0.5">
+            <p className="text-[13px] font-semibold text-amber-900 dark:text-amber-200">Category management is set-level</p>
+            <p className="mt-0.5 text-[13px] text-amber-800 dark:text-amber-300">
               Categories are assigned when creating or editing an assessment set. To change a
               category, edit the set in{" "}
-              <Link href="/builder/sets" className="font-bold underline hover:text-amber-900">
+              <Link
+                href="/builder/sets"
+                className="rounded-sm font-semibold underline hover:text-amber-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:hover:text-amber-100"
+              >
                 Assessments
               </Link>
               . A dedicated category management surface (with rename, merge, and SAT skill
@@ -105,28 +117,28 @@ export default function CategoriesPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        <div className={STUDIO_ERROR_BANNER}>
           {error}
         </div>
       )}
 
       {/* Categories table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 font-bold text-foreground">
+      <div className={STUDIO_CARD}>
+        <div className={STUDIO_BOX_CAPTION}>
           {loading ? "Loading…" : `${categories.length} categor${categories.length === 1 ? "y" : "ies"}`}
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-10">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div className="flex justify-center py-8">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : categories.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <Tag className="h-8 w-8 mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">No categories found.</p>
-            <p className="text-sm mt-1">
+          <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+            <Tag className="mx-auto mb-2 h-6 w-6 opacity-30" />
+            <p className="font-medium">No categories found.</p>
+            <p className="mt-1 text-[13px]">
               Add categories when creating assessment sets in{" "}
-              <Link href="/builder/sets" className="font-bold text-primary hover:underline">
+              <Link href="/builder/sets" className={STUDIO_LINK}>
                 Assessments
               </Link>
               .
@@ -137,40 +149,40 @@ export default function CategoriesPage() {
             {categories.map((cat) => (
               <div
                 key={cat.name}
-                className="flex flex-wrap items-center justify-between gap-4 px-5 py-4 hover:bg-surface-2/50 transition-colors"
+                className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-surface-2"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="rounded-xl bg-surface-2 p-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="shrink-0">
                     <Tag className="h-4 w-4 text-muted-foreground" />
                   </div>
                   <div className="min-w-0">
                     <p
-                      className={`font-extrabold ${cat.name === "(Uncategorised)" ? "text-muted-foreground italic" : "text-foreground"}`}
+                      className={`font-semibold ${cat.name === "(Uncategorised)" ? "text-muted-foreground italic" : "text-foreground"}`}
                     >
                       {cat.name}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="mt-0.5 text-[12px] text-muted-foreground">
                       {cat.setCount} set{cat.setCount === 1 ? "" : "s"} ·{" "}
                       {cat.questionCount} question{cat.questionCount === 1 ? "" : "s"}
                     </p>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2 shrink-0">
                   {cat.mathCount > 0 && (
-                    <span className="inline-flex items-center rounded-lg bg-purple-100 px-2 py-0.5 text-[10px] font-black text-purple-800 uppercase tracking-wide">
+                    <span className="text-[12px] tabular-nums text-muted-foreground">
                       Math · {cat.mathCount}
                     </span>
                   )}
                   {cat.englishCount > 0 && (
-                    <span className="inline-flex items-center rounded-lg bg-teal-100 px-2 py-0.5 text-[10px] font-black text-teal-800 uppercase tracking-wide">
+                    <span className="text-[12px] tabular-nums text-muted-foreground">
                       English · {cat.englishCount}
                     </span>
                   )}
                   <Link
                     href={`/builder/bank?category=${encodeURIComponent(cat.name)}`}
-                    className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                    className={STUDIO_BTN_SECONDARY}
                   >
-                    <LayoutGrid className="h-3 w-3" />
+                    <LayoutGrid className="h-3 w-3 text-muted-foreground" />
                     View questions
                   </Link>
                 </div>

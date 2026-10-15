@@ -5,6 +5,15 @@ import Link from "next/link";
 import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import type { AssessmentSet } from "@/features/assessments/types";
 import { Archive, LayoutGrid, AlertTriangle, ArrowRight } from "lucide-react";
+import { cn } from "@/lib/cn";
+import {
+  STUDIO_BOX_CAPTION,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+} from "@/components/studio/primitives";
 
 export default function ArchivedContentPage() {
   const [sets, setSets] = useState<AssessmentSet[]>([]);
@@ -44,20 +53,20 @@ export default function ArchivedContentPage() {
     <div className="space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-foreground tracking-tight">Archived Content</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className={STUDIO_PAGE_TITLE}>Archived Content</h1>
+        <p className={STUDIO_PAGE_DESC}>
           Inactive assessment sets and deprecated questions. Archived content is preserved for
           academic record purposes — it cannot be deleted if any student has interacted with it.
         </p>
       </div>
 
       {/* Governance note */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+      <div className="border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/30">
         <div className="flex items-start gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-700 shrink-0 mt-0.5" />
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-700 dark:text-amber-400" />
           <div>
-            <p className="text-sm font-bold text-amber-900">Academic record preservation</p>
-            <p className="text-sm text-amber-800 mt-0.5">
+            <p className="text-[13px] font-semibold text-amber-900 dark:text-amber-200">Academic record preservation</p>
+            <p className="mt-0.5 text-[13px] text-amber-800 dark:text-amber-300">
               Content referenced by student attempts is permanently preserved, regardless of
               archive status. The governance invariant INV-003 prohibits deleting any attempt
               record, which transitively prevents deletion of the questions and sets they reference.
@@ -68,18 +77,18 @@ export default function ArchivedContentPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
+        <div className={STUDIO_ERROR_BANNER}>
           {error}
         </div>
       )}
 
       {/* Architecture note about full lifecycle */}
-      <div className="rounded-2xl border border-border bg-card p-5">
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
+      <div className={STUDIO_CARD}>
+        <p className={STUDIO_BOX_CAPTION}>
           What counts as archived
         </p>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          An assessment set is archived when its <strong className="text-foreground">is_active</strong>{" "}
+        <p className="px-3 py-2 text-[13px] leading-relaxed text-muted-foreground">
+          An assessment set is archived when its <strong className="font-semibold text-foreground">is_active</strong>{" "}
           flag is set to inactive. Archived sets are excluded from the question bank and cannot be
           assigned to new classrooms, but remain fully accessible for review and are preserved
           permanently if any student attempt references them.
@@ -87,42 +96,42 @@ export default function ArchivedContentPage() {
       </div>
 
       {/* Inactive sets list */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-        <div className="border-b border-border px-5 py-4 flex items-center justify-between gap-2">
-          <p className="font-bold text-foreground">
+      <div className={STUDIO_CARD}>
+        <div className={cn(STUDIO_BOX_CAPTION, "flex items-center justify-between gap-2")}>
+          <p className="tabular-nums">
             {loading ? "Loading…" : `${inactiveSets.length} inactive set${inactiveSets.length === 1 ? "" : "s"}`}
           </p>
         </div>
 
         {loading ? (
-          <div className="flex justify-center p-10">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <div className="flex justify-center py-8">
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : inactiveSets.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">
-            <Archive className="h-8 w-8 mx-auto mb-3 opacity-30" />
-            <p className="font-semibold">No archived content.</p>
-            <p className="text-sm mt-1">All assessment sets are currently active.</p>
+          <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
+            <Archive className="mx-auto mb-2 h-6 w-6 opacity-30" />
+            <p className="font-medium">No archived content.</p>
+            <p className="mt-1 text-[13px]">All assessment sets are currently active.</p>
           </div>
         ) : (
           <div className="divide-y divide-border">
             {inactiveSets.map((s) => (
-              <div key={s.id} className="px-5 py-4 flex flex-wrap items-center justify-between gap-3">
+              <div key={s.id} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-surface-2">
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 mb-0.5">
-                    <p className="font-extrabold text-foreground truncate">{s.title}</p>
-                    <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black text-slate-600 uppercase tracking-wide">
+                  <div className="mb-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <p className="truncate font-semibold text-foreground">{s.title}</p>
+                    <span className="text-[12px] text-muted-foreground">
                       Inactive
                     </span>
                     {s.subject && (
                       <span
-                        className={`inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide ${s.subject === "math" ? "bg-purple-100 text-purple-800" : "bg-teal-100 text-teal-800"}`}
+                        className="text-[12px] capitalize text-muted-foreground"
                       >
                         {s.subject}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     {s.questions?.length ?? 0} question{(s.questions?.length ?? 0) === 1 ? "" : "s"}
                     {s.category ? ` · ${s.category}` : ""}
                   </p>
@@ -130,14 +139,14 @@ export default function ArchivedContentPage() {
                 <div className="flex items-center gap-2 shrink-0">
                   <Link
                     href={`/builder/bank?setId=${s.id}`}
-                    className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                    className={STUDIO_BTN_SECONDARY}
                   >
-                    <LayoutGrid className="h-3 w-3" />
+                    <LayoutGrid className="h-3 w-3 text-muted-foreground" />
                     Questions
                   </Link>
                   <Link
                     href={`/builder/sets/${s.id}`}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                    className={STUDIO_BTN_SECONDARY}
                   >
                     Open editor
                     <ArrowRight className="h-3 w-3" />
