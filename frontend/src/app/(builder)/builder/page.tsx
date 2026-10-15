@@ -4,13 +4,11 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Archive,
-  ArrowRight,
   BookMarked,
-  CheckCircle2,
+  Database,
   FileText,
   GraduationCap,
   LayoutGrid,
-  Library,
   PlayCircle,
   Tag,
 } from "lucide-react";
@@ -22,137 +20,136 @@ import {
   type StudioSession,
 } from "@/lib/studioSession";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-
 // ─── Quick links ──────────────────────────────────────────────────────────────
 
-type QuickLink = { href: string; icon: React.ElementType; title: string; cta: string; section?: string };
+type QuickLink = { href: string; icon: React.ElementType; title: string; cta: string };
 
-const QUICK_LINKS: QuickLink[] = [
-  // Learning system
-  { href: "/builder/bank",       icon: Library,        title: "Question Bank", cta: "Browse",  section: "Learning" },
-  { href: "/builder/sets",       icon: LayoutGrid,     title: "Assessments",   cta: "Manage",  section: "Learning" },
-  { href: "/builder/midterms",   icon: GraduationCap,  title: "Midterms",      cta: "Manage",  section: "Learning" },
-  { href: "/builder/vocabulary", icon: BookMarked,     title: "Vocabulary",    cta: "Manage",  section: "Learning" },
-  { href: "/builder/categories", icon: Tag,            title: "Categories",    cta: "Edit",    section: "Learning" },
-  // Simulation system
-  { href: "/builder/pastpapers", icon: FileText,        title: "Past papers",   cta: "Manage", section: "Simulation" },
-  // Ops
-  { href: "/builder/archived",   icon: Archive,        title: "Archived",      cta: "Review" },
+/**
+ * The same links, in the same groups, as before the console took the ops frame (2026-10-15).
+ * "Question Bank" now opens the question bank: it pointed at `/builder/bank`, which the sidebar
+ * has long called "Sets bank (legacy)".
+ */
+const QUICK_GROUPS: { caption: string | null; links: QuickLink[] }[] = [
+  {
+    caption: "Learning",
+    links: [
+      { href: "/builder/question-bank", icon: Database, title: "Question Bank", cta: "Browse" },
+      { href: "/builder/sets", icon: LayoutGrid, title: "Assessments", cta: "Manage" },
+      { href: "/builder/midterms", icon: GraduationCap, title: "Midterms", cta: "Manage" },
+      { href: "/builder/vocabulary", icon: BookMarked, title: "Vocabulary", cta: "Manage" },
+      { href: "/builder/categories", icon: Tag, title: "Categories", cta: "Edit" },
+    ],
+  },
+  {
+    caption: "Simulation",
+    links: [{ href: "/builder/pastpapers", icon: FileText, title: "Past papers", cta: "Manage" }],
+  },
+  {
+    // Uncaptioned, as Archived sits on its own in the sidebar.
+    caption: null,
+    links: [{ href: "/builder/archived", icon: Archive, title: "Archived", cta: "Review" }],
+  },
 ];
+
+const STATES = [
+  ["DRAFT", "Work in progress."],
+  ["ACTIVE", "Approved and assignable."],
+  ["ARCHIVED", "Retired, preserved."],
+] as const;
+
+/** A Django-admin "module": a hairline box under a small uppercase caption, as on /ops. */
+function Box({ id, caption, children }: { id: string; caption: string; children: React.ReactNode }) {
+  return (
+    <section aria-labelledby={id} className="border border-border bg-card">
+      <h2
+        id={id}
+        className="border-b border-border px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
+      >
+        {caption}
+      </h2>
+      {children}
+    </section>
+  );
+}
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BuilderDashboardPage() {
   const [session, setSession] = useState<StudioSession | null>(null);
 
-  // Read session on client only (localStorage unavailable during SSR).
   useEffect(() => {
     setSession(readStudioSession());
   }, []);
 
+  const continueHref = session ? sessionContinueHref(session) : null;
+  const continueLabel = session ? sessionContinueLabel(session) : null;
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="max-w-4xl space-y-5">
       <div>
-        <h1 className="text-xl font-bold text-foreground tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground mt-1">Content health at a glance.</p>
+        <h1 className="text-lg font-semibold text-foreground">Dashboard</h1>
+        <p className="text-[13px] text-muted-foreground">Content health at a glance.</p>
       </div>
 
-      {/* Session continuity — "Continue working" card */}
-      {(() => {
-        if (!session) return null;
-        const href = sessionContinueHref(session);
-        const label = sessionContinueLabel(session);
-        if (!href || !label) return null;
-        return (
+      {/* Session continuity — the last editor this browser had open. */}
+      {continueHref && continueLabel ? (
+        <Box id="builder-continue" caption="Continue working">
           <Link
-            href={href}
-            className="flex items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4 hover:border-primary/30 hover:bg-surface-2/60 transition-colors"
+            href={continueHref}
+            className="group flex h-10 items-center gap-2.5 px-3 text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
           >
-            <div className="shrink-0 rounded-xl bg-surface-2 p-3">
-              <PlayCircle className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-extrabold text-foreground">Continue working</p>
-              <p className="mt-0.5 truncate text-xs text-muted-foreground">{label}</p>
-            </div>
-            <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <PlayCircle aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 truncate font-medium text-primary group-hover:underline dark:text-primary-hover">
+              {continueLabel}
+            </span>
+            <span className="ml-auto shrink-0 text-muted-foreground">Open →</span>
           </Link>
-        );
-      })()}
+        </Box>
+      ) : null}
 
-      {/* Quick navigation — grouped by domain */}
-      <div className="space-y-4">
-        {(["Learning", "Simulation"] as const).map((section) => {
-          const links = QUICK_LINKS.filter((l) => l.section === section);
-          return (
-            <div key={section}>
-              <p className="text-[9px] font-black uppercase tracking-[0.15em] text-muted-foreground/60 mb-2 px-0.5">
-                {section}
+      <Box id="builder-quick" caption="Quick access">
+        {QUICK_GROUPS.map((group) => (
+          <div key={group.links[0].href} className="border-b border-border last:border-b-0">
+            {group.caption ? (
+              <p className="border-b border-border bg-surface-2/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                {group.caption}
               </p>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {links.map((link) => (
+            ) : null}
+            <ul className="divide-y divide-border">
+              {group.links.map((link) => (
+                <li key={link.href}>
                   <Link
-                    key={link.href}
                     href={link.href}
-                    className="group flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 hover:border-primary/30 hover:bg-primary/5 transition-colors"
+                    className="group flex h-9 items-center gap-2.5 px-3 text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
                   >
-                    <link.icon className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-                    <div>
-                      <p className="text-sm font-extrabold text-foreground">{link.title}</p>
-                      <p className="text-xs text-primary font-semibold mt-0.5">{link.cta} →</p>
-                    </div>
+                    <link.icon aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="font-medium text-primary group-hover:underline dark:text-primary-hover">{link.title}</span>
+                    <span className="ml-auto text-muted-foreground">{link.cta} →</span>
                   </Link>
-                ))}
-              </div>
-            </div>
-          );
-        })}
-        {/* Ops utilities */}
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {QUICK_LINKS.filter((l) => !l.section).map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="group flex flex-col gap-2 rounded-2xl border border-border bg-card p-4 hover:border-primary/30 hover:bg-primary/5 transition-colors"
-            >
-              <link.icon className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
-              <div>
-                <p className="text-sm font-extrabold text-foreground">{link.title}</p>
-                <p className="text-xs text-primary font-semibold mt-0.5">{link.cta} →</p>
-              </div>
-            </Link>
-          ))}
-        </div>
-      </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </Box>
 
-      {/* State reference — keep as useful inline docs */}
-      <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
-        <div className="flex items-start gap-2">
-          <CheckCircle2 className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-          <p className="text-xs text-muted-foreground leading-relaxed">
-            Content is served <strong className="text-foreground">live</strong>: an edit reaches
-            every not-yet-started attempt. A student mid-attempt keeps the exact questions they
-            started with.
-          </p>
-        </div>
-        <div className="border-t border-border pt-3 grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-3">
-          {(
-            [
-              ["DRAFT", "Work in progress."],
-              ["ACTIVE", "Approved and assignable."],
-              ["ARCHIVED", "Retired, preserved."],
-            ] as const
-          ).map(([state, note]) => (
-            <div key={state} className="flex items-start gap-2">
-              <StateTag state={state} size="xs" showIcon={false} className="shrink-0 mt-0.5" />
-              <span className="text-[11px] text-muted-foreground leading-snug">{note}</span>
+      {/* State reference — inline docs for the badges the lists show. */}
+      <Box id="builder-states" caption="Content states">
+        <p className="px-3 py-2 text-[13px] text-muted-foreground">
+          Content is served <strong className="font-semibold text-foreground">live</strong>: an edit reaches every
+          not-yet-started attempt. A student mid-attempt keeps the exact questions they started with.
+        </p>
+        <dl className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          {STATES.map(([state, note]) => (
+            <div key={state} className="flex items-center gap-2 px-3 py-2">
+              <dt className="shrink-0">
+                <StateTag state={state} size="xs" showIcon={false} />
+              </dt>
+              <dd className="text-[13px] text-muted-foreground">{note}</dd>
             </div>
           ))}
-        </div>
-      </div>
+        </dl>
+      </Box>
     </div>
   );
 }
