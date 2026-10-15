@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sat_beat_watchdog as wd  # noqa: E402
 
 OTHER_APPS = ("sat-frontend", "sat-backend", "sat-livequiz", "sat-celery-worker", "pm2-logrotate")
+AS_SATAPP = ["setpriv", "--reuid=satapp", "--regid=satapp", "--init-groups", "--"]
 T0 = 1_760_500_000.0  # a fixed "now"
 
 # What beat printed on 2026-10-15 when PM2's SIGINT interrupted the stuck acquire (abridged).
@@ -179,7 +180,7 @@ class StallTests(WatchdogTestCase):
         restarts = [c for c in self.pm2.pm2_calls() if "restart" in c]
         self.assertEqual(len(restarts), 1)
         self.assertEqual(restarts[0][-2:], ["restart", wd.APP])
-        self.assertEqual(restarts[0][:3], ["runuser", "-u", "satapp"])
+        self.assertEqual(restarts[0][:5], AS_SATAPP)
         for argv in self.pm2.calls:
             for other in OTHER_APPS:
                 self.assertNotIn(other, " ".join(argv))
@@ -196,7 +197,7 @@ class StallTests(WatchdogTestCase):
         self.assertEqual(alert["wchan"], "futex_wait_queue")
         self.assertEqual(alert["proc_threads"], "1")
         alert_call = next(c for c in self.pm2.calls if "celery_beat_watchdog_alert" in c)
-        self.assertEqual(alert_call[:3], ["runuser", "-u", "satapp"])
+        self.assertEqual(alert_call[:5], AS_SATAPP)
 
     def test_keeps_an_incident_directory(self):
         self.check()

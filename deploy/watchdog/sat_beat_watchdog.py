@@ -186,9 +186,15 @@ class Watchdog:
 
     # ── PM2, always as satapp, only ever jlist / restart APP ─────────────────
 
+    def _as_app_user(self) -> list[str]:
+        # setpriv, not runuser: runuser opens a PAM session, which writes two auth-log lines per
+        # call — about 2,900 a day at one `pm2 jlist` a minute. satapp's group has its name.
+        user = self.c.pm2_user
+        return ["setpriv", f"--reuid={user}", f"--regid={user}", "--init-groups", "--"]
+
     def _pm2(self, *args: str, timeout: float):
         argv = [
-            "runuser", "-u", self.c.pm2_user, "--",
+            *self._as_app_user(),
             "env", "-i", f"HOME={self.c.user_home}", f"PM2_HOME={self.c.pm2_home}", "PATH=/usr/bin:/bin",
             self.c.pm2_bin, *args,
         ]
@@ -239,7 +245,7 @@ class Watchdog:
         state["last_alert"][event] = now
         body = json.dumps({"event": event, "host": os.uname().nodename, **payload}, sort_keys=True, default=str)
         argv = [
-            "runuser", "-u", self.c.pm2_user, "--",
+            *self._as_app_user(),
             "env", "-i", f"HOME={self.c.user_home}", "PATH=/usr/bin:/bin", "DJANGO_SETTINGS_MODULE=config.settings",
             os.path.join(self.c.backend_dir, "venv", "bin", "python"), "manage.py", "celery_beat_watchdog_alert",
         ]
