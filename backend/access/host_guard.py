@@ -45,10 +45,12 @@ PUBLIC_STUDENT_DENIED_PREFIXES = ("/api/mocks/sessions/",)
 #: Read-only exceptions: a public learner who used to study at the centre still opens their OWN
 #: finished results — practice tests and past papers (owner decision 2026-10-14, B4 = A).
 #: GET/HEAD only; the view scopes the rows to completed attempts of the requester.
+#: ASCII digits and ``\Z``, never ``\d`` and ``$``: ``$`` also matches before a trailing newline, and
+#: ``\d`` matches any Unicode digit (which ``int()`` reads, so the router would resolve ``\u0665`` as 5).
 PUBLIC_STUDENT_READONLY_PATTERNS = (
-    re.compile(r"^/api/exams/attempts/$"),
-    re.compile(r"^/api/exams/attempts/\d+/$"),
-    re.compile(r"^/api/exams/attempts/\d+/(review|results)/$"),
+    re.compile(r"^/api/exams/attempts/\Z"),
+    re.compile(r"^/api/exams/attempts/[0-9]+/\Z"),
+    re.compile(r"^/api/exams/attempts/[0-9]+/(review|results)/\Z"),
 )
 
 

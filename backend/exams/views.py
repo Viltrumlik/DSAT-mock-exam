@@ -83,6 +83,7 @@ from .engine_integrity import autoheal_attempt_for_runtime
 from config.error_reporting import report_error
 from config.reliability import conflict_response
 from users.auth_cookies import is_native_client
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from exams.engine_db_guard import TransitionConflict
 
@@ -730,9 +731,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         # RequiresSubmitTest refuses a public learner (no permissions at all); reading their own
-        # finished results needs only a signed-in account. Writes keep the full check.
+        # finished results needs a signed-in account that is NOT debt-frozen. This class's own
+        # permission_classes replaced the project default (IsAuthenticatedAndNotFrozen), so the freeze
+        # check is named here again — a bare IsAuthenticated would let a frozen leaver read. Writes keep
+        # the full check.
         if self._is_public(getattr(getattr(self, "request", None), "user", None)) and getattr(self, "action", None) in self._PUBLIC_READ_ACTIONS:
-            return [IsAuthenticated()]
+            return [IsAuthenticatedAndNotFrozen()]
         return super().get_permissions()
 
     def get_queryset(self):

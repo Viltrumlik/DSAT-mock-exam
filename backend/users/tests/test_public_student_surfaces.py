@@ -77,8 +77,13 @@ class GateTests(TestCase):
             "/api/exams/", "/api/exams/7/", "/api/exams/attempts/5/status/", "/api/exams/attempts/5/start/",
             "/api/exams/attempts/5/save_attempt/", "/api/exams/attempts/x/", "/api/exams/attempts/5/review/x/",
             "/api/exams/attempts/5/results/extra/", "/api/exams/admin/attempts/", "/api/exams/practice-packs/",
+            # `$` would accept a trailing newline and `\d` any Unicode digit (Python's int() reads them, so the
+            # router would resolve `\u0665` as attempt 5): an access boundary is ASCII and fully anchored.
+            "/api/exams/attempts/\n", "/api/exams/attempts/5/\n", "/api/exams/attempts/5/review/\n",
+            "/api/exams/attempts/5/results/\n", "/api/exams/attempts/\u0665/", "/api/exams/attempts/\u0665/review/",
+            "/api/exams/attempts/\uff15/results/", "/api/exams/attempts//", "/api/exams/attempts/5",
         ):
-            self.assertFalse(public_student_may(closed, "GET"), closed)
+            self.assertFalse(public_student_may(closed, "GET"), repr(closed))
 
     def test_a_refused_request_says_centre_only(self):
         api = APIClient()

@@ -72,6 +72,22 @@ class PublicLearnerResultsTests(TestCase):
             self.assertEqual(r.status_code, 403, (method, tail))
             self.assertEqual(r.json().get("code"), "centre_only", (method, tail))
 
+    def test_a_debt_frozen_leaver_is_refused_on_every_read(self):
+        # Debt-frozen accounts stay fully locked. The viewset's own permission_classes replace the
+        # project default (IsAuthenticatedAndNotFrozen), so the public read branch must name it again.
+        User.objects.filter(pk=self.public.pk).update(is_frozen=True)
+        base = f"/api/exams/attempts/{self.done.id}"
+        for url in ("/api/exams/attempts/", f"{base}/", f"{base}/review/", f"{base}/results/"):
+            r = self.client.get(url)
+            self.assertEqual(r.status_code, 403, (url, r.content))
+            self.assertIn("frozen", r.json()["detail"], url)
+
+    def test_unfreezing_gives_the_reads_back(self):
+        User.objects.filter(pk=self.public.pk).update(is_frozen=True)
+        self.assertEqual(self.client.get("/api/exams/attempts/").status_code, 403)
+        User.objects.filter(pk=self.public.pk).update(is_frozen=False)
+        self.assertEqual(self.client.get("/api/exams/attempts/").status_code, 200)
+
     def test_someone_elses_finished_attempt_is_not_found(self):
         other = User.objects.create_user(email="pub_other@example.com", password="pw", role=acc_const.ROLE_PUBLIC_STUDENT)
         pt = PracticeTest.objects.create(subject="MATH", title="Theirs", skip_default_modules=True)
