@@ -8,6 +8,7 @@ import {
   tabId as tabOf,
   type Tab as AnyTab,
 } from "@/features/ops/detail/tabs";
+import { CalendarCheck, History, School, ShieldCheck, Trophy, UserRound, Users, Wallet } from "lucide-react";
 import type { PersonCore } from "./personApi";
 
 /**
@@ -22,23 +23,34 @@ export type Tab = AnyTab<TabKey>;
 
 export { TAB_PARAM } from "@/features/ops/detail/tabs";
 
+const TAB: Record<TabKey, Tab> = {
+  overview: { key: "overview", label: "Overview", icon: UserRound },
+  groups: { key: "groups", label: "Groups", icon: Users },
+  payments: { key: "payments", label: "Payments", icon: Wallet },
+  attendance: { key: "attendance", label: "Attendance", icon: CalendarCheck },
+  results: { key: "results", label: "Results", icon: Trophy },
+  security: { key: "security", label: "Security", icon: ShieldCheck },
+  history: { key: "history", label: "History", icon: History },
+  classes: { key: "classes", label: "Classes", icon: School },
+};
+
 /** The tabs that apply to this person, in reading order. */
 export function tabsFor(person: PersonCore): Tab[] {
-  const tabs: Tab[] = [{ key: "overview", label: "Overview" }];
+  const keys: TabKey[] = ["overview"];
   if (person.section === "staff") {
-    tabs.push({ key: "classes", label: "Classes" });
+    keys.push("classes");
   } else if (person.section === "students") {
-    tabs.push({ key: "groups", label: "Groups" });
-    if (person.lcup) tabs.push({ key: "payments", label: "Payments" });
-    tabs.push({ key: "attendance", label: "Attendance" }, { key: "results", label: "Results" });
+    keys.push("groups");
+    if (person.lcup) keys.push("payments");
+    keys.push("attendance", "results");
   } else {
     // A public user sees only mock exams and events, and sits in no class — unless they once did.
-    tabs.push({ key: "results", label: "Results" });
-    if (person.lcup) tabs.push({ key: "payments", label: "Payments" });
-    if (person.past_groups.length > 0 || person.groups.length > 0) tabs.push({ key: "groups", label: "Groups" });
+    keys.push("results");
+    if (person.lcup) keys.push("payments");
+    if (person.past_groups.length > 0 || person.groups.length > 0) keys.push("groups");
   }
-  tabs.push({ key: "security", label: "Security" }, { key: "history", label: "History" });
-  return tabs;
+  keys.push("security", "history");
+  return keys.map((k) => TAB[k]);
 }
 
 /** The open tab from the address. Anything unknown, or not this person's, is the Overview. */

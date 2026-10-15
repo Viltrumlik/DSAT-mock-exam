@@ -127,8 +127,14 @@ describe("Attendance", () => {
   it("gives each class its rate out of what counts, and the four counts", async () => {
     serve("attendance", DATA);
     await render(<AttendanceSection id={7} />);
-    expect(text()).toContain("Junior G21 Math — 87.5% of 8 · present 6 · late 1 · absent 1 · excused 0");
-    expect(text()).toContain("Old class (left) — —% of 0");
+    const [live, old] = [...host.querySelectorAll('[data-testid="attendance-class"]')].map((c) => c.textContent ?? "");
+    expect(live).toContain("Junior G21 Math");
+    expect(live).toContain("87.5%");
+    expect(live).toContain("of 8 lessons");
+    for (const chip of ["Present 6", "Late 1", "Absent 1", "Excused 0"]) expect(live).toContain(chip);
+    expect(old).toContain("Old class");
+    expect(old).toContain("Left");
+    expect(old).toContain("—");
   });
 
   it("lists the recent marks with lc-up's reason and whether the register reached lc-up", async () => {
@@ -221,14 +227,18 @@ describe("Results", () => {
     ]) {
       expect(subsection(title)).toBe("Nothing yet");
     }
-    expect(text()).toContain("XP 0 · Coins 0");
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*0/);
+    expect(rewards).toMatch(/Coins\s*0/);
   });
 
   it("shows a public user only mock exams, practice tests and events", async () => {
     serve("results", { ...EMPTY_RESULTS, rewards: { xp: 120, coins: 15 } });
     await render(<ResultsSection id={7} section="public" />);
     expect(headings()).toEqual(["Mock exams", "Practice tests", "Events"]);
-    expect(text()).toContain("XP 120 · Coins 15");
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*120/);
+    expect(rewards).toMatch(/Coins\s*15/);
   });
 });
 

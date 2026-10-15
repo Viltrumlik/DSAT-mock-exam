@@ -2,6 +2,16 @@ import type { PeopleSection } from "@/features/ops/changelist/peopleApi";
 import { formatDate, statusLabel } from "@/features/ops/users/peopleColumns";
 import type { PersonCore } from "./personApi";
 
+/** "+998 90 123 45 67" from the stored digits ("998901234567"); anything else as it is. */
+export function formatPhone(phone: string | null | undefined): string {
+  if (!phone) return "";
+  const d = phone.replace(/\D/g, "");
+  if (d.length === 12 && d.startsWith("998")) {
+    return `+998 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8, 10)} ${d.slice(10)}`;
+  }
+  return phone;
+}
+
 /** Each people list's name, as the sidebar and the breadcrumb say it. */
 export const LIST_LABEL: Record<PeopleSection, string> = { students: "Students", public: "Public users", staff: "Staff" };
 

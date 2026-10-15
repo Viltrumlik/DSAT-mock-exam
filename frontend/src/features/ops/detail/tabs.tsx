@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 /**
@@ -12,7 +13,7 @@ import { cn } from "@/lib/cn";
  * solid pills. The console is Django-admin plain, so its tabs are text with an underline.
  */
 
-export type Tab<K extends string = string> = { key: K; label: string };
+export type Tab<K extends string = string> = { key: K; label: string; icon?: LucideIcon };
 
 export const TAB_PARAM = "tab";
 
@@ -141,12 +142,13 @@ export function TabBar<K extends string>({
               tabIndex={on ? 0 : -1}
               onClick={() => onSelect(t.key)}
               className={cn(
-                "h-10 shrink-0 whitespace-nowrap border-b-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
+                "inline-flex h-11 shrink-0 items-center gap-2 whitespace-nowrap border-b-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary",
                 on
-                  ? "border-primary font-medium text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  ? "border-primary font-semibold text-primary dark:text-primary-hover"
+                  : "border-transparent font-medium text-muted-foreground hover:border-border hover:text-foreground",
               )}
             >
+              {t.icon ? <t.icon aria-hidden className="h-4 w-4" /> : null}
               {t.label}
             </button>
           );

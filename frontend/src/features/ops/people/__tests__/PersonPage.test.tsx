@@ -40,6 +40,9 @@ function core(over: Partial<PersonCore> = {}): PersonCore {
   return {
     id: 7,
     section: "students",
+    avatar_url: null,
+    glance: { attendance_rate: 50, homework: { completed: 3, total: 4 }, mocks_taken: 0, last_mock_total: null },
+    one_time_password: null,
     username: "aziz",
     first_name: "Aziz",
     last_name: "Tursunov",
@@ -93,6 +96,7 @@ function core(over: Partial<PersonCore> = {}): PersonCore {
 
 const STAFF: Partial<PersonCore> = {
   section: "staff",
+  glance: null,
   role: "teacher",
   subject: "math",
   status: "active",
@@ -263,7 +267,7 @@ describe("the person page's tabs", () => {
     remount();
     await renderPage("students", "tab=attendance");
     expect(partCalls()).toEqual(["/users/admin/people/7/attendance/"]);
-    expect(box("Attendance (last 30 days)")).not.toBeNull();
+    expect(box("Attendance")).not.toBeNull();
   });
 
   it("opens a tab in the address and keeps the list it came from", async () => {
@@ -352,10 +356,11 @@ describe("the Overview", () => {
     expect(notice.textContent).toContain("Public users");
   });
 
-  it("fits the password hint in its box", async () => {
+  it("has no new-password field — the header gives a one-time password instead", async () => {
     route(core());
     await renderPage();
-    expect(input("New password").placeholder).toBe("Leave blank to keep");
+    expect(input("New password")).toBeNull();
+    expect(box("Profile")!.querySelector('input[type="password"]')).toBeNull();
   });
 
   it("saves the profile and reloads the account", async () => {
@@ -431,10 +436,10 @@ describe("the subject tabs", () => {
     route(core());
     await renderPage("students", "tab=groups");
     const groups = box("Groups")!;
-    const seat = [...groups.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Junior G21 Math"))!;
-    expect(seat.textContent).toContain("Change in lc-up");
+    const seat = [...groups.querySelectorAll('[data-testid="group-card"]')].find((c) => c.textContent?.includes("Junior G21 Math"))!;
+    expect(seat.textContent).toContain("Synced from lc-up");
+    expect(seat.textContent).toContain("Vali Aliyev");
     expect(button(seat, "Remove")).toBeUndefined();
-    expect(phoneHidden(groups.querySelector("table"))).toEqual(["Teacher", "Joined"]);
     expect(box("Profile")).toBeNull();
   });
 
@@ -540,12 +545,91 @@ describe("the page around the tabs", () => {
     route(core());
     post.mockResolvedValue({ data: { revoked: 2 } });
     await renderPage();
-    act(() => button(host, "Log out everywhere")!.click());
+    act(() => host.querySelector<HTMLButtonElement>('[aria-label="More actions"]')!.click());
+    act(() => [...host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find((b) => b.textContent === "Log out everywhere")!.click());
     const dialog = host.querySelector('[role="dialog"]') as HTMLElement;
     expect(dialog.textContent).toContain("up to 3 hours");
     act(() => button(dialog, "Log out everywhere")!.click());
     await settle();
     expect(post).toHaveBeenCalledWith("/users/admin/people/7/revoke-sessions/");
     expect(toast).toHaveBeenCalledWith({ tone: "success", message: "Signed out of 2 devices." });
+  });
+});
+
+describe("the header", () => {
+  it("shows the photo beside the name, or the initials without one", async () => {
+    route(core({ avatar_url: "https://cdn.example/aziz.jpg" }));
+    await renderPage();
+    expect(host.querySelector("img")?.getAttribute("src")).toBe("https://cdn.example/aziz.jpg");
+
+    remount();
+    route(core());
+    await renderPage();
+    expect(host.querySelector("img")).toBeNull();
+    expect(host.textContent).toContain("AT");
+  });
+
+  it("says what the account is and its state, each in its colour", async () => {
+    route(core({ is_frozen: true, frozen_reason: "debt", status: "frozen_debt" }));
+    await renderPage();
+    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    expect(header.textContent).toContain("Student");
+    expect(header.textContent).toContain("Frozen — unpaid");
+    expect(header.textContent).toContain("lc-up linked");
+    expect(header.textContent).toContain("Never signed in");
+    expect(header.textContent).toContain("+998 90 123 45 67");
+  });
+
+  it("puts what matters at a glance: the debt, attendance and homework", async () => {
+    route(core());
+    await renderPage();
+    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    expect(header.textContent).toContain("Owes250,000 UZS");
+    expect(header.textContent).toContain("50%");
+    expect(header.textContent).toContain("3 / 4");
+  });
+
+  it("gives a one-time password after a confirm, and says what to tell them", async () => {
+    route(core());
+    post.mockResolvedValue({ data: { login: "998901234567", code: "4567", expires_at: "2026-10-29T10:00:00+05:00" } });
+    await renderPage();
+    act(() => button(host, "One-time password")!.click());
+    let dialog = host.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialog.textContent).toContain("+998 90 123 45 67 · password 4567");
+    act(() => button(dialog, "Give one-time password")!.click());
+    await settle();
+    expect(post).toHaveBeenCalledWith("/users/admin/people/7/one-time-password/");
+    dialog = host.querySelector('[role="dialog"]') as HTMLElement;
+    expect(dialog.textContent).toContain("One-time password is ready");
+    expect(dialog.textContent).toContain("4567");
+    act(() => button(dialog, "Done")!.click());
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it("says why when the server refuses a one-time password", async () => {
+    route(core());
+    post.mockRejectedValue({ response: { data: { detail: "Another account is waiting to sign in with this phone number." } } });
+    await renderPage();
+    act(() => button(host, "One-time password")!.click());
+    act(() => button(host.querySelector('[role="dialog"]')!, "Give one-time password")!.click());
+    await settle();
+    expect(toast).toHaveBeenCalledWith({ tone: "error", message: "Another account is waiting to sign in with this phone number." });
+  });
+
+  it("needs a phone for a one-time password, and offers none for an admin", async () => {
+    route(core({ phone: "" }));
+    await renderPage();
+    expect(button(host, "One-time password")!.disabled).toBe(true);
+
+    remount();
+    route(core({ ...STAFF, role: "admin", subject: "" }));
+    await renderPage("staff");
+    expect(button(host, "One-time password")).toBeUndefined();
+  });
+
+  it("shows an open one-time password", async () => {
+    route(core({ one_time_password: { expires_at: "2026-10-29T10:00:00+05:00", used: false, locked: false } }));
+    await renderPage();
+    expect(host.textContent).toContain("One-time password · until Oct 29, 2026");
   });
 });
