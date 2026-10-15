@@ -100,19 +100,3 @@ export const STUDIO_SELECT =
 /** A text link styled as the /ops lists do (blue, underline on hover). */
 export const STUDIO_LINK =
   "rounded-sm font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover";
-
-/** The success strip, shaped as STUDIO_ERROR_BANNER is. */
-export const STUDIO_OK_BANNER =
-  "rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] font-medium text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-300";
-
-/** A 32px icon-only button, level with the STUDIO_BTN_* controls beside it. Give it an aria-label. */
-export const STUDIO_ICON_BTN =
-  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
-
-/** The same, for delete: turns red on hover. */
-export const STUDIO_ICON_BTN_DANGER =
-  "inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-300";
-
-/** An underline tab's base; add `border-primary text-primary` when current, `border-transparent text-muted-foreground` when not. */
-export const STUDIO_TAB =
-  "-mb-px border-b-2 px-3 py-1.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary";

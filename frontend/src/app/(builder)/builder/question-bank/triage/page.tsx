@@ -15,32 +15,7 @@ import {
 import { ClassifyModal } from "@/domains/questionBank/components/ClassifyModal";
 import { difficultyLabel } from "@/domains/questionBank/utils";
 import type { QbClassifyInput, QbQuestionListItem } from "@/domains/questionBank/types";
-import {
-  STUDIO_BTN_DESTRUCTIVE,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_LINK,
-  STUDIO_OK_BANNER,
-  STUDIO_PAGE_DESC,
-  STUDIO_PAGE_TITLE,
-  STUDIO_SECTION_GAP,
-  STUDIO_TABLE,
-  STUDIO_TD,
-  STUDIO_TH,
-} from "@/components/studio/primitives";
 import { normalizeApiError } from "@/lib/apiError";
-
-
-const TH_RIGHT = STUDIO_TH.replace("text-left", "text-right");
-
-// Compact buttons (28px, 12px) for the bulk bar and the rows, sized as STUDIO_BTN_DESTRUCTIVE is so
-// Reject sits level with them.
-const ROW_BTN =
-  "inline-flex min-h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50";
-const ROW_BTN_PRIMARY =
-  "inline-flex min-h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 py-1 text-[12px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50";
-
-const CHECKBOX = "h-3.5 w-3.5 cursor-pointer align-middle accent-primary";
 
 export default function TriageQueuePage() {
   const { data, isLoading, error } = useQbQuestions({ status: "TRIAGE", limit: 100 });
@@ -126,35 +101,44 @@ export default function TriageQueuePage() {
   const selectedIds = useMemo(() => [...selected], [selected]);
 
   return (
-    <div className={STUDIO_SECTION_GAP}>
-      <Link href="/builder/question-bank" className={`${STUDIO_LINK} inline-flex items-center gap-1 text-[13px]`}>
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to Question Bank
+    <div className="space-y-5">
+      <Link
+        href="/builder/question-bank"
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" /> Back to Question Bank
       </Link>
 
       <div>
-        <h1 className={STUDIO_PAGE_TITLE}>Triage Queue</h1>
-        <p className={STUDIO_PAGE_DESC}>
+        <h1 className="text-xl font-bold tracking-tight text-foreground">Triage Queue</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Classify imported questions with real taxonomy, then approve. Metadata is never fabricated —
           AI suggestions are advisory and must be confirmed by a person.
         </p>
       </div>
 
       {banner ? (
-        <div className={banner.tone === "ok" ? STUDIO_OK_BANNER : STUDIO_ERROR_BANNER}>
+        <div
+          className={
+            banner.tone === "ok"
+              ? "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800"
+              : "rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700"
+          }
+        >
           {banner.text}
         </div>
       ) : null}
 
       {/* Bulk bar */}
       {selectedIds.length > 0 && (
-        <div className={`${STUDIO_CARD} flex flex-wrap items-center justify-between gap-2 px-3 py-2`}>
-          <span className="text-[13px] font-medium tabular-nums text-foreground">{selectedIds.length} selected</span>
+        <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2">
+          <span className="text-sm font-bold text-foreground">{selectedIds.length} selected</span>
           <div className="flex gap-2">
             <button
               type="button"
               disabled={busy}
               onClick={() => void onBulk("approve")}
-              className={ROW_BTN_PRIMARY}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-bold text-white disabled:opacity-50"
             >
               <Check className="h-3.5 w-3.5" /> Approve
             </button>
@@ -162,7 +146,7 @@ export default function TriageQueuePage() {
               type="button"
               disabled={busy}
               onClick={() => void onBulk("reject")}
-              className={STUDIO_BTN_DESTRUCTIVE}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-sm font-bold text-white disabled:opacity-50"
             >
               <X className="h-3.5 w-3.5" /> Reject
             </button>
@@ -170,17 +154,17 @@ export default function TriageQueuePage() {
         </div>
       )}
 
-      <div className={`${STUDIO_CARD} overflow-x-auto`}>
-        <table className={STUDIO_TABLE}>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+        <table className="w-full text-sm">
           <thead>
-            <tr>
-              <th scope="col" className={`${STUDIO_TH} w-8`}>
-                <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" className={CHECKBOX} />
+            <tr className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="w-10 px-4 py-3">
+                <input type="checkbox" checked={allSelected} onChange={toggleAll} aria-label="Select all" />
               </th>
-              <th scope="col" className={STUDIO_TH}>QB-ID</th>
-              <th scope="col" className={STUDIO_TH}>Question</th>
-              <th scope="col" className={STUDIO_TH}>Suggestion</th>
-              <th scope="col" className={TH_RIGHT}>Actions</th>
+              <th className="px-4 py-3 font-bold">QB-ID</th>
+              <th className="px-4 py-3 font-bold">Question</th>
+              <th className="px-4 py-3 font-bold">Suggestion</th>
+              <th className="px-4 py-3 font-bold text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -192,47 +176,41 @@ export default function TriageQueuePage() {
               <Row colSpan={5}>Triage queue is empty. 🎉</Row>
             ) : (
               rows.map((q) => (
-                <tr key={q.id} className="align-top hover:bg-surface-2 [&:last-child>td]:border-b-0">
-                  <td className={`${STUDIO_TD} py-2`}>
-                    <input
-                      type="checkbox"
-                      checked={selected.has(q.id)}
-                      onChange={() => toggle(q.id)}
-                      aria-label={`Select ${q.qb_id}`}
-                      className={CHECKBOX}
-                    />
+                <tr key={q.id} className="border-b border-border last:border-0 align-top">
+                  <td className="px-4 py-3">
+                    <input type="checkbox" checked={selected.has(q.id)} onChange={() => toggle(q.id)} aria-label={`Select ${q.qb_id}`} />
                   </td>
-                  <td className={`${STUDIO_TD} whitespace-nowrap py-1.5`}>
-                    <Link href={`/builder/question-bank/${q.id}`} className={`${STUDIO_LINK} font-mono text-[12px]`}>
+                  <td className="px-4 py-3">
+                    <Link href={`/builder/question-bank/${q.id}`} className="font-mono text-xs font-bold text-primary hover:underline">
                       {q.qb_id}
                     </Link>
-                    <p className="mt-0.5 text-[12px] text-muted-foreground">{q.subject}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">{q.subject}</p>
                   </td>
-                  <td className={`${STUDIO_TD} max-w-sm py-1.5`}>
+                  <td className="max-w-sm px-4 py-3">
                     <p className="line-clamp-2 text-foreground">{q.question_text || "(no text)"}</p>
                   </td>
-                  <td className={`${STUDIO_TD} py-1.5`}>
+                  <td className="px-4 py-3">
                     {q.suggestion ? (
-                      <div className="text-[12px] text-foreground">
-                        <span className="inline-flex items-center gap-1 font-medium">
-                          <Sparkles className="h-3 w-3 text-muted-foreground" /> {q.suggestion.skill?.name ?? q.suggestion.domain?.name ?? "Suggestion"}
+                      <div className="text-xs text-indigo-700">
+                        <span className="inline-flex items-center gap-1 font-bold">
+                          <Sparkles className="h-3 w-3" /> {q.suggestion.skill?.name ?? q.suggestion.domain?.name ?? "Suggestion"}
                         </span>
                         {q.suggestion.difficulty ? (
                           <span className="ml-1 text-muted-foreground">({difficultyLabel(q.suggestion.difficulty)})</span>
                         ) : null}
                       </div>
                     ) : (
-                      <span className="text-[12px] italic text-muted-foreground">none</span>
+                      <span className="text-xs italic text-muted-foreground/60">none</span>
                     )}
                   </td>
-                  <td className={`${STUDIO_TD} py-1.5`}>
+                  <td className="px-4 py-3">
                     <div className="flex flex-wrap justify-end gap-1.5">
                       {q.suggestion ? (
                         <button
                           type="button"
                           disabled={busy}
                           onClick={() => void onAccept(q.id)}
-                          className={ROW_BTN}
+                          className="rounded-lg border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-xs font-bold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
                         >
                           Accept suggestion
                         </button>
@@ -241,7 +219,7 @@ export default function TriageQueuePage() {
                         type="button"
                         disabled={busy}
                         onClick={() => setClassifyTarget(q)}
-                        className={ROW_BTN}
+                        className="rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-bold text-foreground hover:bg-surface-2 disabled:opacity-50"
                       >
                         Classify
                       </button>
@@ -249,7 +227,7 @@ export default function TriageQueuePage() {
                         type="button"
                         disabled={busy}
                         onClick={() => void onApprove(q.id)}
-                        className={ROW_BTN_PRIMARY}
+                        className="rounded-lg bg-emerald-600 px-2.5 py-1 text-xs font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
                       >
                         Approve
                       </button>
@@ -257,7 +235,7 @@ export default function TriageQueuePage() {
                         type="button"
                         disabled={busy}
                         onClick={() => void onReject(q.id)}
-                        className={STUDIO_BTN_DESTRUCTIVE}
+                        className="rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
                       >
                         Reject
                       </button>
@@ -287,11 +265,7 @@ function Row({ children, colSpan, tone }: { children: React.ReactNode; colSpan: 
     <tr>
       <td
         colSpan={colSpan}
-        className={
-          tone === "error"
-            ? "px-2 py-6 text-[13px] text-red-700 dark:text-red-300"
-            : "px-2 py-6 text-[13px] text-muted-foreground"
-        }
+        className={tone === "error" ? "px-4 py-10 text-center text-rose-600" : "px-4 py-10 text-center text-muted-foreground"}
       >
         {children}
       </td>
