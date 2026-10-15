@@ -59,6 +59,15 @@ class PersonPartsTests(TestCase):
         self.assertEqual(len(body["sessions"]), 1)
         self.assertNotIn("secret-jti", str(body))
 
+    def test_security_sends_the_whole_user_agent_for_the_page_to_name(self):
+        # Telegram's in-app browser says so only at the end of a long Android user agent.
+        ua = ("Mozilla/5.0 (Linux; Android 13; SM-A536B Build/TP1A.220624.014; wv) AppleWebKit/537.36 (KHTML, like "
+              "Gecko) Version/4.0 Chrome/120.0.6099.230 Mobile Safari/537.36 Telegram-Android/10.6.2")
+        RefreshSession.objects.create(user=self.kid, refresh_jti="a", user_agent=ua)
+        RefreshSession.objects.create(user=self.kid, refresh_jti="b", user_agent="  ")
+        devices = sorted(s["device"] for s in self.part("security").json()["sessions"])
+        self.assertEqual(devices, ["", ua])
+
     def test_history_merges_sources_newest_first(self):
         RoleChange.objects.create(user=self.kid, from_role="student", to_role="public_student",
                                   reason="lcup_left", source="lcup_sync")
@@ -72,6 +81,31 @@ class PersonPartsTests(TestCase):
         self.assertEqual(next(i for i in items if i["kind"] == "admin")["by"], "Bo Ss")
         self.assertNotIn("ping", str(items))
         self.assertEqual(items, sorted(items, key=lambda i: i["at"], reverse=True))
+
+    def test_history_names_roles_in_words_not_codes(self):
+        RoleChange.objects.create(user=self.kid, from_role="student", to_role="public_student",
+                                  reason="lcup_left", source="lcup_sync")
+        RoleChange.objects.create(user=self.kid, from_role="public_student", to_role="support_teacher",
+                                  reason="promoted", source="admin")
+        RoleChange.objects.create(user=self.kid, from_role="ghost", to_role="student", reason="x", source="admin")
+        titles = {i["title"] for i in self.part("history").json()["items"] if i["kind"] == "role"}
+        self.assertEqual(titles, {
+            "Role student → public user (left every group in lc-up)",
+            "Role public user → support teacher (promoted)",
+            "Role ghost → student (x)",  # a code with no name stays as it is
+        })
+
+    def test_history_payment_amounts_read_as_the_lcup_box_and_carry_no_time(self):
+        from lcup.models import LcupPayment, LcupStudentLink, LinkStatus
+
+        LcupStudentLink.objects.create(lcup_student_id=9, name="Valiyev Ali", user=self.kid, status=LinkStatus.AUTO)
+        LcupPayment.objects.create(lcup_payment_id=1, lcup_student_id=9, kind="payment", amount=650000,
+                                   paid_on=timezone.localdate(), month="2026-10", synced_at=timezone.now())
+        items = self.part("history").json()["items"]
+        (pay,) = [i for i in items if i["kind"] == "payment"]
+        self.assertEqual(pay["title"], "Payment 650,000 UZS for 2026-10")
+        self.assertIs(pay["all_day"], True)
+        self.assertFalse(any(i.get("all_day") for i in items if i["kind"] != "payment"))
 
     def test_an_unknown_part_is_404(self):
         self.assertEqual(self.part("passwords").status_code, 404)
