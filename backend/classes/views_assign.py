@@ -226,6 +226,10 @@ class AssignTeacherView(_AdminClassroomGovernanceView):
         if not self._guard(request):
             return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        from lcup.guards import is_lcup_managed, lcup_managed_response
+
+        if is_lcup_managed(classroom):  # lcup.follow.follow_teachers would put lc-up's teacher back
+            return lcup_managed_response(["teacher"])
         user, role = self._teacher_user(request.data.get("user_id"))
         if role not in ("teacher", "super_admin"):
             return Response({"detail": "User is not a teacher."}, status=http.HTTP_400_BAD_REQUEST)
@@ -248,6 +252,10 @@ class TransferOwnershipView(_AdminClassroomGovernanceView):
         if not self._guard(request):
             return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        from lcup.guards import is_lcup_managed, lcup_managed_response
+
+        if is_lcup_managed(classroom):  # the owner becomes the teacher, which lc-up sets
+            return lcup_managed_response(["teacher"])
         user, role = self._teacher_user(request.data.get("user_id"))
         if role not in ("teacher", "super_admin"):
             return Response({"detail": "New owner must be a teacher."}, status=http.HTTP_400_BAD_REQUEST)
@@ -278,6 +286,12 @@ class ClassroomGovernanceDeleteView(_AdminClassroomGovernanceView):
         if not self._guard(request):
             return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
+        from lcup.guards import is_lcup_managed, lcup_managed_response
+
+        if is_lcup_managed(classroom):
+            return lcup_managed_response(
+                ["class"], detail="This class follows an lc-up group. Archive or delete the group in lc-up."
+            )
         classroom.delete()
         return Response(status=http.HTTP_204_NO_CONTENT)
 
@@ -462,6 +476,15 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         from .serializers import ClassroomCreateSerializer, ClassroomSerializer
 
         payload = {k: v for k, v in (request.data or {}).items() if k in self.EDITABLE}
+        from lcup.guards import is_lcup_managed, lcup_managed_response, lcup_owned_changes
+
+        # A paired class's details are lc-up's (lcup.follow.follow_details): a change made here would
+        # be undone at the next sync. Checked on what would actually be saved, so the ops form may
+        # post every field whole as long as it leaves lc-up's ones as they are.
+        if is_lcup_managed(classroom):
+            changed = lcup_owned_changes(classroom, payload)
+            if changed:
+                return lcup_managed_response(changed)
         if not payload:
             # Silence would look like success. An admin whose form sent only fields this
             # endpoint refuses should be told, not shown a 200 and an unchanged classroom.
