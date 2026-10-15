@@ -26,6 +26,10 @@ jobs:
         run: python manage.py check
       - name: Ensure no schema drift
         run: python manage.py makemigrations --check --dry-run
+      # Runs as root on the app host outside the venv, so it is tested the way it runs: stdlib only.
+      - name: Beat watchdog tests (deploy/watchdog)
+        working-directory: .
+        run: python -I -B -m unittest discover -s deploy/watchdog -p 'test_*.py' -v
       - name: Backend tests (fast subset)
         run: |
           start=$(date +%s)
