@@ -2,7 +2,7 @@ import Foundation
 
 /// How one day of a teacher's calendar reads in the day strip.
 ///
-/// Five different reasons for a day, five different words — a student who reads "Full" on
+/// Six different reasons for a day, six different words — a student who reads "Full" on
 /// a Sunday keeps checking back for a cancellation that is never coming, and one who reads
 /// "Full" on a day they have already booked goes looking for a seat that would not help them.
 public enum SupportDaySummary: Equatable, Sendable {
@@ -10,6 +10,8 @@ public enum SupportDaySummary: Equatable, Sendable {
     case free(Int)
     /// The student already has their one session this day.
     case booked
+    /// The student's support booking is paused (the no-show rule), so no hour is theirs to take.
+    case paused
     /// The teacher does not work this day.
     case notWorking
     /// Nothing left because the clock ran out, not because anyone took it.
@@ -17,11 +19,12 @@ public enum SupportDaySummary: Equatable, Sendable {
     /// Every working hour is taken or withdrawn.
     case full
 
-    /// "3 free" / "Booked" / "Not working" / "Day over" / "Full".
+    /// "3 free" / "Booked" / "Paused" / "Not working" / "Day over" / "Full".
     public var label: String {
         switch self {
         case .free(let count): return "\(count) free"
         case .booked: return "Booked"
+        case .paused: return "Paused"
         case .notWorking: return "Not working"
         case .dayOver: return "Day over"
         case .full: return "Full"
@@ -69,6 +72,20 @@ public struct SupportNextHour: Equatable, Sendable {
 
     /// "Today, 15:00 with Dilafruz Karimova" — one line for Home.
     public var sentence: String { teacher.isEmpty ? when : "\(when) with \(teacher)" }
+}
+
+/// The no-show rule's banner above the calendar: booking paused, or a first miss warned.
+public struct SupportNoShowBanner: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable {
+        /// Two missed sessions within a week: nothing is bookable until `pausedUntil`.
+        case paused
+        /// One missed session: another before the deadline pauses booking.
+        case warning
+    }
+
+    public let kind: Kind
+    public let title: String
+    public let message: String
 }
 
 /// The support page's rules and wording, kept out of the views so they can be tested.
@@ -123,6 +140,9 @@ public enum SupportSchedule {
         // Ahead of the other three: a student who has booked Wednesday needs the strip to
         // say so on Wednesday, not "Full".
         if isDayTaken(day) { return .booked }
+        // A paused student's every working hour reads "paused"; "Full" would send them
+        // hunting for a cancellation that cannot help them.
+        if day.hours.contains(where: { $0.state == .paused }) { return .paused }
         let working = day.hours.filter { $0.state != .off }
         if working.isEmpty { return .notWorking }
         // A day with nothing left is usually today running out hour by hour — calling that
@@ -158,6 +178,8 @@ public enum SupportSchedule {
         case .off: return "Not working"
         // The one reason about the student rather than the desk — so it says what they have.
         case .dayTaken: return "You have a session today"
+        // Every hour with every teacher says it; the banner above the calendar says until when.
+        case .paused: return "Booking paused"
         case .unknown: return "Not available"
         case .open, .mine: return ""
         }
@@ -223,12 +245,42 @@ public enum SupportSchedule {
         switch booking.status {
         case .booked: return "Booked"
         case .held: return "Attended"
+        case .late: return "Attended late"
         case .noShow: return "Missed"
         case .cancelled: return "Cancelled"
         case .unknown:
             let raw = booking.statusRaw.replacingOccurrences(of: "_", with: " ").lowercased()
             return raw.isEmpty ? "Booked" : raw.prefix(1).uppercased() + raw.dropFirst()
         }
+    }
+
+    /// Said under an "Attended late" session, so the missing points never read as a bug —
+    /// the school asked that the student be told, and the bell can be muted.
+    public static let lateNote =
+        "You came late, so this session earns no XP. It still counts as attended — arrive on time next session to earn it."
+
+    // MARK: - What a session row offers
+
+    /// Only a session that happened can be rated — there is nothing to judge about one that
+    /// was cancelled, missed, or is still to come. A late arrival still sat through it.
+    public static func canRate(_ booking: SupportBooking) -> Bool {
+        booking.status == .held || booking.status == .late
+    }
+
+    /// A BOOKED session can be cancelled until its hour begins. After that the server refuses
+    /// (cancelling a started hour gave the day back, and a second hour walked round the
+    /// one-a-day limit), and a button that always fails is worse than none. A start this
+    /// build cannot read keeps the button: the server stays the judge.
+    public static func canCancel(_ booking: SupportBooking, now: Date = Date()) -> Bool {
+        guard booking.status == .booked else { return false }
+        guard let starts = booking.slot.startDate else { return true }
+        return starts > now
+    }
+
+    /// Not while booking is paused: the server refuses a paused student's invitation, and the
+    /// picker would only fill with names to be turned down.
+    public static func canInvite(_ booking: SupportBooking, allowance: SupportAllowance?) -> Bool {
+        booking.status == .booked && !(allowance?.isPaused ?? false)
     }
 
     /// The hero's first tile: "08:00–18:00".
@@ -245,14 +297,42 @@ public enum SupportSchedule {
     }
 
     /// Said once, up front, when the student is at their limit — rather than letting them
-    /// pick an hour, type a topic, press Confirm and only then be refused.
+    /// pick an hour, type a topic, press Confirm and only then be refused. Not while paused:
+    /// the pause is the reason nothing is bookable, and its own banner says so.
     public static func limitBanner(_ allowance: SupportAllowance?) -> (title: String, message: String)? {
-        guard let allowance, !allowance.canBook else { return nil }
+        guard let allowance, !allowance.canBook, !allowance.isPaused else { return nil }
         let n = allowance.upcoming
         return (
             "You have \(n) session\(n == 1 ? "" : "s") booked already",
             "Attend one — or cancel it if you can't make it — and you can book another."
         )
+    }
+
+    /// The no-show rule (2026-10-11), said on the page as well as in the bell: a student can
+    /// mute support notifications, and must still never be surprised by a pause. The pause
+    /// outranks the warning (the server never sends both). Dates read "Tue, Oct 20", as on
+    /// the web.
+    public static func noShowBanner(_ allowance: SupportAllowance?) -> SupportNoShowBanner? {
+        guard let allowance else { return nil }
+        if let until = allowance.pausedUntil {
+            let missed = allowance.pausedMissed.count == 2
+                ? " (\(ServicesTime.dayWhen(allowance.pausedMissed[0])) and \(ServicesTime.dayWhen(allowance.pausedMissed[1])))"
+                : ""
+            return SupportNoShowBanner(
+                kind: .paused,
+                title: "Support booking is paused — you can book again from \(ServicesTime.dayWhen(until))",
+                message: "You didn't come to two booked sessions within a week\(missed). Any sessions you had booked in that week were cancelled."
+            )
+        }
+        if let until = allowance.warningUntil {
+            let on = allowance.warningMissed.map { " on \(ServicesTime.dayWhen($0))" } ?? ""
+            return SupportNoShowBanner(
+                kind: .warning,
+                title: "Warning: you didn't come to your booked session\(on)",
+                message: "If it happens again before \(ServicesTime.dayWhen(until)), support booking pauses for a week. Can't make it? Cancel before the session starts."
+            )
+        }
+        return nil
     }
 
     // MARK: - Limits the server enforces on text
