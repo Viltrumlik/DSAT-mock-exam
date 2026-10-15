@@ -18,6 +18,8 @@ export type PeopleStatus = "centre" | "public" | "frozen_debt" | "frozen_admin" 
 
 export interface PeopleRowBase {
   id: number;
+  /** The profile photo, when the server sends one; null draws initials. */
+  avatar_url?: string | null;
   username: string;
   /** "First Last", "" when the account has neither. */
   name: string;
@@ -66,8 +68,8 @@ export interface PeoplePage<R extends PeopleRowBase = PeopleRow> extends ChangeL
 
 /** The filter keys each section understands (anything else in the address is not sent). */
 export const PEOPLE_FILTER_KEYS: Record<PeopleSection, readonly string[]> = {
-  students: ["status", "group", "teacher", "lcup", "debt"],
-  public: ["status", "joined", "verified"],
+  students: ["status", "group", "teacher", "lcup", "debt", "dupes", "signin"],
+  public: ["status", "joined", "verified", "dupes", "signin"],
   staff: ["role", "subject", "status"],
 };
 

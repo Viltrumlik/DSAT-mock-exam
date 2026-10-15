@@ -43,7 +43,9 @@ class LcupClaimBackend(BaseBackend):
         phone = normalize_phone(username or kwargs.get(User.USERNAME_FIELD))
         if not phone:
             return None
-        claim = AccountClaim.objects.select_related("user").filter(phone=phone).first()
+        # Open claims only: a phone that moved on can leave another account's spent claim behind, and
+        # a one-time password reopens this one (lcup.accounts.issue_one_time_password).
+        claim = AccountClaim.objects.select_related("user").filter(phone=phone, password_set_at__isnull=True).first()
         now = timezone.now()
         if claim is None or not claim.can_attempt(now):
             return None

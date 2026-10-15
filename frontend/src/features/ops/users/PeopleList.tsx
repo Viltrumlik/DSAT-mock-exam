@@ -6,20 +6,20 @@ import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
+import { withListFilters } from "@/features/ops/changelist/backLink";
 import {
   PEOPLE_FILTER_KEYS,
   peopleKeys,
   usePeople,
-  type PeopleRowBase,
   type PeopleRowFor,
   type PeopleSection,
 } from "@/features/ops/changelist/peopleApi";
 import { ACTION_LABEL, ACTION_PAST, ConfirmBulkModal, type BulkAction, type BulkResult } from "./ConfirmBulkModal";
-import { EditUserModal, type UserRecord } from "./EditUserModal";
 
 /**
  * One of the /ops people lists — Students, Public users or Staff — on the shared changelist,
- * with the row editor and the bulk freeze / unfreeze / delete the old Users page had.
+ * each row linking to the person's change form (`/ops/<section>/<id>`, carrying the list's
+ * address back), with the bulk freeze / unfreeze / delete the old Users page had.
  */
 
 type PeopleListProps<S extends PeopleSection> = {
@@ -31,26 +31,6 @@ type PeopleListProps<S extends PeopleSection> = {
   bulk: readonly BulkAction[];
   searchPlaceholder?: string;
 };
-
-/** The editor's record from a list row. The row carries `name`; the editor needs its two parts. */
-export function rowToUser(row: PeopleRowBase & { subject?: string }): { user: UserRecord; namesKnown: boolean } {
-  const namesKnown = typeof row.first_name === "string" && typeof row.last_name === "string";
-  const [first = "", ...rest] = row.name.trim().split(/\s+/);
-  return {
-    namesKnown,
-    user: {
-      id: row.id,
-      username: row.username,
-      email: row.email || null,
-      first_name: namesKnown ? (row.first_name as string) : first,
-      last_name: namesKnown ? (row.last_name as string) : rest.join(" "),
-      phone_number: row.phone || null,
-      role: row.role,
-      is_frozen: row.is_frozen,
-      subject: row.subject || null,
-    },
-  };
-}
 
 type Pending = { action: BulkAction; ids: number[]; attempts: number; resolve: (done: boolean) => void };
 
@@ -71,11 +51,10 @@ function PeopleListInner<S extends PeopleSection>({
   bulk,
   searchPlaceholder,
 }: PeopleListProps<S>) {
-  const { params } = useChangeListParams(PEOPLE_FILTER_KEYS[section]);
+  const { params, queryString } = useChangeListParams(PEOPLE_FILTER_KEYS[section]);
   const query = usePeople(section, params);
   const queryClient = useQueryClient();
   const { push } = useToast();
-  const [editing, setEditing] = useState<{ user: UserRecord; namesKnown: boolean } | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,21 +125,10 @@ function PeopleListInner<S extends PeopleSection>({
         onRetry={() => void query.refetch()}
         filterKeys={PEOPLE_FILTER_KEYS[section]}
         actions={actions}
-        onRowClick={(row) => setEditing(rowToUser(row))}
+        rowHref={(row) => withListFilters(`/ops/${section}/${row.id}`, queryString)}
         searchPlaceholder={searchPlaceholder}
         rowLabel={(row) => row.name || row.username}
       />
-
-      {editing ? (
-        <EditUserModal
-          // A new row is a new form, not the last one's leftover state.
-          key={editing.user.id}
-          user={editing.user}
-          namesKnown={editing.namesKnown}
-          onClose={() => setEditing(null)}
-          onSaved={refresh}
-        />
-      ) : null}
 
       {pending ? (
         <ConfirmBulkModal

@@ -1,3 +1,4 @@
+import { Avatar } from "@/components/ui";
 import type { ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import type { PeopleRowBase } from "@/features/ops/changelist/peopleApi";
 
@@ -45,9 +46,17 @@ export function nameColumn<R extends PeopleRowBase>(): ChangeListColumn<R> {
     label: "Name",
     sortKey: "name",
     render: (r) => (
-      <span className="block max-w-[16rem] truncate" title={[r.name, r.username].filter(Boolean).join(" · ")}>
-        {r.name || r.username || `User ${r.id}`}
-        {r.name && r.username ? <span className="ml-1.5 font-normal text-muted-foreground">{r.username}</span> : null}
+      // The photo beside every name, as on the person's page (owner: "rasmi ham ko'rinib turishi kerak").
+      // The username sits under the name, not beside it: side by side, with the photo, the column
+      // ran "Last seen" off a 1440px screen.
+      <span className="flex max-w-[15rem] items-center gap-2.5" title={[r.name, r.username].filter(Boolean).join(" · ")}>
+        <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size={28} />
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate">{r.name || r.username || `User ${r.id}`}</span>
+          {r.name && r.username ? (
+            <span className="block truncate text-xs font-normal text-muted-foreground">{r.username}</span>
+          ) : null}
+        </span>
       </span>
     ),
   };

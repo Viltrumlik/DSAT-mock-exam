@@ -1,6 +1,7 @@
 /**
  * /ops/students on `GET /users/admin/people/?section=students`: a debt is red and only a debt
- * (lc-up's balance below zero), the lc-up column says who is linked, and a row opens the editor.
+ * (lc-up's balance below zero), the lc-up column says who is linked, and a row links to its change
+ * form, carrying the list's address so Back returns to the same search, filters and page.
  */
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -10,20 +11,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PeoplePage, StudentRow } from "@/features/ops/changelist/peopleApi";
 
 const get = vi.fn();
-const patch = vi.fn();
 const post = vi.fn();
 const push = vi.fn();
+const routerPush = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   default: {
     get: (...a: unknown[]) => get(...a),
-    patch: (...a: unknown[]) => patch(...a),
     post: (...a: unknown[]) => post(...a),
   },
 }));
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push }) }));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: vi.fn(), push: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ replace: vi.fn(), push: routerPush, prefetch: vi.fn() }),
   useSearchParams: () => new URLSearchParams(window.location.search),
   usePathname: () => "/ops/students",
 }));
@@ -116,9 +116,9 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.history.replaceState(null, "", "/ops/students");
   get.mockReset();
-  patch.mockReset();
   post.mockReset();
   push.mockReset();
+  routerPush.mockReset();
   get.mockResolvedValue({ data: PAGE });
   host = document.createElement("div");
   document.body.appendChild(host);
@@ -166,29 +166,25 @@ describe("/ops/students", () => {
     expect(cell("Aziz Tursunov", "Last seen").textContent).toBe("Never");
   });
 
-  it("opens the editor on a row click", async () => {
+  it("a row's name links to its change form", async () => {
     await renderPage();
-    expect(host.querySelector('[role="dialog"][aria-label="Edit user"]')).toBeNull();
-    act(() => cell("Malika Karimova", "Joined").click());
-    const dialog = host.querySelector('[role="dialog"][aria-label="Edit user"]');
-    expect(dialog).not.toBeNull();
-    expect(dialog?.textContent).toContain("Malika Karimova");
-    expect(dialog?.textContent).toContain("Save changes");
+    const a = cell("Malika Karimova", "Name").querySelector("a");
+    expect(a?.getAttribute("href")).toBe("/ops/students/2");
+    expect(a?.textContent).toContain("Malika Karimova");
   });
 
-  it("does not rewrite a name it only guessed from the one-line name", async () => {
-    patch.mockResolvedValue({ data: {} });
+  it("the link carries the list's address, as Django's _changelist_filters", async () => {
+    window.history.replaceState(null, "", "/ops/students?status=frozen_debt&p=2");
     await renderPage();
-    act(() => cell("Aziz Tursunov", "Joined").click());
-    const save = [...host.querySelectorAll("button")].find((b) => b.textContent?.includes("Save changes"))!;
-    await act(async () => {
-      save.click();
-    });
-    expect(patch).toHaveBeenCalledTimes(1);
-    const [url, payload] = patch.mock.calls[0] as [string, Record<string, unknown>];
-    expect(url).toBe("/users/1/update/");
-    expect(payload).not.toHaveProperty("first_name");
-    expect(payload).not.toHaveProperty("last_name");
-    expect(payload).toMatchObject({ username: "aziz", role: "student", is_frozen: false });
+    expect(cell("Malika Karimova", "Name").querySelector("a")?.getAttribute("href")).toBe(
+      "/ops/students/2?_changelist_filters=status%3Dfrozen_debt%26p%3D2",
+    );
+  });
+
+  it("a click elsewhere on the row opens the same page; no editor pops up over the list", async () => {
+    await renderPage();
+    act(() => cell("Malika Karimova", "Joined").click());
+    expect(routerPush).toHaveBeenCalledWith("/ops/students/2");
+    expect(host.querySelector('[role="dialog"]')).toBeNull();
   });
 });

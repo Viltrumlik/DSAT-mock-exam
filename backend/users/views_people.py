@@ -125,8 +125,24 @@ def _same_name_ids() -> list[int]:
 
 _SAME_NAME = (
     "Duplicates",
-    lambda qs: [("yes", "Same name as another account", qs.filter(pk__in=_same_name_ids()).count())],
+    lambda qs: [("yes", "Same name", qs.filter(pk__in=_same_name_ids()).count())],
     lambda v: Q(pk__in=_same_name_ids()) if v == "yes" else None,
+)
+
+
+def _signin_q(value):
+    ever = Q(pk__in=RefreshSession.objects.values("user_id"))
+    return {"never": ~ever, "yes": ever}.get(value)
+
+
+# "Never" is no session at all: JWT sign-in never writes last_login, and sessions are never pruned.
+_SIGNED_IN = (
+    "Signed in",
+    lambda qs: [
+        ("never", "Never", qs.filter(_signin_q("never")).count()),
+        ("yes", "Has signed in", qs.filter(_signin_q("yes")).count()),
+    ],
+    _signin_q,
 )
 
 
@@ -160,6 +176,7 @@ FILTERS = {
             lambda v: {"owes": Q(lcup_student_link__balance__lt=0), "clear": ~Q(lcup_student_link__balance__lt=0)}.get(v),
         ),
         "dupes": _SAME_NAME,
+        "signin": _SIGNED_IN,
     },
     "public": {
         "status": ("Status", lambda qs: _fixed(qs, _STATUS, _STATUS_LABELS), _STATUS.get),
@@ -178,6 +195,7 @@ FILTERS = {
             lambda v: {"yes": Q(email_verified=True), "no": Q(email_verified=False)}.get(v),
         ),
         "dupes": _SAME_NAME,
+        "signin": _SIGNED_IN,
     },
     "staff": {
         "role": ("Role", lambda qs: _present_choices(qs, "role", _ROLE_LABELS), lambda v: Q(role=v) if v else None),
@@ -207,9 +225,13 @@ _ORDERING = {
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
-def _row(u, section):
+def _row(u, section, request=None):
+    from .photos import profile_image_url
+
     row = {
         "id": u.pk,
+        # The photo beside the name, as on the person's page (owner: "rasmi ham ko'rinib turishi kerak").
+        "avatar_url": profile_image_url(u, request),
         "username": u.username,
         "name": f"{u.first_name} {u.last_name}".strip(),
         "first_name": u.first_name or "",
@@ -312,6 +334,6 @@ class PeopleListView(APIView):
             "page_size": size,
             "pages": pages,
             "ordering": ordering,
-            "results": [_row(u, section) for u in window],
+            "results": [_row(u, section, request) for u in window],
             "filters": filters,
         })

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { PAGE_SIZES, useChangeListParams, type ChangeListPatch } from "./useChangeListParams";
@@ -68,6 +70,8 @@ export type ChangeListProps<R extends { id: number }> = {
   filterKeys?: readonly string[];
   actions?: ChangeListAction[];
   onRowClick?: (row: R) => void;
+  /** Each row's change form. The first cell becomes a link, so it opens in a new tab. */
+  rowHref?: (row: R) => string;
   /** A button beside the title, e.g. "Add student". */
   headerAction?: ReactNode;
   searchPlaceholder?: string;
@@ -121,10 +125,12 @@ export function ChangeList<R extends { id: number }>({
   filterKeys,
   actions,
   onRowClick,
+  rowHref,
   headerAction,
   searchPlaceholder,
   rowLabel,
 }: ChangeListProps<R>) {
+  const router = useRouter();
   const { params, queryString, hrefFor, update } = useChangeListParams(filterKeys);
   const rows = data?.results;
   const filters = data?.filters ?? [];
@@ -362,13 +368,24 @@ export function ChangeList<R extends { id: number }>({
                   ) : (
                     rows.map((row) => {
                       const isSelected = selected.has(row.id);
+                      const href = rowHref?.(row);
+                      const openRow = href
+                        ? (e: MouseEvent<HTMLTableRowElement>) => {
+                            // A held modifier asks for a new tab: that is the first cell's link,
+                            // never a navigation in place that throws the list away.
+                            if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                            router.push(href);
+                          }
+                        : onRowClick
+                          ? () => onRowClick(row)
+                          : undefined;
                       return (
                         <tr
                           key={row.id}
-                          onClick={onRowClick ? () => onRowClick(row) : undefined}
+                          onClick={openRow}
                           className={cn(
                             "[&:last-child>td]:border-b-0",
-                            onRowClick && "cursor-pointer",
+                            openRow && "cursor-pointer",
                             isSelected ? "bg-primary-soft" : "hover:bg-surface-2",
                           )}
                         >
@@ -389,8 +406,21 @@ export function ChangeList<R extends { id: number }>({
                               className={cn("h-[34px] whitespace-nowrap border-b border-border px-2 text-foreground", col.className)}
                             >
                               {/* The first column opens the row, as Django links it to the change form —
-                                  and gives the keyboard a way in, which a clickable <tr> does not. */}
-                              {i === 0 && onRowClick ? (
+                                  and gives the keyboard a way in, which a clickable <tr> does not.
+                                  With `rowHref` it is a real link: cmd-click and middle-click open
+                                  a new tab, and its click stops here so the row does not navigate
+                                  a second time. */}
+                              {i === 0 && href ? (
+                                <Link
+                                  href={href}
+                                  // A page of 50–100 rows would otherwise prefetch every change form on view.
+                                  prefetch={false}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="block max-w-full truncate rounded-sm text-left font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
+                                >
+                                  {col.render(row)}
+                                </Link>
+                              ) : i === 0 && onRowClick ? (
                                 <button
                                   type="button"
                                   onClick={(e) => {

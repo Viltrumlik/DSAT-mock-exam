@@ -1,0 +1,402 @@
+/**
+ * The person page's lazy parts — attendance, results, security, history — each on its own
+ * request (`GET /users/admin/people/<id>/<part>/`): what each shows, that an empty one says
+ * "Nothing yet", and that a failed one says so instead.
+ */
+import { act, type ReactNode } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { PersonAttendance, PersonHistory, PersonLcup, PersonResults, PersonSecurity } from "../personApi";
+
+const get = vi.fn();
+
+vi.mock("@/lib/api", () => ({
+  default: { get: (...a: unknown[]) => get(...a) },
+}));
+
+const { AttendanceSection } = await import("../sections/AttendanceSection");
+const { ResultsSection } = await import("../sections/ResultsSection");
+const { SecuritySection } = await import("../sections/SecuritySection");
+const { HistorySection } = await import("../sections/HistorySection");
+const { freezeTile } = await import("../sections/LcupSection");
+
+let host: HTMLElement;
+let root: Root;
+
+async function settle() {
+  for (let i = 0; i < 5; i += 1) {
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+}
+
+/** Serves `data` for `/users/admin/people/7/<part>/`. */
+function serve(part: string, data: unknown) {
+  get.mockImplementation((url: string) =>
+    url === `/users/admin/people/7/${part}/` ? Promise.resolve({ data }) : Promise.reject(new Error(`unexpected ${url}`)),
+  );
+}
+
+async function render(node: ReactNode) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  act(() => root.render(<QueryClientProvider client={client}>{node}</QueryClientProvider>));
+  await settle();
+}
+
+const text = () => host.textContent ?? "";
+const headings = () => [...host.querySelectorAll("h3")].map((h) => h.textContent?.trim());
+const headers = () => [...host.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+/** A cell a phone does not show: hidden below `sm`, a table cell from there up. */
+const wideOnly = (el: Element) => el.classList.contains("hidden") && el.classList.contains("sm:table-cell");
+
+/**
+ * The header texts of `table`'s columns a phone hides — after checking that every row hides the
+ * same columns as the header, so no cell shifts under the wrong heading on a phone.
+ */
+function phoneHidden(table: Element | null | undefined): string[] {
+  expect(table).toBeTruthy();
+  const heads = [...table!.querySelectorAll("thead th")];
+  for (const tr of table!.querySelectorAll("tbody tr")) {
+    expect([...tr.querySelectorAll("td")].map(wideOnly)).toEqual(heads.map(wideOnly));
+  }
+  return heads.filter(wideOnly).map((th) => th.textContent?.trim() ?? "");
+}
+
+/** The subsection under heading `title`: the h3 and everything up to the next one. */
+function subsection(title: string): string {
+  const h = [...host.querySelectorAll("h3")].find((x) => x.textContent?.trim() === title);
+  let out = "";
+  for (let n = h?.nextElementSibling; n && n.tagName !== "H3"; n = n.nextElementSibling) out += n.textContent ?? "";
+  return out;
+}
+
+beforeEach(() => {
+  (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  get.mockReset();
+  host = document.createElement("div");
+  document.body.appendChild(host);
+  root = createRoot(host);
+});
+
+afterEach(() => {
+  act(() => root.unmount());
+  host.remove();
+});
+
+const EMPTY_RESULTS: PersonResults = {
+  homework: [],
+  overdue: [],
+  assessments: [],
+  mocks: [],
+  practice: [],
+  midterms: [],
+  events: [],
+  rewards: { xp: 0, coins: 0 },
+};
+
+describe("Attendance", () => {
+  const DATA: PersonAttendance = {
+    classes: [
+      { id: 59, name: "Junior G21 Math", active: true, rate: 87.5, present: 6, late: 1, absent: 1, excused: 0, counted: 8 },
+      { id: 12, name: "Old class", active: false, rate: null, present: 0, late: 0, absent: 0, excused: 2, counted: 0 },
+    ],
+    recent: [
+      {
+        date: "2026-10-14",
+        class_id: 59,
+        class_name: "Junior G21 Math",
+        status: "ABSENT",
+        note: "",
+        reason: "Kasal",
+        lcup_push: "sent",
+      },
+      {
+        date: "2026-10-12",
+        class_id: 59,
+        class_name: "Junior G21 Math",
+        status: "PRESENT",
+        note: "on time",
+        reason: "",
+        lcup_push: null,
+      },
+    ],
+  };
+
+  it("gives each class its rate out of what counts, and the four counts", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    const [live, old] = [...host.querySelectorAll('[data-testid="attendance-class"]')].map((c) => c.textContent ?? "");
+    expect(live).toContain("Junior G21 Math");
+    expect(live).toContain("87.5%");
+    expect(live).toContain("of 8 lessons");
+    for (const chip of ["Present 6", "Late 1", "Absent 1", "Excused 0"]) expect(live).toContain(chip);
+    expect(old).toContain("Old class");
+    expect(old).toContain("Left");
+    expect(old).toContain("—");
+  });
+
+  it("lists the recent marks with lc-up's reason and whether the register reached lc-up", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    expect(headers()).toEqual(["Date", "Class", "Mark", "Note", "lc-up"]);
+    const [absent, present] = [...host.querySelectorAll("tbody tr")].map((tr) =>
+      [...tr.querySelectorAll("td")].map((td) => td.textContent),
+    );
+    expect(absent).toEqual(["Oct 14, 2026", "Junior G21 Math", "Absent — Kasal", "—", "Sent"]);
+    expect(present).toEqual(["Oct 12, 2026", "Junior G21 Math", "Present", "on time", "—"]);
+  });
+
+  it("wraps the class and the mark on a phone instead of cutting the excuse off", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    const cells = [...host.querySelectorAll("tbody tr")][0].querySelectorAll("td");
+    for (const td of [cells[1], cells[2]]) {
+      expect(td.classList.contains("whitespace-normal")).toBe(true);
+      expect(td.classList.contains("sm:whitespace-nowrap")).toBe(true);
+      expect(td.classList.contains("whitespace-nowrap")).toBe(false);
+    }
+  });
+
+  it("keeps Date, Class and Mark on a phone and hides the note and lc-up", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    expect(phoneHidden(host.querySelector("table"))).toEqual(["Note", "lc-up"]);
+  });
+
+  it("says Nothing yet only when there is nothing", async () => {
+    serve("attendance", { classes: [], recent: [] });
+    await render(<AttendanceSection id={7} />);
+    expect(text()).toContain("Nothing yet");
+  });
+});
+
+describe("Results", () => {
+  it("lists overdue homework with its class and due date", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      homework: [{ class_id: 59, class_name: "Junior G21 Math", rate: 50, completed: 1, total: 2 }],
+      overdue: [{ id: 3, title: "HW2", class_name: "Junior G21 Math", due_at: "2026-10-10T18:00:00+05:00" }],
+      midterms: [{ title: "Midterm 1", score: 74, scale: "SCALE_100", passed: true, at: "2026-10-01T10:00:00+05:00" }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    expect(subsection("Overdue homework")).toContain("HW2");
+    expect(subsection("Overdue homework")).toContain("Oct 10, 2026");
+    expect(subsection("Homework")).toContain("1/2");
+    expect(subsection("Midterms")).toContain("74 / 100");
+    expect(subsection("Midterms")).toContain("Yes");
+  });
+
+  it("keeps each table's essential columns on a phone", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      homework: [{ class_id: 59, class_name: "Junior G21 Math", rate: 50, completed: 1, total: 2 }],
+      overdue: [{ id: 3, title: "HW2", class_name: "Junior G21 Math", due_at: "2026-10-10T18:00:00+05:00" }],
+      assessments: [{ title: "Unit 1", percent: 80, at: "2026-10-02T10:00:00+05:00" }],
+      mocks: [{ title: "Mock 1", english: 600, math: 650, total: 1250, at: "2026-10-03T10:00:00+05:00" }],
+      practice: [{ title: "Practice 1", score: 1200, at: "2026-10-04T10:00:00+05:00" }],
+      midterms: [{ title: "Midterm 1", score: 74, scale: "SCALE_100", passed: true, at: "2026-10-01T10:00:00+05:00" }],
+      events: [{ title: "Open day", starts_at: "2026-10-05T10:00:00+05:00", status: "REGISTERED", attendance: null }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    const table = (title: string) => {
+      const h = [...host.querySelectorAll("h3")].find((x) => x.textContent?.trim() === title);
+      return h?.nextElementSibling?.querySelector("table");
+    };
+    expect(phoneHidden(table("Homework"))).toEqual(["Done"]);
+    expect(phoneHidden(table("Overdue homework"))).toEqual(["Class"]);
+    expect(phoneHidden(table("Assessments"))).toEqual(["Date"]);
+    expect(phoneHidden(table("Mock exams"))).toEqual(["EN", "Math", "Date"]);
+    expect(phoneHidden(table("Practice tests"))).toEqual(["Date"]);
+    expect(phoneHidden(table("Midterms"))).toEqual(["Passed", "Date"]);
+    expect(phoneHidden(table("Events"))).toEqual(["Status", "Attended"]);
+  });
+
+  /** The kinds named on the single "Nothing yet" line. */
+  const nothingYet = () =>
+    [...host.querySelectorAll('[data-testid="results-empty"] li')].map((li) => li.textContent?.trim());
+
+  it("names the empty kinds once on one line, not a card each, and always the XP line", async () => {
+    serve("results", EMPTY_RESULTS);
+    await render(<ResultsSection id={7} section="students" />);
+    expect(headings()).toEqual([]);
+    // No overdue homework is not a missing result, so it is not named.
+    expect(nothingYet()).toEqual(["Homework", "Assessments", "Mock exams", "Practice tests", "Midterms", "Events"]);
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*0/);
+    expect(rewards).toMatch(/Coins\s*0/);
+  });
+
+  it("gives a card only to the kinds that have rows", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      mocks: [{ title: "Mock 1", english: 600, math: 650, total: 1250, at: "2026-10-03T10:00:00+05:00" }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    expect(headings()).toEqual(["Mock exams"]);
+    expect(nothingYet()).not.toContain("Mock exams");
+  });
+
+  it("colours a rate by its verdict, not the cell's default", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      homework: [{ class_id: 59, class_name: "Junior G21 Math", rate: 50, completed: 1, total: 2 }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    const rate = [...host.querySelectorAll("td")].find((td) => td.textContent === "50%")!;
+    expect(rate.className).toContain("text-danger");
+    expect(rate.className).not.toContain("text-foreground");
+  });
+
+  it("shows a public user only mock exams, practice tests and events", async () => {
+    serve("results", { ...EMPTY_RESULTS, rewards: { xp: 120, coins: 15 } });
+    await render(<ResultsSection id={7} section="public" />);
+    expect(nothingYet()).toEqual(["Mock exams", "Practice tests", "Events"]);
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*120/);
+    expect(rewards).toMatch(/Coins\s*15/);
+  });
+});
+
+describe("Security", () => {
+  const UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
+  const DATA: PersonSecurity = {
+    sessions: [
+      {
+        id: 5,
+        created_at: "2026-10-01T09:00:00+05:00",
+        last_seen_at: null,
+        ip: "1.2.3.4",
+        device: UA,
+      },
+    ],
+    telegram_linked: true,
+    email_verified: false,
+    last_password_change: null,
+  };
+
+  it("lists the signed-in devices and the account's security facts", async () => {
+    serve("security", DATA);
+    await render(<SecuritySection id={7} />);
+    expect(headers()).toEqual(["Device", "IP", "Signed in", "Last active"]);
+    expect(text()).toContain("1.2.3.4");
+    expect(text()).toMatch(/Telegram\s*Linked/);
+    expect(text()).toMatch(/Email verified\s*No/);
+    expect(text()).toMatch(/Password changed\s*Never/);
+  });
+
+  it("names the device in words, with the raw user agent on hover", async () => {
+    serve("security", DATA);
+    await render(<SecuritySection id={7} />);
+    const cell = host.querySelector("tbody td")!;
+    expect(cell.textContent).toBe("Chrome on Windows");
+    expect(cell.querySelector("[title]")?.getAttribute("title")).toBe(UA);
+    expect(text()).not.toContain("Mozilla/5.0");
+  });
+
+  it("keeps Device and Last active on a phone and hides the IP and sign-in time", async () => {
+    serve("security", DATA);
+    await render(<SecuritySection id={7} />);
+    expect(phoneHidden(host.querySelector("table"))).toEqual(["IP", "Signed in"]);
+  });
+
+  it("says when no device is signed in", async () => {
+    serve("security", { ...DATA, sessions: [] });
+    await render(<SecuritySection id={7} />);
+    expect(text()).toContain("No signed-in devices");
+    expect(host.querySelector("table")).toBeNull();
+  });
+});
+
+describe("History", () => {
+  const DATA: PersonHistory = {
+    items: [
+      { at: "2026-10-01T09:30:00+05:00", kind: "group", title: "Added to Junior G21 Math", by: "" },
+      { at: "2026-10-15T14:05:00+05:00", kind: "admin", title: "Frozen by an admin", by: "Bo Ss" },
+    ],
+    truncated: false,
+  };
+
+  it("reads newest first: when, what, and who", async () => {
+    serve("history", DATA);
+    await render(<HistorySection id={7} />);
+    const items = [...host.querySelectorAll("ol > li")].map((li) => li.textContent);
+    expect(items).toEqual([
+      "Oct 15, 2026 14:05 · Frozen by an admin · by Bo Ss",
+      "Oct 1, 2026 09:30 · Added to Junior G21 Math",
+    ]);
+    expect(text()).toContain("Admin edits are recorded from 15 Oct 2026.");
+    expect(text()).not.toContain("Showing the latest 200.");
+  });
+
+  it("gives a payment its day only — lc-up records no time", async () => {
+    serve("history", {
+      items: [
+        {
+          at: "2026-10-01T00:00:00+05:00",
+          kind: "payment",
+          title: "Payment 650,000 UZS for 2026-10",
+          by: "lc-up",
+          all_day: true,
+        },
+      ],
+      truncated: false,
+    });
+    await render(<HistorySection id={7} />);
+    const items = [...host.querySelectorAll("ol > li")].map((li) => li.textContent);
+    expect(items).toEqual(["Oct 1, 2026 · Payment 650,000 UZS for 2026-10 · by lc-up"]);
+  });
+
+  it("says when the list is cut", async () => {
+    serve("history", { ...DATA, truncated: true });
+    await render(<HistorySection id={7} />);
+    expect(text()).toContain("Showing the latest 200.");
+  });
+
+  it("says a failed load failed — never that there is nothing", async () => {
+    get.mockRejectedValue(new Error("boom"));
+    await render(<HistorySection id={7} />);
+    expect(text()).toContain("Could not load.");
+    expect(text()).not.toContain("Nothing yet");
+  });
+
+  it("says Nothing yet for an account with no history", async () => {
+    serve("history", { items: [], truncated: false });
+    await render(<HistorySection id={7} />);
+    expect(text()).toContain("Nothing yet");
+  });
+});
+
+describe("the debt-freeze tile", () => {
+  const LCUP: PersonLcup = {
+    linked: true,
+    balance: -650000,
+    debt: 650000,
+    updated_at: null,
+    frozen_for_debt: false,
+    freeze_day: 6,
+    monthly_cost: 650000,
+    groups: [],
+    payments: [],
+    status: "confirmed",
+    lcup_student_id: 1,
+    exempt: false,
+    freeze_on: true,
+    phone_prompt: null,
+  };
+
+  it("never says all clear beside a debt", () => {
+    expect(freezeTile({ ...LCUP, freeze_on: false }, true, 15)).toMatchObject({ value: "Switched off", tone: "neutral" });
+    expect(freezeTile(LCUP, true, 15)).toMatchObject({ value: "Freezes next sync", tone: "danger" });
+    expect(freezeTile(LCUP, true, 3)).toMatchObject({ value: "Freezes on day 6", tone: "warning" });
+  });
+
+  it("says frozen, exempt or nothing owed as they are", () => {
+    expect(freezeTile({ ...LCUP, frozen_for_debt: true }, true, 15)).toMatchObject({ value: "Frozen", tone: "warning" });
+    expect(freezeTile({ ...LCUP, exempt: true }, true, 15)).toMatchObject({ value: "Exempt", tone: "info" });
+    expect(freezeTile({ ...LCUP, balance: 0, debt: 0 }, false, 15)).toMatchObject({ value: "Not frozen", tone: "success" });
+  });
+});
