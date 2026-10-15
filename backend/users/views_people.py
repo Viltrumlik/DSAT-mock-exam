@@ -23,6 +23,8 @@ from classes.models import ClassroomMembership
 
 from . import audience as A
 from .activity import with_activity_counts
+from .changelist import DEFAULT_PAGE_SIZE, PAGE_SIZES  # noqa: F401 — still importable from here
+from .changelist import apply_search, facets, page_slice, paginate, to_int
 from .models import RefreshSession
 from .views import manageable_users_queryset
 
@@ -31,8 +33,7 @@ SECTIONS = {
     "public": Q(role=C.ROLE_PUBLIC_STUDENT),
     "staff": ~Q(role__in=C.LEARNER_ROLES),
 }
-PAGE_SIZES = (25, 50, 100)
-DEFAULT_PAGE_SIZE = 50
+PEOPLE_SEARCH = ["username", "first_name", "last_name", "email", "phone_number"]
 
 _STATUS = {
     "active": Q(is_frozen=False),
@@ -56,11 +57,7 @@ def _seated_in(**classroom):
     return Q(pk__in=seats.values("user_id"))
 
 
-def _int(raw):
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
+_int = to_int  # FILTERS below read it by this name
 
 
 # ── filters ───────────────────────────────────────────────────────────────
@@ -265,38 +262,10 @@ class PeopleListView(APIView):
         if section not in SECTIONS:
             return Response({"detail": "section must be students, public or staff."}, status=400)
         qs = manageable_users_queryset(request.user).filter(SECTIONS[section])
+        qs = apply_search(qs, params.get("q") or "", PEOPLE_SEARCH)
+        qs, filters = facets(qs, FILTERS[section], params)
 
-        for term in (params.get("q") or "").split()[:5]:
-            qs = qs.filter(
-                Q(username__icontains=term) | Q(first_name__icontains=term) | Q(last_name__icontains=term)
-                | Q(email__icontains=term) | Q(phone_number__icontains=term)
-            )
-
-        defs = FILTERS[section]
-        chosen = {}
-        for key, (_, _, to_q) in defs.items():
-            value = (params.get(key) or "").strip()
-            q = to_q(value) if value else None
-            if q is not None:
-                chosen[key] = (value, q)
-
-        def applied(base, skip=None):
-            for key, (_, q) in chosen.items():
-                if key != skip:
-                    base = base.filter(q)
-            return base
-
-        filters = [
-            {
-                "key": key,
-                "label": label,
-                "options": [{"value": v, "label": lab, "count": n} for v, lab, n in choices(applied(qs, skip=key))],
-                "selected": chosen[key][0] if key in chosen else None,
-            }
-            for key, (label, choices, _) in defs.items()
-        ]
-
-        qs = applied(qs).annotate(
+        qs = qs.annotate(
             last_seen=Subquery(
                 RefreshSession.objects.filter(user=OuterRef("pk")).order_by("-last_seen_at").values("last_seen_at")[:1]
             )
@@ -306,11 +275,7 @@ class PeopleListView(APIView):
             ordering = "-joined"
         qs = qs.order_by(*_ORDERING[ordering], "-pk")
 
-        count = qs.count()
-        size = _int(params.get("page_size"))
-        size = size if size in PAGE_SIZES else DEFAULT_PAGE_SIZE
-        pages = max(1, -(-count // size))
-        page = min(max(_int(params.get("page")) or 1, 1), pages)
+        _, meta = paginate(qs, params)
         if section == "students":
             qs = qs.select_related("lcup_student_link").prefetch_related(
                 Prefetch(
@@ -322,13 +287,10 @@ class PeopleListView(APIView):
                 )
             )
         # Counted for the page only: the subqueries cost per row, and the total above did not need them.
-        window = with_activity_counts(qs)[(page - 1) * size: page * size]
+        window = with_activity_counts(qs)[page_slice(meta)]
         return Response({
             "section": section,
-            "count": count,
-            "page": page,
-            "page_size": size,
-            "pages": pages,
+            **meta,
             "ordering": ordering,
             "results": [_row(u, section) for u in window],
             "filters": filters,

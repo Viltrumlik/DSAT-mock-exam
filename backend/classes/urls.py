@@ -100,6 +100,7 @@ from .views_midterm_v2 import (
     MidtermV2StartCodeView,
 )
 from .views_roster import MemberManageView, ClassroomRosterView
+from .views_ops_classrooms import ClassroomChangeListView
 from .views_teacher import TeacherTodayView
 from .views_media import AssignmentVideoUploadUrlView
 from .views_roadmap import RoadmapReadingView, StudentPeerProgressView, StudentProgressView, StudentRoadmapView
@@ -142,6 +143,9 @@ urlpatterns = [
     ),
     path("ops/stats/", OpsStatsView.as_view(), name="class-ops-stats"),
     path("ops/attention/", OpsAttentionView.as_view(), name="class-ops-attention"),
+    # The /ops Classrooms changelist. A literal "admin" segment up here with the others, so the router's
+    # <pk> classroom routes below never read it as a classroom id.
+    path("admin/classrooms/", ClassroomChangeListView.as_view(), name="ops-classrooms"),
     # The teacher Dashboard's "today". Up here with the other literal collection segments,
     # ABOVE the router include: the classroom detail route matches <pk> as `[^/.]+`, not as
     # an int, so "teacher" left below it would be read as a classroom id.
