@@ -1,0 +1,20 @@
+# Restart sat-celery-beat when it stops ticking while PM2 still says "online".
+# Installed by deploy/watchdog/install.sh; started once a minute by sat-beat-watchdog.timer.
+#
+# The script is a root-owned copy in /usr/local/sbin, not a path inside /var/www/satapp: that
+# tree is writable by satapp, and a root service must not run code its app user can edit.
+[Unit]
+Description=Restart sat-celery-beat when it stops ticking (PM2 still says online)
+Documentation=https://github.com/Viltrumlik/DSAT-mock-exam/blob/main/docs/superpowers/plans/2026-10-15-celery-beat-watchdog.md
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/sat-beat-watchdog
+# Worst case: jlist 30 s + evidence ~20 s + restart 60 s + 5 s + jlist 30 s + alert 120 s.
+TimeoutStartSec=300
+Nice=10
+StateDirectory=sat-beat-watchdog
+StateDirectoryMode=0700
+PrivateTmp=true
+ProtectSystem=full

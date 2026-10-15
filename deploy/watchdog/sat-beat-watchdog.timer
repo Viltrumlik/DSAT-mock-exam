@@ -1,0 +1,10 @@
+# Half past every minute: beat sends on the minute, so the check never races a tick.
+[Unit]
+Description=Check sat-celery-beat once a minute
+
+[Timer]
+OnCalendar=*-*-* *:*:30
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
