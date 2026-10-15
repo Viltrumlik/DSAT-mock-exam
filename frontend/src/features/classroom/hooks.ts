@@ -224,6 +224,8 @@ export interface UnifiedRow {
   student_id: number; student: string; student_profile_image_url?: string | null;
   content_name: string; type: string;
   score: number | null; status: string; submission_date: string | null;
+  /** Past-paper and practice-test rows only: sat without the clock. Absent = timed. */
+  untimed?: boolean;
 }
 export interface UnifiedResults {
   summary: { average_score: number | null; completion_rate: number | null; total_attempts: number; pending_work: number };

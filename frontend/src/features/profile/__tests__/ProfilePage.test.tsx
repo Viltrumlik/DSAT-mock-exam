@@ -179,21 +179,117 @@ afterEach(async () => {
 
 describe("A public learner", () => {
   // Owner, 2026-10-13: a public learner sees mock exams and events; the profile stays usable,
-  // as its settings, and nothing of the learning center's is asked for.
-  it("gets Settings alone, and none of the learning center's requests", async () => {
+  // as its settings, and nothing of the learning center's is asked for — except their own
+  // finished attempts, which the server serves a learner who left (owner, 2026-10-14: "can
+  // still see their own past results, read only, in their profile").
+  const FINISHED = [
+    { id: 81, is_completed: true, score: 640, submitted_at: inDays(-4), practice_test_details: { subject: "MATH", title: "Practice Test 7" } },
+    { id: 82, is_completed: true, score: 590, submitted_at: inDays(-2), practice_test_details: { subject: "READING_WRITING", title: "Practice Test 9" } },
+  ];
+
+  const tabNames = () => [...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim() ?? "");
+  const tab = (name: string) => [...host.querySelectorAll<HTMLElement>('[role="tab"]')].find((t) => t.textContent?.trim() === name);
+
+  it("gets Settings and Results, and none of the learning center's other requests", async () => {
     session.role = "public_student";
     await renderPage("?tab=overview");
     // The page's own tabs; the settings sections below are tabs too, and stay.
-    const tabs = [...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim());
-    expect(tabs[0]).toBe("Settings");
+    const tabs = tabNames();
+    expect(tabs.slice(0, 2)).toEqual(["Settings", "Results"]);
     expect(tabs).not.toContain("Overview");
-    expect(tabs.some((t) => t?.startsWith("Classes"))).toBe(false);
+    expect(tabs.some((t) => t.startsWith("Classes"))).toBe(false);
     expect(text()).toContain("Photo, name and phone");
     expect(classes.list).not.toHaveBeenCalled();
     expect(classes.myAssignments).not.toHaveBeenCalled();
     expect(rewards.me).not.toHaveBeenCalled();
-    expect(attempts.getAttempts).not.toHaveBeenCalled();
+    expect(attempts.getAttempts).toHaveBeenCalledTimes(1);
     expect(users.getMe).toHaveBeenCalled();
+  });
+
+  it("reads each finished attempt back, linked to its review, and nothing else of the centre's", async () => {
+    session.role = "public_student";
+    attempts.getAttempts.mockResolvedValue({
+      items: [...FINISHED, { id: 83, is_completed: false, score: null, submitted_at: null, practice_test_details: { subject: "MATH", title: "Practice Test 3" } }],
+    });
+    await renderPage();
+    await click(tab("Results")!);
+    await flush(() => text().includes("Practice Test 9"));
+
+    expect(text()).toContain("Practice Test 7");
+    expect(text()).toContain("Practice Test 9");
+    expect(text()).not.toContain("Practice Test 3"); // not finished, so not a result
+    const links = [...host.querySelectorAll('a[href^="/review/"]')].map((a) => a.getAttribute("href"));
+    expect(links).toEqual(["/review/82", "/review/81"]); // newest first
+    expect(host.querySelector('a[href="/review/83"]')).toBeNull();
+    // Read only: nothing to start or resume, and nothing of the centre's rewards or homework.
+    expect(text()).not.toMatch(/start|resume|continue|\bXP\b|points|coins|homework|classes/i);
+    expect(host.querySelectorAll('a[href="/practice-tests"], a[href^="/classes"]').length).toBe(0);
+    expect(classes.myAssignments).not.toHaveBeenCalled();
+    expect(rewards.me).not.toHaveBeenCalled();
+  });
+
+  it("says there are no results yet when nothing is finished", async () => {
+    session.role = "public_student";
+    attempts.getAttempts.mockResolvedValue({ items: [] });
+    await renderPage();
+    await click(tab("Results")!);
+    await flush(() => text().includes("No results yet"));
+
+    expect(text()).toContain("No results yet");
+    expect(host.querySelector('a[href^="/review/"]')).toBeNull();
+  });
+
+  it("says a failed request failed, never that there are no results", async () => {
+    session.role = "public_student";
+    attempts.getAttempts.mockRejectedValue(new Error("offline"));
+    await renderPage();
+    await click(tab("Results")!);
+    await flush(() => text().includes("didn't load"));
+
+    expect(text()).toContain("Your results didn't load.");
+    expect(text()).not.toContain("No results yet");
+  });
+
+  it("opens on Results from the address", async () => {
+    session.role = "public_student";
+    await renderPage("?tab=results");
+    await flush(() => text().includes("Practice Test 4"));
+
+    expect(tab("Results")?.getAttribute("aria-selected")).toBe("true");
+  });
+
+  it("asks for the attempts once even when the role arrives after the first render", async () => {
+    // A student first, then a public learner: the role the page was drawn with changes under it.
+    await renderPage();
+    session.role = "public_student";
+    await act(async () =>
+      root.render(
+        <QueryClientProvider client={new QueryClient()}>
+          <ProfilePage />
+        </QueryClientProvider>,
+      ),
+    );
+    await flush();
+
+    expect(attempts.getAttempts).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("A learning-center student's profile", () => {
+  it("keeps results on the Overview, with no Results tab and no second list", async () => {
+    await renderPage("?tab=results");
+    await flush(() => text().includes("Practice Test 4"));
+
+    const tabs = [...host.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim() ?? "");
+    expect(tabs[0]).toBe("Overview");
+    expect(tabs[1]).toMatch(/^Classes/);
+    expect(tabs[2]).toBe("Settings");
+    expect(tabs).not.toContain("Results");
+    // `?tab=results` is a public learner's address; a student's page stays on the Overview.
+    expect(host.querySelector('[role="tab"][aria-selected="true"]')?.textContent?.trim()).toBe("Overview");
+    expect(host.querySelectorAll('a[href="/review/71"]').length).toBe(1);
+    expect(text()).not.toContain("No results yet");
+    expect(attempts.getAttempts).toHaveBeenCalledTimes(1);
   });
 });
 

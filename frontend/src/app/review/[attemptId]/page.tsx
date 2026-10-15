@@ -564,7 +564,7 @@ export default function ReviewPage() {
 
                                 <div className="relative z-10 flex flex-col items-center text-center">
                                     <span className="mb-2 block text-[11px] font-extrabold uppercase tracking-[0.16em] text-primary-foreground/70">
-                                        {subjectLabel} · Section Score
+                                        {subjectLabel} · Section Score{review.is_timed === false ? " · Untimed" : ""}
                                     </span>
 
                                     <div className="flex items-end justify-center gap-4">

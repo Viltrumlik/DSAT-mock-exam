@@ -74,6 +74,9 @@ export interface ProfileAttempt {
     collection_name?: string | null;
     mock_exam_id?: number | null;
     mock_kind?: string | null;
+    /** One of the centre's numbered practice tests: shown as "Practice Test N", never as a past paper. */
+    is_practice_test?: boolean;
+    practice_number?: number | null;
   } | null;
 }
 

@@ -19,7 +19,7 @@ from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import CanManageQuestions, IsSuperAdmin, RequiresSubmitTest
@@ -57,6 +57,7 @@ from .models import (
     TestAttempt,
     ensure_full_mock_practice_test_modules,
 )
+from .practice_tests import assign_practice_number, visible_practice_tests_q
 from .serializers import (
     MockExamSerializer,
     PortalMockExamStudentSerializer,
@@ -298,6 +299,11 @@ def _refetch_attempt_for_api(view, pk: int) -> TestAttempt:
         .prefetch_related("practice_test__modules", "current_module__questions")
         .get(pk=pk)
     )
+
+
+def _untimed_no_pause_response() -> Response:
+    """An untimed sitting has no clock, so there is nothing to pause or resume (practice tests only)."""
+    return Response({"error": "This sitting is untimed."}, status=status.HTTP_400_BAD_REQUEST)
 
 
 def _transition_conflict_response(view, *, attempt_pk: int, detail: str | None = None) -> Response:
@@ -545,7 +551,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Anonymous + students + staff who can browse: ``filter_practice_tests_for_user`` (full bank
         for anon/students; subject-scoped for teachers). Other authenticated roles: ``assigned_users``
-        only (legacy).
+        only (legacy). Practice tests follow ``visible_practice_tests_q``; the list returns ONE kind:
+        past papers by default, practice tests with ``?kind=practice_test``.
         """
         user = self.request.user
         # Student practice library must never surface empty tests (no questions); the exam runner
@@ -557,16 +564,22 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .distinct()
         )
         if can_browse_standalone_practice_library(user):
-            return filter_practice_tests_for_user(user, base).distinct()
-        if not user.is_authenticated:
-            # Unauthenticated: show nothing (assignment/publish required)
+            qs = filter_practice_tests_for_user(user, base).distinct()
+        elif not user.is_authenticated or normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT:
+            # Unauthenticated / public learners: nothing (assignment or centre membership required).
             return base.none()
-        # Students (and other non-browsing authenticated roles) see a pastpaper ONLY
-        # when it has been explicitly assigned to them. Publishing alone must not
-        # expose a section to every student — every assignment path (library
-        # bulk-assign, classroom assign, homework) writes to ``assigned_users``, so
-        # this is the single gate.
-        return base.filter(assigned_users=user).distinct()
+        else:
+            # A pastpaper ONLY when it has been explicitly assigned (publishing alone must not
+            # expose a section — every assignment path writes ``assigned_users``); a practice
+            # test by its own rule (open + level, or given).
+            qs = base.filter(
+                Q(is_practice_test=False, assigned_users=user) | visible_practice_tests_q(user)
+            ).distinct()
+        if getattr(self, "action", None) == "list":
+            # The two libraries are separate pages: one kind per list.
+            wants_practice = self.request.query_params.get("kind") == "practice_test"
+            qs = qs.filter(is_practice_test=wants_practice)
+        return qs
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
@@ -716,8 +729,25 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     throttle_scope = "burst"
     http_method_names = ["get", "post", "head", "options"]
 
+    #: The only actions a public learner reaches (their own finished results; see host_guard).
+    _PUBLIC_READ_ACTIONS = frozenset({"list", "retrieve", "review", "results"})
+
+    @staticmethod
+    def _is_public(user) -> bool:
+        return bool(getattr(user, "is_authenticated", False)) and normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT
+
+    def get_permissions(self):
+        # RequiresSubmitTest refuses a public learner (no permissions at all); reading their own
+        # finished results needs a signed-in account that is NOT debt-frozen. This class's own
+        # permission_classes replaced the project default (IsAuthenticatedAndNotFrozen), so the freeze
+        # check is named here again — a bare IsAuthenticated would let a frozen leaver read. Writes keep
+        # the full check.
+        if self._is_public(getattr(getattr(self, "request", None), "user", None)) and getattr(self, "action", None) in self._PUBLIC_READ_ACTIONS:
+            return [IsAuthenticatedAndNotFrozen()]
+        return super().get_permissions()
+
     def get_queryset(self):
-        return (
+        qs = (
             TestAttempt.objects.filter(student=self.request.user)
             .select_related(
                 "current_module",
@@ -729,6 +759,9 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 "current_module__questions",
             )
         )
+        if self._is_public(self.request.user):
+            qs = qs.filter(is_completed=True, current_state=TestAttempt.STATE_COMPLETED)
+        return qs
 
     def _mask_withheld_midterm(self, data, attempt):
         """Strip a midterm attempt's score + answer key from a serialized payload until
@@ -820,13 +853,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         test's questions. Scope to the UNION of:
           (a) standalone pastpapers explicitly assigned to the student (publish alone never
               exposes a section — assignment is the single gate, mirroring
-              ``PracticeTestViewSet.get_queryset``), and
+              ``PracticeTestViewSet.get_queryset``),
           (b) SECTIONS of a granted/assigned midterm/mock exam (see
-              ``_student_startable_mock_ids``).
+              ``_student_startable_mock_ids``), and
+          (c) practice tests the student may see (``visible_practice_tests_q``).
         """
-        from django.db.models import Q
-
-        cond = Q(mock_exam__isnull=True, assigned_users=user)
+        cond = Q(mock_exam__isnull=True, is_practice_test=False, assigned_users=user) | visible_practice_tests_q(user)
         mock_ids = self._student_startable_mock_ids(user)
         if mock_ids:
             cond |= Q(mock_exam_id__in=mock_ids)
@@ -1111,6 +1143,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         Start the attempt: always starts Module 1 (backend authoritative).
         """
         attempt = self.get_object()
+        # Timed/Untimed is the student's choice on the Welcome screen — practice tests only, and
+        # only before Module 1 starts (owner decision 2026-10-14). Past papers are always timed.
+        # Only an object body can carry the choice. A JSON array or a bare value is `request.data` too
+        # (a list has no `.get`), and a wrong shape is not a reason to answer 500: it is the default.
+        raw_timed = request.data.get("timed", True) if isinstance(request.data, dict) else True
+        wants_untimed = raw_timed in (False, "false", "False", "0", 0)
         if attempt.is_completed:
             return Response({"error": "Cannot start a completed attempt."}, status=status.HTTP_400_BAD_REQUEST)
         _enforce_attempt_student(request, attempt)
@@ -1130,6 +1168,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     pre_state = locked.current_state
                     autoheal_attempt_for_runtime(locked)
                     locked.refresh_from_db()
+                    if (
+                        wants_untimed
+                        and locked.current_state == TestAttempt.STATE_NOT_STARTED
+                        and locked.is_timed
+                        and locked.practice_test.is_practice_test
+                    ):
+                        locked.is_timed = False
+                        locked.save(update_fields=["is_timed", "updated_at"])
                     if pre_state != TestAttempt.STATE_SCORING and locked.current_state == TestAttempt.STATE_SCORING:
                         healed_to_scoring = True
                     locked.start_attempt()
@@ -1360,6 +1406,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         """Mark the attempt as paused so the deadline timer stops counting."""
         attempt = self.get_object()
         _enforce_attempt_student(request, attempt)
+        if not attempt.is_timed:
+            return _untimed_no_pause_response()
         if attempt.is_completed or attempt.current_state == TestAttempt.STATE_COMPLETED:
             return Response({"error": "Attempt already completed."}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
@@ -1376,6 +1424,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         """Clear the paused state, banking the elapsed pause window."""
         attempt = self.get_object()
         _enforce_attempt_student(request, attempt)
+        if not attempt.is_timed:
+            return _untimed_no_pause_response()
         with transaction.atomic():
             locked = TestAttempt.objects.select_for_update(of=("self",)).select_related("current_module").get(pk=attempt.pk)
             if locked.pause_started_at is None:
@@ -1624,6 +1674,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             'previous_score': previous_score,
             'score_delta': score_delta,
             'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0,
+            'is_timed': attempt.is_timed,
             # Section context — used by the review page to render the correct score label.
             'subject': getattr(pt, 'subject', None),
             'mock_kind': getattr(mock, 'kind', None),
@@ -2118,7 +2169,12 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
             base = base.filter(subject__in=subjs)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
-            return base.filter(mock_exam__isnull=True)
+            base = base.filter(mock_exam__isnull=True)
+            kind = self.request.query_params.get("kind")
+            if kind == "practice_test":
+                base = base.filter(is_practice_test=True)
+            elif kind == "pastpaper":
+                base = base.filter(is_practice_test=False)
         return base
 
     @action(detail=True, methods=["post"])
@@ -2139,6 +2195,7 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         section.is_published = True
         section.published_at = timezone.now()
         section.save(update_fields=["is_published", "published_at", "updated_at"])
+        assign_practice_number(section)  # first publish of a practice test gives its number
         return Response(self.get_serializer(section).data)
 
     @action(detail=True, methods=["post"])
@@ -2148,6 +2205,15 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         section.is_published = False
         section.save(update_fields=["is_published", "updated_at"])
         return Response(self.get_serializer(section).data)
+
+    def destroy(self, request, *args, **kwargs):
+        section = self.get_object()
+        if TestAttempt.objects.filter(practice_test=section).exists():
+            return Response(
+                {"detail": "Cannot delete: students have attempts on this section. Unpublish it instead."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(
         detail=True, methods=["get"], url_path="export-csv",

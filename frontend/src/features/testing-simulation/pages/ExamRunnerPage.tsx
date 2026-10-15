@@ -18,9 +18,12 @@ import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attempt
 import {
   calculatorAllowed,
   calculatorScientificOnly,
+  clockPausable,
   isMath,
+  isPracticeTest,
   isProctored,
   isMidtermAttempt,
+  isUntimed,
   moduleLabel,
   pauseAllowed,
   questions as selectQuestions,
@@ -209,6 +212,9 @@ export function ExamRunnerPage() {
       return false;
     }
   });
+  // Practice tests only: the student's Timed/Untimed pick on the Welcome screen. Sent with Start
+  // and then owned by the server (`is_timed`), so a refresh never has to remember it.
+  const [timedChoice, setTimedChoice] = useState(true);
   const ackWelcome = useCallback(() => {
     setWelcomeAck(true);
     try {
@@ -295,6 +301,7 @@ export function ExamRunnerPage() {
   // Start is the single user gesture that (a) enters fullscreen and (b) tells the
   // server to begin the module — so the timer genuinely doesn't run until now.
   const [starting, setStarting] = useState(false);
+  const practiceTest = isPracticeTest(attempt);
   const handleStart = useCallback(async () => {
     setStarting(true);
     try {
@@ -309,13 +316,13 @@ export function ExamRunnerPage() {
       // (forward-compatible with a future server-side timer hold). When the
       // backend already auto-started on create, Start just enters fullscreen.
       if (attempt?.current_state === ATTEMPT_STATE.NOT_STARTED) {
-        await start();
+        await start(practiceTest ? { timed: timedChoice } : undefined);
       }
       ackWelcome();
     } finally {
       setStarting(false);
     }
-  }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
+  }, [tools.fullscreen, start, attempt?.current_state, practiceTest, timedChoice, ackWelcome]);
 
   // "The student is ready to begin." In the app a midterm goes through the pre-check first —
   // AFTER the access code, so nobody waits for a late teacher on a locked machine.
@@ -565,8 +572,10 @@ export function ExamRunnerPage() {
     attempt,
     clock,
     // A blocked duplicate tab must not run the countdown or auto-submit.
-    paused: (paused && pauseAllowed(attempt, mockFlow)) || multiTab.blocked,
+    paused: (paused && clockPausable(attempt, mockFlow)) || multiTab.blocked,
     onExpire,
+    // An untimed practice test has no clock to run, expire or auto-submit.
+    untimed: isUntimed(attempt),
   });
 
   // Pastpapers save in place (assessment-style): a short debounce for a
@@ -642,7 +651,9 @@ export function ExamRunnerPage() {
   const syncedPauseRef = useRef<number | null>(null);
   useEffect(() => {
     if (!attempt) return;
-    if (!pauseAllowed(attempt, mockFlow)) {
+    // An untimed sitting is never shown paused, whatever `is_paused` says: it has no clock, and the
+    // server now refuses the resume that would clear it.
+    if (!clockPausable(attempt, mockFlow)) {
       setPaused(false);
       return;
     }
@@ -735,7 +746,7 @@ export function ExamRunnerPage() {
   }, []);
 
   const handlePauseToggle = useCallback(async () => {
-    if (!attempt || !pauseAllowed(attempt, mockFlow)) return;
+    if (!attempt || !clockPausable(attempt, mockFlow)) return;
     const nextPaused = !paused;
     setPaused(nextPaused); // optimistic
     try {
@@ -754,7 +765,9 @@ export function ExamRunnerPage() {
   const handleSaveAndExit = useCallback(async () => {
     setExiting(true);
     try {
-      if (attemptRef.current && pauseAllowed(attemptRef.current, mockFlow)) {
+      // An untimed sitting has no clock to stop (and the server would answer 400): go straight to
+      // the save below.
+      if (attemptRef.current && clockPausable(attemptRef.current, mockFlow)) {
         try {
           applyAttempt(await engineApi.pause(attemptId));
         } catch {
@@ -804,7 +817,7 @@ export function ExamRunnerPage() {
   const autoPauseRef = useRef<() => void>(() => {});
   autoPauseRef.current = () => {
     // NOTE: the answer FLUSH below runs for every flow (incl. mocks). Only the
-    // pause step is pastpaper-only — see the pauseAllowed gate lower down. A mock
+    // pause step is pastpaper-only (and timed-only) — see the clockPausable gate lower down. A mock
     // cannot pause, but it still must not lose the last answers on an abrupt leave
     // (they'd otherwise reach only the local draft, lost on cross-device resume).
     if (!attempt || !attemptId) return;
@@ -839,7 +852,9 @@ export function ExamRunnerPage() {
     // thing their off-screen rule polices, so their clock keeps running.
     // Pause is PASTPAPER-ONLY. A full mock is strictly timed everywhere — solo or
     // invigilated — so leaving never buys time; in a session it is policed instead.
-    if (!pauseAllowed(attempt, mockFlow)) return;
+    // An untimed practice test has no clock either, so leaving buys and costs nothing: the answer
+    // flush above is all it needs (and the server refuses a pause on it).
+    if (!clockPausable(attempt, mockFlow)) return;
     // A blocked duplicate tab does not own the attempt: pausing from it would freeze the
     // clock of the tab the student is actually sitting the exam in.
     if (multiTab.blocked) return;
@@ -1030,12 +1045,14 @@ export function ExamRunnerPage() {
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
+        kindLabel={practiceTest ? "Practice Test" : "Past Paper"}
         subjectLabel={subjLabel}
         minutes={startMinutes}
         questionCount={startQuestionCount}
         starting={starting}
         fullscreenSupported={tools.fullscreen.supported}
         onStart={() => void handleStart()}
+        timing={practiceTest ? { timed: timedChoice, onChange: setTimedChoice } : undefined}
       />
     );
   }
@@ -1099,7 +1116,8 @@ export function ExamRunnerPage() {
         mathTools={mathQuestions && !isMidterm}
         showCalculator={calculatorAllowed(attempt)}
         tools={tools}
-        pauseAllowed={pauseAllowed(attempt, mockFlow)}
+        pauseAllowed={clockPausable(attempt, mockFlow)}
+        untimed={isUntimed(attempt)}
         paused={paused}
         onTogglePause={handlePauseToggle}
         // A midterm is ONE sitting: there is no pause, and leaving the screen is a

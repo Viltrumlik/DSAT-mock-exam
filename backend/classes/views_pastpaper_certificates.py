@@ -32,7 +32,7 @@ from access import constants as acc_const
 from access.services import is_global_scope_staff, normalized_role
 
 from .models_certificates import PastpaperCertificate
-from .pastpaper_certificate import is_eligible, issue_for_attempt
+from .pastpaper_certificate import _paper_title, is_eligible, issue_for_attempt
 from .pastpaper_certificate_pdf import render_pdf_safe, render_report_pdf
 from .pastpaper_report import build_error_report
 
@@ -182,11 +182,20 @@ class AttemptErrorReportView(APIView):
             )
 
         cert = PastpaperCertificate.objects.filter(attempt=attempt).first()
+        is_practice = bool(getattr(attempt.practice_test, "is_practice_test", False))
         return Response({
             "attempt_id": attempt.pk,
             "practice_test_id": attempt.practice_test_id,
             "score": attempt.score,
-            "paper_title": getattr(attempt.practice_test, "collection_name", "") or "",
+            # A practice test is named "Practice Test N" (+ " · Untimed"); its collection name is
+            # blank, and printing it would present it as a past paper. A past paper keeps the
+            # collection name it always had.
+            "paper_title": (
+                _paper_title(attempt.practice_test, attempt)
+                if is_practice
+                else getattr(attempt.practice_test, "collection_name", "") or ""
+            ),
+            "is_practice_test": is_practice,
             "certificate_code": cert.code if cert else None,
             # Whether this sitting earns a certificate at all; a mock section does not. The
             # download button follows this, not the code: the code is missing on every sitting

@@ -94,13 +94,20 @@ def _display_name(user) -> str:
     return name or getattr(user, "username", None) or getattr(user, "email", None) or "Student"
 
 
-def _paper_title(practice_test) -> str:
+def _paper_title(practice_test, attempt=None) -> str:
     """What to call the paper on the certificate.
 
     `collection_name` is the label the school actually uses ("SAT March 2024"); `title` is
     often blank or an internal string. Prefer the former and fall back rather than printing
-    an empty line.
+    an empty line. A numbered practice test is "Practice Test N", with " · Untimed" when this
+    sitting was untimed (``attempt`` is optional so a caller without one still gets a name).
     """
+    if getattr(practice_test, "is_practice_test", False):
+        # Never falls through to the collection/title/"Past Paper" lines below: a practice test is
+        # not a past paper, numbered or not (the number is assigned on first publish).
+        number = getattr(practice_test, "practice_number", None)
+        name = f"Practice Test {number}" if number else "Practice Test"
+        return f"{name} · Untimed" if attempt is not None and not getattr(attempt, "is_timed", True) else name
     collection = (getattr(practice_test, "collection_name", "") or "").strip()
     title = (getattr(practice_test, "title", "") or "").strip()
     if collection and title and title.lower() not in collection.lower():
@@ -150,7 +157,7 @@ def issue_for_attempt(attempt, *, force: bool = False):
     values = {
         "student": attempt.student,
         "student_name": _display_name(attempt.student),
-        "paper_title": _paper_title(practice_test),
+        "paper_title": _paper_title(practice_test, attempt),
         "collection_name": (getattr(practice_test, "collection_name", "") or "")[:200],
         "subject": getattr(practice_test, "subject", "") or "",
         "score": int(attempt.score or 0),

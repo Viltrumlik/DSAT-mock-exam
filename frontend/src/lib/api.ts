@@ -77,6 +77,13 @@ export type PastpaperSection = {
     modules: PastpaperModuleBrief[];
     created_at?: string;
     mock_exam_id?: number | null;
+    /** True for the centre's own practice tests (own page, own rules); false/absent = past paper. */
+    is_practice_test?: boolean;
+    practice_access?: "open" | "homework_only";
+    /** "" = all levels, else foundation | junior | middle | senior. */
+    practice_level?: string;
+    /** Permanent number, given at first publish (per subject). Null for drafts. */
+    practice_number?: number | null;
 };
 
 /** Admin section row (GET /exams/admin/tests/). Extends the student shape with admin fields. */
@@ -810,6 +817,13 @@ export const examsPublicApi = {
         const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
         return arr as PastpaperSection[];
     },
+    /** GET /exams/?kind=practice_test — the practice tests this student may see (visibility is server-side). */
+    getPracticeTestSections: async (): Promise<PastpaperSection[]> => {
+        const res = await api.get("/exams/", { params: { kind: "practice_test" } });
+        const raw = res.data;
+        const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
+        return arr as PastpaperSection[];
+    },
     /** Single pastpaper section. */
     getPastpaperSection: async (id: number): Promise<PastpaperSection> => {
         const res = await api.get(`/exams/${id}/`);
@@ -874,6 +888,19 @@ export type AssignmentOptions = {
         already_assigned: boolean;
         review_status: "draft" | "needs_review" | "approved";
         is_approved: boolean;
+    }[];
+    /**
+     * The centre's numbered practice tests for the class's subject, newest number first.
+     * Picking one sends its id in `practice_test_ids`, like a past paper.
+     */
+    practice_test_items?: {
+        id: number;
+        number: number | null;
+        title: string;
+        subject: string;
+        level: string;
+        access: "open" | "homework_only";
+        already_assigned: boolean;
     }[];
     practice_test_packs: {
         id: number;
@@ -1638,9 +1665,16 @@ export const examsAdminApi = {
     },
 
     // Standalone pastpaper sections (each a PracticeTest; the PastpaperPack grouping was removed).
-    getStandaloneSections: async (): Promise<AdminPastpaperSection[]> => {
-        const r = await api.get('/exams/admin/tests/', { params: { standalone: '1' } });
+    // `kind` keeps the two libraries apart: the past-paper builder asks for "pastpaper", the
+    // practice-test builder for "practice_test"; omitted = both.
+    getStandaloneSections: async (kind?: 'pastpaper' | 'practice_test'): Promise<AdminPastpaperSection[]> => {
+        const r = await api.get('/exams/admin/tests/', { params: { standalone: '1', ...(kind ? { kind } : {}) } });
         return unwrapAdminList<AdminPastpaperSection>(r.data);
+    },
+    /** One section (the module editors load just the one they are editing). */
+    getSection: async (id: number): Promise<AdminPastpaperSection> => {
+        const r = await api.get(`/exams/admin/tests/${id}/`);
+        return r.data as AdminPastpaperSection;
     },
     createSection: async (data: {
         subject: 'READING_WRITING' | 'MATH';
@@ -1649,6 +1683,11 @@ export const examsAdminApi = {
         label?: string;
         form_type?: 'INTERNATIONAL' | 'US';
         practice_date?: string | null;
+        /** Settable on create only; the server keeps the kind on every later update. */
+        is_practice_test?: boolean;
+        practice_access?: 'open' | 'homework_only';
+        /** "" = all levels, else foundation | junior | middle | senior. */
+        practice_level?: string;
     }): Promise<AdminPastpaperSection> => {
         const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });
         return r.data as AdminPastpaperSection;

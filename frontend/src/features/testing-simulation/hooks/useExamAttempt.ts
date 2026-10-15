@@ -34,7 +34,7 @@ export interface UseExamAttemptResult {
   reload: () => void;
   setError: (msg: string | null) => void;
   /** Transition NOT_STARTED → MODULE_1_ACTIVE on demand (Welcome screen Start). */
-  start: () => Promise<void>;
+  start: (opts?: { timed?: boolean }) => Promise<void>;
   /**
    * The server will only talk about this sitting to the Windows app's locked-down window
    * (or a newer one replaced this window). Not an error: the runner answers it with the
@@ -79,10 +79,10 @@ export function useExamAttempt({ attemptId, assertCriticalAuth, pollingEnabled =
   // On-demand engine start (Welcome screen). Idempotent via the start key, so a
   // double click can't create two starts; the timer anchors from the server's
   // post-start snapshot.
-  const start = useCallback(async () => {
+  const start = useCallback(async (opts?: { timed?: boolean }) => {
     if (!assertCriticalAuth()) return;
     try {
-      const snap = await api.start(attemptId, startKey(attemptId));
+      const snap = await api.start(attemptId, startKey(attemptId), opts);
       applyAttempt(snap);
     } catch (e) {
       if (e instanceof DesktopBlockedError) {

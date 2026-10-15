@@ -11,6 +11,12 @@ interface UseModuleTimerArgs {
   paused: boolean;
   /** Fired exactly once per module when the clock reaches zero. */
   onExpire: () => void;
+  /**
+   * An untimed practice-test sitting: no countdown, no anchor, no auto-submit. An explicit flag
+   * rather than "the server sent no duration", because with `module_duration_seconds` null the
+   * limit below falls back to the module's own `time_limit_minutes` and would start a clock.
+   */
+  untimed?: boolean;
 }
 
 interface UseModuleTimerResult {
@@ -32,7 +38,7 @@ interface UseModuleTimerResult {
  *  - Pause freezes by snapshotting the remaining time; resume re-anchors from it.
  *  - Calls `onExpire` once per module via a latch ref.
  */
-export function useModuleTimer({ attempt, clock, paused, onExpire }: UseModuleTimerArgs): UseModuleTimerResult {
+export function useModuleTimer({ attempt, clock, paused, onExpire, untimed = false }: UseModuleTimerArgs): UseModuleTimerResult {
   const [secondsLeft, setSecondsLeft] = useState(0);
   const [ready, setReady] = useState(false);
 
@@ -54,7 +60,7 @@ export function useModuleTimer({ attempt, clock, paused, onExpire }: UseModuleTi
 
   // (Re)anchor when the module identity changes.
   useEffect(() => {
-    if (!moduleId || !startTime || limitSeconds <= 0) {
+    if (untimed || !moduleId || !startTime || limitSeconds <= 0) {
       setReady(false);
       return;
     }
@@ -74,7 +80,7 @@ export function useModuleTimer({ attempt, clock, paused, onExpire }: UseModuleTi
     setReady(true);
     // Intentionally keyed on module identity only — see hook docblock.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [moduleId, startTime, limitSeconds]);
+  }, [moduleId, startTime, limitSeconds, untimed]);
 
   // Pause / resume re-anchoring.
   useEffect(() => {
@@ -93,7 +99,7 @@ export function useModuleTimer({ attempt, clock, paused, onExpire }: UseModuleTi
 
   // The tick loop: one rAF, but only commits state on whole-second changes.
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || untimed) return;
     let raf = 0;
     let lastRendered = -1;
 
@@ -119,7 +125,7 @@ export function useModuleTimer({ attempt, clock, paused, onExpire }: UseModuleTi
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [ready, moduleId, clock]);
+  }, [ready, untimed, moduleId, clock]);
 
   return { secondsLeft, ready };
 }

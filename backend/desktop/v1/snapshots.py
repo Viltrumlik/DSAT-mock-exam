@@ -114,7 +114,8 @@ def pastpaper_lite(attempt: TestAttempt, *, now: _dt.datetime | None = None) -> 
         module_block = {"id": live.id, "order": int(live.module_order), "duration_ms": duration_ms}
         if state == TestAttempt.STATE_NOT_STARTED:
             remaining_ms = duration_ms
-        elif limit > 0:
+        elif limit > 0 and attempt.is_timed:
+            # An untimed practice-test sitting has no clock: deadline_at / remaining_ms stay null.
             anchor = _module_started_anchor(attempt, live) or attempt.current_module_start_time
             if anchor is not None:
                 order = int(live.module_order)

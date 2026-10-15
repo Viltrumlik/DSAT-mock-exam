@@ -460,7 +460,7 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
                       const rows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
                       return (
                         <PickCard key={cardReactKey(c)} selected={cardSelected(c)} onClick={() => handleCardSelect(c)}>
-                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Practice test"}</span>
+                          <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Past paper"}</span>
                           <span className="text-[12.5px] font-semibold text-muted-foreground">{formatLineDate(lineDate)}</span>
                           <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{cardHeading(c)}</span>
                           <span className="mt-0.5 flex flex-wrap gap-1.5">

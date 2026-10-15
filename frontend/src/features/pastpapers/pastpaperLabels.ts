@@ -43,8 +43,15 @@ export function variantLabel(s: PastpaperSection): string {
   return letter ? `${region} Form ${letter}` : region;
 }
 export function sectionTitle(s: PastpaperSection): string {
+  if (s.is_practice_test && s.practice_number) return `Practice Test ${s.practice_number}`;
   if (s.title && s.title.trim()) return s.title.trim();
   return variantLabel(s);
+}
+
+const LEVEL_LABELS: Record<string, string> = { foundation: "Foundation", junior: "Junior", middle: "Middle", senior: "Senior" };
+/** A practice test's level badge: blank means every level sees it. */
+export function levelLabel(code: string | null | undefined): string {
+  return (code && LEVEL_LABELS[code]) || "All levels";
 }
 export function collectionLabel(s: PastpaperSection): string {
   // Group header = the sitting month (e.g. "October 2025"); ALL variants

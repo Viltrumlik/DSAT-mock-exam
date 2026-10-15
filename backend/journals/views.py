@@ -665,7 +665,8 @@ class JournalContentOptionsView(APIView):
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
-        pt_qs = pvs.get_queryset()
+        # get_queryset() with no action holds BOTH kinds; a practice test is not a past paper.
+        pt_qs = pvs.get_queryset().filter(is_practice_test=False)
         if platform_subject:
             pt_qs = pt_qs.filter(subject=platform_subject)
         practice_tests = [

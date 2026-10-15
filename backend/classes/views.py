@@ -1171,7 +1171,7 @@ class ClassroomViewSet(ModelViewSet):
         pvs = PracticeTestViewSet()
         pvs.request = request
         pvs.format_kwarg = None
-        pt_qs = pvs.get_queryset()
+        pt_qs = pvs.get_queryset().filter(is_practice_test=False)  # practice tests have their own tab
 
         # Match the picker to the classroom's subject: a Math class only sees Math
         # sections/sets; an English class only sees Reading & Writing ones.
@@ -1216,6 +1216,31 @@ class ClassroomViewSet(ModelViewSet):
                     "already_assigned": pt.id in assigned_pt_ids,
                 }
             )
+
+        # Practice tests (the centre's own; owner decisions 2026-10-14): every published one of the
+        # class's subject — Open AND Homework only — with its number and level. Picking one writes
+        # practice_test_ids exactly like a past paper, so grant/grade/launcher are shared.
+        practice_test_items = []
+        pti_qs = (
+            PracticeTest.objects.filter(
+                is_practice_test=True, is_published=True, mock_exam__isnull=True,
+                modules__questions__isnull=False,
+            )
+            .distinct()
+            .order_by("-practice_number", "-id")
+        )
+        if platform_subject:
+            pti_qs = pti_qs.filter(subject=platform_subject)
+        for pt in pti_qs:
+            practice_test_items.append({
+                "id": pt.id,
+                "number": pt.practice_number,
+                "title": (pt.title or "").strip(),
+                "subject": pt.subject,
+                "level": pt.practice_level or "",
+                "access": pt.practice_access,
+                "already_assigned": pt.id in assigned_pt_ids,
+            })
 
         # Assessment sets
         from assessments.models import AssessmentSet
@@ -1311,6 +1336,7 @@ class ClassroomViewSet(ModelViewSet):
             "classroom_subject": classroom.subject,
             "classroom_level": classroom.level or "",
             "practice_tests": practice_tests,
+            "practice_test_items": practice_test_items,
             "assessment_sets": assessment_sets,
             "practice_test_packs": practice_test_packs,
             "midterms": midterms,

@@ -73,6 +73,7 @@ class AssignmentPracticeBundleTestSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     title = serializers.CharField()
     subject = serializers.CharField()
+    is_practice_test = serializers.BooleanField(required=False)
 
 
 @extend_schema_serializer(component_name="AssignmentCreatedBy")
@@ -762,6 +763,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 # is usually blank), so expose it + a ready display name for the launcher.
                 "collection_name": (getattr(p, "collection_name", "") or "").strip(),
                 "name": self._section_name(p),
+                "is_practice_test": bool(getattr(p, "is_practice_test", False)),
                 "subject": p.subject,
                 "state": states[p.id]["state"],
                 "attempt_id": states[p.id]["attempt_id"],
@@ -880,7 +882,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
     @staticmethod
     def _section_name(pt) -> str:
         """Display name for a standalone pastpaper section: collection_name first
-        (sections are labelled by it; title is usually blank), then title."""
+        (sections are labelled by it; title is usually blank), then title. A numbered practice
+        test is always "Practice Test N"."""
+        if getattr(pt, "is_practice_test", False) and getattr(pt, "practice_number", None):
+            return f"Practice Test {pt.practice_number}"
         return (
             (getattr(pt, "collection_name", "") or "").strip()
             or (getattr(pt, "title", "") or "").strip()
@@ -979,6 +984,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
             elif len(names) == 1:
                 # A full paper (e.g. R&W + Math sections sharing one collection_name).
                 title = next(iter(names))
+            elif len(sections) > 1 and all(getattr(s, "is_practice_test", False) for s in sections):
+                # Practice tests are never presented as past papers; `kind` stays PASTPAPER, the
+                # engine kind iOS and the web launcher both key off.
+                title = f"Practice Tests · {len(sections)}"
             elif len(sections) > 1:
                 title = f"Past Paper · {len(sections)} sections"
             else:

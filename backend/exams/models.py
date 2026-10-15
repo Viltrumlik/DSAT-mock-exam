@@ -548,8 +548,46 @@ class PracticeTest(TimestampedModel):
         help_text="If True, post_save does not auto-create SAT modules (midterm/custom builds).",
     )
 
+    # ── Practice tests (owner decisions 2026-10-14) ───────────────────────────
+    # The centre's own tests. A practice test is a standalone section exactly like a past
+    # paper (same runner, scoring, builder, review) but listed on its own page with its own
+    # rules: who sees it (Open / Homework only), which group level, a permanent number.
+    # Only meaningful when mock_exam is NULL.
+    ACCESS_OPEN = "open"
+    ACCESS_HOMEWORK_ONLY = "homework_only"
+    ACCESS_CHOICES = [
+        (ACCESS_OPEN, "Open"),
+        (ACCESS_HOMEWORK_ONLY, "Homework only"),
+    ]
+    # Codes match classes.Classroom.level verbatim (exams cannot import classes — it imports us).
+    LEVEL_CHOICES = [
+        ("foundation", "Foundation"),
+        ("junior", "Junior"),
+        ("middle", "Middle"),
+        ("senior", "Senior"),
+    ]
+    # db_default as well as default: the deploy migrates first while the old code still runs,
+    # and the old code's INSERTs do not name these columns.
+    is_practice_test = models.BooleanField(default=False, db_default=False, db_index=True)
+    practice_access = models.CharField(
+        max_length=16, choices=ACCESS_CHOICES,
+        default=ACCESS_HOMEWORK_ONLY, db_default=ACCESS_HOMEWORK_ONLY,
+    )
+    practice_level = models.CharField(
+        max_length=16, choices=LEVEL_CHOICES, blank=True, default="", db_default="",
+    )
+    # Given at first publish, per subject; never renumbered.
+    practice_number = models.PositiveIntegerField(null=True, blank=True)
+
     class Meta:
         db_table = 'practice_tests'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subject", "practice_number"],
+                condition=models.Q(is_practice_test=True, practice_number__isnull=False),
+                name="uniq_practice_number_per_subject",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -800,7 +838,10 @@ class TestAttempt(TimestampedModel):
 
     is_completed = models.BooleanField(default=False, db_index=True)
     score = models.IntegerField(null=True, blank=True)
-    
+    # A practice-test student may choose to work without the clock (owner decision 2026-10-14).
+    # False = no deadline, no time-based auto-submit, no pause. Past papers are always timed.
+    is_timed = models.BooleanField(default=True, db_default=True)
+
     class Meta:
         db_table = 'test_attempts'
         ordering = ['-created_at']

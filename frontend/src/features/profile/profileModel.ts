@@ -324,6 +324,15 @@ export function profileChecklist(input: ChecklistInput, { telegramAvailable }: {
 
 /* ── Results ─────────────────────────────────────────────────────────────────────────── */
 
+/** The test details `resultTitle` reads (a structural subset of `practice_test_details`). */
+interface AttemptDetails {
+  subject?: string | null;
+  title?: string | null;
+  collection_name?: string | null;
+  is_practice_test?: boolean;
+  practice_number?: number | null;
+}
+
 /** The attempt fields `recentResults` reads (a structural subset of `GET /exams/attempts/`). */
 export interface AttemptLike {
   id: number;
@@ -348,6 +357,17 @@ export function recentResults<T extends AttemptLike>(attempts: T[], limit = 3): 
     .filter((a) => (a.practice_test_details?.mock_kind ?? "").toUpperCase() !== "MIDTERM")
     .sort((a, b) => time(b) - time(a) || b.id - a.id)
     .slice(0, limit);
+}
+
+/**
+ * What a finished test is called in a result row. A practice test is "Practice Test N" (its builder
+ * title is internal, and its collection name is blank) and is never presented as a past paper; a
+ * past paper keeps its title, then its collection, then just its subject.
+ */
+export function resultTitle(attempt: { practice_test_details?: AttemptDetails | null }): string {
+  const d = attempt.practice_test_details;
+  if (d?.is_practice_test) return d.practice_number ? `Practice Test ${d.practice_number}` : "Practice Test";
+  return d?.title?.trim() || d?.collection_name?.trim() || subjectLabel(d?.subject);
 }
 
 /** Where a finished attempt is reviewed: a mock's result page, or the question review. */

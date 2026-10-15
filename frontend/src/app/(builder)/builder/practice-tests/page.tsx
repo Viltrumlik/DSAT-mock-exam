@@ -1,15 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { examsAdminApi } from "@/features/examsAdmin/api";
+import { levelLabel } from "@/features/pastpapers/pastpaperLabels";
+import type { AdminPastpaperSection, SectionPublishViolation } from "@/lib/api";
 import {
+  AlertTriangle,
   BookOpen,
   Calculator,
   ChevronRight,
-  Eye,
-  EyeOff,
-  FlaskConical,
+  FileText,
   Loader2,
   Pencil,
   Plus,
@@ -18,49 +19,93 @@ import {
   X,
 } from "lucide-react";
 
+/**
+ * The practice-test library: the centre's own single-section tests. Same look as the past-paper
+ * builder (card, filter and modal classes), and each module links into the SAME question editor
+ * (`/builder/practice-tests/<id>/<module>` re-exports the past-paper one). What differs is the card:
+ * a permanent number given at first publish, a subtitle, a level, and who sees it.
+ */
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type PracticeTestPackSection = {
-  id: number;
-  subject: string;
-  title: string;
-  modules: { id: number; module_order: number | null }[];
-};
-
-type PracticeTestPack = {
-  id: number;
-  title: string;
-  description: string;
-  is_published: boolean;
-  published_at: string | null;
-  created_by: number | null;
-  sections: PracticeTestPackSection[];
-  section_count: number;
-  created_at: string;
-  updated_at: string;
-};
+type Access = "open" | "homework_only";
 
 type FormState = {
+  subject: "READING_WRITING" | "MATH";
   title: string;
-  description: string;
+  practice_access: Access;
+  /** "" = all levels. */
+  practice_level: string;
 };
 
+/** A new test starts Homework only, like the server's default: nothing reaches the library by accident. */
 const EMPTY_FORM: FormState = {
+  subject: "READING_WRITING",
   title: "",
-  description: "",
+  practice_access: "homework_only",
+  practice_level: "",
 };
+
+const LEVEL_CODES = ["", "foundation", "junior", "middle", "senior"] as const;
+
+type SubjectFilter = "ALL" | "READING_WRITING" | "MATH";
+type StatusFilter = "ALL" | "published" | "draft";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function subjectLabel(subject: string): string {
-  if (subject === "READING_WRITING") return "Reading & Writing";
-  if (subject === "MATH") return "Mathematics";
-  return subject;
-}
 
 function SubjectIcon({ subject }: { subject: string }) {
   if (subject === "MATH") return <Calculator className="h-3.5 w-3.5" />;
   return <BookOpen className="h-3.5 w-3.5" />;
+}
+
+/**
+ * Drafts (no number yet) first, then the highest number, then Reading & Writing before Math.
+ * A number is per subject, so "Practice Test 3" can be one of each.
+ */
+function librarySort(a: AdminPastpaperSection, b: AdminPastpaperSection): number {
+  const an = a.practice_number ?? null;
+  const bn = b.practice_number ?? null;
+  if ((an === null) !== (bn === null)) return an === null ? -1 : 1;
+  if (an !== null && bn !== null && an !== bn) return bn - an;
+  const rank = (x: AdminPastpaperSection) => (x.subject === "READING_WRITING" ? 0 : 1);
+  const d = rank(a) - rank(b);
+  return d !== 0 ? d : a.id - b.id;
+}
+
+/** Student-style segmented filter: an uppercase label + a pill row. */
+function FilterGroup({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { v: string; l: string }[];
+}) {
+  return (
+    <div className="flex flex-col gap-1.5" data-filter={label.toLowerCase()}>
+      <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+      <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-surface-2 p-1">
+        {options.map((o) => {
+          const on = value === o.v;
+          return (
+            <button
+              key={o.v}
+              type="button"
+              onClick={() => onChange(o.v)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
+                on ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {o.l}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function parseError(e: unknown): string {
@@ -78,27 +123,70 @@ function parseError(e: unknown): string {
   return "An error occurred.";
 }
 
-function formatDate(s: string | null | undefined): string {
-  if (!s) return "—";
-  try {
-    return new Date(s).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  } catch {
-    return s;
-  }
+function parseViolations(e: unknown): SectionPublishViolation[] {
+  const data = (e as { response?: { data?: { violations?: unknown } } })?.response?.data;
+  const v = data?.violations;
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((row) => {
+      if (row && typeof row === "object") {
+        const r = row as Record<string, unknown>;
+        return { code: String(r.code ?? ""), message: String(r.message ?? r.code ?? "") };
+      }
+      return { code: "", message: String(row) };
+    })
+    .filter((x) => x.message);
 }
 
-// ─── Pack form modal ──────────────────────────────────────────────────────────
+const LABEL_CLASS = "mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest";
+const FIELD_CLASS =
+  "w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60";
 
-function PackModal({
+/** One option of a radio group: a bordered row that lights up when chosen. */
+function RadioRow({
+  name,
+  value,
+  checked,
+  disabled,
+  onChange,
+  children,
+}: {
+  name: string;
+  value: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <label
+      className={`flex cursor-pointer items-start gap-2.5 rounded-xl border px-3 py-2 text-sm text-foreground transition-colors ${
+        checked ? "border-primary/40 bg-primary/5" : "border-border bg-surface-2/60 hover:bg-surface-2"
+      } ${disabled ? "cursor-not-allowed opacity-60" : ""}`}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={checked}
+        disabled={disabled}
+        onChange={() => onChange(value)}
+        className="mt-0.5 accent-[var(--color-primary,#2a68c0)]"
+      />
+      <span>{children}</span>
+    </label>
+  );
+}
+
+// ─── Practice-test form modal ─────────────────────────────────────────────────
+
+function SectionModal({
   open,
   title,
   initial,
   saving,
   error,
+  isEdit,
   onSubmit,
   onClose,
 }: {
@@ -107,6 +195,7 @@ function PackModal({
   initial: FormState;
   saving: boolean;
   error: string | null;
+  isEdit: boolean;
   onSubmit: (f: FormState) => void;
   onClose: () => void;
 }) {
@@ -121,10 +210,15 @@ function PackModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl"
+      >
         <div className="mb-5 flex items-center justify-between">
           <h2 className="text-base font-extrabold text-foreground">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-surface-2">
+          <button type="button" onClick={onClose} aria-label="Close" className="rounded-lg p-1 hover:bg-surface-2">
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
@@ -143,28 +237,85 @@ function PackModal({
           }}
         >
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Title
+            <span className={LABEL_CLASS}>Subject</span>
+            <div className="grid grid-cols-2 gap-2">
+              <RadioRow
+                name="subject"
+                value="READING_WRITING"
+                checked={form.subject === "READING_WRITING"}
+                disabled={isEdit}
+                onChange={() => setForm((p) => ({ ...p, subject: "READING_WRITING" }))}
+              >
+                Reading &amp; Writing
+              </RadioRow>
+              <RadioRow
+                name="subject"
+                value="MATH"
+                checked={form.subject === "MATH"}
+                disabled={isEdit}
+                onChange={() => setForm((p) => ({ ...p, subject: "MATH" }))}
+              >
+                Math
+              </RadioRow>
+            </div>
+            {isEdit ? (
+              <p className="mt-1 text-[11px] text-muted-foreground">Subject can&apos;t be changed after creation.</p>
+            ) : null}
+          </div>
+
+          <div>
+            <label htmlFor="practice-title" className={LABEL_CLASS}>
+              Subtitle
             </label>
             <input
+              id="practice-title"
+              name="title"
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
-              placeholder="e.g. Practice Test Set 1"
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="Optional — e.g. Algebra focus"
+              className={FIELD_CLASS}
             />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
-              Description
+            <span className={LABEL_CLASS}>Who sees it</span>
+            <div className="space-y-2">
+              <RadioRow
+                name="practice_access"
+                value="open"
+                checked={form.practice_access === "open"}
+                onChange={() => setForm((p) => ({ ...p, practice_access: "open" }))}
+              >
+                <strong className="font-bold">Open</strong> — in the library for students of the level
+              </RadioRow>
+              <RadioRow
+                name="practice_access"
+                value="homework_only"
+                checked={form.practice_access === "homework_only"}
+                onChange={() => setForm((p) => ({ ...p, practice_access: "homework_only" }))}
+              >
+                <strong className="font-bold">Homework only</strong> — hidden until a teacher sets it
+              </RadioRow>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="practice-level" className={LABEL_CLASS}>
+              Level
             </label>
-            <textarea
-              value={form.description}
-              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-              placeholder="Optional description for students..."
-              rows={3}
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
-            />
+            <select
+              id="practice-level"
+              name="practice_level"
+              value={form.practice_level}
+              onChange={(e) => setForm((p) => ({ ...p, practice_level: e.target.value }))}
+              className={FIELD_CLASS}
+            >
+              {LEVEL_CODES.map((code) => (
+                <option key={code} value={code}>
+                  {levelLabel(code)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex gap-2 pt-1">
@@ -181,7 +332,7 @@ function PackModal({
               className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {saving ? "Saving..." : "Save"}
+              {saving ? "Saving…" : "Save"}
             </button>
           </div>
         </form>
@@ -190,203 +341,176 @@ function PackModal({
   );
 }
 
-// ─── Pack row ─────────────────────────────────────────────────────────────────
+// ─── Practice-test card ───────────────────────────────────────────────────────
 
-function PackRow({
-  pack,
+function SectionCard({
+  section,
   onEdit,
   onDelete,
   onTogglePublish,
-  onAddSection,
-  addingSection,
-  publishing,
+  busy,
+  violations,
 }: {
-  pack: PracticeTestPack;
+  section: AdminPastpaperSection;
   onEdit: () => void;
   onDelete: () => void;
   onTogglePublish: () => void;
-  onAddSection: (subject: "READING_WRITING" | "MATH") => void;
-  addingSection: boolean;
-  publishing: boolean;
+  busy: boolean;
+  violations: SectionPublishViolation[] | null;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const rwSection = pack.sections.find((s) => s.subject === "READING_WRITING");
-  const mathSection = pack.sections.find((s) => s.subject === "MATH");
-  const hasRW = !!rwSection;
-  const hasMath = !!mathSection;
+  const isRW = section.subject === "READING_WRITING";
+  const isPublished = section.is_published === true;
+  const modules = section.modules ?? [];
+  const accent = isRW ? "var(--color-primary, #2a68c0)" : "#16a34a";
+  const subtitle = section.title?.trim();
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
-      {/* Pack header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-extrabold text-foreground">
-              {pack.title || `Practice Test #${pack.id}`}
-            </h3>
-            <span
-              className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                pack.is_published
-                  ? "bg-emerald-100 text-emerald-700"
-                  : "bg-amber-100 text-amber-700"
-              }`}
-            >
-              {pack.is_published ? "Published" : "Draft"}
-            </span>
-          </div>
-          {pack.description && (
-            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
-              {pack.description}
+    <div
+      className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
+      style={{ borderTop: `3px solid ${accent}` }}
+    >
+      <div className="flex flex-1 flex-col gap-3 p-5">
+        {/* Badges: subject · level · access · status */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+            }`}
+          >
+            <SubjectIcon subject={section.subject} />
+            {isRW ? "R&W" : "Math"}
+          </span>
+          <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+            {levelLabel(section.practice_level)}
+          </span>
+          <span
+            className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              section.practice_access === "open"
+                ? "bg-surface-2 text-muted-foreground"
+                : "bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-300"
+            }`}
+          >
+            {section.practice_access === "open" ? "Open" : "Homework only"}
+          </span>
+          <span
+            className={`ml-auto rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+              isPublished ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-2 text-muted-foreground"
+            }`}
+          >
+            {isPublished ? "Published" : "Draft"}
+          </span>
+        </div>
+
+        {/* Number + subtitle */}
+        <div>
+          <h3 className="line-clamp-2 text-[15px] font-extrabold leading-snug text-foreground">
+            {section.practice_number ? `Practice Test ${section.practice_number}` : "Draft — numbered when published"}
+          </h3>
+          {subtitle ? (
+            <p data-subtitle className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+              {subtitle}
             </p>
-          )}
-          <p className="mt-1 text-[11px] text-muted-foreground">
-            Created {formatDate(pack.created_at)}
-            <span className="mx-1.5 text-muted-foreground/50">&middot;</span>
-            {pack.sections.length} section{pack.sections.length !== 1 ? "s" : ""}
+          ) : null}
+          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+            <FileText className="h-3 w-3 shrink-0" />
+            <span>{modules.length} module{modules.length !== 1 ? "s" : ""}</span>
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          <button
-            type="button"
-            onClick={onTogglePublish}
-            disabled={publishing}
-            className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5 ${
-              pack.is_published
-                ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-            } disabled:opacity-50`}
-          >
-            {publishing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : pack.is_published ? (
-              <EyeOff className="h-3 w-3" />
-            ) : (
-              <Eye className="h-3 w-3" />
-            )}
-            {pack.is_published ? "Unpublish" : "Publish"}
-          </button>
-          <button
-            type="button"
-            onClick={onEdit}
-            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors flex items-center gap-1.5"
-          >
-            <Pencil className="h-3 w-3" />
-            Edit
-          </button>
-          {confirmDelete ? (
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={onDelete}
-                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 transition-colors"
-              >
-                Confirm
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(false)}
-                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
-              >
-                Cancel
-              </button>
+
+        {/* Publish violations (blocking SAT rules) */}
+        {violations && violations.length > 0 ? (
+          <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+            <div>
+              <strong>Can&apos;t publish yet:</strong>
+              <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                {violations.map((v, i) => (
+                  <li key={`${v.code}-${i}`}>{v.message}</li>
+                ))}
+              </ul>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors flex items-center gap-1.5"
-            >
-              <Trash2 className="h-3 w-3" />
-            </button>
-          )}
-        </div>
+          </div>
+        ) : null}
+
+        {/* Per-module edit links: the past-paper question editor */}
+        {modules.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border px-3 py-2 text-xs italic text-muted-foreground">
+            No modules yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {modules.map((mod) => (
+              <Link
+                key={mod.id}
+                href={`/builder/practice-tests/${section.id}/${mod.id}`}
+                className={`group flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
+                  isRW ? "border-primary/20 bg-primary/5" : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
+                }`}
+              >
+                <p className="min-w-0 flex-1 truncate text-xs font-extrabold text-foreground">
+                  {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`} — edit questions
+                </p>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Sections + per-module links */}
-      {pack.sections.length > 0 && (
-        <div className="mt-4 space-y-2">
-          {pack.sections.map((section) => {
-            const isRW = section.subject === "READING_WRITING";
-            const modules = section.modules ?? [];
-            return (
-              <div key={section.id}>
-                <div className="mb-1.5 flex items-center gap-2 px-1">
-                  <div
-                    className={`rounded-md p-1 ${
-                      isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700"
-                    }`}
-                  >
-                    <SubjectIcon subject={section.subject} />
-                  </div>
-                  <span className="text-xs font-bold text-foreground">
-                    {subjectLabel(section.subject)}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {modules.length} module{modules.length !== 1 ? "s" : ""}
-                  </span>
-                </div>
-
-                {modules.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground italic">
-                    No modules yet — add questions from the test admin.
-                  </p>
-                ) : (
-                  <div className="grid gap-1.5 sm:grid-cols-2">
-                    {modules.map((mod) => (
-                      <Link
-                        key={mod.id}
-                        href={`/builder/practice-tests/${pack.id}/${section.id}/${mod.id}`}
-                        className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
-                          isRW
-                            ? "border-primary/20 bg-primary/5"
-                            : "border-emerald-200 bg-emerald-50/50"
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <p className="text-xs font-extrabold text-foreground">
-                            {mod.module_order != null
-                              ? `Module ${mod.module_order}`
-                              : `Module #${mod.id}`}
-                          </p>
-                        </div>
-                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Add section buttons */}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {!hasRW && (
+      {/* Footer actions */}
+      <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-4 py-3">
+        <button
+          type="button"
+          onClick={onTogglePublish}
+          disabled={busy}
+          className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
+            isPublished
+              ? "border border-border bg-card text-foreground hover:bg-surface-2"
+              : "bg-emerald-600 text-white hover:bg-emerald-700"
+          }`}
+        >
+          {busy ? "…" : isPublished ? "Unpublish" : "Publish"}
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
+        >
+          <Pencil className="h-3 w-3" />
+          Edit
+        </button>
+        {confirmDelete ? (
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setConfirmDelete(false);
+                onDelete();
+              }}
+              className="rounded-xl bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+            >
+              Confirm
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmDelete(false)}
+              className="rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
+            >
+              Cancel
+            </button>
+          </div>
+        ) : (
           <button
             type="button"
-            onClick={() => onAddSection("READING_WRITING")}
-            disabled={addingSection}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:border-primary/70 hover:bg-primary/5 disabled:opacity-50 transition-colors"
+            onClick={() => setConfirmDelete(true)}
+            aria-label="Delete practice test"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
           >
-            <Plus className="h-3 w-3" />
-            Add Reading &amp; Writing
+            <Trash2 className="h-3 w-3" />
+            Delete
           </button>
-        )}
-        {!hasMath && (
-          <button
-            type="button"
-            onClick={() => onAddSection("MATH")}
-            disabled={addingSection}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-emerald-400/50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-50 transition-colors"
-          >
-            <Plus className="h-3 w-3" />
-            Add Mathematics
-          </button>
-        )}
-        {hasRW && hasMath && (
-          <p className="text-xs text-muted-foreground italic">All sections added.</p>
         )}
       </div>
     </div>
@@ -396,26 +520,29 @@ function PackRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function BuilderPracticeTestsPage() {
-  const [packs, setPacks] = useState<PracticeTestPack[]>([]);
+  const [sections, setSections] = useState<AdminPastpaperSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
-  const [editingPack, setEditingPack] = useState<PracticeTestPack | null>(null);
+  const [editing, setEditing] = useState<AdminPastpaperSection | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Per-pack action state
-  const [addingSectionFor, setAddingSectionFor] = useState<number | null>(null);
-  const [publishingFor, setPublishingFor] = useState<number | null>(null);
+  // Per-section publish / delete state
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [violationsFor, setViolationsFor] = useState<Record<number, SectionPublishViolation[]>>({});
+
+  const [subject, setSubject] = useState<SubjectFilter>("ALL");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await examsAdminApi.getPracticeTestPacks();
-      setPacks(data.items as PracticeTestPack[]);
+      const data = await examsAdminApi.getStandaloneSections("practice_test");
+      setSections(data);
     } catch (e) {
       setError(parseError(e));
     } finally {
@@ -427,14 +554,27 @@ export default function BuilderPracticeTestsPage() {
     void load();
   }, []);
 
+  const visibleSections = useMemo(
+    () =>
+      sections
+        .filter((s) => {
+          if (subject !== "ALL" && s.subject !== subject) return false;
+          if (status === "published" && !s.is_published) return false;
+          if (status === "draft" && s.is_published) return false;
+          return true;
+        })
+        .sort(librarySort),
+    [sections, subject, status],
+  );
+
   const openCreate = () => {
-    setEditingPack(null);
+    setEditing(null);
     setSaveError(null);
     setModalOpen(true);
   };
 
-  const openEdit = (pack: PracticeTestPack) => {
-    setEditingPack(pack);
+  const openEdit = (section: AdminPastpaperSection) => {
+    setEditing(section);
     setSaveError(null);
     setModalOpen(true);
   };
@@ -443,14 +583,22 @@ export default function BuilderPracticeTestsPage() {
     setSaving(true);
     setSaveError(null);
     try {
-      const payload = {
-        title: form.title.trim() || undefined,
-        description: form.description.trim() || "",
-      };
-      if (editingPack) {
-        await examsAdminApi.updatePracticeTestPack(editingPack.id, payload);
+      const title = form.title.trim();
+      if (editing) {
+        // The subject and the kind are fixed at creation, so an edit never sends them.
+        await examsAdminApi.updateSection(editing.id, {
+          title,
+          practice_access: form.practice_access,
+          practice_level: form.practice_level,
+        });
       } else {
-        await examsAdminApi.createPracticeTestPack(payload);
+        await examsAdminApi.createSection({
+          subject: form.subject,
+          title,
+          is_practice_test: true,
+          practice_access: form.practice_access,
+          practice_level: form.practice_level,
+        });
       }
       setModalOpen(false);
       await load();
@@ -462,58 +610,68 @@ export default function BuilderPracticeTestsPage() {
   };
 
   const handleDelete = async (id: number) => {
+    setBusyId(id);
+    setError(null);
     try {
-      await examsAdminApi.deletePracticeTestPack(id);
+      await examsAdminApi.deleteSection(id);
       await load();
     } catch (e) {
+      // A test students have already taken refuses with a reason; it is shown as the server wrote it.
       setError(parseError(e));
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const handleTogglePublish = async (pack: PracticeTestPack) => {
-    setPublishingFor(pack.id);
+  const handleTogglePublish = async (section: AdminPastpaperSection) => {
+    setBusyId(section.id);
+    setError(null);
+    setViolationsFor((prev) => {
+      const next = { ...prev };
+      delete next[section.id];
+      return next;
+    });
     try {
-      if (pack.is_published) {
-        await examsAdminApi.unpublishPracticeTestPack(pack.id);
+      if (section.is_published) {
+        await examsAdminApi.unpublishSection(section.id);
       } else {
-        await examsAdminApi.publishPracticeTestPack(pack.id);
+        await examsAdminApi.publishSection(section.id);
       }
       await load();
     } catch (e) {
-      setError(parseError(e));
-    } finally {
-      setPublishingFor(null);
-    }
-  };
-
-  const handleAddSection = async (packId: number, subject: "READING_WRITING" | "MATH") => {
-    setAddingSectionFor(packId);
-    try {
-      await examsAdminApi.addPracticeTestPackSection(packId, subject);
-      await load();
-    } catch (e) {
-      setError(parseError(e));
-    } finally {
-      setAddingSectionFor(null);
-    }
-  };
-
-  const modalInitial: FormState = editingPack
-    ? {
-        title: editingPack.title ?? "",
-        description: editingPack.description ?? "",
+      const violations = parseViolations(e);
+      if (violations.length > 0) {
+        setViolationsFor((prev) => ({ ...prev, [section.id]: violations }));
+      } else {
+        setError(parseError(e));
       }
-    : EMPTY_FORM;
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const modalInitial: FormState = useMemo(
+    () =>
+      editing
+        ? {
+            subject: editing.subject === "MATH" ? "MATH" : "READING_WRITING",
+            title: editing.title ?? "",
+            practice_access: editing.practice_access === "open" ? "open" : "homework_only",
+            practice_level: editing.practice_level ?? "",
+          }
+        : EMPTY_FORM,
+    [editing],
+  );
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div data-header className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Practice Tests</h1>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Practice tests</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage custom practice test packs. Each pack groups Reading &amp; Writing and Mathematics
-            sections. Students can start any section in any order.
+            The centre&apos;s own tests. Students see Open tests of their group&apos;s level; Homework only tests
+            appear when a teacher sets them.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -532,7 +690,7 @@ export default function BuilderPracticeTestsPage() {
             className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="h-4 w-4" />
-            New pack
+            New practice test
           </button>
         </div>
       </div>
@@ -544,19 +702,45 @@ export default function BuilderPracticeTestsPage() {
         </div>
       )}
 
+      {/* Filters */}
+      {!loading && sections.length > 0 ? (
+        <div className="flex flex-wrap gap-5">
+          <FilterGroup
+            label="Subject"
+            value={subject}
+            onChange={(v) => setSubject(v as SubjectFilter)}
+            options={[
+              { v: "ALL", l: "All" },
+              { v: "READING_WRITING", l: "Reading & Writing" },
+              { v: "MATH", l: "Math" },
+            ]}
+          />
+          <FilterGroup
+            label="Status"
+            value={status}
+            onChange={(v) => setStatus(v as StatusFilter)}
+            options={[
+              { v: "ALL", l: "All" },
+              { v: "published", l: "Published" },
+              { v: "draft", l: "Draft" },
+            ]}
+          />
+        </div>
+      ) : null}
+
       {/* Content */}
       {loading ? (
         <div className="flex justify-center py-16">
           <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
-      ) : packs.length === 0 ? (
+      ) : sections.length === 0 ? (
         <div className="rounded-2xl border border-border bg-card p-12 text-center">
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
-            <FlaskConical className="h-7 w-7 text-muted-foreground/40" />
+            <FileText className="h-7 w-7 text-muted-foreground/40" />
           </div>
-          <p className="font-extrabold text-foreground">No practice test packs yet</p>
+          <p className="font-extrabold text-foreground">No practice tests yet</p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Create a pack to start building custom practice tests.
+            Create a practice test, then add the questions of each of its modules.
           </p>
           <button
             type="button"
@@ -564,33 +748,38 @@ export default function BuilderPracticeTestsPage() {
             className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             <Plus className="h-4 w-4" />
-            New pack
+            New practice test
           </button>
         </div>
+      ) : visibleSections.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
+          <p className="font-extrabold text-foreground">No practice tests match your filters</p>
+          <p className="mt-1 text-sm text-muted-foreground">Try a different subject or status.</p>
+        </div>
       ) : (
-        <div className="space-y-4">
-          {packs.map((pack) => (
-            <PackRow
-              key={pack.id}
-              pack={pack}
-              onEdit={() => openEdit(pack)}
-              onDelete={() => void handleDelete(pack.id)}
-              onTogglePublish={() => void handleTogglePublish(pack)}
-              onAddSection={(subject) => void handleAddSection(pack.id, subject)}
-              addingSection={addingSectionFor === pack.id}
-              publishing={publishingFor === pack.id}
+        <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+          {visibleSections.map((section) => (
+            <SectionCard
+              key={section.id}
+              section={section}
+              onEdit={() => openEdit(section)}
+              onDelete={() => void handleDelete(section.id)}
+              onTogglePublish={() => void handleTogglePublish(section)}
+              busy={busyId === section.id}
+              violations={violationsFor[section.id] ?? null}
             />
           ))}
         </div>
       )}
 
       {/* Create / edit modal */}
-      <PackModal
+      <SectionModal
         open={modalOpen}
-        title={editingPack ? "Edit practice test pack" : "New practice test pack"}
+        title={editing ? "Edit practice test" : "New practice test"}
         initial={modalInitial}
         saving={saving}
         error={saveError}
+        isEdit={!!editing}
         onSubmit={(f) => void handleSave(f)}
         onClose={() => setModalOpen(false)}
       />

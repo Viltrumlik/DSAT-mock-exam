@@ -30,6 +30,8 @@ interface ExamHeaderProps {
   onReportProblem?: () => void;
   /** The laptop's battery, in the Windows app only (null everywhere else). */
   battery?: BatteryStatus | null;
+  /** An untimed practice-test sitting: "Untimed" takes the place of the countdown. */
+  untimed?: boolean;
 }
 
 function ToolButton({ label, active, onClick, children }: { label: string; active?: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -65,6 +67,7 @@ export function ExamHeader({
   onSaveAndExit,
   onReportProblem,
   battery = null,
+  untimed = false,
 }: ExamHeaderProps) {
   return (
     <header className="grid shrink-0 grid-cols-3 items-center bg-white px-6 py-3">
@@ -83,16 +86,20 @@ export function ExamHeader({
       </div>
 
       <div className="flex justify-center">
-        {/* Pause sits beside Hide as a matching pill (item: Pause Button). */}
-        <Timer
-          secondsLeft={secondsLeft}
-          hidden={timerHidden}
-          onToggleHidden={onToggleTimer}
-          warning={timerWarning}
-          pauseAllowed={pauseAllowed}
-          paused={paused}
-          onTogglePause={onTogglePause}
-        />
+        {untimed ? (
+          <span className="rounded-full bg-slate-100 px-4 py-1.5 text-sm font-bold text-slate-600">Untimed</span>
+        ) : (
+          /* Pause sits beside Hide as a matching pill (item: Pause Button). */
+          <Timer
+            secondsLeft={secondsLeft}
+            hidden={timerHidden}
+            onToggleHidden={onToggleTimer}
+            warning={timerWarning}
+            pauseAllowed={pauseAllowed}
+            paused={paused}
+            onTogglePause={onTogglePause}
+          />
+        )}
       </div>
 
       <div className="flex items-center justify-end gap-6">

@@ -63,6 +63,8 @@ export interface AssignmentDetail {
     collection_name?: string;
     name?: string;
     subject?: string;
+    /** One of the centre's numbered practice tests (its `name` reads "Practice Test N"). */
+    is_practice_test?: boolean;
     state?: ContentState;
     attempt_id?: number | null;
     /** Sat before this homework was set and not since: the paper is offered again. */
@@ -168,6 +170,37 @@ export const KIND_LABEL: Record<AssignmentKind, string> = {
   FILE: "Homework",
 };
 
+/**
+ * Whether EVERY section the homework sets is one of the centre's own practice tests.
+ *
+ * A practice test travels as `practice_test_ids` and runs on the past-paper engine, so
+ * `assignmentKind` answers PASTPAPER for it and routing / launch / results all follow that. What
+ * the owner ruled is about WORDS: a practice test is never presented as a past paper. The sections
+ * the server resolved (`practice_bundle_tests`) are the only honest source — an empty list says
+ * nothing, so it never counts, and a mix of the two keeps the label it had.
+ */
+export function isPracticeTestHomework(a: AssignmentDetail): boolean {
+  const bundle = a.practice_bundle_tests ?? [];
+  return bundle.length > 0 && bundle.every((t) => Boolean(t.is_practice_test));
+}
+
+/**
+ * The words for a homework's kind. Identical to `KIND_LABEL[kind]` except that a homework whose
+ * sections are all practice tests is a "Practice Test" ("Practice Tests" when it sets several).
+ * The engine kind itself is untouched.
+ */
+export function homeworkKindLabel(a: AssignmentDetail, kind: AssignmentKind = assignmentKind(a)): string {
+  if (kind === "PASTPAPER" && isPracticeTestHomework(a)) {
+    return (a.practice_bundle_tests?.length ?? 0) > 1 ? "Practice Tests" : "Practice Test";
+  }
+  return KIND_LABEL[kind];
+}
+
+/** The words for one launcher card: a section that is a practice test says so. */
+export function contentKindLabel(c: Pick<ContentAction, "kind" | "isPracticeTest">): string {
+  return c.kind === "PASTPAPER" && c.isPracticeTest ? "Practice Test" : KIND_LABEL[c.kind];
+}
+
 /** Short subject label for disambiguating the sections of a multi-section past paper. */
 function subjectShort(s?: string): string {
   const v = (s || "").toUpperCase();
@@ -210,6 +243,8 @@ export interface ContentAction {
    * is history, not this homework, so the launcher offers a new one: "Start again".
    */
   retake?: boolean;
+  /** The section is one of the centre's practice tests (so its card says "Practice Test"). */
+  isPracticeTest?: boolean;
 }
 
 /** The launcher button's word for one content. */
@@ -290,7 +325,8 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
         })();
     const multi = sections.length > 1;
     for (const t of sections) {
-      const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || "Past Paper";
+      const isPractice = Boolean(t.is_practice_test);
+      const base = t.name?.trim() || t.collection_name?.trim() || t.title?.trim() || (isPractice ? "Practice Test" : "Past Paper");
       const name = multi ? `${base} · ${subjectShort(t.subject)}` : base;
       const mode = stateToMode(t.state);
       const aid = t.attempt_id ?? null;
@@ -299,10 +335,11 @@ export function contentActions(a: AssignmentDetail): ContentAction[] {
           : mode === "resume" && aid != null ? `/exam/${aid}?welcome=1`
           : `/practice-test/${t.id}`;
       out.push({
-        kind: "PASTPAPER", name, label: "Open Past Paper", href, mode, attemptId: aid,
+        kind: "PASTPAPER", name, label: isPractice ? "Open Practice Test" : "Open Past Paper", href, mode, attemptId: aid,
         // Only a fresh section starts a new attempt; resume/review follow href.
         startTestId: mode === "start" ? t.id : undefined,
         retake: mode === "start" && Boolean(t.retake),
+        isPracticeTest: isPractice,
       });
     }
   }

@@ -181,6 +181,8 @@ class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False)
     mock_exam_id = serializers.IntegerField(allow_null=True, required=False)
     mock_kind = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    is_practice_test = serializers.BooleanField(required=False)
+    practice_number = serializers.IntegerField(allow_null=True, required=False)
     modules = ModuleListSerializer(many=True)
 
 
@@ -205,8 +207,19 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "modules",
             "created_at",
             "mock_exam_id",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
         ]
-        read_only_fields = ["created_at", "mock_exam_id"]
+        read_only_fields = [
+            "created_at",
+            "mock_exam_id",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
+        ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -305,6 +318,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField(allow_null=True, required=False))
     def get_module_duration_seconds(self, obj):
+        if not getattr(obj, "is_timed", True):
+            return None
         mod = getattr(obj, "current_module", None)
         if not mod:
             # mirror serializer inference so the UI can still render safely
@@ -498,6 +513,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             "is_active": getattr(mock, "is_active", True) if mock is not None else True,
             "mock_exam_id": getattr(pt, "mock_exam_id", None),
             "mock_kind": getattr(mock, "kind", None) if mock is not None else None,
+            "is_practice_test": bool(getattr(pt, "is_practice_test", False)),
+            "practice_number": getattr(pt, "practice_number", None),
             "modules": ModuleListSerializer(pt.modules.all(), many=True).data,
         }
     
@@ -525,6 +542,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'engine_phase',
             'scoring_notice',
             'is_paused',
+            'is_timed',
         ]
 
         read_only_fields = [
@@ -551,6 +569,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'results_ready',
             'engine_phase',
             'scoring_notice',
+            'is_timed',
         ]
 
 # ── Admin Serializers ────────────────────────────────────────────────────────
@@ -847,8 +866,43 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "mock_exam",
             "modules",
             "assigned_users",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
         ]
-        read_only_fields = ["mock_exam", "published_at"]
+        read_only_fields = ["mock_exam", "published_at", "practice_number"]
+        # Deliberately empty. Without it DRF turns the model's conditional UniqueConstraint
+        # (uniq_practice_number_per_subject) into a validator and injects default=False on
+        # is_practice_test: a PATCH that omits the kind then crashes (KeyError -> 500) and a PUT
+        # that omits it reads as "turn into a past paper". practice_number is read-only and is only
+        # ever given by assign_practice_number under a lock; the DB constraint is the backstop.
+        validators = []
+
+    def validate_subject(self, value):
+        # Practice numbers run per subject (uniq_practice_number_per_subject), so a numbered test's
+        # subject is part of its name: moving "Practice Test 1" to the other subject would collide
+        # with that subject's own number 1 (an IntegrityError, i.e. a 500) or leave a gap behind.
+        # Fixed from the first publish. An unnumbered draft, and a past paper, may still change it.
+        inst = self.instance
+        number = getattr(inst, "practice_number", None) if inst is not None else None
+        if number is None:
+            return value
+        if _normalize_platform_subject_value(value) != _normalize_platform_subject_value(inst.subject):
+            raise serializers.ValidationError(
+                f"A numbered practice test cannot change its subject: Practice Test {number} stays "
+                f"{'Math' if _normalize_platform_subject_value(inst.subject) == 'MATH' else 'Reading & Writing'}."
+            )
+        # Same subject, perhaps spelled another way ("math", "Mathematics"): keep the stored value, so a
+        # re-save never rewrites the string the numbering constraint is keyed on.
+        return inst.subject
+
+    def validate_is_practice_test(self, value):
+        # The kind is fixed at creation: a past paper never turns into a practice test or back
+        # (their lists, numbering and visibility rules differ).
+        if self.instance is not None and bool(value) != bool(self.instance.is_practice_test):
+            raise serializers.ValidationError("A section's kind cannot change after it is created.")
+        return value
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

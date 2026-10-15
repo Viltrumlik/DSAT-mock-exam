@@ -88,19 +88,22 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
   const certificateAvailable =
     report.data?.certificate_available ?? Boolean(report.data?.certificate_code);
   const history = report.data?.history ?? [];
+  // A practice test shares this page (it runs on the past-paper engine) but is never presented as a
+  // past paper: its eyebrow and its way back say what it is.
+  const isPractice = report.data?.is_practice_test === true;
 
   return (
     <div className="dzboard" style={{ maxWidth: 900, margin: "0 auto", padding: "18px 16px 40px" }}>
       <button
         type="button"
-        onClick={() => router.push("/pastpapers")}
+        onClick={() => router.push(isPractice ? "/practice-tests" : "/pastpapers")}
         style={{
           display: "inline-flex", alignItems: "center", gap: 6, marginBottom: 16,
           border: "none", background: "none", cursor: "pointer",
           fontFamily: "inherit", fontSize: 13, fontWeight: 700, color: "var(--dz-mute)",
         }}
       >
-        <ArrowLeft size={15} /> Past papers
+        <ArrowLeft size={15} /> {isPractice ? "Practice tests" : "Past papers"}
       </button>
 
       {report.isPending ? (
@@ -143,7 +146,7 @@ export function PastpaperReportPage({ attemptId }: { attemptId: number }) {
             }}
           >
             <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--dz-faint)" }}>
-              {report.data.paper_title || "PAST PAPER"}
+              {report.data.paper_title || (isPractice ? "PRACTICE TEST" : "PAST PAPER")}
             </div>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 6 }}>
               <span style={{ fontSize: 44, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)", lineHeight: 1 }}>

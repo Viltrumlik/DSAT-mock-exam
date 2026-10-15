@@ -26,6 +26,7 @@ import { SegmentedControl } from "@/components/SegmentedControl";
 import MultiLinkInput, { fromLinkRows, toLinkRows, type LinkRow } from "@/components/MultiLinkInput";
 import LessonVideoField from "@/components/LessonVideoField";
 import { materialMeta } from "@/features/classroom/pages/materialMeta";
+import { levelLabel } from "@/features/pastpapers/pastpaperLabels";
 import { spawnRipple } from "@/features/classroom/ui/ripple";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import {
@@ -55,13 +56,21 @@ type AssessmentSetOption = {
 
 type PracticeScope = "BOTH" | "ENGLISH" | "MATH";
 
-type PracticeTestPackOption = {
+/** A published practice test of the class's subject, as `assignment-options` lists it. */
+type PracticeTestItemOption = {
   id: number;
+  number: number | null;
   title: string;
-  description: string;
-  section_count: number;
-  already_assigned?: boolean;
+  subject: string;
+  level: string;
+  access: "open" | "homework_only";
+  already_assigned: boolean;
 };
+
+/** "Practice Test 4" when it has a number, else whatever the builder titled it. */
+function practiceItemName(p: PracticeTestItemOption): string {
+  return p.number ? `Practice Test ${p.number}` : p.title;
+}
 
 type VocabSetOption = {
   id: number;
@@ -76,7 +85,7 @@ type VocabSectionOption = {
   sets: VocabSetOption[];
 };
 
-type TabKey = "pastpapers" | "packs" | "assessments" | "vocabulary" | "submission";
+type TabKey = "pastpapers" | "practice" | "assessments" | "vocabulary" | "submission";
 
 /** What is being authored. The form is identical; only the deadline rule and the wording differ. */
 export type AssignmentKind = "HOMEWORK" | "CLASSWORK";
@@ -229,7 +238,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   // "already assigned" to the class — because they are, by this homework — so they must
   // stay pickable even after the teacher toggles one off and changes their mind.
   const [ownAssessmentSetIds, setOwnAssessmentSetIds] = useState<Set<number>>(new Set());
-  const [selectedPackIds, setSelectedPackIds] = useState<Set<number>>(new Set());
   const [selectedVocabSetIds, setSelectedVocabSetIds] = useState<Set<number>>(new Set());
   // Deadline is composed from two dropdowns (no calendar): a date (next 7 days) + a time.
   const [asgFiles, setAsgFiles] = useState<File[]>([]);
@@ -240,15 +248,13 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   // Classroom level (foundation/junior/middle/senior, "" = untagged). Past papers
   // are only offered to Middle/Senior groups.
   const [classroomLevel, setClassroomLevel] = useState<string>("");
-  // The content library shows one tab at a time (Pastpapers/Packs/Assessments/Submission).
+  // The content library shows one tab at a time (Pastpapers/Practice tests/Assessments/Submission).
   const [activeTab, setActiveTab] = useState<TabKey>("pastpapers");
 
-  // Picker filters: search + region/year for pastpapers, search for packs,
-  // search + source for assessments.
+  // Picker filters: search + region/year for pastpapers, search + source for assessments.
   const [pastpaperSearch, setPastpaperSearch] = useState("");
   const [pastpaperRegion, setPastpaperRegion] = useState<"ALL" | "US" | "INTL">("ALL");
   const [pastpaperYear, setPastpaperYear] = useState("ALL");
-  const [packSearch, setPackSearch] = useState("");
   const [assessmentSearch, setAssessmentSearch] = useState("");
   const [assessmentSource, setAssessmentSource] = useState("ALL");
   const [vocabSearch, setVocabSearch] = useState("");
@@ -259,9 +265,9 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   const [assignmentOptions, setAssignmentOptions] = useState<{
     practice_tests: PastpaperRow[];
     assessment_sets: AssessmentSetOption[];
-    practice_test_packs: PracticeTestPackOption[];
+    practice_test_items: PracticeTestItemOption[];
     vocabulary_sections: VocabSectionOption[];
-  }>({ practice_tests: [], assessment_sets: [], practice_test_packs: [], vocabulary_sections: [] });
+  }>({ practice_tests: [], assessment_sets: [], practice_test_items: [], vocabulary_sections: [] });
   const [asgOptionsLoading, setAsgOptionsLoading] = useState(false);
   const [asgOptionsError, setAsgOptionsError] = useState<string | null>(null);
   const [creatingAsg, setCreatingAsg] = useState(false);
@@ -306,15 +312,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     [filteredPastpaperCards, sectionAssigned]
   );
 
-  const filteredPacks = useMemo(() => {
-    const q = packSearch.trim().toLowerCase();
-    if (!q) return assignmentOptions.practice_test_packs;
-    return assignmentOptions.practice_test_packs.filter(
-      (p) => `${p.title} ${p.description}`.toLowerCase().includes(q)
-    );
-  }, [assignmentOptions.practice_test_packs, packSearch]);
-  const availablePacks = useMemo(() => filteredPacks.filter((p) => !p.already_assigned), [filteredPacks]);
-  const givenPacks = useMemo(() => filteredPacks.filter((p) => p.already_assigned), [filteredPacks]);
+  const availablePracticeItems = useMemo(() => assignmentOptions.practice_test_items.filter((p) => !p.already_assigned), [assignmentOptions.practice_test_items]);
+  const givenPracticeItems = useMemo(() => assignmentOptions.practice_test_items.filter((p) => p.already_assigned), [assignmentOptions.practice_test_items]);
 
   const filteredAssessmentSets = useMemo(() => {
     const q = assessmentSearch.trim().toLowerCase();
@@ -370,7 +369,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     setSelectedTestIds(new Set());
     setSelectedAssessmentIds(new Set());
     setOwnAssessmentSetIds(new Set());
-    setSelectedPackIds(new Set());
     setSelectedVocabSetIds(new Set());
     setAsgFiles([]);
     setReplaceAttachments(false);
@@ -393,7 +391,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           setAssignmentOptions({
             practice_tests: Array.isArray(d.practice_tests) ? d.practice_tests : [],
             assessment_sets: Array.isArray(d.assessment_sets) ? d.assessment_sets : [],
-            practice_test_packs: Array.isArray(d.practice_test_packs) ? d.practice_test_packs : [],
+            practice_test_items: Array.isArray(d.practice_test_items) ? d.practice_test_items : [],
             vocabulary_sections: Array.isArray(d.vocabulary_sections)
               ? d.vocabulary_sections.map((s) => ({ ...s, sets: Array.isArray(s.sets) ? s.sets : [] }))
               : [],
@@ -405,7 +403,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       } catch (e: unknown) {
         const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
         if (!cancelled) {
-          setAssignmentOptions({ practice_tests: [], assessment_sets: [], practice_test_packs: [], vocabulary_sections: [] });
+          setAssignmentOptions({ practice_tests: [], assessment_sets: [], practice_test_items: [], vocabulary_sections: [] });
           setAsgOptionsError(typeof msg === "string" ? msg : "Could not load test lists.");
         }
       } finally {
@@ -477,22 +475,8 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     setSelectedAssessmentIds(nextAssessmentIds);
     setOwnAssessmentSetIds(new Set(nextAssessmentIds));
 
-    // ── Practice packs ── multi `practice_test_pack_ids` and/or legacy single `practice_test_pack`.
-    const nextPackIds = new Set<number>();
-    if (Array.isArray(editingAssignment.practice_test_pack_ids)) {
-      for (const x of editingAssignment.practice_test_pack_ids as unknown[]) {
-        const n = Number(x);
-        if (Number.isFinite(n)) nextPackIds.add(n);
-      }
-    }
-    const ptp = editingAssignment.practice_test_pack;
-    if (ptp != null) {
-      const ptpId = typeof ptp === "object" && ptp != null && "id" in ptp ? Number((ptp as { id: number }).id) : Number(ptp);
-      if (Number.isFinite(ptpId)) nextPackIds.add(ptpId);
-    }
-    setSelectedPackIds(nextPackIds);
-
-    // ── Pastpaper sections ── multi `practice_test_ids` and/or legacy single `practice_test`.
+    // ── Pastpaper and practice-test sections ── multi `practice_test_ids` (a practice test is
+    // a section too, so its id rides here) and/or legacy single `practice_test`.
     const nextTestIds = new Set<number>();
     if (Array.isArray(editingAssignment.practice_test_ids)) {
       for (const x of editingAssignment.practice_test_ids as unknown[]) {
@@ -587,7 +571,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       const editId = editingAssignment != null ? Number(editingAssignment.id) : NaN;
       if (Number.isFinite(editId)) {
         const testIds = [...selectedTestIds];
-        const packIds = [...selectedPackIds];
         const body: Record<string, unknown> = {
           title: newAsg.title.trim(),
           instructions: newAsg.instructions,
@@ -599,7 +582,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
           ...(videoRemoved && !videoKey && !videoUrl.trim() ? { remove_video: true } : {}),
           practice_test: null,
           practice_test_ids: testIds.length > 0 ? testIds : null,
-          practice_test_pack_ids: packIds.length > 0 ? packIds : null,
           // Reconcile attached assessments on edit — always send the full selection
           // (including empty) so the backend can attach AND detach.
           assessment_set_ids: [...selectedAssessmentIds],
@@ -657,10 +639,6 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       // A resource counts only if the teacher actually selected it.
       if (selectedTestIds.size > 0) {
         fd.append("practice_test_ids", JSON.stringify([...selectedTestIds]));
-        fd.append("practice_scope", practiceScope);
-      }
-      if (selectedPackIds.size > 0) {
-        fd.append("practice_test_pack_ids", JSON.stringify([...selectedPackIds]));
         fd.append("practice_scope", practiceScope);
       }
       if (selectedAssessmentIds.size > 0) {
@@ -745,16 +723,10 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       setNewAsg((prev) => ({ ...prev, title: sectionTitle ? `${sectionTitle} · ${vset.title}` : vset.title }));
     }
   };
-  const handlePackSelect = (ptp: PracticeTestPackOption) => {
-    const wasSel = selectedPackIds.has(ptp.id);
-    setSelectedPackIds((prev) => {
-      const next = new Set(prev);
-      if (wasSel) next.delete(ptp.id);
-      else next.add(ptp.id);
-      return next;
-    });
-    if (!wasSel && !newAsg.title.trim()) setNewAsg((prev) => ({ ...prev, title: ptp.title }));
-  };
+  // A practice test is a past-paper section with a number: its id goes in the SAME set, and
+  // leaves as `practice_test_ids`, so grant, grading and the launcher are shared.
+  const togglePracticeItem = (id: number) =>
+    setSelectedTestIds((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
 
   const removeFile = (idx: number) => setAsgFiles((prev) => prev.filter((_, i) => i !== idx));
   const removeEditFile = (idx: number) => setEditAsgFiles((prev) => prev.filter((_, i) => i !== idx));
@@ -774,15 +746,15 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
         onRemove: () => handleCardSelect(c),
       });
     }
-    for (const p of assignmentOptions.practice_test_packs) {
-      if (!selectedPackIds.has(p.id)) continue;
+    for (const p of assignmentOptions.practice_test_items) {
+      if (!selectedTestIds.has(p.id)) continue;
       out.push({
-        key: `pack-${p.id}`,
+        key: `pt-${p.id}`,
         type: "practice",
-        title: p.title || `Pack #${p.id}`,
-        meta: `Practice test · ${p.section_count} section${p.section_count !== 1 ? "s" : ""}`,
-        assigned: !!p.already_assigned,
-        onRemove: () => handlePackSelect(p),
+        title: practiceItemName(p),
+        meta: `Practice test · ${levelLabel(p.level)}`,
+        assigned: p.already_assigned,
+        onRemove: () => togglePracticeItem(p.id),
       });
     }
     for (const a of assignmentOptions.assessment_sets) {
@@ -817,7 +789,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedPackIds, selectedAssessmentIds, selectedVocabSetIds, vocabSetIndex, sectionAssigned]);
+  }, [pastpaperCards, assignmentOptions, selectedTestIds, selectedAssessmentIds, selectedVocabSetIds, vocabSetIndex, sectionAssigned]);
 
   // What the automatic side of the grade is actually made of, named rather than counted:
   // "the other 80%" against nothing in particular is a number a teacher cannot check.
@@ -830,6 +802,11 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   // them to make their share 100% — which would have handed the whole grade to their own
   // mark on a homework that was already composing 20/80 correctly.
   const autoGradedCounts = useMemo<AutoGradedCounts>(() => {
+    // A practice test shares `selectedTestIds` with the past papers but is a different noun to a
+    // teacher, so the ids the picker lists as practice tests are counted apart.
+    const practiceIds = new Set(assignmentOptions.practice_test_items.map((p) => p.id));
+    let practice = 0;
+    for (const id of selectedTestIds) if (practiceIds.has(id)) practice += 1;
     // One pastpaper card is one "past paper" to a teacher but several section rows to the
     // API, so group by card where the cards are known and count anything left over singly.
     const grouped = new Set<number>();
@@ -840,14 +817,14 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
       pastpaper += 1;
       for (const id of ids) grouped.add(id);
     }
-    for (const id of selectedTestIds) if (!grouped.has(id)) pastpaper += 1;
+    for (const id of selectedTestIds) if (!grouped.has(id) && !practiceIds.has(id)) pastpaper += 1;
     return {
       assessment: selectedAssessmentIds.size,
       vocabulary: selectedVocabSetIds.size,
       pastpaper,
-      practice: selectedPackIds.size,
+      practice,
     };
-  }, [pastpaperCards, selectedTestIds, selectedAssessmentIds, selectedVocabSetIds, selectedPackIds]);
+  }, [pastpaperCards, assignmentOptions.practice_test_items, selectedTestIds, selectedAssessmentIds, selectedVocabSetIds]);
   const autoGradedSummary = useMemo(() => listAutoGradedParts(autoGradedCounts), [autoGradedCounts]);
   const hasAutoGradedContent = autoGradedSummary !== "";
   // A share below 100 says the rest of the grade comes from work that marks itself. With
@@ -943,7 +920,7 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     const sectionRows = c.kind === "pastpaper_pack" ? c.tests : [{ id: c.test.id, subject: c.test.subject }];
     return (
       <PickCard key={cardReactKey(c)} selected={cardSelected(c)} given={given} onClick={() => handleCardSelect(c)}>
-        <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Practice test"}</span>
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">{c.kind === "pastpaper_pack" ? "Full exam" : "Past paper"}</span>
         <span className="text-[12.5px] font-semibold text-muted-foreground">{formatLineDate(lineDate)}</span>
         <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{cardHeading(c)}</span>
         <span className="mt-0.5 flex flex-wrap gap-1.5">
@@ -991,12 +968,13 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     </PickCard>
   );
 
-  const renderPackCard = (ptp: PracticeTestPackOption, given: boolean) => (
-    <PickCard key={ptp.id} selected={selectedPackIds.has(ptp.id)} given={given} onClick={() => handlePackSelect(ptp)}>
-      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">Practice test pack</span>
-      <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{ptp.title || `Pack #${ptp.id}`}</span>
-      {ptp.description ? <span className="line-clamp-2 text-[12px] text-muted-foreground">{ptp.description}</span> : null}
-      <span className="text-[12px] font-semibold text-muted-foreground">{ptp.section_count} section{ptp.section_count !== 1 ? "s" : ""}</span>
+  const renderPracticeItemCard = (p: PracticeTestItemOption, given: boolean) => (
+    <PickCard key={p.id} selected={selectedTestIds.has(p.id)} given={given} onClick={() => togglePracticeItem(p.id)}>
+      <span className="text-[11px] font-extrabold uppercase tracking-wider text-primary">
+        {p.access === "homework_only" ? "Practice test · Homework only" : "Practice test"}
+      </span>
+      <span className="line-clamp-2 text-[15px] font-bold leading-snug text-foreground">{practiceItemName(p)}</span>
+      <span className="text-[12px] font-semibold text-muted-foreground">{[p.number && p.title ? p.title : null, levelLabel(p.level)].filter(Boolean).join(" · ")}</span>
     </PickCard>
   );
 
@@ -1035,11 +1013,11 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
     </PickCard>
   );
 
-  // Practice test packs are no longer offered when creating an assignment.
   // Pastpapers only appear for Middle/Senior classes. Vocabulary is general SAT
   // prep, so every class gets it regardless of subject or level.
   const TABS: { key: TabKey; label: string; icon: typeof BookOpen }[] = [
     ...(showPastpapers ? [{ key: "pastpapers" as const, label: "Pastpapers", icon: BookOpen }] : []),
+    { key: "practice", label: "Practice tests", icon: FlaskConical },
     { key: "assessments", label: "Assessments", icon: ClipboardList },
     { key: "vocabulary", label: "Vocabulary", icon: Languages },
     { key: "submission", label: "Submission", icon: SlidersHorizontal },
@@ -1250,22 +1228,18 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
             </div>
           )}
 
-          {/* Practice test packs */}
-          {activeTab === "packs" && (
+          {/* Practice tests — the centre's own numbered tests; ids join the past papers' set */}
+          {activeTab === "practice" && (
             <div className={panelCls} role="tabpanel">
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <input value={packSearch} onChange={(e) => setPackSearch(e.target.value)} placeholder="Search practice test packs…" className={searchInputCls} />
-              </div>
-              {filteredPacks.length === 0 ? (
-                <EmptyPanel icon={FlaskConical} title="No practice test packs found" text="Create and publish one in the Builder console first." />
+              {assignmentOptions.practice_test_items.length === 0 ? (
+                <EmptyPanel icon={FlaskConical} title="No practice tests for this subject yet" text="Publish one in the Builder console first." />
               ) : (
                 <>
-                  {availablePacks.length > 0 && (<>{groupTitle("Available")}<div className={cardGrid}>{availablePacks.map((p) => renderPackCard(p, false))}</div></>)}
-                  {givenPacks.length > 0 && (<>{groupTitle("Already assigned")}<div className={cardGrid}>{givenPacks.map((p) => renderPackCard(p, true))}</div></>)}
+                  {availablePracticeItems.length > 0 && (<>{groupTitle("Available")}<div className={cardGrid}>{availablePracticeItems.map((p) => renderPracticeItemCard(p, false))}</div></>)}
+                  {givenPracticeItems.length > 0 && (<>{groupTitle("Already assigned")}<div className={cardGrid}>{givenPracticeItems.map((p) => renderPracticeItemCard(p, true))}</div></>)}
                 </>
               )}
-              <p className={captionCls}>Select one or more custom practice tests to assign.</p>
+              <p className={captionCls}>Select one or more. Homework only tests stay hidden from students until you set them.</p>
             </div>
           )}
 

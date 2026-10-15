@@ -3,8 +3,6 @@
 import Link from "next/link";
 import {
   ArrowRight,
-  BookOpen,
-  Calculator,
   Check,
   ClipboardCheck,
   Coins,
@@ -31,14 +29,13 @@ import {
   localDate,
   profileChecklist,
   recentResults,
-  resultHref,
-  subjectLabel,
   summariseHomework,
   type ChecklistKey,
   type DueTone,
   type HomeworkRow,
 } from "./profileModel";
 import { Eyebrow, IconTile, Panel, PanelHeader, pill, TONE, type Tone } from "./profileUi";
+import { ResultRow } from "./ResultsTab";
 import type { Load, ProfileAttempt, ProfileMe, SettingsSectionKey } from "./types";
 
 /* ── Stat tiles ──────────────────────────────────────────────────────────────────────── */
@@ -280,38 +277,9 @@ function GoalPanel({
           </p>
         ) : (
           <ul className="mt-3 space-y-2">
-            {results.map((a) => {
-              const math = (a.practice_test_details?.subject ?? "").toUpperCase() === "MATH";
-              const title =
-                a.practice_test_details?.title?.trim() ||
-                a.practice_test_details?.collection_name?.trim() ||
-                subjectLabel(a.practice_test_details?.subject);
-              const when = a.submitted_at
-                ? new Date(a.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
-                : "";
-              return (
-                <li key={a.id} className="quartz quartz-float squircle group relative flex items-center gap-3 px-3.5 py-2.5 [--sq:9px]">
-                  <IconTile icon={math ? Calculator : BookOpen} tone={math ? "sky" : "emerald"} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13.5px] font-bold text-foreground">{title}</p>
-                    <p className="truncate text-[12px] font-medium text-muted-foreground">
-                      {subjectLabel(a.practice_test_details?.subject)}
-                      {when ? ` · ${when}` : ""}
-                    </p>
-                  </div>
-                  <span className="ds-num text-[20px] font-extrabold tabular-nums text-foreground">{a.score}</span>
-                  <Link
-                    href={resultHref(a)}
-                    className="ds-ring inline-flex items-center gap-1 rounded-md text-[12.5px] font-bold text-primary no-underline after:absolute after:inset-0 after:content-[''] dark:text-primary-hover"
-                  >
-                    {/* The word only where there is room for it; on a phone the arrow says it, and the
-                        link keeps "Review" as its name either way. */}
-                    <span className="sr-only sm:not-sr-only">Review</span>
-                    <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden />
-                  </Link>
-                </li>
-              );
-            })}
+            {results.map((a) => (
+              <ResultRow key={a.id} attempt={a} />
+            ))}
           </ul>
         )}
       </div>

@@ -62,10 +62,11 @@ export function createExamApi(base: string) {
       }
     },
 
-    /** Transition NOT_STARTED → active. Idempotent via key. */
-    async start(attemptId: number, idempotencyKey?: string): Promise<Attempt> {
+    /** Transition NOT_STARTED → active. Idempotent via key. `timed:false` = untimed practice test. */
+    async start(attemptId: number, idempotencyKey?: string, opts?: { timed?: boolean }): Promise<Attempt> {
+      const body = opts?.timed === false ? { timed: false } : {};
       const r = await guarded(
-        api.post(`${base}/${attemptId}/start/`, {}, { headers: headersFor(attemptId, idempotencyKey) }),
+        api.post(`${base}/${attemptId}/start/`, body, { headers: headersFor(attemptId, idempotencyKey) }),
       );
       return parseAttempt(r.data, "POST start");
     },

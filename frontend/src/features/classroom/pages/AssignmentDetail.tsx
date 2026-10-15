@@ -14,7 +14,7 @@ import { Card, CardHeader, Button, Pill, LoadingState, ErrorState } from "../ui"
 import { useClassroom } from "../hooks";
 import { capabilitiesFor, type Capabilities } from "../capabilities";
 import { useAssignment, useMySubmission, useSubmitHomework } from "../homeworkHooks";
-import { assignmentKind, contentActions, homeworkAnalysisScope, KIND_LABEL, launcherLabel, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
+import { assignmentKind, contentActions, contentKindLabel, homeworkAnalysisScope, homeworkKindLabel, isPracticeTestHomework, launcherLabel, type AssignmentDetail, type AssignmentKind, type MySubmission } from "../homeworkApi";
 import { HomeworkQuestionStatistics } from "@/features/questionAnalysis/HomeworkQuestionStatistics";
 import { MostMissed } from "@/features/teacher/mistakes";
 import { spawnRipple } from "../ui/ripple";
@@ -96,7 +96,7 @@ function TeacherView({ base, assignment, caps }: { base: string; assignment: Ass
     <div className="cr-section mt-4 space-y-5">
       <header>
         <div className="flex items-center gap-2">
-          <Pill tone="primary">{isClasswork ? "Classwork" : KIND_LABEL[kind]}</Pill>
+          <Pill tone="primary">{isClasswork ? "Classwork" : homeworkKindLabel(assignment, kind)}</Pill>
           {assignment.status === "DRAFT" && <Pill tone="neutral">Draft</Pill>}
           {assignment.status === "ARCHIVED" && <Pill tone="neutral">Archived</Pill>}
         </div>
@@ -296,7 +296,7 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
     }
   }
 
-  const action = resolveAction(kind, status);
+  const action = resolveAction(kind, status, homeworkKindLabel(assignment, kind));
   const actions = contentActions(assignment);
   /**
    * Classwork is work the class already did, in the room. It has no deadline by rule (the
@@ -313,7 +313,15 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
   const canUpload =
     Boolean((assignment as { allow_file_upload?: boolean }).allow_file_upload) ||
     (actions.length === 0 && !isClasswork);
-  const badgeLabel = isClasswork ? "Classwork" : actions.length > 1 ? "Bundle" : KIND_LABEL[kind];
+  // "Bundle" for several contents — except several practice tests, which are one kind of thing and
+  // say so. A practice test is never labelled a past paper (the engine kind stays PASTPAPER).
+  const onlyPracticeTests =
+    kind === "PASTPAPER" && actions.every((c) => c.kind === "PASTPAPER") && isPracticeTestHomework(assignment);
+  const badgeLabel = isClasswork
+    ? "Classwork"
+    : actions.length > 1 && !onlyPracticeTests
+      ? "Bundle"
+      : homeworkKindLabel(assignment, kind);
 
   // Meta tiles (design's hero row): label + value, animated with stagger.
   const tiles: { label: string; value: string; countdown?: boolean }[] = isClasswork
@@ -444,7 +452,7 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
           {actions.map((c) => (
             <Card key={`${c.kind}-${c.href}`} className="cr-card cr-lift flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <Pill tone="primary">{KIND_LABEL[c.kind]}</Pill>
+                <Pill tone="primary">{contentKindLabel(c)}</Pill>
               </div>
               <p className="flex-1 text-[15px] font-bold text-foreground">{c.name}</p>
               <Button
@@ -619,7 +627,7 @@ function StudentView({ classId, base, assignment }: { classId: number; base: str
   );
 }
 
-function resolveAction(kind: AssignmentKind, status: MySubmission["workflow_status"] | null):
+function resolveAction(kind: AssignmentKind, status: MySubmission["workflow_status"] | null, kindLabel: string):
   { label: string; icon: React.ElementType; mode: "start" | "upload" | "feedback" } {
   if (status === "REVIEWED") return { label: "Review feedback", icon: MessageSquare, mode: "feedback" };
   if (kind === "FILE") {
@@ -627,9 +635,9 @@ function resolveAction(kind: AssignmentKind, status: MySubmission["workflow_stat
     if (status === "SUBMITTED") return { label: "Edit submission", icon: Upload, mode: "upload" };
     return { label: "Upload submission", icon: Upload, mode: "upload" };
   }
-  if (status === "RETURNED") return { label: `Start ${KIND_LABEL[kind]} again`, icon: RotateCcw, mode: "start" };
-  if (status === "SUBMITTED") return { label: `Open ${KIND_LABEL[kind]}`, icon: Play, mode: "start" };
-  return { label: `Start ${KIND_LABEL[kind]}`, icon: Play, mode: "start" };
+  if (status === "RETURNED") return { label: `Start ${kindLabel} again`, icon: RotateCcw, mode: "start" };
+  if (status === "SUBMITTED") return { label: `Open ${kindLabel}`, icon: Play, mode: "start" };
+  return { label: `Start ${kindLabel}`, icon: Play, mode: "start" };
 }
 
 function UploadPanel({ classId, assignmentId, my, limits: served, onClose }: {

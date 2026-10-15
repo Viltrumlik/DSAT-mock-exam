@@ -38,6 +38,8 @@ export interface AttemptErrorReport {
   practice_test_id?: number;
   score: number | null;
   paper_title: string;
+  /** The centre's own practice test (named "Practice Test N"), not a past paper. */
+  is_practice_test?: boolean;
   /** Null until the certificate is minted, and for a sitting that never earns one. */
   certificate_code: string | null;
   /**
