@@ -131,7 +131,8 @@ export function ClassHeader({
           </span>
           <div className="min-w-0 space-y-2.5">
             <div>
-              <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{room.name}</h1>
+              {/* Wrapped, never cut — lc-up names run long ("Senior G2 | Math | Shukrona"). */}
+              <h1 className="break-words text-2xl font-semibold tracking-tight text-foreground">{room.name}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 <span className="inline-flex items-center gap-1.5">
                   <CalendarClock aria-hidden className="h-3.5 w-3.5" />
