@@ -169,19 +169,26 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
                 })
 
         # --- Past papers / practice homework (classes.Submission with practice/pastpaper target) ---
-        if f_type in ("all", "past paper", "pastpaper", "past_paper"):
+        if f_type in ("all", "past paper", "pastpaper", "past_paper", "practice test", "practice_test"):
             subs = (Submission.objects
                     .filter(assignment__classroom=classroom, student_id__in=student_ids)
                     .exclude(assignment__assessment_homeworks__isnull=False)
-                    .select_related("assignment", "review"))
+                    .select_related("assignment", "review", "attempt__practice_test"))
             for s in subs:
                 a = s.assignment
                 if not (a.practice_test_id or a.practice_test_ids or a.practice_test_pack_id):
                     continue
+                row_type = "Practice Test" if (s.attempt_id and s.attempt.practice_test.is_practice_test) else "Past Paper"
+                # One query feeds both kinds; the type filter keeps each to its own rows.
+                if f_type in ("practice test", "practice_test") and row_type != "Practice Test":
+                    continue
+                if f_type in ("past paper", "pastpaper", "past_paper") and row_type != "Past Paper":
+                    continue
                 review = getattr(s, "review", None)
                 rows.append({
                     "student_id": s.student_id, "student": name_by_id.get(s.student_id, str(s.student_id)), "student_profile_image_url": photo_by_id.get(s.student_id),
-                    "content_name": a.title, "type": "Past Paper",
+                    "content_name": a.title, "type": row_type,
+                    "untimed": bool(s.attempt_id and not s.attempt.is_timed),
                     "score": (float(review.grade) if (review and review.grade is not None) else None),
                     "status": s.status,
                     "submission_date": (s.submitted_at.isoformat() if getattr(s, "submitted_at", None) else (s.created_at.isoformat() if getattr(s, "created_at", None) else None)),

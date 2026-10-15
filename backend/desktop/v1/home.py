@@ -84,7 +84,10 @@ def _finished_order(row: dict):
 
 def pastpaper_rows(user) -> list[dict]:
     papers = list(
-        PracticeTest.objects.filter(mock_exam__isnull=True, modules__questions__isnull=False, assigned_users=user)
+        PracticeTest.objects.filter(
+            mock_exam__isnull=True, modules__questions__isnull=False, assigned_users=user,
+            is_practice_test=False,  # practice tests reach the Windows app in PR 2
+        )
         .distinct()
         .order_by(F("practice_date").desc(nulls_last=True), "-id")
         .only("id", "title", "practice_date", "subject", "label", "form_type", "collection_name")
