@@ -103,10 +103,22 @@ export function Table({ head, children }: { head: Column[]; children: ReactNode 
   );
 }
 
-/** One cell of `Table`. */
-export function Td({ children, className }: { children: ReactNode; className?: string }) {
+/**
+ * One cell of `Table`. `wrap` lets a phone break the text onto a second line instead of cutting it
+ * ("Excused — Kasal" lost its reason to an ellipsis); from `sm` up it stays on one line. A prop, not
+ * a class: `cn` is not tailwind-merge, so a `whitespace-normal` passed in would fight the default.
+ */
+export function Td({ children, className, wrap = false }: { children: ReactNode; className?: string; wrap?: boolean }) {
   return (
-    <td className={cn("h-[34px] whitespace-nowrap border-b border-border px-3 text-foreground", className)}>{children}</td>
+    <td
+      className={cn(
+        "h-[34px] border-b border-border px-3 text-foreground",
+        wrap ? "whitespace-normal break-words py-1 sm:whitespace-nowrap sm:py-0" : "whitespace-nowrap",
+        className,
+      )}
+    >
+      {children}
+    </td>
   );
 }
 
