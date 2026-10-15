@@ -475,6 +475,15 @@ CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "")
 CELERY_TASK_ALWAYS_EAGER = os.getenv("CELERY_TASK_ALWAYS_EAGER", "False").lower() == "true"
 CELERY_TASK_EAGER_PROPAGATES = True
+# Nothing reads a task's result, and asking for one is what hung beat. The Redis result backend
+# subscribes every SENDING process (beat, gunicorn) to a pub/sub channel per task unless the
+# result is ignored. redis-py 6.2.0's PubSub re-enters its own non-reentrant lock when it
+# reconnects (redis/redis-py#3640). So each apt-driven redis-server restart deadlocked beat, 4
+# times since August and for up to 46 h, and deadlocked gunicorn workers until the 120 s timeout
+# killed them. Ignored, no sender ever opens that PubSub. Applies to `.delay()`/`apply_async`
+# only: `app.send_task` never reads it, and beat falls back to `send_task` for a scheduled task
+# missing from its registry. config/tests_celery_results.py pins both paths.
+CELERY_TASK_IGNORE_RESULT = True
 
 # Exams: when Celery broker is not configured (local/dev), score inline so attempts can complete.
 EXAMS_SCORE_INLINE_IF_NO_CELERY = _env_bool("EXAMS_SCORE_INLINE_IF_NO_CELERY", default_when_unset=DEBUG)
