@@ -7,6 +7,7 @@ Authorization MUST NOT depend on this module: every API view still enforces role
 ``subject``, and ``UserAccess`` via ``access.services.authorize`` and related checks.
 """
 
+import re
 from dataclasses import dataclass
 
 from django.http import JsonResponse
@@ -41,13 +42,25 @@ PUBLIC_STUDENT_API_PREFIXES = (
 PUBLIC_STUDENT_DENIED_PREFIXES = ("/api/mocks/sessions/",)
 
 
-def public_student_may(path: str) -> bool:
+#: Read-only exceptions: a public learner who used to study at the centre still opens their OWN
+#: finished results — practice tests and past papers (owner decision 2026-10-14, B4 = A).
+#: GET/HEAD only; the view scopes the rows to completed attempts of the requester.
+PUBLIC_STUDENT_READONLY_PATTERNS = (
+    re.compile(r"^/api/exams/attempts/$"),
+    re.compile(r"^/api/exams/attempts/\d+/$"),
+    re.compile(r"^/api/exams/attempts/\d+/(review|results)/$"),
+)
+
+
+def public_student_may(path: str, method: str = "GET") -> bool:
     """May a public learner reach this path? Non-API paths are not this guard's business."""
     if not path.startswith("/api/"):
         return True
     if path.startswith(PUBLIC_STUDENT_DENIED_PREFIXES):
         return False
-    return path.startswith(PUBLIC_STUDENT_API_PREFIXES)
+    if path.startswith(PUBLIC_STUDENT_API_PREFIXES):
+        return True
+    return method in ("GET", "HEAD") and any(p.match(path) for p in PUBLIC_STUDENT_READONLY_PATTERNS)
 
 
 @dataclass(frozen=True)
@@ -163,7 +176,7 @@ class SubdomainAPIGuardMiddleware:
             if u and getattr(u, "is_authenticated", False)
             else ""
         )
-        if role == acc_const.ROLE_PUBLIC_STUDENT and not public_student_may(path):
+        if role == acc_const.ROLE_PUBLIC_STUDENT and not public_student_may(path, method):
             exams_metric_incr("forbidden_admin_route_total")
             return JsonResponse(
                 {"detail": "This is available to learning center students only.", "code": "centre_only"},

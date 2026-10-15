@@ -63,6 +63,23 @@ class GateTests(TestCase):
         self.assertTrue(public_student_may("/api/mocks/attempts/5/status/"))
         self.assertFalse(public_student_may("/api/mocks/sessions/join/"))
 
+    def test_a_leaver_reads_only_their_own_finished_attempts_and_nothing_else_in_exams(self):
+        # Read-only exceptions (owner decision 2026-10-14): list, detail, review, results. GET/HEAD only.
+        self.assertTrue(public_student_may("/api/exams/attempts/", "GET"))
+        self.assertTrue(public_student_may("/api/exams/attempts/", "HEAD"))
+        self.assertTrue(public_student_may("/api/exams/attempts/5/", "GET"))
+        self.assertTrue(public_student_may("/api/exams/attempts/5/review/", "GET"))
+        self.assertTrue(public_student_may("/api/exams/attempts/5/results/", "GET"))
+        self.assertFalse(public_student_may("/api/exams/attempts/", "POST"))
+        self.assertFalse(public_student_may("/api/exams/attempts/5/review/", "POST"))
+        self.assertFalse(public_student_may("/api/exams/attempts/5/resume/", "POST"))
+        for closed in (
+            "/api/exams/", "/api/exams/7/", "/api/exams/attempts/5/status/", "/api/exams/attempts/5/start/",
+            "/api/exams/attempts/5/save_attempt/", "/api/exams/attempts/x/", "/api/exams/attempts/5/review/x/",
+            "/api/exams/attempts/5/results/extra/", "/api/exams/admin/attempts/", "/api/exams/practice-packs/",
+        ):
+            self.assertFalse(public_student_may(closed, "GET"), closed)
+
     def test_a_refused_request_says_centre_only(self):
         api = APIClient()
         resp = api.get("/api/classes/", **bearer(self.pub))

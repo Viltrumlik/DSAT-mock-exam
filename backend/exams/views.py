@@ -721,8 +721,22 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
     throttle_scope = "burst"
     http_method_names = ["get", "post", "head", "options"]
 
+    #: The only actions a public learner reaches (their own finished results; see host_guard).
+    _PUBLIC_READ_ACTIONS = frozenset({"list", "retrieve", "review", "results"})
+
+    @staticmethod
+    def _is_public(user) -> bool:
+        return bool(getattr(user, "is_authenticated", False)) and normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT
+
+    def get_permissions(self):
+        # RequiresSubmitTest refuses a public learner (no permissions at all); reading their own
+        # finished results needs only a signed-in account. Writes keep the full check.
+        if self._is_public(getattr(getattr(self, "request", None), "user", None)) and getattr(self, "action", None) in self._PUBLIC_READ_ACTIONS:
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_queryset(self):
-        return (
+        qs = (
             TestAttempt.objects.filter(student=self.request.user)
             .select_related(
                 "current_module",
@@ -734,6 +748,9 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                 "current_module__questions",
             )
         )
+        if self._is_public(self.request.user):
+            qs = qs.filter(is_completed=True, current_state=TestAttempt.STATE_COMPLETED)
+        return qs
 
     def _mask_withheld_midterm(self, data, attempt):
         """Strip a midterm attempt's score + answer key from a serialized payload until
