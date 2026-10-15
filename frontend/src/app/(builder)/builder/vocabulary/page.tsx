@@ -35,7 +35,11 @@ import {
   STUDIO_CARD,
   STUDIO_ERROR_BANNER,
   STUDIO_FIELD_LABEL,
+  STUDIO_ICON_BTN,
+  STUDIO_ICON_BTN_DANGER,
   STUDIO_INPUT,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
   STUDIO_SECTION_GAP,
 } from "@/components/studio/primitives";
 import { useToast } from "@/components/ToastProvider";
@@ -49,6 +53,7 @@ import {
 import type { AdminVocabSection } from "@/features/vocabularyAdmin/types";
 import { normalizeApiError } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
+
 
 export default function BuilderVocabularyPage() {
   const router = useRouter();
@@ -146,13 +151,13 @@ export default function BuilderVocabularyPage() {
   return (
     <div className={STUDIO_SECTION_GAP}>
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="mb-0.5 text-[12px] text-muted-foreground">
             Vocabulary bank
           </p>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Vocabulary</h1>
-          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
+          <h1 className={STUDIO_PAGE_TITLE}>Vocabulary</h1>
+          <p className={`${STUDIO_PAGE_DESC} max-w-xl`}>
             A section is a named collection — “College Panda”, “650 Hard Words”. Sections hold sets
             of about 25 words, and a teacher assigns a set as homework. Only a published section is
             visible to students.
@@ -164,7 +169,7 @@ export default function BuilderVocabularyPage() {
           disabled={isFetching}
           className={STUDIO_BTN_SECONDARY}
         >
-          <RefreshCcw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+          <RefreshCcw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
           Refresh
         </button>
       </div>
@@ -175,7 +180,7 @@ export default function BuilderVocabularyPage() {
           e.preventDefault();
           submitCreate();
         }}
-        className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+        className={`${STUDIO_CARD} p-3`}
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
@@ -203,7 +208,7 @@ export default function BuilderVocabularyPage() {
             />
           </div>
           <button type="submit" disabled={!title.trim() || createMut.isPending} className={STUDIO_BTN_PRIMARY}>
-            {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             Create section
           </button>
         </div>
@@ -211,22 +216,22 @@ export default function BuilderVocabularyPage() {
 
       {/* Stats */}
       {!isLoading && sections.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-foreground">{sections.length}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        <div className="grid grid-cols-3 gap-px border border-border bg-border">
+          <div className="bg-card px-3 py-2">
+            <p className="text-lg font-semibold tabular-nums text-foreground">{sections.length}</p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
               Sections
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-primary">{totalSets}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <div className="bg-card px-3 py-2">
+            <p className="text-lg font-semibold tabular-nums text-primary dark:text-primary-hover">{totalSets}</p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
               Sets
             </p>
           </div>
-          <div className="rounded-xl border border-border bg-card px-4 py-3">
-            <p className="text-xl font-extrabold tabular-nums text-muted-foreground">{totalWords}</p>
-            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+          <div className="bg-card px-3 py-2">
+            <p className="text-lg font-semibold tabular-nums text-muted-foreground">{totalWords}</p>
+            <p className="mt-0.5 text-[12px] text-muted-foreground">
               Words
             </p>
           </div>
@@ -248,12 +253,12 @@ export default function BuilderVocabularyPage() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
           {sections.map((section) => {
             const isEditing = editingId === section.id;
             const isBusy = busyId === section.id;
             return (
-              <div key={section.id} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div key={section.id} className="px-3 py-2.5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     {isEditing ? (
@@ -290,15 +295,15 @@ export default function BuilderVocabularyPage() {
                     ) : (
                       <>
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="truncate font-extrabold text-foreground">
+                          <h3 className="truncate text-[13px] font-semibold text-foreground">
                             #{section.id} · {section.title}
                           </h3>
                           <StateTag state={section.is_published ? "PUBLISHED" : "DRAFT"} size="xs" />
                         </div>
                         {section.description && (
-                          <p className="mt-1 text-sm text-muted-foreground">{section.description}</p>
+                          <p className="mt-0.5 text-[13px] text-muted-foreground">{section.description}</p>
                         )}
-                        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                        <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <Layers className="h-3 w-3" />
                             {section.set_count} set{section.set_count !== 1 ? "s" : ""}
@@ -321,19 +326,14 @@ export default function BuilderVocabularyPage() {
                         type="button"
                         onClick={() => togglePublished(section)}
                         disabled={isBusy}
-                        className={cn(
-                          "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50",
-                          section.is_published
-                            ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                            : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100",
-                        )}
+                        className={STUDIO_BTN_SECONDARY}
                       >
                         {isBusy ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
                         ) : section.is_published ? (
-                          <EyeOff className="h-3 w-3" />
+                          <EyeOff className="h-3.5 w-3.5" />
                         ) : (
-                          <Eye className="h-3 w-3" />
+                          <Eye className="h-3.5 w-3.5" />
                         )}
                         {section.is_published ? "Unpublish" : "Publish"}
                       </button>
@@ -345,13 +345,13 @@ export default function BuilderVocabularyPage() {
                         }}
                         title="Rename section"
                         aria-label={`Rename section ${section.title}`}
-                        className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                        className={STUDIO_ICON_BTN}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <Link
                         href={`/builder/vocabulary/${section.id}`}
-                        className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
+                        className={STUDIO_BTN_SECONDARY}
                       >
                         Open sets
                         <ChevronRight className="h-3.5 w-3.5" />
@@ -364,7 +364,7 @@ export default function BuilderVocabularyPage() {
                         }}
                         title="Delete section"
                         aria-label={`Delete section ${section.title}`}
-                        className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                        className={STUDIO_ICON_BTN_DANGER}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>

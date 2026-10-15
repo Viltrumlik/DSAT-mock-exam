@@ -30,12 +30,19 @@ import { StateTag } from "@/components/governance";
 import { StudioEmptyState } from "@/components/studio/StudioEmptyState";
 import { StudioSpinner } from "@/components/studio/StudioSpinner";
 import {
+  STUDIO_BOX_CAPTION,
   STUDIO_BTN_PRIMARY,
   STUDIO_BTN_SECONDARY,
   STUDIO_CARD,
   STUDIO_ERROR_BANNER,
   STUDIO_FIELD_LABEL,
+  STUDIO_ICON_BTN,
+  STUDIO_ICON_BTN_DANGER,
   STUDIO_INPUT,
+  STUDIO_LINK,
+  STUDIO_OK_BANNER,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
   STUDIO_SECTION_GAP,
 } from "@/components/studio/primitives";
 import { useToast } from "@/components/ToastProvider";
@@ -57,23 +64,25 @@ import {
 import { normalizeApiError } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
 
+
+
 /** Progress against the 25-word target. Guidance only — nothing is blocked. */
 function WordCountMeter({ count }: { count: number }) {
   const over = count > VOCAB_SET_TARGET_WORDS;
   const pct = Math.min(100, Math.round((count / VOCAB_SET_TARGET_WORDS) * 100));
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="h-1.5 w-20 overflow-hidden rounded-full bg-surface-2">
+      <span className="h-1.5 w-20 overflow-hidden rounded-sm bg-surface-2">
         <span
-          className={cn("block h-full rounded-full", over ? "bg-amber-500" : "bg-primary")}
+          className={cn("block h-full rounded-sm", over ? "bg-amber-500" : "bg-primary")}
           style={{ width: `${over ? 100 : pct}%` }}
         />
       </span>
-      <span className={cn("tabular-nums font-bold", over ? "text-amber-700" : "text-foreground")}>
+      <span className={cn("tabular-nums font-medium", over ? "text-amber-700 dark:text-amber-400" : "text-foreground")}>
         {count} / {VOCAB_SET_TARGET_WORDS}
       </span>
       {over && (
-        <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-amber-800">
+        <span className="font-medium text-foreground">
           {count - VOCAB_SET_TARGET_WORDS} over
         </span>
       )}
@@ -188,16 +197,16 @@ export default function BuilderVocabularySectionPage() {
   return (
     <div className={STUDIO_SECTION_GAP}>
       {/* Breadcrumb */}
-      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
+      <nav className="flex flex-wrap items-center gap-1.5 text-[13px]">
         <Link
           href="/builder/vocabulary"
-          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-primary hover:bg-surface-2"
+          className={`${STUDIO_LINK} inline-flex items-center gap-1`}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Vocabulary
         </Link>
-        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-        <span className="rounded-lg px-2 py-1 text-foreground">
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-foreground">
           {section?.title ?? `Section #${sectionId}`}
         </span>
       </nav>
@@ -210,7 +219,7 @@ export default function BuilderVocabularySectionPage() {
             body="It may have been deleted. Go back to the section list to pick another."
             action={
               <Link href="/builder/vocabulary" className={STUDIO_BTN_SECONDARY}>
-                <ArrowLeft className="h-4 w-4" />
+                <ArrowLeft className="h-3.5 w-3.5" />
                 Back to sections
               </Link>
             }
@@ -219,18 +228,18 @@ export default function BuilderVocabularySectionPage() {
       ) : (
         <>
           {/* Header */}
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-foreground">
+                <h1 className={STUDIO_PAGE_TITLE}>
                   {section?.title ?? "Section"}
                 </h1>
                 {section && <StateTag state={section.is_published ? "PUBLISHED" : "DRAFT"} size="xs" />}
               </div>
               {section?.description && (
-                <p className="mt-1 max-w-xl text-sm text-muted-foreground">{section.description}</p>
+                <p className={`${STUDIO_PAGE_DESC} max-w-xl`}>{section.description}</p>
               )}
-              <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                 <span className="inline-flex items-center gap-1">
                   <Layers className="h-3 w-3" />
                   {sets.length} set{sets.length !== 1 ? "s" : ""}
@@ -249,7 +258,7 @@ export default function BuilderVocabularySectionPage() {
                 disabled={isFetching}
                 className={STUDIO_BTN_SECONDARY}
               >
-                <RefreshCcw className={cn("h-4 w-4", isFetching && "animate-spin")} />
+                <RefreshCcw className={cn("h-3.5 w-3.5", isFetching && "animate-spin")} />
                 Refresh
               </button>
               <button
@@ -261,7 +270,7 @@ export default function BuilderVocabularySectionPage() {
                 }}
                 className={STUDIO_BTN_SECONDARY}
               >
-                <Upload className="h-4 w-4" />
+                <Upload className="h-3.5 w-3.5" />
                 Import CSV
               </button>
             </div>
@@ -273,7 +282,7 @@ export default function BuilderVocabularySectionPage() {
               e.preventDefault();
               submitCreate();
             }}
-            className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+            className={`${STUDIO_CARD} p-3`}
           >
             <div className="flex flex-wrap items-end gap-3">
               <div className="min-w-[220px] flex-1">
@@ -294,9 +303,9 @@ export default function BuilderVocabularySectionPage() {
                 className={STUDIO_BTN_PRIMARY}
               >
                 {createMut.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3.5 w-3.5" />
                 )}
                 Create set
               </button>
@@ -319,7 +328,7 @@ export default function BuilderVocabularySectionPage() {
             </div>
           ) : (
             <div className={STUDIO_CARD}>
-              <div className="border-b border-border px-5 py-4 font-bold text-foreground">
+              <div className={STUDIO_BOX_CAPTION}>
                 {sets.length} set{sets.length === 1 ? "" : "s"}
               </div>
               <div className="divide-y divide-border">
@@ -329,7 +338,7 @@ export default function BuilderVocabularySectionPage() {
                   return (
                     <div
                       key={set.id}
-                      className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 transition-colors hover:bg-surface-2/50"
+                      className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-surface-2"
                     >
                       <div className="min-w-0 flex-1">
                         {isEditing ? (
@@ -369,10 +378,10 @@ export default function BuilderVocabularySectionPage() {
                           </form>
                         ) : (
                           <>
-                            <p className="truncate font-extrabold text-foreground">
+                            <p className="truncate text-[13px] font-semibold text-foreground">
                               #{set.id} · {set.title}
                             </p>
-                            <p className="mt-1 text-xs text-muted-foreground">
+                            <p className="mt-1 text-[12px] text-muted-foreground">
                               <WordCountMeter count={set.word_count} />
                             </p>
                           </>
@@ -389,13 +398,13 @@ export default function BuilderVocabularySectionPage() {
                             }}
                             title="Rename set"
                             aria-label={`Rename set ${set.title}`}
-                            className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                            className={STUDIO_ICON_BTN}
                           >
                             <Pencil className="h-3.5 w-3.5" />
                           </button>
                           <Link
                             href={`/builder/vocabulary/${sectionId}/${set.id}`}
-                            className="inline-flex items-center gap-1 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
+                            className={STUDIO_BTN_SECONDARY}
                           >
                             Open words
                             <ChevronRight className="h-3.5 w-3.5" />
@@ -408,7 +417,7 @@ export default function BuilderVocabularySectionPage() {
                             }}
                             title="Delete set"
                             aria-label={`Delete set ${set.title}`}
-                            className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600"
+                            className={STUDIO_ICON_BTN_DANGER}
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -426,17 +435,17 @@ export default function BuilderVocabularySectionPage() {
       {/* Section CSV import */}
       {csvOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--overlay-scrim)] p-4"
           onClick={() => !importMut.isPending && setCsvOpen(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl"
+            className="w-full max-w-md border border-border bg-card shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-2.5">
               <div>
-                <h2 className="text-base font-bold text-foreground">Import words into this section</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
+                <h2 className="text-[14px] font-semibold text-foreground">Import words into this section</h2>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
                   One word per row. Rows sharing a <code className="font-mono">set</code> value land
                   in the same set.
                 </p>
@@ -444,25 +453,25 @@ export default function BuilderVocabularySectionPage() {
               <button
                 type="button"
                 onClick={() => !importMut.isPending && setCsvOpen(false)}
-                className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2"
+                className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 aria-label="Close"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="mt-4 space-y-3">
-              <div className="rounded-xl border border-border bg-surface-2/60 px-3 py-2">
+            <div className="space-y-3 px-4 py-3">
+              <div className="border border-border bg-surface-2/60 px-3 py-2">
                 <p className={STUDIO_FIELD_LABEL}>Columns</p>
                 <code className="block font-mono text-[11px] leading-relaxed text-foreground">
                   {VOCAB_CSV_COLUMNS}
                 </code>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                  <span className="font-bold">word</span> and{" "}
-                  <span className="font-bold">definition</span> are required. A numeric{" "}
-                  <span className="font-bold">set</span> becomes “Set 3”; any other value is used as
+                <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
+                  <span className="font-medium text-foreground">word</span> and{" "}
+                  <span className="font-medium text-foreground">definition</span> are required. A numeric{" "}
+                  <span className="font-medium text-foreground">set</span> becomes “Set 3”; any other value is used as
                   the title, and an existing set with that title is appended to. Separate{" "}
-                  <span className="font-bold">synonyms</span> with semicolons. The whole file is
+                  <span className="font-medium text-foreground">synonyms</span> with semicolons. The whole file is
                   rejected if any row is invalid.
                 </p>
               </div>
@@ -478,32 +487,25 @@ export default function BuilderVocabularySectionPage() {
                   accept=".csv,text/csv"
                   disabled={importMut.isPending}
                   onChange={(e) => void handleCsvFile(e.target.files?.[0] ?? null)}
-                  className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-primary disabled:opacity-50"
+                  className="w-full rounded-md text-[13px] file:mr-3 file:h-8 file:rounded-md file:border file:border-border file:bg-card file:px-2.5 file:text-[13px] file:font-medium file:text-foreground hover:file:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
                 />
               </div>
 
               {importMut.isPending && (
-                <p className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                <p className="inline-flex items-center gap-2 text-[13px] font-medium text-muted-foreground">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   Importing…
                 </p>
               )}
 
               {csvMsg && (
-                <div
-                  className={cn(
-                    "rounded-xl border px-3 py-2 text-sm font-semibold",
-                    csvMsg.ok
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-red-200 bg-red-50 text-red-700",
-                  )}
-                >
+                <div className={csvMsg.ok ? STUDIO_OK_BANNER : STUDIO_ERROR_BANNER}>
                   {csvMsg.text}
                 </div>
               )}
             </div>
 
-            <div className="mt-5 flex justify-end">
+            <div className="flex justify-end border-t border-border px-4 py-2.5">
               <button
                 type="button"
                 onClick={() => setCsvOpen(false)}

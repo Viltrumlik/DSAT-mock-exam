@@ -6,7 +6,22 @@ import { ArrowLeft, RefreshCw, Upload } from "lucide-react";
 
 import { useQbBatches, useQbUploadBatch } from "@/domains/questionBank/hooks";
 import { BatchStatusBadge } from "@/domains/questionBank/components/ImportStatusBadge";
+import {
+  STUDIO_BTN_PRIMARY,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_LINK,
+  STUDIO_OK_BANNER,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+  STUDIO_SECTION_GAP,
+  STUDIO_TABLE,
+  STUDIO_TD,
+  STUDIO_TH,
+} from "@/components/studio/primitives";
 import { normalizeApiError } from "@/lib/apiError";
+
 
 export default function ImportsPage() {
   const { data, isLoading, error, refetch, isFetching } = useQbBatches();
@@ -29,20 +44,15 @@ export default function ImportsPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <Link
-        href="/builder/question-bank"
-        className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" /> Back to Question Bank
+    <div className={STUDIO_SECTION_GAP}>
+      <Link href="/builder/question-bank" className={`${STUDIO_LINK} inline-flex items-center gap-1 text-[13px]`}>
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to Question Bank
       </Link>
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground">
-            <Upload className="h-5 w-5 text-primary" /> Imports
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className={STUDIO_PAGE_TITLE}>Imports</h1>
+          <p className={STUDIO_PAGE_DESC}>
             Review parsed import batches and promote candidates into triage. Exact duplicate detection
             (content hash); similarity detection coming later.
           </p>
@@ -53,14 +63,14 @@ export default function ImportsPage() {
             type="button"
             disabled={upload.isPending}
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+            className={STUDIO_BTN_PRIMARY}
           >
             <Upload className="h-3.5 w-3.5" /> {upload.isPending ? "Uploading…" : "Upload PDF"}
           </button>
           <button
             type="button"
             onClick={() => void refetch()}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+            className={STUDIO_BTN_SECONDARY}
           >
             <RefreshCw className={isFetching ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} /> Refresh
           </button>
@@ -68,27 +78,21 @@ export default function ImportsPage() {
       </div>
 
       {banner ? (
-        <div
-          className={
-            banner.tone === "ok"
-              ? "rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-800"
-              : "rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700"
-          }
-        >
+        <div className={banner.tone === "ok" ? STUDIO_OK_BANNER : STUDIO_ERROR_BANNER}>
           {banner.text}
         </div>
       ) : null}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <table className="w-full text-sm">
+      <div className={`${STUDIO_CARD} overflow-x-auto`}>
+        <table className={STUDIO_TABLE}>
           <thead>
-            <tr className="border-b border-border bg-surface-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="px-4 py-3 font-bold">Batch</th>
-              <th className="px-4 py-3 font-bold">Source</th>
-              <th className="px-4 py-3 font-bold">Status</th>
-              <th className="px-4 py-3 font-bold">Candidates</th>
-              <th className="px-4 py-3 font-bold">Promoted</th>
-              <th className="px-4 py-3 font-bold">Created</th>
+            <tr>
+              <th scope="col" className={STUDIO_TH}>Batch</th>
+              <th scope="col" className={STUDIO_TH}>Source</th>
+              <th scope="col" className={STUDIO_TH}>Status</th>
+              <th scope="col" className={STUDIO_TH}>Candidates</th>
+              <th scope="col" className={STUDIO_TH}>Promoted</th>
+              <th scope="col" className={STUDIO_TH}>Created</th>
             </tr>
           </thead>
           <tbody>
@@ -100,24 +104,24 @@ export default function ImportsPage() {
               <Row colSpan={6}>No import batches yet.</Row>
             ) : (
               batches.map((b) => (
-                <tr key={b.id} className="border-b border-border last:border-0 hover:bg-surface-2/50">
-                  <td className="px-4 py-3">
-                    <Link href={`/builder/question-bank/imports/${b.id}`} className="font-bold text-primary hover:underline">
+                <tr key={b.id} className="hover:bg-surface-2 [&:last-child>td]:border-b-0">
+                  <td className={STUDIO_TD}>
+                    <Link href={`/builder/question-bank/imports/${b.id}`} className={STUDIO_LINK}>
                       #{b.id} {b.filename || "(no filename)"}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{b.source_type}</td>
-                  <td className="px-4 py-3">
+                  <td className={`${STUDIO_TD} text-muted-foreground`}>{b.source_type}</td>
+                  <td className={STUDIO_TD}>
                     <BatchStatusBadge label={b.status_display} />
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">
+                  <td className={`${STUDIO_TD} whitespace-nowrap tabular-nums text-muted-foreground`}>
                     {b.total_candidates}
-                    <span className="ml-1 text-xs text-muted-foreground/70">
+                    <span className="ml-1 text-[12px] text-muted-foreground/70">
                       ({b.candidate_counts.valid}✓ / {b.candidate_counts.error}✕ / {b.candidate_counts.duplicate} dup)
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground">{b.promoted_count}</td>
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(b.created_at).toLocaleDateString()}</td>
+                  <td className={`${STUDIO_TD} tabular-nums text-muted-foreground`}>{b.promoted_count}</td>
+                  <td className={`${STUDIO_TD} whitespace-nowrap text-muted-foreground`}>{new Date(b.created_at).toLocaleDateString()}</td>
                 </tr>
               ))
             )}
@@ -133,7 +137,11 @@ function Row({ children, colSpan, tone }: { children: React.ReactNode; colSpan: 
     <tr>
       <td
         colSpan={colSpan}
-        className={tone === "error" ? "px-4 py-10 text-center text-rose-600" : "px-4 py-10 text-center text-muted-foreground"}
+        className={
+          tone === "error"
+            ? "px-2 py-6 text-[13px] text-red-700 dark:text-red-300"
+            : "px-2 py-6 text-[13px] text-muted-foreground"
+        }
       >
         {children}
       </td>

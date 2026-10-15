@@ -37,6 +37,9 @@ A token belongs in `primitives.ts` if:
 | `STUDIO_TABLE` / `STUDIO_TH` / `STUDIO_TD` | Dense list table, as the /ops changelist |
 | `STUDIO_SELECT` | Compact select / filter control in a toolbar |
 | `STUDIO_LINK` | Blue text link, underline on hover |
+| `STUDIO_OK_BANNER` | Success strip, the shape of the error banner |
+| `STUDIO_ICON_BTN` / `STUDIO_ICON_BTN_DANGER` | 32px icon-only buttons |
+| `STUDIO_TAB` | Underline tab base |
 
 Since 2026-10-15 these carry the /ops console's Django-admin dialect: 13px type, hairline borders,
 square boxes, `rounded-md` 32px controls, nothing heavier than semibold.
