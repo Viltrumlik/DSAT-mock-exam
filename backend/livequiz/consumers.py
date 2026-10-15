@@ -21,9 +21,11 @@ import logging
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from core.errors.api import AppError
+from users.permissions import IsAuthenticatedAndNotFrozen, is_frozen_learner
 
 from . import constants as const
 from . import events, services
@@ -70,6 +72,13 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_UNAUTHENTICATED)
             return
 
+        if is_frozen_learner(user):
+            # REST refuses a frozen learner everything but signing in, and a place taken
+            # before the freeze is no way round that. The middleware read this user from the
+            # database for this handshake, so the flag is current.
+            await self.close(code=CLOSE_FORBIDDEN)
+            return
+
         try:
             self.session_id = int(self.scope["url_route"]["kwargs"]["session_id"])
         except (KeyError, TypeError, ValueError):
@@ -110,6 +119,15 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content, **kwargs):
         command = str((content or {}).get("type") or "").strip()
+
+        if self.participant_id and await self._frozen_now():
+            # Frozen while the socket was open. REST would refuse their next request, and
+            # every frame is one — the heartbeat included, so a player who sends nothing else
+            # is gone within one beat. Checked before the command, so an answer that came
+            # with it is not counted. Players only: a host is staff, and this is a learner rule.
+            await self._error(const.ERR_ACCOUNT_FROZEN, IsAuthenticatedAndNotFrozen.message)
+            await self.close(code=CLOSE_FORBIDDEN)
+            return
 
         if command == const.CMD_HEARTBEAT:
             if self.participant_id:
@@ -367,6 +385,17 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             # without a place means a stale tab or a guessed session id.
             return None
         return role, participant.id
+
+    @database_sync_to_async
+    def _frozen_now(self) -> bool:
+        # Read again: the user in scope is the one the handshake saw.
+        user = (
+            get_user_model()
+            .objects.filter(pk=self.scope["user"].pk)
+            .only("role", "is_frozen")
+            .first()
+        )
+        return user is not None and is_frozen_learner(user)
 
     @database_sync_to_async
     def _load_session(self):
