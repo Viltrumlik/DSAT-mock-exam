@@ -866,8 +866,25 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
             "mock_exam",
             "modules",
             "assigned_users",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
         ]
-        read_only_fields = ["mock_exam", "published_at"]
+        read_only_fields = ["mock_exam", "published_at", "practice_number"]
+        # Deliberately empty. Without it DRF turns the model's conditional UniqueConstraint
+        # (uniq_practice_number_per_subject) into a validator and injects default=False on
+        # is_practice_test: a PATCH that omits the kind then crashes (KeyError -> 500) and a PUT
+        # that omits it reads as "turn into a past paper". practice_number is read-only and is only
+        # ever given by assign_practice_number under a lock; the DB constraint is the backstop.
+        validators = []
+
+    def validate_is_practice_test(self, value):
+        # The kind is fixed at creation: a past paper never turns into a practice test or back
+        # (their lists, numbering and visibility rules differ).
+        if self.instance is not None and bool(value) != bool(self.instance.is_practice_test):
+            raise serializers.ValidationError("A section's kind cannot change after it is created.")
+        return value
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

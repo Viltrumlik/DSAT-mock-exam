@@ -57,7 +57,7 @@ from .models import (
     TestAttempt,
     ensure_full_mock_practice_test_modules,
 )
-from .practice_tests import visible_practice_tests_q
+from .practice_tests import assign_practice_number, visible_practice_tests_q
 from .serializers import (
     MockExamSerializer,
     PortalMockExamStudentSerializer,
@@ -2135,7 +2135,12 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
             base = base.filter(subject__in=subjs)
         standalone = self.request.query_params.get("standalone")
         if standalone in ("1", "true", "yes"):
-            return base.filter(mock_exam__isnull=True)
+            base = base.filter(mock_exam__isnull=True)
+            kind = self.request.query_params.get("kind")
+            if kind == "practice_test":
+                base = base.filter(is_practice_test=True)
+            elif kind == "pastpaper":
+                base = base.filter(is_practice_test=False)
         return base
 
     @action(detail=True, methods=["post"])
@@ -2156,6 +2161,7 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         section.is_published = True
         section.published_at = timezone.now()
         section.save(update_fields=["is_published", "published_at", "updated_at"])
+        assign_practice_number(section)  # first publish of a practice test gives its number
         return Response(self.get_serializer(section).data)
 
     @action(detail=True, methods=["post"])
@@ -2165,6 +2171,15 @@ class AdminPracticeTestViewSet(viewsets.ModelViewSet):
         section.is_published = False
         section.save(update_fields=["is_published", "updated_at"])
         return Response(self.get_serializer(section).data)
+
+    def destroy(self, request, *args, **kwargs):
+        section = self.get_object()
+        if TestAttempt.objects.filter(practice_test=section).exists():
+            return Response(
+                {"detail": "Cannot delete: students have attempts on this section. Unpublish it instead."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        return super().destroy(request, *args, **kwargs)
 
     @action(
         detail=True, methods=["get"], url_path="export-csv",
