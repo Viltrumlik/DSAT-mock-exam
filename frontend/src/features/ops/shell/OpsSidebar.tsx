@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import Link from "next/link";
 import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { isOpsNavActive, type OpsNavGroup } from "./opsNav";
+import { activeNavItem, OPS_CONSOLE, type ConsoleConfig, type OpsNavGroup } from "./opsNav";
 
 export const OPS_SIDEBAR_ID = "ops-sidebar";
 
@@ -26,6 +26,7 @@ export function OpsSidebar({
   onCloseMobile,
   onToggleCollapsed,
   closeButtonRef,
+  config = OPS_CONSOLE,
 }: {
   groups: OpsNavGroup[];
   pathname: string;
@@ -34,11 +35,15 @@ export function OpsSidebar({
   onCloseMobile: () => void;
   onToggleCollapsed: () => void;
   closeButtonRef?: RefObject<HTMLButtonElement | null>;
+  /** Which console this rail belongs to — its home, its name. */
+  config?: Pick<ConsoleConfig, "root" | "brand" | "crumb">;
 }) {
+  // One item is current: the longest match, so a nested item does not light up its parent too.
+  const activeHref = activeNavItem(pathname, groups)?.href ?? null;
   return (
     <aside
       id={OPS_SIDEBAR_ID}
-      aria-label="Admin navigation"
+      aria-label={`${config.crumb} navigation`}
       className={cn(
         "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-card transition-[transform,width,visibility] duration-200 ease-out",
         collapsed ? "lg:w-16" : "lg:w-60",
@@ -53,14 +58,14 @@ export function OpsSidebar({
         )}
       >
         <Link
-          href="/ops"
+          href={config.root}
           className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          title="MasterSAT admin"
+          title={`MasterSAT ${config.brand}`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/images/logo.png" alt="" aria-hidden className="h-6 w-6 shrink-0 object-contain" />
           <span className={cn("truncate text-sm font-bold text-foreground", collapsed && "lg:hidden")}>
-            MasterSAT <span className="font-normal text-muted-foreground">admin</span>
+            MasterSAT <span className="font-normal text-muted-foreground">{config.brand}</span>
           </span>
         </Link>
         <button
@@ -74,7 +79,7 @@ export function OpsSidebar({
         </button>
       </div>
 
-      <nav aria-label="Admin sections" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+      <nav aria-label={`${config.crumb} sections`} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
         {groups.map((group, index) => (
           <div key={group.id} className={cn(index > 0 && "mt-3")}>
             {group.caption ? (
@@ -93,7 +98,7 @@ export function OpsSidebar({
             ) : null}
             <ul className="flex flex-col gap-px">
               {group.items.map((item) => {
-                const active = isOpsNavActive(pathname, item);
+                const active = item.href === activeHref;
                 const Icon = item.icon;
                 return (
                   <li key={item.href}>

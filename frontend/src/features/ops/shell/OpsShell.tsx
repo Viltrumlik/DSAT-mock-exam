@@ -4,16 +4,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/cn";
 import { OpsSidebar } from "./OpsSidebar";
 import { OpsTopBar } from "./OpsTopBar";
-import { OPS_NAV_GROUPS, visibleNav } from "./opsNav";
-
-const COLLAPSE_KEY = "mastersat.ops.sidebar.collapsed";
-
-/** `useMe` types the payload as an open record, so the fields are narrowed here. */
-type MeLike = Record<string, unknown> | null | undefined;
+import { OPS_CONSOLE, type ConsoleConfig, type MeLike } from "./opsNav";
 
 /**
  * The ops console's frame, after Django admin: a sidebar stuck to the left edge, a thin top bar,
  * and the page across the rest of the window — no centred box, no card around the nav.
+ *
+ * The builder (questions.mastersat.uz) wears the same frame with its own `config` — its nav, its
+ * name, its home. Without one this is the ops console.
  *
  * Mounted inside AuthGuard, which renders nothing of its children until `/users/me` has loaded,
  * so this never renders on the server and the collapse preference can be read before the first
@@ -26,15 +24,17 @@ export function OpsShell({
   pathname,
   me,
   children,
+  config = OPS_CONSOLE,
 }: {
   pathname: string;
   me: MeLike;
   children: React.ReactNode;
+  config?: ConsoleConfig;
 }) {
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
     try {
-      return window.localStorage.getItem(COLLAPSE_KEY) === "1";
+      return window.localStorage.getItem(config.collapseKey) === "1";
     } catch {
       return false;
     }
@@ -44,7 +44,7 @@ export function OpsShell({
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const wasOpen = useRef(false);
 
-  const groups = useMemo(() => visibleNav(OPS_NAV_GROUPS, me), [me]);
+  const groups = useMemo(() => config.visible(config.groups, me), [config, me]);
 
   // Navigating closes the drawer (the links also close it on click; this covers back/forward).
   useEffect(() => {
@@ -75,7 +75,7 @@ export function OpsShell({
     setCollapsed((c) => {
       const next = !c;
       try {
-        window.localStorage.setItem(COLLAPSE_KEY, next ? "1" : "0");
+        window.localStorage.setItem(config.collapseKey, next ? "1" : "0");
       } catch {
         /* storage blocked — the choice just isn't remembered */
       }
@@ -109,6 +109,7 @@ export function OpsShell({
         onCloseMobile={() => setMobileOpen(false)}
         onToggleCollapsed={toggleCollapsed}
         closeButtonRef={closeButtonRef}
+        config={config}
       />
 
       {/* No z-index here on purpose: a stacking context on this column would trap the pages'
@@ -125,6 +126,7 @@ export function OpsShell({
           mobileOpen={mobileOpen}
           onOpenMobile={() => setMobileOpen(true)}
           menuButtonRef={menuButtonRef}
+          config={config}
         />
         <main id="ops-main" className="min-w-0 flex-1 px-4 py-4 md:px-6">
           {children}
