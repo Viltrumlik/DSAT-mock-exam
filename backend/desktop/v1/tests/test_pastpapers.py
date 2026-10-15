@@ -10,6 +10,8 @@ from django.test import override_settings
 from django.utils import timezone
 
 from exams.models import AttemptIdempotencyKey, TestAttempt
+from users.audience import FROZEN_LCUP_DEBT
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from desktop.v1 import content, idem
 from desktop.v1.tests.support import (
@@ -430,6 +432,32 @@ class OwnershipTests(PastpaperCase):
             res = intruder.get(path)
             self.assertEqual(res.status_code, 404, path)
         self.assertEqual(TestAttempt.objects.get(pk=attempt_id).module_answers or {}, {})
+
+
+class FrozenLearnerTests(PastpaperCase):
+    """A debt-frozen student signs in but cannot sit a past paper — the website's gate, here too."""
+
+    def test_a_frozen_student_is_refused_on_every_route(self):
+        attempt_id = self.started()
+        type(self.student).objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason=FROZEN_LCUP_DEBT)
+        self.student.refresh_from_db()
+        self.app = AppClient(self.student)
+        body = {"module_id": self.m1.id, "seq": 1, "answers": {str(self.q1[0]): "B"}}
+
+        writes = [f"pastpapers/{self.paper.id}/open"] + [
+            f"pastpapers/attempts/{attempt_id}/{action}" for action in ("start", "sync", "submit", "pause", "resume")
+        ]
+        for path in writes:
+            with self.subTest(path=path):
+                res = self.app.post(path, body, key=new_key("frozen"))
+                self.assertEqual(res.status_code, 403, res.content)
+                self.assertEqual(res.json(), {"code": "forbidden", "detail": IsAuthenticatedAndNotFrozen.message})
+        res = self.app.get(f"pastpapers/attempts/{attempt_id}/result")
+        self.assertEqual(res.status_code, 403, res.content)
+
+        attempt = TestAttempt.objects.get(pk=attempt_id)
+        self.assertEqual(attempt.current_state, TestAttempt.STATE_MODULE_1_ACTIVE)
+        self.assertEqual((attempt.module_answers or {}).get(str(self.m1.id)) or {}, {})
 
 
 class IdempotencyLayerTests(PastpaperCase):
