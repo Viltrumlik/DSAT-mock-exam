@@ -15,19 +15,6 @@ import { assessmentsAdminApi } from "@/features/assessmentsAdmin/api";
 import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
 import type { Subject } from "@/features/assessments/types";
 import { useToast } from "@/components/ToastProvider";
-import {
-  STUDIO_BOX_CAPTION,
-  STUDIO_BTN_PRIMARY,
-  STUDIO_BTN_SECONDARY,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_FIELD_LABEL,
-  STUDIO_INPUT,
-  STUDIO_LINK,
-  STUDIO_PAGE_DESC,
-  STUDIO_PAGE_TITLE,
-  STUDIO_SELECT,
-} from "@/components/studio/primitives";
 
 type SubjectKey = "english" | "math";
 const SUBJECTS: { code: SubjectKey; label: string }[] = [
@@ -37,11 +24,15 @@ const SUBJECTS: { code: SubjectKey; label: string }[] = [
 // Sentinel for the "Unassigned" bucket (legacy sets with a blank level).
 const UNASSIGNED_LEVEL = "__unassigned__";
 
-// Plain text, as the /ops lists draw a state: only the one that asks for attention is dark.
+const SUBJECT_COLORS: Record<string, string> = {
+  math: "bg-purple-100 text-purple-800",
+  english: "bg-teal-100 text-teal-800",
+};
+
 const REVIEW_STATUS_STYLES: Record<ReviewStatus, string> = {
-  draft: "text-muted-foreground",
-  needs_review: "font-medium text-foreground",
-  approved: "text-muted-foreground",
+  draft: "bg-slate-100 text-slate-700",
+  needs_review: "bg-amber-100 text-amber-800",
+  approved: "bg-emerald-100 text-emerald-800",
 };
 
 const REVIEW_STATUS_ORDER: ReviewStatus[] = ["draft", "needs_review", "approved"];
@@ -203,10 +194,10 @@ export default function BuilderSetsPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className={STUDIO_PAGE_TITLE}>Assessments</h1>
-          <p className={STUDIO_PAGE_DESC}>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Assessments</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Assessment sets group reusable questions into a deliverable unit. Approve a set to make
             it assignable to classrooms.
           </p>
@@ -215,14 +206,14 @@ export default function BuilderSetsPage() {
           <button
             type="button"
             onClick={() => void refetch()}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors"
           >
-            <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+            <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </button>
           <Link
             href="/builder/bank"
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
           >
             Question Bank
           </Link>
@@ -230,18 +221,18 @@ export default function BuilderSetsPage() {
             <button
               type="button"
               onClick={() => { setCsvTitle(""); setCsvSource(""); if (csvFileRef.current) csvFileRef.current.value = ""; setCsvOpen(true); }}
-              className={STUDIO_BTN_SECONDARY}
+              className="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
             >
-              <Upload className="h-3.5 w-3.5 text-muted-foreground" />
+              <Upload className="h-4 w-4" />
               Import CSV
             </button>
           )}
           {canCreate && (
             <Link
               href={newSetHref}
-              className={STUDIO_BTN_PRIMARY}
+              className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               New set
             </Link>
           )}
@@ -249,15 +240,12 @@ export default function BuilderSetsPage() {
       </div>
 
       {/* Breadcrumb — subject → level drill-down */}
-      <nav className="flex flex-wrap items-center gap-1 text-[13px] font-medium">
+      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
         {scopedSubject ? (
           <button
             type="button"
             onClick={() => setSelectedLevel(null)}
-            className={cn(
-              "rounded-md px-1.5 py-0.5 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-              selectedLevel ? "text-primary hover:underline dark:text-primary-hover" : "text-foreground",
-            )}
+            className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
           >
             {SUBJECTS.find((s) => s.code === scopedSubject)?.label ?? scopedSubject}
           </button>
@@ -265,24 +253,18 @@ export default function BuilderSetsPage() {
           <button
             type="button"
             onClick={() => { setSelectedSubject(null); setSelectedLevel(null); }}
-            className={cn(
-              "rounded-md px-1.5 py-0.5 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-              selectedSubject ? "text-primary hover:underline dark:text-primary-hover" : "text-foreground",
-            )}
+            className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedSubject ? "text-primary" : "text-foreground")}
           >
             All subjects
           </button>
         )}
         {selectedSubject && !scopedSubject && (
           <>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
             <button
               type="button"
               onClick={() => setSelectedLevel(null)}
-              className={cn(
-                "rounded-md px-1.5 py-0.5 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                selectedLevel ? "text-primary hover:underline dark:text-primary-hover" : "text-foreground",
-              )}
+              className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
             >
               {SUBJECTS.find((s) => s.code === selectedSubject)?.label ?? selectedSubject}
             </button>
@@ -290,26 +272,26 @@ export default function BuilderSetsPage() {
         )}
         {selectedSubject && selectedLevel && (
           <>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="px-1.5 py-0.5 text-foreground">{selectedLevelLabel}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <span className="rounded-lg px-2 py-1 text-foreground">{selectedLevelLabel}</span>
           </>
         )}
       </nav>
 
-      {/* Stats — one hairline box, a figure per cell (as the /ops dashboard's Learners box) */}
+      {/* Stats */}
       {!isLoading && sets.length > 0 && (
-        <div className="grid grid-cols-3 gap-px overflow-hidden border border-border bg-border">
-          <div className="bg-card px-3 py-2">
-            <p className="text-xl font-semibold tabular-nums text-foreground">{sets.length}</p>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">Total</p>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-foreground">{sets.length}</p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Total</p>
           </div>
-          <div className="bg-card px-3 py-2">
-            <p className="text-xl font-semibold tabular-nums text-primary dark:text-primary-hover">{activeCount}</p>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">Active</p>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-primary">{activeCount}</p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Active</p>
           </div>
-          <div className="bg-card px-3 py-2">
-            <p className="text-xl font-semibold tabular-nums text-muted-foreground">{draftCount}</p>
-            <p className="mt-0.5 text-[12px] text-muted-foreground">Draft</p>
+          <div className="rounded-xl border border-border bg-card px-4 py-3">
+            <p className="text-xl font-extrabold tabular-nums text-muted-foreground">{draftCount}</p>
+            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-0.5">Draft</p>
           </div>
         </div>
       )}
@@ -317,20 +299,20 @@ export default function BuilderSetsPage() {
 
       {/* Search + filter — only in the set list (subject & level are the drill-down) */}
       {canCreate && (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[160px]">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search sets…"
-              className="h-8 w-full rounded-md border border-border bg-card pl-8 pr-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              className="w-full rounded-xl border border-border bg-card pl-9 pr-4 py-2 text-sm font-medium placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
           </div>
           <select
             value={reviewFilter}
             onChange={(e) => setReviewFilter(e.target.value as typeof reviewFilter)}
-            className={STUDIO_SELECT}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
             title="Review status"
           >
             <option value="all">All review statuses</option>
@@ -343,7 +325,7 @@ export default function BuilderSetsPage() {
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-            className={STUDIO_SELECT}
+            className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold"
             title="Visibility"
           >
             <option value="all">All visibility</option>
@@ -355,19 +337,19 @@ export default function BuilderSetsPage() {
 
       {/* Error */}
       {error ? (
-        <div className={STUDIO_ERROR_BANNER}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">
           {String((error as { message?: string })?.message || error)}
         </div>
       ) : null}
 
       {/* Content — drill-down: subject → level → sets */}
       {isLoading ? (
-        <div className="flex justify-center py-8">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="flex justify-center p-10">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       ) : selectedSubject === null ? (
         /* Step 1 — choose a subject */
-        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
+        <div className="grid gap-4 sm:grid-cols-2">
           {SUBJECTS.map((s) => {
             const n = countForSubject(s.code);
             const Icon = s.code === "math" ? Sigma : BookOpen;
@@ -376,25 +358,25 @@ export default function BuilderSetsPage() {
                 key={s.code}
                 type="button"
                 onClick={() => { setSelectedSubject(s.code); setSelectedLevel(null); }}
-                className="group flex h-10 w-full items-center justify-between px-3 text-left text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-primary hover:bg-surface-2"
               >
-                <div className="flex items-center gap-2.5">
-                  <div className="flex shrink-0 items-center justify-center text-muted-foreground">
-                    <Icon className="h-4 w-4" />
+                <div className="flex items-center gap-4">
+                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", s.code === "math" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700")}>
+                    <Icon className="h-6 w-6" />
                   </div>
-                  <div className="flex items-baseline gap-2">
-                    <p className="font-medium text-primary group-hover:underline dark:text-primary-hover">{s.label}</p>
-                    <p className="text-[12px] tabular-nums text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
+                  <div>
+                    <p className="text-lg font-extrabold text-foreground">{s.label}</p>
+                    <p className="text-sm text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             );
           })}
         </div>
       ) : selectedLevel === null ? (
         /* Step 2 — choose a level */
-        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {levelsForSubject(selectedSubject).map((code: LevelKey) => {
             const n = countForLevel(code);
             return (
@@ -402,13 +384,13 @@ export default function BuilderSetsPage() {
                 key={code}
                 type="button"
                 onClick={() => setSelectedLevel(code)}
-                className="group flex h-9 w-full items-center justify-between px-3 text-left text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
               >
-                <div className="flex items-baseline gap-2">
-                  <p className="font-medium text-primary group-hover:underline dark:text-primary-hover">{levelLabel(code)}</p>
-                  <p className="text-[12px] tabular-nums text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
+                <div>
+                  <p className="text-base font-extrabold text-foreground">{levelLabel(code)}</p>
+                  <p className="text-sm text-muted-foreground">{n} set{n !== 1 ? "s" : ""}</p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             );
           })}
@@ -416,35 +398,35 @@ export default function BuilderSetsPage() {
             <button
               type="button"
               onClick={() => setSelectedLevel(UNASSIGNED_LEVEL)}
-              className="group flex h-9 w-full items-center justify-between bg-surface-2/40 px-3 text-left text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+              className="group flex items-center justify-between rounded-2xl border border-dashed border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
             >
-              <div className="flex items-baseline gap-2">
-                <p className="font-medium text-primary group-hover:underline dark:text-primary-hover">Unassigned</p>
-                <p className="text-[12px] tabular-nums text-muted-foreground">{countForLevel(UNASSIGNED_LEVEL)} without a level</p>
+              <div>
+                <p className="text-base font-extrabold text-foreground">Unassigned</p>
+                <p className="text-sm text-muted-foreground">{countForLevel(UNASSIGNED_LEVEL)} without a level</p>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </button>
           )}
         </div>
       ) : (
       /* Step 3 — sets in this subject+level */
-      <div className={STUDIO_CARD}>
-        <div className={STUDIO_BOX_CAPTION}>
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+        <div className="border-b border-border px-5 py-4 font-bold text-foreground">
           {`${filtered.length} set${filtered.length === 1 ? "" : "s"}`}
         </div>
 
         {filtered.length === 0 ? (
-          <div className="px-3 py-6 text-center text-[13px] text-muted-foreground">
-            <p className="font-medium">
+          <div className="p-8 text-center text-muted-foreground">
+            <p className="font-semibold">
               {subjectSets.length === 0 || countForLevel(selectedLevel === UNASSIGNED_LEVEL ? UNASSIGNED_LEVEL : selectedLevel ?? "") === 0
                 ? `No sets in ${SUBJECTS.find((s) => s.code === selectedSubject)?.label} · ${selectedLevelLabel} yet.`
                 : "No sets match your filters."}
             </p>
             <Link
               href={newSetHref}
-              className={cn(STUDIO_BTN_PRIMARY, "mt-3")}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               New set
             </Link>
           </div>
@@ -457,21 +439,26 @@ export default function BuilderSetsPage() {
               return (
                 <div
                   key={s.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-[13px] hover:bg-surface-2"
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 hover:bg-surface-2/50 transition-colors"
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                      <p className="truncate font-semibold text-foreground">
+                    <div className="flex flex-wrap items-center gap-2 mb-0.5">
+                      <p className="font-extrabold text-foreground truncate">
                         #{s.id} · {s.title}
                       </p>
                       {s.subject && (
-                        <span className="text-[12px] capitalize text-muted-foreground">
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
+                            SUBJECT_COLORS[s.subject] ?? "bg-slate-100 text-slate-700",
+                          )}
+                        >
                           {s.subject}
                         </span>
                       )}
                       <span
                         className={cn(
-                          "text-[12px]",
+                          "inline-flex items-center rounded-lg px-2 py-0.5 text-[10px] font-black uppercase tracking-wide",
                           REVIEW_STATUS_STYLES[reviewStatus],
                         )}
                         title="Review status"
@@ -480,18 +467,18 @@ export default function BuilderSetsPage() {
                       </span>
                       <StateTag state={s.is_active ? "PUBLISHED" : "DRAFT"} size="xs" />
                       {s.level && (
-                        <span className="text-[12px] text-muted-foreground">
+                        <span className="inline-flex items-center rounded-lg bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-slate-700">
                           {setLevelsLabel(s.level, s.secondary_level)}
                         </span>
                       )}
                     </div>
                     {s.category && (
-                      <p className="mb-0.5 text-[12px] text-muted-foreground">{s.category}</p>
+                      <p className="text-xs text-muted-foreground mb-0.5">{s.category}</p>
                     )}
                     {role === "super_admin" && (s.created_by_name || s.created_by_email) && (
-                      <p className="mb-0.5 text-[12px] text-muted-foreground">
+                      <p className="text-[11px] text-muted-foreground/80 mb-0.5">
                         Created by{" "}
-                        <span className="font-medium text-foreground">
+                        <span className="font-semibold text-foreground/70">
                           {s.created_by_name || s.created_by_email}
                         </span>
                         {s.created_by_name && s.created_by_email ? ` · ${s.created_by_email}` : ""}
@@ -512,7 +499,7 @@ export default function BuilderSetsPage() {
                       onChange={(e) => changeStatus(s.id, e.target.value as ReviewStatus)}
                       onClick={(e) => e.stopPropagation()}
                       title={canApprove ? "Change review status" : "Only an admin can approve"}
-                      className={cn(STUDIO_SELECT, "disabled:opacity-50")}
+                      className="rounded-lg border border-border bg-card px-2 py-1 text-xs font-bold text-foreground disabled:opacity-50"
                     >
                       {REVIEW_STATUS_ORDER.map((rs) => (
                         <option key={rs} value={rs} disabled={rs === "approved" && !canApprove}>
@@ -522,7 +509,7 @@ export default function BuilderSetsPage() {
                     </select>
                     <Link
                       href={`/builder/sets/${s.id}`}
-                      className={STUDIO_LINK}
+                      className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors"
                     >
                       Open editor →
                     </Link>
@@ -535,7 +522,7 @@ export default function BuilderSetsPage() {
                       }}
                       title="Delete set"
                       aria-label={`Delete set ${s.title}`}
-                      className="inline-flex items-center rounded-md border border-border p-1.5 text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+                      className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -550,25 +537,25 @@ export default function BuilderSetsPage() {
 
       {csvOpen && selectedSubject && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !csvBusy && setCsvOpen(false)}>
-          <div className="w-full max-w-md border border-border bg-card shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-start justify-between gap-3 border-b border-border px-3 py-2">
+          <div className="w-full max-w-md rounded-2xl bg-card p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-[13px] font-semibold text-foreground">Import set from CSV</h2>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                <h2 className="text-base font-bold text-foreground">Import set from CSV</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
                   {SUBJECTS.find((s) => s.code === selectedSubject)?.label}
                   {selectedLevelLabel ? ` · ${selectedLevelLabel}` : ""} — one question per row.
                 </p>
               </div>
-              <button onClick={() => !csvBusy && setCsvOpen(false)} className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" aria-label="Close"><X className="h-4 w-4" /></button>
+              <button onClick={() => !csvBusy && setCsvOpen(false)} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2" aria-label="Close"><X className="h-4 w-4" /></button>
             </div>
-            <div className="space-y-3 px-3 py-3">
+            <div className="mt-4 space-y-3">
               <div>
-                <label className={STUDIO_FIELD_LABEL}>Title</label>
-                <input autoFocus value={csvTitle} onChange={(e) => setCsvTitle(e.target.value)} placeholder="e.g. Algebra — Unit 1" className={STUDIO_INPUT} />
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Title</label>
+                <input autoFocus value={csvTitle} onChange={(e) => setCsvTitle(e.target.value)} placeholder="e.g. Algebra — Unit 1" className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-primary/30" />
               </div>
               <div>
-                <label className={STUDIO_FIELD_LABEL}>Source</label>
-                <select value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className={STUDIO_INPUT}>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">Source</label>
+                <select value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
                   <option value="">Select a source…</option>
                   {allowedSourcesForSubject(selectedSubject as Subject).map((s) => (
                     <option key={s} value={s}>{sourceLabel(s)}</option>
@@ -576,14 +563,14 @@ export default function BuilderSetsPage() {
                 </select>
               </div>
               <div>
-                <label className={STUDIO_FIELD_LABEL}>CSV file</label>
-                <input ref={csvFileRef} type="file" accept=".csv,text/csv" className="w-full rounded-md text-[13px] text-foreground file:mr-3 file:rounded-md file:border file:border-solid file:border-border file:bg-card file:px-2.5 file:py-1 file:text-[13px] file:font-medium file:text-foreground hover:file:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" />
-                <p className="mt-1 text-[12px] text-muted-foreground">Columns: question_type, prompt, option_a–d, correct_answer, points, explanation.</p>
+                <label className="mb-1 block text-xs font-bold text-muted-foreground">CSV file</label>
+                <input ref={csvFileRef} type="file" accept=".csv,text/csv" className="w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-primary/10 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-primary" />
+                <p className="mt-1 text-[11px] text-muted-foreground">Columns: question_type, prompt, option_a–d, correct_answer, points, explanation.</p>
               </div>
             </div>
-            <div className="flex justify-end gap-2 border-t border-border px-3 py-2">
-              <button onClick={() => setCsvOpen(false)} disabled={csvBusy} className={STUDIO_BTN_SECONDARY}>Cancel</button>
-              <button onClick={() => void submitCsvImport()} disabled={csvBusy || !csvTitle.trim() || !csvSource} className={STUDIO_BTN_PRIMARY}>{csvBusy ? "Importing…" : "Import"}</button>
+            <div className="mt-5 flex justify-end gap-2">
+              <button onClick={() => setCsvOpen(false)} disabled={csvBusy} className="rounded-xl px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2 disabled:opacity-50">Cancel</button>
+              <button onClick={() => void submitCsvImport()} disabled={csvBusy || !csvTitle.trim() || !csvSource} className="rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50">{csvBusy ? "Importing…" : "Import"}</button>
             </div>
           </div>
         </div>
@@ -605,13 +592,13 @@ export default function BuilderSetsPage() {
       >
         {deleteError ? (
           <div className="space-y-3">
-            <div className={STUDIO_ERROR_BANNER}>
+            <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
               {deleteError}
             </div>
             {deleteBlocked ? (
-              <div className="border border-red-300 bg-red-50 px-3 py-2 dark:border-red-900/60 dark:bg-red-950/40">
-                <p className="text-[13px] font-semibold text-red-800 dark:text-red-200">Force delete?</p>
-                <p className="mt-1 text-[12px] text-red-700 dark:text-red-300">
+              <div className="rounded-xl border border-red-300 bg-red-50 p-3">
+                <p className="text-sm font-bold text-red-800">Force delete?</p>
+                <p className="mt-1 text-xs text-red-700">
                   This permanently deletes the set together with every student attempt, grade, and
                   result on it, and removes it from any classroom homework. This can’t be undone.
                 </p>
@@ -619,7 +606,7 @@ export default function BuilderSetsPage() {
                   type="button"
                   onClick={() => runDelete(true)}
                   disabled={deleteSet.isPending}
-                  className="mt-2 inline-flex min-h-7 items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1 text-[12px] font-semibold text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2 disabled:opacity-50"
+                  className="mt-2 inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-3 py-1.5 text-xs font-extrabold text-white hover:bg-red-700 disabled:opacity-50 transition-colors"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                   {deleteSet.isPending ? "Deleting…" : "Force delete (removes attempts & grades)"}
