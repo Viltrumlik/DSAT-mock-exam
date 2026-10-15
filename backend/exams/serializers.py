@@ -205,8 +205,19 @@ class PracticeTestSerializer(serializers.ModelSerializer):
             "modules",
             "created_at",
             "mock_exam_id",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
         ]
-        read_only_fields = ["created_at", "mock_exam_id"]
+        read_only_fields = [
+            "created_at",
+            "mock_exam_id",
+            "is_practice_test",
+            "practice_access",
+            "practice_level",
+            "practice_number",
+        ]
 
     def to_representation(self, instance):
         data = super().to_representation(instance)

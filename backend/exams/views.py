@@ -19,7 +19,7 @@ from django.http import HttpResponse
 from datetime import timedelta
 import hashlib
 import json
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 from access import constants as acc_const
 from access.permissions import CanManageQuestions, IsSuperAdmin, RequiresSubmitTest
@@ -57,6 +57,7 @@ from .models import (
     TestAttempt,
     ensure_full_mock_practice_test_modules,
 )
+from .practice_tests import visible_practice_tests_q
 from .serializers import (
     MockExamSerializer,
     PortalMockExamStudentSerializer,
@@ -544,7 +545,8 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         """
         Anonymous + students + staff who can browse: ``filter_practice_tests_for_user`` (full bank
         for anon/students; subject-scoped for teachers). Other authenticated roles: ``assigned_users``
-        only (legacy).
+        only (legacy). Practice tests follow ``visible_practice_tests_q``; the list returns ONE kind:
+        past papers by default, practice tests with ``?kind=practice_test``.
         """
         user = self.request.user
         # Student practice library must never surface empty tests (no questions); the exam runner
@@ -556,16 +558,22 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
             .distinct()
         )
         if can_browse_standalone_practice_library(user):
-            return filter_practice_tests_for_user(user, base).distinct()
-        if not user.is_authenticated:
-            # Unauthenticated: show nothing (assignment/publish required)
+            qs = filter_practice_tests_for_user(user, base).distinct()
+        elif not user.is_authenticated or normalized_role(user) == acc_const.ROLE_PUBLIC_STUDENT:
+            # Unauthenticated / public learners: nothing (assignment or centre membership required).
             return base.none()
-        # Students (and other non-browsing authenticated roles) see a pastpaper ONLY
-        # when it has been explicitly assigned to them. Publishing alone must not
-        # expose a section to every student — every assignment path (library
-        # bulk-assign, classroom assign, homework) writes to ``assigned_users``, so
-        # this is the single gate.
-        return base.filter(assigned_users=user).distinct()
+        else:
+            # A pastpaper ONLY when it has been explicitly assigned (publishing alone must not
+            # expose a section — every assignment path writes ``assigned_users``); a practice
+            # test by its own rule (open + level, or given).
+            qs = base.filter(
+                Q(is_practice_test=False, assigned_users=user) | visible_practice_tests_q(user)
+            ).distinct()
+        if getattr(self, "action", None) == "list":
+            # The two libraries are separate pages: one kind per list.
+            wants_practice = self.request.query_params.get("kind") == "practice_test"
+            qs = qs.filter(is_practice_test=wants_practice)
+        return qs
 
     @action(detail=False, methods=["post"], permission_classes=[IsAuthenticated, BulkAssignAccess])
     def bulk_assign(self, request):
@@ -817,13 +825,12 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         test's questions. Scope to the UNION of:
           (a) standalone pastpapers explicitly assigned to the student (publish alone never
               exposes a section — assignment is the single gate, mirroring
-              ``PracticeTestViewSet.get_queryset``), and
+              ``PracticeTestViewSet.get_queryset``),
           (b) SECTIONS of a granted/assigned midterm/mock exam (see
-              ``_student_startable_mock_ids``).
+              ``_student_startable_mock_ids``), and
+          (c) practice tests the student may see (``visible_practice_tests_q``).
         """
-        from django.db.models import Q
-
-        cond = Q(mock_exam__isnull=True, assigned_users=user)
+        cond = Q(mock_exam__isnull=True, is_practice_test=False, assigned_users=user) | visible_practice_tests_q(user)
         mock_ids = self._student_startable_mock_ids(user)
         if mock_ids:
             cond |= Q(mock_exam_id__in=mock_ids)
