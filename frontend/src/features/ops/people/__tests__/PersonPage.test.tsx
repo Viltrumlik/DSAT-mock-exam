@@ -297,6 +297,21 @@ describe("the person page's tabs", () => {
     expect(replace).toHaveBeenLastCalledWith("/ops/students/7?tab=history", { scroll: false });
   });
 
+  it("scrolls the open tab into view, so a phone opening ?tab=security sees it underlined", async () => {
+    const scrolled: Element[] = [];
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element) {
+      scrolled.push(this);
+    };
+    try {
+      route(core());
+      await renderPage("students", "tab=security");
+      expect(scrolled.map((el) => el.textContent)).toContain("Security");
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
+
   it("opens the Overview for a tab it does not know, or one this person has not", async () => {
     route(core({ section: "public", status: "public", groups: [], lcup: null }));
     await renderPage("public", "tab=attendance");
@@ -370,6 +385,34 @@ describe("the Overview", () => {
     act(() => button(box("Profile")!, "Save")!.click());
     await settle();
     expect(box("Profile")?.textContent).toContain("This phone number is taken.");
+  });
+
+  it("shows a public user only the learner facts they have", async () => {
+    route(core({ section: "public", status: "public", groups: [], lcup: null, lcup_created: false }));
+    await renderPage("public");
+    const summary = box("Summary")!.textContent;
+    expect(summary).not.toContain("Created by lc-up");
+    expect(summary).not.toContain("SAT exam date");
+
+    remount();
+    route(
+      core({
+        section: "public",
+        status: "public",
+        groups: [],
+        lcup: null,
+        lcup_created: false,
+        sat: { exam_date: "2026-12-05", target_score: 1400, target_english: null, target_math: null },
+      }),
+    );
+    await renderPage("public");
+    expect(box("Summary")!.textContent).toContain("Total 1400");
+  });
+
+  it("names the subject as the form's select does", async () => {
+    route(core(STAFF));
+    await renderPage("staff");
+    expect(box("Summary")!.textContent).toContain("Mathematics");
   });
 
   it("gives a staff member their workload, and none of a learner's facts", async () => {

@@ -142,6 +142,17 @@ describe("Attendance", () => {
     expect(present).toEqual(["Oct 12, 2026", "Junior G21 Math", "Present", "on time", "—"]);
   });
 
+  it("wraps the class and the mark on a phone instead of cutting the excuse off", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    const cells = [...host.querySelectorAll("tbody tr")][0].querySelectorAll("td");
+    for (const td of [cells[1], cells[2]]) {
+      expect(td.classList.contains("whitespace-normal")).toBe(true);
+      expect(td.classList.contains("sm:whitespace-nowrap")).toBe(true);
+      expect(td.classList.contains("whitespace-nowrap")).toBe(false);
+    }
+  });
+
   it("keeps Date, Class and Mark on a phone and hides the note and lc-up", async () => {
     serve("attendance", DATA);
     await render(<AttendanceSection id={7} />);

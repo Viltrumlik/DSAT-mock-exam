@@ -12,7 +12,8 @@ import type { PersonCore } from "./personApi";
  * fetched for it). Same-name accounts head it — the duplicate accounts the owner keeps untangling.
  */
 
-const SUBJECT_LABEL: Record<string, string> = { math: "Math", english: "English", both: "Both" };
+/** As the form's Subject select says it, so the two halves of the Overview agree. */
+const SUBJECT_LABEL: Record<string, string> = { math: "Mathematics", english: "English", both: "Both" };
 
 /** "EN 650 · Math 700 · Total 1350" — only the parts the student has set. */
 function targetsText(sat: PersonCore["sat"]): string {
@@ -50,8 +51,13 @@ function SameName({ person }: { person: PersonCore }) {
   );
 }
 
+function hasSatGoal(sat: PersonCore["sat"]): boolean {
+  return [sat.exam_date, sat.target_score, sat.target_english, sat.target_math].some((v) => v != null);
+}
+
 export function SummaryCard({ person }: { person: PersonCore }) {
   const staff = person.staff;
+  const student = person.section === "students";
   return (
     <Fieldset title="Summary">
       <SameName person={person} />
@@ -94,13 +100,21 @@ export function SummaryCard({ person }: { person: PersonCore }) {
       <Row label="Email verified">{person.email_verified ? "Yes" : "No"}</Row>
       <Row label="Telegram">{person.telegram_linked ? "Linked" : "Not linked"}</Row>
 
+      {/* A centre student always shows these; a public user only what is there — a "No" and two
+          dashes say nothing about someone who never studied here. */}
       {staff ? null : (
         <>
-          <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row>
-          <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
-          <Row label="Targets">
-            {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· set by the student</span>
-          </Row>
+          {student || person.lcup_created ? (
+            <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row>
+          ) : null}
+          {student || hasSatGoal(person.sat) ? (
+            <>
+              <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
+              <Row label="Targets">
+                {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· set by the student</span>
+              </Row>
+            </>
+          ) : null}
         </>
       )}
     </Fieldset>

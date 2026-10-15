@@ -49,10 +49,11 @@ export function AttendanceSection({ id }: { id: number }) {
                   {d.recent.map((r, i) => (
                     <tr key={`${r.date}-${r.class_id}-${i}`}>
                       <Td className="tabular-nums text-muted-foreground">{formatDay(r.date)}</Td>
-                      <Td className="max-w-[6rem] truncate sm:max-w-[14rem]">{r.class_name}</Td>
-                      <Td className="max-w-[6rem] truncate sm:max-w-none">
-                        <span title={markText(r.status, r.reason)}>{markText(r.status, r.reason)}</span>
+                      {/* On a phone these wrap rather than cut: the reason is the point of an excused mark. */}
+                      <Td wrap className="sm:max-w-[14rem] sm:truncate">
+                        {r.class_name}
                       </Td>
+                      <Td wrap>{markText(r.status, r.reason)}</Td>
                       <Td className={`${WIDE_ONLY} max-w-[16rem] truncate text-muted-foreground`}>{r.note || "—"}</Td>
                       <Td className={`${WIDE_ONLY} text-muted-foreground`}>
                         {r.lcup_push ? (PUSH[r.lcup_push] ?? r.lcup_push) : "—"}
