@@ -72,7 +72,8 @@ export const isStudentSiteRole = (r: unknown) => norm(r) === "student" || isPubl
 export const PUBLIC_STUDENT_HOME = "/mock-exam";
 
 /** The runner is `/exam/<id>`; the backend decides which attempts it serves a public learner. */
-const PUBLIC_STUDENT_PATH_PREFIXES = ["/mock-exam", "/exam", "/events", "/profile"] as const;
+// "/review": a learner who left reads their own finished results (owner 2026-10-14).
+const PUBLIC_STUDENT_PATH_PREFIXES = ["/mock-exam", "/exam", "/events", "/profile", "/review"] as const;
 
 export function isPublicStudentPath(p: string): boolean {
   return PUBLIC_STUDENT_PATH_PREFIXES.some((x) => p === x || p.startsWith(`${x}/`));

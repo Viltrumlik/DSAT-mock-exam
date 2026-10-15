@@ -78,7 +78,8 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   const tabsRef = useRef<HTMLDivElement>(null);
   // A public learner's profile is Settings alone: Overview and Classes are the learning
-  // center's (points, homework, classes), and every one of their requests would be refused.
+  // center's (points, homework, classes), and all of their requests but the learner's own
+  // finished attempts would be refused.
   const { me: sessionMe } = useMe();
   const isPublic = isPublicStudent((sessionMe as { role?: string } | undefined)?.role);
 
@@ -196,10 +197,12 @@ export default function ProfilePage() {
 
   useEffect(() => {
     void loadProfile();
-    if (isPublic) return; // Overview's panels, which a public learner has no tab for.
+    // A learner who left still has their own finished attempts: the server serves a public
+    // learner those and nothing else of the exams app (owner 2026-10-14).
+    void loadAttempts();
+    if (isPublic) return; // Points and homework are the learning center's, and would be refused.
     void loadRewards();
     void loadHomework();
-    void loadAttempts();
   }, [isPublic, loadProfile, loadRewards, loadHomework, loadAttempts]);
 
   // The Classes tab's own requests wait until someone opens it.

@@ -179,8 +179,9 @@ afterEach(async () => {
 
 describe("A public learner", () => {
   // Owner, 2026-10-13: a public learner sees mock exams and events; the profile stays usable,
-  // as its settings, and nothing of the learning center's is asked for.
-  it("gets Settings alone, and none of the learning center's requests", async () => {
+  // as its settings, and nothing of the learning center's is asked for — except their own
+  // finished attempts, which the server now serves a learner who left (owner, 2026-10-14).
+  it("gets Settings alone, and asks only for their own finished attempts of the learning center's requests", async () => {
     session.role = "public_student";
     await renderPage("?tab=overview");
     // The page's own tabs; the settings sections below are tabs too, and stay.
@@ -192,7 +193,7 @@ describe("A public learner", () => {
     expect(classes.list).not.toHaveBeenCalled();
     expect(classes.myAssignments).not.toHaveBeenCalled();
     expect(rewards.me).not.toHaveBeenCalled();
-    expect(attempts.getAttempts).not.toHaveBeenCalled();
+    expect(attempts.getAttempts).toHaveBeenCalled();
     expect(users.getMe).toHaveBeenCalled();
   });
 });

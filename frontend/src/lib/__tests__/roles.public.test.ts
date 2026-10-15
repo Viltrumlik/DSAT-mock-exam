@@ -24,11 +24,29 @@ describe("public_student", () => {
     expect(ROLE_LABELS.public_student).toBe("Public student");
   });
 
-  it("may open only mock exams, the runner, events and the profile", () => {
-    for (const p of ["/mock-exam", "/mock-exam/result/5", "/exam/9", "/events", "/events/3", "/profile"]) {
+  it("may open only mock exams, the runner, events, the profile and their own review pages", () => {
+    for (const p of [
+      "/mock-exam",
+      "/mock-exam/result/5",
+      "/exam/9",
+      "/events",
+      "/events/3",
+      "/profile",
+      "/review/12",
+    ]) {
       expect(isPublicStudentPath(p), p).toBe(true);
     }
-    for (const p of ["/", "/classes", "/pastpapers", "/leaderboard", "/mock-examx", "/mock/4/results", "/examples"]) {
+    for (const p of [
+      "/",
+      "/classes",
+      "/pastpapers",
+      "/practice-tests",
+      "/leaderboard",
+      "/mock-examx",
+      "/mock/4/results",
+      "/examples",
+      "/reviewer",
+    ]) {
       expect(isPublicStudentPath(p), p).toBe(false);
     }
   });
