@@ -18,6 +18,8 @@ from classes.models_certificates import MidtermCertificate
 from classes.models_schedule import MidtermSchedule
 from desktop.proof import sign
 from midterms.models import Midterm, MidtermAttempt, MidtermAttemptIdempotencyKey
+from users.audience import FROZEN_LCUP_DEBT
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from desktop.v1 import content
 from desktop.v1.tests.support import (
@@ -549,6 +551,34 @@ class OwnershipTests(MidtermCase):
         self.assertEqual(intruder.get(f"midterms/attempts/{attempt_id}/result").status_code, 404)
         self.assertEqual(intruder.get(f"attempts/midterm/{attempt_id}/media").status_code, 404)
         self.assertEqual(MidtermAttempt.objects.get(pk=attempt_id).offscreen_violations, 0)
+
+
+class FrozenLearnerTests(MidtermCase):
+    """A debt-frozen student signs in but cannot sit a midterm — the website's gate, here too,
+    even when the freeze lands in the middle of a sitting."""
+
+    def test_a_frozen_student_is_refused_on_every_route(self):
+        attempt_id = self.opened()
+        type(self.student).objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason=FROZEN_LCUP_DEBT)
+        self.student.refresh_from_db()
+        self.app = AppClient(self.student)
+        body = {"module_id": self.m1.id, "seq": 1, "answers": {str(self.q1[0]): "B"}}
+
+        writes = [f"midterms/{self.midterm.id}/prepare"] + [
+            f"midterms/attempts/{attempt_id}/{action}" for action in ("open", "sync", "submit", "offscreen")
+        ]
+        for path in writes:
+            with self.subTest(path=path):
+                res = self.app.post(path, body, key=new_key("frozen"))
+                self.assertEqual(res.status_code, 403, res.content)
+                self.assertEqual(res.json(), {"code": "forbidden", "detail": IsAuthenticatedAndNotFrozen.message})
+        res = self.app.get(f"midterms/attempts/{attempt_id}/result")
+        self.assertEqual(res.status_code, 403, res.content)
+
+        attempt = MidtermAttempt.objects.get(pk=attempt_id)
+        self.assertEqual(attempt.current_state, MidtermAttempt.STATE_ACTIVE)
+        self.assertNotIn(str(self.q1[0]), json.dumps(attempt.answers or {}))
+        self.assertEqual(attempt.offscreen_violations, 0)
 
 
 @override_settings(MIDTERM_DESKTOP_REQUIRED=True, DESKTOP_PROOF_KEYS={KEY_ID: KEY_HEX})
