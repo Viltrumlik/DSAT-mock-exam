@@ -191,7 +191,8 @@ export function PersonHeader({
           />
           <div className="min-w-0 space-y-2.5">
             <div>
-              <h1 className="truncate text-2xl font-semibold tracking-tight text-foreground">{person.name}</h1>
+              {/* Wrapped, never cut: the name is the page's most important text ("Malika Karim…" on a phone). */}
+              <h1 className="break-words text-2xl font-semibold tracking-tight text-foreground">{person.name}</h1>
               <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
                 {person.username ? (
                   <span className="inline-flex items-center gap-1.5">
@@ -208,7 +209,7 @@ export function PersonHeader({
                 {person.email ? (
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <Mail aria-hidden className="h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{person.email}</span>
+                    <span className="break-all">{person.email}</span>
                   </span>
                 ) : null}
               </div>
@@ -229,19 +230,19 @@ export function PersonHeader({
           </div>
         </div>
 
-        {/* A phone gives the buttons a row of their own, the first one stretching, so "More" never
-            wraps onto a line by itself. */}
-        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2 sm:flex sm:flex-wrap">
+        {/* On a phone the one-time password takes a row of its own at full width, and Freeze and
+            "More" share the next — no label cut ("One-time…") and no "More" left alone on a line. */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:flex sm:flex-wrap">
           {canOtp ? (
             <button
               type="button"
               disabled={busy || !person.phone}
               title={person.phone ? undefined : "Add a phone number first"}
               onClick={onOneTimePassword}
-              className={ACTION}
+              className={`${ACTION} col-span-2`}
             >
               <KeyRound aria-hidden className="h-4 w-4 shrink-0 text-primary" />
-              <span className="truncate">One-time password</span>
+              One-time password
             </button>
           ) : null}
           <button type="button" disabled={busy} onClick={onToggleFreeze} className={ACTION}>
@@ -260,12 +261,12 @@ export function PersonHeader({
             }
           >
             <DropdownMenuItem onClick={onRevoke}>
-              <LogOut aria-hidden className="h-4 w-4 text-muted-foreground" />
-              Log out everywhere
+              <LogOut aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="whitespace-nowrap">Log out everywhere</span>
             </DropdownMenuItem>
             <DropdownMenuItem destructive onClick={onDelete}>
-              <Trash2 aria-hidden className="h-4 w-4" />
-              Delete account
+              <Trash2 aria-hidden className="h-4 w-4 shrink-0" />
+              <span className="whitespace-nowrap">Delete account</span>
             </DropdownMenuItem>
           </DropdownMenu>
         </div>

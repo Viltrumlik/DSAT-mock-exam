@@ -497,7 +497,8 @@ describe("the subject tabs", () => {
     await renderPage("students", "tab=payments");
     const payments = box("lc-up & payments")!;
     expect(payments.textContent).toContain("250,000 UZS");
-    expect(phoneHidden(payments.querySelector("table"))).toEqual(["Month", "Group"]);
+    // A phone keeps Date and Amount: the table fits its card (335px of 324 with the Kind badge).
+    expect(phoneHidden(payments.querySelector("table"))).toEqual(["Kind", "Month", "Group"]);
   });
 
   it("keeps the page up when a part fails, and offers a retry there", async () => {

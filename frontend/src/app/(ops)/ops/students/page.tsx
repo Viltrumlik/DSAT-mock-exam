@@ -18,11 +18,15 @@ const COLUMNS: ChangeListColumn<StudentRow>[] = [
   {
     key: "groups",
     label: "Groups",
-    render: (r) => <Truncated text={r.groups.map((g) => g.name).join(", ")} />,
+    render: (r) => (
+      <Truncated text={r.groups.map((g) => g.name).join(", ")} className="max-w-[9rem] min-[1440px]:max-w-[11rem]" />
+    ),
   },
   {
     key: "lcup",
     label: "lc-up",
+    // Below 1440px the column gives way so "Last seen" fits; the "By lc-up" filter still says it.
+    className: "hidden min-[1440px]:table-cell",
     render: (r) =>
       r.lcup.linked ? (
         <span title="Linked to lc-up" aria-label="Linked">
