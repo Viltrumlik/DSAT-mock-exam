@@ -1,136 +1,106 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { examsStudentApi } from "@/features/examsStudent/api";
-import { FlaskConical, ChevronRight, BookOpen, Calculator } from "lucide-react";
-import { HeroPage, PageHero, Skeleton } from "@/components/ui";
-// The house devices, so practice reads as part of the same product as the classroom.
-import { Card, EmptyState, ErrorState, Pill } from "@/features/classroom/ui";
+/**
+ * /practice-tests — the centre's own practice tests (owner decisions 2026-10-14/15). Each card is
+ * ONE section on the past-paper engine and looks like a past-paper booklet; the server decides
+ * which ones this student sees (Open + level, or given as homework). Newest number first, with a
+ * subject and a status filter. Timed/Untimed is chosen on the runner's Welcome screen.
+ */
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+// eslint-disable-next-line no-restricted-imports
+import { examsPublicApi } from "@/lib/api";
+import { cardState } from "@/features/pastpapers/pastpaperCardState";
+import { isRW, levelLabel, sectionTitle, subjectLabel } from "@/features/pastpapers/pastpaperLabels";
+import { Booklet, PapersEmpty, PapersError, Segmented, usePaperLibrary } from "@/features/pastpapers/PaperLibrary";
+import { Search } from "lucide-react";
 
-type PracticeTestPackSection = {
-  id: number;
-  title: string;
-  subject: string;
-  module_count: number;
-};
+type SubjectFilter = "ALL" | "RW" | "MATH";
+type StatusFilter = "ALL" | "new" | "progress" | "completed";
 
-type PracticeTestPack = {
-  id: number;
-  title: string;
-  description: string;
-  is_published: boolean;
-  sections: PracticeTestPackSection[];
-  created_at: string;
-};
+export default function PracticeTestsPage() {
+  const router = useRouter();
+  const lib = usePaperLibrary({ loadSections: examsPublicApi.getPracticeTestSections, backHref: "/practice-tests" });
+  const [subject, setSubject] = useState<SubjectFilter>("ALL");
+  const [status, setStatus] = useState<StatusFilter>("ALL");
+  const [search, setSearch] = useState("");
 
-function subjectLabel(subject: string): string {
-  if (subject === "READING_WRITING") return "Reading & Writing";
-  if (subject === "MATH") return "Mathematics";
-  return subject;
-}
+  const rows = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    return lib.sections
+      .map((s) => ({ section: s, d: cardState(lib.byTest.get(s.id) ?? [], lib.reopened.get(s.id)) }))
+      .filter(({ section, d }) => {
+        if (subject === "RW" && !isRW(section.subject)) return false;
+        if (subject === "MATH" && isRW(section.subject)) return false;
+        const bucket = d.status === "reopened" ? "new" : d.status;
+        if (status !== "ALL" && bucket !== status) return false;
+        if (q && !`${sectionTitle(section)} ${section.title} ${subjectLabel(section.subject)}`.toLowerCase().includes(q)) return false;
+        return true;
+      })
+      .sort((a, b) =>
+        (b.section.practice_number ?? 0) - (a.section.practice_number ?? 0)
+        || (isRW(a.section.subject) ? 0 : 1) - (isRW(b.section.subject) ? 0 : 1)
+        || b.section.id - a.section.id);
+  }, [lib.sections, lib.byTest, lib.reopened, subject, status, search]);
 
-export default function PracticeTestsListPage() {
-  const [packs, setPacks] = useState<PracticeTestPack[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setFailed(false);
-    try {
-      const data = await examsStudentApi.getPracticeTestPacksStudent();
-      setPacks(data as PracticeTestPack[]);
-    } catch {
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
+  const hasFilter = subject !== "ALL" || status !== "ALL" || !!search.trim();
 
   return (
-    <HeroPage className="space-y-5">
-      <Card pad="none" className="cr-card overflow-hidden">
-        <PageHero
-          badge="Practice"
-          icon={FlaskConical}
-          title="Practice tests"
-          description="Untimed practice — start any section in any order."
-          tiles={
-            !loading && !failed && packs.length > 0
-              ? [{ label: "Available", value: packs.length, accent: true }]
-              : []
-          }
-        />
-      </Card>
+    <div className="dzboard" style={{ maxWidth: 1280, width: "100%", margin: "0 auto" }}>
+      <div className="dz-content">
+        <div style={{ marginBottom: 22 }}>
+          <div className="dz-headin" style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".18em", color: "var(--dz-faint)" }}>SIMULATION</div>
+          <h1 className="dz-headin" style={{ margin: "8px 0 0", fontSize: 38, lineHeight: 1.05, fontWeight: 800, letterSpacing: "-.03em", color: "var(--dz-ink)" }}>Practice tests</h1>
+        </div>
 
-      {loading ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-36 rounded-2xl" />)}
+        <div className="dz-headin" style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20, flexWrap: "wrap" }}>
+          <Segmented label="Subject" value={subject} onChange={(v) => setSubject(v as SubjectFilter)}
+            options={[{ v: "ALL", l: "All" }, { v: "RW", l: "Reading & Writing" }, { v: "MATH", l: "Math" }]} />
+          <Segmented label="Status" value={status} onChange={(v) => setStatus(v as StatusFilter)}
+            options={[{ v: "ALL", l: "All" }, { v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
         </div>
-      ) : failed ? (
-        // Not an empty state: "no practice tests yet" would tell a student with work waiting
-        // that there is nothing to practise.
-        <Card className="cr-card">
-          <ErrorState
-            title="Practice tests aren't loading right now."
-            message="Nothing has been lost — they'll be here once the list loads."
-            onRetry={() => void load()}
-          />
-        </Card>
-      ) : packs.length === 0 ? (
-        <Card className="cr-card">
-          <EmptyState
-            icon={FlaskConical}
-            title="No practice tests yet"
-            description="Practice test packs appear here once your teacher publishes them."
-          />
-        </Card>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {packs.map((pack, i) => (
-            <Link
-              key={pack.id}
-              href={`/practice-tests/${pack.id}`}
-              className="ds-ring block rounded-2xl"
-              style={{ animationDelay: `${Math.min(i, 8) * 60}ms` }}
-            >
-              <Card className="cr-card cr-lift flex h-full flex-col gap-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="truncate text-[16px] font-extrabold text-foreground">
-                      {pack.title || `Practice test #${pack.id}`}
-                    </h3>
-                    {pack.description ? (
-                      <p className="mt-1 line-clamp-2 text-[13px] text-muted-foreground">
-                        {pack.description}
-                      </p>
-                    ) : null}
-                  </div>
-                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
-                </div>
-                <div className="mt-auto flex flex-wrap gap-1.5">
-                  {pack.sections.map((s) => {
-                    const isRW = s.subject === "READING_WRITING";
-                    return (
-                      <Pill key={s.id} tone={isRW ? "info" : "success"}>
-                        {isRW ? (
-                          <BookOpen className="h-3 w-3" aria-hidden />
-                        ) : (
-                          <Calculator className="h-3 w-3" aria-hidden />
-                        )}
-                        {subjectLabel(s.subject)}
-                      </Pill>
-                    );
-                  })}
-                </div>
-              </Card>
-            </Link>
-          ))}
+
+        <div className="dz-headin" style={{ position: "relative", marginBottom: 24, maxWidth: 560 }}>
+          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--dz-faint)", display: "flex" }}><Search size={18} /></span>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search practice tests…"
+            style={{ width: "100%", border: "1px solid var(--dz-border)", background: "var(--dz-panel)", borderRadius: 14, padding: "14px 16px 14px 48px", fontFamily: "inherit", fontSize: 15, color: "var(--dz-ink)", outline: "none" }} />
         </div>
-      )}
-    </HeroPage>
+
+        {lib.error ? (
+          <PapersError onRetry={lib.load} noun="practice tests" />
+        ) : lib.loading ? (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 18 }}>
+            {Array.from({ length: 6 }).map((_, i) => <div key={i} className="dz-skel" style={{ height: 200, borderRadius: 18 }} />)}
+          </div>
+        ) : rows.length === 0 ? (
+          <PapersEmpty hasFilter={hasFilter} noun="practice tests" />
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(380px, 1fr))", gap: 18 }}>
+            {rows.map((row) => (
+              <Booklet
+                key={row.section.id}
+                section={row.section}
+                d={row.d}
+                badge={<LevelBadge code={row.section.practice_level ?? ""} />}
+                meta={row.section.title?.trim() || "Timed or untimed — your choice"}
+                busy={lib.starting === row.section.id}
+                error={lib.startError?.sectionId === row.section.id ? lib.startError.msg : null}
+                onOpen={() => void lib.handleOpen(row.section, row.d)}
+                onReport={() => { if (row.d.completedAttemptId) router.push(`/pastpapers/${row.d.completedAttemptId}/report`); }}
+                onHistory={() => { if (row.d.completedAttemptId) router.push(`/pastpapers/${row.d.completedAttemptId}/report#history`); }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LevelBadge({ code }: { code: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 800, color: "var(--dz-indigo)", background: "var(--dz-indigo-soft)", padding: "4px 10px", borderRadius: 8 }}>
+      {levelLabel(code)}
+    </span>
   );
 }

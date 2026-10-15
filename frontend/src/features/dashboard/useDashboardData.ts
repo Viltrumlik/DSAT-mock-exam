@@ -335,7 +335,7 @@ function buildModel(
   const nextActions: ActionItem[] = [];
   if (resume) nextActions.push({ id: "resume", title: "Resume test", detail: resume.practice_test_details?.title || "In progress", href: `/exam/${resume.id}` });
   nextActions.push({ id: "mock", title: "Take a timed mock", detail: "Full-length, test-day conditions", href: "/mock-exam" });
-  nextActions.push({ id: "practice", title: "Practice a section", detail: "Untimed, build accuracy", href: "/practice-tests" });
+  nextActions.push({ id: "practice", title: "Practice a section", detail: "Timed or untimed, build accuracy", href: "/practice-tests" });
 
   return {
     firstName,

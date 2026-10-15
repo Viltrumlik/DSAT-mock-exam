@@ -77,6 +77,13 @@ export type PastpaperSection = {
     modules: PastpaperModuleBrief[];
     created_at?: string;
     mock_exam_id?: number | null;
+    /** True for the centre's own practice tests (own page, own rules); false/absent = past paper. */
+    is_practice_test?: boolean;
+    practice_access?: "open" | "homework_only";
+    /** "" = all levels, else foundation | junior | middle | senior. */
+    practice_level?: string;
+    /** Permanent number, given at first publish (per subject). Null for drafts. */
+    practice_number?: number | null;
 };
 
 /** Admin section row (GET /exams/admin/tests/). Extends the student shape with admin fields. */
@@ -806,6 +813,13 @@ export const examsPublicApi = {
      */
     getPastpaperSections: async (): Promise<PastpaperSection[]> => {
         const res = await api.get("/exams/");
+        const raw = res.data;
+        const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
+        return arr as PastpaperSection[];
+    },
+    /** GET /exams/?kind=practice_test — the practice tests this student may see (visibility is server-side). */
+    getPracticeTestSections: async (): Promise<PastpaperSection[]> => {
+        const res = await api.get("/exams/", { params: { kind: "practice_test" } });
         const raw = res.data;
         const arr = Array.isArray(raw) ? raw : Array.isArray(raw?.results) ? raw.results : [];
         return arr as PastpaperSection[];
