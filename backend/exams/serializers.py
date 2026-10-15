@@ -879,6 +879,24 @@ class AdminPracticeTestSerializer(serializers.ModelSerializer):
         # ever given by assign_practice_number under a lock; the DB constraint is the backstop.
         validators = []
 
+    def validate_subject(self, value):
+        # Practice numbers run per subject (uniq_practice_number_per_subject), so a numbered test's
+        # subject is part of its name: moving "Practice Test 1" to the other subject would collide
+        # with that subject's own number 1 (an IntegrityError, i.e. a 500) or leave a gap behind.
+        # Fixed from the first publish. An unnumbered draft, and a past paper, may still change it.
+        inst = self.instance
+        number = getattr(inst, "practice_number", None) if inst is not None else None
+        if number is None:
+            return value
+        if _normalize_platform_subject_value(value) != _normalize_platform_subject_value(inst.subject):
+            raise serializers.ValidationError(
+                f"A numbered practice test cannot change its subject: Practice Test {number} stays "
+                f"{'Math' if _normalize_platform_subject_value(inst.subject) == 'MATH' else 'Reading & Writing'}."
+            )
+        # Same subject, perhaps spelled another way ("math", "Mathematics"): keep the stored value, so a
+        # re-save never rewrites the string the numbering constraint is keyed on.
+        return inst.subject
+
     def validate_is_practice_test(self, value):
         # The kind is fixed at creation: a past paper never turns into a practice test or back
         # (their lists, numbering and visibility rules differ).

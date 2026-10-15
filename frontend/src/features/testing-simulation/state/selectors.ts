@@ -67,6 +67,16 @@ export function isUntimed(attempt: Attempt | null): boolean {
   return attempt?.is_timed === false;
 }
 
+/**
+ * Whether there is a running clock the student can stop: the flow allows a pause AND the sitting has
+ * a clock. An untimed sitting has none, so it has no Pause button, no pause on Save & Exit, no
+ * auto-pause on leaving the tab, and the server refuses the call (400) if one is sent anyway.
+ * Every pause the runner starts reads this, not `pauseAllowed` alone.
+ */
+export function clockPausable(attempt: Attempt | null, mockFlow: boolean): boolean {
+  return pauseAllowed(attempt, mockFlow) && !isUntimed(attempt);
+}
+
 /** The centre's own practice test (own Welcome wording + the Timed/Untimed choice). */
 export function isPracticeTest(attempt: Attempt | null): boolean {
   return Boolean(attempt?.practice_test_details?.is_practice_test);

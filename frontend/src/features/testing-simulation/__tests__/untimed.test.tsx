@@ -19,7 +19,7 @@ vi.mock("@/lib/api", () => ({
 import { ExamHeader } from "../components/ExamHeader";
 import { WelcomeScreen } from "../components/WelcomeScreen";
 import { createExamApi } from "../services/examApiClient";
-import { isPracticeTest, isUntimed } from "../state/selectors";
+import { clockPausable, isPracticeTest, isUntimed, pauseAllowed } from "../state/selectors";
 import { parseAttempt } from "../types";
 
 const attempt = (extra: Record<string, unknown>) => extra as never;
@@ -85,6 +85,20 @@ describe("untimed practice tests", () => {
     expect(isUntimed(attempt({ is_timed: true }))).toBe(false);
     expect(isUntimed(attempt({}))).toBe(false);
     expect(isPracticeTest(attempt({ practice_test_details: { is_practice_test: true } }))).toBe(true);
+  });
+
+  it("has no clock to stop: an untimed sitting is never paused, by hand or on leaving", () => {
+    // `clockPausable` is the one gate the runner's Pause button, Save & Exit, the auto-pause on
+    // leaving the tab and the pause-state sync all read. The server refuses a pause on an
+    // untimed sitting too (400), so a request that slipped past would only be an error toast.
+    const timedPastpaper = attempt({ is_timed: true, practice_test_details: { mock_kind: null } });
+    const untimedPractice = attempt({ is_timed: false, practice_test_details: { is_practice_test: true, mock_kind: null } });
+    expect(pauseAllowed(untimedPractice, false)).toBe(true); // the flow allows it...
+    expect(clockPausable(untimedPractice, false)).toBe(false); // ...but there is no clock
+    expect(clockPausable(timedPastpaper, false)).toBe(true);
+    // Everything pauseAllowed refuses stays refused.
+    expect(clockPausable(timedPastpaper, true)).toBe(false);
+    expect(clockPausable(attempt({ is_timed: true, practice_test_details: { mock_kind: "MIDTERM" } }), false)).toBe(false);
   });
 
   it("offers Timed / Untimed on the Welcome screen and reports the choice", () => {

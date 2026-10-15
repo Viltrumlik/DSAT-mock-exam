@@ -301,6 +301,11 @@ def _refetch_attempt_for_api(view, pk: int) -> TestAttempt:
     )
 
 
+def _untimed_no_pause_response() -> Response:
+    """An untimed sitting has no clock, so there is nothing to pause or resume (practice tests only)."""
+    return Response({"error": "This sitting is untimed."}, status=status.HTTP_400_BAD_REQUEST)
+
+
 def _transition_conflict_response(view, *, attempt_pk: int, detail: str | None = None) -> Response:
     """After a guarded state transition misses (0-row update), reload and return authoritative attempt JSON."""
     metric_incr("exam_engine_transition_conflict_total")
@@ -1138,7 +1143,9 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         attempt = self.get_object()
         # Timed/Untimed is the student's choice on the Welcome screen — practice tests only, and
         # only before Module 1 starts (owner decision 2026-10-14). Past papers are always timed.
-        raw_timed = request.data.get("timed", True) if hasattr(request, "data") else True
+        # Only an object body can carry the choice. A JSON array or a bare value is `request.data` too
+        # (a list has no `.get`), and a wrong shape is not a reason to answer 500: it is the default.
+        raw_timed = request.data.get("timed", True) if isinstance(request.data, dict) else True
         wants_untimed = raw_timed in (False, "false", "False", "0", 0)
         if attempt.is_completed:
             return Response({"error": "Cannot start a completed attempt."}, status=status.HTTP_400_BAD_REQUEST)
@@ -1397,6 +1404,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         """Mark the attempt as paused so the deadline timer stops counting."""
         attempt = self.get_object()
         _enforce_attempt_student(request, attempt)
+        if not attempt.is_timed:
+            return _untimed_no_pause_response()
         if attempt.is_completed or attempt.current_state == TestAttempt.STATE_COMPLETED:
             return Response({"error": "Attempt already completed."}, status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
@@ -1413,6 +1422,8 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         """Clear the paused state, banking the elapsed pause window."""
         attempt = self.get_object()
         _enforce_attempt_student(request, attempt)
+        if not attempt.is_timed:
+            return _untimed_no_pause_response()
         with transaction.atomic():
             locked = TestAttempt.objects.select_for_update(of=("self",)).select_related("current_module").get(pk=attempt.pk)
             if locked.pause_started_at is None:

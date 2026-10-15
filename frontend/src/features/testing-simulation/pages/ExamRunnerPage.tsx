@@ -18,6 +18,7 @@ import { isCompleted, isModulePayloadMissing, isScoring } from "../state/attempt
 import {
   calculatorAllowed,
   calculatorScientificOnly,
+  clockPausable,
   isMath,
   isPracticeTest,
   isProctored,
@@ -571,7 +572,7 @@ export function ExamRunnerPage() {
     attempt,
     clock,
     // A blocked duplicate tab must not run the countdown or auto-submit.
-    paused: (paused && pauseAllowed(attempt, mockFlow)) || multiTab.blocked,
+    paused: (paused && clockPausable(attempt, mockFlow)) || multiTab.blocked,
     onExpire,
     // An untimed practice test has no clock to run, expire or auto-submit.
     untimed: isUntimed(attempt),
@@ -650,7 +651,9 @@ export function ExamRunnerPage() {
   const syncedPauseRef = useRef<number | null>(null);
   useEffect(() => {
     if (!attempt) return;
-    if (!pauseAllowed(attempt, mockFlow)) {
+    // An untimed sitting is never shown paused, whatever `is_paused` says: it has no clock, and the
+    // server now refuses the resume that would clear it.
+    if (!clockPausable(attempt, mockFlow)) {
       setPaused(false);
       return;
     }
@@ -743,7 +746,7 @@ export function ExamRunnerPage() {
   }, []);
 
   const handlePauseToggle = useCallback(async () => {
-    if (!attempt || !pauseAllowed(attempt, mockFlow)) return;
+    if (!attempt || !clockPausable(attempt, mockFlow)) return;
     const nextPaused = !paused;
     setPaused(nextPaused); // optimistic
     try {
@@ -762,7 +765,9 @@ export function ExamRunnerPage() {
   const handleSaveAndExit = useCallback(async () => {
     setExiting(true);
     try {
-      if (attemptRef.current && pauseAllowed(attemptRef.current, mockFlow)) {
+      // An untimed sitting has no clock to stop (and the server would answer 400): go straight to
+      // the save below.
+      if (attemptRef.current && clockPausable(attemptRef.current, mockFlow)) {
         try {
           applyAttempt(await engineApi.pause(attemptId));
         } catch {
@@ -812,7 +817,7 @@ export function ExamRunnerPage() {
   const autoPauseRef = useRef<() => void>(() => {});
   autoPauseRef.current = () => {
     // NOTE: the answer FLUSH below runs for every flow (incl. mocks). Only the
-    // pause step is pastpaper-only — see the pauseAllowed gate lower down. A mock
+    // pause step is pastpaper-only (and timed-only) — see the clockPausable gate lower down. A mock
     // cannot pause, but it still must not lose the last answers on an abrupt leave
     // (they'd otherwise reach only the local draft, lost on cross-device resume).
     if (!attempt || !attemptId) return;
@@ -847,7 +852,9 @@ export function ExamRunnerPage() {
     // thing their off-screen rule polices, so their clock keeps running.
     // Pause is PASTPAPER-ONLY. A full mock is strictly timed everywhere — solo or
     // invigilated — so leaving never buys time; in a session it is policed instead.
-    if (!pauseAllowed(attempt, mockFlow)) return;
+    // An untimed practice test has no clock either, so leaving buys and costs nothing: the answer
+    // flush above is all it needs (and the server refuses a pause on it).
+    if (!clockPausable(attempt, mockFlow)) return;
     // A blocked duplicate tab does not own the attempt: pausing from it would freeze the
     // clock of the tab the student is actually sitting the exam in.
     if (multiTab.blocked) return;
@@ -1109,7 +1116,7 @@ export function ExamRunnerPage() {
         mathTools={mathQuestions && !isMidterm}
         showCalculator={calculatorAllowed(attempt)}
         tools={tools}
-        pauseAllowed={pauseAllowed(attempt, mockFlow) && !isUntimed(attempt)}
+        pauseAllowed={clockPausable(attempt, mockFlow)}
         untimed={isUntimed(attempt)}
         paused={paused}
         onTogglePause={handlePauseToggle}

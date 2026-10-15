@@ -77,6 +77,43 @@ class PracticeTestBuilderApiTests(TestCase):
         self.assertEqual(r.status_code, 200, r.content)
         self.assertTrue(PracticeTest.objects.get(pk=pt["id"]).is_practice_test)
 
+    def _numbered(self):
+        row = self._create(is_practice_test=True)
+        seed_mc_questions_for_practice_test(PracticeTest.objects.get(pk=row["id"]), questions_per_module=22)
+        r = self.client.post(f"/api/exams/admin/tests/{row['id']}/publish/", **_Q)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["practice_number"], 1)
+        return row["id"]
+
+    def test_subject_is_fixed_once_the_test_is_numbered(self):
+        # Numbers run per subject (uniq_practice_number_per_subject): moving a numbered test to the other
+        # subject would collide with that subject's own Practice Test 1 (IntegrityError -> 500) or leave a
+        # gap in this one. A clear 400 instead.
+        pid = self._numbered()
+        r = self.client.patch(f"/api/exams/admin/tests/{pid}/", {"subject": "READING_WRITING"}, format="json", **_Q)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("subject", r.json())
+        self.assertIn("cannot change", str(r.json()["subject"]).lower())
+        self.assertEqual(PracticeTest.objects.get(pk=pid).subject, "MATH")
+
+    def test_naming_the_same_subject_again_is_not_a_change(self):
+        pid = self._numbered()
+        for spelling in ("MATH", "math", "Mathematics"):
+            r = self.client.patch(f"/api/exams/admin/tests/{pid}/", {"subject": spelling}, format="json", **_Q)
+            self.assertEqual(r.status_code, 200, (spelling, r.content))
+        self.assertEqual(PracticeTest.objects.get(pk=pid).subject, "MATH")
+
+    def test_subject_can_still_change_before_it_is_numbered(self):
+        row = self._create(is_practice_test=True)
+        r = self.client.patch(f"/api/exams/admin/tests/{row['id']}/", {"subject": "READING_WRITING"}, format="json", **_Q)
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertEqual(r.json()["subject"], "READING_WRITING")
+
+    def test_a_past_papers_subject_is_unchanged_by_this_rule(self):
+        row = self._create()
+        r = self.client.patch(f"/api/exams/admin/tests/{row['id']}/", {"subject": "READING_WRITING"}, format="json", **_Q)
+        self.assertEqual(r.status_code, 200, r.content)
+
     def test_practice_number_cannot_be_set_through_the_api(self):
         row = self._create(is_practice_test=True, practice_number=7)
         self.assertIsNone(row["practice_number"])

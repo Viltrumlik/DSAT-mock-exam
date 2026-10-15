@@ -57,6 +57,14 @@ class UntimedPracticeTestTests(TestCase):
         self.assertTrue(body["is_timed"])
         self.assertIsNotNone(body["remaining_seconds"])
 
+    def test_a_non_object_start_body_is_not_a_server_error_and_stays_timed(self):
+        # `request.data` is a list for a JSON array: `.get` on it used to raise (a 500). The choice is
+        # only ever read from an object body; anything else is the default, timed.
+        aid = self._create_attempt(practice=True)
+        r = self.client.post(f"/api/exams/attempts/{aid}/start/", [False], format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+        self.assertTrue(r.json()["is_timed"])
+
     def test_past_papers_ignore_the_untimed_request(self):
         aid = self._create_attempt(practice=False)
         body = self.client.post(f"/api/exams/attempts/{aid}/start/", {"timed": False}, format="json").json()
@@ -96,3 +104,53 @@ class UntimedPracticeTestTests(TestCase):
         TestAttempt.objects.filter(pk=aid).update(is_timed=True)
         r = self.client.get(f"/api/exams/attempts/{aid}/review/")
         self.assertIs(r.json()["is_timed"], True)
+
+
+class UntimedHasNoPauseTests(TestCase):
+    """An untimed sitting has no clock, so it has nothing to pause (owner, 2026-10-14). The Pause
+    button is hidden for it; the server refuses the call too, so a stale tab or a crafted request
+    cannot park an untimed sitting in a paused state."""
+
+    URL = "/api/exams/attempts/{id}/{action}/"
+
+    def setUp(self):
+        self.client = APIClient()
+        self.student = User.objects.create_user(email="unp_student@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+        self.client.force_authenticate(self.student)
+        pt = PracticeTest.objects.create(
+            subject="MATH", title="S", is_practice_test=True, is_published=True,
+            practice_access=PracticeTest.ACCESS_OPEN, practice_number=1,
+        )
+        seed_mc_questions_for_practice_test(pt)
+        r = self.client.post("/api/exams/attempts/", {"practice_test": pt.id}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.attempt_id = r.json()["id"]
+
+    def _start(self, **body):
+        r = self.client.post(f"/api/exams/attempts/{self.attempt_id}/start/", body, format="json")
+        self.assertEqual(r.status_code, 200, r.content)
+
+    def _post(self, action):
+        return self.client.post(self.URL.format(id=self.attempt_id, action=action), {}, format="json")
+
+    def test_pause_is_refused_on_an_untimed_attempt(self):
+        self._start(timed=False)
+        r = self._post("pause")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"error": "This sitting is untimed."})
+        self.assertIsNone(TestAttempt.objects.get(pk=self.attempt_id).pause_started_at)
+
+    def test_resume_pause_is_refused_on_an_untimed_attempt(self):
+        self._start(timed=False)
+        r = self._post("resume_pause")
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertEqual(r.json(), {"error": "This sitting is untimed."})
+
+    def test_a_timed_attempt_still_pauses_and_resumes(self):
+        self._start()
+        paused = self._post("pause")
+        self.assertEqual(paused.status_code, 200, paused.content)
+        self.assertIsNotNone(TestAttempt.objects.get(pk=self.attempt_id).pause_started_at)
+        resumed = self._post("resume_pause")
+        self.assertEqual(resumed.status_code, 200, resumed.content)
+        self.assertIsNone(TestAttempt.objects.get(pk=self.attempt_id).pause_started_at)
