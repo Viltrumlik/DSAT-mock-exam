@@ -62,6 +62,16 @@ export function pauseAllowed(attempt: Attempt | null, mockFlow: boolean): boolea
   return !mockFlow && kind !== "MIDTERM" && kind !== "MOCK";
 }
 
+/** A practice-test student chose to work without the clock (server `is_timed=false`). */
+export function isUntimed(attempt: Attempt | null): boolean {
+  return attempt?.is_timed === false;
+}
+
+/** The centre's own practice test (own Welcome wording + the Timed/Untimed choice). */
+export function isPracticeTest(attempt: Attempt | null): boolean {
+  return Boolean(attempt?.practice_test_details?.is_practice_test);
+}
+
 /**
  * Whether this sitting is INVIGILATED — fullscreen enforced and leaving the screen policed
  * by the off-screen rule.

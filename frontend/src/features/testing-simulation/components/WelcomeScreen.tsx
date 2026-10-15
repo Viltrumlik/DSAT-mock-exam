@@ -18,6 +18,8 @@ interface WelcomeScreenProps {
   /** Whether fullscreen will be requested on start (drives the helper text). */
   fullscreenSupported: boolean;
   onStart: () => void;
+  /** Practice tests only: the student's Timed/Untimed choice (owner decision 2026-10-14). */
+  timing?: { timed: boolean; onChange: (timed: boolean) => void };
 }
 
 /**
@@ -35,7 +37,9 @@ export function WelcomeScreen({
   starting,
   fullscreenSupported,
   onStart,
+  timing,
 }: WelcomeScreenProps) {
+  const untimed = timing?.timed === false;
   return (
     <div className="flex h-screen flex-col bg-white">
       <SatColorRule />
@@ -51,7 +55,7 @@ export function WelcomeScreen({
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <Clock className="mx-auto h-5 w-5 text-slate-500" />
               <div className="mt-2 text-lg font-bold text-slate-900">
-                {minutes ? `${minutes} min` : "—"}
+                {untimed ? "No limit" : minutes ? `${minutes} min` : "—"}
               </div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Time</div>
             </div>
@@ -64,8 +68,20 @@ export function WelcomeScreen({
             </div>
           </div>
 
+          {timing && (
+            <div role="radiogroup" aria-label="Timing" className="mt-6 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1">
+              {[{ v: true, l: "Timed" }, { v: false, l: "Untimed" }].map((o) => (
+                <button key={o.l} type="button" role="radio" aria-checked={timing.timed === o.v}
+                  onClick={() => timing.onChange(o.v)}
+                  className={`rounded-xl px-4 py-2 text-sm font-bold transition-colors ${timing.timed === o.v ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  {o.l}
+                </button>
+              ))}
+            </div>
+          )}
+
           <ul className="mt-6 space-y-2 text-left text-sm text-slate-600">
-            <li className="flex gap-2"><span className="text-blue-600">•</span> The timer starts when you press Start and cannot be reset.</li>
+            <li className="flex gap-2"><span className="text-blue-600">•</span> {untimed ? "There is no timer — take as long as you need." : "The timer starts when you press Start and cannot be reset."}</li>
             <li className="flex gap-2"><span className="text-blue-600">•</span> You can flag questions for review and return to them before submitting.</li>
             <li className="flex gap-2"><span className="text-blue-600">•</span> Your answers save automatically as you go.</li>
             {fullscreenSupported && (

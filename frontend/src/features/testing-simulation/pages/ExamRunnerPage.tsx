@@ -19,8 +19,10 @@ import {
   calculatorAllowed,
   calculatorScientificOnly,
   isMath,
+  isPracticeTest,
   isProctored,
   isMidtermAttempt,
+  isUntimed,
   moduleLabel,
   pauseAllowed,
   questions as selectQuestions,
@@ -209,6 +211,9 @@ export function ExamRunnerPage() {
       return false;
     }
   });
+  // Practice tests only: the student's Timed/Untimed pick on the Welcome screen. Sent with Start
+  // and then owned by the server (`is_timed`), so a refresh never has to remember it.
+  const [timedChoice, setTimedChoice] = useState(true);
   const ackWelcome = useCallback(() => {
     setWelcomeAck(true);
     try {
@@ -295,6 +300,7 @@ export function ExamRunnerPage() {
   // Start is the single user gesture that (a) enters fullscreen and (b) tells the
   // server to begin the module — so the timer genuinely doesn't run until now.
   const [starting, setStarting] = useState(false);
+  const practiceTest = isPracticeTest(attempt);
   const handleStart = useCallback(async () => {
     setStarting(true);
     try {
@@ -309,13 +315,13 @@ export function ExamRunnerPage() {
       // (forward-compatible with a future server-side timer hold). When the
       // backend already auto-started on create, Start just enters fullscreen.
       if (attempt?.current_state === ATTEMPT_STATE.NOT_STARTED) {
-        await start();
+        await start(practiceTest ? { timed: timedChoice } : undefined);
       }
       ackWelcome();
     } finally {
       setStarting(false);
     }
-  }, [tools.fullscreen, start, attempt?.current_state, ackWelcome]);
+  }, [tools.fullscreen, start, attempt?.current_state, practiceTest, timedChoice, ackWelcome]);
 
   // "The student is ready to begin." In the app a midterm goes through the pre-check first —
   // AFTER the access code, so nobody waits for a late teacher on a locked machine.
@@ -567,6 +573,8 @@ export function ExamRunnerPage() {
     // A blocked duplicate tab must not run the countdown or auto-submit.
     paused: (paused && pauseAllowed(attempt, mockFlow)) || multiTab.blocked,
     onExpire,
+    // An untimed practice test has no clock to run, expire or auto-submit.
+    untimed: isUntimed(attempt),
   });
 
   // Pastpapers save in place (assessment-style): a short debounce for a
@@ -1030,12 +1038,14 @@ export function ExamRunnerPage() {
     return (
       <WelcomeScreen
         moduleTitle={moduleLabel(attempt)}
+        kindLabel={practiceTest ? "Practice Test" : "Past Paper"}
         subjectLabel={subjLabel}
         minutes={startMinutes}
         questionCount={startQuestionCount}
         starting={starting}
         fullscreenSupported={tools.fullscreen.supported}
         onStart={() => void handleStart()}
+        timing={practiceTest ? { timed: timedChoice, onChange: setTimedChoice } : undefined}
       />
     );
   }
@@ -1099,7 +1109,8 @@ export function ExamRunnerPage() {
         mathTools={mathQuestions && !isMidterm}
         showCalculator={calculatorAllowed(attempt)}
         tools={tools}
-        pauseAllowed={pauseAllowed(attempt, mockFlow)}
+        pauseAllowed={pauseAllowed(attempt, mockFlow) && !isUntimed(attempt)}
+        untimed={isUntimed(attempt)}
         paused={paused}
         onTogglePause={handlePauseToggle}
         // A midterm is ONE sitting: there is no pause, and leaving the screen is a

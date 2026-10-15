@@ -75,6 +75,10 @@ const practiceTestDetailsSchema = z
     title: z.string(),
     mock_exam_id: z.number().nullable().optional(),
     mock_kind: z.string().nullable().optional(),
+    /** The centre's own practice test (own Welcome wording + the Timed/Untimed choice). */
+    is_practice_test: z.boolean().optional(),
+    /** "Practice Test N" — the number the centre gave it. */
+    practice_number: z.number().nullable().optional(),
     /** Midterm difficulty tier (foundation/junior/middle/senior). Only /midterms/attempts sends these. */
     level: z.string().nullable().optional(),
     /**
@@ -121,6 +125,12 @@ export const attemptSchema = z
     server_now: z.string(),
     remaining_seconds: z.number().nullable(),
     module_duration_seconds: z.number().nullable(),
+    /**
+     * False when a practice-test student chose to work without the clock: the server then sends
+     * `remaining_seconds` and `module_duration_seconds` as null and never expires the module.
+     * Defaults to true so a payload from a backend that predates the choice reads as timed.
+     */
+    is_timed: z.boolean().default(true),
 
     // Persisted per-module work (rehydration after refresh).
     current_module_saved_answers: z.record(z.string(), z.unknown()).nullable(),
