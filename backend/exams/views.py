@@ -82,6 +82,7 @@ from .engine_integrity import autoheal_attempt_for_runtime
 from config.error_reporting import report_error
 from config.reliability import conflict_response
 from users.auth_cookies import is_native_client
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from exams.engine_db_guard import TransitionConflict
 
@@ -708,7 +709,9 @@ class PracticeTestViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(out)
 
 class TestAttemptViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticated, RequiresSubmitTest]
+    # An explicit list REPLACES the project default (IsAuthenticatedAndNotFrozen), so the freeze
+    # check is named here: a frozen learner signs in but cannot list, start, save or submit.
+    permission_classes = [IsAuthenticatedAndNotFrozen, RequiresSubmitTest]
     serializer_class = TestAttemptSerializer
     throttle_scope = "burst"
     http_method_names = ["get", "post", "head", "options"]
