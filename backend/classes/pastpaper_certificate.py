@@ -102,8 +102,11 @@ def _paper_title(practice_test, attempt=None) -> str:
     an empty line. A numbered practice test is "Practice Test N", with " · Untimed" when this
     sitting was untimed (``attempt`` is optional so a caller without one still gets a name).
     """
-    if getattr(practice_test, "is_practice_test", False) and getattr(practice_test, "practice_number", None):
-        name = f"Practice Test {practice_test.practice_number}"
+    if getattr(practice_test, "is_practice_test", False):
+        # Never falls through to the collection/title/"Past Paper" lines below: a practice test is
+        # not a past paper, numbered or not (the number is assigned on first publish).
+        number = getattr(practice_test, "practice_number", None)
+        name = f"Practice Test {number}" if number else "Practice Test"
         return f"{name} · Untimed" if attempt is not None and not getattr(attempt, "is_timed", True) else name
     collection = (getattr(practice_test, "collection_name", "") or "").strip()
     title = (getattr(practice_test, "title", "") or "").strip()

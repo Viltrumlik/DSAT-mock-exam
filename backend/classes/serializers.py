@@ -984,6 +984,10 @@ class AssignmentSerializer(serializers.ModelSerializer):
             elif len(names) == 1:
                 # A full paper (e.g. R&W + Math sections sharing one collection_name).
                 title = next(iter(names))
+            elif len(sections) > 1 and all(getattr(s, "is_practice_test", False) for s in sections):
+                # Practice tests are never presented as past papers; `kind` stays PASTPAPER, the
+                # engine kind iOS and the web launcher both key off.
+                title = f"Practice Tests · {len(sections)}"
             elif len(sections) > 1:
                 title = f"Past Paper · {len(sections)} sections"
             else:

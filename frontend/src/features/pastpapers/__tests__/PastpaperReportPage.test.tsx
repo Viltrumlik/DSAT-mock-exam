@@ -141,6 +141,43 @@ describe("PastpaperReportPage", () => {
     expect(downloadCertificateForAttempt).toHaveBeenCalledWith(7);
   });
 
+  describe("a practice test", () => {
+    const PRACTICE: AttemptErrorReport = {
+      ...REPORT, paper_title: "Practice Test 4", is_practice_test: true,
+    };
+
+    it("is never called a past paper, and goes back to the practice tests", async () => {
+      useAttemptReport.mockReturnValue(query({ data: { ...PRACTICE, paper_title: "" } }));
+      await render();
+
+      // Eyebrow: even with no title to print, the fallback is not "PAST PAPER".
+      expect(host.textContent).toContain("PRACTICE TEST");
+      expect(host.textContent).not.toMatch(/past paper/i);
+
+      const back = host.querySelector("button");
+      expect(back?.textContent).toContain("Practice tests");
+      await act(async () => (back as HTMLButtonElement).click());
+      expect(push).toHaveBeenCalledWith("/practice-tests");
+    });
+
+    it("names the sitting by its number", async () => {
+      useAttemptReport.mockReturnValue(query({ data: PRACTICE }));
+      await render();
+
+      expect(host.textContent).toContain("Practice Test 4");
+    });
+
+    it("leaves a past paper as it was", async () => {
+      useAttemptReport.mockReturnValue(query({ data: REPORT }));
+      await render();
+
+      const back = host.querySelector("button");
+      expect(back?.textContent).toContain("Past papers");
+      await act(async () => (back as HTMLButtonElement).click());
+      expect(push).toHaveBeenCalledWith("/pastpapers");
+    });
+  });
+
   describe("history", () => {
     const TWO_SITTINGS: AttemptErrorReport = {
       ...REPORT,

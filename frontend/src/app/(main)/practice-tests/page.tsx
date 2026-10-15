@@ -54,9 +54,9 @@ export default function PracticeTestsPage() {
         </div>
 
         <div className="dz-headin" style={{ display: "flex", alignItems: "center", gap: 24, marginBottom: 20, flexWrap: "wrap" }}>
-          <Segmented label="Subject" value={subject} onChange={(v) => setSubject(v as SubjectFilter)}
+          <Segmented label="SUBJECT" value={subject} onChange={(v) => setSubject(v as SubjectFilter)}
             options={[{ v: "ALL", l: "All" }, { v: "RW", l: "Reading & Writing" }, { v: "MATH", l: "Math" }]} />
-          <Segmented label="Status" value={status} onChange={(v) => setStatus(v as StatusFilter)}
+          <Segmented label="STATUS" value={status} onChange={(v) => setStatus(v as StatusFilter)}
             options={[{ v: "ALL", l: "All" }, { v: "new", l: "New" }, { v: "progress", l: "In progress" }, { v: "completed", l: "Completed" }]} />
         </div>
 

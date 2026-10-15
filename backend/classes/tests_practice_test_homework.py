@@ -9,6 +9,7 @@ among the past papers).
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
@@ -145,6 +146,117 @@ class PracticeTestHomeworkTests(TestCase):
         self.assertEqual(types("practice_test"), ["Practice Test"])
         self.assertEqual(types("past paper"), ["Past Paper"])
         self.assertEqual(sorted(types("all")), ["Past Paper", "Practice Test"])
+
+
+class PracticeTestContentsTitleTests(TestCase):
+    """``contents[]`` is what the iOS homework list titles a card with. A homework of practice tests
+    must not read "Past Paper · N sections"; its ``kind`` stays PASTPAPER (iOS and the web launcher key
+    off it and know no other value for a section)."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.teacher = User.objects.create_user(
+            email="ptc_teacher@example.com", password="pw", role=acc_const.ROLE_TEACHER, subject=acc_const.DOMAIN_MATH,
+        )
+        self.student = User.objects.create_user(email="ptc_student@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+        self.room = Classroom.objects.create(
+            name="Math", subject=Classroom.SUBJECT_MATH, level="middle",
+            lesson_days=Classroom.DAYS_ODD, created_by=self.teacher, teacher=self.teacher,
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=self.teacher, role=ClassroomMembership.ROLE_TEACHER)
+        ClassroomMembership.objects.create(classroom=self.room, user=self.student, role=ClassroomMembership.ROLE_STUDENT)
+
+    def _practice(self, number, subject="MATH"):
+        t = PracticeTest.objects.create(
+            subject=subject, title="", is_practice_test=True, is_published=True,
+            practice_access=PracticeTest.ACCESS_OPEN, practice_number=number,
+        )
+        seed_mc_questions_for_practice_test(t)
+        return t
+
+    def _paper(self, name):
+        t = PracticeTest.objects.create(subject="MATH", title="", collection_name=name, is_published=True)
+        seed_mc_questions_for_practice_test(t)
+        return t
+
+    def _contents(self, *tests):
+        a = Assignment.objects.create(
+            classroom=self.room, created_by=self.teacher, title="HW",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test_ids=[t.id for t in tests],
+        )
+        self.client.force_authenticate(self.student)
+        r = self.client.get(f"/api/classes/{self.room.id}/assignments/{a.id}/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["contents"]
+
+    def test_one_practice_test_is_titled_by_its_number(self):
+        (c,) = self._contents(self._practice(4))
+        self.assertEqual(c["title"], "Practice Test 4")
+        self.assertEqual(c["kind"], "PASTPAPER")
+
+    def test_several_practice_tests_are_titled_as_practice_tests(self):
+        (c,) = self._contents(self._practice(4), self._practice(5), self._practice(6))
+        self.assertEqual(c["title"], "Practice Tests \u00b7 3")
+        self.assertEqual(c["kind"], "PASTPAPER")
+
+    def test_a_mix_of_practice_tests_and_past_papers_keeps_the_old_title(self):
+        (c,) = self._contents(self._practice(4), self._paper("SAT March 2024"))
+        self.assertEqual(c["title"], "Past Paper \u00b7 2 sections")
+        self.assertEqual(c["kind"], "PASTPAPER")
+
+    def test_several_past_papers_are_unchanged(self):
+        (c,) = self._contents(self._paper("SAT March 2024"), self._paper("SAT May 2024"))
+        self.assertEqual(c["title"], "Past Paper \u00b7 2 sections")
+
+
+class PracticeTestReportPayloadTests(TestCase):
+    """The report page a finished practice-test card opens is the past-paper report page, so the
+    payload has to name the sitting "Practice Test N" and say what it is — never the (blank) collection
+    name, and never "Past Paper"."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.student = User.objects.create_user(email="ptr_student@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+        self.practice = PracticeTest.objects.create(
+            subject="MATH", title="Algebra focus", is_practice_test=True, is_published=True,
+            practice_access=PracticeTest.ACCESS_OPEN, practice_number=4,
+        )
+        seed_mc_questions_for_practice_test(self.practice)
+        self.pastpaper = PracticeTest.objects.create(
+            subject="MATH", title="Oct 2025", collection_name="SAT March 2024", is_published=True,
+        )
+        seed_mc_questions_for_practice_test(self.pastpaper)
+
+    def _finished(self, test, *, is_timed=True):
+        return TestAttempt.objects.create(
+            student=self.student, practice_test=test, is_timed=is_timed, score=600,
+            is_completed=True, current_state=TestAttempt.STATE_COMPLETED, completed_at=timezone.now(),
+        )
+
+    def _report(self, attempt):
+        self.client.force_authenticate(self.student)
+        r = self.client.get(f"/api/classes/pastpapers/attempts/{attempt.pk}/report/")
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()
+
+    def test_a_practice_test_report_is_named_by_its_number(self):
+        body = self._report(self._finished(self.practice))
+        self.assertEqual(body["paper_title"], "Practice Test 4")
+        self.assertTrue(body["is_practice_test"])
+
+    def test_an_untimed_practice_test_report_says_so(self):
+        body = self._report(self._finished(self.practice, is_timed=False))
+        self.assertEqual(body["paper_title"], "Practice Test 4 \u00b7 Untimed")
+
+    def test_a_past_paper_report_is_unchanged(self):
+        body = self._report(self._finished(self.pastpaper))
+        self.assertEqual(body["paper_title"], "SAT March 2024")
+        self.assertFalse(body["is_practice_test"])
+
+    def test_an_unnumbered_practice_test_is_still_never_a_past_paper(self):
+        self.practice.practice_number = None
+        self.assertEqual(_paper_title(self.practice), "Practice Test")
 
 
 class JournalPickerExcludesPracticeTestsTests(TestCase):

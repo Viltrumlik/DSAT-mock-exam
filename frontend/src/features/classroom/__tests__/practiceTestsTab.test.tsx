@@ -180,6 +180,16 @@ describe("AssignmentForm — the Practice tests tab", () => {
     expect(JSON.parse(String(fd.get("practice_test_ids"))).sort()).toEqual([3, 9]);
   });
 
+  it("eyebrows a past paper's card on the Pastpapers tab as a Past paper, never a Practice test", async () => {
+    await renderForm();
+
+    await click(buttonLabelled("Pastpapers"));
+    const card = cardWith("SAT March 2026");
+    expect(card, "the tab should list the past paper").toBeTruthy();
+    expect(card!.textContent).toContain("Past paper");
+    expect(card!.textContent).not.toMatch(/practice test/i);
+  });
+
   it("puts the pick in the cart, and removing it from there clears it", async () => {
     await renderForm();
     await click(buttonLabelled("Practice tests"));

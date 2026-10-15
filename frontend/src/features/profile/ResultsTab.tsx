@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui";
 import { ErrorState } from "@/features/classroom/ui";
 import { cn } from "@/lib/cn";
 
-import { recentResults, resultHref, subjectLabel } from "./profileModel";
+import { recentResults, resultHref, resultTitle, subjectLabel } from "./profileModel";
 import { IconTile, Panel, PanelHeader, TONE } from "./profileUi";
 import type { Load, ProfileAttempt } from "./types";
 
@@ -17,10 +17,7 @@ import type { Load, ProfileAttempt } from "./types";
  */
 export function ResultRow({ attempt: a }: { attempt: ProfileAttempt }) {
   const math = (a.practice_test_details?.subject ?? "").toUpperCase() === "MATH";
-  const title =
-    a.practice_test_details?.title?.trim() ||
-    a.practice_test_details?.collection_name?.trim() ||
-    subjectLabel(a.practice_test_details?.subject);
+  const title = resultTitle(a);
   const when = a.submitted_at ? new Date(a.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "";
   return (
     <li className="quartz quartz-float squircle group relative flex items-center gap-3 px-3.5 py-2.5 [--sq:9px]">
