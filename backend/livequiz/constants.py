@@ -121,6 +121,7 @@ ERR_TOO_LATE = "too_late"
 ERR_ALREADY_ANSWERED = "already_answered"
 ERR_NOT_PARTICIPANT = "not_participant"
 ERR_UNKNOWN_QUESTION = "unknown_question"
+ERR_ACCOUNT_FROZEN = "account_frozen"
 
 
 # ─── Join codes ───────────────────────────────────────────────────────────────

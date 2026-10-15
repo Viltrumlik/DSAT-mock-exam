@@ -17,6 +17,7 @@ from unittest import mock
 
 from asgiref.sync import async_to_sync
 from asgiref.testing import ApplicationCommunicator
+from channels.db import database_sync_to_async
 from channels.layers import get_channel_layer
 from channels.routing import URLRouter
 from django.contrib.auth import get_user_model
@@ -25,9 +26,11 @@ from django.utils import timezone
 
 from vocabulary.models import VocabSection, VocabSet, VocabSetItem, VocabWord
 from classes.models import Classroom, ClassroomMembership
+from users.audience import FROZEN_LCUP_DEBT
 
 from . import constants as const
 from . import services
+from .consumers import CLOSE_FORBIDDEN
 from .models import LiveQuizSession
 from .routing import websocket_urlpatterns
 
@@ -94,6 +97,17 @@ async def await_frame(client, expected, limit=12):
         if frame["type"] == expected:
             return frame
     raise AssertionError(f"{expected!r} never arrived; saw {seen}")
+
+
+async def await_close(client, limit=12):
+    """Read until the server closes the socket. Returns the close code and the frames before it."""
+    seen = []
+    for _ in range(limit):
+        response = await client.receive_output(5)
+        if response["type"] == "websocket.close":
+            return response.get("code", 1000), seen
+        seen.append(json.loads(response["text"]))
+    raise AssertionError(f"the socket was never closed; saw {[f['type'] for f in seen]}")
 
 
 @override_settings(LIVE_QUIZ_ENABLED=True, CHANNEL_LAYERS=IN_MEMORY_LAYER)
@@ -452,3 +466,91 @@ class LiveQuizSocketTests(TransactionTestCase):
 
         participant.refresh_from_db()
         self.assertEqual(participant.status, const.PARTICIPANT_JOINED)
+
+    # ── A frozen learner ─────────────────────────────────────────────────────
+
+    def _set_frozen(self, user, frozen: bool) -> None:
+        # A queryset update, as the lc-up debt sweep does (no User post_save side effects).
+        type(user).objects.filter(pk=user.pk).update(
+            is_frozen=frozen, frozen_reason=FROZEN_LCUP_DEBT if frozen else ""
+        )
+        user.refresh_from_db()
+
+    def test_a_frozen_student_with_a_place_is_refused(self):
+        """They took their place before the freeze. Holding a place is no way round it."""
+        services.join_session(session=self.session, user=self.student)
+        self._set_frozen(self.student, True)
+
+        async def run():
+            communicator = self._communicator(self.student)
+            connected, code = await communicator.connect()
+            self.assertFalse(connected)
+            self.assertEqual(code, CLOSE_FORBIDDEN)
+
+        async_to_sync(run)()
+
+    def test_a_student_unfrozen_again_is_let_back_in(self):
+        services.join_session(session=self.session, user=self.student)
+        self._set_frozen(self.student, True)
+        self._set_frozen(self.student, False)
+
+        async def run():
+            communicator = self._communicator(self.student)
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            first = await communicator.receive_json_from()
+            self.assertEqual(first["type"], const.EV_SESSION_STATE)
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+    def test_the_freeze_is_a_learner_rule_so_a_host_still_connects(self):
+        # REST reads the role before the flag (IsAuthenticatedAndNotFrozen), so the flag on a
+        # staff account locks nothing. It must not lock a teacher out of their own room here.
+        self._set_frozen(self.teacher, True)
+
+        async def run():
+            communicator = self._communicator(self.teacher)
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            first = await communicator.receive_json_from()
+            self.assertEqual(first["type"], const.EV_SESSION_STATE)
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+    def test_a_player_frozen_mid_game_is_dropped_and_their_answer_is_not_counted(self):
+        participant = services.join_session(session=self.session, user=self.student)
+        session = services.start_game(session=self.session)
+        session, question = services.open_question(session=session, index=0)
+
+        async def run():
+            communicator = self._communicator(self.student)
+            connected, _ = await communicator.connect()
+            self.assertTrue(connected)
+            await communicator.receive_json_from()  # session_state
+
+            # The debt sweep runs while the socket is open.
+            await database_sync_to_async(self._set_frozen)(self.student, True)
+
+            await communicator.send_json_to(
+                {
+                    "type": const.CMD_SUBMIT_ANSWER,
+                    "question_id": question.id,
+                    "answer": question.correct_answer,
+                }
+            )
+            code, frames = await await_close(communicator)
+            self.assertEqual(code, CLOSE_FORBIDDEN)
+            types = [frame["type"] for frame in frames]
+            self.assertNotIn(const.EV_ANSWER_RESULT, types)
+            errors = [frame["data"]["code"] for frame in frames if frame["type"] == const.EV_ERROR]
+            self.assertEqual(errors, [const.ERR_ACCOUNT_FROZEN])
+            await communicator.disconnect()
+
+        async_to_sync(run)()
+
+        participant.refresh_from_db()
+        self.assertFalse(participant.answers.exists())
+        self.assertEqual(participant.correct_count, 0)
+        self.assertEqual(participant.score, 0)
