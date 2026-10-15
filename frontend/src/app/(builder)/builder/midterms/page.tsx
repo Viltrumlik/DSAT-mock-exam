@@ -36,21 +36,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import {
-  STUDIO_BOX_CAPTION,
-  STUDIO_BTN_DESTRUCTIVE,
-  STUDIO_BTN_PRIMARY,
-  STUDIO_BTN_SECONDARY,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_FIELD_LABEL,
-  STUDIO_INPUT,
-  STUDIO_LINK,
-  STUDIO_PAGE_DESC,
-  STUDIO_PAGE_TITLE,
-  STUDIO_SECTION_GAP,
-  STUDIO_SELECT,
-} from "@/components/studio/primitives";
+import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 import { cn } from "@/lib/cn";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -263,269 +249,263 @@ function MidtermModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 max-h-[90vh] w-full max-w-lg overflow-y-auto border border-border bg-card shadow-xl">
-        <div className={cn(STUDIO_BOX_CAPTION, "flex items-center justify-between gap-3")}>
-          <h2 className="min-w-0 truncate">{heading}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-xl overflow-y-auto max-h-[90vh]">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-base font-extrabold text-foreground">{heading}</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-surface-2">
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
 
-        <div className="p-4">
-          {error && (
-            <div className={cn(STUDIO_ERROR_BANNER, "mb-3")}>
-              {error}
+        {error && (
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+            {error}
+          </div>
+        )}
+
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSubmit(form);
+          }}
+        >
+          {/* Title */}
+          <div>
+            <label className={FL}>
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              value={form.title}
+              onChange={set("title")}
+              required
+              placeholder="e.g. Algebra Midterm — Spring 2025"
+              className={SI}
+            />
+          </div>
+
+          {/* Date + Subject */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={FL}>Date</label>
+              <input type="date" value={form.practice_date} onChange={set("practice_date")} className={SI} />
+            </div>
+            <div>
+              <label className={FL}>Subject</label>
+              {lockSubjectLevel ? (
+                <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>{subjectLabel(form.midterm_subject)}</div>
+              ) : (
+                <select
+                  value={form.midterm_subject}
+                  onChange={(e) => {
+                    const subj = e.target.value as "READING_WRITING" | "MATH";
+                    // Foundation is Math-only — drop it when switching to R&W. The retake
+                    // parent is subject-scoped too, so a cross-subject one must go as well.
+                    setForm((p) => ({
+                      ...p,
+                      midterm_subject: subj,
+                      midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
+                      midterm_retake_of: "",
+                    }));
+                  }}
+                  className={SI}
+                >
+                  <option value="READING_WRITING">English</option>
+                  <option value="MATH">Math</option>
+                </select>
+              )}
+            </div>
+          </div>
+
+          {/* Taxonomy — level (by subject) · type · period. Used for filtering. */}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={FL}>Level</label>
+              {lockSubjectLevel ? (
+                <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>
+                  {form.midterm_level ? MIDTERM_LEVEL_LABELS[form.midterm_level] ?? form.midterm_level : "Any level"}
+                </div>
+              ) : (
+                <select value={form.midterm_level} onChange={set("midterm_level")} className={SI}>
+                  {levelOptionsForSubject(form.midterm_subject).map((o) => (
+                    <option key={o.v} value={o.v}>{o.l}</option>
+                  ))}
+                </select>
+              )}
+            </div>
+            <div>
+              <label className={FL}>Type</label>
+              <select value={form.midterm_type} onChange={set("midterm_type")} className={SI}>
+                {TYPE_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={FL}>Period</label>
+              <select value={form.midterm_period} onChange={set("midterm_period")} className={SI}>
+                {PERIOD_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>{o.l}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Scoring scale — controls how the final result is reported and how
+              the question console frames per-question scoring. */}
+          <div>
+            <label className={FL}>Scoring system</label>
+            <select value={form.midterm_scoring_scale} onChange={set("midterm_scoring_scale")} className={SI}>
+              <option value="SCALE_100">100-point (percentage)</option>
+              <option value="SCALE_800">800-point (SAT scaled)</option>
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {form.midterm_scoring_scale === "SCALE_800"
+                ? "Final score maps onto the SAT 200–800 curve. Give each question a point weight in the question console."
+                : "Final score is a clean 0–100 percentage. Every question counts equally."}
+            </p>
+          </div>
+
+          {/* Pass mark — graded types only, labelled with the scale's own range. */}
+          {graded && (
+            <div>
+              <label className={FL}>
+                Pass mark ({passMarkScale.min}–{passMarkScale.max})
+              </label>
+              <input
+                type="number"
+                min={passMarkScale.min}
+                max={passMarkScale.max}
+                value={form.midterm_pass_mark}
+                onChange={set("midterm_pass_mark")}
+                placeholder={passMarkScale.placeholder}
+                className={SI}
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Score a student must reach to pass, on this midterm&rsquo;s own scale. Leave blank
+                for the default ({passMarkScale.placeholder}).
+              </p>
             </div>
           )}
 
-          <form
-            className="space-y-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              onSubmit(form);
-            }}
-          >
-            {/* Title */}
+          {/* Retake parent — the failing cohort of this midterm is who gets access. */}
+          {isRetake && (
             <div>
-              <label className={FL}>
-                Title <span className="text-red-500">*</span>
-              </label>
+              <label className={FL}>Retake of</label>
+              <select value={form.midterm_retake_of} onChange={set("midterm_retake_of")} className={SI}>
+                <option value="">— No parent midterm —</option>
+                {subjectCandidates.map((m) => (
+                  <option key={m.id} value={String(m.id)}>
+                    {m.title || `Midterm #${m.id}`}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {subjectCandidates.length === 0
+                  ? "No published midterms in this subject yet — publish one first."
+                  : "Students who did not clear the selected midterm get this retake — that includes anyone who was ABSENT from it. Students who passed are never granted it."}
+              </p>
+            </div>
+          )}
+
+          {/* Module count + timing */}
+          <div>
+            <label className={FL}>Modules</label>
+            <select value={form.midterm_module_count} onChange={set("midterm_module_count")} className={SI}>
+              <option value="1">1 module (single-part)</option>
+              <option value="2">2 modules (standard)</option>
+            </select>
+          </div>
+
+          <div className={`grid gap-3 ${twoModules ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div>
+              <label className={FL}>Module 1 — minutes</label>
               <input
-                value={form.title}
-                onChange={set("title")}
-                required
-                placeholder="e.g. Algebra Midterm — Spring 2025"
+                type="number"
+                min={5}
+                max={600}
+                value={form.midterm_module1_minutes}
+                onChange={set("midterm_module1_minutes")}
                 className={SI}
               />
             </div>
-
-            {/* Date + Subject */}
-            <div className="grid grid-cols-2 gap-3">
+            {twoModules && (
               <div>
-                <label className={FL}>Date</label>
-                <input type="date" value={form.practice_date} onChange={set("practice_date")} className={SI} />
-              </div>
-              <div>
-                <label className={FL}>Subject</label>
-                {lockSubjectLevel ? (
-                  <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>{subjectLabel(form.midterm_subject)}</div>
-                ) : (
-                  <select
-                    value={form.midterm_subject}
-                    onChange={(e) => {
-                      const subj = e.target.value as "READING_WRITING" | "MATH";
-                      // Foundation is Math-only — drop it when switching to R&W. The retake
-                      // parent is subject-scoped too, so a cross-subject one must go as well.
-                      setForm((p) => ({
-                        ...p,
-                        midterm_subject: subj,
-                        midterm_level: subj !== "MATH" && p.midterm_level === "foundation" ? "" : p.midterm_level,
-                        midterm_retake_of: "",
-                      }));
-                    }}
-                    className={SI}
-                  >
-                    <option value="READING_WRITING">English</option>
-                    <option value="MATH">Math</option>
-                  </select>
-                )}
-              </div>
-            </div>
-
-            {/* Taxonomy — level (by subject) · type · period. Used for filtering. */}
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className={FL}>Level</label>
-                {lockSubjectLevel ? (
-                  <div className={`${SI} flex items-center bg-surface-2 text-muted-foreground`}>
-                    {form.midterm_level ? MIDTERM_LEVEL_LABELS[form.midterm_level] ?? form.midterm_level : "Any level"}
-                  </div>
-                ) : (
-                  <select value={form.midterm_level} onChange={set("midterm_level")} className={SI}>
-                    {levelOptionsForSubject(form.midterm_subject).map((o) => (
-                      <option key={o.v} value={o.v}>{o.l}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-              <div>
-                <label className={FL}>Type</label>
-                <select value={form.midterm_type} onChange={set("midterm_type")} className={SI}>
-                  {TYPE_OPTIONS.map((o) => (
-                    <option key={o.v} value={o.v}>{o.l}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className={FL}>Period</label>
-                <select value={form.midterm_period} onChange={set("midterm_period")} className={SI}>
-                  {PERIOD_OPTIONS.map((o) => (
-                    <option key={o.v} value={o.v}>{o.l}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Scoring scale — controls how the final result is reported and how
-                the question console frames per-question scoring. */}
-            <div>
-              <label className={FL}>Scoring system</label>
-              <select value={form.midterm_scoring_scale} onChange={set("midterm_scoring_scale")} className={SI}>
-                <option value="SCALE_100">100-point (percentage)</option>
-                <option value="SCALE_800">800-point (SAT scaled)</option>
-              </select>
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                {form.midterm_scoring_scale === "SCALE_800"
-                  ? "Final score maps onto the SAT 200–800 curve. Give each question a point weight in the question console."
-                  : "Final score is a clean 0–100 percentage. Every question counts equally."}
-              </p>
-            </div>
-
-            {/* Pass mark — graded types only, labelled with the scale's own range. */}
-            {graded && (
-              <div>
-                <label className={FL}>
-                  Pass mark ({passMarkScale.min}–{passMarkScale.max})
-                </label>
-                <input
-                  type="number"
-                  min={passMarkScale.min}
-                  max={passMarkScale.max}
-                  value={form.midterm_pass_mark}
-                  onChange={set("midterm_pass_mark")}
-                  placeholder={passMarkScale.placeholder}
-                  className={SI}
-                />
-                <p className="mt-1 text-[12px] text-muted-foreground">
-                  Score a student must reach to pass, on this midterm&rsquo;s own scale. Leave blank
-                  for the default ({passMarkScale.placeholder}).
-                </p>
-              </div>
-            )}
-
-            {/* Retake parent — the failing cohort of this midterm is who gets access. */}
-            {isRetake && (
-              <div>
-                <label className={FL}>Retake of</label>
-                <select value={form.midterm_retake_of} onChange={set("midterm_retake_of")} className={SI}>
-                  <option value="">— No parent midterm —</option>
-                  {subjectCandidates.map((m) => (
-                    <option key={m.id} value={String(m.id)}>
-                      {m.title || `Midterm #${m.id}`}
-                    </option>
-                  ))}
-                </select>
-                <p className="mt-1 text-[12px] text-muted-foreground">
-                  {subjectCandidates.length === 0
-                    ? "No published midterms in this subject yet — publish one first."
-                    : "Students who did not clear the selected midterm get this retake — that includes anyone who was ABSENT from it. Students who passed are never granted it."}
-                </p>
-              </div>
-            )}
-
-            {/* Module count + timing */}
-            <div>
-              <label className={FL}>Modules</label>
-              <select value={form.midterm_module_count} onChange={set("midterm_module_count")} className={SI}>
-                <option value="1">1 module (single-part)</option>
-                <option value="2">2 modules (standard)</option>
-              </select>
-            </div>
-
-            <div className={`grid gap-3 ${twoModules ? "grid-cols-2" : "grid-cols-1"}`}>
-              <div>
-                <label className={FL}>Module 1 — minutes</label>
+                <label className={FL}>Module 2 — minutes</label>
                 <input
                   type="number"
                   min={5}
                   max={600}
-                  value={form.midterm_module1_minutes}
-                  onChange={set("midterm_module1_minutes")}
+                  value={form.midterm_module2_minutes}
+                  onChange={set("midterm_module2_minutes")}
                   className={SI}
                 />
               </div>
-              {twoModules && (
-                <div>
-                  <label className={FL}>Module 2 — minutes</label>
-                  <input
-                    type="number"
-                    min={5}
-                    max={600}
-                    value={form.midterm_module2_minutes}
-                    onChange={set("midterm_module2_minutes")}
-                    className={SI}
-                  />
-                </div>
-              )}
-            </div>
-
-            {twoModules && (
-              <p className="border border-border bg-surface-2/60 px-3 py-2 text-[12px] text-muted-foreground">
-                <span className="font-medium text-foreground">Two sequential timed modules.</span>{" "}
-                Module&nbsp;1 runs on its own timer and auto-submits when it expires, then
-                Module&nbsp;2 runs on its own timer — like the real Digital SAT. Students get{" "}
-                <span className="font-medium text-foreground">
-                  {(Number(form.midterm_module1_minutes) || 0) + (Number(form.midterm_module2_minutes) || 0)} minutes
-                </span>{" "}
-                in total. Choose “1 module” above if you want one continuous section instead.
-              </p>
             )}
+          </div>
 
-            {/* Target question count */}
-            <div>
-              <label className={FL}>Target question count</label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={form.midterm_target_question_count}
-                onChange={set("midterm_target_question_count")}
-                className={SI}
-              />
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                Total questions across all modules. Used for grading and score calculation.
-              </p>
-            </div>
+          {twoModules && (
+            <p className="rounded-lg border border-border bg-muted/30 p-3 text-[12px] text-muted-foreground">
+              <span className="font-medium text-foreground">Two sequential timed modules.</span>{" "}
+              Module&nbsp;1 runs on its own timer and auto-submits when it expires, then
+              Module&nbsp;2 runs on its own timer — like the real Digital SAT. Students get{" "}
+              <span className="font-medium text-foreground">
+                {(Number(form.midterm_module1_minutes) || 0) + (Number(form.midterm_module2_minutes) || 0)} minutes
+              </span>{" "}
+              in total. Choose “1 module” above if you want one continuous section instead.
+            </p>
+          )}
 
-            {/* Per-module question limit (hard cap enforced in the question console) */}
-            <div>
-              <label className={FL}>Questions per module (limit)</label>
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={form.midterm_module_question_limit}
-                onChange={set("midterm_module_question_limit")}
-                className={SI}
-              />
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                Maximum questions you can add to each module. Default 30.
-              </p>
-            </div>
+          {/* Target question count */}
+          <div>
+            <label className={FL}>Target question count</label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={form.midterm_target_question_count}
+              onChange={set("midterm_target_question_count")}
+              className={SI}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Total questions across all modules. Used for grading and score calculation.
+            </p>
+          </div>
 
-            <div className="flex gap-2 pt-1">
-              <button
-                type="button"
-                onClick={onClose}
-                className={cn(STUDIO_BTN_SECONDARY, "flex-1 justify-center")}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saving || !form.title.trim()}
-                className={cn(STUDIO_BTN_PRIMARY, "flex-1 justify-center")}
-              >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {saving ? "Saving…" : "Save midterm"}
-              </button>
-            </div>
-          </form>
-        </div>
+          {/* Per-module question limit (hard cap enforced in the question console) */}
+          <div>
+            <label className={FL}>Questions per module (limit)</label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              value={form.midterm_module_question_limit}
+              onChange={set("midterm_module_question_limit")}
+              className={SI}
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Maximum questions you can add to each module. Default 30.
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !form.title.trim()}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            >
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {saving ? "Saving…" : "Save midterm"}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
@@ -563,59 +543,58 @@ function MidtermRow({
   const totalModules = exam.tests.reduce((acc, t) => acc + (t.modules?.length ?? 0), 0);
 
   const statusLabel = exam.is_published ? "Published" : exam.publish_ready ? "Ready" : "Draft";
-  // Plain text, as the /ops lists draw a status: "Ready" is the one asking for a move (publish).
   const statusColors = exam.is_published
-    ? "text-muted-foreground"
+    ? "bg-emerald-100 text-emerald-800"
     : exam.publish_ready
-    ? "font-medium text-foreground"
-    : "text-muted-foreground";
+    ? "bg-amber-100 text-amber-800"
+    : "bg-surface-2 text-muted-foreground";
 
   return (
-    <div className="px-3 py-3">
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         {/* Info block */}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-[13px] font-semibold text-foreground">
+            <h3 className="font-extrabold text-foreground truncate">
               {exam.title || `Midterm #${exam.id}`}
             </h3>
-            <span className={`text-[12px] ${statusColors}`}>
+            <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${statusColors}`}>
               {statusLabel}
             </span>
             {exam.midterm_type && exam.midterm_type !== "MIDTERM" ? (
-              <span className="rounded-md border border-border px-1.5 py-px text-[12px] font-medium text-foreground">
+              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
                 {TYPE_LABELS[exam.midterm_type] ?? exam.midterm_type}
               </span>
             ) : null}
             {exam.midterm_level ? (
-              <span className="rounded-md border border-border px-1.5 py-px text-[12px] text-muted-foreground">
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {MIDTERM_LEVEL_LABELS[exam.midterm_level] ?? exam.midterm_level}
               </span>
             ) : null}
             {exam.midterm_period ? (
-              <span className="rounded-md border border-border px-1.5 py-px text-[12px] text-muted-foreground">
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {PERIOD_LABELS[exam.midterm_period] ?? exam.midterm_period}
               </span>
             ) : null}
           </div>
 
-          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
+          <div className="mt-2 flex flex-wrap gap-3">
             {/* Subject */}
-            <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <BookOpen className="h-3 w-3" />
               {subjectLabel(exam.midterm_subject)}
             </span>
 
             {/* Date */}
             {exam.practice_date && (
-              <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <Calendar className="h-3 w-3" />
                 {formatDate(exam.practice_date)}
               </span>
             )}
 
             {/* Timing */}
-            <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <Clock className="h-3 w-3" />
               {exam.midterm_module_count === 1
                 ? `${exam.midterm_module1_minutes} min`
@@ -623,14 +602,14 @@ function MidtermRow({
             </span>
 
             {/* Questions */}
-            <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
               <FileText className="h-3 w-3" />
               {exam.midterm_target_question_count} target questions
             </span>
 
             {/* Pass mark — only meaningful once the midterm is pass/fail graded. */}
             {exam.midterm_pass_mark != null && exam.midterm_type !== "PRE_MIDTERM" && (
-              <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                 <CheckCircle2 className="h-3 w-3" />
                 Pass at {exam.midterm_pass_mark}
               </span>
@@ -638,8 +617,8 @@ function MidtermRow({
 
             {/* Modules created */}
             {totalModules > 0 && (
-              <span className="inline-flex items-center gap-1 text-[12px] text-muted-foreground">
-                <CheckCircle2 className="h-3 w-3" />
+              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                <CheckCircle2 className="h-3 w-3 text-emerald-500" />
                 {totalModules} module{totalModules !== 1 ? "s" : ""} created
               </span>
             )}
@@ -653,9 +632,9 @@ function MidtermRow({
               type="button"
               onClick={onUnpublish}
               disabled={publishing}
-              className={STUDIO_BTN_SECONDARY}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
             >
-              {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <EyeOff className="h-3.5 w-3.5" />}
+              {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
               Unpublish
             </button>
           ) : (
@@ -664,9 +643,9 @@ function MidtermRow({
               onClick={onPublish}
               disabled={!exam.publish_ready || publishing}
               title={!exam.publish_ready ? exam.publish_block_reason : undefined}
-              className={STUDIO_BTN_PRIMARY}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
             >
-              {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+              {publishing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
               Publish
             </button>
           )}
@@ -674,18 +653,18 @@ function MidtermRow({
           <button
             type="button"
             onClick={onResults}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-700 hover:bg-sky-100 transition-colors"
           >
-            <FileText className="h-3.5 w-3.5" />
+            <FileText className="h-3 w-3" />
             Results
           </button>
 
           <button
             type="button"
             onClick={onEdit}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
           >
-            <Pencil className="h-3.5 w-3.5" />
+            <Pencil className="h-3 w-3" />
             Edit
           </button>
 
@@ -694,14 +673,14 @@ function MidtermRow({
               <button
                 type="button"
                 onClick={onDelete}
-                className="inline-flex min-h-7 items-center rounded-md bg-red-600 px-2.5 py-1 text-[12px] font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:ring-offset-2"
+                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 transition-colors"
               >
                 Confirm delete
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className={STUDIO_BTN_SECONDARY}
+                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
               >
                 Cancel
               </button>
@@ -710,9 +689,9 @@ function MidtermRow({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className={STUDIO_BTN_DESTRUCTIVE}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors"
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
               Delete
             </button>
           )}
@@ -721,9 +700,9 @@ function MidtermRow({
 
       {/* Publish block */}
       {!exam.is_published && !exam.publish_ready && exam.publish_block_reason && (
-        <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900/60 dark:bg-amber-950/40">
-          <Zap className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          <p className="text-[12px] text-amber-800 dark:text-amber-300">{exam.publish_block_reason}</p>
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+          <Zap className="h-3.5 w-3.5 shrink-0 text-amber-600 mt-0.5" />
+          <p className="text-xs text-amber-800">{exam.publish_block_reason}</p>
         </div>
       )}
 
@@ -733,7 +712,7 @@ function MidtermRow({
         here: authoring a second form is not a draft or a backup, it changes what half the
         class sits.
       */}
-      <p className="mt-3 text-[12px] text-muted-foreground">
+      <p className="mt-4 text-xs text-muted-foreground">
         {exam.tests.length < 2 ? (
           <>One version — everyone sits the same paper. Add a second to let the seating plan give desk partners different questions.</>
         ) : exam.tests.length < 4 ? (
@@ -742,14 +721,14 @@ function MidtermRow({
           <>Four versions — the seating plan can separate every direction: partner, aisle, front, behind and diagonal.</>
         )}
       </p>
-      <div className="mt-2 space-y-2">
+      <div className="mt-3 space-y-3">
         {exam.tests.map((test, vIdx) => {
           const modules = test.modules ?? [];
           return (
-            <div key={test.id} className="border border-border bg-card">
-              <div className="flex min-h-8 items-center justify-between gap-2 border-b border-border bg-surface-2/60 px-3 py-0.5">
-                <span className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-foreground">
-                  <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+            <div key={test.id} className="rounded-xl border border-border bg-surface-2/30 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wide text-foreground">
+                  <Layers className="h-3.5 w-3.5 text-primary" />
                   Version {VERSION_LETTERS[vIdx] ?? vIdx + 1}
                 </span>
                 {exam.tests.length > 1 && (
@@ -757,23 +736,23 @@ function MidtermRow({
                     type="button"
                     onClick={() => onRemoveVersion(test.id)}
                     disabled={versionBusy}
-                    className={STUDIO_BTN_DESTRUCTIVE}
+                    className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2 py-1 text-[11px] font-bold text-red-700 transition-colors hover:bg-red-100 disabled:opacity-50 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
                   >
                     <Trash2 className="h-3 w-3" /> Remove
                   </button>
                 )}
               </div>
-              <div className="divide-y divide-border">
+              <div className="space-y-1.5">
                 {modules.length === 0 ? (
-                  <p className="px-3 py-2 text-[12px] italic text-muted-foreground">No modules yet.</p>
+                  <p className="rounded-lg border border-dashed border-border px-3 py-2 text-[11px] italic text-muted-foreground">No modules yet.</p>
                 ) : (
                   modules.map((mod) => (
                     <Link
                       key={mod.id}
                       href={`/builder/midterms/${exam.id}/${test.id}/${mod.id}`}
-                      className="group flex min-h-9 items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                      className="group flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/30 hover:bg-primary/5"
                     >
-                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <BookOpen className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
                       <span className="flex-1">
                         {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`}
                         {/*
@@ -791,14 +770,14 @@ function MidtermRow({
                                 : null
                               : exam.midterm_module1_minutes;
                           return served != null ? (
-                            <span className="ml-2 font-normal text-muted-foreground">{served} min</span>
+                            <span className="ml-2 text-muted-foreground">{served} min</span>
                           ) : (
-                            <span className="ml-2 font-normal text-amber-700 dark:text-amber-400">not used — midterm is 1 module</span>
+                            <span className="ml-2 text-amber-600">not used — midterm is 1 module</span>
                           );
                         })()}
                       </span>
-                      <span className="font-medium text-primary group-hover:underline dark:text-primary-hover">Edit questions →</span>
-                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="text-xs font-bold text-primary group-hover:underline">Edit questions →</span>
+                      <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground group-hover:text-primary" />
                     </Link>
                   ))
                 )}
@@ -811,7 +790,7 @@ function MidtermRow({
             type="button"
             onClick={onAddVersion}
             disabled={versionBusy}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 bg-primary/5 px-3 py-2 text-xs font-bold text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
           >
             <Plus className="h-3.5 w-3.5" /> Add version{exam.tests.length > 0 ? ` (${exam.tests.length}/4)` : ""}
           </button>
@@ -1042,15 +1021,15 @@ export default function BuilderMidtermsPage() {
   const canCreate = Boolean(selectedSubject && selectedLevel);
 
   return (
-    <div className={STUDIO_SECTION_GAP}>
+    <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="mb-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">
             Learning System
           </p>
-          <h1 className={STUDIO_PAGE_TITLE}>Midterms</h1>
-          <p className={cn(STUDIO_PAGE_DESC, "max-w-xl")}>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Midterms</h1>
+          <p className="mt-1 text-sm text-muted-foreground max-w-xl">
             Teacher-assigned, classroom-scoped midterm exams. Each midterm is subject-specific,
             timed per-module, and graded by the instructor. Students access them through
             their classroom, not the SAT simulation interface.
@@ -1061,18 +1040,18 @@ export default function BuilderMidtermsPage() {
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
           >
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
           {canCreate && (
             <button
               type="button"
               onClick={openCreate}
-              className={STUDIO_BTN_PRIMARY}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               New midterm
             </button>
           )}
@@ -1080,21 +1059,21 @@ export default function BuilderMidtermsPage() {
       </div>
 
       {/* Breadcrumb — subject → level drill-down */}
-      <nav className="flex flex-wrap items-center gap-1 text-[13px]">
+      <nav className="flex flex-wrap items-center gap-1.5 text-sm font-semibold">
         <button
           type="button"
           onClick={() => { setSelectedSubject(null); setSelectedLevel(null); setFilterType("ALL"); setFilterPeriod("ALL"); }}
-          className={cn("rounded-sm px-0.5 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", selectedSubject ? "font-medium text-primary dark:text-primary-hover" : "text-foreground")}
+          className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedSubject ? "text-primary" : "text-foreground")}
         >
           All subjects
         </button>
         {selectedSubject && (
           <>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
             <button
               type="button"
               onClick={() => { setSelectedLevel(null); setFilterType("ALL"); setFilterPeriod("ALL"); }}
-              className={cn("rounded-sm px-0.5 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary", selectedLevel ? "font-medium text-primary dark:text-primary-hover" : "text-foreground")}
+              className={cn("rounded-lg px-2 py-1 hover:bg-surface-2", selectedLevel ? "text-primary" : "text-foreground")}
             >
               {subjectLabel(selectedSubject)}
             </button>
@@ -1102,28 +1081,28 @@ export default function BuilderMidtermsPage() {
         )}
         {selectedSubject && selectedLevel && (
           <>
-            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="px-0.5 text-foreground">{selectedLevelLabel}</span>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            <span className="rounded-lg px-2 py-1 text-foreground">{selectedLevelLabel}</span>
           </>
         )}
       </nav>
 
       {/* Stats */}
       {!loading && midterms.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground">
+        <div className="flex flex-wrap gap-3">
+          <div className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground">
             <GraduationCap className="h-3.5 w-3.5 text-muted-foreground" />
             {midterms.length} midterm{midterms.length !== 1 ? "s" : ""}
           </div>
           {published > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground">
-              <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+              <Eye className="h-3.5 w-3.5" />
               {published} published
             </div>
           )}
           {drafts > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground">
-              <Pencil className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+              <Pencil className="h-3.5 w-3.5" />
               {drafts} draft{drafts !== 1 ? "s" : ""}
             </div>
           )}
@@ -1138,11 +1117,11 @@ export default function BuilderMidtermsPage() {
             { label: "Period", value: filterPeriod, set: setFilterPeriod, opts: [{ v: "ALL", l: "All periods" }, ...PERIOD_OPTIONS.filter((o) => o.v !== "")] },
           ].map((f) => (
             <div key={f.label} className="flex flex-col gap-1">
-              <span className="text-[12px] font-semibold text-muted-foreground">{f.label}</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">{f.label}</span>
               <select
                 value={f.value}
                 onChange={(e) => f.set(e.target.value)}
-                className={STUDIO_SELECT}
+                className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
                 {f.opts.map((o) => <option key={o.v} value={o.v}>{o.l}</option>)}
               </select>
@@ -1152,7 +1131,7 @@ export default function BuilderMidtermsPage() {
             <button
               type="button"
               onClick={() => { setFilterType("ALL"); setFilterPeriod("ALL"); }}
-              className={STUDIO_BTN_SECONDARY}
+              className="rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-muted-foreground hover:bg-surface-2"
             >
               Clear
             </button>
@@ -1161,12 +1140,12 @@ export default function BuilderMidtermsPage() {
       )}
 
       {/* Domain clarification note */}
-      <div className="border border-border bg-surface-2/40 px-3 py-2">
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
-          <strong className="font-semibold text-foreground">Note:</strong> Midterms are classroom pedagogy tools —
+      <div className="rounded-2xl border border-border bg-surface-2/30 px-4 py-3">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Note:</strong> Midterms are classroom pedagogy tools —
           not SAT simulations. Use them for semester exams, unit tests, and curriculum assessments.
           For SAT-style timed mocks, go to{" "}
-          <Link href="/builder/full-mocks" className={STUDIO_LINK}>
+          <Link href="/builder/full-mocks" className="font-semibold text-primary hover:underline">
             Builder → Full mocks
           </Link>
           .
@@ -1175,19 +1154,19 @@ export default function BuilderMidtermsPage() {
 
       {/* Error */}
       {error && (
-        <div className={STUDIO_ERROR_BANNER}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           {error}
         </div>
       )}
 
       {/* Content — drill-down: subject → level → midterms */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="flex justify-center py-16">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       ) : selectedSubject === null ? (
         /* Step 1 — choose a subject */
-        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
+        <div className="grid gap-4 sm:grid-cols-2">
           {MIDTERM_SUBJECTS.map((s) => {
             const n = countForSubject(s.code);
             return (
@@ -1195,25 +1174,25 @@ export default function BuilderMidtermsPage() {
                 key={s.code}
                 type="button"
                 onClick={() => { setSelectedSubject(s.code); setSelectedLevel(null); }}
-                className="group flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-6 text-left transition-colors hover:border-primary hover:bg-surface-2"
               >
-                <div className="flex items-center gap-2.5">
-                  <div className={cn("flex h-4 w-4 items-center justify-center", s.code === "MATH" ? "text-purple-700 dark:text-purple-300" : "text-teal-700 dark:text-teal-300")}>
-                    <GraduationCap className="h-4 w-4" />
+                <div className="flex items-center gap-4">
+                  <div className={cn("flex h-12 w-12 items-center justify-center rounded-2xl", s.code === "MATH" ? "bg-purple-100 text-purple-700" : "bg-teal-100 text-teal-700")}>
+                    <GraduationCap className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="text-[13px] font-medium text-primary group-hover:underline dark:text-primary-hover">{s.label}</p>
-                    <p className="text-[12px] text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
+                    <p className="text-lg font-extrabold text-foreground">{s.label}</p>
+                    <p className="text-sm text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             );
           })}
         </div>
       ) : selectedLevel === null ? (
         /* Step 2 — choose a level within the subject */
-        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {levelCodesForSubject(selectedSubject).map((code) => {
             const n = countForLevel(code);
             return (
@@ -1221,13 +1200,13 @@ export default function BuilderMidtermsPage() {
                 key={code}
                 type="button"
                 onClick={() => { setSelectedLevel(code); setFilterType("ALL"); setFilterPeriod("ALL"); }}
-                className="group flex w-full items-center justify-between px-3 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="group flex items-center justify-between rounded-2xl border border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
               >
                 <div>
-                  <p className="text-[13px] font-medium text-primary group-hover:underline dark:text-primary-hover">{MIDTERM_LEVEL_LABELS[code]}</p>
-                  <p className="text-[12px] text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
+                  <p className="text-base font-extrabold text-foreground">{MIDTERM_LEVEL_LABELS[code]}</p>
+                  <p className="text-sm text-muted-foreground">{n} midterm{n !== 1 ? "s" : ""}</p>
                 </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
               </button>
             );
           })}
@@ -1235,26 +1214,26 @@ export default function BuilderMidtermsPage() {
             <button
               type="button"
               onClick={() => { setSelectedLevel(UNTAGGED_LEVEL); setFilterType("ALL"); setFilterPeriod("ALL"); }}
-              className="group flex w-full items-center justify-between bg-surface-2/40 px-3 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+              className="group flex items-center justify-between rounded-2xl border border-dashed border-border bg-card p-5 text-left transition-colors hover:border-primary hover:bg-surface-2"
             >
               <div>
-                <p className="text-[13px] font-medium text-primary group-hover:underline dark:text-primary-hover">Untagged</p>
-                <p className="text-[12px] text-muted-foreground">{countForLevel(UNTAGGED_LEVEL)} without a level</p>
+                <p className="text-base font-extrabold text-foreground">Untagged</p>
+                <p className="text-sm text-muted-foreground">{countForLevel(UNTAGGED_LEVEL)} without a level</p>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              <ChevronRight className="h-5 w-5 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
             </button>
           )}
         </div>
       ) : filteredMidterms.length === 0 ? (
         /* Step 3 — empty bucket */
-        <div className={cn(STUDIO_CARD, "px-3 py-8 text-center")}>
-          <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center">
-            <GraduationCap className="h-5 w-5 text-muted-foreground/60" />
+        <div className="rounded-2xl border border-border bg-card p-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
+            <GraduationCap className="h-7 w-7 text-muted-foreground/40" />
           </div>
-          <p className="text-[13px] font-semibold text-foreground">
+          <p className="font-extrabold text-foreground">
             {filterType !== "ALL" || filterPeriod !== "ALL" ? "No midterms match these filters" : `No ${subjectLabel(selectedSubject)} · ${selectedLevelLabel} midterms yet`}
           </p>
-          <p className="mx-auto mt-1 max-w-xs text-[13px] leading-relaxed text-muted-foreground">
+          <p className="mt-1 mx-auto max-w-xs text-sm text-muted-foreground leading-relaxed">
             {filterType !== "ALL" || filterPeriod !== "ALL"
               ? "Try a different type or period."
               : "Create a midterm in this level, configure its structure, then author its questions."}
@@ -1263,16 +1242,16 @@ export default function BuilderMidtermsPage() {
             <button
               type="button"
               onClick={openCreate}
-              className={cn(STUDIO_BTN_PRIMARY, "mt-3")}
+              className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               New midterm
             </button>
           )}
         </div>
       ) : (
         /* Step 3 — the midterms in this subject+level */
-        <div className={cn(STUDIO_CARD, "divide-y divide-border")}>
+        <div className="space-y-4">
           {filteredMidterms.map((m) => (
             <MidtermRow
               key={m.id}
@@ -1357,70 +1336,67 @@ function MidtermResultsModal({ exam, onClose }: { exam: AdminMidterm; onClose: (
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden border border-border bg-card shadow-xl"
+        className="max-h-[85vh] w-full max-w-3xl overflow-hidden rounded-2xl bg-card shadow-2xl flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className={cn(STUDIO_BOX_CAPTION, "flex items-center justify-between gap-3")}>
+        <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="min-w-0">
-            <h2 className="truncate">
+            <h2 className="font-extrabold text-foreground truncate">
               Results · {exam.title || `Midterm #${exam.id}`}
             </h2>
-            <p className="font-normal normal-case tracking-normal">Visible to teachers only</p>
+            <p className="text-xs text-muted-foreground">Visible to teachers only</p>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <X className="h-4 w-4" />
+          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-2">
           {err && (
-            <div className={cn(STUDIO_ERROR_BANNER, "m-3")}>{err}</div>
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{err}</div>
           )}
           {!rows && !err && (
-            <div className="flex items-center gap-2 px-3 py-3 text-[13px] text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading…
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
           )}
           {rows && rows.length === 0 && (
-            <p className="px-3 py-3 text-[13px] text-muted-foreground">No students have completed this midterm yet.</p>
+            <p className="text-sm text-muted-foreground">No students have completed this midterm yet.</p>
           )}
           {rows?.map((r) => (
-            <div key={r.attempt_id}>
+            <div key={r.attempt_id} className="rounded-xl border border-border bg-surface-1">
               <button
                 type="button"
                 onClick={() => setExpanded((cur) => (cur === r.attempt_id ? null : r.attempt_id))}
-                className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium text-foreground">{r.student_name || r.student_username}</p>
-                  <p className="text-[12px] text-muted-foreground">
+                  <p className="font-bold text-foreground truncate">{r.student_name || r.student_username}</p>
+                  <p className="text-xs text-muted-foreground">
                     {r.correct_count}/{r.total_questions} correct · {r.wrong_count} wrong
                   </p>
                 </div>
                 <div className="shrink-0 text-right">
-                  <p className="text-base font-semibold tabular-nums text-foreground">
+                  <p className="text-lg font-black tabular-nums text-foreground">
                     {r.score}
-                    <span className="text-[12px] font-normal text-muted-foreground"> / {r.max_score}</span>
+                    <span className="text-xs font-bold text-muted-foreground"> / {r.max_score}</span>
                   </p>
                 </div>
               </button>
               {expanded === r.attempt_id && (
-                <div className="space-y-1.5 border-t border-border bg-surface-2/40 px-3 py-2">
+                <div className="border-t border-border px-4 py-3 space-y-2">
                   {r.wrong_questions.length === 0 ? (
-                    <p className="text-[12px] font-medium text-emerald-700 dark:text-emerald-400">Perfect — no wrong answers.</p>
+                    <p className="text-xs font-semibold text-emerald-600">Perfect — no wrong answers.</p>
                   ) : (
                     r.wrong_questions.map((w) => (
-                      <div key={w.question_id} className="border border-border bg-card px-3 py-2 text-[12px]">
-                        <p className="font-medium text-foreground">
+                      <div key={w.question_id} className="rounded-lg bg-surface-2 px-3 py-2 text-xs">
+                        <p className="font-semibold text-foreground">
                           M{w.module_order} · {w.prompt || `Question #${w.question_id}`}
                         </p>
-                        <p className="mt-0.5 text-red-600 dark:text-red-400">
+                        <p className="mt-0.5 text-red-600">
                           Answered: {String(w.student_answer ?? "—")}
                         </p>
-                        <p className="text-emerald-700 dark:text-emerald-400">
+                        <p className="text-emerald-600">
                           Correct: {Array.isArray(w.correct_answers) ? w.correct_answers.join(", ") : String(w.correct_answers ?? "—")}
                         </p>
                       </div>
