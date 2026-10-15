@@ -10,10 +10,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChangeListAction, ChangeListColumn, ChangeListData, ChangeListProps } from "../ChangeList";
 
 const replace = vi.fn();
+const push = vi.fn();
 let search = "";
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ replace, push: vi.fn(), prefetch: vi.fn() }),
+  useRouter: () => ({ replace, push, prefetch: vi.fn() }),
   useSearchParams: () => new URLSearchParams(search),
   usePathname: () => "/ops/students",
 }));
@@ -112,6 +113,7 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   search = "";
   replace.mockReset();
+  push.mockReset();
   host = document.createElement("div");
   document.body.appendChild(host);
   root = createRoot(host);
@@ -225,6 +227,45 @@ describe("ChangeList", () => {
     // The first column is a button too, so a keyboard can open the row.
     click(host.querySelectorAll("tbody tr")[0].querySelector("button")!);
     expect(onRowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("with rowHref, the first cell is a real link to the row's change form", () => {
+    render({ rowHref: (r) => "/ops/students/" + r.id, actions: [{ key: "freeze", label: "Freeze", run: vi.fn() }] });
+    // Cell 0 is the checkbox; the first column follows it.
+    const first = host.querySelectorAll("tbody tr")[1].querySelectorAll("td")[1];
+    const a = first.querySelector("a");
+    expect(a?.getAttribute("href")).toMatch(/\/ops\/students\/2$/);
+    expect(a?.textContent).toBe("Malika Karimova");
+    // A link, so it opens in a new tab; not a button that can only navigate in place.
+    expect(first.querySelector("button")).toBeNull();
+  });
+
+  it("with rowHref, a plain click elsewhere on the row goes there through the router", () => {
+    render({ rowHref: (r) => "/ops/students/" + r.id, actions: [{ key: "freeze", label: "Freeze", run: vi.fn() }] });
+    const row = host.querySelectorAll("tbody tr")[1];
+    click(row.querySelectorAll("td")[2]);
+    expect(push).toHaveBeenCalledWith("/ops/students/2");
+    push.mockClear();
+
+    // Picking the row is not opening it.
+    click(host.querySelector('input[aria-label="Select 2"]')!);
+    expect(push).not.toHaveBeenCalled();
+
+    // A held modifier asks for a new tab — the link's job — never a navigation in place.
+    act(() => {
+      row.querySelectorAll("td")[2].dispatchEvent(new MouseEvent("click", { bubbles: true, metaKey: true }));
+    });
+    expect(push).not.toHaveBeenCalled();
+
+    // The link navigates by itself; its click does not reach the row and navigate a second time.
+    const stopNavigation = (e: Event) => e.preventDefault();
+    document.addEventListener("click", stopNavigation, true);
+    try {
+      click(row.querySelector("a")!);
+    } finally {
+      document.removeEventListener("click", stopNavigation, true);
+    }
+    expect(push).not.toHaveBeenCalled();
   });
 
   it("a failed load shows the error with Retry — never the empty state", () => {
