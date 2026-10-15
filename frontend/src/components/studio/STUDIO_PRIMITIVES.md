@@ -24,14 +24,22 @@ A token belongs in `primitives.ts` if:
 
 | Token | Purpose |
 |---|---|
-| `STUDIO_FIELD_LABEL` | Uppercase form-field label above inputs |
+| `STUDIO_FIELD_LABEL` | Form-field label above inputs |
 | `STUDIO_INPUT` | Standard text input / textarea / select |
 | `STUDIO_SECTION_GAP` | Vertical spacing between page sections |
-| `STUDIO_CARD` | Standard rounded bordered card container |
+| `STUDIO_CARD` | Hairline box (square, as an /ops "module") |
 | `STUDIO_BTN_PRIMARY` | Single primary CTA per surface |
 | `STUDIO_BTN_SECONDARY` | Auxiliary action alongside primary |
 | `STUDIO_BTN_DESTRUCTIVE` | Delete/archive actions (requires confirm step) |
 | `STUDIO_ERROR_BANNER` | Inline error strip for failed mutations |
+| `STUDIO_PAGE_TITLE` / `STUDIO_PAGE_DESC` | Page title and the muted line under it |
+| `STUDIO_BOX_CAPTION` | Small uppercase caption bar inside a `STUDIO_CARD` |
+| `STUDIO_TABLE` / `STUDIO_TH` / `STUDIO_TD` | Dense list table, as the /ops changelist |
+| `STUDIO_SELECT` | Compact select / filter control in a toolbar |
+| `STUDIO_LINK` | Blue text link, underline on hover |
+
+Since 2026-10-15 these carry the /ops console's Django-admin dialect: 13px type, hairline borders,
+square boxes, `rounded-md` 32px controls, nothing heavier than semibold.
 
 ---
 
