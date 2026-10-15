@@ -9,7 +9,9 @@ from rest_framework.views import APIView
 from users.changelist import apply_search, facets, paginate
 
 from .models import Classroom
-from .ops_classrooms import CLASS_FILTERS, CLASS_ORDERING, CLASS_SEARCH, STUDENT_SEATS, class_row
+from .ops_classrooms import (
+    CLASS_FILTERS, CLASS_ORDERING, CLASS_PARTS, CLASS_SEARCH, STUDENT_SEATS, class_row, classroom_core,
+)
 
 
 def is_ops_admin(user) -> bool:
@@ -46,3 +48,33 @@ class ClassroomChangeListView(APIView):
         managed = lcup_managed_ids(r.pk for r in rooms)
         return Response({**meta, "ordering": ordering, "results": [class_row(r, managed) for r in rooms],
                          "filters": filters})
+
+
+class ClassroomDetailView(APIView):
+    """``GET /api/classes/admin/classrooms/<pk>/`` — what the class's change form opens with."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk: int):
+        if not is_ops_admin(request.user):
+            return Response({"detail": "Admins only."}, status=403)
+        room = Classroom.objects.select_related("teacher", "branch").filter(pk=pk).first()
+        if room is None:
+            return Response({"detail": "Not found."}, status=404)
+        return Response(classroom_core(room))
+
+
+class ClassroomPartView(APIView):
+    """``GET /api/classes/admin/classrooms/<pk>/<part>/`` — roster, attendance, homework or history, each on its
+    own, so a slow or failing part never blanks the page."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk: int, part: str):
+        if not is_ops_admin(request.user):
+            return Response({"detail": "Admins only."}, status=403)
+        build = CLASS_PARTS.get(part)
+        room = Classroom.objects.filter(pk=pk).first() if build else None
+        if room is None:
+            return Response({"detail": "Not found."}, status=404)
+        return Response(build(room))
