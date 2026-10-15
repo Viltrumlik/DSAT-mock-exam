@@ -31,7 +31,6 @@ import logging
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.settings import api_settings
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -65,6 +64,7 @@ from midterms.views import (
     _late_answers_accepted,
     _module_deadline,
 )
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import content, idem
 from .conventions import (
@@ -135,7 +135,7 @@ class CodeThrottle(_LiveScopedThrottle):
 
 # ── shared ───────────────────────────────────────────────────────────────────────────────
 class MidtermView(V1APIView):
-    permission_classes = [IsAuthenticated]  # as MidtermAttemptViewSet
+    permission_classes = [IsAuthenticatedAndNotFrozen]  # as MidtermAttemptViewSet
 
 
 def calculator_for(midterm: Midterm) -> str | None:

@@ -16,11 +16,11 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from config.reliability import idempotency_key_from_request
 from desktop import lockdown as desktop_lockdown
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .access import (
     can_start_midterm,
@@ -177,7 +177,9 @@ def _is_background_save(request) -> bool:
 
 
 class MidtermAttemptViewSet(viewsets.GenericViewSet):
-    permission_classes = [IsAuthenticated]
+    # An explicit list REPLACES the project default (IsAuthenticatedAndNotFrozen), so it is named
+    # here: a frozen learner signs in but cannot sit a midterm, even when the freeze lands mid-sitting.
+    permission_classes = [IsAuthenticatedAndNotFrozen]
     serializer_class = MidtermAttemptSerializer
     lookup_value_regex = r"\d+"
 

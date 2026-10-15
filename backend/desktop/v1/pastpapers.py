@@ -29,7 +29,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
 
 from access.permissions import RequiresSubmitTest
 from exams.engine_db_guard import TransitionConflict
@@ -42,6 +41,7 @@ from exams.models import (
     TestAttempt,
     ensure_full_mock_practice_test_modules,
 )
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import content, idem
 from .conventions import (
@@ -74,8 +74,8 @@ EMPTY_DETAIL = "This practice test has no questions yet."
 
 # ── shared ───────────────────────────────────────────────────────────────────────────────
 class PastpaperView(V1APIView):
-    # The same gate as the website's TestAttemptViewSet.
-    permission_classes = [IsAuthenticated, RequiresSubmitTest]
+    # The same gate as the website's TestAttemptViewSet, freeze check included.
+    permission_classes = [IsAuthenticatedAndNotFrozen, RequiresSubmitTest]
 
 
 def enqueue_scoring(attempt_id: int, request=None) -> None:
