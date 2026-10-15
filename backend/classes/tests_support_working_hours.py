@@ -16,7 +16,8 @@ Two properties matter more than the CRUD and are tested hardest:
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
@@ -31,22 +32,35 @@ from classes.models_support import SupportAvailability, SupportBooking, SupportW
 
 User = get_user_model()
 
+WEEKDAY_NAMES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
 
-def _next_weekday(weekday: int, *, after=None):
-    """The next local date falling on ``weekday``, never today.
-
-    Never today on purpose: "today" may already be past the hour under test, and a slot in the
-    past is refused for a reason that has nothing to do with the schedule — which would make
-    this suite pass for the wrong reason on some days of the week and some times of day.
-    """
-    day = timezone.localdate(after or timezone.now()) + timedelta(days=1)
-    while day.weekday() != weekday:
-        day += timedelta(days=1)
-    return day
+#: The date every test here believes is today. A Monday, but any weekday works.
+#:
+#: The calendar is a rolling window of ``CALENDAR_DAYS`` days from today. This suite used to
+#: read the real clock and then pick its day by name, "next Wednesday", which can sit seven
+#: days out. On five days of the week that was past the window, and the tests failed with
+#: "You can book up to 4 days ahead.", a refusal that has nothing to do with the schedule.
+#: So the clock is pinned (see ``setUp``) and the days under test follow from it.
+FROZEN_TODAY = date(2026, 10, 12)
 
 
 class SupportWorkingHoursBase(TestCase):
     def setUp(self):
+        # Noon on FROZEN_TODAY in the school's timezone, for everything that reads
+        # `timezone.now()`: the service, the calendar, and the rows the tests create.
+        self.now = support_service._hour_start(FROZEN_TODAY, 12)
+        clock = mock.patch("django.utils.timezone.now", return_value=self.now)
+        clock.start()
+        self.addCleanup(clock.stop)
+        # The days under test: tomorrow and the day after. Never today, because today's
+        # morning is already past, and a slot in the past is refused for a reason that has
+        # nothing to do with the schedule. Both fall inside the window whatever weekday today
+        # is, and on two different weekdays, so one can be working while the other is not.
+        self.day = FROZEN_TODAY + timedelta(days=1)
+        self.other_day = FROZEN_TODAY + timedelta(days=2)
+        # Fail here, by name, if the window ever shrinks below what these tests assume.
+        self.assertIn(self.other_day, support_service.calendar_dates())
+
         # `APIClient`, not the default Django test client: DRF does not pick the session up
         # from the plain client here and answers every request 401, which would make the
         # endpoint tests below fail for a reason that has nothing to do with the endpoint.
@@ -83,9 +97,8 @@ class SupportWorkingHoursBase(TestCase):
         Days not named are written as NOT working, because a real save always writes all seven
         and the partial state is not one the UI can produce.
         """
-        names = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
         days = []
-        for i, name in enumerate(names):
+        for i, name in enumerate(WEEKDAY_NAMES):
             window = per_weekday.get(name)
             days.append({
                 "weekday": i,
@@ -94,6 +107,10 @@ class SupportWorkingHoursBase(TestCase):
                 "end_hour": window[1] if window else 18,
             })
         return support_service.write_weekly_schedule(self.support, days)
+
+    def work_only(self, day, start_hour: int, end_hour: int):
+        """Open the weekday ``day`` falls on, ``start_hour``–``end_hour``; close the other six."""
+        return self.set_schedule(**{WEEKDAY_NAMES[day.weekday()]: (start_hour, end_hour)})
 
     def hour_state(self, day, hour: int) -> str:
         """What the STUDENT's calendar says about one hour of one day."""
@@ -114,13 +131,11 @@ class UnconfiguredTeacherKeepsWorking(SupportWorkingHoursBase):
 
     def test_no_rows_leaves_every_hour_open(self):
         self.assertEqual(SupportWorkingHours.objects.count(), 0)
-        day = _next_weekday(2)  # a Wednesday, arbitrarily
-        self.assertEqual(self.hour_state(day, 9), "open")
-        self.assertEqual(self.hour_state(day, 17), "open")
+        self.assertEqual(self.hour_state(self.day, 9), "open")
+        self.assertEqual(self.hour_state(self.day, 17), "open")
 
     def test_no_rows_still_allows_booking(self):
-        day = _next_weekday(2)
-        starts_at = support_service._hour_start(day, 10)
+        starts_at = support_service._hour_start(self.day, 10)
         booking = support_service.book_at(self.student, self.support, starts_at)
         self.assertEqual(booking.status, SupportBooking.STATUS_BOOKED)
 
@@ -134,116 +149,109 @@ class UnconfiguredTeacherKeepsWorking(SupportWorkingHoursBase):
 
 class ScheduleGovernsTheStudentCalendar(SupportWorkingHoursBase):
     def test_hours_outside_the_window_read_off_not_closed(self):
-        self.set_schedule(wed=(10, 14))
-        day = _next_weekday(2)
-        self.assertEqual(self.hour_state(day, 9), "off")
-        self.assertEqual(self.hour_state(day, 10), "open")
-        self.assertEqual(self.hour_state(day, 13), "open")
+        self.work_only(self.day, 10, 14)
+        self.assertEqual(self.hour_state(self.day, 9), "off")
+        self.assertEqual(self.hour_state(self.day, 10), "open")
+        self.assertEqual(self.hour_state(self.day, 13), "open")
         # end_hour is EXCLUSIVE — 14:00 is when the last session ENDS.
-        self.assertEqual(self.hour_state(day, 14), "off")
+        self.assertEqual(self.hour_state(self.day, 14), "off")
 
     def test_a_non_working_weekday_is_off_all_day(self):
-        self.set_schedule(wed=(10, 14))
-        thursday = _next_weekday(3)
+        self.work_only(self.day, 10, 14)
         self.assertTrue(all(
-            self.hour_state(thursday, h) == "off" for h in range(8, 18)
+            self.hour_state(self.other_day, h) == "off" for h in range(8, 18)
         ))
 
     def test_off_is_distinct_from_a_withdrawn_hour(self):
         """A teacher who withdrew an hour and one who never worked it are different facts,
         and the student is owed the difference: one reads "he cancelled", the other "he's
         not in"."""
-        self.set_schedule(wed=(8, 18))
-        day = _next_weekday(2)
+        self.work_only(self.day, 8, 18)
         SupportAvailability.objects.create(
             support_teacher=self.support,
-            starts_at=support_service._hour_start(day, 11),
-            ends_at=support_service._hour_start(day, 12),
+            starts_at=support_service._hour_start(self.day, 11),
+            ends_at=support_service._hour_start(self.day, 12),
             capacity=1, is_cancelled=True,
         )
-        self.assertEqual(self.hour_state(day, 11), "closed")
+        self.assertEqual(self.hour_state(self.day, 11), "closed")
 
     def test_a_configured_teacher_with_a_missing_weekday_fails_closed(self):
         """A half-written schedule must not open a day nobody chose. Written by hand — the
         UI always saves seven — because failing OPEN here puts a student in front of an
         empty desk."""
         SupportWorkingHours.objects.create(
-            support_teacher=self.support, weekday=2, is_working=True,
+            support_teacher=self.support, weekday=self.day.weekday(), is_working=True,
             start_hour=9, end_hour=15,
         )
-        self.assertEqual(self.hour_state(_next_weekday(2), 10), "open")
-        self.assertEqual(self.hour_state(_next_weekday(3), 10), "off")
+        self.assertEqual(self.hour_state(self.day, 10), "open")
+        self.assertEqual(self.hour_state(self.other_day, 10), "off")
 
 
 class ScheduleIsEnforcedOnTheWritePath(SupportWorkingHoursBase):
     """The read path painting "off" is worth nothing if the POST still accepts the hour."""
 
     def test_booking_outside_working_hours_is_refused(self):
-        self.set_schedule(wed=(10, 14))
-        day = _next_weekday(2)
+        self.work_only(self.day, 10, 14)
         with self.assertRaises(ValidationError):
             support_service.book_at(
-                self.student, self.support, support_service._hour_start(day, 9)
+                self.student, self.support, support_service._hour_start(self.day, 9)
             )
 
     def test_booking_on_a_non_working_day_is_refused(self):
-        self.set_schedule(wed=(10, 14))
+        self.work_only(self.day, 10, 14)
         with self.assertRaises(ValidationError):
             support_service.book_at(
                 self.student, self.support,
-                support_service._hour_start(_next_weekday(3), 11),
+                support_service._hour_start(self.other_day, 11),
             )
 
     def test_booking_inside_working_hours_still_works(self):
-        self.set_schedule(wed=(10, 14))
+        self.work_only(self.day, 10, 14)
         booking = support_service.book_at(
             self.student, self.support,
-            support_service._hour_start(_next_weekday(2), 11),
+            support_service._hour_start(self.day, 11),
         )
         self.assertEqual(booking.status, SupportBooking.STATUS_BOOKED)
 
     def test_a_refused_booking_leaves_no_availability_row_behind(self):
         """`book_at` is one transaction precisely so a refusal does not litter the teacher's
         calendar with rows they never published and cannot see."""
-        self.set_schedule(wed=(10, 14))
+        self.work_only(self.day, 10, 14)
         before = SupportAvailability.objects.count()
         with self.assertRaises(ValidationError):
             support_service.book_at(
                 self.student, self.support,
-                support_service._hour_start(_next_weekday(2), 16),
+                support_service._hour_start(self.day, 16),
             )
         self.assertEqual(SupportAvailability.objects.count(), before)
 
 
 class ExistingBookingsSurviveAScheduleChange(SupportWorkingHoursBase):
     def test_narrowing_the_week_does_not_cancel_or_hide_a_booking(self):
-        day = _next_weekday(2)
         booking = support_service.book_at(
-            self.student, self.support, support_service._hour_start(day, 9)
+            self.student, self.support, support_service._hour_start(self.day, 9)
         )
-        self.set_schedule(wed=(10, 14))   # 09:00 is now outside the schedule
+        self.work_only(self.day, 10, 14)   # 09:00 is now outside the schedule
 
         booking.refresh_from_db()
         self.assertEqual(booking.status, SupportBooking.STATUS_BOOKED)
         # The student still sees their own appointment; "mine" outranks "off".
-        self.assertEqual(self.hour_state(day, 9), "mine")
+        self.assertEqual(self.hour_state(self.day, 9), "mine")
 
     def test_the_clash_is_reported_so_a_human_can_act_on_it(self):
-        day = _next_weekday(2)
         support_service.book_at(
-            self.student, self.support, support_service._hour_start(day, 9)
+            self.student, self.support, support_service._hour_start(self.day, 9)
         )
-        self.set_schedule(wed=(10, 14))
+        self.work_only(self.day, 10, 14)
         clashes = support_service.bookings_outside_schedule(self.support)
         self.assertEqual(len(clashes), 1)
         self.assertEqual(clashes[0].student_id, self.student.id)
 
     def test_a_booking_inside_the_new_schedule_is_not_reported(self):
-        day = _next_weekday(2)
         support_service.book_at(
-            self.student, self.support, support_service._hour_start(day, 11)
+            self.student, self.support, support_service._hour_start(self.day, 11)
         )
-        self.set_schedule(wed=(10, 14))
+        self.work_only(self.day, 10, 14)
         self.assertEqual(support_service.bookings_outside_schedule(self.support), [])
 
 
