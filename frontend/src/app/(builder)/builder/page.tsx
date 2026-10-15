@@ -114,7 +114,10 @@ export default function BuilderDashboardPage() {
               <p className="border-b border-border bg-surface-2/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                 {group.caption}
               </p>
-            ) : null}
+            ) : (
+              // A blank strip, so Archived does not read as part of the group above it.
+              <div aria-hidden className="h-2 border-b border-border bg-surface-2/60" />
+            )}
             <ul className="divide-y divide-border">
               {group.links.map((link) => (
                 <li key={link.href}>

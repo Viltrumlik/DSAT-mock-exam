@@ -7,7 +7,7 @@ import { ListChecks, Loader2, Plus, Upload } from "lucide-react";
 import { useToast } from "@/components/ToastProvider";
 import { ChangeList, type ChangeListAction, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
-import { formatDate, Truncated } from "@/features/ops/users/peopleColumns";
+import { Truncated } from "@/features/ops/users/peopleColumns";
 import { QB_FILTER_KEYS, useQbChangeList } from "@/domains/questionBank/changelist";
 import { useQbBulk } from "@/domains/questionBank/hooks";
 import { STATUS_LABELS, difficultyLabel } from "@/domains/questionBank/utils";
@@ -21,6 +21,11 @@ import type { QbQuestionListItem } from "@/domains/questionBank/types";
  */
 
 const SUBJECT_LABELS: Record<string, string> = { ENGLISH: "English", MATH: "Math" };
+
+// The two text columns give way so Difficulty and Status stay in view beside the filter panel:
+// measured to fit at 1280 and 1440 wide; narrower windows scroll the table, as Django's does.
+const QUESTION_WIDTH = "max-w-[14rem] min-[1400px]:max-w-[20rem]";
+const SKILL_WIDTH = "max-w-[9rem] min-[1400px]:max-w-[13rem]";
 
 const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
   {
@@ -42,7 +47,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
     render: (q) =>
       q.question_text ? (
         <Link href={`/builder/question-bank/${q.id}`} className="block hover:underline" title={q.question_text}>
-          <Truncated text={q.question_text} className="max-w-[28rem]" />
+          <Truncated text={q.question_text} className={QUESTION_WIDTH} />
         </Link>
       ) : (
         <span className="text-muted-foreground">(no text)</span>
@@ -56,7 +61,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
       q.domain_name ? (
         <Truncated
           text={q.skill_name ? `${q.domain_name} › ${q.skill_name}` : q.domain_name}
-          className="max-w-[16rem] text-muted-foreground"
+          className={`${SKILL_WIDTH} text-muted-foreground`}
         />
       ) : (
         <span className="italic text-muted-foreground">Unclassified</span>
@@ -76,12 +81,6 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
         {STATUS_LABELS[q.status] ?? q.status}
       </span>
     ),
-  },
-  {
-    key: "created",
-    label: "Created",
-    sortKey: "created",
-    render: (q) => <span className="tabular-nums text-muted-foreground">{formatDate(q.created_at)}</span>,
   },
 ];
 
