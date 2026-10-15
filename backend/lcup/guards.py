@@ -25,6 +25,18 @@ def is_lcup_managed(classroom) -> bool:
     ).exists()
 
 
+def lcup_managed_ids(classroom_ids) -> set[int]:
+    """The classes among ``classroom_ids`` that follow lc-up — ``is_lcup_managed`` for many at once."""
+    ids = [i for i in classroom_ids if i is not None]
+    if not lcup_enabled() or not ids:
+        return set()
+    return set(
+        LcupGroupLink.objects.filter(
+            classroom_id__in=ids, status=GroupLinkStatus.CONFIRMED, deleted_in_lcup_at__isnull=True
+        ).values_list("classroom_id", flat=True)
+    )
+
+
 def lcup_managed_response() -> Response:
     return Response(
         {"detail": "This class's students come from lc-up. Add or remove students there.", "code": "lcup_managed"},
