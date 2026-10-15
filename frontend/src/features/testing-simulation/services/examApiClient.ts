@@ -171,9 +171,11 @@ export function createExamApi(base: string) {
     async reportOffscreen(
       attemptId: number,
       idempotencyKey: string,
+      // What the browser saw — kept by the server as evidence, never used to decide anything.
+      evidence?: { reason: string | null; continuing: boolean },
     ): Promise<{ violations?: number; limit?: number; grace_seconds?: number; terminated?: boolean; attempt?: unknown }> {
       const r = await guarded(
-        api.post(`${base}/${attemptId}/offscreen/`, {}, { headers: headersFor(attemptId, idempotencyKey) }),
+        api.post(`${base}/${attemptId}/offscreen/`, evidence ?? {}, { headers: headersFor(attemptId, idempotencyKey) }),
       );
       return r.data ?? {};
     },

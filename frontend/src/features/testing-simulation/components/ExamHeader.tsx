@@ -27,6 +27,8 @@ interface ExamHeaderProps {
   onTogglePause: () => void;
   saveExitAllowed: boolean;
   onSaveAndExit: () => void;
+  /** False on a proctored paper, where leaving fullscreen is an offence (see MoreMenu). */
+  fullscreenExitAllowed?: boolean;
   onReportProblem?: () => void;
   /** The laptop's battery, in the Windows app only (null everywhere else). */
   battery?: BatteryStatus | null;
@@ -65,6 +67,7 @@ export function ExamHeader({
   onTogglePause,
   saveExitAllowed,
   onSaveAndExit,
+  fullscreenExitAllowed,
   onReportProblem,
   battery = null,
   untimed = false,
@@ -138,6 +141,7 @@ export function ExamHeader({
           onTogglePause={onTogglePause}
           saveExitAllowed={saveExitAllowed}
           onSaveAndExit={onSaveAndExit}
+          fullscreenExitAllowed={fullscreenExitAllowed}
         />
         <BatteryIndicator battery={battery} />
       </div>

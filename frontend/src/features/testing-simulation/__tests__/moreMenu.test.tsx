@@ -120,3 +120,22 @@ describe("MoreMenu — Save & Exit", () => {
     expect(has(midterm.labels, /save\s*&\s*exit/i)).toBe(false);
   });
 });
+
+// On a proctored paper, leaving fullscreen IS the off-screen offence: the item would let the
+// runner itself spend a student's chance, and left alone for ~7s it forfeits the paper.
+describe("MoreMenu — fullscreen on a proctored paper", () => {
+  it("does not offer Exit full screen", () => {
+    const { labels } = openMenu({ isFullscreen: true, fullscreenExitAllowed: false });
+    expect(has(labels, /exit full screen/i)).toBe(false);
+  });
+
+  it("still offers entering fullscreen, which is the way back", () => {
+    const { labels } = openMenu({ isFullscreen: false, fullscreenExitAllowed: false });
+    expect(labels).toContain("Full screen");
+  });
+
+  it("keeps Exit full screen where leaving it is allowed (the default)", () => {
+    const { labels } = openMenu({ isFullscreen: true });
+    expect(has(labels, /exit full screen/i)).toBe(true);
+  });
+});
