@@ -19,6 +19,19 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  STUDIO_BOX_CAPTION,
+  STUDIO_BTN_DESTRUCTIVE,
+  STUDIO_BTN_PRIMARY,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_FIELD_LABEL,
+  STUDIO_INPUT,
+  STUDIO_LINK,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+} from "@/components/studio/primitives";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,7 +89,7 @@ function yearOf(s: string | null | undefined): string {
 type RegionFilter = "ALL" | "US" | "INTL";
 type StatusFilter = "ALL" | "live" | "draft";
 
-/** Student-style segmented filter: an uppercase label + a pill row. */
+/** Segmented filter: a small label over a row of options (the /ops toolbar look). */
 function FilterGroup({
   label,
   value,
@@ -89,9 +102,9 @@ function FilterGroup({
   options: { v: string; l: string }[];
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
-      <div className="inline-flex flex-wrap gap-1 rounded-xl border border-border bg-surface-2 p-1">
+    <div className="flex flex-col gap-1">
+      <span className="text-[12px] font-semibold text-muted-foreground">{label}</span>
+      <div className="inline-flex flex-wrap gap-0.5 rounded-md border border-border bg-card p-0.5">
         {options.map((o) => {
           const on = value === o.v;
           return (
@@ -99,8 +112,8 @@ function FilterGroup({
               key={o.v}
               type="button"
               onClick={() => onChange(o.v)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${
-                on ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+              className={`h-7 rounded-sm px-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                on ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-surface-2 hover:text-foreground"
               }`}
             >
               {o.l}
@@ -177,125 +190,129 @@ function SectionModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
-        <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-base font-extrabold text-foreground">{title}</h2>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-surface-2">
+      <div className="relative z-10 w-full max-w-md border border-border bg-card shadow-xl">
+        <div className={`${STUDIO_BOX_CAPTION} flex items-center justify-between gap-2`}>
+          <h2 className="min-w-0">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+          <div className={`mx-4 mt-4 ${STUDIO_ERROR_BANNER}`}>
             {error}
           </div>
         )}
 
         <form
-          className="space-y-4"
+          className="space-y-3 p-4"
           onSubmit={(e) => {
             e.preventDefault();
             onSubmit(form);
           }}
         >
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+            <label className={STUDIO_FIELD_LABEL}>
               Subject
             </label>
             <select
               value={form.subject}
               onChange={set("subject")}
               disabled={isEdit}
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+              className={`${STUDIO_INPUT} disabled:opacity-60`}
             >
               <option value="READING_WRITING">Reading &amp; Writing</option>
               <option value="MATH">Mathematics</option>
             </select>
             {isEdit ? (
-              <p className="mt-1 text-[11px] text-muted-foreground">Subject can&apos;t be changed after creation.</p>
+              <p className="mt-1 text-[12px] text-muted-foreground">Subject can&apos;t be changed after creation.</p>
             ) : null}
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+            <label className={STUDIO_FIELD_LABEL}>
               Collection
             </label>
             <input
               value={form.collection_name}
               onChange={set("collection_name")}
               placeholder="e.g. SAT October 2024"
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={STUDIO_INPUT}
             />
-            <p className="mt-1 text-[11px] text-muted-foreground">
+            <p className="mt-1 text-[12px] text-muted-foreground">
               Sections sharing a collection name are grouped together for students.
             </p>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+            <label className={STUDIO_FIELD_LABEL}>
               Title
             </label>
             <input
               value={form.title}
               onChange={set("title")}
               placeholder="Optional — defaults to subject + date"
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={STUDIO_INPUT}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              <label className={STUDIO_FIELD_LABEL}>
                 Practice date
               </label>
               <input
                 type="date"
                 value={form.practice_date}
                 onChange={set("practice_date")}
-                className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className={STUDIO_INPUT}
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+              <label className={STUDIO_FIELD_LABEL}>
                 Form label
               </label>
               <input
                 value={form.label}
                 onChange={set("label")}
                 placeholder="A, B, …"
-                className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+                className={STUDIO_INPUT}
               />
             </div>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
+            <label className={STUDIO_FIELD_LABEL}>
               Form type
             </label>
             <select
               value={form.form_type}
               onChange={set("form_type")}
-              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className={STUDIO_INPUT}
             >
               <option value="INTERNATIONAL">International</option>
               <option value="US">US Form</option>
             </select>
           </div>
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex justify-end gap-2 border-t border-border pt-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
+              className={STUDIO_BTN_SECONDARY}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+              className={STUDIO_BTN_PRIMARY}
             >
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
               {saving ? "Saving…" : "Save"}
             </button>
           </div>
@@ -326,43 +343,31 @@ function SectionCard({
   const isRW = section.subject === "READING_WRITING";
   const isPublished = section.is_published === true;
   const modules = section.modules ?? [];
-  const accent = isRW ? "var(--color-primary, #2a68c0)" : "#16a34a";
 
   return (
-    <div
-      className="flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md"
-      style={{ borderTop: `3px solid ${accent}` }}
-    >
-      <div className="flex flex-1 flex-col gap-3 p-5">
+    <div className="flex flex-col hover:bg-surface-2/40">
+      <div className="flex flex-1 flex-col gap-2 px-3 pt-2.5">
         {/* Badges: subject · region · status */}
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span
-            className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-            }`}
-          >
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+          <span className="inline-flex items-center gap-1 text-muted-foreground">
             <SubjectIcon subject={section.subject} />
             {isRW ? "R&W" : "Math"}
           </span>
-          <span className="rounded-md bg-surface-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+          <span className="text-muted-foreground">
             {section.form_type === "US" ? "🇺🇸 US" : "🌐 International"}
             {section.label ? ` · Form ${section.label}` : ""}
           </span>
-          <span
-            className={`ml-auto rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              isPublished ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-surface-2 text-muted-foreground"
-            }`}
-          >
+          <span className={`ml-auto font-medium ${isPublished ? "text-muted-foreground" : "text-foreground"}`}>
             {isPublished ? "Live" : "Draft"}
           </span>
         </div>
 
         {/* Title + date */}
         <div>
-          <h3 className="line-clamp-2 text-[15px] font-extrabold leading-snug text-foreground">
+          <h3 className="line-clamp-2 text-[13px] font-semibold leading-snug text-foreground">
             {section.title?.trim() || `${subjectLabel(section.subject)} · ${formatDate(section.practice_date)}`}
           </h3>
-          <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
+          <p className="mt-0.5 flex items-center gap-1 text-[12px] text-muted-foreground">
             <Calendar className="h-3 w-3 shrink-0" />
             {formatDate(section.practice_date)}
             <span className="text-muted-foreground/50">·</span>
@@ -372,10 +377,10 @@ function SectionCard({
 
         {/* Publish violations (blocking SAT rules) */}
         {violations && violations.length > 0 ? (
-          <div className="flex items-start gap-2 rounded-xl border border-amber-300 bg-amber-50/90 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50/90 px-3 py-2 text-[12px] text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
             <div>
-              <strong>Can&apos;t publish yet:</strong>
+              <strong className="font-semibold">Can&apos;t publish yet:</strong>
               <ul className="mt-1 list-disc space-y-0.5 pl-4">
                 {violations.map((v, i) => (
                   <li key={`${v.code}-${i}`}>{v.message}</li>
@@ -387,20 +392,18 @@ function SectionCard({
 
         {/* Per-module edit links */}
         {modules.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-border px-3 py-2 text-xs italic text-muted-foreground">
+          <p className="text-[12px] italic text-muted-foreground">
             No modules yet.
           </p>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
             {modules.map((mod) => (
               <Link
                 key={mod.id}
                 href={`/builder/pastpapers/${section.id}/${mod.id}`}
-                className={`group flex items-center gap-2 rounded-xl border px-3 py-2 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
-                  isRW ? "border-primary/20 bg-primary/5" : "border-emerald-200 bg-emerald-50/50 dark:border-emerald-500/20 dark:bg-emerald-500/5"
-                }`}
+                className={`group inline-flex items-center gap-1 text-[13px] ${STUDIO_LINK}`}
               >
-                <p className="min-w-0 flex-1 truncate text-xs font-extrabold text-foreground">
+                <p className="min-w-0 truncate">
                   {mod.module_order != null ? `Module ${mod.module_order}` : `Module #${mod.id}`} — edit questions
                 </p>
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" />
@@ -411,23 +414,19 @@ function SectionCard({
       </div>
 
       {/* Footer actions */}
-      <div className="flex items-center gap-1.5 border-t border-border bg-surface-2/40 px-4 py-3">
+      <div className="flex items-center gap-1.5 px-3 pb-2.5 pt-2">
         <button
           type="button"
           onClick={onTogglePublish}
           disabled={busy}
-          className={`rounded-xl px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${
-            isPublished
-              ? "border border-border bg-card text-foreground hover:bg-surface-2"
-              : "bg-emerald-600 text-white hover:bg-emerald-700"
-          }`}
+          className={isPublished ? STUDIO_BTN_SECONDARY : STUDIO_BTN_PRIMARY}
         >
           {busy ? "…" : isPublished ? "Unpublish" : "Publish"}
         </button>
         <button
           type="button"
           onClick={onEdit}
-          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground transition-colors hover:bg-surface-2"
+          className={STUDIO_BTN_SECONDARY}
         >
           <Pencil className="h-3 w-3" />
           Edit
@@ -437,14 +436,14 @@ function SectionCard({
             <button
               type="button"
               onClick={onDelete}
-              className="rounded-xl bg-red-600 px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-red-700"
+              className="inline-flex min-h-8 items-center rounded-md bg-red-600 px-2.5 py-1 text-[13px] font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
             >
               Confirm
             </button>
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="rounded-xl border border-border bg-card px-2.5 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
+              className={STUDIO_BTN_SECONDARY}
             >
               Cancel
             </button>
@@ -454,7 +453,7 @@ function SectionCard({
             type="button"
             onClick={() => setConfirmDelete(true)}
             aria-label="Delete section"
-            className="ml-auto inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 dark:border-red-500/30 dark:bg-red-500/10 dark:text-red-300"
+            className={`ml-auto ${STUDIO_BTN_DESTRUCTIVE}`}
           >
             <Trash2 className="h-3 w-3" />
             Delete
@@ -635,10 +634,10 @@ export default function BuilderPastpapersPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Pastpapers</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <h1 className={STUDIO_PAGE_TITLE}>Pastpapers</h1>
+          <p className={STUDIO_PAGE_DESC}>
             Manage standalone pastpaper sections. Each section is a single Reading &amp; Writing or
             Mathematics test, published independently. Use a shared collection name to group sections
             from the same SAT form for students.
@@ -649,17 +648,17 @@ export default function BuilderPastpapersPage() {
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
+            className={STUDIO_BTN_SECONDARY}
           >
-            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            className={STUDIO_BTN_PRIMARY}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             New section
           </button>
         </div>
@@ -667,25 +666,25 @@ export default function BuilderPastpapersPage() {
 
       {/* Error banner */}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+        <div className={STUDIO_ERROR_BANNER}>
           {error}
         </div>
       )}
 
       {/* Search + filters (student-style) */}
       {!loading && sections.length > 0 ? (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3">
           <div className="relative w-full max-w-lg">
-            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search pastpapers…"
               aria-label="Search pastpapers"
-              className="w-full rounded-xl border border-border bg-card py-2.5 pl-10 pr-3 text-sm font-medium text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="h-8 w-full rounded-md border border-border bg-card pl-8 pr-2.5 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
             />
           </div>
-          <div className="flex flex-wrap gap-5">
+          <div className="flex flex-wrap gap-4">
             <FilterGroup
               label="Region"
               value={region}
@@ -712,44 +711,43 @@ export default function BuilderPastpapersPage() {
 
       {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="flex justify-center py-12">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
       ) : sections.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-12 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
-            <FileText className="h-7 w-7 text-muted-foreground/40" />
+        <div className={`${STUDIO_CARD} px-3 py-8 text-center`}>
+          <div className="mb-2 flex justify-center">
+            <FileText className="h-5 w-5 text-muted-foreground/60" />
           </div>
-          <p className="font-extrabold text-foreground">No pastpaper sections yet</p>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="text-[13px] font-semibold text-foreground">No pastpaper sections yet</p>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">
             Create a section, then add its modules and questions.
           </p>
           <button
             type="button"
             onClick={openCreate}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
+            className={`mt-3 ${STUDIO_BTN_PRIMARY}`}
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-3.5 w-3.5" />
             New section
           </button>
         </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-border bg-card p-12 text-center">
-          <p className="font-extrabold text-foreground">No pastpapers match your filters</p>
-          <p className="mt-1 text-sm text-muted-foreground">Try a different region, year, status, or search.</p>
+        <div className="border border-dashed border-border bg-card px-3 py-8 text-center">
+          <p className="text-[13px] font-semibold text-foreground">No pastpapers match your filters</p>
+          <p className="mt-0.5 text-[13px] text-muted-foreground">Try a different region, year, status, or search.</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           {groups.map((g) => (
-            <div key={g.name} className="space-y-3">
-              <div className="flex items-center gap-2 px-1">
-                <span className="text-xs font-bold uppercase tracking-widest text-muted-foreground">{g.name}</span>
-                <span className="text-[11px] text-muted-foreground/60">
+            <div key={g.name} className={STUDIO_CARD}>
+              <div className={`${STUDIO_BOX_CAPTION} flex items-center gap-2`}>
+                <span>{g.name}</span>
+                <span className="font-normal normal-case tracking-normal">
                   {g.items.length} section{g.items.length !== 1 ? "s" : ""}
                 </span>
-                <span className="h-px flex-1 bg-border" />
               </div>
-              <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))" }}>
+              <div className="divide-y divide-border">
                 {g.items.map((section) => (
                   <SectionCard
                     key={section.id}

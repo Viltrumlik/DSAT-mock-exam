@@ -29,7 +29,16 @@ import { mocksAdminApi, type AdminMock } from "@/features/mocksAdmin/api";
 import { StateTag } from "@/components/governance";
 import { ConfirmDialog } from "@/features/classroom/ui";
 import { useToast } from "@/components/ToastProvider";
-import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
+import {
+  STUDIO_BTN_PRIMARY,
+  STUDIO_BTN_SECONDARY,
+  STUDIO_CARD,
+  STUDIO_ERROR_BANNER,
+  STUDIO_FIELD_LABEL,
+  STUDIO_INPUT,
+  STUDIO_PAGE_DESC,
+  STUDIO_PAGE_TITLE,
+} from "@/components/studio/primitives";
 
 const MOCKS_KEY = ["mocks", "admin", "list"] as const;
 
@@ -125,13 +134,13 @@ export default function BuilderFullMocksPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="mb-1 text-[10px] font-bold uppercase tracking-widest text-primary">
+          <p className="mb-0.5 text-[12px] font-medium text-muted-foreground">
             Full Mock System
           </p>
-          <h1 className="text-xl font-bold text-foreground tracking-tight">Full mocks</h1>
-          <p className="mt-1 text-sm text-muted-foreground max-w-xl">
+          <h1 className={STUDIO_PAGE_TITLE}>Full mocks</h1>
+          <p className={`${STUDIO_PAGE_DESC} max-w-xl`}>
             A full mock is a complete timed SAT — a Reading &amp; Writing section and a Math section,
             each with two modules. Author questions per module, then publish once every module has at
             least one question.
@@ -141,9 +150,9 @@ export default function BuilderFullMocksPage() {
           type="button"
           onClick={() => void refetch()}
           disabled={isFetching}
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
+          className={`shrink-0 ${STUDIO_BTN_SECONDARY}`}
         >
-          <RefreshCcw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+          <RefreshCcw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
           Refresh
         </button>
       </div>
@@ -154,7 +163,7 @@ export default function BuilderFullMocksPage() {
           e.preventDefault();
           if (title.trim()) createMut.mutate();
         }}
-        className="rounded-2xl border border-border bg-card p-4 shadow-sm"
+        className={`${STUDIO_CARD} px-3 py-3`}
       >
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[220px] flex-1">
@@ -179,9 +188,9 @@ export default function BuilderFullMocksPage() {
           <button
             type="submit"
             disabled={!title.trim() || createMut.isPending}
-            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
+            className={STUDIO_BTN_PRIMARY}
           >
-            {createMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             Create mock
           </button>
         </div>
@@ -189,19 +198,19 @@ export default function BuilderFullMocksPage() {
 
       {/* Stats */}
       {!isLoading && mocks.length > 0 && (
-        <div className="flex flex-wrap gap-3">
-          <div className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px]">
+          <div className="inline-flex items-center gap-1.5 font-medium text-foreground">
             <FileText className="h-3.5 w-3.5 text-muted-foreground" />
             {mocks.length} mock{mocks.length !== 1 ? "s" : ""}
           </div>
           {publishedCount > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
+            <div className="inline-flex items-center gap-1.5 text-muted-foreground">
               <Eye className="h-3.5 w-3.5" />
               {publishedCount} published
             </div>
           )}
           {draftCount > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+            <div className="inline-flex items-center gap-1.5 text-foreground">
               {draftCount} draft{draftCount !== 1 ? "s" : ""}
             </div>
           )}
@@ -210,41 +219,41 @@ export default function BuilderFullMocksPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+        <div className={STUDIO_ERROR_BANNER}>
           {parseError(error)}
         </div>
       )}
 
       {/* List */}
       {isLoading ? (
-        <div className="flex justify-center py-16">
-          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="flex justify-center py-12">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
         </div>
       ) : mocks.length === 0 ? (
-        <div className="rounded-2xl border border-border bg-card p-12 text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
-            <FileText className="h-7 w-7 text-muted-foreground/40" />
+        <div className={`${STUDIO_CARD} px-3 py-8 text-center`}>
+          <div className="mb-2 flex justify-center">
+            <FileText className="h-5 w-5 text-muted-foreground/60" />
           </div>
-          <p className="font-extrabold text-foreground">No full mocks yet</p>
-          <p className="mt-1 mx-auto max-w-xs text-sm text-muted-foreground leading-relaxed">
+          <p className="text-[13px] font-semibold text-foreground">No full mocks yet</p>
+          <p className="mt-0.5 mx-auto max-w-xs text-[13px] text-muted-foreground">
             Create a mock above — its sections and modules are provisioned automatically.
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className={`${STUDIO_CARD} divide-y divide-border`}>
           {mocks.map((mock) => {
             const isBusy = busyId === mock.id;
             return (
-              <div key={mock.id} className="rounded-2xl border border-border bg-card p-5 shadow-sm">
+              <div key={mock.id} className="px-3 py-2.5 hover:bg-surface-2/40">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="font-extrabold text-foreground truncate">
+                      <h3 className="truncate text-[13px] font-semibold text-foreground">
                         #{mock.id} · {mock.title || "Untitled mock"}
                       </h3>
                       <StateTag state={mock.is_published ? "PUBLISHED" : "DRAFT"} size="xs" />
                     </div>
-                    <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-muted-foreground">
                       <span className="inline-flex items-center gap-1">
                         <FileText className="h-3 w-3" />
                         {mock.question_count} question{mock.question_count !== 1 ? "s" : ""}
@@ -256,16 +265,16 @@ export default function BuilderFullMocksPage() {
                       </span>
                     </p>
                     {/* Section / module summary */}
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-2">
                       {mock.sections.map((section) => (
                         <div
                           key={section.subject}
-                          className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-surface-2/40 px-2.5 py-1.5 text-[11px] font-semibold text-foreground"
+                          className="inline-flex items-center gap-1.5 rounded-md border border-border bg-surface-2/40 px-2 py-1 text-[12px] font-medium text-foreground"
                         >
                           {section.subject === "MATH" ? (
-                            <Calculator className="h-3 w-3 text-emerald-600" />
+                            <Calculator className="h-3 w-3 text-muted-foreground" />
                           ) : (
-                            <BookOpen className="h-3 w-3 text-primary" />
+                            <BookOpen className="h-3 w-3 text-muted-foreground" />
                           )}
                           {subjectLabel(section.subject)}
                           <span className="flex items-center gap-1 text-muted-foreground">
@@ -288,7 +297,7 @@ export default function BuilderFullMocksPage() {
                         type="button"
                         onClick={() => unpublishMut.mutate(mock.id)}
                         disabled={isBusy}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+                        className={STUDIO_BTN_SECONDARY}
                       >
                         {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
                         Unpublish
@@ -299,7 +308,7 @@ export default function BuilderFullMocksPage() {
                         onClick={() => publishMut.mutate(mock.id)}
                         disabled={isBusy || !mock.publish_ready}
                         title={!mock.publish_ready ? mock.publish_block_reason : "Publish this mock"}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
+                        className={STUDIO_BTN_PRIMARY}
                       >
                         {isBusy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
                         Publish
@@ -307,7 +316,7 @@ export default function BuilderFullMocksPage() {
                     )}
                     <Link
                       href={`/builder/full-mocks/${mock.id}`}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors"
+                      className={STUDIO_BTN_SECONDARY}
                     >
                       Open editor →
                     </Link>
@@ -316,7 +325,7 @@ export default function BuilderFullMocksPage() {
                       onClick={() => setPendingDelete(mock)}
                       title="Delete mock"
                       aria-label={`Delete mock ${mock.title}`}
-                      className="inline-flex items-center rounded-xl border border-border p-1.5 text-muted-foreground hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-colors"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-muted-foreground transition-colors hover:border-red-300 hover:bg-red-50 hover:text-red-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 dark:hover:border-red-900/60 dark:hover:bg-red-950/40 dark:hover:text-red-300"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -325,7 +334,7 @@ export default function BuilderFullMocksPage() {
 
                 {/* Publish block reason */}
                 {!mock.is_published && !mock.publish_ready && mock.publish_block_reason && (
-                  <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
                     {mock.publish_block_reason}
                   </div>
                 )}
