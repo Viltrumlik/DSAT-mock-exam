@@ -92,6 +92,21 @@ class PracticeTestRuleTests(TestCase):
         assign_practice_number(m1)  # already numbered: unchanged
         self.assertEqual(m1.practice_number, 1)
 
+    def test_a_stale_instance_never_renumbers_an_already_numbered_test(self):
+        # Two requests load the same un-numbered row; the first numbers it, the second (stale
+        # in memory, practice_number still None) must adopt that number, not take the next one.
+        pt = self._pt(published=False)
+        stale = PracticeTest.objects.get(pk=pt.pk)
+        assign_practice_number(pt)
+        assign_practice_number(stale)
+        self.assertEqual(stale.practice_number, 1)
+        pt.refresh_from_db()
+        self.assertEqual(pt.practice_number, 1)
+        self.assertEqual(PracticeTest.objects.filter(is_practice_test=True, subject="MATH").count(), 1)
+        nxt = self._pt(published=False)
+        assign_practice_number(nxt)
+        self.assertEqual(nxt.practice_number, 2)  # no number was burned
+
     def test_assign_number_ignores_past_papers(self):
         pp = self._pt(practice=False)
         assign_practice_number(pp)

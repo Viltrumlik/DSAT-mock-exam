@@ -7,7 +7,7 @@ listed to everyone, 404 on Start).
 from __future__ import annotations
 
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Q
 
 from access import constants as acc_const
 from core.authz import normalized_role
@@ -54,16 +54,19 @@ def assign_practice_number(section: PracticeTest) -> None:
     with transaction.atomic():
         # Lock the subject's practice tests so two first-publishes can't take the same number;
         # the partial unique constraint is the backstop.
-        list(
+        rows = list(
             PracticeTest.objects.select_for_update()
             .filter(is_practice_test=True, subject=section.subject)
-            .values_list("pk", flat=True)
+            .values_list("pk", "practice_number")
         )
-        top = (
-            PracticeTest.objects.filter(is_practice_test=True, subject=section.subject)
-            .aggregate(m=Max("practice_number"))["m"]
-        )
-        section.practice_number = (top or 0) + 1
+        # Re-read under the lock: this instance may be stale (a double-click publish), and a
+        # number once given is never changed or burned.
+        current = next((n for pk, n in rows if pk == section.pk), None)
+        if current is not None:
+            section.practice_number = current
+            return
+        top = max((n for _, n in rows if n is not None), default=0)
+        section.practice_number = top + 1
         section.save(update_fields=["practice_number", "updated_at"])
 
 
