@@ -77,4 +77,4 @@ class ClassroomPartView(APIView):
         room = Classroom.objects.filter(pk=pk).first() if build else None
         if room is None:
             return Response({"detail": "Not found."}, status=404)
-        return Response(build(room))
+        return Response(build(room, request=request))

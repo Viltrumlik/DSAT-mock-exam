@@ -71,6 +71,7 @@ function core(over: Partial<ClassroomCore> = {}): ClassroomCore {
     tas: [{ id: 4, name: "Sardor TA" }],
     students: 2,
     lcup: { managed: true, group_name: "G21 Math", status: "confirmed", locked_fields: LOCKED },
+    glance: { attendance_rate: 64, last_lesson: "2026-10-14", homework: { assignments: 3, handed_in: 4, expected: 6 }, owing: 1 },
     ...over,
   };
 }
@@ -80,8 +81,8 @@ const UNPAIRED: Partial<ClassroomCore> = { lcup: null, name: "Own class" };
 const PARTS: Record<string, unknown> = {
   roster: {
     students: [
-      { id: 7, name: "Aziz Tursunov", username: "aziz", section: "students", joined_at: null, owes: 250000, attendance_rate: 50, homework_rate: 100 },
-      { id: 8, name: "Public Person", username: "pub", section: "public", joined_at: null, owes: null, attendance_rate: null, homework_rate: null },
+      { id: 7, name: "Aziz Tursunov", username: "aziz", avatar_url: null, section: "students", joined_at: null, owes: 250000, attendance_rate: 50, homework_rate: 100 },
+      { id: 8, name: "Public Person", username: "pub", avatar_url: null, section: "public", joined_at: null, owes: null, attendance_rate: null, homework_rate: null },
     ],
   },
   attendance: { sessions: [], rate: null },
@@ -202,7 +203,13 @@ describe("a class that follows lc-up", () => {
     await renderPage();
     expect(host.textContent).toContain("Managed in lc-up");
     expect(button(host, "Archive")).toBeUndefined();
-    expect(button(host, "Delete")).toBeUndefined();
+    expect(host.querySelector('[aria-label="More actions"]')).toBeNull();
+  });
+
+  it("says in the form why lc-up's fields are locked", async () => {
+    route(core());
+    await renderPage();
+    expect(box("Details")!.textContent).toContain("This class follows the lc-up group G21 Math");
   });
 
   it("offers no student add or remove", async () => {
@@ -235,7 +242,10 @@ describe("any other class", () => {
     expect(control("Name").disabled).toBe(false);
     expect(box("Details")!.textContent).not.toContain("Set in lc-up");
 
-    act(() => button(host, "Delete")!.click());
+    // Delete is the rare, destructive one: behind "More", not beside Archive.
+    expect(button(host, "Delete class")).toBeUndefined();
+    act(() => (host.querySelector('[aria-label="More actions"]') as HTMLButtonElement).click());
+    act(() => button(host, "Delete class")!.click());
     const dialog = host.querySelector('[role="dialog"]') as HTMLElement;
     expect(dialog.textContent).toContain("cannot be undone");
     act(() => button(dialog, "Delete")!.click());
@@ -264,6 +274,47 @@ describe("any other class", () => {
   });
 });
 
+describe("the header", () => {
+  /** The card holding the h1: the class's header. */
+  const header = () => host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+
+  it("says where and when the class meets, and who teaches it", async () => {
+    route(core());
+    await renderPage();
+    const text = header().textContent;
+    expect(text).toContain("Odd days 14:00");
+    expect(text).toContain("Room 301");
+    expect(text).toContain("Chilonzor");
+    expect(header().querySelector('a[href="/ops/staff/3"]')?.textContent).toBe("Vali Aliyev");
+    expect(text).toContain("Synced from lc-up");
+  });
+
+  it("puts the class's figures on the Overview, in the colour of their verdict", async () => {
+    route(core());
+    await renderPage();
+    const text = header().textContent;
+    expect(text).toContain("64%"); // attendance, amber
+    expect(text).toContain("67%"); // 4 of 6 handed in
+    expect(text).toMatch(/Owe lc-up\s*1/);
+    // The tile's value, not its icon square (which shares the colour and has no text).
+    const owing = [...header().querySelectorAll(".text-danger")].map((el) => el.textContent).filter(Boolean);
+    expect(owing).toEqual(["1"]);
+  });
+
+  it("leaves the figures off the other tabs", async () => {
+    route(core());
+    await renderPage("tab=history");
+    expect(header().textContent).toContain("Junior G21 Math");
+    expect(header().textContent).not.toContain("Attendance");
+  });
+
+  it("says Full when the class has no seat left", async () => {
+    route(core({ max_students: 2 }));
+    await renderPage();
+    expect(header().textContent).toContain("Full");
+  });
+});
+
 describe("the tabs", () => {
   it("fetch a part only when its tab opens", async () => {
     route(core());
@@ -282,7 +333,7 @@ describe("the tabs", () => {
     const students = box("Students")!;
     expect(students.querySelector('a[href="/ops/students/7"]')?.textContent).toBe("Aziz Tursunov");
     expect(students.querySelector('a[href="/ops/public/8"]')?.textContent).toBe("Public Person");
-    const owed = [...students.querySelectorAll(".text-danger")].map((el) => el.textContent);
+    const owed = [...students.querySelectorAll(".text-danger")].map((el) => el.textContent).filter((t) => t?.endsWith("UZS"));
     expect(owed).toEqual(["250,000 UZS"]);
   });
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { Lock, SquarePen } from "lucide-react";
 import { classesApi } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
@@ -9,24 +10,40 @@ import { Fieldset } from "@/features/ops/people/Fieldset";
 import { serverReason, type ClassroomCore } from "./classroomsApi";
 
 /**
- * A class's own fields (`PATCH /classes/<id>/details/`). While the class follows an lc-up group,
- * the fields lc-up writes every sync (`core.lcup.locked_fields`) are shown but not editable, and are
- * left out of the save — the server would refuse a change to them, and keep it for 15 minutes at
- * most if it did not. Description, Telegram and the size cap stay ours.
+ * A class's own fields (`PATCH /classes/<id>/details/`), grouped the way an admin thinks of a
+ * class — what it is, when it meets, where, and its Telegram and notes — with the person form's
+ * room between them. While the class follows an lc-up group, the fields lc-up writes every sync
+ * (`core.lcup.locked_fields`) are shown locked, and are left out of the save — the server would
+ * refuse a change to them, and keep it for 15 minutes at most if it did not. Description, Telegram
+ * and the size cap stay ours.
  */
 
 const INPUT =
-  "h-8 w-full rounded-md border border-border bg-card px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted-foreground";
+  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted-foreground";
 
 function Field({ id, label, locked, children }: { id: string; label: string; locked?: boolean; children: ReactNode }) {
   return (
-    <div className="min-w-0 space-y-1">
-      <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
+    <div className="min-w-0 space-y-1.5">
+      <label htmlFor={id} className="flex items-baseline justify-between gap-2 text-sm font-medium text-foreground">
         <span>{label}</span>
-        {locked ? <span>Set in lc-up</span> : null}
+        {locked ? (
+          <span className="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground">
+            <Lock aria-hidden className="h-3 w-3" />
+            Set in lc-up
+          </span>
+        ) : null}
       </label>
       {children}
     </div>
+  );
+}
+
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</legend>
+      <div className="grid gap-4 sm:grid-cols-2">{children}</div>
+    </fieldset>
   );
 }
 
@@ -102,9 +119,19 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
   };
 
   return (
-    <Fieldset title="Details">
-      <form onSubmit={(e) => void save(e)} className="space-y-4" noValidate>
-        <div className="grid gap-3 sm:grid-cols-2">
+    <Fieldset title="Details" icon={SquarePen} description="What the class is, when and where it meets">
+      <form onSubmit={(e) => void save(e)} className="space-y-6" noValidate>
+        {locked.size > 0 ? (
+          <p className="flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
+            <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>
+              This class follows the lc-up group <span className="font-semibold">{room.lcup?.group_name}</span>. Its
+              name, schedule, room and branch come from lc-up at every sync — change them there.
+            </span>
+          </p>
+        ) : null}
+
+        <Group title="Class">
           <div className="sm:col-span-2">
             <Field id={id("name")} label="Name" locked={off("name")}>
               <input id={id("name")} value={name} disabled={off("name")} onChange={(e) => setName(e.target.value)} className={INPUT} />
@@ -121,6 +148,20 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
               {level && !levels.includes(level) ? <option value={level}>{level}</option> : null}
             </select>
           </Field>
+          <Field id={id("max")} label="Max students">
+            <input
+              id={id("max")}
+              type="number"
+              min={1}
+              value={maxStudents}
+              onChange={(e) => setMaxStudents(e.target.value)}
+              placeholder="No limit"
+              className={INPUT}
+            />
+          </Field>
+        </Group>
+
+        <Group title="Schedule">
           <Field id={id("days")} label="Lesson days" locked={off("lesson_days")}>
             <select id={id("days")} value={days} disabled={off("lesson_days")} onChange={(e) => setDays(e.target.value)} className={INPUT}>
               <option value="ODD">Odd days</option>
@@ -151,9 +192,9 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
               className={INPUT}
             />
           </Field>
-          <Field id={id("room")} label="Room" locked={off("room_number")}>
-            <input id={id("room")} value={roomNumber} disabled={off("room_number")} onChange={(e) => setRoomNumber(e.target.value)} className={INPUT} />
-          </Field>
+        </Group>
+
+        <Group title="Place">
           <Field id={id("region")} label="Region" locked={off("branch")}>
             <select
               id={id("region")}
@@ -194,51 +235,46 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
               ) : null}
             </select>
           </Field>
-          <div className="sm:col-span-2">
-            <Field id={id("description")} label="Description">
-              <textarea
-                id={id("description")}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                className={`${INPUT} h-auto py-1.5`}
-              />
-            </Field>
-          </div>
+          <Field id={id("room")} label="Room" locked={off("room_number")}>
+            <input id={id("room")} value={roomNumber} disabled={off("room_number")} onChange={(e) => setRoomNumber(e.target.value)} className={INPUT} />
+          </Field>
+        </Group>
+
+        <Group title="Telegram and notes">
           <Field id={id("chat")} label="Telegram chat id">
             <input id={id("chat")} value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890" className={INPUT} />
           </Field>
           <Field id={id("url")} label="Telegram link">
             <input id={id("url")} value={groupUrl} onChange={(e) => setGroupUrl(e.target.value)} placeholder="https://t.me/…" className={INPUT} />
           </Field>
-          <Field id={id("max")} label="Max students">
-            <input
-              id={id("max")}
-              type="number"
-              min={1}
-              value={maxStudents}
-              onChange={(e) => setMaxStudents(e.target.value)}
-              placeholder="No limit"
-              className={INPUT}
-            />
-          </Field>
-        </div>
+          <div className="sm:col-span-2">
+            <Field id={id("description")} label="Description">
+              <textarea
+                id={id("description")}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={3}
+                className={`${INPUT} h-auto py-2`}
+              />
+            </Field>
+          </div>
+        </Group>
 
-        <div className="space-y-2 border-t border-border pt-3">
+        <div className="flex flex-col-reverse items-stretch gap-3 border-t border-border pt-5 sm:flex-row sm:items-center sm:justify-between">
           {error ? (
-            <p role="alert" className="text-foreground">
+            <p role="alert" className="rounded-lg bg-danger-soft px-3 py-2 text-sm text-danger-foreground">
               {error}
             </p>
-          ) : null}
-          <div className="flex justify-end">
-            <button
-              type="submit"
-              disabled={saving}
-              className="h-8 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-          </div>
+          ) : (
+            <span />
+          )}
+          <button
+            type="submit"
+            disabled={saving}
+            className="h-10 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground shadow-sm hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
       </form>
     </Fieldset>

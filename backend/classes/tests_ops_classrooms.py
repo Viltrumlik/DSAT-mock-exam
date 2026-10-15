@@ -157,6 +157,40 @@ class ClassroomChangeFormTests(ClassroomFixture):
         self.assertEqual((body["room_number"], body["lesson_days"], body["join_code"]),
                          ("205", "ODD", self.paired.join_code))
 
+    def test_the_core_glance_reads_like_the_tabs(self):
+        session = AttendanceSession.objects.create(classroom=self.paired, date=date(2026, 10, 1))
+        AttendanceSession.objects.create(classroom=self.paired, date=date(2026, 10, 3))
+        AttendanceRecord.objects.create(session=session, student=self.aziz, status=AttendanceRecord.STATUS_PRESENT)
+        AttendanceRecord.objects.create(session=session, student=self.malika, status=AttendanceRecord.STATUS_ABSENT)
+        LcupStudentLink.objects.create(
+            lcup_student_id=5, name="Karimova Malika", user=self.malika, status=LinkStatus.AUTO,
+            balance=Decimal("-100000"),
+        )
+        LcupStudentLink.objects.create(  # a removed seat that owes is not this class's student
+            lcup_student_id=6, name="Student Gone", user=self.gone, status=LinkStatus.AUTO, balance=Decimal("-5"),
+        )
+        hw = Assignment.objects.create(
+            classroom=self.paired, created_by=self.teacher, title="HW1", category=Assignment.CATEGORY_HOMEWORK,
+            status=Assignment.STATUS_PUBLISHED, due_at=timezone.now(),
+        )
+        Assignment.objects.create(classroom=self.paired, created_by=self.teacher, title="Draft", status=Assignment.STATUS_DRAFT)
+        Submission.objects.create(assignment=hw, student=self.aziz, status=Submission.STATUS_SUBMITTED)
+
+        glance = self.get(self.url(self.paired.pk)).json()["glance"]
+        self.assertEqual(
+            glance,
+            {"attendance_rate": 50.0, "last_lesson": "2026-10-03",
+             "homework": {"assignments": 1, "handed_in": 1, "expected": 2}, "owing": 1},
+        )
+
+    def test_an_empty_class_glance(self):
+        glance = self.get(self.url(self.archived.pk)).json()["glance"]
+        self.assertEqual(
+            glance,
+            {"attendance_rate": None, "last_lesson": None,
+             "homework": {"assignments": 0, "handed_in": 0, "expected": 0}, "owing": 0},
+        )
+
     def test_an_unpaired_class_has_no_lcup_block(self):
         self.assertIsNone(self.get(self.url(self.unpaired.pk)).json()["lcup"])
 
@@ -186,6 +220,7 @@ class ClassroomChangeFormTests(ClassroomFixture):
         self.assertEqual((aziz["attendance_rate"], aziz["owes"], aziz["homework_rate"]), (50.0, None, 100.0))
         self.assertEqual((malika["attendance_rate"], malika["owes"], malika["homework_rate"]), (None, 100000, 0.0))
         self.assertEqual((aziz["section"], aziz["username"], aziz["name"]), ("students", "aziz", "Aziz Tursunov"))
+        self.assertIsNone(aziz["avatar_url"])  # no photo set
 
     def test_a_roster_with_nothing_published_has_no_homework_rate(self):
         student = self.part(self.unpaired, "roster")["students"][0]

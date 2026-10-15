@@ -1,23 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
+import { Lock, UserCog, UserPlus } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
+import { Avatar, Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import type { PeoplePage, StaffRow } from "@/features/ops/changelist/peopleApi";
-import { Fieldset, LINK_CLASS, Row, SubHeading } from "@/features/ops/people/Fieldset";
+import { Fieldset, LINK_CLASS, SubHeading } from "@/features/ops/people/Fieldset";
 import { classDomainOf, coversSubject } from "../CreateClassroomModal";
 import { serverReason, type ClassroomCore } from "../classroomsApi";
 import { SMALL_BUTTON } from "./StudentsSection";
 
 /**
- * Who teaches the class. The teacher of a class that follows lc-up is lc-up's (the sync sets it and
- * the server refuses a change here); support teachers (TA seats) are always ours.
+ * Who teaches the class, each as a card. The teacher of a class that follows lc-up is lc-up's (the
+ * sync sets it and the server refuses a change here); support teachers (TA seats) are always ours.
  */
 
 const SELECT =
-  "h-7 min-w-0 max-w-full rounded-md border border-border bg-card px-1.5 text-[13px] text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+  "h-9 min-w-0 max-w-full rounded-lg border border-border bg-card px-2.5 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+
+/** One staff member: their initials, their name linking to their page, what they are here, a control. */
+function PersonCard({ id, name, badge, children }: { id: number; name: string; badge: ReactNode; children?: ReactNode }) {
+  return (
+    <li className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
+      <span className="flex min-w-0 items-center gap-3">
+        <Avatar src={null} name={name} size={36} />
+        <span className="min-w-0">
+          <Link href={`/ops/staff/${id}`} prefetch={false} className={`${LINK_CLASS} block truncate`}>
+            {name}
+          </Link>
+          <span className="mt-1 block">{badge}</span>
+        </span>
+      </span>
+      {children}
+    </li>
+  );
+}
 
 export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChanged: () => void }) {
   const managed = room.lcup?.managed ?? false;
@@ -58,20 +78,27 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
   const nameOf = (id: string) => (staff.data ?? []).find((s) => String(s.id) === id)?.name ?? "them";
 
   return (
-    <Fieldset title="Staff">
-      <Row label="Teacher">
-        {room.teacher ? (
-          <Link href={`/ops/staff/${room.teacher.id}`} prefetch={false} className={LINK_CLASS}>
-            {room.teacher.name}
-          </Link>
-        ) : (
-          "No teacher"
-        )}
-        {managed ? <span className="text-xs text-muted-foreground"> · set in lc-up</span> : null}
-      </Row>
+    <Fieldset title="Staff" icon={UserCog} description="Who teaches the class, and who helps">
+      <SubHeading>Teacher</SubHeading>
+      {room.teacher ? (
+        <ul>
+          <PersonCard id={room.teacher.id} name={room.teacher.name} badge={<Badge variant="primary">Teacher</Badge>}>
+            {managed ? (
+              <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+                <Lock aria-hidden className="h-3.5 w-3.5" />
+                set in lc-up
+              </span>
+            ) : null}
+          </PersonCard>
+        </ul>
+      ) : (
+        <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm font-medium text-warning-foreground">
+          No teacher{managed ? " — set in lc-up" : ""}
+        </p>
+      )}
       {managed ? null : (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label htmlFor={`teacher-${room.id}`} className="text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-3">
+          <label htmlFor={`teacher-${room.id}`} className="text-sm text-muted-foreground">
             Change teacher
           </label>
           <select
@@ -80,7 +107,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
             onChange={(e) => setTeacherPick(e.target.value)}
             className={SELECT}
           >
-            <option value="">---------</option>
+            <option value="">— choose —</option>
             {teachers.map((t) => (
               <option key={t.id} value={String(t.id)}>
                 {t.name || t.username}
@@ -120,14 +147,11 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
 
       <SubHeading>Support teachers</SubHeading>
       {room.tas.length === 0 ? (
-        <p className="text-muted-foreground">None yet.</p>
+        <p className="rounded-xl bg-surface-2 px-4 py-3 text-sm text-muted-foreground">None yet.</p>
       ) : (
-        <ul className="divide-y divide-border">
+        <ul className="grid gap-3 sm:grid-cols-2">
           {room.tas.map((t) => (
-            <li key={t.id} className="flex items-center justify-between gap-2 py-1">
-              <Link href={`/ops/staff/${t.id}`} prefetch={false} className={`${LINK_CLASS} min-w-0 truncate`}>
-                {t.name}
-              </Link>
+            <PersonCard key={t.id} id={t.id} name={t.name} badge={<Badge variant="info">Support teacher</Badge>}>
               <button
                 type="button"
                 disabled={busy}
@@ -142,13 +166,14 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
               >
                 Remove
               </button>
-            </li>
+            </PersonCard>
           ))}
         </ul>
       )}
       {supports.length > 0 ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <label htmlFor={`support-${room.id}`} className="text-muted-foreground">
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border p-3">
+          <label htmlFor={`support-${room.id}`} className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+            <UserPlus aria-hidden className="h-4 w-4 text-primary" />
             Add support teacher
           </label>
           <select
@@ -157,7 +182,7 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
             onChange={(e) => setSupportPick(e.target.value)}
             className={SELECT}
           >
-            <option value="">---------</option>
+            <option value="">— choose —</option>
             {supports.map((s) => (
               <option key={s.id} value={String(s.id)}>
                 {s.name || s.username}

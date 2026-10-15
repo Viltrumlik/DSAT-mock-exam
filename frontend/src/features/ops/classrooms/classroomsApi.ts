@@ -60,6 +60,19 @@ export type ClassroomCore = {
   students: number;
   /** Null when the class has no lc-up group at all. `locked_fields` are lc-up's while it is managed. */
   lcup: { managed: boolean; group_name: string; status: string; locked_fields: string[] } | null;
+  /** The header's figures on the Overview (`ops_classrooms._glance`), each the same reading as its tab. */
+  glance: ClassroomGlance;
+};
+
+export type ClassroomGlance = {
+  /** Over every marked lesson; null before the first. */
+  attendance_rate: number | null;
+  /** "YYYY-MM-DD" of the latest lesson, null before the first. */
+  last_lesson: string | null;
+  /** Published homework: handed in out of expected (students sitting now × assignments). */
+  homework: { assignments: number; handed_in: number; expected: number };
+  /** Students sitting now who owe lc-up. */
+  owing: number;
 };
 
 export type ClassroomRoster = {
@@ -67,6 +80,8 @@ export type ClassroomRoster = {
     id: number;
     name: string;
     username: string;
+    /** Their profile photo, null when none is set. */
+    avatar_url: string | null;
     section: PeopleSection;
     joined_at: string | null;
     /** What lc-up says they owe, in whole UZS; null when nothing. */

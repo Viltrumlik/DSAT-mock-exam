@@ -162,6 +162,37 @@ def classroom_core(room) -> dict:
         "tas": sorted((_person(m.user) for m in tas), key=lambda p: p["name"].casefold()),
         "students": _student_seats(room).count(),
         "lcup": _lcup_block(room),
+        "glance": _glance(room),
+    }
+
+
+def _glance(room) -> dict:
+    """
+    The figures the change form's header shows on its Overview: attendance over every marked
+    lesson and the last lesson's day, homework handed in over everything published to the students
+    sitting now, and how many of them owe lc-up — each the same reading as its tab.
+    """
+    from lcup.models import LcupStudentLink
+
+    from .analytics import _completion_map
+    from .attendance import compute_attendance_score
+    from .models_attendance import AttendanceRecord, AttendanceSession
+
+    every = list(AttendanceRecord.objects.filter(session__classroom=room).values_list("status", flat=True))
+    last = AttendanceSession.objects.filter(classroom=room).order_by("-date").values_list("date", flat=True).first()
+    ids = list(_student_seats(room).values_list("user_id", flat=True))
+    work = [a for a in _homework_work(room) if a.status == Assignment.STATUS_PUBLISHED]
+    published = {a.pk for a in work}
+    done = _completion_map(room, ids, work) if ids and work else {}
+    return {
+        "attendance_rate": compute_attendance_score(every) if every else None,
+        "last_lesson": iso(last),
+        "homework": {
+            "assignments": len(published),
+            "handed_in": sum(len(done.get(u, set()) & published) for u in ids),
+            "expected": len(ids) * len(published),
+        },
+        "owing": LcupStudentLink.objects.filter(user_id__in=ids, balance__lt=0).count() if ids else 0,
     }
 
 
@@ -172,8 +203,9 @@ def _homework_work(room):
     return [a for a in _academic_assignments(room) if a.category != Assignment.CATEGORY_CLASSWORK]
 
 
-def roster_part(room) -> dict:
+def roster_part(room, request=None) -> dict:
     from lcup.models import LcupStudentLink
+    from users.photos import profile_image_url
 
     from .analytics import _completion_map
     from .attendance import compute_attendance_score
@@ -206,6 +238,8 @@ def roster_part(room) -> dict:
                 "id": s.user_id,
                 "name": display_name(s.user),
                 "username": s.user.username,
+                # The photo beside the name, as on every people list (owner, 2026-10-15).
+                "avatar_url": profile_image_url(s.user, request),
                 "section": section_of(s.user),
                 "joined_at": iso(s.joined_at),
                 "owes": owes(s.user_id),
@@ -217,7 +251,7 @@ def roster_part(room) -> dict:
     }
 
 
-def class_attendance_part(room) -> dict:
+def class_attendance_part(room, request=None) -> dict:
     from lcup.models import LcupAttendancePush
 
     from .attendance import compute_attendance_score
@@ -251,7 +285,7 @@ def class_attendance_part(room) -> dict:
     }
 
 
-def homework_part(room) -> dict:
+def homework_part(room, request=None) -> dict:
     from .analytics import _completion_map
 
     work = [a for a in _homework_work(room) if a.status == Assignment.STATUS_PUBLISHED]
@@ -280,7 +314,7 @@ CLASS_MEMBERSHIP_ACTIONS = {
 _ROLE_WORDS = {"ADMIN": "owner", "OWNER": "owner", "TEACHER": "teacher", "TA": "support teacher"}
 
 
-def class_history_part(room) -> dict:
+def class_history_part(room, request=None) -> dict:
     from .models_membership_audit import ClassroomMembershipEvent
 
     events = list(

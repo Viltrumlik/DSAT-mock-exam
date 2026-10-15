@@ -3,22 +3,36 @@
 import { useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { Lock, Search, UserPlus, Users } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
+import { Avatar } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
+import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
 import type { PeoplePage, StudentRow } from "@/features/ops/changelist/peopleApi";
 import { formatDate } from "@/features/ops/users/peopleColumns";
-import { Fieldset, LINK_CLASS, PartBody, Table, Td, WIDE_ONLY, type Column } from "@/features/ops/people/Fieldset";
+import {
+  Fieldset,
+  LINK_CLASS,
+  PartBody,
+  Table,
+  Td,
+  TONE_TEXT,
+  WIDE_ONLY,
+  type Column,
+} from "@/features/ops/people/Fieldset";
+import { rateTone } from "@/features/ops/people/PersonHeader";
 import { serverReason, useClassroomPart, type ClassroomCore, type ClassroomRoster } from "../classroomsApi";
 
 /**
- * The class's students: what each owes, their attendance and homework here. A class that follows
- * an lc-up group takes its students from lc-up, so it offers no add or remove (the server refuses
- * both); any other class adds students by search and removes them here.
+ * The class's students, each with their photo, what they owe and how they are doing here — a debt
+ * in red, a rate in the colour of its verdict. A class that follows an lc-up group takes its
+ * students from lc-up, so it offers no add or remove (the server refuses both); any other class
+ * adds students by search and removes them here.
  */
 
 export const SMALL_BUTTON =
-  "h-7 rounded-md border border-border bg-card px-2 text-[13px] text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
+  "inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50";
 
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
 
@@ -53,31 +67,40 @@ function AddStudent({ room, onAdded }: { room: ClassroomCore; onAdded: () => voi
   };
 
   return (
-    <div className="mb-3 space-y-1.5">
-      <label htmlFor={`add-student-${room.id}`} className="block text-xs text-muted-foreground">
+    <div className="mb-5 rounded-xl border border-dashed border-border p-4">
+      <label htmlFor={`add-student-${room.id}`} className="flex items-center gap-2 text-sm font-medium text-foreground">
+        <UserPlus aria-hidden className="h-4 w-4 text-primary" />
         Add student
       </label>
-      <input
-        id={`add-student-${room.id}`}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search name, username or phone"
-        autoComplete="off"
-        className="h-8 w-full max-w-sm rounded-md border border-border bg-card px-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-      />
+      <div className="relative mt-2 max-w-md">
+        <Search aria-hidden className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <input
+          id={`add-student-${room.id}`}
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search name, username or phone"
+          autoComplete="off"
+          className="h-10 w-full rounded-lg border border-border bg-card pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        />
+      </div>
       {term.length < 2 ? null : search.isError ? (
-        <p className="text-muted-foreground">Could not search. Try again.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Could not search. Try again.</p>
       ) : search.isPending ? (
-        <p className="text-muted-foreground">Searching…</p>
+        <p className="mt-2 text-sm text-muted-foreground">Searching…</p>
       ) : rows.length === 0 ? (
-        <p className="text-muted-foreground">No student matches “{term}”.</p>
+        <p className="mt-2 text-sm text-muted-foreground">No student matches “{term}”.</p>
       ) : (
-        <ul className="max-w-sm divide-y divide-border rounded-md border border-border">
+        <ul className="mt-2 max-w-md divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
           {rows.map((r) => (
-            <li key={r.id} className="flex items-center justify-between gap-2 px-2 py-1">
-              <span className="min-w-0 truncate">
-                {r.name || r.username}
-                <span className="text-muted-foreground"> · {r.groups.map((g) => g.name).join(", ") || "no class"}</span>
+            <li key={r.id} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className="flex min-w-0 items-center gap-2.5">
+                <Avatar src={r.avatar_url ?? null} name={r.name || r.username || ""} size={28} />
+                <span className="min-w-0 leading-tight">
+                  <span className="block truncate text-sm font-medium text-foreground">{r.name || r.username}</span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {r.groups.map((g) => g.name).join(", ") || "no class"}
+                  </span>
+                </span>
               </span>
               <button type="button" disabled={busy} onClick={() => void add(r)} className={SMALL_BUTTON}>
                 Add
@@ -119,9 +142,12 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
   ];
 
   return (
-    <Fieldset title="Students">
+    <Fieldset title="Students" icon={Users} description="Who sits in this class, what they owe and how they are doing">
       {managed ? (
-        <p className="mb-2 text-muted-foreground">Students come from lc-up. Add or remove them there.</p>
+        <p className="mb-5 flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
+          <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+          Students come from lc-up. Add or remove them there.
+        </p>
       ) : (
         <AddStudent room={room} onAdded={onChanged} />
       )}
@@ -132,17 +158,28 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
           <Table head={head}>
             {d.students.map((s) => (
               <tr key={s.id}>
-                <Td className="max-w-[9rem] truncate sm:max-w-[16rem]">
-                  <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={LINK_CLASS}>
-                    {s.name || s.username}
-                  </Link>
+                <Td className="max-w-[11rem] sm:max-w-[18rem]">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
+                    <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "truncate")}>
+                      {s.name || s.username}
+                    </Link>
+                  </span>
                 </Td>
                 <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDate(s.joined_at)}</Td>
                 <Td className="tabular-nums">
-                  {s.owes ? <span className="text-danger">{formatUzs(s.owes)}</span> : <span className="text-muted-foreground">—</span>}
+                  {s.owes ? (
+                    <span className="font-semibold text-danger">{formatUzs(s.owes)}</span>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
                 </Td>
-                <Td className="tabular-nums">{pct(s.attendance_rate)}</Td>
-                <Td className={`${WIDE_ONLY} tabular-nums`}>{pct(s.homework_rate)}</Td>
+                <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
+                  {pct(s.attendance_rate)}
+                </Td>
+                <Td className={cn(WIDE_ONLY, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
+                  {pct(s.homework_rate)}
+                </Td>
                 {managed ? null : (
                   <Td className="text-right">
                     <button
