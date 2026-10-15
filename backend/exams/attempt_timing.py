@@ -70,6 +70,9 @@ def get_active_module_timing(
     then legacy current_module_start_time. Subtracts time the student has spent
     paused so a long break doesn't burn the deadline.
     """
+    if not getattr(attempt, "is_timed", True):
+        # An untimed practice-test sitting has no deadline: nothing expires, nothing auto-submits.
+        return None
     mod: Module | None = getattr(attempt, "current_module", None)
     if not mod:
         return None

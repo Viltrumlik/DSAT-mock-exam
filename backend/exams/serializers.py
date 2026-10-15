@@ -181,6 +181,8 @@ class AttemptPracticeTestDetailsSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False)
     mock_exam_id = serializers.IntegerField(allow_null=True, required=False)
     mock_kind = serializers.CharField(allow_blank=True, allow_null=True, required=False)
+    is_practice_test = serializers.BooleanField(required=False)
+    practice_number = serializers.IntegerField(allow_null=True, required=False)
     modules = ModuleListSerializer(many=True)
 
 
@@ -316,6 +318,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(serializers.IntegerField(allow_null=True, required=False))
     def get_module_duration_seconds(self, obj):
+        if not getattr(obj, "is_timed", True):
+            return None
         mod = getattr(obj, "current_module", None)
         if not mod:
             # mirror serializer inference so the UI can still render safely
@@ -509,6 +513,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             "is_active": getattr(mock, "is_active", True) if mock is not None else True,
             "mock_exam_id": getattr(pt, "mock_exam_id", None),
             "mock_kind": getattr(mock, "kind", None) if mock is not None else None,
+            "is_practice_test": bool(getattr(pt, "is_practice_test", False)),
+            "practice_number": getattr(pt, "practice_number", None),
             "modules": ModuleListSerializer(pt.modules.all(), many=True).data,
         }
     
@@ -536,6 +542,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'engine_phase',
             'scoring_notice',
             'is_paused',
+            'is_timed',
         ]
 
         read_only_fields = [
@@ -562,6 +569,7 @@ class TestAttemptSerializer(serializers.ModelSerializer):
             'results_ready',
             'engine_phase',
             'scoring_notice',
+            'is_timed',
         ]
 
 # ── Admin Serializers ────────────────────────────────────────────────────────

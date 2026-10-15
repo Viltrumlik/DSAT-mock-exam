@@ -1115,6 +1115,10 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
         Start the attempt: always starts Module 1 (backend authoritative).
         """
         attempt = self.get_object()
+        # Timed/Untimed is the student's choice on the Welcome screen — practice tests only, and
+        # only before Module 1 starts (owner decision 2026-10-14). Past papers are always timed.
+        raw_timed = request.data.get("timed", True) if hasattr(request, "data") else True
+        wants_untimed = raw_timed in (False, "false", "False", "0", 0)
         if attempt.is_completed:
             return Response({"error": "Cannot start a completed attempt."}, status=status.HTTP_400_BAD_REQUEST)
         _enforce_attempt_student(request, attempt)
@@ -1134,6 +1138,14 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
                     pre_state = locked.current_state
                     autoheal_attempt_for_runtime(locked)
                     locked.refresh_from_db()
+                    if (
+                        wants_untimed
+                        and locked.current_state == TestAttempt.STATE_NOT_STARTED
+                        and locked.is_timed
+                        and locked.practice_test.is_practice_test
+                    ):
+                        locked.is_timed = False
+                        locked.save(update_fields=["is_timed", "updated_at"])
                     if pre_state != TestAttempt.STATE_SCORING and locked.current_state == TestAttempt.STATE_SCORING:
                         healed_to_scoring = True
                     locked.start_attempt()
@@ -1628,6 +1640,7 @@ class TestAttemptViewSet(viewsets.ModelViewSet):
             'previous_score': previous_score,
             'score_delta': score_delta,
             'score_percentage': (total_correct / total_questions * 100) if total_questions > 0 else 0,
+            'is_timed': attempt.is_timed,
             # Section context — used by the review page to render the correct score label.
             'subject': getattr(pt, 'subject', None),
             'mock_kind': getattr(mock, 'kind', None),
