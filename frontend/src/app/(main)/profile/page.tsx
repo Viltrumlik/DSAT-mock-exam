@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { School, Settings2, User } from "lucide-react";
+import { ClipboardCheck, School, Settings2, User } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { EmailVerificationModal } from "@/components/EmailVerificationModal";
@@ -16,6 +16,7 @@ import { capabilitiesFor } from "@/features/classroom/capabilities";
 import { ClassesTab, type ClassPerson } from "@/features/profile/ClassesTab";
 import { OverviewTab } from "@/features/profile/OverviewTab";
 import { ProfileHero } from "@/features/profile/ProfileHero";
+import { ResultsTab } from "@/features/profile/ResultsTab";
 import { SettingsTab } from "@/features/profile/SettingsTab";
 import type { HomeworkRow, ScheduleEvent } from "@/features/profile/profileModel";
 import {
@@ -35,9 +36,12 @@ import { emptyNormalizedList } from "@/lib/criticalApiContract";
 import { isPublicStudent } from "@/lib/roles";
 import { displayEmail } from "@/lib/email";
 
-type ProfileTab = "overview" | "classes" | "settings";
+type ProfileTab = "overview" | "classes" | "results" | "settings";
 
-const TAB_KEYS: ProfileTab[] = ["overview", "classes", "settings"];
+/** The learning center's student has the Overview, Classes and Settings; a public learner has
+ *  Settings and their own finished results (owner, 2026-10-14), and none of the rest. */
+const CENTRE_TABS: ProfileTab[] = ["overview", "classes", "settings"];
+const PUBLIC_TABS: ProfileTab[] = ["settings", "results"];
 
 /** What the Telegram callback appends to `next` when linking fails, in a student's words. */
 const TELEGRAM_ERRORS: Record<string, string> = {
@@ -77,9 +81,9 @@ export default function ProfilePage() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const tabsRef = useRef<HTMLDivElement>(null);
-  // A public learner's profile is Settings alone: Overview and Classes are the learning
-  // center's (points, homework, classes), and all of their requests but the learner's own
-  // finished attempts would be refused.
+  // A public learner's profile is Settings and their own finished results: Overview and
+  // Classes are the learning center's (points, homework, classes), and all of their requests
+  // but the learner's own finished attempts would be refused.
   const { me: sessionMe } = useMe();
   const isPublic = isPublicStudent((sessionMe as { role?: string } | undefined)?.role);
 
@@ -108,7 +112,7 @@ export default function ProfilePage() {
     const params = new URLSearchParams(window.location.search);
     const wantedTab = params.get("tab") as ProfileTab | null;
     const wantedSection = params.get("section") as SettingsSectionKey | null;
-    if (wantedTab && TAB_KEYS.includes(wantedTab) && (!isPublic || wantedTab === "settings")) setTab(wantedTab);
+    if (wantedTab && (isPublic ? PUBLIC_TABS : CENTRE_TABS).includes(wantedTab)) setTab(wantedTab);
     if (wantedSection && SETTINGS_SECTIONS.includes(wantedSection)) setSection(wantedSection);
 
     // Back from Telegram's link flow, which lands on /profile?tg_linked=1 or ?tg_error=….
@@ -195,15 +199,18 @@ export default function ProfilePage() {
     [],
   );
 
+  // Everyone's own finished attempts: a learner who left reads them on the Results tab, the
+  // student on the Overview. Its own effect, so a role that arrives late does not ask twice.
+  useEffect(() => {
+    void loadAttempts();
+  }, [loadAttempts]);
+
   useEffect(() => {
     void loadProfile();
-    // A learner who left still has their own finished attempts: the server serves a public
-    // learner those and nothing else of the exams app (owner 2026-10-14).
-    void loadAttempts();
     if (isPublic) return; // Points and homework are the learning center's, and would be refused.
     void loadRewards();
     void loadHomework();
-  }, [isPublic, loadProfile, loadRewards, loadHomework, loadAttempts]);
+  }, [isPublic, loadProfile, loadRewards, loadHomework]);
 
   // The Classes tab's own requests wait until someone opens it.
   const classesOpened = tab === "classes";
@@ -246,7 +253,10 @@ export default function ProfilePage() {
   const tabs: TabItem[] = useMemo(
     () =>
       isPublic
-        ? [{ id: "settings", label: "Settings", icon: Settings2 }]
+        ? [
+            { id: "settings", label: "Settings", icon: Settings2 },
+            { id: "results", label: "Results", icon: ClipboardCheck },
+          ]
         : [
             { id: "overview", label: "Overview", icon: User },
             { id: "classes", label: "Classes", icon: School, count: classes.length },
@@ -330,6 +340,8 @@ export default function ProfilePage() {
             selfId={me.id}
             onRetryPeople={() => selectedClassId != null && void loadPeople(selectedClassId)}
           />
+        ) : tab === "results" ? (
+          <ResultsTab attempts={attempts} onRetry={() => void loadAttempts()} />
         ) : (
           <SettingsTab
             section={section}

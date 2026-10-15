@@ -46,6 +46,7 @@ describe("public_student", () => {
       "/mock/4/results",
       "/examples",
       "/reviewer",
+      "/review-center",
     ]) {
       expect(isPublicStudentPath(p), p).toBe(false);
     }
