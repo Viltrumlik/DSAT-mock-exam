@@ -17,19 +17,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import {
-  STUDIO_BOX_CAPTION,
-  STUDIO_BTN_DESTRUCTIVE,
-  STUDIO_BTN_PRIMARY,
-  STUDIO_BTN_SECONDARY,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_FIELD_LABEL,
-  STUDIO_INPUT,
-  STUDIO_LINK,
-  STUDIO_PAGE_DESC,
-  STUDIO_PAGE_TITLE,
-} from "@/components/studio/primitives";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -134,45 +121,41 @@ function PackModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 w-full max-w-md border border-border bg-card shadow-xl">
-        <div className={`${STUDIO_BOX_CAPTION} flex items-center justify-between gap-2`}>
-          <h2 className="min-w-0">{title}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
+      <div className="relative z-10 w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-xl">
+        <div className="mb-5 flex items-center justify-between">
+          <h2 className="text-base font-extrabold text-foreground">{title}</h2>
+          <button type="button" onClick={onClose} className="rounded-lg p-1 hover:bg-surface-2">
             <X className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
 
         {error && (
-          <div className={`mx-4 mt-4 ${STUDIO_ERROR_BANNER}`}>
+          <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
             {error}
           </div>
         )}
 
         <form
-          className="space-y-3 p-4"
+          className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
             onSubmit(form);
           }}
         >
           <div>
-            <label className={STUDIO_FIELD_LABEL}>
+            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
               Title
             </label>
             <input
               value={form.title}
               onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))}
               placeholder="e.g. Practice Test Set 1"
-              className={STUDIO_INPUT}
+              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
 
           <div>
-            <label className={STUDIO_FIELD_LABEL}>
+            <label className="mb-1 block text-xs font-bold text-muted-foreground uppercase tracking-widest">
               Description
             </label>
             <textarea
@@ -180,24 +163,24 @@ function PackModal({
               onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
               placeholder="Optional description for students..."
               rows={3}
-              className={`${STUDIO_INPUT} resize-none`}
+              className="w-full rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-2 focus:ring-primary/20 resize-none"
             />
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-border pt-3">
+          <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={onClose}
-              className={STUDIO_BTN_SECONDARY}
+              className="flex-1 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-bold text-foreground hover:bg-surface-2 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className={STUDIO_BTN_PRIMARY}
+              className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
             >
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               {saving ? "Saving..." : "Save"}
             </button>
           </div>
@@ -234,30 +217,30 @@ function PackRow({
   const hasMath = !!mathSection;
 
   return (
-    <div className="px-3 py-2.5 hover:bg-surface-2/40">
+    <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
       {/* Pack header */}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <h3 className="text-[13px] font-semibold text-foreground">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-extrabold text-foreground">
               {pack.title || `Practice Test #${pack.id}`}
             </h3>
             <span
-              className={`text-[12px] font-medium ${
+              className={`rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                 pack.is_published
-                  ? "text-muted-foreground"
-                  : "text-foreground"
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "bg-amber-100 text-amber-700"
               }`}
             >
               {pack.is_published ? "Published" : "Draft"}
             </span>
           </div>
           {pack.description && (
-            <p className="mt-0.5 text-[13px] text-muted-foreground line-clamp-2">
+            <p className="mt-1 text-xs text-muted-foreground line-clamp-2">
               {pack.description}
             </p>
           )}
-          <p className="mt-0.5 text-[12px] text-muted-foreground">
+          <p className="mt-1 text-[11px] text-muted-foreground">
             Created {formatDate(pack.created_at)}
             <span className="mx-1.5 text-muted-foreground/50">&middot;</span>
             {pack.sections.length} section{pack.sections.length !== 1 ? "s" : ""}
@@ -268,7 +251,11 @@ function PackRow({
             type="button"
             onClick={onTogglePublish}
             disabled={publishing}
-            className={pack.is_published ? STUDIO_BTN_SECONDARY : STUDIO_BTN_PRIMARY}
+            className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-colors flex items-center gap-1.5 ${
+              pack.is_published
+                ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                : "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+            } disabled:opacity-50`}
           >
             {publishing ? (
               <Loader2 className="h-3 w-3 animate-spin" />
@@ -282,7 +269,7 @@ function PackRow({
           <button
             type="button"
             onClick={onEdit}
-            className={STUDIO_BTN_SECONDARY}
+            className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2 transition-colors flex items-center gap-1.5"
           >
             <Pencil className="h-3 w-3" />
             Edit
@@ -292,14 +279,14 @@ function PackRow({
               <button
                 type="button"
                 onClick={onDelete}
-                className="inline-flex min-h-8 items-center rounded-md bg-red-600 px-2.5 py-1 text-[13px] font-medium text-white transition-colors hover:bg-red-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
+                className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-red-700 transition-colors"
               >
                 Confirm
               </button>
               <button
                 type="button"
                 onClick={() => setConfirmDelete(false)}
-                className={STUDIO_BTN_SECONDARY}
+                className="rounded-xl border border-border bg-card px-3 py-1.5 text-xs font-bold text-foreground hover:bg-surface-2"
               >
                 Cancel
               </button>
@@ -308,7 +295,7 @@ function PackRow({
             <button
               type="button"
               onClick={() => setConfirmDelete(true)}
-              className={STUDIO_BTN_DESTRUCTIVE}
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors flex items-center gap-1.5"
             >
               <Trash2 className="h-3 w-3" />
             </button>
@@ -318,37 +305,46 @@ function PackRow({
 
       {/* Sections + per-module links */}
       {pack.sections.length > 0 && (
-        <div className="mt-2 space-y-2">
+        <div className="mt-4 space-y-2">
           {pack.sections.map((section) => {
+            const isRW = section.subject === "READING_WRITING";
             const modules = section.modules ?? [];
             return (
               <div key={section.id}>
-                <div className="mb-1 flex items-center gap-2">
-                  <div className="text-muted-foreground">
+                <div className="mb-1.5 flex items-center gap-2 px-1">
+                  <div
+                    className={`rounded-md p-1 ${
+                      isRW ? "bg-primary/10 text-primary" : "bg-emerald-100 text-emerald-700"
+                    }`}
+                  >
                     <SubjectIcon subject={section.subject} />
                   </div>
-                  <span className="text-[12px] font-semibold text-foreground">
+                  <span className="text-xs font-bold text-foreground">
                     {subjectLabel(section.subject)}
                   </span>
-                  <span className="text-[12px] text-muted-foreground">
+                  <span className="text-[10px] text-muted-foreground">
                     {modules.length} module{modules.length !== 1 ? "s" : ""}
                   </span>
                 </div>
 
                 {modules.length === 0 ? (
-                  <p className="pl-5.5 text-[12px] text-muted-foreground italic">
+                  <p className="rounded-xl border border-dashed border-border px-4 py-2.5 text-xs text-muted-foreground italic">
                     No modules yet — add questions from the test admin.
                   </p>
                 ) : (
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 pl-5.5">
+                  <div className="grid gap-1.5 sm:grid-cols-2">
                     {modules.map((mod) => (
                       <Link
                         key={mod.id}
                         href={`/builder/practice-tests/${pack.id}/${section.id}/${mod.id}`}
-                        className={`group inline-flex items-center gap-1 text-[13px] ${STUDIO_LINK}`}
+                        className={`group flex items-center gap-3 rounded-xl border px-4 py-3 transition-colors hover:border-primary/30 hover:bg-primary/5 ${
+                          isRW
+                            ? "border-primary/20 bg-primary/5"
+                            : "border-emerald-200 bg-emerald-50/50"
+                        }`}
                       >
-                        <div className="min-w-0">
-                          <p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-extrabold text-foreground">
                             {mod.module_order != null
                               ? `Module ${mod.module_order}`
                               : `Module #${mod.id}`}
@@ -366,13 +362,13 @@ function PackRow({
       )}
 
       {/* Add section buttons */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         {!hasRW && (
           <button
             type="button"
             onClick={() => onAddSection("READING_WRITING")}
             disabled={addingSection}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-primary/40 px-3 py-1.5 text-xs font-semibold text-primary hover:border-primary/70 hover:bg-primary/5 disabled:opacity-50 transition-colors"
           >
             <Plus className="h-3 w-3" />
             Add Reading &amp; Writing
@@ -383,14 +379,14 @@ function PackRow({
             type="button"
             onClick={() => onAddSection("MATH")}
             disabled={addingSection}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-dashed border-emerald-400/50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:border-emerald-500 hover:bg-emerald-50 disabled:opacity-50 transition-colors"
           >
             <Plus className="h-3 w-3" />
             Add Mathematics
           </button>
         )}
         {hasRW && hasMath && (
-          <p className="text-[12px] text-muted-foreground italic">All sections added.</p>
+          <p className="text-xs text-muted-foreground italic">All sections added.</p>
         )}
       </div>
     </div>
@@ -512,10 +508,10 @@ export default function BuilderPracticeTestsPage() {
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className={STUDIO_PAGE_TITLE}>Practice Tests</h1>
-          <p className={STUDIO_PAGE_DESC}>
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Practice Tests</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
             Manage custom practice test packs. Each pack groups Reading &amp; Writing and Mathematics
             sections. Students can start any section in any order.
           </p>
@@ -525,17 +521,17 @@ export default function BuilderPracticeTestsPage() {
             type="button"
             onClick={() => void load()}
             disabled={loading}
-            className={STUDIO_BTN_SECONDARY}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card px-3 py-2 text-sm font-bold text-foreground hover:bg-surface-2 disabled:opacity-50 transition-colors"
           >
-            <RefreshCcw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </button>
           <button
             type="button"
             onClick={openCreate}
-            className={STUDIO_BTN_PRIMARY}
+            className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" />
             New pack
           </button>
         </div>
@@ -543,36 +539,36 @@ export default function BuilderPracticeTestsPage() {
 
       {/* Error banner */}
       {error && (
-        <div className={STUDIO_ERROR_BANNER}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           {error}
         </div>
       )}
 
       {/* Content */}
       {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="flex justify-center py-16">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
         </div>
       ) : packs.length === 0 ? (
-        <div className={`${STUDIO_CARD} px-3 py-8 text-center`}>
-          <div className="mb-2 flex justify-center">
-            <FlaskConical className="h-5 w-5 text-muted-foreground/60" />
+        <div className="rounded-2xl border border-border bg-card p-12 text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-surface-2">
+            <FlaskConical className="h-7 w-7 text-muted-foreground/40" />
           </div>
-          <p className="text-[13px] font-semibold text-foreground">No practice test packs yet</p>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
+          <p className="font-extrabold text-foreground">No practice test packs yet</p>
+          <p className="mt-1 text-sm text-muted-foreground">
             Create a pack to start building custom practice tests.
           </p>
           <button
             type="button"
             onClick={openCreate}
-            className={`mt-3 ${STUDIO_BTN_PRIMARY}`}
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            <Plus className="h-3.5 w-3.5" />
+            <Plus className="h-4 w-4" />
             New pack
           </button>
         </div>
       ) : (
-        <div className={`${STUDIO_CARD} divide-y divide-border`}>
+        <div className="space-y-4">
           {packs.map((pack) => (
             <PackRow
               key={pack.id}

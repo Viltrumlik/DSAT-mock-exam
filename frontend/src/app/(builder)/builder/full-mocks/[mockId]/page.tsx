@@ -27,19 +27,7 @@ import {
 import { mocksAdminApi } from "@/features/mocksAdmin/api";
 import { StateTag } from "@/components/governance";
 import { useToast } from "@/components/ToastProvider";
-import {
-  STUDIO_BOX_CAPTION,
-  STUDIO_BTN_PRIMARY,
-  STUDIO_BTN_SECONDARY,
-  STUDIO_CARD,
-  STUDIO_ERROR_BANNER,
-  STUDIO_FIELD_LABEL,
-  STUDIO_INPUT,
-} from "@/components/studio/primitives";
-
-/** The muted "← Back" link above the page, with a keyboard ring. */
-const BACK_LINK =
-  "inline-flex items-center gap-1.5 rounded-sm text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+import { STUDIO_FIELD_LABEL, STUDIO_INPUT } from "@/components/studio/primitives";
 
 function parseError(e: unknown): string {
   const data = (e as { response?: { data?: unknown } })?.response?.data;
@@ -117,13 +105,13 @@ export default function FullMockOverviewPage() {
   );
 
   if (!Number.isFinite(mockId) || mockId <= 0) {
-    return <div className="p-8 text-[13px] text-red-700 dark:text-red-300">Invalid mock id.</div>;
+    return <div className="p-8 text-sm text-red-700">Invalid mock id.</div>;
   }
 
   if (isLoading) {
     return (
       <div className="flex justify-center py-24">
-        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary border-t-transparent" />
       </div>
     );
   }
@@ -131,10 +119,10 @@ export default function FullMockOverviewPage() {
   if (error || !mock) {
     return (
       <div className="space-y-4">
-        <Link href="/builder/full-mocks" className={BACK_LINK}>
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to full mocks
+        <Link href="/builder/full-mocks" className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Back to full mocks
         </Link>
-        <div className={STUDIO_ERROR_BANNER}>
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
           {error ? parseError(error) : "Mock not found."}
         </div>
       </div>
@@ -142,20 +130,20 @@ export default function FullMockOverviewPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <Link
         href="/builder/full-mocks"
-        className={BACK_LINK}
+        className="inline-flex items-center gap-1.5 text-sm font-bold text-muted-foreground hover:text-foreground transition-colors"
       >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to full mocks
+        <ArrowLeft className="h-4 w-4" /> Back to full mocks
       </Link>
 
       {/* Header card */}
-      <div className={`${STUDIO_CARD} px-3 py-3`}>
+      <div className="rounded-2xl border border-border bg-card p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-center gap-2">
             <StateTag state={mock.is_published ? "PUBLISHED" : "DRAFT"} size="sm" />
-            <span className="text-[12px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {totalQuestions} question{totalQuestions !== 1 ? "s" : ""}
             </span>
           </div>
@@ -165,7 +153,7 @@ export default function FullMockOverviewPage() {
                 type="button"
                 onClick={() => unpublishMut.mutate()}
                 disabled={unpublishMut.isPending}
-                className={STUDIO_BTN_SECONDARY}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50 transition-colors"
               >
                 {unpublishMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <EyeOff className="h-3 w-3" />}
                 Unpublish
@@ -176,7 +164,7 @@ export default function FullMockOverviewPage() {
                 onClick={() => publishMut.mutate()}
                 disabled={publishMut.isPending || !mock.publish_ready}
                 title={!mock.publish_ready ? mock.publish_block_reason : "Publish this mock"}
-                className={STUDIO_BTN_PRIMARY}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 disabled:opacity-50 transition-colors"
               >
                 {publishMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Eye className="h-3 w-3" />}
                 Publish
@@ -185,7 +173,7 @@ export default function FullMockOverviewPage() {
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-end gap-3">
+        <div className="mt-4 flex flex-wrap items-end gap-3">
           <div className="min-w-[240px] flex-1">
             <label className={STUDIO_FIELD_LABEL}>Title</label>
             <input value={title} onChange={(e) => setTitle(e.target.value)} className={STUDIO_INPUT} />
@@ -204,15 +192,15 @@ export default function FullMockOverviewPage() {
             type="button"
             onClick={() => saveMeta.mutate()}
             disabled={!dirty || !title.trim() || saveMeta.isPending}
-            className={STUDIO_BTN_PRIMARY}
+            className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-sm font-bold text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
-            {saveMeta.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            {saveMeta.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save details
           </button>
         </div>
 
         {!mock.is_published && !mock.publish_ready && mock.publish_block_reason && (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             {mock.publish_block_reason}
           </div>
         )}
@@ -221,8 +209,8 @@ export default function FullMockOverviewPage() {
             proportional), but a "full mock" that hands out 12 Reading questions instead of
             27 should say so out loud rather than look finished. */}
         {(mock.publish_warnings?.length ?? 0) > 0 && (
-          <div className="mt-3 rounded-md border border-border bg-surface-2 px-3 py-2 text-[12px] text-muted-foreground">
-            <p className="font-semibold text-foreground">Shorter than a real SAT</p>
+          <div className="mt-3 rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            <p className="font-bold text-foreground">Shorter than a real SAT</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-4">
               {mock.publish_warnings.map((w) => (
                 <li key={w}>{w}</li>
@@ -233,33 +221,35 @@ export default function FullMockOverviewPage() {
       </div>
 
       {/* Modules — each opens the shared question editor */}
-      <div className="space-y-4">
+      <div className="space-y-3">
         {mock.sections.map((section) => (
-          <div key={section.subject} className={STUDIO_CARD}>
-            <div className={`${STUDIO_BOX_CAPTION} flex items-center gap-2`}>
-              <div className="shrink-0">
+          <div key={section.subject}>
+            <div className="mb-1.5 flex items-center gap-2 px-1">
+              <div
+                className={`rounded-md p-1 ${section.subject === "MATH" ? "bg-emerald-100 text-emerald-700" : "bg-primary/10 text-primary"}`}
+              >
                 {section.subject === "MATH" ? <Calculator className="h-3.5 w-3.5" /> : <BookOpen className="h-3.5 w-3.5" />}
               </div>
-              <span>{subjectLabel(section.subject)}</span>
+              <span className="text-xs font-bold text-foreground">{subjectLabel(section.subject)}</span>
             </div>
-            <div className="divide-y divide-border">
+            <div className="grid gap-2 sm:grid-cols-2">
               {section.modules.map((m) => (
                 <Link
                   key={m.id}
                   href={`/builder/full-mocks/${mockId}/${m.id}`}
-                  className="group flex items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5"
                 >
                   <div className="min-w-0">
-                    <p className="text-[13px] font-medium text-foreground">Module {m.module_order}</p>
-                    <p className="mt-0.5 flex items-center gap-1 text-[12px] text-muted-foreground">
-                      <Clock className="h-3 w-3" />
+                    <p className="text-xs font-extrabold text-foreground">Module {m.module_order}</p>
+                    <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Clock className="h-2.5 w-2.5" />
                       {m.time_limit_minutes} min ·{" "}
                       {m.question_target
                         ? `${m.question_count} / ${m.question_target} questions`
                         : `${m.question_count} question${m.question_count !== 1 ? "s" : ""}`}
                     </p>
                   </div>
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[13px] font-medium text-primary group-hover:underline dark:text-primary-hover">
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-bold text-primary">
                     Edit questions <ChevronRight className="h-3.5 w-3.5" />
                   </span>
                 </Link>
