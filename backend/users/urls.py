@@ -19,7 +19,12 @@ from .views import (
 )
 from .prometheus_security import AdminSecurityPrometheusMetricsView
 from .views_people import PeopleListView
-from .views_people_detail import PersonDetailView, PersonPartView, PersonRevokeSessionsView
+from .views_people_detail import (
+    PersonDetailView,
+    PersonOneTimePasswordView,
+    PersonPartView,
+    PersonRevokeSessionsView,
+)
 from .views_population import PopulationView
 
 urlpatterns = [
@@ -39,6 +44,7 @@ urlpatterns = [
     path('admin/population/', PopulationView.as_view(), name='users-admin-population'),
     path('admin/people/', PeopleListView.as_view(), name='users-admin-people'),
     path('admin/people/<int:pk>/', PersonDetailView.as_view(), name='users-admin-person'),
+    path('admin/people/<int:pk>/one-time-password/', PersonOneTimePasswordView.as_view(), name='users-admin-person-otp'),
     path('admin/people/<int:pk>/revoke-sessions/', PersonRevokeSessionsView.as_view(), name='users-admin-person-revoke'),
     path('admin/people/<int:pk>/<str:part>/', PersonPartView.as_view(), name='users-admin-person-part'),
     path('admin/bulk/', UserBulkActionView.as_view(), name='admin-user-bulk'),

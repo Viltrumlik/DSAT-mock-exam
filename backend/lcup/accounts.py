@@ -113,6 +113,46 @@ def _claimable_account(link, phone: str, *, now, **fields) -> User:
     return user
 
 
+class OneTimePasswordRefused(Exception):
+    """Why an account cannot be given a one-time password; the message is shown to the admin."""
+
+
+def issue_one_time_password(user, *, now) -> AccountClaim:
+    """Take the account's password away and let it sign in once more with phone + last four digits.
+
+    Owner, 2026-10-15: "new password kerak emas uning o'rniga … give one time password bo'lsin, shuni
+    bosganda yana telefoni 4ta raqamiga qaytsin bir martalik qilib". It is the lc-up first sign-in
+    again, reused whole: the password becomes unusable, the claim reopens for ``CLAIM_DAYS``, and the
+    completion gate asks for a new password straight after that one sign-in (``claims``).
+    """
+    from .conf import lcup_enabled
+
+    if not lcup_enabled():
+        raise OneTimePasswordRefused("One-time sign-in is turned off.")
+    phone = normalize_phone(user.phone_number)
+    if not phone:
+        raise OneTimePasswordRefused("This account has no phone number. Add one first.")
+    # The claim backend looks a phone up among OPEN claims; two open on one phone would be a coin toss.
+    if AccountClaim.objects.filter(phone=phone, password_set_at__isnull=True).exclude(user=user).exists():
+        raise OneTimePasswordRefused("Another account is waiting to sign in with this phone number.")
+    with transaction.atomic():
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        claim, created = AccountClaim.objects.get_or_create(
+            user=user, defaults={"phone": phone, "expires_at": now + timedelta(days=CLAIM_DAYS)}
+        )
+        if not created:
+            claim.phone = phone
+            claim.failed_attempts = 0
+            claim.locked_at = None
+            claim.first_login_at = None
+            claim.password_set_at = None
+            claim.expires_at = now + timedelta(days=CLAIM_DAYS)
+            claim.reissued_count += 1
+            claim.save()
+    return claim
+
+
 def reissue_claim(claim: AccountClaim, *, now) -> AccountClaim:
     claim.failed_attempts = 0
     claim.locked_at = None

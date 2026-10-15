@@ -176,8 +176,55 @@ def _staff(user) -> dict:
     }
 
 
-def person_core(user) -> dict:
+def _glance(user, section: str) -> dict:
+    """The page header's at-a-glance figures — what the tabs below hold, said once at the top.
+
+    A student: attendance and homework across their live classes. A public user: their mock exams.
+    """
+    from classes.attendance import compute_attendance_score
+    from classes.models_attendance import AttendanceRecord
+    from classes.progress import _homework_for
+    from mocks.models import MockAttempt
+
+    out = {"attendance_rate": None, "homework": None, "mocks_taken": 0, "last_mock_total": None}
+    if section == "students":
+        rooms = [s.classroom for s in _live_seats([user.pk])]
+        statuses = list(
+            AttendanceRecord.objects.filter(student=user, session__classroom__in=rooms).values_list("status", flat=True)
+        )
+        out["attendance_rate"] = compute_attendance_score(statuses) if statuses else None
+        done = total = 0
+        for room in rooms:
+            stats = _homework_for(room, user)
+            if stats:
+                done, total = done + stats["completed"], total + stats["total"]
+        out["homework"] = {"completed": done, "total": total} if total else None
+    mocks = MockAttempt.objects.filter(student=user, is_completed=True)
+    out["mocks_taken"] = mocks.count()
+    out["last_mock_total"] = mocks.order_by("-completed_at").values_list("total_score", flat=True).first()
+    return out
+
+
+def _one_time_password(user):
+    """An open one-time sign-in (phone + last four digits), or None. Shown so an admin can say so."""
+    from lcup.models import AccountClaim
+
+    if user.has_usable_password():
+        return None
+    claim = AccountClaim.objects.filter(user=user, password_set_at__isnull=True).first()
+    if claim is None:
+        return None
+    return {
+        "expires_at": iso(claim.expires_at),
+        "used": claim.first_login_at is not None,
+        "locked": claim.locked_at is not None,
+    }
+
+
+def person_core(user, request=None) -> dict:
     from lcup.models import LcupStudentLink, LinkStatus
+
+    from .photos import profile_image_url
 
     section = section_of(user)
     counted = with_activity_counts(User.objects.filter(pk=user.pk)).values_list("attempt_count", flat=True).first()
@@ -185,6 +232,9 @@ def person_core(user) -> dict:
     return {
         "id": user.pk,
         "section": section,
+        "avatar_url": profile_image_url(user, request),
+        "glance": _glance(user, section) if learner else None,
+        "one_time_password": _one_time_password(user),
         "username": user.username or "",
         "first_name": user.first_name or "",
         "last_name": user.last_name or "",

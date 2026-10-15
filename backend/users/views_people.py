@@ -225,9 +225,13 @@ _ORDERING = {
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
-def _row(u, section):
+def _row(u, section, request=None):
+    from .photos import profile_image_url
+
     row = {
         "id": u.pk,
+        # The photo beside the name, as on the person's page (owner: "rasmi ham ko'rinib turishi kerak").
+        "avatar_url": profile_image_url(u, request),
         "username": u.username,
         "name": f"{u.first_name} {u.last_name}".strip(),
         "first_name": u.first_name or "",
@@ -330,6 +334,6 @@ class PeopleListView(APIView):
             "page_size": size,
             "pages": pages,
             "ordering": ordering,
-            "results": [_row(u, section) for u in window],
+            "results": [_row(u, section, request) for u in window],
             "filters": filters,
         })
