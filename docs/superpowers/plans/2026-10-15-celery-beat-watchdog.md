@@ -1,6 +1,7 @@
 # Celery beat watchdog — 2026-10-15
 
-**Status:** proposed. Nothing here is installed on prod. Installing it needs the owner's yes (§7).
+**Status:** installed on prod in **DRY-RUN** on 2026-10-15 at 12:24 CEST, with the owner's yes. It
+decides and logs, but never restarts or alerts. **Not live.** Going live needs the owner's yes (§7).
 
 ## 1. What actually happened
 
@@ -157,7 +158,23 @@ venv, on PATH for root). The watchdog already calls it when present.
 **Off switches:** `touch /var/www/satapp/shared/beat-watchdog.pause` (instant), or
 `install.sh --uninstall` (incidents are kept).
 
-Already checked on prod without installing: one `--dry-run` from `/tmp` read the real PM2 list
+### Dry-run install, done 2026-10-15 12:24 CEST (owner's yes)
+
+This was installed before merge. `install.sh` ran from a root-only copy of the branch's files,
+`/root/sat-beat-watchdog/` (commit `f2158333`, checksums verified). After merge and deploy, run
+`/var/www/satapp/current/deploy/watchdog/install.sh --live` from the release instead; it re-copies
+the script. Then delete `/root/sat-beat-watchdog/`.
+
+- Installed: `/usr/local/sbin/sat-beat-watchdog`, both units, `sat-beat-watchdog.service.d/10-dry-run.conf`
+  (`SAT_BEAT_WD_DRY_RUN=1`), `/var/lib/sat-beat-watchdog/` (0700), and `/var/log/sat-beat-watchdog.log` (0640).
+- Timer runs at 12:25:30 and 12:26:30 were `healthy` with `dry_run: true`, log ages 30 s and
+  schedule ages 90/150 s. They left 0 PAM session lines, because the script uses `setpriv` (runuser
+  would log ~2,900 a day). Beat was untouched: pid 2902891, 25 restarts before and after.
+- What to watch: `journalctl -u sat-beat-watchdog`. The action log `/var/log/sat-beat-watchdog.log`
+  stays empty until something other than "healthy" happens. Expect `not_online` / `starting`
+  during deploys, and `would_restart` only on a real stall.
+
+Checked on prod before that, without installing: one `--dry-run` from `/tmp` read the real PM2 list
 and files (`healthy`, log 14 s, schedule 134 s). With a 5 s threshold it took the stall path to
 `would_restart`. Beat was untouched (same pid, restart count 25). `systemd-analyze verify` passed
 both units. The temp files were removed.
