@@ -125,7 +125,7 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
 ];
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */
-type MeLike = Record<string, unknown> | null | undefined;
+export type MeLike = Record<string, unknown> | null | undefined;
 
 export function isOpsSuperAdmin(me: MeLike): boolean {
   if (!me) return false;
@@ -148,35 +148,96 @@ export function visibleNav(groups: readonly OpsNavGroup[], me: MeLike): OpsNavGr
     .filter((group) => group.items.length > 0);
 }
 
+/**
+ * The groups a console WITHOUT the admin scoping shows (the builder): only `superAdminOnly` is
+ * applied, and a group left empty is dropped.
+ */
+export function visibleByRole(groups: readonly OpsNavGroup[], me: MeLike): OpsNavGroup[] {
+  const superAdmin = isOpsSuperAdmin(me);
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => !item.superAdminOnly || superAdmin) }))
+    .filter((group) => group.items.length > 0);
+}
+
 export function isOpsNavActive(pathname: string, item: Pick<OpsNavItem, "href" | "exact">): boolean {
   if (item.exact) return pathname === item.href;
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
 /**
- * The section a path belongs to — the nav item whose href it sits under (longest match), so a
- * deeper page such as `/ops/classrooms/12/roster` resolves to Classrooms. An ops path the nav
- * does not list (`/ops/users`, `/ops/assignments`) is named after its first segment.
+ * The nav item a path sits under — the LONGEST matching href, so `/builder/question-bank/triage`
+ * is Triage Queue and not also Question Bank, and `/ops/classrooms/12/roster` is Classrooms.
+ * The sidebar marks only this item; `null` when no item matches.
  */
-export function sectionFor(pathname: string): { href: string; label: string } | null {
+export function activeNavItem(pathname: string, groups: readonly OpsNavGroup[]): OpsNavItem | null {
   let best: OpsNavItem | null = null;
-  for (const group of OPS_NAV_GROUPS) {
+  for (const group of groups) {
     for (const item of group.items) {
       if (isOpsNavActive(pathname, item) && (!best || item.href.length > best.href.length)) {
         best = item;
       }
     }
   }
+  return best;
+}
+
+/**
+ * The section a path belongs to — the nav item whose href it sits under (longest match), so a
+ * deeper page such as `/ops/classrooms/12/roster` resolves to Classrooms. A console path the nav
+ * does not list (`/ops/users`, `/ops/assignments`) is named after its first segment.
+ *
+ * Defaults to the ops console; the builder passes its own groups and root.
+ */
+export function sectionFor(
+  pathname: string,
+  groups: readonly OpsNavGroup[] = OPS_NAV_GROUPS,
+  root = "/ops",
+): { href: string; label: string } | null {
+  const best = activeNavItem(pathname, groups);
   if (best) return { href: best.href, label: best.label };
 
-  const match = /^\/ops\/([^/?#]+)/.exec(pathname);
-  if (!match) return null;
-  const words = match[1].replace(/[-_]+/g, " ").trim();
+  if (!pathname.startsWith(`${root}/`)) return null;
+  const segment = pathname.slice(root.length + 1).split(/[/?#]/)[0];
+  const words = segment.replace(/[-_]+/g, " ").trim();
   if (!words) return null;
-  return { href: `/ops/${match[1]}`, label: words.charAt(0).toUpperCase() + words.slice(1) };
+  return { href: `${root}/${segment}`, label: words.charAt(0).toUpperCase() + words.slice(1) };
 }
 
 /** The breadcrumb's label for a path, or `null` outside the console. */
 export function sectionLabel(pathname: string): string | null {
   return sectionFor(pathname)?.label ?? null;
 }
+
+/**
+ * What one console's frame needs to know: where it lives, what it is called, and its nav. The ops
+ * console and the builder (questions.mastersat.uz, owner 2026-10-15: "opsga styledan ko'chirib")
+ * wear the same frame; only this differs.
+ */
+export type ConsoleConfig = {
+  /** The console's home: the brand link, the breadcrumb's first crumb, the root of unlisted paths. */
+  root: string;
+  /** The word after "MasterSAT" in the sidebar: "admin", "builder". */
+  brand: string;
+  /** The breadcrumb's first crumb, and the name in the nav's accessible labels: "Admin", "Builder". */
+  crumb: string;
+  /** Where the collapsed-rail preference is remembered. */
+  collapseKey: string;
+  groups: readonly OpsNavGroup[];
+  /** The groups and items this viewer may see, in nav order. */
+  visible: (groups: readonly OpsNavGroup[], me: MeLike) => OpsNavGroup[];
+  /**
+   * A softer, roomier frame: taller rounded nav rows, a washed background, and the page in a
+   * centred column with generous padding. The builder wears it (owner 2026-10-15: "django paneldek
+   * zerikarli oddiy bo'lib qolmasligi kerak"); /ops keeps the dense Django-admin frame.
+   */
+  soft?: boolean;
+};
+
+export const OPS_CONSOLE: ConsoleConfig = {
+  root: "/ops",
+  brand: "admin",
+  crumb: "Admin",
+  collapseKey: "mastersat.ops.sidebar.collapsed",
+  groups: OPS_NAV_GROUPS,
+  visible: visibleNav,
+};

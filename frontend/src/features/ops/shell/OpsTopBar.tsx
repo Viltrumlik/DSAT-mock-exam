@@ -6,7 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ChevronRight, LogOut, Menu } from "lucide-react";
 import { authApi } from "@/lib/api";
 import { OPS_SIDEBAR_ID } from "./OpsSidebar";
-import { sectionFor } from "./opsNav";
+import { OPS_CONSOLE, sectionFor, type ConsoleConfig } from "./opsNav";
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */
 type MeLike = Record<string, unknown> | null | undefined;
@@ -24,7 +24,7 @@ export function opsDisplayName(me: MeLike): string {
 
 /**
  * The bar across the top of the content column: the hamburger (below `lg` only), the
- * breadcrumb "Admin › <section>", and the signed-in user with Log out.
+ * breadcrumb "Admin › <section>" (the builder: "Builder › <section>"), and the signed-in user with Log out.
  */
 export function OpsTopBar({
   pathname,
@@ -32,16 +32,19 @@ export function OpsTopBar({
   mobileOpen,
   onOpenMobile,
   menuButtonRef,
+  config = OPS_CONSOLE,
 }: {
   pathname: string;
   me: MeLike;
   mobileOpen: boolean;
   onOpenMobile: () => void;
   menuButtonRef?: RefObject<HTMLButtonElement | null>;
+  /** Which console this bar belongs to — its home, its first crumb, its nav. */
+  config?: Pick<ConsoleConfig, "root" | "crumb" | "groups">;
 }) {
   const queryClient = useQueryClient();
   const [loggingOut, setLoggingOut] = useState(false);
-  const section = sectionFor(pathname);
+  const section = sectionFor(pathname, config.groups, config.root);
   const name = opsDisplayName(me);
   const atSection = section ? pathname === section.href : false;
 
@@ -63,10 +66,10 @@ export function OpsTopBar({
         <ol className="flex min-w-0 items-center gap-1 text-[13px]">
           <li className="shrink-0">
             <Link
-              href="/ops"
+              href={config.root}
               className="rounded-sm text-muted-foreground hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              Admin
+              {config.crumb}
             </Link>
           </li>
           {section ? (

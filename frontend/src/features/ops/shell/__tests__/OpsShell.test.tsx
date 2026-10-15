@@ -18,6 +18,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { OpsShell } = await import("../OpsShell");
+const { BUILDER_CONSOLE } = await import("@/features/builderShell/builderNav");
 
 const SUPER_ADMIN = { role: "super_admin", permissions: ["*"], first_name: "Aziza", last_name: "Karimova" };
 const ADMIN = { role: "admin", permissions: [], username: "desk1" };
@@ -25,12 +26,12 @@ const ADMIN = { role: "admin", permissions: [], username: "desk1" };
 let container: HTMLDivElement;
 let root: Root;
 
-function render(pathname: string, me: Record<string, unknown>) {
+function render(pathname: string, me: Record<string, unknown>, config?: typeof BUILDER_CONSOLE) {
   const client = new QueryClient();
   act(() => {
     root.render(
       <QueryClientProvider client={client}>
-        <OpsShell pathname={pathname} me={me}>
+        <OpsShell pathname={pathname} me={me} config={config}>
           <p>page body</p>
         </OpsShell>
       </QueryClientProvider>,
@@ -152,5 +153,31 @@ describe("OpsShell", () => {
       document.removeEventListener("click", stopNavigation, true);
     }
     expect(sidebar().className).toContain("max-lg:-translate-x-full");
+  });
+});
+
+describe("OpsShell for the builder", () => {
+  it("wears the same frame with the builder's nav, name and home", () => {
+    render("/builder/question-bank/triage", SUPER_ADMIN, BUILDER_CONSOLE);
+    expect(sidebar().className).toContain("fixed");
+    expect(sidebar().getAttribute("aria-label")).toBe("Builder navigation");
+    expect(sidebar().textContent).toContain("MasterSAT builder");
+    expect(sidebar().querySelector('a[title="MasterSAT builder"]')?.getAttribute("href")).toBe("/builder");
+    const captions = [...sidebar().querySelectorAll("p")].map((p) => p.textContent);
+    expect(captions).toEqual(["Learning", "Simulation"]);
+    // Only Triage Queue is current — not Question Bank, which it nests under.
+    const current = [...sidebar().querySelectorAll('[aria-current="page"]')].map((a) => a.getAttribute("href"));
+    expect(current).toEqual(["/builder/question-bank/triage"]);
+    const crumb = container.querySelector('nav[aria-label="Breadcrumb"]') as HTMLElement;
+    expect(crumb.textContent).toBe("BuilderTriage Queue");
+    expect(crumb.querySelector('a[href="/builder"]')).not.toBeNull();
+  });
+
+  it("remembers its own collapsed rail, apart from the ops console's", () => {
+    window.localStorage.setItem("mastersat.ops.sidebar.collapsed", "1");
+    render("/builder", SUPER_ADMIN, BUILDER_CONSOLE);
+    expect(button("Collapse sidebar")).toBeTruthy();
+    act(() => button("Collapse sidebar")!.click());
+    expect(window.localStorage.getItem("mastersat.builder.sidebar.collapsed")).toBe("1");
   });
 });
