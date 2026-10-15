@@ -194,6 +194,13 @@ describe("the person change form", () => {
     expect(box("lc-up & payments")?.textContent).toContain("250,000 UZS");
   });
 
+  it("offers no class seat to a public user — joining the centre is a new lc-up account", async () => {
+    route(core({ section: "public", status: "public", groups: [] }));
+    await renderPage("public");
+    expect(host.querySelector("h1")?.textContent).toBe("Aziz Tursunov");
+    expect(box("Groups")?.textContent).not.toContain("Add to class");
+  });
+
   it("sends a person opened under the wrong section to the right one", async () => {
     route(core({ section: "public", status: "public" }));
     await renderPage("students");

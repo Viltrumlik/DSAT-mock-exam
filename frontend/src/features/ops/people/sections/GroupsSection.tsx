@@ -79,7 +79,9 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
         </Table>
       )}
 
-      {person.open_classes.length > 0 ? (
+      {/* Students only. The roster endpoint enrols student accounts alone, and the owner's rule is that a
+          public learner who joins the centre gets a NEW account from lc-up, not a seat for the old one. */}
+      {person.section === "students" && person.open_classes.length > 0 ? (
         <div className="mt-3 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor={`add-class-${person.id}`} className="text-muted-foreground">
@@ -102,9 +104,6 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
               Add
             </button>
           </div>
-          {person.section === "public" ? (
-            <p className="text-xs text-muted-foreground">They become a student at the next sync (within 15 minutes).</p>
-          ) : null}
         </div>
       ) : null}
 
