@@ -18,6 +18,8 @@ export type PeopleStatus = "centre" | "public" | "frozen_debt" | "frozen_admin" 
 
 export interface PeopleRowBase {
   id: number;
+  /** The profile photo, when the server sends one; null draws initials. */
+  avatar_url?: string | null;
   username: string;
   /** "First Last", "" when the account has neither. */
   name: string;

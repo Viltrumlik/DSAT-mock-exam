@@ -1,15 +1,25 @@
 "use client";
 
-import Link from "next/link";
-import { formatUzs } from "@/features/finance/financeApi";
-import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
-import { Fieldset, LINK_CLASS, Row } from "./Fieldset";
-import { formatDay, LIST_LABEL, statusText } from "./format";
+import {
+  BookOpen,
+  Fingerprint,
+  GraduationCap,
+  Link2,
+  Mail,
+  Send,
+  Target,
+  Users,
+} from "lucide-react";
+import { Badge } from "@/components/ui";
+import { Fieldset, Row } from "./Fieldset";
+import { formatDay } from "./format";
 import type { PersonCore } from "./personApi";
 
 /**
- * The Overview's read-only side: who this is at a glance, from the page's own payload (no part is
- * fetched for it). Same-name accounts head it — the duplicate accounts the owner keeps untangling.
+ * The Overview's read-only side: the account's facts with an icon each, and the ones that carry a
+ * verdict in colour (an unverified email, a missing Telegram). The balance and the day they joined
+ * are in the header's figures right above, so they are not said twice. Nothing here is fetched: it
+ * is the page's own payload.
  */
 
 /** As the form's Subject select says it, so the two halves of the Overview agree. */
@@ -25,93 +35,82 @@ function targetsText(sat: PersonCore["sat"]): string {
   return parts.length > 0 ? parts.join(" · ") : "—";
 }
 
-function SameName({ person }: { person: PersonCore }) {
-  const n = person.duplicates.length;
-  if (n === 0) return null;
-  return (
-    <div className="mb-2 border-b border-border pb-2" data-testid="same-name">
-      <p className="text-foreground">
-        Same name as {n} other account{n === 1 ? "" : "s"}
-      </p>
-      <ul className="mt-1 space-y-0.5">
-        {person.duplicates.map((d) => (
-          <li key={d.id} className="min-w-0 truncate">
-            <Link href={`/ops/${d.section}/${d.id}`} prefetch={false} className={LINK_CLASS}>
-              {d.name || d.username || `User ${d.id}`}
-            </Link>
-            <span className="text-muted-foreground">
-              {" "}
-              · {LIST_LABEL[d.section] ?? d.section}
-              {d.groups.length > 0 ? ` · ${d.groups.join(", ")}` : ""} · last seen {formatLastSeen(d.last_seen)}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 function hasSatGoal(sat: PersonCore["sat"]): boolean {
   return [sat.exam_date, sat.target_score, sat.target_english, sat.target_math].some((v) => v != null);
 }
+
+const yesNo = (yes: boolean, good: string, bad: string) =>
+  yes ? <Badge variant="success">{good}</Badge> : <Badge variant="warning">{bad}</Badge>;
 
 export function SummaryCard({ person }: { person: PersonCore }) {
   const staff = person.staff;
   const student = person.section === "students";
   return (
-    <Fieldset title="Summary">
-      <SameName person={person} />
-      <Row label="Status">{statusText(person)}</Row>
-
+    <Fieldset title="Summary" icon={Fingerprint} tone="accent" description="The account at a glance">
       {staff ? (
         <>
-          <Row label="Subject">{SUBJECT_LABEL[person.subject] ?? (person.subject || "—")}</Row>
-          <Row label="Classes">
+          <Row label="Subject" icon={BookOpen}>
+            {SUBJECT_LABEL[person.subject] ?? (person.subject || "—")}
+          </Row>
+          <Row label="Classes" icon={Users}>
             {staff.workload.classes} · {staff.workload.students} student{staff.workload.students === 1 ? "" : "s"}
           </Row>
-          <Row label="To review">{staff.workload.to_review}</Row>
-          <Row label="lc-up teacher">{staff.lcup_teacher ? staff.lcup_teacher.name : "Not linked"}</Row>
+          <Row label="lc-up teacher" icon={Link2}>
+            {staff.lcup_teacher ? (
+              <Badge variant="neutral">{staff.lcup_teacher.name}</Badge>
+            ) : (
+              <Badge variant="outline">Not linked</Badge>
+            )}
+          </Row>
         </>
       ) : (
         <>
-          {person.section === "students" ? (
-            <Row label="Groups">
-              {person.groups.length > 0 ? person.groups.map((g) => g.name).join(", ") : "Not in any class"}
+          {student ? (
+            <Row label="Groups" icon={Users}>
+              {person.groups.length > 0 ? (
+                <span className="inline-flex flex-wrap justify-end gap-1">
+                  {person.groups.map((g) => (
+                    <Badge key={g.id} variant="primary">
+                      {g.name}
+                    </Badge>
+                  ))}
+                </span>
+              ) : (
+                <Badge variant="warning">Not in any class</Badge>
+              )}
             </Row>
           ) : person.past_groups.length > 0 ? (
-            <Row label="Earlier groups">{person.past_groups.map((g) => g.name).join(", ")}</Row>
-          ) : null}
-          {person.lcup ? (
-            <Row label="Balance">
-              {person.lcup.balance === null ? (
-                "—"
-              ) : person.lcup.balance < 0 ? (
-                <span className="tabular-nums text-danger">Owes {formatUzs(-person.lcup.balance)}</span>
-              ) : (
-                "Paid up"
-              )}
+            <Row label="Earlier groups" icon={Users}>
+              {person.past_groups.map((g) => g.name).join(", ")}
             </Row>
           ) : null}
         </>
       )}
 
-      <Row label="Last seen">{formatLastSeen(person.last_seen)}</Row>
-      <Row label="Joined">{formatDate(person.date_joined)}</Row>
-      <Row label="Email verified">{person.email_verified ? "Yes" : "No"}</Row>
-      <Row label="Telegram">{person.telegram_linked ? "Linked" : "Not linked"}</Row>
+      <Row label="Email" icon={Mail}>
+        {person.email ? yesNo(person.email_verified, "Verified", "Not verified") : <span className="text-muted-foreground">None</span>}
+      </Row>
+      <Row label="Telegram" icon={Send}>
+        {person.telegram_linked ? <Badge variant="success">Linked</Badge> : <Badge variant="outline">Not linked</Badge>}
+      </Row>
 
       {/* A centre student always shows these; a public user only what is there — a "No" and two
           dashes say nothing about someone who never studied here. */}
       {staff ? null : (
         <>
           {student || person.lcup_created ? (
-            <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row>
+            <Row label="Created by lc-up" icon={Link2}>
+              {person.lcup_created ? "Yes" : "No"}
+            </Row>
           ) : null}
           {student || hasSatGoal(person.sat) ? (
             <>
-              <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
-              <Row label="Targets">
-                {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· set by the student</span>
+              <Row label="SAT exam date" icon={GraduationCap}>
+                {formatDay(person.sat.exam_date)}
+              </Row>
+              <Row label="Targets" icon={Target}>
+                {targetsText(person.sat)}
+                <span className="block text-xs font-normal text-muted-foreground">set by the student</span>
               </Row>
             </>
           ) : null}

@@ -8,7 +8,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PersonAttendance, PersonHistory, PersonResults, PersonSecurity } from "../personApi";
+import type { PersonAttendance, PersonHistory, PersonLcup, PersonResults, PersonSecurity } from "../personApi";
 
 const get = vi.fn();
 
@@ -20,6 +20,7 @@ const { AttendanceSection } = await import("../sections/AttendanceSection");
 const { ResultsSection } = await import("../sections/ResultsSection");
 const { SecuritySection } = await import("../sections/SecuritySection");
 const { HistorySection } = await import("../sections/HistorySection");
+const { freezeTile } = await import("../sections/LcupSection");
 
 let host: HTMLElement;
 let root: Root;
@@ -127,8 +128,14 @@ describe("Attendance", () => {
   it("gives each class its rate out of what counts, and the four counts", async () => {
     serve("attendance", DATA);
     await render(<AttendanceSection id={7} />);
-    expect(text()).toContain("Junior G21 Math — 87.5% of 8 · present 6 · late 1 · absent 1 · excused 0");
-    expect(text()).toContain("Old class (left) — —% of 0");
+    const [live, old] = [...host.querySelectorAll('[data-testid="attendance-class"]')].map((c) => c.textContent ?? "");
+    expect(live).toContain("Junior G21 Math");
+    expect(live).toContain("87.5%");
+    expect(live).toContain("of 8 lessons");
+    for (const chip of ["Present 6", "Late 1", "Absent 1", "Excused 0"]) expect(live).toContain(chip);
+    expect(old).toContain("Old class");
+    expect(old).toContain("Left");
+    expect(old).toContain("—");
   });
 
   it("lists the recent marks with lc-up's reason and whether the register reached lc-up", async () => {
@@ -207,28 +214,49 @@ describe("Results", () => {
     expect(phoneHidden(table("Events"))).toEqual(["Status", "Attended"]);
   });
 
-  it("says Nothing yet under every empty list, and always the XP line", async () => {
+  /** The kinds named on the single "Nothing yet" line. */
+  const nothingYet = () =>
+    [...host.querySelectorAll('[data-testid="results-empty"] li')].map((li) => li.textContent?.trim());
+
+  it("names the empty kinds once on one line, not a card each, and always the XP line", async () => {
     serve("results", EMPTY_RESULTS);
     await render(<ResultsSection id={7} section="students" />);
-    for (const title of [
-      "Homework",
-      "Overdue homework",
-      "Assessments",
-      "Mock exams",
-      "Practice tests",
-      "Midterms",
-      "Events",
-    ]) {
-      expect(subsection(title)).toBe("Nothing yet");
-    }
-    expect(text()).toContain("XP 0 · Coins 0");
+    expect(headings()).toEqual([]);
+    // No overdue homework is not a missing result, so it is not named.
+    expect(nothingYet()).toEqual(["Homework", "Assessments", "Mock exams", "Practice tests", "Midterms", "Events"]);
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*0/);
+    expect(rewards).toMatch(/Coins\s*0/);
+  });
+
+  it("gives a card only to the kinds that have rows", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      mocks: [{ title: "Mock 1", english: 600, math: 650, total: 1250, at: "2026-10-03T10:00:00+05:00" }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    expect(headings()).toEqual(["Mock exams"]);
+    expect(nothingYet()).not.toContain("Mock exams");
+  });
+
+  it("colours a rate by its verdict, not the cell's default", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      homework: [{ class_id: 59, class_name: "Junior G21 Math", rate: 50, completed: 1, total: 2 }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    const rate = [...host.querySelectorAll("td")].find((td) => td.textContent === "50%")!;
+    expect(rate.className).toContain("text-danger");
+    expect(rate.className).not.toContain("text-foreground");
   });
 
   it("shows a public user only mock exams, practice tests and events", async () => {
     serve("results", { ...EMPTY_RESULTS, rewards: { xp: 120, coins: 15 } });
     await render(<ResultsSection id={7} section="public" />);
-    expect(headings()).toEqual(["Mock exams", "Practice tests", "Events"]);
-    expect(text()).toContain("XP 120 · Coins 15");
+    expect(nothingYet()).toEqual(["Mock exams", "Practice tests", "Events"]);
+    const rewards = host.querySelector('[data-testid="rewards"]')!.textContent ?? "";
+    expect(rewards).toMatch(/XP\s*120/);
+    expect(rewards).toMatch(/Coins\s*15/);
   });
 });
 
@@ -339,5 +367,36 @@ describe("History", () => {
     serve("history", { items: [], truncated: false });
     await render(<HistorySection id={7} />);
     expect(text()).toContain("Nothing yet");
+  });
+});
+
+describe("the debt-freeze tile", () => {
+  const LCUP: PersonLcup = {
+    linked: true,
+    balance: -650000,
+    debt: 650000,
+    updated_at: null,
+    frozen_for_debt: false,
+    freeze_day: 6,
+    monthly_cost: 650000,
+    groups: [],
+    payments: [],
+    status: "confirmed",
+    lcup_student_id: 1,
+    exempt: false,
+    freeze_on: true,
+    phone_prompt: null,
+  };
+
+  it("never says all clear beside a debt", () => {
+    expect(freezeTile({ ...LCUP, freeze_on: false }, true, 15)).toMatchObject({ value: "Switched off", tone: "neutral" });
+    expect(freezeTile(LCUP, true, 15)).toMatchObject({ value: "Freezes next sync", tone: "danger" });
+    expect(freezeTile(LCUP, true, 3)).toMatchObject({ value: "Freezes on day 6", tone: "warning" });
+  });
+
+  it("says frozen, exempt or nothing owed as they are", () => {
+    expect(freezeTile({ ...LCUP, frozen_for_debt: true }, true, 15)).toMatchObject({ value: "Frozen", tone: "warning" });
+    expect(freezeTile({ ...LCUP, exempt: true }, true, 15)).toMatchObject({ value: "Exempt", tone: "info" });
+    expect(freezeTile({ ...LCUP, balance: 0, debt: 0 }, false, 15)).toMatchObject({ value: "Not frozen", tone: "success" });
   });
 });

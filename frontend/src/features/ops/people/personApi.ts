@@ -32,6 +32,8 @@ export type PersonLcup = MyFinance & {
   lcup_student_id: number;
   /** Never frozen for debt (`debt_freeze_exempt_at` is set). */
   exempt: boolean;
+  /** `LCUP_DEBT_FREEZE_ENABLED`: whether the debt freeze runs at all. */
+  freeze_on: boolean;
   /** The duplicate-accounts phone form's state, null when never asked. */
   phone_prompt: "pending" | "confirmed" | "not_me" | "superseded" | null;
 };
@@ -62,10 +64,27 @@ export type PersonStaff = {
   workload: { classes: number; students: number; to_review: number };
 };
 
+/** The header's at-a-glance figures (learners only). */
+export type PersonGlance = {
+  /** Across the student's live classes; null when nothing is marked. */
+  attendance_rate: number | null;
+  homework: { completed: number; total: number } | null;
+  mocks_taken: number;
+  last_mock_total: number | null;
+};
+
+/** An open one-time sign-in (phone + its last four digits) waiting to be used. */
+export type PersonOneTimePassword = { expires_at: string | null; used: boolean; locked: boolean };
+
 export type PersonCore = {
   id: number;
   /** Where the account belongs now; the page follows it there when opened under another. */
   section: PeopleSection;
+  /** The profile photo; null draws initials. */
+  avatar_url: string | null;
+  /** Null for staff. */
+  glance: PersonGlance | null;
+  one_time_password: PersonOneTimePassword | null;
   username: string;
   first_name: string;
   last_name: string;
@@ -201,5 +220,15 @@ export const personActions = {
   async revokeSessions(id: number): Promise<number> {
     const { data } = await api.post<{ revoked: number }>(`/users/admin/people/${id}/revoke-sessions/`);
     return data.revoked;
+  },
+  /**
+   * Removes the password: the account signs in once with `login` (its phone) and `code` (the
+   * phone's last four digits), then must choose a new password.
+   */
+  async oneTimePassword(id: number): Promise<{ login: string; code: string; expires_at: string | null }> {
+    const { data } = await api.post<{ login: string; code: string; expires_at: string | null }>(
+      `/users/admin/people/${id}/one-time-password/`,
+    );
+    return data;
   },
 };

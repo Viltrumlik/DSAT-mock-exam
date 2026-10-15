@@ -188,6 +188,7 @@ EVENT_TITLES = {
     "admin_freeze": "Frozen by an admin",
     "admin_unfreeze": "Unfrozen by an admin",
     "admin_revoke_sessions": "Signed out of every device by an admin",
+    "admin_one_time_password": "Given a one-time password by an admin",
     "password_change": "Changed their password",
     "session_revoke_all": "Signed out everywhere",
     "session_revoke_others": "Signed out of other devices",

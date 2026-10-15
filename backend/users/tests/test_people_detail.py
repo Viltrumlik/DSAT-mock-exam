@@ -52,6 +52,12 @@ class PersonCoreTests(TestCase):
         self.assertTrue(body["lcup_created"])
         self.assertIsNone(body["staff"])
 
+    def test_the_lcup_part_says_whether_the_debt_freeze_runs(self):
+        with self.settings(LCUP_DEBT_FREEZE_ENABLED=False):
+            self.assertFalse(self.get(self.aziz.pk).json()["lcup"]["freeze_on"])
+        with self.settings(LCUP_DEBT_FREEZE_ENABLED=True):
+            self.assertTrue(self.get(self.aziz.pk).json()["lcup"]["freeze_on"])
+
     def test_the_freeze_reason_is_debt_or_admin(self):
         User.objects.filter(pk=self.aziz.pk).update(is_frozen=True, frozen_reason="lcup_debt")
         self.assertEqual(self.get(self.aziz.pk).json()["frozen_reason"], "debt")
@@ -79,6 +85,22 @@ class PersonCoreTests(TestCase):
         self.assertEqual(body["staff"]["workload"], {"classes": 2, "students": 1, "to_review": 1})
         self.assertEqual([(c["name"], c["as"]) for c in self.get(ta.pk).json()["staff"]["classes"]],
                          [("Own class", "ta")])
+
+    def test_the_header_gets_a_photo_slot_and_the_glance(self):
+        from datetime import date
+
+        from classes.models_attendance import AttendanceRecord, AttendanceSession
+
+        for i, status in enumerate(["PRESENT", "ABSENT"]):
+            s = AttendanceSession.objects.create(classroom=self.paired, date=date(2026, 10, 1 + i))
+            AttendanceRecord.objects.create(session=s, student=self.aziz, status=status)
+        Assignment.objects.create(classroom=self.paired, title="HW1", status="PUBLISHED", created_by=self.teacher)
+        body = self.get(self.aziz.pk).json()
+        self.assertIsNone(body["avatar_url"])  # no photo uploaded: the page draws initials
+        self.assertEqual(body["glance"]["attendance_rate"], 50.0)
+        self.assertEqual(body["glance"]["homework"], {"completed": 0, "total": 1})
+        self.assertEqual((body["glance"]["mocks_taken"], body["glance"]["last_mock_total"]), (0, None))
+        self.assertIsNone(self.get(self.teacher.pk).json()["glance"])
 
     def test_out_of_scope_or_missing_is_404_and_learners_are_403(self):
         self.assertEqual(self.get(999999).status_code, 404)
