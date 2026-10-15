@@ -63,7 +63,7 @@ export const STUDIO_BTN_SECONDARY =
  * Destructive action button — delete, archive. Requires confirm step before use.
  */
 export const STUDIO_BTN_DESTRUCTIVE =
-  "inline-flex min-h-7 items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[12px] font-medium text-red-700 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50 transition-colors dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300";
+  "inline-flex min-h-8 items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[13px] font-medium text-red-700 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50 transition-colors dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300";
 
 // ─── Error banner ─────────────────────────────────────────────────────────────
 /**

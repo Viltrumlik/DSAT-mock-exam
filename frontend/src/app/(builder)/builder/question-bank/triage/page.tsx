@@ -16,7 +16,6 @@ import { ClassifyModal } from "@/domains/questionBank/components/ClassifyModal";
 import { difficultyLabel } from "@/domains/questionBank/utils";
 import type { QbClassifyInput, QbQuestionListItem } from "@/domains/questionBank/types";
 import {
-  STUDIO_BTN_DESTRUCTIVE,
   STUDIO_CARD,
   STUDIO_ERROR_BANNER,
   STUDIO_LINK,
@@ -33,8 +32,10 @@ import { normalizeApiError } from "@/lib/apiError";
 
 const TH_RIGHT = STUDIO_TH.replace("text-left", "text-right");
 
-// Compact buttons (28px, 12px) for the bulk bar and the rows, sized as STUDIO_BTN_DESTRUCTIVE is so
-// Reject sits level with them.
+// Compact buttons (28px, 12px) for the bulk bar and the rows — a table row is denser than a page
+// header, so these sit a size below the STUDIO_BTN_* tokens, Reject included.
+const ROW_BTN_DANGER =
+  "inline-flex min-h-7 items-center gap-1.5 rounded-md border border-red-200 bg-red-50 px-2.5 py-1 text-[12px] font-medium text-red-700 hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:opacity-50 transition-colors dark:border-red-900/60 dark:bg-red-950/40 dark:text-red-300";
 const ROW_BTN =
   "inline-flex min-h-7 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50";
 const ROW_BTN_PRIMARY =
@@ -162,7 +163,7 @@ export default function TriageQueuePage() {
               type="button"
               disabled={busy}
               onClick={() => void onBulk("reject")}
-              className={STUDIO_BTN_DESTRUCTIVE}
+              className={ROW_BTN_DANGER}
             >
               <X className="h-3.5 w-3.5" /> Reject
             </button>
@@ -257,7 +258,7 @@ export default function TriageQueuePage() {
                         type="button"
                         disabled={busy}
                         onClick={() => void onReject(q.id)}
-                        className={STUDIO_BTN_DESTRUCTIVE}
+                        className={ROW_BTN_DANGER}
                       >
                         Reject
                       </button>
