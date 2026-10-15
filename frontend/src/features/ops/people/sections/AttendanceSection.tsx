@@ -1,6 +1,6 @@
 "use client";
 
-import { Fieldset, PartBody, SubHeading, Table, Td } from "../Fieldset";
+import { Fieldset, PartBody, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
 import { formatDay } from "../format";
 import { usePersonPart, type PersonAttendance } from "../personApi";
 
@@ -45,14 +45,18 @@ export function AttendanceSection({ id }: { id: number }) {
               {d.recent.length === 0 ? (
                 <p className="text-muted-foreground">No marks in the last 30 days.</p>
               ) : (
-                <Table head={["Date", "Class", "Mark", "Note", "lc-up"]}>
+                <Table head={["Date", "Class", "Mark", { label: "Note", className: WIDE_ONLY }, { label: "lc-up", className: WIDE_ONLY }]}>
                   {d.recent.map((r, i) => (
                     <tr key={`${r.date}-${r.class_id}-${i}`}>
                       <Td className="tabular-nums text-muted-foreground">{formatDay(r.date)}</Td>
-                      <Td className="max-w-[14rem] truncate">{r.class_name}</Td>
-                      <Td>{markText(r.status, r.reason)}</Td>
-                      <Td className="max-w-[16rem] truncate text-muted-foreground">{r.note || "—"}</Td>
-                      <Td className="text-muted-foreground">{r.lcup_push ? (PUSH[r.lcup_push] ?? r.lcup_push) : "—"}</Td>
+                      <Td className="max-w-[6rem] truncate sm:max-w-[14rem]">{r.class_name}</Td>
+                      <Td className="max-w-[6rem] truncate sm:max-w-none">
+                        <span title={markText(r.status, r.reason)}>{markText(r.status, r.reason)}</span>
+                      </Td>
+                      <Td className={`${WIDE_ONLY} max-w-[16rem] truncate text-muted-foreground`}>{r.note || "—"}</Td>
+                      <Td className={`${WIDE_ONLY} text-muted-foreground`}>
+                        {r.lcup_push ? (PUSH[r.lcup_push] ?? r.lcup_push) : "—"}
+                      </Td>
                     </tr>
                   ))}
                 </Table>

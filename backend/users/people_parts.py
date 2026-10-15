@@ -7,6 +7,7 @@ from datetime import datetime, time, timedelta
 from django.conf import settings
 from django.utils import timezone
 
+from access import constants as C
 from classes.models import Assignment, Classroom, ClassroomMembership
 from classes.models_attendance import AttendanceRecord
 from classes.models_membership_audit import ClassroomMembershipEvent
@@ -166,7 +167,8 @@ def security_part(user) -> dict:
     return {
         "sessions": [
             {"id": s.pk, "created_at": iso(s.created_at), "last_seen_at": iso(s.last_seen_at), "ip": s.ip or "",
-             "device": (s.user_agent or "").strip()[:120] or "Unknown device"}
+             # Whole (the column holds ≤ 512): the page names it, and a browser's tell can come last.
+             "device": (s.user_agent or "").strip()}
             for s in sessions
         ],
         "telegram_linked": bool(user.telegram_id),
@@ -200,6 +202,12 @@ MEMBERSHIP_ACTIONS = {
     "ROLE_CHANGED": "Role changed in", "STATUS_CHANGED": "Status changed in", "DELETED": "Seat deleted in",
 }
 FIELD_LABELS = {"first_name": "first name", "last_name": "last name", "phone_number": "phone", "is_frozen": "frozen"}
+#: A role as History says it: "student → public user", not "student → public_student".
+ROLE_NAMES = {**{code: label.lower() for code, label in C.ROLE_CHOICES}, C.ROLE_PUBLIC_STUDENT: "public user"}
+
+
+def _role_name(code: str) -> str:
+    return ROLE_NAMES.get(code, code)
 
 
 def _event_title(ev) -> str:
@@ -225,7 +233,8 @@ def history_part(user) -> dict:
     for rc in RoleChange.objects.filter(user=user).order_by("-created_at")[:HISTORY_LIMIT]:
         extra = " and frozen" if rc.froze else (" and unfrozen" if rc.unfroze else "")
         why = ROLE_REASONS.get(rc.reason, rc.reason.replace("_", " "))
-        rows.append((rc.created_at, {"kind": "role", "title": f"Role {rc.from_role} → {rc.to_role}{extra} ({why})",
+        roles = f"{_role_name(rc.from_role)} → {_role_name(rc.to_role)}"
+        rows.append((rc.created_at, {"kind": "role", "title": f"Role {roles}{extra} ({why})",
                                      "by": "lc-up sync" if rc.source == "lcup_sync" else rc.source}))
     for ev in ClassroomMembershipEvent.objects.filter(student=user).order_by("-created_at")[:HISTORY_LIMIT]:
         rows.append((ev.created_at, {"kind": "group",
@@ -238,11 +247,11 @@ def history_part(user) -> dict:
     link = LcupStudentLink.objects.filter(user=user).first()
     if link:
         for p in LcupPayment.objects.filter(lcup_student_id=link.lcup_student_id).order_by("-paid_on")[:HISTORY_LIMIT]:
-            amount = f"{abs(int(p.amount)):,}".replace(",", " ")
+            # "650,000 UZS", as the lc-up box writes it; a payment has a day, not a time.
             rows.append((_day(p.paid_on), {"kind": "payment",
-                                           "title": f"{p.kind.capitalize()} {amount} UZS"
+                                           "title": f"{p.kind.capitalize()} {abs(int(p.amount)):,} UZS"
                                            + (f" for {p.month}" if p.month else ""),
-                                           "by": "lc-up"}))
+                                           "by": "lc-up", "all_day": True}))
     rows = [(t, item) for t, item in rows if t]
     rows.sort(key=lambda r: r[0], reverse=True)
     items = [{"at": iso(timezone.localtime(t)), **item} for t, item in rows[:HISTORY_LIMIT]]

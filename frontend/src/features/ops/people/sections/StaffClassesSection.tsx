@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Fieldset, LINK_CLASS, Row, Table, Td } from "../Fieldset";
+import { Fieldset, LINK_CLASS, Row, Table, Td, WIDE_ONLY } from "../Fieldset";
 import type { PersonStaff } from "../personApi";
 
 /** A staff member's classes — taught, or helped in as a TA — and what is waiting on them. */
@@ -28,17 +28,17 @@ export function StaffClassesSection({ staff }: { staff: PersonStaff }) {
         {staff.classes.length === 0 ? (
           <p className="text-muted-foreground">No classes.</p>
         ) : (
-          <Table head={["Class", "As", "Students", "lc-up"]}>
+          <Table head={["Class", "As", "Students", { label: "lc-up", className: WIDE_ONLY }]}>
             {staff.classes.map((c) => (
               <tr key={`${c.id}-${c.as}`}>
-                <Td className="max-w-[14rem] truncate">
+                <Td className="max-w-[9rem] truncate sm:max-w-[14rem]">
                   <Link href={`/ops/classrooms/${c.id}`} prefetch={false} className={LINK_CLASS}>
                     {c.name}
                   </Link>
                 </Td>
                 <Td>{c.as === "ta" ? "TA" : "Teacher"}</Td>
                 <Td className="tabular-nums">{c.students}</Td>
-                <Td className="text-muted-foreground">{c.lcup_managed ? "Yes" : "—"}</Td>
+                <Td className={`${WIDE_ONLY} text-muted-foreground`}>{c.lcup_managed ? "Yes" : "—"}</Td>
               </tr>
             ))}
           </Table>

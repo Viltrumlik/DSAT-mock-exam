@@ -48,6 +48,22 @@ async function render(node: ReactNode) {
 const text = () => host.textContent ?? "";
 const headings = () => [...host.querySelectorAll("h3")].map((h) => h.textContent?.trim());
 const headers = () => [...host.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+/** A cell a phone does not show: hidden below `sm`, a table cell from there up. */
+const wideOnly = (el: Element) => el.classList.contains("hidden") && el.classList.contains("sm:table-cell");
+
+/**
+ * The header texts of `table`'s columns a phone hides — after checking that every row hides the
+ * same columns as the header, so no cell shifts under the wrong heading on a phone.
+ */
+function phoneHidden(table: Element | null | undefined): string[] {
+  expect(table).toBeTruthy();
+  const heads = [...table!.querySelectorAll("thead th")];
+  for (const tr of table!.querySelectorAll("tbody tr")) {
+    expect([...tr.querySelectorAll("td")].map(wideOnly)).toEqual(heads.map(wideOnly));
+  }
+  return heads.filter(wideOnly).map((th) => th.textContent?.trim() ?? "");
+}
+
 /** The subsection under heading `title`: the h3 and everything up to the next one. */
 function subsection(title: string): string {
   const h = [...host.querySelectorAll("h3")].find((x) => x.textContent?.trim() === title);
@@ -126,6 +142,12 @@ describe("Attendance", () => {
     expect(present).toEqual(["Oct 12, 2026", "Junior G21 Math", "Present", "on time", "—"]);
   });
 
+  it("keeps Date, Class and Mark on a phone and hides the note and lc-up", async () => {
+    serve("attendance", DATA);
+    await render(<AttendanceSection id={7} />);
+    expect(phoneHidden(host.querySelector("table"))).toEqual(["Note", "lc-up"]);
+  });
+
   it("says Nothing yet only when there is nothing", async () => {
     serve("attendance", { classes: [], recent: [] });
     await render(<AttendanceSection id={7} />);
@@ -147,6 +169,31 @@ describe("Results", () => {
     expect(subsection("Homework")).toContain("1/2");
     expect(subsection("Midterms")).toContain("74 / 100");
     expect(subsection("Midterms")).toContain("Yes");
+  });
+
+  it("keeps each table's essential columns on a phone", async () => {
+    serve("results", {
+      ...EMPTY_RESULTS,
+      homework: [{ class_id: 59, class_name: "Junior G21 Math", rate: 50, completed: 1, total: 2 }],
+      overdue: [{ id: 3, title: "HW2", class_name: "Junior G21 Math", due_at: "2026-10-10T18:00:00+05:00" }],
+      assessments: [{ title: "Unit 1", percent: 80, at: "2026-10-02T10:00:00+05:00" }],
+      mocks: [{ title: "Mock 1", english: 600, math: 650, total: 1250, at: "2026-10-03T10:00:00+05:00" }],
+      practice: [{ title: "Practice 1", score: 1200, at: "2026-10-04T10:00:00+05:00" }],
+      midterms: [{ title: "Midterm 1", score: 74, scale: "SCALE_100", passed: true, at: "2026-10-01T10:00:00+05:00" }],
+      events: [{ title: "Open day", starts_at: "2026-10-05T10:00:00+05:00", status: "REGISTERED", attendance: null }],
+    });
+    await render(<ResultsSection id={7} section="students" />);
+    const table = (title: string) => {
+      const h = [...host.querySelectorAll("h3")].find((x) => x.textContent?.trim() === title);
+      return h?.nextElementSibling?.querySelector("table");
+    };
+    expect(phoneHidden(table("Homework"))).toEqual(["Done"]);
+    expect(phoneHidden(table("Overdue homework"))).toEqual(["Class"]);
+    expect(phoneHidden(table("Assessments"))).toEqual(["Date"]);
+    expect(phoneHidden(table("Mock exams"))).toEqual(["EN", "Math", "Date"]);
+    expect(phoneHidden(table("Practice tests"))).toEqual(["Date"]);
+    expect(phoneHidden(table("Midterms"))).toEqual(["Passed", "Date"]);
+    expect(phoneHidden(table("Events"))).toEqual(["Status", "Attended"]);
   });
 
   it("says Nothing yet under every empty list, and always the XP line", async () => {
@@ -175,6 +222,8 @@ describe("Results", () => {
 });
 
 describe("Security", () => {
+  const UA =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
   const DATA: PersonSecurity = {
     sessions: [
       {
@@ -182,7 +231,7 @@ describe("Security", () => {
         created_at: "2026-10-01T09:00:00+05:00",
         last_seen_at: null,
         ip: "1.2.3.4",
-        device: "Mozilla/5.0 Chrome",
+        device: UA,
       },
     ],
     telegram_linked: true,
@@ -194,11 +243,25 @@ describe("Security", () => {
     serve("security", DATA);
     await render(<SecuritySection id={7} />);
     expect(headers()).toEqual(["Device", "IP", "Signed in", "Last active"]);
-    expect(text()).toContain("Mozilla/5.0 Chrome");
     expect(text()).toContain("1.2.3.4");
     expect(text()).toMatch(/Telegram\s*Linked/);
     expect(text()).toMatch(/Email verified\s*No/);
     expect(text()).toMatch(/Password changed\s*Never/);
+  });
+
+  it("names the device in words, with the raw user agent on hover", async () => {
+    serve("security", DATA);
+    await render(<SecuritySection id={7} />);
+    const cell = host.querySelector("tbody td")!;
+    expect(cell.textContent).toBe("Chrome on Windows");
+    expect(cell.querySelector("[title]")?.getAttribute("title")).toBe(UA);
+    expect(text()).not.toContain("Mozilla/5.0");
+  });
+
+  it("keeps Device and Last active on a phone and hides the IP and sign-in time", async () => {
+    serve("security", DATA);
+    await render(<SecuritySection id={7} />);
+    expect(phoneHidden(host.querySelector("table"))).toEqual(["IP", "Signed in"]);
   });
 
   it("says when no device is signed in", async () => {
@@ -228,6 +291,24 @@ describe("History", () => {
     ]);
     expect(text()).toContain("Admin edits are recorded from 15 Oct 2026.");
     expect(text()).not.toContain("Showing the latest 200.");
+  });
+
+  it("gives a payment its day only — lc-up records no time", async () => {
+    serve("history", {
+      items: [
+        {
+          at: "2026-10-01T00:00:00+05:00",
+          kind: "payment",
+          title: "Payment 650,000 UZS for 2026-10",
+          by: "lc-up",
+          all_day: true,
+        },
+      ],
+      truncated: false,
+    });
+    await render(<HistorySection id={7} />);
+    const items = [...host.querySelectorAll("ol > li")].map((li) => li.textContent);
+    expect(items).toEqual(["Oct 1, 2026 · Payment 650,000 UZS for 2026-10 · by lc-up"]);
   });
 
   it("says when the list is cut", async () => {

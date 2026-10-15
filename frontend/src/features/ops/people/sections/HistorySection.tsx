@@ -1,7 +1,7 @@
 "use client";
 
 import { Fieldset, PartBody } from "../Fieldset";
-import { formatDateTime } from "../format";
+import { formatDateTime, formatDay } from "../format";
 import { usePersonPart, type PersonHistory } from "../personApi";
 
 /**
@@ -28,7 +28,10 @@ export function HistorySection({ id }: { id: number }) {
               <ol className="space-y-0.5">
                 {items.map((item, i) => (
                   <li key={`${item.at}-${i}`} className="break-words">
-                    <span className="tabular-nums text-muted-foreground">{formatDateTime(item.at)}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {/* A payment has a day, not a time: its "at" is that day's midnight, read as the day. */}
+                      {item.all_day ? formatDay(item.at.slice(0, 10)) : formatDateTime(item.at)}
+                    </span>
                     {" · "}
                     {item.title}
                     {item.by ? <span className="text-muted-foreground"> · by {item.by}</span> : null}

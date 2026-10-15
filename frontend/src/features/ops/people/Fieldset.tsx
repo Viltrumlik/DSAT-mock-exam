@@ -66,8 +66,18 @@ export function Row({ label, children }: { label: string; children: ReactNode })
   );
 }
 
-/** The changelist's dense table (34px rows), inside a box that scrolls sideways on a phone. */
-export function Table({ head, children }: { head: ReactNode[]; children: ReactNode }) {
+/**
+ * A secondary column a phone does not show: give it to the column's header (`Table`'s `head`) and
+ * to each of its cells (`Td`'s `className`), so a phone sees the columns that matter and no table
+ * runs wider than its box.
+ */
+export const WIDE_ONLY = "hidden sm:table-cell";
+
+/** A column header: its text, or its text and the classes its header cell takes (`WIDE_ONLY`). */
+export type Column = string | { label: string; className?: string };
+
+/** The changelist's dense table (34px rows). The box still scrolls sideways if a row is ever too wide. */
+export function Table({ head, children }: { head: Column[]; children: ReactNode }) {
   return (
     <div className="-mx-3 overflow-x-auto">
       <table className="w-full border-separate border-spacing-0 text-[13px]">
@@ -77,9 +87,12 @@ export function Table({ head, children }: { head: ReactNode[]; children: ReactNo
               <th
                 key={i}
                 scope="col"
-                className="h-8 whitespace-nowrap border-b border-border px-3 text-left text-[12px] font-semibold text-muted-foreground"
+                className={cn(
+                  "h-8 whitespace-nowrap border-b border-border px-3 text-left text-[12px] font-semibold text-muted-foreground",
+                  typeof h === "string" ? undefined : h.className,
+                )}
               >
-                {h}
+                {typeof h === "string" ? h : h.label}
               </th>
             ))}
           </tr>

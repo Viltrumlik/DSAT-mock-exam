@@ -185,7 +185,8 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         </div>
       </div>
 
-      {learner ? <AttendanceSection id={id} /> : null}
+      {/* Attendance is taken in classes; a public user sits in none. */}
+      {section === "students" ? <AttendanceSection id={id} /> : null}
       {learner ? <ResultsSection id={id} section={section} /> : null}
       <SecuritySection id={id} />
       <HistorySection id={id} />

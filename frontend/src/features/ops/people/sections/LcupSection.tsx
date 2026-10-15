@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { formatUzs } from "@/features/finance/financeApi";
-import { Fieldset, Row, SubHeading, Table, Td } from "../Fieldset";
+import { Fieldset, Row, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
 import { formatDateTime, formatDay } from "../format";
 import type { PersonLcup } from "../personApi";
 
@@ -64,14 +64,14 @@ export function LcupSection({ lcup }: { lcup: PersonLcup }) {
           <p className="text-muted-foreground">No payments yet.</p>
         ) : (
           <>
-            <Table head={["Date", "Kind", "Amount", "Month", "Group"]}>
+            <Table head={["Date", "Kind", "Amount", { label: "Month", className: WIDE_ONLY }, { label: "Group", className: WIDE_ONLY }]}>
               {payments.map((p) => (
                 <tr key={p.id}>
                   <Td className="tabular-nums text-muted-foreground">{formatDay(p.date)}</Td>
                   <Td>{capitalize(p.kind)}</Td>
                   <Td className="tabular-nums">{formatUzs(p.amount)}</Td>
-                  <Td className="tabular-nums text-muted-foreground">{p.month || "—"}</Td>
-                  <Td className="max-w-[12rem] truncate text-muted-foreground">{p.group || "—"}</Td>
+                  <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{p.month || "—"}</Td>
+                  <Td className={`${WIDE_ONLY} max-w-[12rem] truncate text-muted-foreground`}>{p.group || "—"}</Td>
                 </tr>
               ))}
             </Table>

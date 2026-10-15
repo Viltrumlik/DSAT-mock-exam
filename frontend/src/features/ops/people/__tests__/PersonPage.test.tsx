@@ -159,6 +159,17 @@ function typeInto(el: HTMLInputElement, value: string) {
   });
 }
 
+/** The header texts of `table`'s columns a phone hides (`hidden sm:table-cell`); every row hides the same ones. */
+function phoneHidden(table: Element | null | undefined): string[] {
+  const wideOnly = (el: Element) => el.classList.contains("hidden") && el.classList.contains("sm:table-cell");
+  expect(table).toBeTruthy();
+  const heads = [...table!.querySelectorAll("thead th")];
+  for (const tr of table!.querySelectorAll("tbody tr")) {
+    expect([...tr.querySelectorAll("td")].map(wideOnly)).toEqual(heads.map(wideOnly));
+  }
+  return heads.filter(wideOnly).map((th) => th.textContent?.trim() ?? "");
+}
+
 const button = (scope: ParentNode, text: string) =>
   [...scope.querySelectorAll("button")].find((b) => b.textContent?.trim() === text) as HTMLButtonElement | undefined;
 
@@ -192,6 +203,50 @@ describe("the person change form", () => {
     expect(button(seat, "Remove")).toBeUndefined();
 
     expect(box("lc-up & payments")?.textContent).toContain("250,000 UZS");
+  });
+
+  it("keeps each table's essential columns on a phone", async () => {
+    const base = core();
+    route(
+      core({
+        lcup: {
+          ...base.lcup!,
+          payments: [
+            { id: 1, date: "2026-10-01", kind: "payment", amount: 650000, method: "", month: "2026-10", group: "G21" },
+          ],
+        },
+        duplicates: [
+          { id: 8, name: "Aziz Tursunov", username: "aziz2", section: "public", status: "public", last_seen: null, groups: [] },
+        ],
+      }),
+    );
+    await renderPage();
+    expect(phoneHidden(box("Groups")?.querySelector("table"))).toEqual(["Teacher", "Joined"]);
+    expect(phoneHidden(box("lc-up & payments")?.querySelector("table"))).toEqual(["Month", "Group"]);
+    expect(phoneHidden(box("Same-name accounts")?.querySelector("table"))).toEqual(["Username", "Status", "Groups"]);
+  });
+
+  it("fits the password hint in its box", async () => {
+    route(core());
+    await renderPage();
+    expect(input("New password").placeholder).toBe("Leave blank to keep");
+  });
+
+  it("shows a learner's SAT goal and lc-up origin", async () => {
+    route(core());
+    await renderPage();
+    const profile = box("Profile")!.textContent;
+    expect(profile).toContain("SAT exam date");
+    expect(profile).toContain("Set by the student");
+    expect(profile).toContain("Created by lc-up");
+  });
+
+  it("gives a public user no attendance box and asks for none", async () => {
+    route(core({ section: "public", status: "public", groups: [], lcup: null }));
+    await renderPage("public");
+    expect(host.querySelector("h1")?.textContent).toBe("Aziz Tursunov");
+    expect(box("Attendance (last 30 days)")).toBeNull();
+    expect(get.mock.calls.some(([url]) => url === "/users/admin/people/7/attendance/")).toBe(false);
   });
 
   it("offers no class seat to a public user — joining the centre is a new lc-up account", async () => {
@@ -327,5 +382,11 @@ describe("the person change form", () => {
     const classes = box("Classes")!;
     expect(classes.textContent).toContain("1 class · 12 students · 3 to review");
     expect(classes.querySelector('a[href="/ops/classrooms/59"]')?.textContent).toBe("Junior G21 Math");
+    expect(phoneHidden(classes.querySelector("table"))).toEqual(["lc-up"]);
+    // A learner's facts are not a staff member's.
+    const profile = box("Profile")!.textContent;
+    expect(profile).not.toContain("SAT exam date");
+    expect(profile).not.toContain("Set by the student");
+    expect(profile).not.toContain("Created by lc-up");
   });
 });

@@ -111,6 +111,8 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
   };
 
   const id = (name: string) => `${uid}-${name}`;
+  // The SAT goal and lc-up's account creation are a learner's; a staff member has neither.
+  const learner = person.section !== "staff";
 
   return (
     <Fieldset title="Profile">
@@ -181,7 +183,7 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
                 type={showPassword ? "text" : "password"}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Leave blank to keep the current one"
+                placeholder="Leave blank to keep"
                 autoComplete="new-password"
                 className={INPUT}
               />
@@ -198,14 +200,18 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
         </div>
 
         <div>
-          <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
-          <Row label="Targets">
-            {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· Set by the student</span>
-          </Row>
+          {learner ? (
+            <>
+              <Row label="SAT exam date">{formatDay(person.sat.exam_date)}</Row>
+              <Row label="Targets">
+                {targetsText(person.sat)} <span className="text-xs text-muted-foreground">· Set by the student</span>
+              </Row>
+            </>
+          ) : null}
           <Row label="Joined">{formatDate(person.date_joined)}</Row>
           <Row label="Email verified">{person.email_verified ? "Yes" : "No"}</Row>
           <Row label="Telegram">{person.telegram_linked ? "Linked" : "Not linked"}</Row>
-          <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row>
+          {learner ? <Row label="Created by lc-up">{person.lcup_created ? "Yes" : "No"}</Row> : null}
         </div>
 
         <div className="space-y-2 border-t border-border pt-3">

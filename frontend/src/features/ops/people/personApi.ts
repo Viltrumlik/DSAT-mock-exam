@@ -160,7 +160,14 @@ export type PersonSecurity = {
 
 /** `GET …/history/`: role changes, seats, security and admin events, lc-up payments; newest first, ≤ 200. */
 export type PersonHistory = {
-  items: { at: string; kind: "role" | "group" | "admin" | "security" | "payment"; title: string; by: string }[];
+  items: {
+    at: string;
+    kind: "role" | "group" | "admin" | "security" | "payment";
+    title: string;
+    by: string;
+    /** A day without a time (an lc-up payment): show the date alone. */
+    all_day?: boolean;
+  }[];
   truncated: boolean;
 };
 

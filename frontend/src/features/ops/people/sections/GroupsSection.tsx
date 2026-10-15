@@ -5,7 +5,7 @@ import Link from "next/link";
 import api from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { formatDate } from "@/features/ops/users/peopleColumns";
-import { Fieldset, LINK_CLASS, SubHeading, Table, Td } from "../Fieldset";
+import { Fieldset, LINK_CLASS, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
 import type { PersonCore } from "../personApi";
 
 /**
@@ -55,16 +55,16 @@ export function GroupsSection({ person, onChanged }: { person: PersonCore; onCha
       {person.groups.length === 0 ? (
         <p className="text-muted-foreground">Not in any class.</p>
       ) : (
-        <Table head={["Class", "Teacher", "Joined", ""]}>
+        <Table head={["Class", { label: "Teacher", className: WIDE_ONLY }, { label: "Joined", className: WIDE_ONLY }, ""]}>
           {person.groups.map((g) => (
             <tr key={g.id}>
-              <Td className="max-w-[14rem] truncate">
+              <Td className="max-w-[12rem] truncate sm:max-w-[14rem]">
                 <Link href={`/ops/classrooms/${g.id}`} prefetch={false} className={LINK_CLASS}>
                   {g.name}
                 </Link>
               </Td>
-              <Td className="text-muted-foreground">{g.teacher || "—"}</Td>
-              <Td className="tabular-nums text-muted-foreground">{formatDate(g.joined_at)}</Td>
+              <Td className={`${WIDE_ONLY} text-muted-foreground`}>{g.teacher || "—"}</Td>
+              <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDate(g.joined_at)}</Td>
               <Td className="text-right">
                 {g.lcup_managed ? (
                   <span className="text-muted-foreground">Change in lc-up</span>

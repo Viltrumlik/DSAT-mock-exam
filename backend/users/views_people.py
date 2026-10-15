@@ -125,7 +125,7 @@ def _same_name_ids() -> list[int]:
 
 _SAME_NAME = (
     "Duplicates",
-    lambda qs: [("yes", "Same name as another account", qs.filter(pk__in=_same_name_ids()).count())],
+    lambda qs: [("yes", "Same name", qs.filter(pk__in=_same_name_ids()).count())],
     lambda v: Q(pk__in=_same_name_ids()) if v == "yes" else None,
 )
 

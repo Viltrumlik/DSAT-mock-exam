@@ -1,7 +1,8 @@
 "use client";
 
 import { formatDate, formatLastSeen } from "@/features/ops/users/peopleColumns";
-import { Fieldset, PartBody, Row, SubHeading, Table, Td } from "../Fieldset";
+import { Fieldset, PartBody, Row, SubHeading, Table, Td, WIDE_ONLY } from "../Fieldset";
+import { describeDevice } from "../device";
 import { formatDateTime } from "../format";
 import { usePersonPart, type PersonSecurity } from "../personApi";
 
@@ -26,14 +27,14 @@ export function SecuritySection({ id }: { id: number }) {
               {d.sessions.length === 0 ? (
                 <p className="text-muted-foreground">No signed-in devices</p>
               ) : (
-                <Table head={["Device", "IP", "Signed in", "Last active"]}>
+                <Table head={["Device", { label: "IP", className: WIDE_ONLY }, { label: "Signed in", className: WIDE_ONLY }, "Last active"]}>
                   {d.sessions.map((s) => (
                     <tr key={s.id}>
-                      <Td className="max-w-[20rem] truncate">
-                        <span title={s.device}>{s.device}</span>
+                      <Td className="max-w-[12rem] truncate sm:max-w-[20rem]">
+                        <span title={s.device || undefined}>{describeDevice(s.device)}</span>
                       </Td>
-                      <Td className="tabular-nums text-muted-foreground">{s.ip || "—"}</Td>
-                      <Td className="tabular-nums text-muted-foreground">{formatDateTime(s.created_at)}</Td>
+                      <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{s.ip || "—"}</Td>
+                      <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDateTime(s.created_at)}</Td>
                       <Td className="tabular-nums text-muted-foreground">
                         {s.last_seen_at ? formatLastSeen(s.last_seen_at) : "—"}
                       </Td>
