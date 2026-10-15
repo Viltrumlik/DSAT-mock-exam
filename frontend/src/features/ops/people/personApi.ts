@@ -101,6 +101,69 @@ export type PersonCore = {
 
 export type PersonPartName = "attendance" | "results" | "security" | "history";
 
+// ── Parts (backend/users/people_parts.py) ─────────────────────────────────────────────────
+
+/** `GET …/attendance/`: every class with records, and the last 30 days' marks (≤ 60, newest first). */
+export type PersonAttendance = {
+  classes: {
+    id: number;
+    name: string;
+    /** False once the seat or the class is gone. */
+    active: boolean;
+    /** Percent of `counted` (EXCUSED is left out); null when nothing counts. */
+    rate: number | null;
+    present: number;
+    late: number;
+    absent: number;
+    excused: number;
+    counted: number;
+  }[];
+  recent: {
+    /** "YYYY-MM-DD". */
+    date: string;
+    class_id: number;
+    class_name: string;
+    status: "PRESENT" | "LATE" | "ABSENT" | "EXCUSED" | string;
+    note: string;
+    /** lc-up's absence reason, "" when none. */
+    reason: string;
+    /** That register's `POST /attendance` to lc-up; null when none was made. */
+    lcup_push: "sent" | "failed" | "refused" | null;
+  }[];
+};
+
+/** `GET …/results/`: each list at most 20, newest first. */
+export type PersonResults = {
+  homework: { class_id: number; class_name: string; rate: number; completed: number; total: number }[];
+  overdue: { id: number; title: string; class_name: string; due_at: string | null }[];
+  assessments: { title: string; percent: number | null; at: string | null }[];
+  mocks: { title: string; english: number | null; math: number | null; total: number | null; at: string | null }[];
+  practice: { title: string; score: number | null; at: string | null }[];
+  /** `scale` is the midterm's scoring scale: "SCALE_100" or "SCALE_800". */
+  midterms: { title: string; score: number | null; scale: string; passed: boolean | null; at: string | null }[];
+  events: {
+    title: string;
+    starts_at: string | null;
+    status: "REGISTERED" | "CANCELLED" | string;
+    attendance: "ATTENDED" | "MISSED" | string | null;
+  }[];
+  rewards: { xp: number; coins: number };
+};
+
+/** `GET …/security/`: live sign-in sessions (no token ever leaves the server). */
+export type PersonSecurity = {
+  sessions: { id: number; created_at: string | null; last_seen_at: string | null; ip: string; device: string }[];
+  telegram_linked: boolean;
+  email_verified: boolean;
+  last_password_change: string | null;
+};
+
+/** `GET …/history/`: role changes, seats, security and admin events, lc-up payments; newest first, ≤ 200. */
+export type PersonHistory = {
+  items: { at: string; kind: "role" | "group" | "admin" | "security" | "payment"; title: string; by: string }[];
+  truncated: boolean;
+};
+
 export const personKeys = {
   all: ["ops", "person"] as const,
   core: (id: number) => ["ops", "person", id] as const,
