@@ -130,6 +130,22 @@ _SAME_NAME = (
 )
 
 
+def _signin_q(value):
+    ever = Q(pk__in=RefreshSession.objects.values("user_id"))
+    return {"never": ~ever, "yes": ever}.get(value)
+
+
+# "Never" is no session at all: JWT sign-in never writes last_login, and sessions are never pruned.
+_SIGNED_IN = (
+    "Signed in",
+    lambda qs: [
+        ("never", "Never", qs.filter(_signin_q("never")).count()),
+        ("yes", "Has signed in", qs.filter(_signin_q("yes")).count()),
+    ],
+    _signin_q,
+)
+
+
 def _present_choices(qs, field, labels):
     rows = qs.order_by().values(field).annotate(n=Count("pk"))
     return sorted(
@@ -160,6 +176,7 @@ FILTERS = {
             lambda v: {"owes": Q(lcup_student_link__balance__lt=0), "clear": ~Q(lcup_student_link__balance__lt=0)}.get(v),
         ),
         "dupes": _SAME_NAME,
+        "signin": _SIGNED_IN,
     },
     "public": {
         "status": ("Status", lambda qs: _fixed(qs, _STATUS, _STATUS_LABELS), _STATUS.get),
@@ -178,6 +195,7 @@ FILTERS = {
             lambda v: {"yes": Q(email_verified=True), "no": Q(email_verified=False)}.get(v),
         ),
         "dupes": _SAME_NAME,
+        "signin": _SIGNED_IN,
     },
     "staff": {
         "role": ("Role", lambda qs: _present_choices(qs, "role", _ROLE_LABELS), lambda v: Q(role=v) if v else None),

@@ -93,6 +93,14 @@ class PeopleListTests(TestCase):
         self.assertEqual(sorted(self.ids(body)), sorted([self.aziz.pk, twin.pk]))
         self.assertEqual(self.facet(self.get(section="students").json(), "dupes"), {"yes": 2})
 
+    def test_never_signed_in_means_no_session_at_all(self):
+        from users.models import RefreshSession
+
+        RefreshSession.objects.create(user=self.aziz, refresh_jti="x")
+        self.assertEqual(self.ids(self.get(section="students", signin="never").json()), [self.malika.pk])
+        self.assertEqual(self.facet(self.get(section="students").json(), "signin"), {"never": 1, "yes": 1})
+        self.assertEqual(self.ids(self.get(section="public", signin="never").json()), [self.pub.pk])
+
     def test_an_unknown_choice_is_ignored_not_an_error(self):
         self.assertEqual(len(self.get(section="students", status="nope").json()["results"]), 2)
 

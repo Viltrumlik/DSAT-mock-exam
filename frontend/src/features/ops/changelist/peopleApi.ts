@@ -66,8 +66,8 @@ export interface PeoplePage<R extends PeopleRowBase = PeopleRow> extends ChangeL
 
 /** The filter keys each section understands (anything else in the address is not sent). */
 export const PEOPLE_FILTER_KEYS: Record<PeopleSection, readonly string[]> = {
-  students: ["status", "group", "teacher", "lcup", "debt"],
-  public: ["status", "joined", "verified"],
+  students: ["status", "group", "teacher", "lcup", "debt", "dupes", "signin"],
+  public: ["status", "joined", "verified", "dupes", "signin"],
   staff: ["role", "subject", "status"],
 };
 
