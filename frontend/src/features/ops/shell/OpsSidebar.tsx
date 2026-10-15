@@ -1,0 +1,150 @@
+"use client";
+
+import type { RefObject } from "react";
+import Link from "next/link";
+import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
+import { cn } from "@/lib/cn";
+import { isOpsNavActive, type OpsNavGroup } from "./opsNav";
+
+export const OPS_SIDEBAR_ID = "ops-sidebar";
+
+/**
+ * The console's left rail, Django-admin style: flush to the window's left edge, full height,
+ * grouped under small uppercase captions, one compact row per section.
+ *
+ * - `lg` and up: fixed, 240px, or a 64px icon rail when `collapsed` (labels move to `title`).
+ * - Below `lg`: an off-canvas drawer (always full labels) that the top bar's hamburger opens.
+ *   Closed, it is `invisible` as well as off-screen, so its links leave the tab order.
+ *
+ * `collapsed` only ever narrows the desktop rail — every collapsed style is `lg:`-prefixed.
+ */
+export function OpsSidebar({
+  groups,
+  pathname,
+  collapsed,
+  mobileOpen,
+  onCloseMobile,
+  onToggleCollapsed,
+  closeButtonRef,
+}: {
+  groups: OpsNavGroup[];
+  pathname: string;
+  collapsed: boolean;
+  mobileOpen: boolean;
+  onCloseMobile: () => void;
+  onToggleCollapsed: () => void;
+  closeButtonRef?: RefObject<HTMLButtonElement | null>;
+}) {
+  return (
+    <aside
+      id={OPS_SIDEBAR_ID}
+      aria-label="Admin navigation"
+      className={cn(
+        "fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border bg-card transition-[transform,width,visibility] duration-200 ease-out",
+        collapsed ? "lg:w-16" : "lg:w-60",
+        mobileOpen ? "translate-x-0" : "max-lg:invisible max-lg:-translate-x-full",
+      )}
+    >
+      {/* Identity — the same height as the top bar, so the two hairlines meet. */}
+      <div
+        className={cn(
+          "flex h-12 shrink-0 items-center gap-2 border-b border-border px-4",
+          collapsed && "lg:justify-center lg:px-0",
+        )}
+      >
+        <Link
+          href="/ops"
+          className="flex min-w-0 items-center gap-2 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          title="MasterSAT admin"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/images/logo.png" alt="" aria-hidden className="h-6 w-6 shrink-0 object-contain" />
+          <span className={cn("truncate text-sm font-bold text-foreground", collapsed && "lg:hidden")}>
+            MasterSAT <span className="font-normal text-muted-foreground">admin</span>
+          </span>
+        </Link>
+        <button
+          ref={closeButtonRef}
+          type="button"
+          onClick={onCloseMobile}
+          aria-label="Close menu"
+          className="ml-auto grid h-8 w-8 place-items-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary lg:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+
+      <nav aria-label="Admin sections" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+        {groups.map((group, index) => (
+          <div key={group.id} className={cn(index > 0 && "mt-3")}>
+            {group.caption ? (
+              <>
+                <p
+                  className={cn(
+                    "px-2.5 pb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+                    collapsed && "lg:hidden",
+                  )}
+                >
+                  {group.caption}
+                </p>
+                {/* On the icon rail a hairline stands in for the caption. */}
+                {collapsed ? <div aria-hidden className="mx-2 mb-2 hidden h-px bg-border lg:block" /> : null}
+              </>
+            ) : null}
+            <ul className="flex flex-col gap-px">
+              {group.items.map((item) => {
+                const active = isOpsNavActive(pathname, item);
+                const Icon = item.icon;
+                return (
+                  <li key={item.href}>
+                    <Link
+                      href={item.href}
+                      onClick={onCloseMobile}
+                      aria-current={active ? "page" : undefined}
+                      title={collapsed ? item.label : undefined}
+                      className={cn(
+                        "relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        collapsed && "lg:justify-center lg:px-0",
+                        active
+                          ? "bg-primary-soft font-semibold text-primary dark:text-primary-hover"
+                          : "text-foreground hover:bg-surface-2",
+                      )}
+                    >
+                      {active ? (
+                        <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
+                      ) : null}
+                      <Icon
+                        aria-hidden
+                        className={cn("h-4 w-4 shrink-0", active ? "text-primary dark:text-primary-hover" : "text-muted-foreground")}
+                      />
+                      <span className={cn("truncate", collapsed && "lg:sr-only")}>{item.label}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </nav>
+
+      <div className="hidden shrink-0 border-t border-border p-2 lg:block">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          aria-controls={OPS_SIDEBAR_ID}
+          aria-expanded={!collapsed}
+          title={collapsed ? "Expand sidebar" : undefined}
+          className={cn(
+            "flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+            // `lib/cn` is a plain join, not tailwind-merge: the variant is what beats `px-2.5`.
+            collapsed && "lg:justify-center lg:px-0",
+          )}
+        >
+          {collapsed ? <ChevronsRight className="h-4 w-4 shrink-0" /> : <ChevronsLeft className="h-4 w-4 shrink-0" />}
+          {collapsed ? null : <span>Collapse</span>}
+        </button>
+      </div>
+    </aside>
+  );
+}

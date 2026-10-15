@@ -1,7 +1,8 @@
-"""The one-off split (plan 2026-10-13).
+"""The one-off split (plans 2026-10-13 and 2026-10-14).
 
-Every active ``student`` who is not a live lc-up member becomes ``public_student`` and loses their
-classroom seats; a linked leaver with a negative lc-up balance is frozen for the debt. ``--revert``
+The seat rule (owner, 2026-10-14: "guruhi yo'q studentlar to'g'ridan to'g'ri public bo'lib qolsin"):
+every active ``student`` with no seat in an active class becomes ``public_student`` — frozen for the
+debt when lc-up shows one — and a public learner who has a seat becomes a student again. ``--revert``
 puts back exactly what ``--apply`` changed (role, debt freeze, each seat's status), from the
 ``RoleChange`` rows it wrote. Prints JSON counts.
 """
@@ -12,14 +13,13 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
-from access import constants as C
 from classes.models import ClassroomMembership
 from users import audience as A
-from users.models import RoleChange, User
+from users.models import RoleChange
 
 
 class Command(BaseCommand):
-    help = "Split learners into centre (live lc-up members) and public. --dry-run | --apply | --revert"
+    help = "Split learners into centre (a seat in a class) and public. --dry-run | --apply | --revert"
 
     def add_arguments(self, parser):
         g = parser.add_mutually_exclusive_group(required=True)
@@ -30,28 +30,19 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         if opts["revert"]:
             return self._out(self._revert())
-        plan = self._plan()
-        counts = {"to_public": len(plan), "to_freeze": sum(owes for _, owes in plan)}
+        to_public, to_centre = A.seat_plan()
+        counts = {
+            "to_public": len(to_public),
+            "to_freeze": sum(owes for _, owes in to_public),
+            "to_centre": len(to_centre),
+        }
         if opts["apply"]:
-            for u, owes in plan:
+            for u, owes in to_public:
                 A.make_public(u, reason=A.REASON_INITIAL_SPLIT, source=A.SOURCE_SPLIT, freeze_for_debt=owes)
+            for u in to_centre:
+                A.make_centre(u, reason=A.REASON_INITIAL_SPLIT, source=A.SOURCE_SPLIT)
             counts["applied"] = True
         self._out(counts)
-
-    def _plan(self):
-        from lcup.models import LcupStudentLink
-        from lcup.sync import live_student_ids
-
-        live_links = live_student_ids()  # LcupStudentLink pks with a live membership
-        links = {link.user_id: link for link in LcupStudentLink.objects.filter(user__isnull=False)}
-        plan = []
-        for u in User.objects.filter(role=C.ROLE_STUDENT, is_active=True).order_by("pk"):
-            link = links.get(u.pk)
-            if link is not None and link.pk in live_links and not link.deleted_in_lcup:
-                continue  # a learning-center student
-            owes = bool(link is not None and link.balance is not None and link.balance < 0)
-            plan.append((u, owes))
-        return plan
 
     @transaction.atomic
     def _revert(self):

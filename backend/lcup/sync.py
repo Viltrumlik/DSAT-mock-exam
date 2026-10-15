@@ -431,11 +431,12 @@ def _run_stages(client, run: _Run) -> None:
         # theirs exists (owner, 2026-10-13); matching would hand them the old one.
         _stage(run, "match_students", lambda: _match_students(run))
     _stage(run, "accounts", lambda: _accounts(run))
-    # Before rosters: a returning student is a student again when the roster adds them back.
+    _stage(run, "rosters", lambda: _rosters(run))
+    # After rosters: the seat rule reads this run's seats — the roster adding a returning student
+    # makes them a student again, and one it took out of their last class becomes public.
     _stage(run, "audience", lambda: audience.apply(run))
     # After the balances (students) and the roles (audience): an unpaid month freezes, a paid one lifts.
     _stage(run, "debt_freeze", lambda: finance.apply_freeze(run))
-    _stage(run, "rosters", lambda: _rosters(run))
     _stage(run, "reasons", lambda: _reasons(client, run))
     # After rosters, so a mark lands on the class as lc-up now has it. One atomic block per
     # register inside, and the push after its block commits — not one stage-wide savepoint.

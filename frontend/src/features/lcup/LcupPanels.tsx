@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { Alert, Badge, Button, Input, Select } from "@/components/ui";
-import type { BadgeVariant } from "@/components/ui/Badge";
+import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { useOrgClassrooms } from "@/features/org/orgHooks";
 import { formatApiErrorForToast } from "@/lib/apiError";
+import { cn } from "@/lib/cn";
 import {
   lcupApi,
   type AttendancePushState,
@@ -28,83 +27,149 @@ import {
 } from "./lcupHooks";
 
 /**
- * The five panels of /ops/lcup. Every write goes through `useLcupAction`, which refetches
+ * The panels of /ops/lcup. Every write goes through `useLcupAction`, which refetches
  * everything under ["lcup"]: one link moves counts, queues and the classes still free to pair.
+ *
+ * Drawn like the console's changelists (features/ops/changelist/ChangeList): hairline borders,
+ * 13px text, dense rows, statuses as plain words — red only for what went wrong.
  *
  * A failed read renders an error with a retry, never the empty state — "nobody to review" and
  * "the review list did not load" must not look the same on a page whose job is the review.
  */
 
-const CARD = "rounded-xl border border-border bg-card p-4";
+// ── look ─────────────────────────────────────────────────────────────────
+// `cn` does not merge Tailwind classes, so a cell's alignment and colour are never set twice:
+// the table carries the colour and `nowrap` (both inherit), a cell only adds what differs.
+
+const BOX = "border border-border bg-card";
+const CAPTION_TEXT = "text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground";
+const CAPTION = `border-b border-border px-3 py-2 ${CAPTION_TEXT}`;
+const TABLE = "w-full border-separate border-spacing-0 whitespace-nowrap text-[13px] text-foreground";
+const TH_BASE = "h-8 border-b border-border bg-card px-2 text-[12px] font-semibold text-muted-foreground";
+const TH = `${TH_BASE} text-left`;
+const TH_R = `${TH_BASE} text-right`;
+const TD = "h-[34px] border-b border-border px-2 py-1";
+const TD_R = `${TD} text-right tabular-nums`;
+/** A cell whose text may run to a second line (notes, errors, suggestions). */
+const TD_WRAP = `${TD} min-w-[12rem] whitespace-normal`;
+const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+const CONTROL =
+  "h-7 rounded-md border border-border bg-card px-2 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+const TEXT_BUTTON =
+  "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline dark:text-primary-hover";
+
 const DAY = ["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+function Btn({ primary, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={cn(
+        "inline-flex h-7 shrink-0 items-center justify-center rounded-md border px-2.5 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50",
+        primary
+          ? "border-primary bg-primary text-primary-foreground hover:bg-primary-hover"
+          : "border-border bg-card text-foreground hover:bg-surface-2",
+        className,
+      )}
+    />
+  );
+}
 
 function when(iso: string | null | undefined): string {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
+/** A long list in one cell, cut to the column with the whole of it on hover. */
+function Clipped({ text, width = "max-w-[14rem]" }: { text: string; width?: string }) {
+  if (!text) return <span className="text-muted-foreground">—</span>;
+  return (
+    <span title={text} className={cn("block truncate", width)}>
+      {text}
+    </span>
+  );
+}
+
 function Loading() {
-  return <p className="text-sm text-muted-foreground">Loading…</p>;
+  return (
+    <p role="status" className="text-[13px] text-muted-foreground">
+      Loading…
+    </p>
+  );
 }
 
 function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
-    <Alert tone="danger" title="This list did not load">
-      <div className="flex flex-wrap items-center gap-3">
-        <span>{formatApiErrorForToast(error)}</span>
-        <Button size="sm" variant="outline" onClick={onRetry}>
-          Retry
-        </Button>
-      </div>
-    </Alert>
+    <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px]")}>
+      <span className="font-semibold text-danger">This list did not load.</span>{" "}
+      <span className="text-muted-foreground">{formatApiErrorForToast(error)}</span>{" "}
+      <button type="button" onClick={onRetry} className={TEXT_BUTTON}>
+        Retry
+      </button>
+    </div>
   );
 }
 
 function ActionError({ error }: { error: unknown }) {
   if (!error) return null;
   return (
-    <div className="mt-2">
-      <Alert tone="danger">{formatApiErrorForToast(error)}</Alert>
+    <p role="alert" className="mt-1 whitespace-normal text-[12px] text-danger">
+      {formatApiErrorForToast(error)}
+    </p>
+  );
+}
+
+/** A table in the changelist's frame, scrolling sideways on a narrow screen. */
+function DenseTable({ caption, head, children }: { caption: string; head: ReactNode; children: ReactNode }) {
+  return (
+    <div className={cn(BOX, "overflow-x-auto")}>
+      <table className={TABLE}>
+        <caption className="sr-only">{caption}</caption>
+        <thead>
+          <tr>{head}</tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
     </div>
   );
 }
 
 // ── status ───────────────────────────────────────────────────────────────
 
-function Tile({ label, value }: { label: string; value: number }) {
+/** One line of a read-only fieldset: the label on the left, the value beside it. */
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className={CARD}>
-      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-foreground">{value}</p>
+    <div className="flex border-b border-border last:border-b-0">
+      <dt className="w-52 shrink-0 px-3 py-1.5 text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 px-3 py-1.5 tabular-nums text-foreground">{children}</dd>
     </div>
   );
 }
 
 function RunRow({ run }: { run: LcupRun }) {
   const counts = Object.entries(run.counts).filter(([, n]) => n);
+  const quiet = !run.alerts.length && !run.errors.length;
   return (
-    <li className="border-t border-border py-3 first:border-t-0 first:pt-0">
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="font-semibold text-foreground">{when(run.started_at)}</span>
-        {run.dry_run ? <Badge variant="outline">Dry run</Badge> : null}
-        <Badge variant={run.ok ? "success" : "danger"}>{run.ok ? "OK" : "Errors"}</Badge>
-      </div>
-      {counts.length ? (
-        <p className="mt-1 text-xs text-muted-foreground">
-          {counts.map(([key, n]) => `${key.replace(/_/g, " ")}: ${n}`).join(" · ")}
-        </p>
-      ) : null}
-      {run.alerts.map((alert) => (
-        <p key={alert} className="mt-1 text-xs text-foreground">
-          ⚠ {alert}
-        </p>
-      ))}
-      {run.errors.map((err) => (
-        <p key={`${err.stage}-${err.error}`} className="mt-1 text-xs text-danger">
-          {err.stage}: {err.error}
-        </p>
-      ))}
-    </li>
+    <tr className={TR}>
+      <td className={TD}>{when(run.started_at)}</td>
+      <td className={cn(TD, "text-muted-foreground")}>{run.dry_run ? "Dry run" : "Sync"}</td>
+      <td className={cn(TD, !run.ok && "text-danger")}>{run.ok ? "OK" : "Errors"}</td>
+      <td className={cn(TD_WRAP, "text-muted-foreground")}>
+        {counts.length ? counts.map(([key, n]) => `${key.replace(/_/g, " ")}: ${n}`).join(" · ") : "—"}
+      </td>
+      <td className={cn(TD_WRAP, quiet && "text-muted-foreground")}>
+        {quiet ? "—" : null}
+        {run.alerts.map((alert) => (
+          <p key={alert}>{alert}</p>
+        ))}
+        {run.errors.map((err) => (
+          <p key={`${err.stage}-${err.error}`} className="text-danger">
+            {err.stage}: {err.error}
+          </p>
+        ))}
+      </td>
+    </tr>
   );
 }
 
@@ -121,91 +186,106 @@ export function StatusPanel() {
 
   return (
     <div className="space-y-4">
-      <div className={CARD}>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant={status.enabled ? "success" : "neutral"}>{status.enabled ? "Sync on" : "Sync off"}</Badge>
-          <Badge variant={status.initial_review_done_at ? "success" : "warning"}>
-            {status.initial_review_done_at
-              ? `Initial review done ${when(status.initial_review_done_at)}`
-              : "Initial review not done yet"}
-          </Badge>
+      <section aria-label="Status" className={cn(BOX, "text-[13px]")}>
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
+          <h2 className={CAPTION_TEXT}>Status</h2>
           <div className="ml-auto flex gap-2">
-            <Button size="sm" variant="outline" disabled={sync.isPending} onClick={() => sync.mutate(true)}>
+            <Btn disabled={sync.isPending} onClick={() => sync.mutate(true)}>
               Dry run
-            </Button>
-            <Button size="sm" disabled={!status.enabled || sync.isPending} onClick={() => sync.mutate(false)}>
+            </Btn>
+            <Btn primary disabled={!status.enabled || sync.isPending} onClick={() => sync.mutate(false)}>
               Sync now
-            </Button>
+            </Btn>
           </div>
         </div>
-        {sync.isSuccess ? (
-          <p className="mt-2 text-sm text-muted-foreground">Queued — the run appears below when the worker finishes it.</p>
+        <dl>
+          <Field label="Sync">{status.enabled ? "On" : "Off"}</Field>
+          <Field label="Initial review">
+            {status.initial_review_done_at ? `Done ${when(status.initial_review_done_at)}` : "Not done yet"}
+          </Field>
+          <Field label="Students to review">{c.needs_review_students}</Field>
+          <Field label="Students with no match">{c.unmatched_students}</Field>
+          <Field label="Teachers to link">{c.needs_review_teachers}</Field>
+          <Field label="Groups to pair">{c.groups_pending}</Field>
+          <Field label="Accounts not claimed yet">{c.unclaimed_accounts}</Field>
+        </dl>
+        {sync.isSuccess || sync.error ? (
+          <div className="border-t border-border px-3 py-2">
+            {sync.isSuccess ? (
+              <p className="text-muted-foreground">Queued — the run appears below when the worker finishes it.</p>
+            ) : null}
+            <ActionError error={sync.error} />
+          </div>
         ) : null}
-        <ActionError error={sync.error} />
-      </div>
+      </section>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Tile label="Students to review" value={c.needs_review_students} />
-        <Tile label="Students with no match" value={c.unmatched_students} />
-        <Tile label="Teachers to link" value={c.needs_review_teachers} />
-        <Tile label="Groups to pair" value={c.groups_pending} />
-        <Tile label="Accounts not claimed yet" value={c.unclaimed_accounts} />
-      </div>
-
-      <div className={CARD}>
-        <h3 className="text-sm font-semibold text-foreground">Initial review</h3>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Until this is marked done, the sync only links and suggests. Once every student who already has an
-          account is linked, mark it done: from the next sync, accounts are created for the rest, and classes for
-          groups that match none of ours.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {confirming ? (
-            <>
-              <Button size="sm" disabled={done.isPending} onClick={() => done.mutate(undefined, { onSuccess: () => setConfirming(false) })}>
-                Yes, mark it done
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-            </>
-          ) : (
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={Boolean(status.initial_review_done_at) || c.needs_review_students > 0}
-              onClick={() => setConfirming(true)}
-            >
-              Mark initial review done
-            </Button>
-          )}
+      <section aria-label="Initial review" className={cn(BOX, "text-[13px]")}>
+        <h2 className={CAPTION}>Initial review</h2>
+        <div className="space-y-2 px-3 py-2">
+          <p className="text-muted-foreground">
+            Until this is marked done, the sync only links and suggests. Once every student who already has an account
+            is linked, mark it done: from the next sync, accounts are created for the rest, and classes for groups that
+            match none of ours.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {confirming ? (
+              <>
+                <Btn
+                  primary
+                  disabled={done.isPending}
+                  onClick={() => done.mutate(undefined, { onSuccess: () => setConfirming(false) })}
+                >
+                  Yes, mark it done
+                </Btn>
+                <Btn onClick={() => setConfirming(false)}>Cancel</Btn>
+              </>
+            ) : (
+              <Btn
+                disabled={Boolean(status.initial_review_done_at) || c.needs_review_students > 0}
+                onClick={() => setConfirming(true)}
+              >
+                Mark initial review done
+              </Btn>
+            )}
+          </div>
+          <ActionError error={done.error} />
         </div>
-        <ActionError error={done.error} />
-      </div>
+      </section>
 
-      <div className={CARD}>
-        <h3 className="mb-3 text-sm font-semibold text-foreground">Recent runs</h3>
+      <section aria-label="Recent runs" className="space-y-2">
+        <h2 className={CAPTION_TEXT}>Recent runs</h2>
         {status.recent_runs.length ? (
-          <ul>
+          <DenseTable
+            caption="Recent sync runs"
+            head={
+              <>
+                <th scope="col" className={TH}>Started</th>
+                <th scope="col" className={TH}>Kind</th>
+                <th scope="col" className={TH}>Result</th>
+                <th scope="col" className={TH}>Changes</th>
+                <th scope="col" className={TH}>Alerts and errors</th>
+              </>
+            }
+          >
             {status.recent_runs.map((run) => (
               <RunRow key={run.id} run={run} />
             ))}
-          </ul>
+          </DenseTable>
         ) : (
-          <p className="text-sm text-muted-foreground">No sync has run yet. A dry run shows what the first one would do.</p>
+          <p className="text-[13px] text-muted-foreground">No sync has run yet. A dry run shows what the first one would do.</p>
         )}
-      </div>
+      </section>
     </div>
   );
 }
 
 // ── groups ───────────────────────────────────────────────────────────────
 
-const GROUP_BADGE: Record<GroupLinkStatus, { variant: BadgeVariant; label: string }> = {
-  suggested: { variant: "warning", label: "To pair" },
-  needs_teacher: { variant: "warning", label: "Link its teacher first" },
-  confirmed: { variant: "success", label: "Paired" },
-  ignored: { variant: "outline", label: "Ignored" },
+const GROUP_STATUS: Record<GroupLinkStatus, string> = {
+  suggested: "To pair",
+  needs_teacher: "Link its teacher first",
+  confirmed: "Paired",
+  ignored: "Ignored",
 };
 
 const GROUP_ORDER: Record<GroupLinkStatus, number> = { suggested: 0, needs_teacher: 1, confirmed: 2, ignored: 3 };
@@ -215,47 +295,54 @@ function GroupRow({ group, freeRooms }: { group: LcupGroup; freeRooms: { id: num
   const confirm = useLcupAction((classroomId: number | undefined) => lcupApi.confirmGroup(group.id, classroomId));
   const create = useLcupAction(() => lcupApi.createClass(group.id));
   const ignore = useLcupAction(() => lcupApi.ignoreGroup(group.id));
-  const badge = GROUP_BADGE[group.status];
   const open = !group.deleted && group.status !== "confirmed" && group.status !== "ignored";
   const busy = confirm.isPending || create.isPending || ignore.isPending;
+  const days = group.days.map((d) => DAY[d] ?? d).join("/");
+  const time = group.start_time ? `${group.start_time}–${group.finish_time}` : "";
+  const schedule = [days, time].filter(Boolean).join(" ");
+  const error = confirm.error || create.error || ignore.error;
 
   return (
-    <li className={CARD}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-foreground">{group.name}</span>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-        {group.deleted ? <Badge variant="danger">Deleted in lc-up</Badge> : null}
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {[group.course, group.days.map((d) => DAY[d] ?? d).join("/"), group.start_time && `${group.start_time}–${group.finish_time}`, group.teachers.join(", "), group.member_count != null && `${group.member_count} in lc-up`]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-
-      {group.classroom ? (
-        <p className="mt-2 text-sm text-foreground">Paired with {group.classroom.name}</p>
-      ) : group.suggestion ? (
-        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="text-foreground">
-            Suggested: <span className="font-semibold">{group.suggestion.name}</span> ({group.suggestion.score}/14)
+    <tr className={TR}>
+      <td className={TD}>
+        <span className="font-medium">{group.name}</span>
+        {group.deleted ? <span className="ml-2 text-[12px] text-danger">Deleted in lc-up</span> : null}
+      </td>
+      <td className={cn(TD, "text-muted-foreground")}>{group.course || "—"}</td>
+      <td className={cn(TD, "text-muted-foreground")}>{schedule || "—"}</td>
+      <td className={cn(TD, "text-muted-foreground")}>
+        <Clipped text={group.teachers.join(", ")} width="max-w-[11rem]" />
+      </td>
+      <td className={TD_R}>{group.member_count ?? "—"}</td>
+      <td className={cn(TD, group.status === "ignored" && "text-muted-foreground")}>{GROUP_STATUS[group.status]}</td>
+      <td className={TD_WRAP}>
+        {group.classroom ? (
+          group.classroom.name
+        ) : group.suggestion ? (
+          <>
+            Suggested: <span className="font-medium">{group.suggestion.name}</span> ({group.suggestion.score}/14)
+            {group.suggestion.reasons.length ? (
+              <span className="block text-[12px] text-muted-foreground">{group.suggestion.reasons.join(", ")}</span>
+            ) : null}
+          </>
+        ) : group.notes.length ? null : (
+          <span className="text-muted-foreground">—</span>
+        )}
+        {group.notes.map((note) => (
+          <span key={note} className="block text-[12px] text-muted-foreground">
+            {note}
           </span>
-          {group.suggestion.reasons.map((reason) => (
-            <Badge key={reason} variant="outline">
-              {reason}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-      {group.notes.map((note) => (
-        <p key={note} className="mt-1 text-xs text-muted-foreground">
-          {note}
-        </p>
-      ))}
-
-      {open ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <div className="w-64">
-            <Select selectSize="sm" aria-label={`Class for ${group.name}`} value={choice} onChange={(e) => setChoice(e.target.value)}>
+        ))}
+      </td>
+      <td className={TD}>
+        {open ? (
+          <div className="flex items-center gap-1.5">
+            <select
+              aria-label={`Class for ${group.name}`}
+              value={choice}
+              onChange={(e) => setChoice(e.target.value)}
+              className={cn(CONTROL, "w-48")}
+            >
               <option value="">Choose a class…</option>
               {group.suggestion && !freeRooms.some((r) => r.id === group.suggestion!.id) ? (
                 <option value={group.suggestion.id}>{group.suggestion.name}</option>
@@ -265,21 +352,21 @@ function GroupRow({ group, freeRooms }: { group: LcupGroup; freeRooms: { id: num
                   {room.name}
                 </option>
               ))}
-            </Select>
+            </select>
+            <Btn primary disabled={busy || !choice} onClick={() => confirm.mutate(Number(choice))}>
+              Pair
+            </Btn>
+            <Btn disabled={busy} onClick={() => create.mutate(undefined)}>
+              Create a new class
+            </Btn>
+            <button type="button" className={cn(TEXT_BUTTON, "px-1")} disabled={busy} onClick={() => ignore.mutate(undefined)}>
+              Ignore
+            </button>
           </div>
-          <Button size="sm" disabled={busy || !choice} onClick={() => confirm.mutate(Number(choice))}>
-            Pair
-          </Button>
-          <Button size="sm" variant="outline" disabled={busy} onClick={() => create.mutate(undefined)}>
-            Create a new class
-          </Button>
-          <Button size="sm" variant="ghost" disabled={busy} onClick={() => ignore.mutate(undefined)}>
-            Ignore
-          </Button>
-        </div>
-      ) : null}
-      <ActionError error={confirm.error || create.error || ignore.error} />
-    </li>
+        ) : null}
+        <ActionError error={error} />
+      </td>
+    </tr>
   );
 }
 
@@ -296,29 +383,52 @@ export function GroupsPanel() {
   );
 
   if (!groups.length) {
-    return <p className="text-sm text-muted-foreground">No lc-up groups yet. They appear after the first sync.</p>;
+    return <p className="text-[13px] text-muted-foreground">No lc-up groups yet. They appear after the first sync.</p>;
   }
   return (
-    <div className="space-y-3">
-      {rooms.error ? <Alert tone="warning">Our class list did not load, so only suggested classes can be chosen.</Alert> : null}
-      <ul className="space-y-3">
+    <div className="space-y-2">
+      {rooms.error ? (
+        <p role="alert" className="text-[12px] text-danger">
+          Our class list did not load, so only suggested classes can be chosen.
+        </p>
+      ) : null}
+      <p className="text-[13px] tabular-nums text-muted-foreground">
+        {groups.length} {groups.length === 1 ? "group" : "groups"}
+      </p>
+      <DenseTable
+        caption="lc-up groups and the classes they are paired with"
+        head={
+          <>
+            <th scope="col" className={TH}>Group</th>
+            <th scope="col" className={TH}>Course</th>
+            <th scope="col" className={TH}>Schedule</th>
+            <th scope="col" className={TH}>Teachers</th>
+            <th scope="col" className={TH_R}>In lc-up</th>
+            <th scope="col" className={TH}>Status</th>
+            <th scope="col" className={TH}>Class</th>
+            <th scope="col" className={TH}>
+              <span className="sr-only">Actions</span>
+            </th>
+          </>
+        }
+      >
         {groups.map((group) => (
           <GroupRow key={group.id} group={group} freeRooms={freeRooms} />
         ))}
-      </ul>
+      </DenseTable>
     </div>
   );
 }
 
 // ── students and teachers ────────────────────────────────────────────────
 
-const LINK_BADGE: Record<LinkStatus, { variant: BadgeVariant; label: string }> = {
-  auto: { variant: "success", label: "Auto-linked" },
-  confirmed: { variant: "success", label: "Linked" },
-  created: { variant: "info", label: "Account created" },
-  needs_review: { variant: "warning", label: "Needs review" },
-  unmatched: { variant: "neutral", label: "No match" },
-  ignored: { variant: "outline", label: "Ignored" },
+const LINK_STATUS: Record<LinkStatus, string> = {
+  auto: "Auto-linked",
+  confirmed: "Linked",
+  created: "Account created",
+  needs_review: "Needs review",
+  unmatched: "No match",
+  ignored: "Ignored",
 };
 
 function PersonRow({ person, kind }: { person: LcupPerson; kind: "students" | "teachers" }) {
@@ -329,68 +439,103 @@ function PersonRow({ person, kind }: { person: LcupPerson; kind: "students" | "t
   );
   const ignore = useLcupAction(() => (kind === "students" ? lcupApi.ignoreStudent(person.id) : lcupApi.ignoreTeacher(person.id)));
   const create = useLcupAction((otherPhone: string) => lcupApi.createAccount(person.id, otherPhone || undefined));
-  const badge = LINK_BADGE[person.status];
   const busy = link.isPending || ignore.isPending || create.isPending;
 
   return (
-    <li className={CARD}>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-semibold text-foreground">{person.name}</span>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
-        <span className="text-xs text-muted-foreground">{person.phone || "no phone in lc-up"}</span>
-      </div>
-      <p className="mt-1 text-xs text-muted-foreground">
-        {[person.groups.join(", "), person.reason].filter(Boolean).join(" · ")}
-      </p>
-      {person.user ? (
-        <p className="mt-1 text-sm text-foreground">
-          Linked to {person.user.name} ({person.user.username})
-        </p>
-      ) : null}
-
-      {person.candidates.length ? (
-        <ul className="mt-2 space-y-1">
-          {person.candidates.map((candidate) => (
-            <li key={candidate.user_id} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-foreground">{candidate.name}</span>
-              <span className="text-xs text-muted-foreground">{candidate.reason}</span>
-              <Button size="sm" variant="outline" disabled={busy} onClick={() => link.mutate(candidate.user_id)}>
-                Link
-              </Button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <div className="w-40">
-          <Input
+    <tr className={TR}>
+      <td className={cn(TD, "font-medium")}>{person.name}</td>
+      <td className={cn(TD, !person.phone && "text-muted-foreground")}>{person.phone || "no phone in lc-up"}</td>
+      <td className={cn(TD, "text-muted-foreground")}>
+        <Clipped text={person.groups.join(", ")} />
+      </td>
+      <td className={cn(TD, person.status === "ignored" && "text-muted-foreground")}>{LINK_STATUS[person.status]}</td>
+      <td className={cn(TD_WRAP, "text-muted-foreground")}>{person.reason || "—"}</td>
+      <td className={cn(TD, !person.user && "text-muted-foreground")}>
+        {person.user ? `${person.user.name} (${person.user.username})` : "—"}
+      </td>
+      <td className={TD}>
+        {person.candidates.length ? (
+          <ul className="space-y-0.5">
+            {person.candidates.map((candidate) => (
+              <li key={candidate.user_id} className="flex items-center gap-2">
+                <span>{candidate.name}</span>
+                <span className="text-[12px] text-muted-foreground">{candidate.reason}</span>
+                <button
+                  type="button"
+                  className={TEXT_BUTTON}
+                  disabled={busy}
+                  aria-label={`Link to ${candidate.name}`}
+                  onClick={() => link.mutate(candidate.user_id)}
+                >
+                  Link
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        )}
+      </td>
+      <td className={TD}>
+        <div className="flex items-center gap-1.5">
+          <input
             aria-label="Account ID"
             placeholder="Account ID"
             inputMode="numeric"
             value={accountId}
             onChange={(e) => setAccountId(e.target.value.replace(/\D/g, ""))}
+            className={cn(CONTROL, "w-24")}
           />
+          <Btn disabled={busy || !accountId} onClick={() => link.mutate(Number(accountId))}>
+            Link to this account
+          </Btn>
+          {kind === "students" && !person.user ? (
+            <>
+              <input
+                aria-label="Another phone"
+                placeholder="Another phone (siblings)"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                className={cn(CONTROL, "ml-2 w-44")}
+              />
+              <Btn primary disabled={busy} onClick={() => create.mutate(phone)}>
+                Create account
+              </Btn>
+            </>
+          ) : null}
+          <button type="button" className={cn(TEXT_BUTTON, "ml-1 px-1")} disabled={busy} onClick={() => ignore.mutate(undefined)}>
+            Ignore
+          </button>
         </div>
-        <Button size="sm" variant="outline" disabled={busy || !accountId} onClick={() => link.mutate(Number(accountId))}>
-          Link to this account
-        </Button>
-        {kind === "students" && !person.user ? (
-          <>
-            <div className="w-48">
-              <Input aria-label="Another phone" placeholder="Another phone (siblings)" value={phone} onChange={(e) => setPhone(e.target.value)} />
-            </div>
-            <Button size="sm" disabled={busy} onClick={() => create.mutate(phone)}>
-              Create account
-            </Button>
-          </>
-        ) : null}
-        <Button size="sm" variant="ghost" disabled={busy} onClick={() => ignore.mutate(undefined)}>
-          Ignore
-        </Button>
-      </div>
-      <ActionError error={link.error || ignore.error || create.error} />
-    </li>
+        <ActionError error={link.error || ignore.error || create.error} />
+      </td>
+    </tr>
+  );
+}
+
+function PeopleTable({ people, kind }: { people: LcupPerson[]; kind: "students" | "teachers" }) {
+  return (
+    <DenseTable
+      caption={kind === "students" ? "lc-up students" : "lc-up teachers"}
+      head={
+        <>
+          <th scope="col" className={TH}>Name</th>
+          <th scope="col" className={TH}>Phone</th>
+          <th scope="col" className={TH}>Groups</th>
+          <th scope="col" className={TH}>Status</th>
+          <th scope="col" className={TH}>Note</th>
+          <th scope="col" className={TH}>Linked to</th>
+          <th scope="col" className={TH}>Possible matches</th>
+          <th scope="col" className={TH}>
+            <span className="sr-only">Actions</span>
+          </th>
+        </>
+      }
+    >
+      {people.map((person) => (
+        <PersonRow key={person.id} person={person} kind={kind} />
+      ))}
+    </DenseTable>
   );
 }
 
@@ -398,15 +543,28 @@ function UnlinkedMembers() {
   const q = useLcupUnlinked();
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data.length) return <p className="text-sm text-muted-foreground">Every student of a paired class is linked to lc-up.</p>;
+  if (!q.data.length) {
+    return <p className="text-[13px] text-muted-foreground">Every student of a paired class is linked to lc-up.</p>;
+  }
   return (
-    <ul className="space-y-1 text-sm">
+    <DenseTable
+      caption="Students in paired classes who are not linked to lc-up"
+      head={
+        <>
+          <th scope="col" className={TH}>Student</th>
+          <th scope="col" className={TH}>Class</th>
+          <th scope="col" className={TH_R}>Account ID</th>
+        </>
+      }
+    >
       {q.data.map((row) => (
-        <li key={`${row.classroom.id}-${row.user.id}`} className="text-foreground">
-          {row.user.name} <span className="text-muted-foreground">· {row.classroom.name} · account {row.user.id}</span>
-        </li>
+        <tr key={`${row.classroom.id}-${row.user.id}`} className={TR}>
+          <td className={TD}>{row.user.name}</td>
+          <td className={cn(TD, "text-muted-foreground")}>{row.classroom.name}</td>
+          <td className={TD_R}>{row.user.id}</td>
+        </tr>
       ))}
-    </ul>
+    </DenseTable>
   );
 }
 
@@ -416,34 +574,46 @@ export function StudentsPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="w-64">
-        <Select selectSize="sm" aria-label="Which students" value={filter} onChange={(e) => setFilter(e.target.value as StudentFilter)}>
-          <option value="needs_review">Needs review</option>
-          <option value="unmatched">No match yet</option>
-          <option value="all">Everyone in a live group</option>
-        </Select>
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          <label className="flex items-center gap-2 text-muted-foreground">
+            Show
+            <select
+              aria-label="Which students"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value as StudentFilter)}
+              className={CONTROL}
+            >
+              <option value="needs_review">Needs review</option>
+              <option value="unmatched">No match yet</option>
+              <option value="all">Everyone in a live group</option>
+            </select>
+          </label>
+          {q.data ? (
+            <span className="tabular-nums text-muted-foreground">
+              {q.data.length} {q.data.length === 1 ? "student" : "students"}
+            </span>
+          ) : null}
+        </div>
+        {q.isLoading ? (
+          <Loading />
+        ) : q.error || !q.data ? (
+          <LoadError error={q.error} onRetry={() => void q.refetch()} />
+        ) : q.data.length ? (
+          <PeopleTable people={q.data} kind="students" />
+        ) : (
+          <p className="text-[13px] text-muted-foreground">Nobody here.</p>
+        )}
       </div>
-      {q.isLoading ? (
-        <Loading />
-      ) : q.error || !q.data ? (
-        <LoadError error={q.error} onRetry={() => void q.refetch()} />
-      ) : q.data.length ? (
-        <ul className="space-y-3">
-          {q.data.map((person) => (
-            <PersonRow key={person.id} person={person} kind="students" />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">Nobody here.</p>
-      )}
-      <div className={CARD}>
-        <h3 className="mb-2 text-sm font-semibold text-foreground">In our paired classes, but not linked to lc-up</h3>
-        <p className="mb-3 text-xs text-muted-foreground">
-          The sync never removes these students. Link each one to their lc-up record above, or leave them if they
-          are not lc-up students.
+
+      <section aria-label="In our paired classes, but not linked to lc-up" className="space-y-2">
+        <h2 className={CAPTION_TEXT}>In our paired classes, but not linked to lc-up</h2>
+        <p className="text-[12px] text-muted-foreground">
+          The sync never removes these students. Link each one to their lc-up record above, or leave them if they are
+          not lc-up students.
         </p>
         <UnlinkedMembers />
-      </div>
+      </section>
     </div>
   );
 }
@@ -452,24 +622,18 @@ export function TeachersPanel() {
   const q = useLcupTeachers();
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data.length) return <p className="text-sm text-muted-foreground">Every lc-up teacher is linked.</p>;
-  return (
-    <ul className="space-y-3">
-      {q.data.map((person) => (
-        <PersonRow key={person.id} person={person} kind="teachers" />
-      ))}
-    </ul>
-  );
+  if (!q.data.length) return <p className="text-[13px] text-muted-foreground">Every lc-up teacher is linked.</p>;
+  return <PeopleTable people={q.data} kind="teachers" />;
 }
 
 // ── accounts ─────────────────────────────────────────────────────────────
 
-const CLAIM_BADGE: Record<ClaimState, { variant: BadgeVariant; label: string }> = {
-  pending: { variant: "neutral", label: "Not signed in yet" },
-  signed_in: { variant: "info", label: "Signed in, choosing a password" },
-  done: { variant: "success", label: "Claimed" },
-  expired: { variant: "warning", label: "Code expired" },
-  locked: { variant: "danger", label: "Locked after 5 tries" },
+const CLAIM_STATE: Record<ClaimState, string> = {
+  pending: "Not signed in yet",
+  signed_in: "Signed in, choosing a password",
+  done: "Claimed",
+  expired: "Code expired",
+  locked: "Locked after 5 tries",
 };
 
 export function AccountsPanel() {
@@ -478,40 +642,57 @@ export function AccountsPanel() {
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) {
-    return <p className="text-sm text-muted-foreground">No accounts created yet — they come after the initial review.</p>;
+    return <p className="text-[13px] text-muted-foreground">No accounts created yet — they come after the initial review.</p>;
   }
   return (
     <div className="space-y-2">
-      <p className="text-sm text-muted-foreground">
+      <p className="text-[13px] text-muted-foreground">
         A student signs in with their phone number; the first password is its last 4 digits, for 14 days.
       </p>
       <ActionError error={reissue.error} />
-      <ul className="space-y-2">
+      <DenseTable
+        caption="Accounts created from lc-up"
+        head={
+          <>
+            <th scope="col" className={TH}>Student</th>
+            <th scope="col" className={TH}>Phone</th>
+            <th scope="col" className={TH}>State</th>
+            <th scope="col" className={TH}>Valid until</th>
+            <th scope="col" className={TH_R}>
+              <span className="sr-only">Action</span>
+            </th>
+          </>
+        }
+      >
         {q.data.map((account) => {
-          const badge = CLAIM_BADGE[account.state];
+          const stuck = account.state === "expired" || account.state === "locked";
           return (
-            <li key={account.user.id} className={`${CARD} flex flex-wrap items-center gap-2`}>
-              <span className="font-semibold text-foreground">{account.user.name}</span>
-              <span className="text-xs text-muted-foreground">{account.phone}</span>
-              <Badge variant={badge.variant}>{badge.label}</Badge>
-              <span className="text-xs text-muted-foreground">until {when(account.expires_at)}</span>
-              {account.state === "expired" || account.state === "locked" ? (
-                <Button size="sm" variant="outline" className="ml-auto" disabled={reissue.isPending} onClick={() => reissue.mutate(account.user.id)}>
-                  Reissue the code
-                </Button>
-              ) : null}
-            </li>
+            <tr key={account.user.id} className={TR}>
+              <td className={cn(TD, "font-medium")}>{account.user.name}</td>
+              <td className={TD}>{account.phone}</td>
+              <td className={cn(TD, stuck && "text-danger")}>{CLAIM_STATE[account.state]}</td>
+              <td className={cn(TD, "text-muted-foreground")}>{when(account.expires_at)}</td>
+              <td className={cn(TD, "text-right")}>
+                {stuck ? (
+                  <Btn disabled={reissue.isPending} onClick={() => reissue.mutate(account.user.id)}>
+                    Reissue the code
+                  </Btn>
+                ) : null}
+              </td>
+            </tr>
           );
         })}
-      </ul>
+      </DenseTable>
     </div>
   );
 }
 
-const PUSH_BADGE: Record<AttendancePushState, { label: string; variant: BadgeVariant }> = {
-  sent: { label: "Sent", variant: "success" },
-  failed: { label: "Will retry", variant: "warning" },
-  refused: { label: "Refused by lc-up", variant: "danger" },
+// ── attendance ───────────────────────────────────────────────────────────
+
+const PUSH_STATE: Record<AttendancePushState, string> = {
+  sent: "Sent",
+  failed: "Will retry",
+  refused: "Refused by lc-up",
 };
 
 /** What was sent to lc-up — once per register, when it closes — and what lc-up did not take. */
@@ -521,40 +702,48 @@ export function AttendancePushesPanel() {
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
   if (!q.data.length) {
     return (
-      <p className="text-sm text-muted-foreground">
-        Nothing sent to lc-up yet. A register is sent once it closes — two hours after its lesson — and only
-        the marks lc-up does not already have.
+      <p className="text-[13px] text-muted-foreground">
+        Nothing sent to lc-up yet. A register is sent once it closes — two hours after its lesson — and only the marks
+        lc-up does not already have.
       </p>
     );
   }
   return (
-    <ul className="space-y-2">
+    <DenseTable
+      caption="Registers sent to lc-up"
+      head={
+        <>
+          <th scope="col" className={TH}>Group</th>
+          <th scope="col" className={TH}>Lesson</th>
+          <th scope="col" className={TH}>State</th>
+          <th scope="col" className={TH}>Marks</th>
+          <th scope="col" className={TH}>Not taken by lc-up</th>
+        </>
+      }
+    >
       {q.data.map((push) => {
-        const badge = PUSH_BADGE[push.state];
+        const quiet = !push.error && !push.failures.length;
         return (
-          <li key={push.id} className={CARD}>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-semibold text-foreground">{push.group}</span>
-              <span className="text-xs text-muted-foreground">{push.date}</span>
-              <Badge variant={badge.variant}>{badge.label}</Badge>
-              <span className="text-xs text-muted-foreground">
-                {push.marks} mark{push.marks === 1 ? "" : "s"}
-                {push.summary.saved != null ? ` · ${push.summary.saved} saved` : ""}
-              </span>
-            </div>
-            {push.error ? <p className="mt-2 text-xs text-muted-foreground">{push.error}</p> : null}
-            {push.failures.length ? (
-              <ul className="mt-2 space-y-1 text-xs">
-                {push.failures.map((failure, index) => (
-                  <li key={`${push.id}-${index}`} className="text-foreground">
-                    {failure.student?.name ?? "A student"} — lc-up did not take this mark ({failure.code || "unknown"})
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-          </li>
+          <tr key={push.id} className={TR}>
+            <td className={cn(TD, "font-medium")}>{push.group}</td>
+            <td className={TD}>{push.date}</td>
+            <td className={cn(TD, push.state === "refused" && "text-danger")}>{PUSH_STATE[push.state]}</td>
+            <td className={cn(TD, "tabular-nums")}>
+              {push.marks} mark{push.marks === 1 ? "" : "s"}
+              {push.summary.saved != null ? ` · ${push.summary.saved} saved` : ""}
+            </td>
+            <td className={cn(TD_WRAP, quiet && "text-muted-foreground")}>
+              {quiet ? "—" : null}
+              {push.error ? <p className="text-[12px] text-muted-foreground">{push.error}</p> : null}
+              {push.failures.map((failure, index) => (
+                <p key={`${push.id}-${index}`}>
+                  {failure.student?.name ?? "A student"} — lc-up did not take this mark ({failure.code || "unknown"})
+                </p>
+              ))}
+            </td>
+          </tr>
         );
       })}
-    </ul>
+    </DenseTable>
   );
 }

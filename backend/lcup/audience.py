@@ -1,8 +1,10 @@
-"""The sync's say over who is a learning-center student (plan 2026-10-13).
+"""The sync's say over who is a learning-center student — by the seat rule (owner, 2026-10-14).
 
-Only LINKED learners are touched: lc-up decides about its own people, an administrator about
-everyone else. In a live group → student. Out of every live group → public_student, frozen first
-when lc-up shows a negative balance; the freeze lifts once the balance is back to zero or above.
+"Guruhi yo'q studentlar to'g'ridan to'g'ri public bo'lib qolsin": a student with no seat in an active
+class becomes a public learner (frozen first when lc-up shows a debt), and a public learner who has
+one — the roster just added them — is a student again (``users.audience.seat_plan``). It runs after
+the rosters, so a seat lc-up added or took away this run already counts. A leaver frozen for debt is
+let go once lc-up shows the balance paid.
 
 Two brakes: a run that hit any error changes no role (a failed page must never read as "left"),
 and more than MAX_DEMOTIONS_PER_RUN leavers at once are held as an alert for a human to look at.
@@ -21,28 +23,12 @@ MAX_DEMOTIONS_PER_RUN = 20
 
 
 def apply(run) -> None:
-    if not getattr(settings, "PUBLIC_SPLIT_ENABLED", False) or not run.review_done:
+    if not getattr(settings, "PUBLIC_SPLIT_ENABLED", False):
         return
     if run.errors:
         run.alerts.append("role changes held: this sync had errors")
         return
-    from .sync import live_student_ids
-
-    live = live_student_ids()
-    links = LcupStudentLink.objects.filter(user__isnull=False, user__role__in=C.LEARNER_ROLES).select_related("user")
-    joining, leaving, paid = [], [], []
-    for link in links:
-        u = link.user
-        if link.pk in live and not link.deleted_in_lcup:
-            # A centre student frozen for debt stays frozen here: the month's debt freeze
-            # (``finance``) froze them and lifts it once the balance is paid.
-            if u.role != C.ROLE_STUDENT:
-                joining.append(u)
-        elif u.role == C.ROLE_STUDENT:
-            leaving.append((u, link.balance is not None and link.balance < 0))
-        elif u.frozen_reason == A.FROZEN_LCUP_DEBT and link.balance is not None and link.balance >= 0:
-            paid.append(u)
-
+    leaving, joining = A.seat_plan()
     for u in joining:
         A.make_centre(u, reason=A.REASON_JOINED, source=A.SOURCE_SYNC)
         run.counts["became_centre"] += 1
@@ -57,6 +43,10 @@ def apply(run) -> None:
             )
             run.counts["became_public"] += 1
             run.counts["frozen_for_debt"] += int(owes)
-    for u in paid:
-        if A.clear_debt_freeze(u, source=A.SOURCE_SYNC):
+    paid = LcupStudentLink.objects.filter(
+        user__role=C.ROLE_PUBLIC_STUDENT, user__is_frozen=True, user__frozen_reason=A.FROZEN_LCUP_DEBT,
+        balance__gte=0,
+    ).select_related("user")
+    for link in paid:
+        if A.clear_debt_freeze(link.user, source=A.SOURCE_SYNC):
             run.counts["debt_cleared"] += 1

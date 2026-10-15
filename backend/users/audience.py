@@ -1,8 +1,9 @@
 """The one place a learner's role or debt freeze changes (public vs learning center, plan 2026-10-13).
 
-A learning-center student is role ``student``: an lc-up member. A public learner is role
-``public_student``: everyone else. The lc-up sync (``lcup.audience``) and ``split_public_students``
-call these; nothing else should move an existing account between the two. Each call is one
+A learning-center student is role ``student``: a learner with a seat in a class (``seat_plan``,
+owner 2026-10-14). A public learner is role ``public_student``: everyone else. The lc-up sync
+(``lcup.audience``) and ``split_public_students`` call these; nothing else should move an existing
+account between the two. Each call is one
 transaction and writes one ``RoleChange``, which is what the /ops numbers and ``--revert`` read.
 """
 
@@ -25,6 +26,39 @@ REASON_JOINED = "lcup_joined"
 REASON_LEFT = "lcup_left"
 REASON_LEFT_WITH_DEBT = "lcup_left_with_debt"
 REASON_DEBT_PAID = "lcup_debt_paid"
+
+
+def seated_user_ids() -> set[int]:
+    """Accounts with an ACTIVE student seat in an active class — a learning-center student's mark."""
+    from classes.models import ClassroomMembership
+
+    return set(
+        ClassroomMembership.objects.filter(
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+            classroom__is_active=True,
+        ).values_list("user_id", flat=True)
+    )
+
+
+def seat_plan() -> tuple[list[tuple[User, bool]], list[User]]:
+    """Who moves under the seat rule (owner, 2026-10-14: "guruhi yo'q studentlar to'g'ridan to'g'ri
+    public bo'lib qolsin"): an active ``student`` with no seat becomes public — ``owes`` when lc-up
+    shows a debt, so they are frozen on the way out — and a public learner with a seat becomes a
+    student again. It replaced "linked AND in a live lc-up group" (2026-10-13); the rosters mirror
+    lc-up, so for lc-up students the two agree."""
+    from lcup.models import LcupStudentLink
+
+    seated = seated_user_ids()
+    owing = set(
+        LcupStudentLink.objects.filter(user__isnull=False, balance__lt=0).values_list("user_id", flat=True)
+    )
+    to_public = [
+        (u, u.pk in owing)
+        for u in User.objects.filter(role=C.ROLE_STUDENT, is_active=True).exclude(pk__in=seated).order_by("pk")
+    ]
+    to_centre = list(User.objects.filter(role=C.ROLE_PUBLIC_STUDENT, is_active=True, pk__in=seated).order_by("pk"))
+    return to_public, to_centre
 
 
 def self_signup_role() -> str:
