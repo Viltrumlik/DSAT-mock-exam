@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from access import constants as acc_const
 from access.permissions import CanCreateMockSessions, CanRunMockSessions
 from access.services import normalized_role
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .models import MockSession, MockSessionParticipant
 from .session_serializers import (
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 class JoinMockSessionView(APIView):
     """Type the code the teacher read out; get in the queue."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request):
         place, reason = request_place(request.user, request.data.get("code"))
@@ -66,7 +67,7 @@ class MyMockSessionsView(APIView):
     not a problem.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request):
         if normalized_role(request.user) == acc_const.ROLE_PUBLIC_STUDENT:

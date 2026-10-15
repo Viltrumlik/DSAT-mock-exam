@@ -44,6 +44,7 @@ from rest_framework.views import APIView
 
 from access import constants as acc_const
 from access.services import normalized_role
+from users.permissions import IsAuthenticatedAndNotFrozen
 from users.photos import profile_image_url
 
 from . import support as support_service
@@ -347,7 +348,7 @@ class SupportAvailabilityDetailView(SupportAvailabilityView):
 class SupportBookingsView(APIView):
     """Student: my bookings, and making one."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request):
         bookings = (
@@ -465,7 +466,7 @@ class SupportBookingInviteView(APIView):
     adding somebody would be a summons rather than an invitation.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request, booking_id):
         """Who this student may add — the picker's options.
@@ -568,7 +569,7 @@ class SupportBookingRateView(APIView):
     is nothing to judge about a session that was cancelled, missed, or has not happened.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request, booking_id):
         booking = get_object_or_404(

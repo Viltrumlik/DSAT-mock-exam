@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 from rewards import coins as coins_service
 from rewards import strikes as strikes_service
 from rewards.views import _is_reward_staff
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services
 from .models import ShopItem, ShopOrder
@@ -74,7 +75,7 @@ class ShopView(APIView):
 
 
 class PurchaseView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request, item_id):
         try:

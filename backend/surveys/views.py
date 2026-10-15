@@ -35,6 +35,7 @@ from rest_framework.views import APIView
 
 from access import constants as acc_const
 from access.services import normalized_role
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services
 from .models import Survey, SurveyQuestion, SurveyResponse
@@ -128,7 +129,7 @@ class SurveyDetailView(APIView):
 
 
 class SurveyRespondView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request, survey_id):
         survey = get_object_or_404(Survey, pk=survey_id)
@@ -166,7 +167,7 @@ class SurveyDraftView(APIView):
     one. All the real validation still happens once, at submit.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request, survey_id):
         survey = get_object_or_404(Survey, pk=survey_id)

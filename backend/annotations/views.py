@@ -14,9 +14,10 @@ reads them.
 from __future__ import annotations
 
 from rest_framework import status as http
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .models import StudyAnnotation
 from .serializers import AnnotationWriteSerializer
@@ -25,7 +26,7 @@ from .serializers import AnnotationWriteSerializer
 class AnnotationListView(APIView):
     """GET /api/annotations/?scope=exam&ref=123 — everything the student marked there."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def get(self, request):
         scope = (request.query_params.get("scope") or "").strip()
@@ -50,7 +51,7 @@ class AnnotationWriteView(APIView):
     empty row would grow a table that is read in full on every page open.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def put(self, request):
         serializer = AnnotationWriteSerializer(data=request.data)

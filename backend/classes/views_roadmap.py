@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from journals.models import ClassroomLesson
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from .progress import student_progress
 from .progress_peers import peer_progress
@@ -86,12 +87,14 @@ class RoadmapReadingView(APIView):
     GET returns one session's reading — the ordered sections, and the homework id IF the
     student has earned it. POST is the "I've finished reading" button.
 
-    ``IsAuthenticated``, matching the roadmap it hangs off: the entitlement question here is
-    classroom membership, which is not a thing a permission class can answer without the
-    object, so it is answered in ``delivery_for_student`` against the delivery row itself.
+    ``IsAuthenticatedAndNotFrozen``, unlike the roadmap it hangs off: the map is safe to show a
+    frozen student because it opens nothing, but this is what it opens — the lesson material,
+    and the homework id once confirmed. The entitlement question here is classroom membership,
+    which is not a thing a permission class can answer without the object, so it is answered
+    in ``delivery_for_student`` against the delivery row itself.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def _delivery(self, request, delivery_id):
         try:

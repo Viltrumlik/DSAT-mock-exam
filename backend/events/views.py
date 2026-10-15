@@ -20,6 +20,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from rewards.views import _is_reward_staff
+from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import services
 from .models import Event, EventRegistration
@@ -104,7 +105,7 @@ class EventSignUpView(APIView):
 
 
 class EventCancelView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticatedAndNotFrozen]
 
     def post(self, request, event_id: int):
         row = get_object_or_404(
