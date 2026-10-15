@@ -10,7 +10,9 @@ import { useChangeListParams } from "@/features/ops/changelist/useChangeListPara
 import { Truncated } from "@/features/ops/users/peopleColumns";
 import { QB_FILTER_KEYS, useQbChangeList } from "@/domains/questionBank/changelist";
 import { useQbBulk } from "@/domains/questionBank/hooks";
-import { STATUS_LABELS, difficultyLabel } from "@/domains/questionBank/utils";
+import { QbStatusBadge } from "@/domains/questionBank/components/QbStatusBadge";
+import { difficultyLabel } from "@/domains/questionBank/utils";
+import "@/features/builderShell/studioChangelist.css";
 import type { QbQuestionListItem } from "@/domains/questionBank/types";
 
 /**
@@ -23,9 +25,9 @@ import type { QbQuestionListItem } from "@/domains/questionBank/types";
 const SUBJECT_LABELS: Record<string, string> = { ENGLISH: "English", MATH: "Math" };
 
 // The two text columns give way so Difficulty and Status stay in view beside the filter panel:
-// measured to fit at 1280 and 1440 wide; narrower windows scroll the table, as Django's does.
-const QUESTION_WIDTH = "max-w-[14rem] min-[1400px]:max-w-[20rem]";
-const SKILL_WIDTH = "max-w-[9rem] min-[1400px]:max-w-[13rem]";
+// measured to fit at 1280, 1440 and 1920 wide; narrower windows scroll the table.
+const QUESTION_WIDTH = "max-w-[9rem] min-[1400px]:max-w-[14rem] min-[1600px]:max-w-[22rem]";
+const SKILL_WIDTH = "max-w-[7rem] min-[1400px]:max-w-[9rem] min-[1600px]:max-w-[13rem]";
 
 const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
   {
@@ -35,7 +37,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
     render: (q) => (
       <Link
         href={`/builder/question-bank/${q.id}`}
-        className="rounded-sm font-mono text-[12px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
+        className="rounded-sm font-mono text-xs font-bold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:text-primary-hover"
       >
         {q.qb_id}
       </Link>
@@ -75,12 +77,8 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
   {
     key: "status",
     label: "Status",
-    // Plain text, as on the /ops lists; only what still needs a decision stands out.
-    render: (q) => (
-      <span className={q.status === "TRIAGE" || q.status === "IMPORTED" ? "text-foreground" : "text-muted-foreground"}>
-        {STATUS_LABELS[q.status] ?? q.status}
-      </span>
-    ),
+    // The bank's own tinted badge — the builder keeps its colour (owner 2026-10-15).
+    render: (q) => <QbStatusBadge status={q.status} />,
   },
 ];
 
@@ -88,7 +86,7 @@ const COLUMNS: ChangeListColumn<QbQuestionListItem>[] = [
 type Pending = { ids: number[]; resolve: (done: boolean) => void };
 
 const HEADER_LINK =
-  "inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-[13px] font-medium text-foreground transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+  "inline-flex h-10 items-center gap-1.5 rounded-xl border border-border bg-card px-3.5 text-sm font-bold text-foreground shadow-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
 export default function QuestionBankListPage() {
   // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
@@ -144,7 +142,8 @@ function QuestionBankChangeList() {
   };
 
   return (
-    <>
+    // The builder's soft skin on the shared /ops changelist — see studioChangelist.css.
+    <div className="studio-changelist">
       <ChangeList<QbQuestionListItem>
         title="Question Bank"
         noun={{ singular: "question", plural: "questions" }}
@@ -170,7 +169,7 @@ function QuestionBankChangeList() {
             </Link>
             <Link
               href="/builder/question-bank/new"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+              className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-primary px-3.5 text-sm font-bold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
             >
               <Plus aria-hidden className="h-3.5 w-3.5" />
               New question
@@ -187,7 +186,7 @@ function QuestionBankChangeList() {
           onConfirm={() => void confirm()}
         />
       ) : null}
-    </>
+    </div>
   );
 }
 
@@ -209,25 +208,25 @@ function ConfirmApprove({
         role="dialog"
         aria-modal="true"
         aria-labelledby="qb-bulk-title"
-        className="w-full max-w-sm border border-border bg-card shadow-xl"
+        className="w-full max-w-sm overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
         }}
       >
-        <h2 id="qb-bulk-title" className="border-b border-border px-4 py-2.5 text-[14px] font-semibold text-foreground">
+        <h2 id="qb-bulk-title" className="px-6 pt-5 text-base font-extrabold text-foreground">
           Approve {noun}?
         </h2>
-        <p className="px-4 py-3 text-[13px] text-muted-foreground">
+        <p className="px-6 pb-5 pt-2 text-sm leading-relaxed text-muted-foreground">
           Approved questions become selectable by tests and count in analytics. A question without a domain, skill and
           difficulty is skipped.
         </p>
-        <div className="flex justify-end gap-2 border-t border-border px-4 py-2.5">
+        <div className="flex gap-2 border-t border-border bg-surface-2/40 px-6 py-4">
           <button
             type="button"
             onClick={onCancel}
             autoFocus
-            className="h-8 rounded-md border border-border bg-card px-3 text-[13px] font-medium text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            className="h-10 flex-1 rounded-xl border border-border bg-card px-4 text-sm font-bold text-foreground hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
           >
             Cancel
           </button>
@@ -235,7 +234,7 @@ function ConfirmApprove({
             type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-3 text-[13px] font-medium text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-60"
+            className="inline-flex h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:opacity-60"
           >
             {busy ? <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" /> : null}
             Approve
