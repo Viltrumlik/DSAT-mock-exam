@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Archive,
+  ArrowRight,
   BookMarked,
+  CheckCircle2,
   Database,
   FileText,
   GraduationCap,
@@ -25,9 +27,8 @@ import {
 type QuickLink = { href: string; icon: React.ElementType; title: string; cta: string };
 
 /**
- * The same links, in the same groups, as before the console took the ops frame (2026-10-15).
- * "Question Bank" now opens the question bank: it pointed at `/builder/bank`, which the sidebar
- * has long called "Sets bank (legacy)".
+ * The same links, in the same groups, as the dashboard always had. "Question Bank" opens the
+ * question bank: it pointed at `/builder/bank`, which the sidebar calls "Sets bank (legacy)".
  */
 const QUICK_GROUPS: { caption: string | null; links: QuickLink[] }[] = [
   {
@@ -44,11 +45,8 @@ const QUICK_GROUPS: { caption: string | null; links: QuickLink[] }[] = [
     caption: "Simulation",
     links: [{ href: "/builder/pastpapers", icon: FileText, title: "Past papers", cta: "Manage" }],
   },
-  {
-    // Uncaptioned, as Archived sits on its own in the sidebar.
-    caption: null,
-    links: [{ href: "/builder/archived", icon: Archive, title: "Archived", cta: "Review" }],
-  },
+  // Uncaptioned, as Archived sits on its own in the sidebar.
+  { caption: null, links: [{ href: "/builder/archived", icon: Archive, title: "Archived", cta: "Review" }] },
 ];
 
 const STATES = [
@@ -57,18 +55,20 @@ const STATES = [
   ["ARCHIVED", "Retired, preserved."],
 ] as const;
 
-/** A Django-admin "module": a hairline box under a small uppercase caption, as on /ops. */
-function Box({ id, caption, children }: { id: string; caption: string; children: React.ReactNode }) {
+function QuickTile({ link }: { link: QuickLink }) {
   return (
-    <section aria-labelledby={id} className="border border-border bg-card">
-      <h2
-        id={id}
-        className="border-b border-border px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground"
-      >
-        {caption}
-      </h2>
-      {children}
-    </section>
+    <Link
+      href={link.href}
+      className="group flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+    >
+      <span className="grid h-10 w-10 place-items-center rounded-xl bg-surface-2 text-muted-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+        <link.icon aria-hidden className="h-5 w-5" />
+      </span>
+      <span>
+        <span className="block text-sm font-extrabold text-foreground">{link.title}</span>
+        <span className="mt-0.5 block text-xs font-semibold text-primary">{link.cta} →</span>
+      </span>
+    </Link>
   );
 }
 
@@ -85,74 +85,67 @@ export default function BuilderDashboardPage() {
   const continueLabel = session ? sessionContinueLabel(session) : null;
 
   return (
-    <div className="max-w-4xl space-y-5">
+    <div className="space-y-8">
       <div>
-        <h1 className="text-lg font-semibold text-foreground">Dashboard</h1>
-        <p className="text-[13px] text-muted-foreground">Content health at a glance.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">Dashboard</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Content health at a glance.</p>
       </div>
 
       {/* Session continuity — the last editor this browser had open. */}
       {continueHref && continueLabel ? (
-        <Box id="builder-continue" caption="Continue working">
-          <Link
-            href={continueHref}
-            className="group flex h-10 items-center gap-2.5 px-3 text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-          >
-            <PlayCircle aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="min-w-0 truncate font-medium text-primary group-hover:underline dark:text-primary-hover">
-              {continueLabel}
-            </span>
-            <span className="ml-auto shrink-0 text-muted-foreground">Open →</span>
-          </Link>
-        </Box>
+        <Link
+          href={continueHref}
+          className="group flex items-center gap-4 rounded-2xl border border-border bg-card px-5 py-4 shadow-sm transition-colors hover:border-primary/30 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-primary/10 text-primary">
+            <PlayCircle aria-hidden className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-extrabold text-foreground">Continue working</span>
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">{continueLabel}</span>
+          </span>
+          <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
       ) : null}
 
-      <Box id="builder-quick" caption="Quick access">
+      {/* Quick navigation — grouped by domain */}
+      <div className="space-y-6">
         {QUICK_GROUPS.map((group) => (
-          <div key={group.links[0].href} className="border-b border-border last:border-b-0">
+          <section key={group.links[0].href} aria-label={group.caption ?? "Other"}>
             {group.caption ? (
-              <p className="border-b border-border bg-surface-2/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+              <h2 className="mb-3 px-0.5 text-[11px] font-black uppercase tracking-[0.15em] text-muted-foreground/70">
                 {group.caption}
-              </p>
-            ) : (
-              // A blank strip, so Archived does not read as part of the group above it.
-              <div aria-hidden className="h-2 border-b border-border bg-surface-2/60" />
-            )}
-            <ul className="divide-y divide-border">
+              </h2>
+            ) : null}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {group.links.map((link) => (
-                <li key={link.href}>
-                  <Link
-                    href={link.href}
-                    className="group flex h-9 items-center gap-2.5 px-3 text-[13px] hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-                  >
-                    <link.icon aria-hidden className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <span className="font-medium text-primary group-hover:underline dark:text-primary-hover">{link.title}</span>
-                    <span className="ml-auto text-muted-foreground">{link.cta} →</span>
-                  </Link>
-                </li>
+                <QuickTile key={link.href} link={link} />
               ))}
-            </ul>
-          </div>
+            </div>
+          </section>
         ))}
-      </Box>
+      </div>
 
       {/* State reference — inline docs for the badges the lists show. */}
-      <Box id="builder-states" caption="Content states">
-        <p className="px-3 py-2 text-[13px] text-muted-foreground">
-          Content is served <strong className="font-semibold text-foreground">live</strong>: an edit reaches every
-          not-yet-started attempt. A student mid-attempt keeps the exact questions they started with.
-        </p>
-        <dl className="grid divide-y divide-border border-t border-border sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+      <div className="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <div className="flex items-start gap-2.5">
+          <CheckCircle2 aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            Content is served <strong className="text-foreground">live</strong>: an edit reaches every not-yet-started
+            attempt. A student mid-attempt keeps the exact questions they started with.
+          </p>
+        </div>
+        <dl className="grid gap-x-6 gap-y-3 border-t border-border pt-4 sm:grid-cols-3">
           {STATES.map(([state, note]) => (
-            <div key={state} className="flex items-center gap-2 px-3 py-2">
+            <div key={state} className="flex items-center gap-2.5">
               <dt className="shrink-0">
                 <StateTag state={state} size="xs" showIcon={false} />
               </dt>
-              <dd className="text-[13px] text-muted-foreground">{note}</dd>
+              <dd className="text-xs leading-snug text-muted-foreground">{note}</dd>
             </div>
           ))}
         </dl>
-      </Box>
+      </div>
     </div>
   );
 }

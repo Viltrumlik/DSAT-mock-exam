@@ -225,6 +225,12 @@ export type ConsoleConfig = {
   groups: readonly OpsNavGroup[];
   /** The groups and items this viewer may see, in nav order. */
   visible: (groups: readonly OpsNavGroup[], me: MeLike) => OpsNavGroup[];
+  /**
+   * A softer, roomier frame: taller rounded nav rows, a washed background, and the page in a
+   * centred column with generous padding. The builder wears it (owner 2026-10-15: "django paneldek
+   * zerikarli oddiy bo'lib qolmasligi kerak"); /ops keeps the dense Django-admin frame.
+   */
+  soft?: boolean;
 };
 
 export const OPS_CONSOLE: ConsoleConfig = {

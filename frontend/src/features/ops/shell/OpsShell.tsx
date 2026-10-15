@@ -83,7 +83,7 @@ export function OpsShell({
     });
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className={cn("min-h-screen text-foreground", config.soft ? "app-bg" : "bg-background")}>
       <a
         href="#ops-main"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-2 focus:z-50 focus:rounded-md focus:border focus:border-border focus:bg-card focus:px-3 focus:py-1.5 focus:text-sm focus:font-semibold"
@@ -128,8 +128,12 @@ export function OpsShell({
           menuButtonRef={menuButtonRef}
           config={config}
         />
-        <main id="ops-main" className="min-w-0 flex-1 px-4 py-4 md:px-6">
-          {children}
+        <main
+          id="ops-main"
+          className={cn("min-w-0 flex-1", config.soft ? "px-4 py-6 md:px-8 md:py-8" : "px-4 py-4 md:px-6")}
+        >
+          {/* The soft frame keeps a page to a readable column instead of the whole window. */}
+          {config.soft ? <div className="mx-auto w-full max-w-7xl">{children}</div> : children}
         </main>
       </div>
     </div>

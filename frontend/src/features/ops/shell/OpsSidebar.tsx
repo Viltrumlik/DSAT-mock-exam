@@ -36,7 +36,7 @@ export function OpsSidebar({
   onToggleCollapsed: () => void;
   closeButtonRef?: RefObject<HTMLButtonElement | null>;
   /** Which console this rail belongs to — its home, its name. */
-  config?: Pick<ConsoleConfig, "root" | "brand" | "crumb">;
+  config?: Pick<ConsoleConfig, "root" | "brand" | "crumb" | "soft">;
 }) {
   // One item is current: the longest match, so a nested item does not light up its parent too.
   const activeHref = activeNavItem(pathname, groups)?.href ?? null;
@@ -81,7 +81,7 @@ export function OpsSidebar({
 
       <nav aria-label={`${config.crumb} sections`} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
         {groups.map((group, index) => (
-          <div key={group.id} className={cn(index > 0 && "mt-3")}>
+          <div key={group.id} className={cn(index > 0 && (config.soft ? "mt-5" : "mt-3"))}>
             {group.caption ? (
               <>
                 <p
@@ -108,14 +108,16 @@ export function OpsSidebar({
                       aria-current={active ? "page" : undefined}
                       title={collapsed ? item.label : undefined}
                       className={cn(
-                        "relative flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        "relative flex items-center gap-2.5 px-2.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                        config.soft ? "h-9 rounded-xl text-sm" : "h-8 rounded-md text-[13px]",
                         collapsed && "lg:justify-center lg:px-0",
                         active
                           ? "bg-primary-soft font-semibold text-primary dark:text-primary-hover"
                           : "text-foreground hover:bg-surface-2",
                       )}
                     >
-                      {active ? (
+                      {/* The soft frame's rounded pill is mark enough; the bar is the dense frame's. */}
+                      {active && !config.soft ? (
                         <span aria-hidden className="absolute inset-y-1 left-0 w-0.5 rounded-full bg-primary" />
                       ) : null}
                       <Icon
