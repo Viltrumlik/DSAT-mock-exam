@@ -132,10 +132,11 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
     }
   };
 
+  // A phone keeps the name (its debt under it), attendance and the Remove button; the table fits.
   const head: Column[] = [
     "Name",
     { label: "Joined", className: WIDE_ONLY },
-    "Owes",
+    { label: "Owes", className: WIDE_ONLY },
     "Attendance",
     { label: "Homework", className: WIDE_ONLY },
     ...(managed ? [] : [""]),
@@ -158,16 +159,22 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
           <Table head={head}>
             {d.students.map((s) => (
               <tr key={s.id}>
-                <Td className="max-w-[11rem] sm:max-w-[18rem]">
+                <Td wrap className="sm:max-w-[18rem]">
                   <span className="flex min-w-0 items-center gap-2.5">
                     <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
-                    <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "truncate")}>
-                      {s.name || s.username}
-                    </Link>
+                    <span className="min-w-0">
+                      {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
+                      <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "break-words sm:truncate")}>
+                        {s.name || s.username}
+                      </Link>
+                      {s.owes ? (
+                        <span className="block text-xs font-semibold text-danger sm:hidden">owes {formatUzs(s.owes)}</span>
+                      ) : null}
+                    </span>
                   </span>
                 </Td>
                 <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDate(s.joined_at)}</Td>
-                <Td className="tabular-nums">
+                <Td className={`${WIDE_ONLY} tabular-nums`}>
                   {s.owes ? (
                     <span className="font-semibold text-danger">{formatUzs(s.owes)}</span>
                   ) : (

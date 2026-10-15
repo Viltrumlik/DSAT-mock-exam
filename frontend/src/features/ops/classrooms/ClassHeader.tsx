@@ -89,11 +89,11 @@ function Glance({ room }: { room: ClassroomCore }) {
         />
       ) : (
         <StatTile
-          label="Support teachers"
+          label="Support"
           value={room.tas.length}
           icon={UsersRound}
           tone="primary"
-          sub={room.tas.map((t) => t.name).join(", ") || "none yet"}
+          sub={room.tas.map((t) => t.name).join(", ") || "no support teacher yet"}
         />
       )}
     </>

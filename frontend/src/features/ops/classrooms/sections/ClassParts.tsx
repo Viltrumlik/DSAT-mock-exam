@@ -103,7 +103,9 @@ export function ClassHomeworkSection({ id }: { id: number }) {
         render={(d) => (
           <Table head={["Title", { label: "Due", className: WIDE_ONLY }, "Turned in"]}>
             {d.assignments.map((a) => {
-              const rate = a.students > 0 ? (100 * a.turned_in) / a.students : null;
+              // A share handed in is a verdict only once the work is due; before that it is progress.
+              const due = a.due_at == null || new Date(a.due_at).getTime() <= Date.now();
+              const rate = due && a.students > 0 ? (100 * a.turned_in) / a.students : null;
               return (
                 <tr key={a.id}>
                   <Td wrap className="font-medium sm:max-w-[24rem] sm:truncate">

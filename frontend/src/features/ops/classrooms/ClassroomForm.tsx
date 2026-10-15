@@ -124,9 +124,10 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
         {locked.size > 0 ? (
           <p className="flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
             <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
+            {/* The group's name is in the Summary beside this form; lc-up's names run long. */}
             <span>
-              This class follows the lc-up group <span className="font-semibold">{room.lcup?.group_name}</span>. Its
-              name, schedule, room and branch come from lc-up at every sync — change them there.
+              This class follows its lc-up group. Its name, schedule, room and branch come from lc-up at every sync —
+              change them there.
             </span>
           </p>
         ) : null}

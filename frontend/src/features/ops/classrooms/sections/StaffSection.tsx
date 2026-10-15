@@ -81,19 +81,20 @@ export function StaffSection({ room, onChanged }: { room: ClassroomCore; onChang
     <Fieldset title="Staff" icon={UserCog} description="Who teaches the class, and who helps">
       <SubHeading>Teacher</SubHeading>
       {room.teacher ? (
-        <ul>
+        // The same grid as the support teachers, so the two kinds of card are one size.
+        <ul className="grid gap-3 sm:grid-cols-2">
           <PersonCard id={room.teacher.id} name={room.teacher.name} badge={<Badge variant="primary">Teacher</Badge>}>
             {managed ? (
               <span className="inline-flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
                 <Lock aria-hidden className="h-3.5 w-3.5" />
-                set in lc-up
+                Set in lc-up
               </span>
             ) : null}
           </PersonCard>
         </ul>
       ) : (
         <p className="rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm font-medium text-warning-foreground">
-          No teacher{managed ? " — set in lc-up" : ""}
+          No teacher{managed ? " — Set in lc-up" : ""}
         </p>
       )}
       {managed ? null : (

@@ -209,7 +209,9 @@ describe("a class that follows lc-up", () => {
   it("says in the form why lc-up's fields are locked", async () => {
     route(core());
     await renderPage();
-    expect(box("Details")!.textContent).toContain("This class follows the lc-up group G21 Math");
+    expect(box("Details")!.textContent).toContain("This class follows its lc-up group");
+    // The group's name is said once, in the Summary, as plain text.
+    expect(box("Summary")!.textContent).toContain("G21 Math");
   });
 
   it("offers no student add or remove", async () => {
@@ -226,7 +228,7 @@ describe("a class that follows lc-up", () => {
     classes.removeSupportTeacher.mockResolvedValue(undefined);
     await renderPage("tab=staff");
     const staff = box("Staff")!;
-    expect(staff.textContent).toContain("set in lc-up");
+    expect(staff.textContent).toContain("Set in lc-up");
     expect(button(staff, "Make teacher")).toBeUndefined();
     act(() => button(staff, "Remove")!.click());
     await settle();
@@ -261,6 +263,14 @@ describe("any other class", () => {
     act(() => button(host, "Archive")!.click());
     await settle();
     expect(classes.governanceUpdate).toHaveBeenCalledWith(45, { is_active: false });
+  });
+
+  it("counts its support teachers in the header, not again in the Summary", async () => {
+    route(core(UNPAIRED));
+    await renderPage();
+    const header = host.querySelector("h1")!.closest(".rounded-2xl") as HTMLElement;
+    expect(header.textContent).toContain("Sardor TA");
+    expect(box("Summary")!.textContent).not.toContain("Support teachers");
   });
 
   it("removes a student from the Students tab", async () => {
@@ -334,7 +344,37 @@ describe("the tabs", () => {
     expect(students.querySelector('a[href="/ops/students/7"]')?.textContent).toBe("Aziz Tursunov");
     expect(students.querySelector('a[href="/ops/public/8"]')?.textContent).toBe("Public Person");
     const owed = [...students.querySelectorAll(".text-danger")].map((el) => el.textContent).filter((t) => t?.endsWith("UZS"));
-    expect(owed).toEqual(["250,000 UZS"]);
+    // Once under the name (a phone's) and once in the Owes column (from sm up).
+    expect(owed).toEqual(["owes 250,000 UZS", "250,000 UZS"]);
+  });
+
+  it("put a debt under the name for a phone, where the Owes column is hidden", async () => {
+    route(core());
+    await renderPage("tab=students");
+    const row = [...box("Students")!.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes("Aziz"))!;
+    const phoneDebt = row.querySelector("td span.sm\\:hidden");
+    expect(phoneDebt?.textContent).toBe("owes 250,000 UZS");
+  });
+
+  it("colour a homework's share only once it is due", async () => {
+    const later = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const earlier = new Date(Date.now() - 3 * 86_400_000).toISOString();
+    PARTS.homework = {
+      assignments: [
+        { id: 1, title: "Not due yet", due_at: later, turned_in: 1, students: 7 },
+        { id: 2, title: "Past due", due_at: earlier, turned_in: 1, students: 7 },
+      ],
+    };
+    try {
+      route(core());
+      await renderPage("tab=homework");
+      const cell = (title: string) =>
+        [...box("Homework")!.querySelectorAll("tbody tr")].find((tr) => tr.textContent?.includes(title))!.lastElementChild!;
+      expect(cell("Not due yet").className).not.toContain("text-danger");
+      expect(cell("Past due").className).toContain("text-danger");
+    } finally {
+      PARTS.homework = { assignments: [] };
+    }
   });
 
   it("open in the address and keep the list it came from", async () => {

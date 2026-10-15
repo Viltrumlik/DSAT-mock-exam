@@ -65,27 +65,36 @@ function ClassSummary({ room }: { room: ClassroomCore }) {
   return (
     <Fieldset title="Summary" icon={Info} tone="accent" description="The class at a glance">
       <Row label="lc-up group" icon={Link2}>
+        {/* Plain text, not a pill: lc-up's group names run to two lines. */}
         {!room.lcup ? (
           <Badge variant="outline">Not paired</Badge>
         ) : room.lcup.managed ? (
-          <Badge variant="neutral">{room.lcup.group_name}</Badge>
+          room.lcup.group_name
         ) : (
-          <Badge variant="warning">{room.lcup.group_name} · not followed</Badge>
+          <>
+            {room.lcup.group_name}
+            <span className="mt-1 block">
+              <Badge variant="warning">Not followed</Badge>
+            </span>
+          </>
         )}
       </Row>
-      <Row label="Support teachers" icon={UsersRound}>
-        {room.tas.length === 0 ? (
-          <span className="text-muted-foreground">None</span>
-        ) : (
-          <span className="inline-flex flex-wrap justify-end gap-x-2 gap-y-1">
-            {room.tas.map((t) => (
-              <Link key={t.id} href={`/ops/staff/${t.id}`} prefetch={false} className={LINK_CLASS}>
-                {t.name}
-              </Link>
-            ))}
-          </span>
-        )}
-      </Row>
+      {/* An unpaired class's header already counts its support teachers in the fourth figure. */}
+      {room.lcup ? (
+        <Row label="Support teachers" icon={UsersRound}>
+          {room.tas.length === 0 ? (
+            <span className="text-muted-foreground">None</span>
+          ) : (
+            <span className="inline-flex flex-wrap justify-end gap-x-2 gap-y-1">
+              {room.tas.map((t) => (
+                <Link key={t.id} href={`/ops/staff/${t.id}`} prefetch={false} className={LINK_CLASS}>
+                  {t.name}
+                </Link>
+              ))}
+            </span>
+          )}
+        </Row>
+      ) : null}
       <Row label="Lesson length" icon={Clock}>
         {room.lesson_hours == null ? "—" : `${room.lesson_hours} h`}
       </Row>
