@@ -209,7 +209,13 @@ export function PersonHeader({
                 {person.email ? (
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     <Mail aria-hidden className="h-3.5 w-3.5 shrink-0" />
-                    <span className="break-all">{person.email}</span>
+                    {/* A break allowed before the "@" only, so a phone splits "name" from "@domain"
+                        instead of leaving a lone "m" of ".com" on a line of its own. */}
+                    <span className="break-words">
+                      {person.email.split("@")[0]}
+                      <wbr />
+                      {person.email.includes("@") ? `@${person.email.split("@").slice(1).join("@")}` : ""}
+                    </span>
                   </span>
                 ) : null}
               </div>

@@ -187,7 +187,7 @@ export type Column = string | { label: string; className?: string };
 export function Table({ head, children }: { head: Column[]; children: ReactNode }) {
   return (
     <div className="-mx-5 overflow-x-auto">
-      <table className="w-full border-separate border-spacing-0 text-sm text-foreground">
+      <table className="w-full border-separate border-spacing-0 text-sm text-foreground lining-nums">
         <thead>
           <tr>
             {head.map((h, i) => (

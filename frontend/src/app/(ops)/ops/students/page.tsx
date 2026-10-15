@@ -19,7 +19,7 @@ const COLUMNS: ChangeListColumn<StudentRow>[] = [
     key: "groups",
     label: "Groups",
     render: (r) => (
-      <Truncated text={r.groups.map((g) => g.name).join(", ")} className="max-w-[9rem] min-[1440px]:max-w-[11rem]" />
+      <Truncated text={r.groups.map((g) => g.name).join(", ")} className="max-w-[8rem] min-[1440px]:max-w-[11rem]" />
     ),
   },
   {
