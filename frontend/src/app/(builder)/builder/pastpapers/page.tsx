@@ -492,7 +492,7 @@ export default function BuilderPastpapersPage() {
     setLoading(true);
     setError(null);
     try {
-      const data = await examsAdminApi.getStandaloneSections();
+      const data = await examsAdminApi.getStandaloneSections("pastpaper");
       setSections(data);
     } catch (e) {
       setError(parseError(e));

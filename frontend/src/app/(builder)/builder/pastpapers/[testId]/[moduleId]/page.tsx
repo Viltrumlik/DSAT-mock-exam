@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, usePathname } from "next/navigation";
 import { Suspense } from "react";
 import ModuleQuestionsPanel from "@/features/questionsAdmin/ModuleQuestionsPanel";
 import { examsAdminApi } from "@/features/examsAdmin/api";
@@ -18,15 +18,16 @@ function PastpaperModuleEditor({
   moduleId: number;
 }) {
   const [section, setSection] = useState<AdminPastpaperSection | null>(null);
+  // The practice-test library re-exports this editor unchanged; only the way back differs.
+  const inPracticeLibrary = (usePathname() ?? "").startsWith("/builder/practice-tests");
 
-  // Load section context for breadcrumb enrichment (non-blocking — panel renders immediately)
+  // Load section context for breadcrumb enrichment (non-blocking — panel renders immediately).
+  // Just the one section: both libraries share this editor, and each library's list holds only its own kind.
   useEffect(() => {
     let cancelled = false;
-    examsAdminApi.getStandaloneSections().then((sections) => {
-      if (cancelled) return;
-      const found = sections.find((s) => s.id === testId) ?? null;
-      setSection(found);
-    });
+    examsAdminApi.getSection(testId)
+      .then((s) => { if (!cancelled) setSection(s); })
+      .catch(() => { if (!cancelled) setSection(null); });
     return () => { cancelled = true; };
   }, [testId]);
 
@@ -67,6 +68,8 @@ function PastpaperModuleEditor({
         packTitle={collectionTitle}
         sectionSubject={section?.subject ?? undefined}
         moduleOrder={moduleEntry?.module_order != null ? `Module ${moduleEntry.module_order}` : undefined}
+        backHref={inPracticeLibrary ? "/builder/practice-tests" : undefined}
+        backLabel={inPracticeLibrary ? "Practice tests" : undefined}
       />
     </div>
   );

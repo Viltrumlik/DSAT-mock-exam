@@ -1652,9 +1652,16 @@ export const examsAdminApi = {
     },
 
     // Standalone pastpaper sections (each a PracticeTest; the PastpaperPack grouping was removed).
-    getStandaloneSections: async (): Promise<AdminPastpaperSection[]> => {
-        const r = await api.get('/exams/admin/tests/', { params: { standalone: '1' } });
+    // `kind` keeps the two libraries apart: the past-paper builder asks for "pastpaper", the
+    // practice-test builder for "practice_test"; omitted = both.
+    getStandaloneSections: async (kind?: 'pastpaper' | 'practice_test'): Promise<AdminPastpaperSection[]> => {
+        const r = await api.get('/exams/admin/tests/', { params: { standalone: '1', ...(kind ? { kind } : {}) } });
         return unwrapAdminList<AdminPastpaperSection>(r.data);
+    },
+    /** One section (the module editors load just the one they are editing). */
+    getSection: async (id: number): Promise<AdminPastpaperSection> => {
+        const r = await api.get(`/exams/admin/tests/${id}/`);
+        return r.data as AdminPastpaperSection;
     },
     createSection: async (data: {
         subject: 'READING_WRITING' | 'MATH';
@@ -1663,6 +1670,11 @@ export const examsAdminApi = {
         label?: string;
         form_type?: 'INTERNATIONAL' | 'US';
         practice_date?: string | null;
+        /** Settable on create only; the server keeps the kind on every later update. */
+        is_practice_test?: boolean;
+        practice_access?: 'open' | 'homework_only';
+        /** "" = all levels, else foundation | junior | middle | senior. */
+        practice_level?: string;
     }): Promise<AdminPastpaperSection> => {
         const r = await api.post('/exams/admin/tests/', { mock_exam: null, ...data });
         return r.data as AdminPastpaperSection;
