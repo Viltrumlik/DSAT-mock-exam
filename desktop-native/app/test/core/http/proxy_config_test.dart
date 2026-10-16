@@ -1,5 +1,5 @@
 // ProxyResolver (WinHTTP answers cached 5 min, loopback DIRECT, failures DIRECT) and
-// ApiConfig (where the app talks to, the client header, the sign-in link, the version).
+// ApiConfig (where the app talks to, the client header, the update feed, the version).
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -59,10 +59,9 @@ void main() {
       expect(() => ApiConfig.fromDefine('ftp://x', appVersion: '0.2.0'), throwsArgumentError);
     });
 
-    test('client header, sign-in link and update feed', () {
+    test('client header and update feed', () {
       final c = ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0');
       expect(c.clientHeader, 'windows/0.2.0');
-      expect(c.signInLink('abc_DEF-123').toString(), 'https://mastersat.uz/desktop/link?challenge=abc_DEF-123');
       expect(c.updateFeed.toString(), 'https://mastersat.uz/downloads/desktop/');
       expect(c.resolve('/api/desktop/v1/home').toString(), 'https://mastersat.uz/api/desktop/v1/home');
     });

@@ -9,7 +9,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/app.dart';
 import 'package:mastersat_app/core/api/fixture_v1_api.dart';
 import 'package:mastersat_app/core/api/v1_api.dart';
-import 'package:mastersat_app/core/http/api_config.dart';
 import 'package:mastersat_app/core/models/models.dart';
 import 'package:mastersat_app/native/native_bridge.dart';
 
@@ -128,15 +127,6 @@ void main() {
     await tester.tap(find.text('Download from the website'));
     await settleApp(tester);
     expect(h.openedUrls.single.toString(), 'https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe');
-    await h.dispose(tester);
-  });
-
-  testWidgets('the app runs against a real HTTP origin config without the dev sign-in shortcut', (tester) async {
-    final h = await AppHarness.start(
-      signedIn: false,
-      config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0'),
-    );
-    expect(h.services.auth.devMintCode, isNull, reason: 'only loopback or in-process fixtures get it');
     await h.dispose(tester);
   });
 

@@ -1,7 +1,6 @@
 // Tokens at rest: `%LOCALAPPDATA%\MasterSAT\auth.bin`, sealed with DPAPI for the current
 // Windows user (NativeBridge.protect → ms_protect). Tokens never go into the SQLite store or
-// any log. The pending PKCE verifier of an open browser sign-in is kept the same way in
-// `signin.bin` for 10 minutes, so a sign-in link that cold-starts the app still completes.
+// any log; the password never goes anywhere (it is sent once and not kept).
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -10,55 +9,22 @@ import '../../native/native_bridge.dart';
 import '../store/app_paths.dart';
 import 'session.dart';
 
-/// A browser sign-in in progress: the verifier stays on this computer; only the challenge
-/// went to the browser.
-class PendingSignIn {
-  const PendingSignIn({required this.verifier, required this.challenge, required this.startedAt});
-
-  factory PendingSignIn.fromJson(Map<String, Object?> j) => PendingSignIn(
-        verifier: j['verifier']! as String,
-        challenge: j['challenge']! as String,
-        startedAt: DateTime.parse(j['started_at']! as String).toUtc(),
-      );
-
-  /// How long a pending sign-in is honoured (the server's code lives for less than this).
-  static const lifetime = Duration(minutes: 10);
-
-  final String verifier;
-  final String challenge;
-  final DateTime startedAt;
-
-  bool isExpired(DateTime now) => now.difference(startedAt) > lifetime;
-
-  Map<String, Object?> toJson() =>
-      {'verifier': verifier, 'challenge': challenge, 'started_at': startedAt.toUtc().toIso8601String()};
-}
-
-/// Where the session and the pending sign-in live.
+/// Where the session lives.
 abstract class TokenStore {
-  /// The sealed files under [paths] (the app).
-  factory TokenStore.at(AppPaths paths, NativeBridge native) => FileTokenStore(
-        authFile: paths.authFile,
-        pendingFile: paths.pendingSignInFile,
-        native: native,
-      );
+  /// The sealed file under [paths] (the app).
+  factory TokenStore.at(AppPaths paths, NativeBridge native) => FileTokenStore(authFile: paths.authFile, native: native);
 
   /// The stored session, or null.
   Future<AuthSession?> read();
   Future<void> write(AuthSession session);
   Future<void> clear();
-
-  Future<PendingSignIn?> readPending();
-  Future<void> writePending(PendingSignIn p);
-  Future<void> clearPending();
 }
 
 /// In memory (tests; nothing touches the disk).
 class MemoryTokenStore implements TokenStore {
-  MemoryTokenStore({this.session, this.pending});
+  MemoryTokenStore({this.session});
 
   AuthSession? session;
-  PendingSignIn? pending;
 
   /// How many times [write] ran (tests check a refresh stored the rotated pair).
   int writes = 0;
@@ -74,23 +40,13 @@ class MemoryTokenStore implements TokenStore {
 
   @override
   Future<void> clear() async => session = null;
-
-  @override
-  Future<PendingSignIn?> readPending() async => pending;
-
-  @override
-  Future<void> writePending(PendingSignIn p) async => pending = p;
-
-  @override
-  Future<void> clearPending() async => pending = null;
 }
 
-/// `auth.bin` / `signin.bin`, sealed with DPAPI through the native library.
+/// `auth.bin`, sealed with DPAPI through the native library.
 class FileTokenStore implements TokenStore {
-  FileTokenStore({required this.authFile, required this.pendingFile, required this._native});
+  FileTokenStore({required this.authFile, required this._native});
 
   final File authFile;
-  final File pendingFile;
   final NativeBridge _native;
 
   static const _version = 1;
@@ -113,23 +69,6 @@ class FileTokenStore implements TokenStore {
 
   @override
   Future<void> clear() => _remove(authFile);
-
-  @override
-  Future<PendingSignIn?> readPending() async {
-    final j = await _readSealed(pendingFile);
-    if (j == null) return null;
-    try {
-      return PendingSignIn.fromJson(j);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  @override
-  Future<void> writePending(PendingSignIn p) => _writeSealed(pendingFile, p.toJson());
-
-  @override
-  Future<void> clearPending() => _remove(pendingFile);
 
   Future<Map<String, Object?>?> _readSealed(File f) async {
     try {

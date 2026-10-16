@@ -5,10 +5,11 @@
 // The exam endpoints are served by the foundation's stateful [FixtureV1Api] (requests are
 // parsed through the real models, answers serialised with their toJson). This server adds what
 // a fake API object cannot show: the HTTP layer itself —
-//  * auth: the browser hand-off (`POST /api/desktop/auth/code/` → one-time code bound to a PKCE
-//    challenge, `POST /api/desktop/auth/exchange/` checks S256(verifier)), JWT-shaped access
-//    tokens with a real `exp`, refresh rotation (a retired refresh token is refused), and a 401
-//    for any request without a live access token;
+//  * auth: the sign-in form (`POST /api/desktop/auth/login/` {identifier, password}: native
+//    clients only; the fixture's rules — password "wrong" is 401, login "nopass" is 403
+//    `password_not_set`, anything else signs in), JWT-shaped access tokens with a real `exp`,
+//    refresh rotation (a retired refresh token is refused), and a 401 for any request without
+//    a live access token;
 //  * the version gate (426 below `minimumVersion`), ETag / If-None-Match on `home`,
 //    Retry-After, gzip, the `Date` header;
 //  * control endpoints under `/__fixture__/` to put the server offline, expire tokens, or make
@@ -16,7 +17,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
@@ -60,8 +60,6 @@ class FixtureServer {
   final DateTime Function() _now;
 
   HttpServer? _server;
-  final Random _random = Random.secure();
-  final Map<String, _Code> _codes = {};
   final Map<String, DateTime> _access = {};
   String? _refresh;
   int _serial = 0;
@@ -128,13 +126,6 @@ class FixtureServer {
     if (h == null || !h.startsWith('Bearer ')) return false;
     final exp = _access[h.substring(7).trim()];
     return exp != null && exp.isAfter(_now());
-  }
-
-  /// A sign-in code for [challenge], as the website's /desktop/link page would mint one.
-  String mintCode(String challenge) {
-    final code = base64Url.encode(List<int>.generate(24, (_) => _random.nextInt(256))).replaceAll('=', '');
-    _codes[code] = _Code(challenge, _now().add(const Duration(seconds: 120)));
-    return code;
   }
 
   // ------------------------------------------------------------------------------------------
@@ -253,8 +244,7 @@ class FixtureServer {
   // ------------------------------------------------------------------------------------------
 
   static final _routes = <(String, RegExp, String)>[
-    ('POST', RegExp(r'^/api/desktop/auth/code/$'), 'code'),
-    ('POST', RegExp(r'^/api/desktop/auth/exchange/$'), 'exchange'),
+    ('POST', RegExp(r'^/api/desktop/auth/login/$'), 'login'),
     ('POST', RegExp(r'^/api/auth/refresh/$'), 'refresh'),
     ('GET', RegExp(r'^/api/desktop/v1/home$'), 'home'),
     ('POST', RegExp(r'^/api/desktop/v1/pastpapers/(\d+)/open$'), 'ppOpen'),
@@ -281,7 +271,7 @@ class FixtureServer {
     ('GET', RegExp(r'^/api/classes/certificates/midterm/([^/]+)/download/$'), 'mtCertPdf'),
   ];
 
-  static const _public = {'code', 'exchange', 'refresh'};
+  static const _public = {'login', 'refresh'};
 
   Future<void> _api(HttpRequest r) async {
     final path = r.uri.path;
@@ -319,15 +309,8 @@ class FixtureServer {
 
     try {
       switch (name) {
-        case 'code':
-          final challenge = '${(await _body(r))['challenge'] ?? ''}'.trim();
-          if (!RegExp(r'^[A-Za-z0-9_-]{43}$').hasMatch(challenge)) {
-            await _json(r, 400, {'detail': 'Invalid challenge.'});
-            return;
-          }
-          await _json(r, 200, {'code': mintCode(challenge), 'expires_in': 120});
-        case 'exchange':
-          await _exchange(r);
+        case 'login':
+          await _login(r);
         case 'refresh':
           final refresh = '${(await _body(r))['refresh'] ?? ''}';
           if (_refresh == null || refresh != _refresh) {
@@ -423,25 +406,19 @@ class FixtureServer {
     return out;
   }
 
-  Future<void> _exchange(HttpRequest r) async {
+  /// `POST /api/desktop/auth/login/`, as the server answers it (desktop.views
+  /// .DesktopPasswordLoginView) with the fixture's accounts ([FixtureV1Api.authLogin]).
+  Future<void> _login(HttpRequest r) async {
     final b = await _body(r);
-    final code = '${b['code'] ?? ''}'.trim();
-    final verifier = '${b['verifier'] ?? ''}'.trim();
-    const refused = {'detail': 'This sign-in link has expired. Sign in again from the app.'};
-    final row = _codes.remove(code); // spent on the first try either way
-    if (row == null ||
-        row.expires.isBefore(_now()) ||
-        !RegExp(r'^[A-Za-z0-9._~-]{43,128}$').hasMatch(verifier) ||
-        _s256(verifier) != row.challenge) {
-      await _json(r, 400, refused);
+    if (!(r.headers.value(V1Headers.client) ?? '').startsWith('windows/')) {
+      await _json(r, 400, {'detail': 'Sign in on the website, or in the MasterSAT app.'});
       return;
     }
-    final native = (r.headers.value(V1Headers.client) ?? '').startsWith('windows/');
-    await _json(r, 200, native ? {'ok': true, ..._mint()} : {'ok': true});
+    String text(Object? v) => v is String ? v : '';
+    final typed = text(b['identifier']).trim().isNotEmpty ? text(b['identifier']) : text(b['email']);
+    await api.authLogin(AuthLoginRequest(identifier: typed.trim(), password: text(b['password'])));
+    await _json(r, 200, {'ok': true, ..._mint()});
   }
-
-  static String _s256(String verifier) =>
-      base64Url.encode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
 
   Future<void> _home(HttpRequest r) async {
     final fetch = await api.home();
@@ -495,7 +472,6 @@ class FixtureServer {
       case '/__fixture__/reset':
         api = FixtureV1Api(now: _now);
         revokeAll();
-        _codes.clear();
         offline = false;
         updateMode = null;
         minimumVersion = null;
@@ -512,10 +488,4 @@ class FixtureServer {
       'requests': requestLog.length,
     });
   }
-}
-
-class _Code {
-  _Code(this.challenge, this.expires);
-  final String challenge;
-  final DateTime expires;
 }

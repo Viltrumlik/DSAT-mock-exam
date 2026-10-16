@@ -11,27 +11,14 @@
 //                                                    with; marks Dart as listening
 //                    'focusWindow'  → bool           restore + bring the window to the front
 //
-// Only `mastersat://auth?code=…` is acted on (everything else is ignored).
+// No link is acted on any more: sign-in moved into the app's own form. The runner still forwards
+// `mastersat://` links (the protocol stays registered, so an old "Open the MasterSAT app" link
+// from the website still opens the app) and brings the window forward on a second launch by
+// itself; the app drains what arrives and ignores it.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-
-/// The sign-in code inside a `mastersat://auth?code=…` link, or null for any other link.
-String? signInCodeFrom(String raw) {
-  final Uri uri;
-  try {
-    uri = Uri.parse(raw.trim());
-  } on FormatException {
-    return null;
-  }
-  if (uri.scheme.toLowerCase() != 'mastersat') return null;
-  if (uri.host.toLowerCase() != 'auth') return null;
-  if (uri.path.isNotEmpty && uri.path != '/') return null;
-  final code = uri.queryParameters['code']?.trim();
-  if (code == null || code.isEmpty || code.length > 512) return null;
-  return code;
-}
 
 class LaunchLinks {
   LaunchLinks({this._channel = const MethodChannel(channelName)}) {
@@ -78,7 +65,7 @@ class LaunchLinks {
     }
   }
 
-  /// Brings the window to the front (after the browser hands a sign-in back).
+  /// Brings the window to the front.
   Future<void> focusWindow() async {
     try {
       await _channel.invokeMethod<Object?>('focusWindow');

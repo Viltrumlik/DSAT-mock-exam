@@ -49,7 +49,7 @@ final Map<String, ContractModel<Object>> contractModels = {
     ContractModel<OffscreenOutcome>('OffscreenOutcome', OffscreenOutcome.fromJson, (v) => v.toJson()),
     ContractModel<MidtermResult>('MidtermResult', MidtermResult.fromJson, (v) => v.toJson()),
     ContractModel<MediaResponse>('MediaResponse', MediaResponse.fromJson, (v) => v.toJson()),
-    ContractModel<AuthExchangeRequest>('AuthExchangeRequest', AuthExchangeRequest.fromJson, (v) => v.toJson()),
+    ContractModel<AuthLoginRequest>('AuthLoginRequest', AuthLoginRequest.fromJson, (v) => v.toJson()),
     ContractModel<AuthTokens>('AuthTokens', AuthTokens.fromJson, (v) => v.toJson()),
     ContractModel<RefreshRequest>('RefreshRequest', RefreshRequest.fromJson, (v) => v.toJson()),
     ContractModel<AnnotationWriteRequest>(

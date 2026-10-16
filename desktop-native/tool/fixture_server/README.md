@@ -3,7 +3,8 @@
 A small HTTP server that speaks the v1 wire contract (`desktop-native/contracts/v1`) with
 in-memory state, so the native app can run against real HTTP without touching production.
 The exam endpoints are the foundation's stateful `FixtureV1Api`; the server adds the HTTP
-layer: the PKCE sign-in hand-off, JWT-shaped tokens with `exp`, refresh rotation, 401s, the
+layer: the sign-in form's login (any login, any password but `wrong`; login `nopass` gets 403
+`password_not_set`), JWT-shaped tokens with `exp`, refresh rotation, 401s, the
 426 version gate, `ETag` / `304` on Home, gzip and the `Date` header.
 
 ```sh
@@ -11,7 +12,7 @@ source desktop-native/tool/env.sh
 cd desktop-native/tool/fixture_server && flutter pub get
 dart run bin/fixture_server.dart --port 8765 --verbose      # --help for the options
 
-# the app (debug builds sign in through the server's /api/desktop/auth/code/, no browser)
+# the app (sign in with any login and any password except "wrong")
 cd desktop-native/app
 flutter run -d macos --dart-define=MASTERSAT_API_BASE=http://127.0.0.1:8765
 ```

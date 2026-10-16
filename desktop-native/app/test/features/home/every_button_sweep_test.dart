@@ -134,27 +134,31 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async => find.byType(Scaffold),
   ),
-  'Sign-in, waiting for the browser': (
+  'Sign-in, filled in': (
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async {
-      await tester.tap(find.text('Sign in with your browser'));
-      await settleApp(tester);
+      await _fillSignIn(tester);
       return find.byType(Scaffold);
     },
   ),
   'Sign-in, offline': (
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async {
-      await tester.tap(find.text('Sign in with your browser'));
-      await settleApp(tester);
+      await _fillSignIn(tester);
       h.api.offline = true;
-      await h.services.auth.handleLink('mastersat://auth?code=c');
+      await tester.tap(find.text('Sign in'));
       await settleApp(tester);
       h.api.offline = false;
       return find.byType(Scaffold);
     },
   ),
 };
+
+Future<void> _fillSignIn(WidgetTester tester) async {
+  await tester.enterText(find.byType(TextField).first, 'aziza');
+  await tester.enterText(find.byType(TextField).last, 'fixture-password');
+  await settleApp(tester);
+}
 
 /// Everything a press could change.
 String fingerprint(WidgetTester tester, AppHarness h) {
@@ -179,6 +183,8 @@ String fingerprint(WidgetTester tester, AppHarness h) {
     h.api.calls.length,
     find.byType(AppDialog).evaluate().length,
     find.byType(HistoryDialog).evaluate().length,
+    // A password shown or hidden.
+    find.byType(EditableText).evaluate().map((e) => (e.widget as EditableText).obscureText).join(','),
     focus,
     texts,
   ].join('\n');

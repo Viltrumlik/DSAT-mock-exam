@@ -53,18 +53,6 @@ void main() {
     expect(await store.read(), isNull, reason: 'missing fields');
   });
 
-  test('the pending browser sign-in is kept the same way in signin.bin', () async {
-    final p = PendingSignIn(verifier: FakeNativeBridge.fixedVerifier, challenge: 'ch', startedAt: now);
-    await store.writePending(p);
-    expect(paths.pendingSignInFile.readAsStringSync(), isNot(contains(FakeNativeBridge.fixedVerifier)));
-    final back = (await store.readPending())!;
-    expect(back.verifier, p.verifier);
-    expect(back.isExpired(now.add(const Duration(minutes: 9))), isFalse);
-    expect(back.isExpired(now.add(const Duration(minutes: 11))), isTrue);
-    await store.clearPending();
-    expect(await store.readPending(), isNull);
-  });
-
   group('Jwt / AuthSession', () {
     test('reads exp and user_id; anything else is null', () {
       final t = fakeJwt(expires: DateTime.utc(2026, 10, 11, 12), userId: 5);

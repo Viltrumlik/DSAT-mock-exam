@@ -235,8 +235,26 @@ void main() {
     expect(const NetworkError('x').isTransient, isTrue);
   });
 
+  test('login: any login and password signs in; "wrong" is 401, "nopass" is 403 password_not_set', () async {
+    final t = await api.authLogin(const AuthLoginRequest(identifier: 'aziza', password: 'anything'));
+    expect(t.ok, isTrue);
+    expect(t.access, isNotEmpty);
+    await expectLater(
+      api.authLogin(const AuthLoginRequest(identifier: 'aziza', password: FixtureV1Api.wrongPassword)),
+      throwsA(isA<ApiError>()
+          .having((e) => e.status, 'status', 401)
+          .having((e) => e.body.detail, 'detail', 'Invalid credentials.')),
+    );
+    await expectLater(
+      api.authLogin(const AuthLoginRequest(identifier: FixtureV1Api.passwordNotSetLogin, password: '1234')),
+      throwsA(isA<ApiError>().having((e) => e.status, 'status', 403).having((e) => e.code, 'code', 'password_not_set')),
+    );
+    expect(api.calls.where((c) => c.method == 'authLogin').map((c) => c.args.keys), everyElement(['identifier']),
+        reason: 'the password is never recorded');
+  });
+
   test('auth refresh rotates; a spent refresh is refused', () async {
-    final t = await api.authExchange(const AuthExchangeRequest(code: 'c', verifier: 'v'));
+    final t = await api.authLogin(const AuthLoginRequest(identifier: 'aziza', password: 'p'));
     final r1 = await api.authRefresh(RefreshRequest(refresh: t.refresh));
     expect(r1.refresh, isNot(t.refresh));
     await expectLater(api.authRefresh(RefreshRequest(refresh: t.refresh)),
