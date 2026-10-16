@@ -27,6 +27,7 @@ class MidtermPrecheckScreen extends StatefulWidget {
     this.onBack,
     this.refreshEvery = const Duration(seconds: 2),
     this.copy = PrecheckCopy.midterm,
+    this.strict = false,
   });
 
   final NativeBridge native;
@@ -43,6 +44,10 @@ class MidtermPrecheckScreen extends StatefulWidget {
 
   /// Back (releases the machine if this screen locked it). Disabled while locking.
   final VoidCallback? onBack;
+
+  /// A midterm's pre-check: every other program with a window must be closed too (one window,
+  /// one app), not only chat and screen-sharing apps.
+  final bool strict;
   final Duration refreshEvery;
 
   @override
@@ -76,7 +81,7 @@ class _MidtermPrecheckScreenState extends State<MidtermPrecheckScreen> {
     BatteryStatus? battery;
     var failed = false;
     try {
-      report = widget.native.precheck();
+      report = widget.native.precheck(strict: widget.strict);
     } on Object {
       failed = true;
     }
@@ -157,7 +162,7 @@ class _MidtermPrecheckScreenState extends State<MidtermPrecheckScreen> {
         rows.add(_CheckRow(state: _RowState.fix, title: MidtermCopy.vmTitle, hint: widget.copy.vmHint));
       }
       if (report.apps.isEmpty) {
-        rows.add(const _CheckRow(state: _RowState.ok, title: MidtermCopy.noApps));
+        rows.add(_CheckRow(state: _RowState.ok, title: widget.strict ? MidtermCopy.noOtherApps : MidtermCopy.noApps));
       } else {
         for (final app in report.apps) {
           rows.add(_CheckRow(

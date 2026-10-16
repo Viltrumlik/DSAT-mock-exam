@@ -223,8 +223,8 @@ class HttpV1Api implements V1Api {
   // ------------------------------------------------------------------------------------------
 
   @override
-  Future<AuthTokens> authExchange(AuthExchangeRequest body) =>
-      _json('POST', V1Paths.authExchange, AuthTokens.fromJson, body: body.toJson(), auth: false);
+  Future<AuthTokens> authLogin(AuthLoginRequest body) =>
+      _json('POST', V1Paths.authLogin, AuthTokens.fromJson, body: body.toJson(), auth: false);
 
   @override
   Future<AuthTokens> authRefresh(RefreshRequest body) => _json(

@@ -40,6 +40,8 @@ pub struct Shared {
     pub saved_window: Option<SavedWindow>,
     /// What the UI asked for with ms_keep_awake (re-asserted after a release clears it).
     pub keep_awake: bool,
+    /// The engaged lock is the strict one (a midterm: one window, one app).
+    pub strict: bool,
 }
 
 impl Shared {
@@ -51,6 +53,7 @@ impl Shared {
             precheck_json: String::new(),
             saved_window: None,
             keep_awake: false,
+            strict: false,
         }
     }
 }
@@ -113,11 +116,12 @@ pub enum EnterOutcome {
     Refused(String),
 }
 
-/// `ms_lock_enter`. Fresh pre-check; refuse if it fails; otherwise engage, fullscreen + topmost,
-/// reset the heartbeat clock and capture the JSON.
-pub fn enter() -> MsResult<EnterOutcome> {
+/// `ms_lock_enter` / `ms_lock_enter_ex`. Fresh pre-check; refuse if it fails; otherwise engage,
+/// fullscreen + topmost, reset the heartbeat clock and capture the JSON. `strict` (a midterm)
+/// pre-checks every other app with a window too, and engages the foreground guard.
+pub fn enter(strict: bool) -> MsResult<EnterOutcome> {
     require_init()?;
-    let report = lockdown::precheck();
+    let report = lockdown::precheck_with(strict);
     let json = serde_json::to_string(&report).map_err(|e| MsError::os(e.to_string()))?;
     if !report.ok {
         return Ok(EnterOutcome::Refused(json));
@@ -130,8 +134,8 @@ pub fn enter() -> MsResult<EnterOutcome> {
     // Window work on the window's thread. Re-entering an engaged lock keeps the pre-lock
     // placement saved the first time.
     let saved = window::on_window_thread_wait(move || {
-        let saved = window::enter_fullscreen(hwnd, !already_active);
-        lockdown::engage(hwnd);
+        let saved = window::enter_fullscreen(hwnd, !already_active, strict);
+        lockdown::engage_with(hwnd, strict);
         saved
     });
     let saved = match saved {
@@ -153,6 +157,7 @@ pub fn enter() -> MsResult<EnterOutcome> {
         s.saved_window = saved;
     }
     s.active = true;
+    s.strict = strict;
     s.last_heartbeat = Instant::now();
     s.precheck_json = json.clone();
     Ok(EnterOutcome::Locked(json))
@@ -167,6 +172,7 @@ pub struct Release {
 
 fn take_release(s: &mut Shared) -> Release {
     s.active = false;
+    s.strict = false;
     s.precheck_json.clear();
     Release {
         hwnd: s.hwnd,

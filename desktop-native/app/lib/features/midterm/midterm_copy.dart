@@ -123,8 +123,9 @@ abstract final class MidtermCopy {
   static const precheckTitle = 'Get this computer ready';
   static const precheckResumeTitle = 'Resume your midterm';
   static const precheckLead =
-      'When you continue, MasterSAT locks this computer until your midterm ends. Other apps, '
-      'notifications, screenshots and copying are turned off.';
+      'When you continue, MasterSAT locks this computer until your midterm ends. Only MasterSAT '
+      'stays open: every other app must be closed, and notifications, screenshots and copying '
+      'are turned off.';
   static const checking = 'Checking this computer…';
   static const oneScreen = 'One screen';
   static String screensConnected(int n) => '$n screens connected';
@@ -134,6 +135,7 @@ abstract final class MidtermCopy {
   static const vmTitle = 'Virtual machine';
   static const vmHint = "Midterms can't be taken inside a virtual machine.";
   static const noApps = 'No chat or screen-sharing apps open';
+  static const noOtherApps = 'No other apps open';
   static String closeApp(String name) => 'Close $name';
   static String closeFromTray(String name) => 'Close $name from the system tray, then come back.';
   static const close = 'Close';

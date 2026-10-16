@@ -15,8 +15,10 @@ import '../../core/models/models.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/theme/controls.dart';
 import '../../core/theme/tokens.dart';
-import '../home/app_header.dart';
 import '../library/pastpaper_model.dart';
+import '../shell/app_shell.dart';
+import '../shell/shell_controller.dart';
+import '../shell/shell_page.dart';
 import 'result_states.dart';
 import 'results_controller.dart';
 
@@ -63,45 +65,40 @@ class _PastpaperResultScreenState extends State<PastpaperResultScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Column(
-        children: [
-          AppHeader(backLabel: 'Your tests', onBack: () => Navigator.of(context).maybePop()),
-          Expanded(
-            child: ListenableBuilder(
-              listenable: _controller,
-              builder: (context, _) {
-                final r = _controller.result;
-                final ready = _controller.phase == ResultPhase.ready && r != null && r.isCompleted;
-                return SingleChildScrollView(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 960),
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(32, 28, 32, 48),
-                        child: ready
-                            ? _Report(
-                                result: r,
-                                paper: _paperFor(r),
-                                downloadError: _downloadError,
-                                onDownloadError: _setDownloadError,
-                              )
-                            : ResultPendingView(
-                                phase: _controller.phase,
-                                error: _controller.error,
-                                onRetry: () => unawaited(_controller.load()),
-                                loadingLabel: 'Loading your report…',
-                                failedTitle: "The report didn't load.",
-                              ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+    // features/pastpapers/PastpaperReportPage.tsx: `.dzboard`, 900 wide with 18/16/40 padding,
+    // the way back ("Past papers") on top.
+    return AppShell(
+      section: ShellSection.pastPapers,
+      title: 'Past paper result',
+      child: ListenableBuilder(
+        listenable: _controller,
+        builder: (context, _) {
+          final r = _controller.result;
+          final ready = _controller.phase == ResultPhase.ready && r != null && r.isCompleted;
+          return ShellPage(
+            maxWidth: 868,
+            padding: const EdgeInsets.fromLTRB(48, 38, 48, 60),
+            children: [
+              ShellBackLink(label: 'Past papers', onPressed: () => Navigator.of(context).maybePop()),
+              const SizedBox(height: 16),
+              if (ready)
+                _Report(
+                  result: r,
+                  paper: _paperFor(r),
+                  downloadError: _downloadError,
+                  onDownloadError: _setDownloadError,
+                )
+              else
+                ResultPendingView(
+                  phase: _controller.phase,
+                  error: _controller.error,
+                  onRetry: () => unawaited(_controller.load()),
+                  loadingLabel: 'Loading your report…',
+                  failedTitle: "The report didn't load.",
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -166,7 +163,7 @@ class _Label extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
         padding: const EdgeInsets.only(left: 2, bottom: 10),
-        child: Text(text, style: AppText.filterLabel.copyWith(letterSpacing: 1.1)),
+        child: Text(text, style: AppText.filterLabel.copyWith(letterSpacing: 11 * 0.1)),
       );
 }
 
@@ -206,23 +203,24 @@ class _ScoreCard extends StatelessWidget {
         ? 'PAST PAPER'
         : '${sectionTitle(p)} · ${subjectLabel(p.subject)} · ${fmtMonth(p.practiceDate)}'.toUpperCase();
     final change = scoreChange(r);
-    return AppCard(
-      padding: const EdgeInsets.all(24),
+    // Score + certificate: padding 22, radius 16, --dz-line, no shadow.
+    return AppCard.board(
+      padding: const EdgeInsets.all(22),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(eyebrow, style: AppText.filterLabel),
-          const SizedBox(height: 8),
+          Text(eyebrow, style: AppText.filterLabel.copyWith(letterSpacing: 11 * 0.08)),
+          const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Text('${r.score ?? '—'}', style: AppText.scoreLarge.copyWith(fontSize: 48)),
+              Text('${r.score ?? '—'}', style: AppText.scoreLarge.copyWith(fontSize: 44, letterSpacing: 44 * -0.03)),
               const SizedBox(width: 8),
               Text('/ 800', style: AppText.scoreSuffix.copyWith(fontSize: 15)),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 16,
             runSpacing: 6,
@@ -241,7 +239,7 @@ class _ScoreCard extends StatelessWidget {
                 ]),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 16),
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -249,12 +247,15 @@ class _ScoreCard extends StatelessWidget {
               AppButton(
                 label: 'Review questions',
                 icon: LucideIcons.eye,
+                size: AppButtonSize.action,
                 onPressed: () => unawaited(openExam(context, ReviewExamRequest(result: r, paper: p))),
               ),
               if (r.score != null)
                 PdfDownloadButton(
                   label: 'Certificate',
                   icon: LucideIcons.award,
+                  tone: AppButtonTone.line,
+                  size: AppButtonSize.action,
                   suggestedName: 'MasterSAT-certificate-${r.attemptId}.pdf',
                   fetch: () => services.api.pastpaperCertificatePdf(r.attemptId),
                   failure: "The certificate couldn't be produced right now. Your result is safe.",
@@ -263,6 +264,8 @@ class _ScoreCard extends StatelessWidget {
               if (toReview > 0)
                 PdfDownloadButton(
                   label: 'Error report PDF',
+                  tone: AppButtonTone.line,
+                  size: AppButtonSize.action,
                   suggestedName: 'MasterSAT-error-report-${r.attemptId}.pdf',
                   fetch: () => services.api.pastpaperReportPdf(r.attemptId),
                   failure: "The report couldn't be produced right now. Nothing has been lost.",
@@ -272,7 +275,7 @@ class _ScoreCard extends StatelessWidget {
           ),
           if (downloadError != null) ...[
             const SizedBox(height: 10),
-            Text(downloadError!, style: AppText.small.copyWith(color: AppColors.mute)),
+            Text(downloadError!, style: AppText.small.copyWith(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.mute)),
           ],
         ],
       ),
@@ -288,15 +291,15 @@ class _Stat extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return AppCard.board(
       radius: AppRadii.md,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: AppText.score.copyWith(fontSize: 26)),
+          Text(value, style: AppText.score.copyWith(fontSize: 26, letterSpacing: 0)),
           const SizedBox(height: 4),
-          Text(label.toUpperCase(), style: AppText.filterLabel),
+          Text(label.toUpperCase(), style: AppText.filterLabel.copyWith(letterSpacing: 11 * 0.08)),
         ],
       ),
     );
@@ -311,9 +314,8 @@ class _Modules extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modules = [...result.modules]..sort((a, b) => a.order.compareTo(b.order));
-    return AppCard(
+    return AppCard.board(
       padding: EdgeInsets.zero,
-      radius: AppRadii.lg,
       child: Column(
         children: [
           for (var i = 0; i < modules.length; i++)
@@ -367,7 +369,7 @@ class QuestionGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final modules = [...result.modules]..sort((a, b) => a.order.compareTo(b.order));
-    return AppCard(
+    return AppCard.board(
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,7 +504,7 @@ class _History extends StatelessWidget {
   Widget build(BuildContext context) {
     final services = AppScope.of(context);
     final rows = paper.history;
-    return AppCard(
+    return AppCard.board(
       padding: EdgeInsets.zero,
       child: Column(
         children: [
@@ -523,16 +525,10 @@ class _History extends StatelessWidget {
                           textBaseline: TextBaseline.alphabetic,
                           children: [
                             Text('${rows[i].score ?? '—'}', style: AppText.cardTitle),
-                            const SizedBox(width: 4),
-                            Text('/ 800', style: AppText.caption.copyWith(color: AppColors.faint)),
-                            if (i == 0) ...[
-                              const SizedBox(width: 8),
-                              const StatusBadge(label: 'Latest', foreground: AppColors.indigo, background: AppColors.indigoSoft),
-                            ],
-                            if (rows[i].attemptId == current) ...[
-                              const SizedBox(width: 6),
-                              const StatusBadge(label: 'This report', foreground: AppColors.mute, background: AppColors.neutralSoft),
-                            ],
+                            const SizedBox(width: 6),
+                            Text('/ 800', style: AppText.caption.copyWith(fontWeight: FontWeight.w700, color: AppColors.faint)),
+                            if (i == 0) ...[const SizedBox(width: 6), const _Tag('Latest')],
+                            if (rows[i].attemptId == current) ...[const SizedBox(width: 6), const _Tag('This report')],
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -543,8 +539,8 @@ class _History extends StatelessWidget {
                   if (rows[i].attemptId != current) ...[
                     AppButton(
                       label: 'Report',
-                      tone: AppButtonTone.secondary,
-                      size: AppButtonSize.small,
+                      tone: AppButtonTone.line,
+                      size: AppButtonSize.mini,
                       onPressed: () => Navigator.of(context).pushReplacement(instantRoute(
                         (_) => PastpaperResultScreen(attemptId: rows[i].attemptId, paper: paper),
                         settings: RouteSettings(name: '/results/pastpaper/${rows[i].attemptId}'),
@@ -556,7 +552,7 @@ class _History extends StatelessWidget {
                     PdfDownloadButton(
                       label: 'Certificate',
                       tone: AppButtonTone.soft,
-                      size: AppButtonSize.small,
+                      size: AppButtonSize.mini,
                       suggestedName: 'MasterSAT-certificate-${rows[i].attemptId}.pdf',
                       fetch: () => services.api.pastpaperCertificatePdf(rows[i].attemptId),
                       failure: "The certificate couldn't be produced right now. Your result is safe.",
@@ -569,4 +565,20 @@ class _History extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The report page's tag ("Latest", "This report": 10.5/800, .04em, indigo on indigo-soft).
+class _Tag extends StatelessWidget {
+  const _Tag(this.text);
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => StatusBadge(
+        label: text,
+        foreground: AppColors.indigo,
+        background: AppColors.indigoSoft,
+        fontSize: 10.5,
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        radius: 6,
+      );
 }

@@ -140,7 +140,7 @@ void main() {
 
   testWidgets('pre-check — ready', (tester) async {
     await golden(tester, 'midterm_precheck_ready',
-        MidtermPrecheckScreen(native: FakeNativeBridge(), resume: false, onContinue: () async {}, onBack: () {}));
+        MidtermPrecheckScreen(native: FakeNativeBridge(), strict: true, resume: false, onContinue: () async {}, onBack: () {}));
   }, skip: skip);
 
   testWidgets('pre-check — things to fix', (tester) async {
@@ -148,18 +148,19 @@ void main() {
       const BlockedApp(exe: 'Telegram.exe', name: 'Telegram', closable: true),
       const BlockedApp(exe: 'AnyDesk.exe', name: 'AnyDesk', closable: false),
     ])
-      ..batteryStatus = const BatteryStatus(percent: 19, charging: false, hasBattery: true);
+      ..batteryStatus = const BatteryStatus(percent: 19, charging: false, hasBattery: true)
+      ..windowApps = [const BlockedApp(exe: 'chrome.exe', name: 'Google Chrome', closable: true)];
     await golden(
       tester,
       'midterm_precheck_fix',
-      MidtermPrecheckScreen(native: native, resume: false, onContinue: () async {}, onBack: () {}),
+      MidtermPrecheckScreen(native: native, strict: true, resume: false, onContinue: () async {}, onBack: () {}),
       size: const Size(1280, 900),
     );
   }, skip: skip);
 
   testWidgets('pre-check — resume', (tester) async {
     await golden(tester, 'midterm_precheck_resume',
-        MidtermPrecheckScreen(native: FakeNativeBridge(), resume: true, onContinue: () async {}, onBack: () {}));
+        MidtermPrecheckScreen(native: FakeNativeBridge(), strict: true, resume: true, onContinue: () async {}, onBack: () {}));
   }, skip: skip);
 
   testWidgets('off-screen warning over the paper', (tester) async {

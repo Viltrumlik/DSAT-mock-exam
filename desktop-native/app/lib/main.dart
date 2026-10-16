@@ -28,7 +28,6 @@ import 'core/api/fixture_v1_api.dart';
 import 'core/api/http_v1_api.dart';
 import 'core/api/v1_api.dart';
 import 'core/auth/auth_controller.dart';
-import 'core/auth/dev_sign_in.dart';
 import 'core/auth/launch_links.dart';
 import 'core/auth/token_store.dart';
 import 'core/clock/clock.dart';
@@ -138,8 +137,10 @@ Future<void> runMasterSat({NativeBridge? native, ExamLauncher? examLauncher}) as
   await services.auth.restore();
   if (services.auth.isSignedIn) await services.home.loadCached();
   runApp(MasterSatApp(services: services));
+  // Sign-in no longer comes back through a `mastersat://` link; whatever the runner queued (an
+  // old website link that opened the app) is taken and ignored.
   final links = services.links;
-  if (links != null) unawaited(services.auth.attachLinks(links));
+  if (links != null) unawaited(links.takePending());
   unawaited(_windowsHousekeeping(services));
 }
 
@@ -154,6 +155,9 @@ ExamRuntimeFactory productionExamRuntimes(AppPaths paths, PowerEvents power) =>
           fetchMedia: fetchMedia,
           power: power,
         );
+
+/// Opens a link in the student's browser.
+typedef UrlOpener = Future<bool> Function(Uri url);
 
 /// Every long-lived object, wired together (tests build theirs with fakes the same way).
 Future<AppServices> buildAppServices({
@@ -198,13 +202,9 @@ Future<AppServices> buildAppServices({
 
   final auth = AuthController(
     api: v1,
-    native: native,
     store: tokenStore ?? TokenStore.at(paths, native),
-    config: config,
     unsentWork: unsent,
     clock: clock,
-    openUrl: openUrl,
-    devMintCode: _devMinter(config, http),
   );
 
   final home = HomeController(
@@ -258,16 +258,6 @@ Future<AppServices> buildAppServices({
     fetchMedia: fetchMedia,
     islandDiagnostics: islandDiagnostics,
   );
-}
-
-/// Debug builds sign in without a browser trip: against the local fixture server it asks the
-/// server for a code (as the website's /desktop/link page would); with in-process fixtures any
-/// code works. Never in a release build, never against a non-loopback origin.
-DevCodeMinter? _devMinter(ApiConfig config, Transport? http) {
-  if (kReleaseMode) return null;
-  if (config.target == ApiTarget.inProcessFixtures) return (challenge) async => 'fixture-code';
-  if (http == null) return null;
-  return devCodeMinterFor(config, http);
 }
 
 void _captureErrors(EventLog log) {

@@ -133,7 +133,7 @@ abstract final class V1Paths {
   static String media(AttemptKind kind, int attemptId) => '$v1/attempts/${kind.wire}/$attemptId/media';
 
   // Existing endpoints, used as they are.
-  static const authExchange = '/api/desktop/auth/exchange/';
+  static const authLogin = '/api/desktop/auth/login/';
   static const authRefresh = '/api/auth/refresh/';
   static String midtermChallenge(int attemptId) => '/api/midterms/attempts/$attemptId/desktop_challenge/';
   static String midtermSession(int attemptId) => '/api/midterms/attempts/$attemptId/desktop_session/';
@@ -170,8 +170,9 @@ abstract final class V1Headers {
 abstract class V1Api {
   // ---- auth (existing endpoints) ----------------------------------------------------------
 
-  /// `POST /api/desktop/auth/exchange/` — trade the deep-link code + PKCE verifier for tokens.
-  Future<AuthTokens> authExchange(AuthExchangeRequest body);
+  /// `POST /api/desktop/auth/login/` — the sign-in form: login + password for the token pair.
+  /// 401 wrong login or password, 403 `password_not_set` or another refusal, 429 slow down.
+  Future<AuthTokens> authLogin(AuthLoginRequest body);
 
   /// `POST /api/auth/refresh/` — rotates: always store the returned refresh token.
   Future<AuthTokens> authRefresh(RefreshRequest body);

@@ -160,16 +160,45 @@ abstract final class AppColors {
 
   /// Sign-in brand panel gradient (`linear-gradient(160deg,#2a68c0,#1f4d9a)`).
   static const brandGradientEnd = Color(0xFF1F4D9A);
+
+  // ---- the shell (components/shell/AppShell.tsx) -----------------------------------------
+  /// The top bar: `bg-card/80` over --bg (white at 80 % on #eef2fa).
+  static const topBar = Color(0xFFFCFCFE);
+
+  /// --border (= --border-subtle), the kit's hairline.
+  static const border = borderSubtle;
+
+  // ---- Tailwind v4 slate (MidtermList.tsx classes; sRGB of the OKLCH values) -------------
+  /// slate-100, oklch(96.8% 0.007 247.896)
+  static const slate100 = Color(0xFFF1F5F9);
+
+  /// slate-200, oklch(92.9% 0.013 255.508)
+  static const slate200 = Color(0xFFE2E8F0);
+
+  /// slate-400, oklch(70.4% 0.04 256.788)
+  static const slate400 = Color(0xFF90A1B9);
+
+  /// slate-500, oklch(55.4% 0.046 257.417)
+  static const slate500 = Color(0xFF62748E);
 }
 
-/// --ds-radius-* (0.625 / 0.875 / 1.125 / 1.5 rem at 16 px) plus the card radii the
-/// dashboard pages use inline (11, 14, 18).
+/// --ds-radius-* (0.625 / 0.875 / 1.125 / 1.5 rem at 16 px), Tailwind's rounded-lg / -xl /
+/// -2xl (8 / 12 / 16) the kit uses, and the radii the dashboard pages use inline (11, 14, 18).
 abstract final class AppRadii {
   static const sm = 10.0;
   static const button = 11.0;
   static const md = 14.0;
   static const lg = 18.0;
   static const xl = 24.0;
+
+  /// Tailwind `rounded-lg` (Button sm).
+  static const kitSm = 8.0;
+
+  /// Tailwind `rounded-xl` (Button md/lg, Input, Alert).
+  static const kitMd = 12.0;
+
+  /// Tailwind `rounded-2xl` (Card, Modal, toasts, nav items).
+  static const kitLg = 16.0;
 }
 
 /// Spacing on a 4 px grid, tuned for desktop density.
@@ -182,14 +211,51 @@ abstract final class AppSpace {
   static const xxl = 32.0;
 }
 
-/// --ds-shadow-sm: 0 1px 2px rgba(15,23,42,.04), 0 2px 8px -2px rgba(30,58,110,.10).
-const List<BoxShadow> cardShadow = [
-  BoxShadow(color: Color(0x0A0F172A), offset: Offset(0, 1), blurRadius: 2),
-  BoxShadow(color: Color(0x1A1E3A6E), offset: Offset(0, 2), blurRadius: 8, spreadRadius: -2),
-];
+/// The house shadows (globals.css :root): two layers each, a tight contact shadow and a wide
+/// soft one, cast in navy.
+abstract final class AppShadows {
+  /// --ds-shadow-sm (`shadow-card`): 0 1px 2px rgba(15,23,42,.04), 0 2px 8px -2px rgba(30,58,110,.10).
+  static const sm = [
+    BoxShadow(color: Color(0x0A0F172A), offset: Offset(0, 1), blurRadius: 2),
+    BoxShadow(color: Color(0x1A1E3A6E), offset: Offset(0, 2), blurRadius: 8, spreadRadius: -2),
+  ];
 
-/// --ds-shadow-lg, for dialogs.
-const List<BoxShadow> dialogShadow = [
-  BoxShadow(color: Color(0x0F0F172A), offset: Offset(0, 6), blurRadius: 12),
-  BoxShadow(color: Color(0x421E3A6E), offset: Offset(0, 24), blurRadius: 48, spreadRadius: -16),
-];
+  /// --ds-shadow-md (`shadow-pop`): 0 2px 4px rgba(15,23,42,.04), 0 10px 24px -8px rgba(30,58,110,.18).
+  static const md = [
+    BoxShadow(color: Color(0x0A0F172A), offset: Offset(0, 2), blurRadius: 4),
+    BoxShadow(color: Color(0x2E1E3A6E), offset: Offset(0, 10), blurRadius: 24, spreadRadius: -8),
+  ];
+
+  /// --ds-shadow-lg (`shadow-modal`): 0 6px 12px rgba(15,23,42,.06), 0 24px 48px -16px rgba(30,58,110,.26).
+  static const lg = [
+    BoxShadow(color: Color(0x0F0F172A), offset: Offset(0, 6), blurRadius: 12),
+    BoxShadow(color: Color(0x421E3A6E), offset: Offset(0, 24), blurRadius: 48, spreadRadius: -16),
+  ];
+
+  /// Button.tsx primary: `shadow-[0_1px_2px_rgba(67,56,202,0.35)]`.
+  static const primaryButton = [BoxShadow(color: Color(0x594338CA), offset: Offset(0, 1), blurRadius: 2)];
+
+  /// Button.tsx danger: `shadow-[0_1px_2px_rgba(220,38,38,0.3)]`.
+  static const dangerButton = [BoxShadow(color: Color(0x4DDC2626), offset: Offset(0, 1), blurRadius: 2)];
+
+  /// The active sidebar item (AppShell.tsx): 0 10px 22px -10px rgba(42,104,192,.9).
+  static const navActive = [BoxShadow(color: Color(0xE62A68C0), offset: Offset(0, 10), blurRadius: 22, spreadRadius: -10)];
+
+  /// The active filter pill (PaperLibrary.tsx `Segmented`): 0 2px 8px rgba(42,104,192,.35).
+  static const segmentActive = [BoxShadow(color: Color(0x592A68C0), offset: Offset(0, 2), blurRadius: 8)];
+
+  /// `.dz-booklet:hover` (globals.css): 0 18px 38px rgba(15,23,41,.14).
+  static const bookletHover = [BoxShadow(color: Color(0x240F1729), offset: Offset(0, 18), blurRadius: 38)];
+
+  /// Tailwind `shadow-lg` (the website's toasts): 0 10px 15px -3px rgb(0 0 0/.1), 0 4px 6px -4px rgb(0 0 0/.1).
+  static const toast = [
+    BoxShadow(color: Color(0x1A000000), offset: Offset(0, 10), blurRadius: 15, spreadRadius: -3),
+    BoxShadow(color: Color(0x1A000000), offset: Offset(0, 4), blurRadius: 6, spreadRadius: -4),
+  ];
+}
+
+/// --ds-shadow-sm, for cards (kept for older call sites; prefer [AppShadows.sm]).
+const List<BoxShadow> cardShadow = AppShadows.sm;
+
+/// --ds-shadow-lg, for dialogs (prefer [AppShadows.lg]).
+const List<BoxShadow> dialogShadow = AppShadows.lg;

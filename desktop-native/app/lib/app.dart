@@ -30,6 +30,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/controls.dart';
 import 'core/theme/toast.dart';
 import 'core/theme/tokens.dart';
+import 'exam/engine/lockdown_controller.dart' show LockdownController;
 import 'exam/engine/media_cache.dart' show MediaFetcher;
 import 'exam/launch/exam_runtime_host.dart';
 import 'exam/launch/island_guard.dart' show IslandDiagnostics;
@@ -42,7 +43,8 @@ import 'features/library/pastpaper_model.dart';
 import 'features/results/midterm_result_screen.dart';
 import 'features/results/pastpaper_result_screen.dart';
 import 'features/results/results_controller.dart';
-import 'features/settings/settings_screen.dart';
+import 'features/shell/app_shell.dart';
+import 'features/shell/shell_controller.dart';
 import 'features/signin/sign_in_screen.dart';
 import 'native/native_bridge.dart';
 
@@ -181,8 +183,8 @@ Future<void> openMidtermResult(BuildContext context, {required MidtermRow row}) 
   ));
 }
 
-Future<void> openSettings(BuildContext context) =>
-    Navigator.of(context).push<void>(instantRoute((_) => const SettingsScreen(), settings: const RouteSettings(name: '/settings')));
+/// Settings is a page of the shell (the sidebar's third row): back to the shell, then open it.
+Future<void> openSettings(BuildContext context) async => AppShell.go(context, ShellSection.settings);
 
 // =============================================================================================
 // Services
@@ -268,6 +270,9 @@ class AppServices {
   final IslandDiagnostics? islandDiagnostics;
 
   final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
+  /// Which page of the signed-in shell is open (Past papers, Midterms, Settings).
+  final ShellController shell = ShellController();
   AuthStatus? _lastStatus;
   bool _wasOffline = false;
 
@@ -284,6 +289,7 @@ class AppServices {
     } else if (was == AuthStatus.signedIn) {
       log.add('auth', 'signed out${auth.problem == null ? '' : ' (${auth.problem!.kind.name})'}');
       navigatorKey.currentState?.popUntil((r) => r.isFirst);
+      shell.reset();
       windowPlacement?.detach();
       library.reset();
       unawaited(home.reset());
@@ -367,6 +373,7 @@ class AppServices {
     library.dispose();
     auth.dispose();
     toasts.dispose();
+    shell.dispose();
   }
 }
 
@@ -426,12 +433,13 @@ class _MasterSatAppState extends State<MasterSatApp> {
         final s = widget.services;
         if (s.auth.isSignedIn) unawaited(s.home.refresh());
       },
-      onExitRequested: exams == null
-          ? null
-          : () async {
-              await exams.closeGracefully();
-              return AppExitResponse.exit;
-            },
+      onExitRequested: () async {
+        // A midterm's strict lock is one window, one app: the window does not close either
+        // (Alt+F4 is swallowed natively; this is the taskbar's or Task Manager's polite close).
+        if (LockdownController.strictEngaged) return AppExitResponse.cancel;
+        if (exams != null) await exams.closeGracefully();
+        return AppExitResponse.exit;
+      },
     );
   }
 
@@ -453,9 +461,13 @@ class _MasterSatAppState extends State<MasterSatApp> {
         navigatorKey: services.navigatorKey,
         scrollBehavior: const _DesktopScrollBehavior(),
         // No browser habits: nothing here binds reload, find-in-page or zoom keys.
-        builder: (context, child) => ToastHost(
-          controller: services.toasts,
-          child: UpdateRequiredGate(child: child ?? const SizedBox.shrink()),
+        // Every route, dialog, menu and toast starts in Geist (app_theme.dart).
+        builder: (context, child) => DefaultTextStyle(
+          style: appDefaultTextStyle,
+          child: ToastHost(
+            controller: services.toasts,
+            child: UpdateRequiredGate(child: child ?? const SizedBox.shrink()),
+          ),
         ),
         home: const AppRoot(),
       ),

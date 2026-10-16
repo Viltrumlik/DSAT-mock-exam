@@ -1,15 +1,14 @@
 // The app's sign-in state (architecture §6 "Sign-in", §4.2 "Tokens").
 //
-//   starting           reading auth.bin
-//   signedOut          the sign-in screen (with [AuthController.problem] when something failed)
-//   waitingForBrowser  "Sign in with your browser" is open; waiting for mastersat://auth?code=
-//   exchanging         POST /api/desktop/auth/exchange/ {code, verifier} in flight
-//   signedIn           Home
+//   starting    reading auth.bin
+//   signedOut   the sign-in form (with [AuthController.problem] when something failed)
+//   signingIn   POST /api/desktop/auth/login/ {identifier, password} in flight
+//   signedIn    Home
 //
-// Sign-in is PKCE through the student's real browser (Google and Telegram refuse embedded
-// web views): NativeBridge.pkceNew → open https://mastersat.uz/desktop/link?challenge=<S256>
-// → the website mints a one-time code and navigates to mastersat://auth?code=… → exchange it
-// with the verifier, which never left this computer. Tokens come back in the body (#244).
+// Sign-in is the app's own login form: the same login and password the website takes (email,
+// username or phone), exchanged once for the token pair, which comes back in the body. The
+// password is never stored, logged or kept: it lives in the request for the one call and the
+// controller holds no reference to it afterwards (the form clears its field on a refusal).
 //
 // Refresh rules, carried over from 0.1.0's review rounds:
 //  * one refresh at a time — two refreshes race, and the loser presents a retired token;
@@ -21,38 +20,36 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../native/native_bridge.dart';
 import '../api/http_v1_api.dart';
 import '../api/v1_api.dart';
 import '../clock/clock.dart';
-import '../http/api_config.dart';
 import '../models/models.dart';
 import '../store/unsent_work.dart';
-import 'launch_links.dart';
 import 'session.dart';
 import 'token_store.dart';
 
-enum AuthStatus { starting, signedOut, waitingForBrowser, exchanging, signedIn }
+enum AuthStatus { starting, signedOut, signingIn, signedIn }
 
 enum AuthProblemKind {
-  /// The browser could not be opened.
-  browserFailed,
+  /// 401: the login or the password is wrong (or the account does not exist, or is closed —
+  /// the server answers all of these alike).
+  invalidCredentials,
 
-  /// The exchange did not reach the server. Retry re-sends it.
-  offline,
+  /// 403 `password_not_set`: an lc-up account still on its first phone + four digits sign-in.
+  /// The server's own words say where to set the password.
+  passwordNotSet,
 
-  /// The server refused the code (expired, used, or not this app's): start again.
-  linkExpired,
-
-  /// A link arrived but no sign-in was started in this app.
-  notStartedHere,
-
-  /// The server refused the student (account rules); the server's own words are shown.
+  /// Any other 403 (account rules); the server's own words are shown.
   refused,
 
-  /// The server failed or asked us to slow down. Retry re-sends the exchange.
+  /// 429: too many tries for this account or from this network.
+  tooManyAttempts,
+
+  /// The sign-in did not reach the server. The form can send it again as it is.
+  offline,
+
+  /// The server failed. The form can send it again as it is.
   server,
 
   /// A refresh was definitely refused: the session is over.
@@ -69,7 +66,8 @@ class AuthProblem {
   final AuthProblemKind kind;
   final String message;
 
-  /// Whether "Try again" re-sends the same exchange request.
+  /// Whether the sign-in can be sent again as typed ("Try again"): it never reached the
+  /// server, or the server failed. A refusal is final until something is retyped.
   final bool canRetry;
 
   @override
@@ -91,37 +89,19 @@ final class SignOutBlocked extends SignOutResult {
   final UnsentSummary unsent;
 }
 
-typedef UrlOpener = Future<bool> Function(Uri url);
-
-/// Mints a sign-in code for a challenge without a browser (local fixture server, debug only).
-typedef DevCodeMinter = Future<String> Function(String challenge);
-
-Future<bool> _openInBrowser(Uri url) => launchUrl(url, mode: LaunchMode.externalApplication);
-
 class AuthController extends ChangeNotifier implements AccessTokenSource {
   AuthController({
     required this._api,
-    required this._native,
     required this._store,
-    required this._config,
     required UnsentWork unsentWork,
     this._clock = const SystemClock(),
-    UrlOpener? openUrl,
-    this.devMintCode,
     this.refreshLead = const Duration(minutes: 30),
-  })  : _unsent = unsentWork,
-        _openUrl = openUrl ?? _openInBrowser;
+  }) : _unsent = unsentWork;
 
   final V1Api _api;
-  final NativeBridge _native;
   final TokenStore _store;
-  final ApiConfig _config;
   final UnsentWork _unsent;
   final Clock _clock;
-  final UrlOpener _openUrl;
-
-  /// Debug-only shortcut for the local fixture server (see main.dart).
-  final DevCodeMinter? devMintCode;
 
   /// Refresh in the background when less than this much of the access token remains.
   final Duration refreshLead;
@@ -129,21 +109,15 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
   AuthStatus _status = AuthStatus.starting;
   AuthSession? _session;
   AuthProblem? _problem;
-  PendingSignIn? _pending;
-  AuthExchangeRequest? _lastExchange;
   Future<RecoverOutcome>? _refreshing;
   Timer? _refreshTimer;
   Duration _refreshBackoff = const Duration(seconds: 30);
-  StreamSubscription<String>? _linkSub;
   bool _disposed = false;
 
   AuthStatus get status => _status;
   AuthSession? get session => _session;
   AuthProblem? get problem => _problem;
   bool get isSignedIn => _status == AuthStatus.signedIn && _session != null;
-
-  /// The PKCE pending sign-in (tests and diagnostics; the verifier is never shown).
-  PendingSignIn? get pendingSignIn => _pending;
 
   @override
   String? get accessToken => _session?.access;
@@ -156,11 +130,6 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
   /// from the cache with an offline banner, which beats a sign-in screen that cannot work.
   Future<void> restore() async {
     final s = await _store.read();
-    _pending = await _store.readPending();
-    if (_pending != null && _pending!.isExpired(_clock.now())) {
-      _pending = null;
-      await _store.clearPending();
-    }
     if (s != null) {
       _session = s;
       _set(AuthStatus.signedIn);
@@ -170,96 +139,21 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     }
   }
 
-  /// Listens to `mastersat://` links, and handles the ones that arrived before (the link the
-  /// app was launched with first). A sign-in link also brings the window to the front.
-  Future<void> attachLinks(LaunchLinks links) async {
-    await _linkSub?.cancel();
-    Future<void> onLink(String raw) async {
-      if (signInCodeFrom(raw) == null) return;
-      unawaited(links.focusWindow());
-      await handleLink(raw);
-    }
-
-    _linkSub = links.links.listen((raw) => unawaited(onLink(raw)));
-    for (final raw in await links.takePending()) {
-      await onLink(raw);
-    }
-  }
-
   // ------------------------------------------------------------------------------------------
   // Sign-in
   // ------------------------------------------------------------------------------------------
 
-  /// "Sign in with your browser".
-  Future<void> signIn() async {
-    if (_status == AuthStatus.exchanging) return;
-    final pair = _native.pkceNew();
-    final pending = PendingSignIn(verifier: pair.verifier, challenge: pair.challenge, startedAt: _clock.now());
-    _pending = pending;
-    _lastExchange = null;
+  /// The sign-in form: [identifier] is an email, username or phone. Does nothing while a
+  /// sign-in is already in flight, when signed in, or with a blank field (the form's button is
+  /// disabled then). The password is used for this one request and not kept anywhere.
+  Future<void> signIn(String identifier, String password) async {
+    if (_status == AuthStatus.signingIn || _status == AuthStatus.signedIn) return;
+    final login = identifier.trim();
+    if (login.isEmpty || password.isEmpty) return;
     _problem = null;
-    _set(AuthStatus.waitingForBrowser);
-    await _store.writePending(pending);
-
-    final mint = devMintCode;
-    if (mint != null) {
-      try {
-        await handleLink('mastersat://auth?code=${Uri.encodeQueryComponent(await mint(pair.challenge))}');
-      } catch (e) {
-        _fail(const AuthProblem(AuthProblemKind.browserFailed, "Couldn't reach the local sign-in server."));
-      }
-      return;
-    }
-
-    bool opened;
+    _set(AuthStatus.signingIn);
     try {
-      opened = await _openUrl(_config.signInLink(pair.challenge));
-    } catch (_) {
-      opened = false;
-    }
-    if (!opened && _status == AuthStatus.waitingForBrowser) {
-      _fail(const AuthProblem(AuthProblemKind.browserFailed, "Couldn't open your browser. Please try again."));
-    }
-  }
-
-  /// Back from "Waiting for your browser…" to the sign-in screen. The pending verifier is
-  /// kept, so a link that still arrives completes the sign-in.
-  void cancelSignIn() {
-    if (_status != AuthStatus.waitingForBrowser) return;
-    _set(AuthStatus.signedOut);
-  }
-
-  /// A `mastersat://…` link. Only `mastersat://auth?code=` does anything.
-  Future<void> handleLink(String raw) async {
-    final code = signInCodeFrom(raw);
-    if (code == null) return;
-    if (_status == AuthStatus.exchanging) return; // the same link delivered twice
-    if (_status == AuthStatus.signedIn) return; // already in; a stale link changes nothing
-    final pending = _pending ?? await _store.readPending();
-    if (pending == null || pending.isExpired(_clock.now())) {
-      _fail(const AuthProblem(
-        AuthProblemKind.notStartedHere,
-        "This sign-in didn't start in the app. Press “Sign in with your browser” to try again.",
-      ));
-      return;
-    }
-    _lastExchange = AuthExchangeRequest(code: code, verifier: pending.verifier);
-    await _exchange();
-  }
-
-  /// "Try again" after a failed exchange: re-sends the SAME request (no new browser trip).
-  Future<void> retry() async {
-    if (_lastExchange == null || !(_problem?.canRetry ?? false)) return;
-    await _exchange();
-  }
-
-  Future<void> _exchange() async {
-    final request = _lastExchange;
-    if (request == null) return;
-    _problem = null;
-    _set(AuthStatus.exchanging);
-    try {
-      final tokens = await _api.authExchange(request);
+      final tokens = await _api.authLogin(AuthLoginRequest(identifier: login, password: password));
       final now = _clock.now();
       final session = AuthSession(
         access: tokens.access,
@@ -268,9 +162,6 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
         userId: Jwt.userId(tokens.access),
       );
       await _store.write(session);
-      await _store.clearPending();
-      _pending = null;
-      _lastExchange = null;
       _session = session;
       _refreshBackoff = const Duration(seconds: 30);
       _set(AuthStatus.signedIn);
@@ -284,33 +175,33 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     } on UpdateRequired {
       _fail(const AuthProblem(AuthProblemKind.updateRequired, 'Update the MasterSAT app to continue.'));
     } on ApiError catch (e) {
-      if (e.status == 400 || e.status == 401 || e.status == 404) {
-        _lastExchange = null;
-        _fail(const AuthProblem(
-          AuthProblemKind.linkExpired,
-          'That sign-in link has expired. Press “Sign in with your browser” to get a new one.',
-        ));
-      } else if (e.status == 403) {
-        _lastExchange = null;
-        _fail(AuthProblem(
+      _fail(_problemFor(e));
+    }
+  }
+
+  static AuthProblem _problemFor(ApiError e) {
+    final detail = e.body.detail?.trim() ?? '';
+    switch (e.status) {
+      case 401:
+        return const AuthProblem(AuthProblemKind.invalidCredentials, 'That login or password is not right.');
+      case 403 when e.code == 'password_not_set':
+        return AuthProblem(
+          AuthProblemKind.passwordNotSet,
+          detail.isNotEmpty ? detail : 'Set your password on mastersat.uz first, then sign in here.',
+        );
+      case 403:
+        return AuthProblem(
           AuthProblemKind.refused,
-          (e.body.detail?.trim().isNotEmpty ?? false)
-              ? e.body.detail!.trim()
-              : "This account can't sign in to the app. Ask your teacher for help.",
-        ));
-      } else if (e.status == 429) {
-        _fail(const AuthProblem(
-          AuthProblemKind.server,
-          'Too many sign-in attempts. Wait a minute, then press Try again.',
-          canRetry: true,
-        ));
-      } else {
-        _fail(const AuthProblem(
+          detail.isNotEmpty ? detail : "This account can't sign in to the app. Ask your teacher for help.",
+        );
+      case 429:
+        return const AuthProblem(AuthProblemKind.tooManyAttempts, 'Too many tries. Wait a few minutes and try again.');
+      default:
+        return const AuthProblem(
           AuthProblemKind.server,
           "MasterSAT couldn't finish signing you in. Press Try again in a moment.",
           canRetry: true,
-        ));
-      }
+        );
     }
   }
 
@@ -434,7 +325,6 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _session = null;
-    _lastExchange = null;
     await _store.clear();
     _problem = problem;
     _set(AuthStatus.signedOut);
@@ -445,7 +335,7 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
     _notify();
   }
 
-  /// A refresh or an exchange can land after the app has torn this down: say nothing then.
+  /// A refresh or a sign-in can land after the app has torn this down: say nothing then.
   void _notify() {
     if (!_disposed) notifyListeners();
   }
@@ -454,7 +344,6 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
   void dispose() {
     _disposed = true;
     _refreshTimer?.cancel();
-    _linkSub?.cancel();
     super.dispose();
   }
 }

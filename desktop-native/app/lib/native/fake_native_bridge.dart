@@ -28,6 +28,13 @@ class FakeNativeBridge implements NativeBridge {
   final String keyId;
   final String secretHex;
   List<BlockedApp> apps;
+
+  /// Other programs with a window: only a STRICT (midterm) pre-check lists them.
+  List<BlockedApp> windowApps = [];
+
+  /// Whether the last [precheck] / [lockEnter] asked for the strict (midterm) lock.
+  bool? lastPrecheckStrict;
+  bool? lastLockStrict;
   int displays;
   bool vm;
   bool remote;
@@ -65,13 +72,19 @@ class FakeNativeBridge implements NativeBridge {
   static String pkceChallenge(String verifier) =>
       base64Url.encode(sha256.convert(ascii.encode(verifier)).bytes).replaceAll('=', '');
 
-  String _precheckJson() => jsonEncode({
-        'ok': apps.isEmpty && displays == 1 && !vm && !remote,
-        'displays': displays,
-        'remote': remote,
-        'vm': vm,
-        'apps': [for (final a in apps) a.toJson()],
-      });
+  String _precheckJson({bool strict = false}) {
+    final listed = [
+      ...apps,
+      if (strict) ...windowApps.where((w) => !apps.any((a) => a.exe == w.exe)),
+    ];
+    return jsonEncode({
+      'ok': listed.isEmpty && displays == 1 && !vm && !remote,
+      'displays': displays,
+      'remote': remote,
+      'vm': vm,
+      'apps': [for (final a in listed) a.toJson()],
+    });
+  }
 
   @override
   String get libraryVersion => 'fake-$appVersion';
@@ -89,14 +102,20 @@ class FakeNativeBridge implements NativeBridge {
   }
 
   @override
-  PrecheckReport precheck() {
+  PrecheckReport precheck({bool strict = false}) {
     calls.add('precheck');
-    return PrecheckReport.parse(_precheckJson());
+    lastPrecheckStrict = strict;
+    return PrecheckReport.parse(_precheckJson(strict: strict));
   }
 
   @override
   void closeApp(String exe) {
     calls.add('closeApp $exe');
+    final w = windowApps.indexWhere((a) => a.exe.toLowerCase() == exe.toLowerCase());
+    if (w >= 0) {
+      windowApps.removeAt(w);
+      return;
+    }
     final i = apps.indexWhere((a) => a.exe.toLowerCase() == exe.toLowerCase());
     if (i < 0) throw NativeBridgeException(NativeStatus.errNotFound, 'ms_close_app', '$exe is not running');
     if (!apps[i].closable) throw NativeBridgeException(NativeStatus.errArg, 'ms_close_app', '$exe cannot be closed');
@@ -104,9 +123,10 @@ class FakeNativeBridge implements NativeBridge {
   }
 
   @override
-  PrecheckReport lockEnter() {
+  PrecheckReport lockEnter({bool strict = false}) {
     calls.add('lockEnter');
-    final raw = _precheckJson();
+    lastLockStrict = strict;
+    final raw = _precheckJson(strict: strict);
     final report = PrecheckReport.parse(raw);
     if (!report.ok) throw NativeBridgeException(NativeStatus.errPrecheck, 'ms_lock_enter', raw);
     locked = true;

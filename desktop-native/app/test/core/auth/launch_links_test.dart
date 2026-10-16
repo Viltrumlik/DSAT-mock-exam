@@ -1,22 +1,10 @@
-// mastersat:// links: only mastersat://auth?code= counts; windows-host's channel protocol.
+// mastersat:// links: windows-host's channel protocol (the app takes links and ignores them).
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/core/auth/launch_links.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-
-  test('signInCodeFrom accepts only mastersat://auth?code=…', () {
-    expect(signInCodeFrom('mastersat://auth?code=abc'), 'abc');
-    expect(signInCodeFrom(' MASTERSAT://AUTH/?code=a%2Bb '), 'a+b');
-    expect(signInCodeFrom('mastersat://auth?code='), isNull);
-    expect(signInCodeFrom('mastersat://auth'), isNull);
-    expect(signInCodeFrom('mastersat://exam?code=abc'), isNull);
-    expect(signInCodeFrom('mastersat://auth/steal?code=abc'), isNull);
-    expect(signInCodeFrom('https://mastersat.uz/auth?code=abc'), isNull);
-    expect(signInCodeFrom('mastersat://auth?code=${'x' * 513}'), isNull);
-    expect(signInCodeFrom('::not a uri::'), isNull);
-  });
 
   test("the runner's messages: 'open' {url}, a bare 'link', and 'activate'", () async {
     const channel = MethodChannel('test/launch-links');

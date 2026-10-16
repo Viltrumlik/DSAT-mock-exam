@@ -224,12 +224,24 @@ class FixtureV1Api implements V1Api {
   // Auth
   // ------------------------------------------------------------------------------------------
 
+  /// The login the fixture answers 403 `password_not_set` (an lc-up account on its first
+  /// phone + four digits sign-in).
+  static const passwordNotSetLogin = 'nopass';
+
+  /// The password the fixture refuses (401); any other non-empty one signs in.
+  static const wrongPassword = 'wrong';
+
+  /// Any non-empty login signs in with any password but [wrongPassword]; [passwordNotSetLogin]
+  /// is refused as the server refuses an lc-up claim. The password is never recorded in [calls].
   @override
-  Future<AuthTokens> authExchange(AuthExchangeRequest body) => _call('authExchange', body.toJson(), () {
-        if (body.code.isEmpty || body.verifier.isEmpty) {
-          _error(400, {'code': 'bad_request', 'detail': 'Missing code or verifier.'});
+  Future<AuthTokens> authLogin(AuthLoginRequest body) => _call('authLogin', {'identifier': body.identifier}, () {
+        if (body.identifier.trim().isEmpty || body.password.isEmpty || body.password == wrongPassword) {
+          _error(401, fixture('auth_login.response.invalid.json'));
         }
-        final json = fixture('auth_exchange.response.json');
+        if (body.identifier.trim().toLowerCase() == passwordNotSetLogin) {
+          _error(403, fixture('auth_login.response.password_not_set.json'));
+        }
+        final json = fixture('auth_login.response.json');
         _currentRefresh = json['refresh']! as String;
         return AuthTokens.fromJson(JsonReader.of(json));
       });

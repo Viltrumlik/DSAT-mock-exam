@@ -1,78 +1,13 @@
-// The bar across the top of every screen outside the exam: logo and wordmark, an optional
-// Back, and on the right the student's name, Settings and Sign out.
+// Signing out, from the shell's account menu or its sidebar (features/shell/app_shell.dart),
+// and the "work not sent yet" dialog it shares with Settings → "Delete data on this computer".
+// (The old top header that lived here gave way to the shell's sidebar and top bar.)
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../app.dart';
 import '../../core/auth/auth_controller.dart';
 import '../../core/store/unsent_work.dart';
-import '../../core/theme/app_theme.dart';
-import '../../core/theme/brand.dart';
 import '../../core/theme/controls.dart';
-import '../../core/theme/tokens.dart';
-
-class AppHeader extends StatelessWidget {
-  const AppHeader({super.key, this.backLabel, this.onBack, this.showSettings = true});
-
-  /// "Your tests" — shows a Back button before the logo.
-  final String? backLabel;
-  final VoidCallback? onBack;
-  final bool showSettings;
-
-  @override
-  Widget build(BuildContext context) {
-    final services = AppScope.of(context);
-    return Container(
-      height: 56,
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      decoration: const BoxDecoration(
-        color: AppColors.panel,
-        border: Border(bottom: BorderSide(color: AppColors.line)),
-      ),
-      child: Row(
-        children: [
-          if (onBack != null) ...[
-            AppLinkButton(label: backLabel ?? 'Back', icon: LucideIcons.arrowLeft, onPressed: onBack),
-            const SizedBox(width: 12),
-            const SizedBox(height: 22, child: VerticalDivider(width: 1, color: AppColors.line)),
-            const SizedBox(width: 16),
-          ],
-          const BrandWordmark(size: 26),
-          const Spacer(),
-          ListenableBuilder(
-            listenable: Listenable.merge([services.home, services.auth]),
-            builder: (context, _) {
-              final name = services.home.home?.student.fullName ?? services.auth.session?.displayName;
-              return Row(
-                children: [
-                  if (name != null && name.isNotEmpty) ...[
-                    const Icon(LucideIcons.circleUser, size: 17, color: AppColors.mute),
-                    const SizedBox(width: 7),
-                    Text(name, style: AppText.small.copyWith(color: AppColors.ink, fontWeight: FontWeight.w700)),
-                    const SizedBox(width: 14),
-                  ],
-                  if (showSettings) ...[
-                    AppIconButton(
-                      icon: LucideIcons.settings,
-                      semanticLabel: 'Settings',
-                      onPressed: () => openSettings(context),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                  AppLinkButton(
-                    label: 'Sign out',
-                    icon: LucideIcons.logOut,
-                    onPressed: () => confirmSignOut(context),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 /// Signs out, or — when answers saved on this computer have not reached MasterSAT yet — asks
 /// first, with an explicit "Sign out anyway" (design §1.12).

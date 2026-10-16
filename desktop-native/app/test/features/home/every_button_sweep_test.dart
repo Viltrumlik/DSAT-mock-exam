@@ -25,7 +25,23 @@ import '../../core/harness/app_harness.dart';
 typedef Scenario = Future<Finder> Function(WidgetTester tester, AppHarness h);
 
 final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
-  'Home': (AppHarness.start, (tester, h) async => find.byType(Scaffold)),
+  // The landing page (a midterm is open now): the shell — sidebar, top bar — and Midterms.
+  'Home (Midterms)': (AppHarness.start, (tester, h) async => find.byType(Scaffold)),
+  'Past papers': (
+    AppHarness.start,
+    (tester, h) async {
+      await openPage(tester, 'Past papers');
+      return find.byType(Scaffold);
+    },
+  ),
+  'Account menu': (
+    AppHarness.start,
+    (tester, h) async {
+      await tester.tap(find.bySemanticsLabel('Your account'));
+      await settleApp(tester);
+      return find.bySemanticsLabel('Account menu');
+    },
+  ),
   'Home, offline with a cached copy': (
     () async {
       final store = await UserStore.memory(77);
@@ -55,6 +71,7 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
   'History dialog': (
     AppHarness.start,
     (tester, h) async {
+      await openPage(tester, 'Past papers');
       final link = find.text('History · 2 attempts');
       await tester.ensureVisible(link);
       await tester.tap(link);
@@ -79,7 +96,7 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
     (tester, h) async {
       unawaited(openSettings(h.services.navigatorKey.currentContext!));
       await settleApp(tester);
-      return find.byType(Scaffold).last;
+      return find.byType(Scaffold);
     },
   ),
   'Delete-data confirmation': (
@@ -134,27 +151,31 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async => find.byType(Scaffold),
   ),
-  'Sign-in, waiting for the browser': (
+  'Sign-in, filled in': (
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async {
-      await tester.tap(find.text('Sign in with your browser'));
-      await settleApp(tester);
+      await _fillSignIn(tester);
       return find.byType(Scaffold);
     },
   ),
   'Sign-in, offline': (
     () => AppHarness.start(signedIn: false, config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0')),
     (tester, h) async {
-      await tester.tap(find.text('Sign in with your browser'));
-      await settleApp(tester);
+      await _fillSignIn(tester);
       h.api.offline = true;
-      await h.services.auth.handleLink('mastersat://auth?code=c');
+      await tester.tap(find.text('Sign in'));
       await settleApp(tester);
       h.api.offline = false;
       return find.byType(Scaffold);
     },
   ),
 };
+
+Future<void> _fillSignIn(WidgetTester tester) async {
+  await tester.enterText(find.byType(TextField).first, 'aziza');
+  await tester.enterText(find.byType(TextField).last, 'fixture-password');
+  await settleApp(tester);
+}
 
 /// Everything a press could change.
 String fingerprint(WidgetTester tester, AppHarness h) {
@@ -179,6 +200,8 @@ String fingerprint(WidgetTester tester, AppHarness h) {
     h.api.calls.length,
     find.byType(AppDialog).evaluate().length,
     find.byType(HistoryDialog).evaluate().length,
+    // A password shown or hidden.
+    find.byType(EditableText).evaluate().map((e) => (e.widget as EditableText).obscureText).join(','),
     focus,
     texts,
   ].join('\n');
