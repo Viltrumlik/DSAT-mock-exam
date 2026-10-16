@@ -3,8 +3,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:mastersat_app/core/clock/clock.dart';
 import 'package:mastersat_app/core/api/v1_api.dart';
+import 'package:mastersat_app/core/clock/clock.dart';
 import 'package:mastersat_app/core/http/api_config.dart';
 import 'package:mastersat_app/core/http/proxy.dart';
 
