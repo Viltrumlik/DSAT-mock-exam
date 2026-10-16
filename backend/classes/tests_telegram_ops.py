@@ -3,9 +3,14 @@ Remove button for the people it never will (decision 3, 2026-10-16)."""
 
 from __future__ import annotations
 
+from io import StringIO
+
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.utils import timezone
 
+from classes import telegram_texts as T
+from classes.models import Classroom
 from classes.models_telegram import ClassroomTelegramMember
 from classes.tests_telegram_group import CHAT, TelegramGroupBase
 
@@ -79,3 +84,22 @@ class OpsTelegramPartTests(TelegramGroupBase):
         self.client.force_authenticate(user=self.admin)
         r = self.client.post(self.url("remove/"), {"member_id": 999999}, format="json")
         self.assertEqual(r.status_code, 404)
+
+
+class AnnounceCommandTests(TelegramGroupBase):
+    def test_a_dry_run_posts_nothing(self):
+        out = StringIO()
+        call_command("announce_classroom_bot", stdout=out)
+        self.assertEqual(self.tg.messages, [])
+        self.assertIn("dry run", out.getvalue())
+
+    def test_send_posts_once_per_group_with_the_bot_button(self):
+        # A second class meeting in the same group: one post, not two.
+        Classroom.objects.create(
+            name="Junior G15 Math", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin, telegram_chat_id=CHAT,
+        )
+        call_command("announce_classroom_bot", "--send", stdout=StringIO())
+        self.assertEqual(self.tg.messages, [(CHAT, T.ANNOUNCE)])
+        button = self.tg.markups[-1]["inline_keyboard"][0][0]
+        self.assertEqual(button, {"text": T.ANNOUNCE_BUTTON, "url": "https://t.me/MasterSATTestBot?start=login"})
