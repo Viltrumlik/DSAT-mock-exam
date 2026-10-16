@@ -50,6 +50,7 @@ from notifications import constants as note_const
 from notifications.services import notify
 
 from . import telegram_group_api as api
+from . import telegram_texts as T
 from .models import Classroom, ClassroomMembership
 from .models_telegram import (
     ClassroomTelegramEvent,
@@ -630,7 +631,23 @@ def student_state(*, user, classroom: Classroom) -> dict:
 # ── Removing somebody ────────────────────────────────────────────────────────
 
 
-def _notify_removed(user, classroom: Classroom, reason: str) -> None:
+def _removal_dm(user, names: list[str], reason: str) -> str:
+    """The bot's Uzbek note for coming out of one or more groups (plan 2026-10-16)."""
+    groups = T.group_list(names)
+    if reason == ClassroomTelegramMember.REASON_FROZEN:
+        from users.audience import FROZEN_LCUP_DEBT
+
+        debt = str(getattr(user, "frozen_reason", "") or "") == FROZEN_LCUP_DEBT
+        return (T.REMOVED_DEBT if debt else T.REMOVED_FROZEN).format(groups=groups)
+    if reason == ClassroomTelegramMember.REASON_NOT_IN_CLASS:
+        return T.REMOVED_NOT_IN_CLASS.format(groups=groups)
+    if reason == ClassroomTelegramMember.REASON_IDENTITY_MISMATCH:
+        return T.REMOVED_MISMATCH
+    return T.REMOVED_MANUAL.format(groups=groups)
+
+
+def _notify_removed(user, classroom: Classroom, reason: str, *, dm: bool = True) -> None:
+    """The site's notification (English, one per class) and, unless ``dm`` is off, the bot's."""
     if user is None:
         return
     if reason == ClassroomTelegramMember.REASON_FROZEN:
@@ -660,8 +677,8 @@ def _notify_removed(user, classroom: Classroom, reason: str) -> None:
         dedupe_key=f"tg-group:{classroom.pk}:{user.pk}:{reason}",
     )
     telegram_id = bot_id_for(user)
-    if telegram_id:
-        api.send_message(int(telegram_id), f"<b>{api.esc(classroom.name)}</b>\n{body}")
+    if dm and telegram_id:
+        api.send_message(int(telegram_id), _removal_dm(user, [classroom.name], reason))
 
 
 def remove_member(
@@ -835,13 +852,25 @@ def enforce_for_user(user, *, reason: str) -> dict:
         .exclude(status=ClassroomTelegramMember.STATUS_REMOVED)
         .select_related("classroom", "user")
     )
+    removed_from: list[Classroom] = []
     for row in rows:
         if not chat_id_for(row.classroom):
             continue
         if row.invite_link:
             revoked += 1
-        if remove_member(row, reason=reason):
+        # The student hears it once, naming every group — not once per group.
+        if remove_member(row, reason=reason, notify_student=False):
             removed += 1
+            removed_from.append(row.classroom)
+    if removed_from:
+        for classroom in removed_from:
+            _notify_removed(user, classroom, reason, dm=False)
+        telegram_id = bot_id_for(user)
+        if telegram_id:
+            api.send_message(
+                int(telegram_id),
+                _removal_dm(user, sorted(c.name for c in removed_from), reason),
+            )
     return {"removed": removed, "tickets_revoked": revoked}
 
 

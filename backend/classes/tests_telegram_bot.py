@@ -22,6 +22,8 @@ from classes import telegram_texts as T
 from classes.models import Classroom, ClassroomMembership
 from classes.models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
 from classes.tests_telegram_group import CHAT, TelegramGroupBase
+from notifications import constants as note_const
+from notifications.models import Notification
 from users.models import SecurityAuditEvent
 
 User = get_user_model()
@@ -530,3 +532,72 @@ class MenuTests(BotBase):
         from classes.management.commands.set_classroom_bot_webhook import ALLOWED_UPDATES
 
         self.assertIn("callback_query", ALLOWED_UPDATES)
+
+
+CHAT2 = "-1009876543210"
+
+
+class FreezeMessageTests(BotBase):
+    def setUp(self):
+        super().setUp()
+        self.math = Classroom.objects.create(
+            name="Junior G15 Math", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin, telegram_chat_id=CHAT2,
+        )
+        ClassroomMembership.objects.create(classroom=self.math, user=self.student, role=ClassroomMembership.ROLE_STUDENT)
+        for room, chat in ((self.classroom, CHAT), (self.math, CHAT2)):
+            self.tg.members[(chat, 1001)] = "member"
+            ClassroomTelegramMember.objects.create(
+                classroom=room, user=self.student, telegram_user_id=1001, status=JOINED,
+                identified_at=timezone.now(),
+            )
+        self.tg.messages.clear()
+        self.tg.markups.clear()
+
+    def freeze(self, reason: str):
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.frozen_reason = reason
+            self.student.save(update_fields=["is_frozen", "frozen_reason"])
+
+    def dms(self):
+        return [body for chat, body in self.tg.messages if chat == "1001"]
+
+    def test_a_debt_freeze_sends_one_message_naming_every_group(self):
+        self.freeze("lcup_debt")
+        self.assertEqual(
+            self.dms(),
+            [T.REMOVED_DEBT.format(groups=T.group_list(["Junior G15 English", "Junior G15 Math"]))],
+        )
+
+    def test_an_admin_freeze_says_to_ask_the_admin(self):
+        self.freeze("")
+        self.assertEqual(
+            self.dms(),
+            [T.REMOVED_FROZEN.format(groups=T.group_list(["Junior G15 English", "Junior G15 Math"]))],
+        )
+
+    def test_the_site_still_says_it_once_per_class(self):
+        self.freeze("lcup_debt")
+        # Only the group notices: other freeze hooks may write notifications of their own.
+        self.assertEqual(
+            Notification.objects.filter(recipient=self.student, event=note_const.EVENT_TELEGRAM_GROUP).count(), 2
+        )
+
+    def test_unfreezing_offers_the_groups_back(self):
+        self.freeze("lcup_debt")
+        self.tg.messages.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = False
+            self.student.frozen_reason = ""
+            self.student.save(update_fields=["is_frozen", "frozen_reason"])
+        self.assertEqual(self.dms(), [T.UNFROZEN])
+
+    @override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=False)
+    def test_unfreezing_with_the_bot_off_sends_nothing(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        self.student.refresh_from_db()
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = False
+            self.student.save(update_fields=["is_frozen"])
+        self.assertEqual(self.dms(), [])

@@ -116,6 +116,12 @@ def _on_freeze_change(sender, instance, created, **kwargs):
         previous = instance.__dict__.pop(_FROZEN_SNAPSHOT, _UNKNOWN)
         if created or previous is _UNKNOWN or previous is None:
             return
+        if bool(previous) and not bool(instance.is_frozen):
+            # True → False: the bot offers the groups back (plan 2026-10-16).
+            from .tasks import notify_telegram_unfrozen
+
+            _dispatch(notify_telegram_unfrozen, instance.pk)
+            return
         if bool(previous) or not bool(instance.is_frozen):
             return  # not a False → True transition
 
