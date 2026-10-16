@@ -19,15 +19,24 @@ const Map<String, String> v1FixtureFiles = {
   ]
 }
 ''',
-  'auth_exchange.request.json': r'''{
-  "code": "dc-3YqK9w2LmN8pR4tV",
-  "verifier": "vrf-0123456789abcdef0123456789abcdef0123456789a"
+  'auth_login.request.json': r'''{
+  "identifier": "aziza.karimova",
+  "password": "fixture-password"
 }
 ''',
-  'auth_exchange.response.json': r'''{
+  'auth_login.response.invalid.json': r'''{
+  "detail": "Invalid credentials."
+}
+''',
+  'auth_login.response.json': r'''{
   "ok": true,
   "access": "eyJhbGciOiJIUzI1NiJ9.fixture-access.sig",
   "refresh": "eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig"
+}
+''',
+  'auth_login.response.password_not_set.json': r'''{
+  "code": "password_not_set",
+  "detail": "Set your password on mastersat.uz first, then sign in here."
 }
 ''',
   'auth_refresh.request.json': r'''{
@@ -985,21 +994,43 @@ const Map<String, String> v1FixtureFiles = {
       "note": "kind is pastpaper|midterm; midterm needs X-Lockdown-Session."
     },
     {
-      "file": "auth_exchange.request.json",
-      "endpoint": "auth_exchange",
+      "file": "auth_login.request.json",
+      "endpoint": "auth_login",
       "method": "POST",
-      "path": "/api/desktop/auth/exchange/",
+      "path": "/api/desktop/auth/login/",
       "kind": "request",
-      "model": "AuthExchangeRequest"
+      "model": "AuthLoginRequest",
+      "note": "identifier: email, username or phone (as the website's login). Native clients only (400 otherwise)."
     },
     {
-      "file": "auth_exchange.response.json",
-      "endpoint": "auth_exchange",
+      "file": "auth_login.response.json",
+      "endpoint": "auth_login",
       "method": "POST",
-      "path": "/api/desktop/auth/exchange/",
+      "path": "/api/desktop/auth/login/",
       "kind": "response",
       "model": "AuthTokens",
-      "status": 200
+      "status": 200,
+      "note": "No cookie. The session is recorded like every other sign-in."
+    },
+    {
+      "file": "auth_login.response.invalid.json",
+      "endpoint": "auth_login",
+      "method": "POST",
+      "path": "/api/desktop/auth/login/",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 401,
+      "note": "Unknown account, wrong password, blank fields and a deactivated account all read the same."
+    },
+    {
+      "file": "auth_login.response.password_not_set.json",
+      "endpoint": "auth_login",
+      "method": "POST",
+      "path": "/api/desktop/auth/login/",
+      "kind": "error",
+      "model": "ApiErrorBody",
+      "status": 403,
+      "note": "An lc-up account still on its phone + four digits first sign-in. Other 403s carry only detail."
     },
     {
       "file": "auth_refresh.request.json",

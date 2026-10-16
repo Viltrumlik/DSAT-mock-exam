@@ -44,33 +44,37 @@ Future<void> golden(WidgetTester tester, String name) async {
   await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/$name.png'));
 }
 
-ApiConfig get _browserConfig => ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0');
+ApiConfig get _productionConfig => ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0');
 
 void main() {
   final skip = !goldensSupported;
 
   testWidgets('sign-in', (tester) async {
-    final h = await AppHarness.start(signedIn: false, config: _browserConfig);
+    final h = await AppHarness.start(signedIn: false, config: _productionConfig);
     await h.pump(tester);
     await golden(tester, 'signin');
     await h.dispose(tester);
   }, skip: skip);
 
-  testWidgets('sign-in, waiting for the browser', (tester) async {
-    final h = await AppHarness.start(signedIn: false, config: _browserConfig);
+  testWidgets('sign-in, a wrong password', (tester) async {
+    final h = await AppHarness.start(signedIn: false, config: _productionConfig);
     await h.pump(tester);
-    await tester.tap(find.text('Sign in with your browser'));
-    await golden(tester, 'signin_waiting');
+    await tester.enterText(find.byType(TextField).first, 'aziza.karimova');
+    await tester.enterText(find.byType(TextField).last, FixtureV1Api.wrongPassword);
+    await tester.pump(); // the button enables once both fields have text
+    await tester.tap(find.text('Sign in'));
+    await golden(tester, 'signin_invalid');
     await h.dispose(tester);
   }, skip: skip);
 
   testWidgets('sign-in, offline', (tester) async {
-    final h = await AppHarness.start(signedIn: false, config: _browserConfig);
+    final h = await AppHarness.start(signedIn: false, config: _productionConfig);
     await h.pump(tester);
-    await tester.tap(find.text('Sign in with your browser'));
-    await settleApp(tester);
     h.api.offline = true;
-    await h.services.auth.handleLink('mastersat://auth?code=c');
+    await tester.enterText(find.byType(TextField).first, 'aziza.karimova');
+    await tester.enterText(find.byType(TextField).last, 'fixture-password');
+    await tester.pump(); // the button enables once both fields have text
+    await tester.tap(find.text('Sign in'));
     await golden(tester, 'signin_offline');
     await h.dispose(tester);
   }, skip: skip);

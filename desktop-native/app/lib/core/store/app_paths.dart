@@ -5,7 +5,6 @@
 //   macOS (development only): the app-support folder from path_provider.
 //
 //   auth.bin              sealed tokens (DPAPI via NativeBridge.protect)
-//   signin.bin            the PKCE verifier while a browser sign-in is open (10 min)
 //   store-<user_id>.db    the per-user drift database (Home cache, settings)
 //   media\                cached question images (exam engine)
 //   webview2\             WebView2 user data (windows-host)
@@ -35,7 +34,6 @@ class AppPaths {
   final String root;
 
   File get authFile => File(p.join(root, 'auth.bin'));
-  File get pendingSignInFile => File(p.join(root, 'signin.bin'));
   File storeFile(int userId) => File(p.join(root, 'store-$userId.db'));
   Directory get mediaDir => Directory(p.join(root, 'media'));
   Directory get webviewDir => Directory(p.join(root, 'webview2'));

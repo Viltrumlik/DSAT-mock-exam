@@ -32,14 +32,7 @@ class _Rig {
         userId: sessionUser,
       ),
     );
-    auth = AuthController(
-      api: api,
-      native: FakeNativeBridge(),
-      store: tokens,
-      config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0'),
-      unsentWork: UnsentWork(),
-      clock: clock,
-    );
+    auth = AuthController(api: api, store: tokens, unsentWork: UnsentWork(), clock: clock);
     home = HomeController(
       api: api,
       auth: auth,

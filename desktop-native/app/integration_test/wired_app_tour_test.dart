@@ -64,9 +64,7 @@ void main() {
 
   testWidgets('wired tour: Home → past papers on the real island → result → review → midterm rules', (tester) async {
     final paths = await AppPaths.resolve();
-    for (final f in [paths.authFile, paths.pendingSignInFile]) {
-      if (f.existsSync()) f.deleteSync();
-    }
+    if (paths.authFile.existsSync()) paths.authFile.deleteSync();
     // A clean exam database: earlier runs' sittings would resume instead of starting.
     for (final f in Directory(paths.root).listSync().whereType<File>()) {
       if (f.path.contains('${Platform.pathSeparator}exam-')) f.deleteSync();
@@ -114,7 +112,7 @@ void main() {
     final services = AppScope.of(tester.element(find.byType(Navigator)));
     BuildContext ctx() => services.navigatorKey.currentContext!;
 
-    await services.auth.signIn(); // debug + in-process fixtures: no browser trip
+    await services.auth.signIn('aziza', 'fixture-password'); // in-process fixtures take any password
     await _until(tester, () => find.byType(HomeScreen).evaluate().isNotEmpty && services.home.home != null, what: 'Home');
     await _until(tester, () => services.exams?.runtime != null, what: 'the exam runtime');
     await shot('home');

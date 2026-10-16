@@ -33,19 +33,10 @@ void main() {
     expect(s.updates.required.value, isNotNull);
     api.onServerNow!(DateTime.now().toUtc().add(const Duration(minutes: 3)));
     expect(s.serverClock.offset.inMinutes, inInclusiveRange(2, 3));
-    expect(s.auth.devMintCode, isNull, reason: 'production origin: browser sign-in only');
     (api.transport as HttpTransport).close();
   });
 
-  test('a loopback origin gets the dev sign-in shortcut; in-process fixtures need no network', () async {
-    final local = await buildAppServices(
-      config: ApiConfig.fromDefine('http://127.0.0.1:8765', appVersion: '0.2.0'),
-      paths: AppPaths(dir.path),
-      native: FakeNativeBridge(),
-    );
-    addTearDown(local.dispose);
-    expect(local.auth.devMintCode, isNotNull);
-
+  test('in-process fixtures need no network', () async {
     final fixtures = await buildAppServices(
       config: ApiConfig.fromDefine('fixture:', appVersion: '0.2.0'),
       paths: AppPaths(dir.path),
@@ -64,7 +55,7 @@ void main() {
     );
     addTearDown(s.dispose);
     await s.auth.restore();
-    await s.auth.signIn();
+    await s.auth.signIn('aziza', 'fixture-password');
     expect(s.auth.isSignedIn, isTrue);
     expect(paths.authFile.existsSync(), isTrue);
     await s.home.refresh();

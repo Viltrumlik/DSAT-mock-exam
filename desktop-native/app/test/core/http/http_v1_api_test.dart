@@ -121,12 +121,15 @@ void main() {
   });
 
   test('sign-in endpoints never send a bearer token; refresh gets 120 s', () async {
-    t.reply(200, fx('auth_exchange.response.json'));
+    t.reply(200, fx('auth_login.response.json'));
     t.reply(200, fx('auth_refresh.response.json'));
-    await api.authExchange(const AuthExchangeRequest(code: 'c', verifier: 'v'));
+    final tokens = await api.authLogin(const AuthLoginRequest(identifier: 'aziza@example.com', password: 'p4ss'));
+    expect(tokens.access, isNotEmpty);
     await api.authRefresh(const RefreshRequest(refresh: 'r'));
     expect(t.requests.map((r) => r.headers.containsKey('Authorization')), [false, false]);
-    expect(t.requests[0].url.path, '/api/desktop/auth/exchange/');
+    expect(t.requests[0].url.path, '/api/desktop/auth/login/');
+    expect(t.requests[0].headers['X-MasterSAT-Client'], 'windows/0.2.0', reason: 'what makes the server call it native');
+    expect(jsonDecode(utf8.decode(t.requests[0].body!)), {'identifier': 'aziza@example.com', 'password': 'p4ss'});
     expect(t.requests[1].url.path, '/api/auth/refresh/');
     expect(t.requests[1].timeout, const Duration(seconds: 120));
   });

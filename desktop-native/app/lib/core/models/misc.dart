@@ -4,27 +4,32 @@ import 'attempt.dart';
 import 'content.dart';
 import 'json.dart';
 
-/// `POST /api/desktop/auth/exchange/` body (PKCE hand-off from the browser).
-class AuthExchangeRequest {
-  const AuthExchangeRequest({required this.code, required this.verifier});
+/// `POST /api/desktop/auth/login/` body — the sign-in form. [identifier] is whatever the
+/// website's login takes: email, username or phone. The password is sent once and never kept,
+/// stored or logged ([toString] masks it).
+class AuthLoginRequest {
+  const AuthLoginRequest({required this.identifier, required this.password});
 
-  factory AuthExchangeRequest.fromJson(JsonReader r) =>
-      AuthExchangeRequest(code: r.string('code'), verifier: r.string('verifier'));
+  factory AuthLoginRequest.fromJson(JsonReader r) =>
+      AuthLoginRequest(identifier: r.string('identifier'), password: r.string('password'));
 
-  final String code;
-  final String verifier;
+  final String identifier;
+  final String password;
 
-  Map<String, Object?> toJson() => {'code': code, 'verifier': verifier};
+  Map<String, Object?> toJson() => {'identifier': identifier, 'password': password};
+
+  @override
+  String toString() => 'AuthLoginRequest($identifier, ***)';
 }
 
-/// Tokens in the body (exchange: with `ok:true`; refresh: rotated pair).
+/// Tokens in the body (login: with `ok:true`; refresh: rotated pair).
 class AuthTokens {
   const AuthTokens({this.ok, required this.access, required this.refresh});
 
   factory AuthTokens.fromJson(JsonReader r) =>
       AuthTokens(ok: r.booleanOrNull('ok'), access: r.string('access'), refresh: r.string('refresh'));
 
-  /// Present (true) on exchange only.
+  /// Present (true) on login only.
   final bool? ok;
   final String access;
   final String refresh;

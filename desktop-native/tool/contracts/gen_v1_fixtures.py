@@ -859,14 +859,22 @@ def build() -> None:
          endpoint="media", method="GET", path=V1 + "attempts/{kind}/{id}/media", kind="response",
          model="MediaResponse", status=200, note="kind is pastpaper|midterm; midterm needs X-Lockdown-Session.")
 
-    # ---- auth (existing endpoints, used as they are) ----------------------------------------
-    emit("auth_exchange.request", {"code": "dc-3YqK9w2LmN8pR4tV", "verifier": "vrf-0123456789abcdef0123456789abcdef0123456789a"},
-         endpoint="auth_exchange", method="POST", path="/api/desktop/auth/exchange/", kind="request",
-         model="AuthExchangeRequest")
-    emit("auth_exchange.response", {"ok": True, "access": "eyJhbGciOiJIUzI1NiJ9.fixture-access.sig",
-                                    "refresh": "eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig"},
-         endpoint="auth_exchange", method="POST", path="/api/desktop/auth/exchange/", kind="response",
-         model="AuthTokens", status=200)
+    # ---- auth: the app's login form, and the existing refresh --------------------------------
+    login = "/api/desktop/auth/login/"
+    emit("auth_login.request", {"identifier": "aziza.karimova", "password": "fixture-password"},
+         endpoint="auth_login", method="POST", path=login, kind="request", model="AuthLoginRequest",
+         note="identifier: email, username or phone (as the website's login). Native clients only (400 otherwise).")
+    emit("auth_login.response", {"ok": True, "access": "eyJhbGciOiJIUzI1NiJ9.fixture-access.sig",
+                                 "refresh": "eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig"},
+         endpoint="auth_login", method="POST", path=login, kind="response", model="AuthTokens", status=200,
+         note="No cookie. The session is recorded like every other sign-in.")
+    emit("auth_login.response.invalid", {"detail": "Invalid credentials."},
+         endpoint="auth_login", method="POST", path=login, kind="error", model="ApiErrorBody", status=401,
+         note="Unknown account, wrong password, blank fields and a deactivated account all read the same.")
+    emit("auth_login.response.password_not_set",
+         {"code": "password_not_set", "detail": "Set your password on mastersat.uz first, then sign in here."},
+         endpoint="auth_login", method="POST", path=login, kind="error", model="ApiErrorBody", status=403,
+         note="An lc-up account still on its phone + four digits first sign-in. Other 403s carry only detail.")
     emit("auth_refresh.request", {"refresh": "eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig"}, endpoint="auth_refresh",
          method="POST", path="/api/auth/refresh/", kind="request", model="RefreshRequest")
     emit("auth_refresh.response", {"access": "eyJhbGciOiJIUzI1NiJ9.fixture-access-2.sig",

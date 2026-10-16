@@ -769,6 +769,12 @@ class AppTextField extends StatelessWidget {
     this.onClear,
     this.onEscape,
     this.semanticLabel,
+    this.obscureText = false,
+    this.autofocus = false,
+    this.autocorrect = true,
+    this.textInputAction,
+    this.onSubmitted,
+    this.trailing,
   });
 
   final TextEditingController controller;
@@ -782,6 +788,20 @@ class AppTextField extends StatelessWidget {
   final VoidCallback? onEscape;
   final String? semanticLabel;
 
+  /// A password: the text is masked (and cannot be copied out).
+  final bool obscureText;
+  final bool autofocus;
+
+  /// False for logins and passwords: no autocorrect, no suggestions.
+  final bool autocorrect;
+  final TextInputAction? textInputAction;
+
+  /// Enter in the field.
+  final ValueChanged<String>? onSubmitted;
+
+  /// A control at the field's end (the password's show/hide). Takes the clear button's place.
+  final Widget? trailing;
+
   @override
   Widget build(BuildContext context) {
     final field = ValueListenableBuilder<TextEditingValue>(
@@ -791,6 +811,12 @@ class AppTextField extends StatelessWidget {
           controller: controller,
           focusNode: focusNode,
           onChanged: onChanged,
+          obscureText: obscureText,
+          autofocus: autofocus,
+          autocorrect: autocorrect && !obscureText,
+          enableSuggestions: autocorrect && !obscureText,
+          textInputAction: textInputAction,
+          onSubmitted: onSubmitted,
           // No right-click menu anywhere (architecture §2.3); keyboard copy/paste still work.
           contextMenuBuilder: null,
           style: AppText.body.copyWith(fontSize: 14),
@@ -804,7 +830,9 @@ class AppTextField extends StatelessWidget {
             hintStyle: AppText.bodyMuted.copyWith(color: AppColors.faint),
             prefixIcon: prefixIcon == null ? null : Icon(prefixIcon, size: 17, color: AppColors.faint),
             prefixIconConstraints: const BoxConstraints(minWidth: 42, minHeight: 40),
-            suffixIcon: (onClear != null && value.text.isNotEmpty)
+            suffixIcon: trailing != null
+                ? Padding(padding: const EdgeInsets.only(right: 4), child: trailing)
+                : (onClear != null && value.text.isNotEmpty)
                 ? Padding(
                     padding: const EdgeInsets.only(right: 4),
                     child: AppIconButton(

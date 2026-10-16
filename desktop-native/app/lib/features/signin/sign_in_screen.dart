@@ -1,12 +1,12 @@
-// Sign-in (architecture §2.3, §6 "Sign-in"): the visual twin of the website's /login, with one
-// way in — the student's own browser (Google and Telegram refuse embedded web views).
+// Sign-in (architecture §2.3, §6 "Sign-in"): the visual twin of the website's /login, with the
+// app's own login form — the same login (email, username or phone) and password the website
+// takes.
 //
-//   signed out          "Sign in with your browser"
-//   waiting             "Waiting for your browser…" + Open the browser again / Cancel
-//   exchanging          "Signing you in…"
-//   problem             a notice above the button; when the exchange can be re-sent
-//                       (offline, server busy) its "Try again" RE-SENDS the same request —
-//                       no new browser trip, nothing reloads.
+//   signed out   Login + Password (show/hide) + "Sign in"; Enter submits
+//   signing in   "Signing in…" on the button
+//   problem      a notice under the button. A refusal clears the password (the login stays);
+//                when the sign-in never reached the server or the server failed, the password
+//                stays and "Try again" sends the same login again.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -172,26 +172,66 @@ class _Blob extends StatelessWidget {
   );
 }
 
-class _SignInPanel extends StatelessWidget {
+class _SignInPanel extends StatefulWidget {
   const _SignInPanel({required this.auth, required this.showLogo});
 
   final AuthController auth;
   final bool showLogo;
 
   @override
+  State<_SignInPanel> createState() => _SignInPanelState();
+}
+
+class _SignInPanelState extends State<_SignInPanel> {
+  final _login = TextEditingController();
+  final _password = TextEditingController();
+  final _passwordFocus = FocusNode(debugLabel: 'password');
+  bool _obscured = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _login.addListener(_changed);
+    _password.addListener(_changed);
+  }
+
+  @override
+  void dispose() {
+    _login.dispose();
+    _password.dispose();
+    _passwordFocus.dispose();
+    super.dispose();
+  }
+
+  void _changed() => setState(() {});
+
+  bool get _busy => widget.auth.status == AuthStatus.signingIn;
+
+  bool get _canSubmit => !_busy && _login.text.trim().isNotEmpty && _password.text.isNotEmpty;
+
+  Future<void> _submit() async {
+    if (!_canSubmit) return;
+    await widget.auth.signIn(_login.text, _password.text);
+    if (!mounted) return; // signed in: Home replaced this screen
+    final problem = widget.auth.problem;
+    if (widget.auth.status == AuthStatus.signedOut && problem != null && !problem.canRetry) {
+      _password.clear();
+      _passwordFocus.requestFocus();
+    }
+  }
+
+  /// Enter in the login field: on to the password, or sign in when both are filled.
+  void _loginSubmitted(String _) {
+    if (_canSubmit) {
+      unawaited(_submit());
+    } else {
+      _passwordFocus.requestFocus();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final status = auth.status;
-    final problem = auth.problem;
-    final waiting = status == AuthStatus.waitingForBrowser;
-    final exchanging = status == AuthStatus.exchanging;
-
-    final helper = waiting
-        ? 'Finish signing in in your browser, then come back — this screen updates on its own.'
-        : exchanging
-        ? 'Almost there — getting your tests ready.'
-        : 'Your browser opens so you can sign in with Google, Telegram or your email — whatever you use '
-              'on the website. The app takes it from there.';
-
+    final problem = widget.auth.problem;
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
@@ -201,7 +241,7 @@ class _SignInPanel extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (showLogo) ...[
+              if (widget.showLogo) ...[
                 const Center(child: BrandLogo(size: 64)),
                 const SizedBox(height: 12),
                 Center(child: Text('MasterSAT', style: AppText.title.copyWith(fontSize: 26))),
@@ -212,41 +252,55 @@ class _SignInPanel extends StatelessWidget {
                 Text('Sign in to see your tests.', style: AppText.bodyMuted),
                 const SizedBox(height: 28),
               ],
-              if (problem != null) ...[
-                SignInProblemNotice(problem: problem, onRetry: problem.canRetry ? () => unawaited(auth.retry()) : null),
-                const SizedBox(height: 16),
-              ],
+              const _FieldLabel('Login'),
+              AppTextField(
+                controller: _login,
+                hint: 'Email, username or phone',
+                prefixIcon: LucideIcons.user,
+                semanticLabel: 'Login',
+                autofocus: true,
+                autocorrect: false,
+                textInputAction: TextInputAction.next,
+                onSubmitted: _loginSubmitted,
+              ),
+              const SizedBox(height: 16),
+              const _FieldLabel('Password'),
+              AppTextField(
+                controller: _password,
+                focusNode: _passwordFocus,
+                hint: 'Password',
+                prefixIcon: LucideIcons.lock,
+                semanticLabel: 'Password',
+                obscureText: _obscured,
+                autocorrect: false,
+                textInputAction: TextInputAction.done,
+                onSubmitted: (_) => unawaited(_submit()),
+                trailing: AppIconButton(
+                  icon: _obscured ? LucideIcons.eye : LucideIcons.eyeOff,
+                  semanticLabel: _obscured ? 'Show password' : 'Hide password',
+                  size: 30,
+                  onPressed: () => setState(() => _obscured = !_obscured),
+                ),
+              ),
+              const SizedBox(height: 22),
               AppButton(
-                label: 'Sign in with your browser',
-                icon: LucideIcons.globe,
+                label: 'Sign in',
                 size: AppButtonSize.large,
                 expand: true,
-                autofocus: true,
-                busy: waiting || exchanging,
-                busyLabel: exchanging ? 'Signing you in…' : 'Waiting for your browser…',
-                onPressed: () => unawaited(auth.signIn()),
+                busy: _busy,
+                busyLabel: 'Signing in…',
+                onPressed: _canSubmit ? () => unawaited(_submit()) : null,
               ),
-              const SizedBox(height: 12),
+              if (problem != null) ...[
+                const SizedBox(height: 16),
+                SignInProblemNotice(problem: problem, onRetry: problem.canRetry && _canSubmit ? () => unawaited(_submit()) : null),
+              ],
+              const SizedBox(height: 14),
               Text(
-                helper,
+                'Forgot your password? Ask your teacher.',
                 textAlign: TextAlign.center,
                 style: AppText.caption.copyWith(fontWeight: FontWeight.w500, height: 1.5),
               ),
-              if (waiting) ...[
-                const SizedBox(height: 14),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    AppLinkButton(
-                      label: 'Open the browser again',
-                      icon: LucideIcons.externalLink,
-                      onPressed: () => unawaited(auth.signIn()),
-                    ),
-                    const SizedBox(width: 8),
-                    AppLinkButton(label: 'Cancel', icon: LucideIcons.x, onPressed: auth.cancelSignIn),
-                  ],
-                ),
-              ],
             ],
           ),
         ),
@@ -255,7 +309,21 @@ class _SignInPanel extends StatelessWidget {
   }
 }
 
-/// The notice above the sign-in button. Retry (when offered) re-sends the same exchange.
+class _FieldLabel extends StatelessWidget {
+  const _FieldLabel(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: ExcludeSemantics(
+      child: Text(text, style: AppText.small.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+    ),
+  );
+}
+
+/// The notice under the sign-in button. Retry (when offered) sends the same login again.
 class SignInProblemNotice extends StatelessWidget {
   const SignInProblemNotice({super.key, required this.problem, this.onRetry});
 
@@ -265,12 +333,12 @@ class SignInProblemNotice extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (tone, title) = switch (problem.kind) {
+      AuthProblemKind.invalidCredentials => (NoticeTone.danger, "Couldn't sign you in"),
+      AuthProblemKind.passwordNotSet => (NoticeTone.info, 'Set your password first'),
+      AuthProblemKind.refused => (NoticeTone.danger, "This account can't sign in here"),
+      AuthProblemKind.tooManyAttempts => (NoticeTone.warning, 'Too many tries'),
       AuthProblemKind.offline => (NoticeTone.offline, "You're offline"),
       AuthProblemKind.server => (NoticeTone.warning, "Couldn't sign you in"),
-      AuthProblemKind.linkExpired => (NoticeTone.warning, 'That sign-in link has expired'),
-      AuthProblemKind.notStartedHere => (NoticeTone.info, 'Start the sign-in from this app'),
-      AuthProblemKind.browserFailed => (NoticeTone.danger, "Couldn't open your browser"),
-      AuthProblemKind.refused => (NoticeTone.danger, "This account can't sign in here"),
       AuthProblemKind.sessionEnded => (NoticeTone.info, 'Please sign in again'),
       AuthProblemKind.updateRequired => (NoticeTone.warning, 'Update required'),
     };

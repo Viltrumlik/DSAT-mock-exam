@@ -40,9 +40,7 @@ void main() {
 
     // Start clean: no stored session from an earlier run.
     final paths = await AppPaths.resolve();
-    for (final f in [paths.authFile, paths.pendingSignInFile]) {
-      if (f.existsSync()) f.deleteSync();
-    }
+    if (paths.authFile.existsSync()) paths.authFile.deleteSync();
 
     final out = await Directory.systemTemp.createTemp('mastersat-tour-');
     var n = 0;
@@ -68,7 +66,7 @@ void main() {
     final nav = services.navigatorKey.currentState!;
     BuildContext ctx() => services.navigatorKey.currentContext!;
 
-    await services.auth.signIn(); // debug + in-process fixtures: no browser trip
+    await services.auth.signIn('aziza', 'fixture-password'); // in-process fixtures take any password
     await _settle(tester, 40);
     expect(find.byType(HomeScreen), findsOneWidget);
     await shot('home');

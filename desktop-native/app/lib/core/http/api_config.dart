@@ -91,10 +91,6 @@ class ApiConfig {
     return h == '127.0.0.1' || h == 'localhost' || h == '::1' || h == '[::1]';
   }
 
-  /// The website page the browser sign-in starts on.
-  Uri signInLink(String challenge) =>
-      origin.replace(path: '/desktop/link', queryParameters: {'challenge': challenge});
-
   /// The Velopack feed folder (architecture §6: the live `/downloads/desktop/` block).
   Uri get updateFeed => origin.replace(path: '/downloads/desktop/');
 
