@@ -119,3 +119,21 @@ class AnnounceCommandTests(TelegramGroupBase):
         )
         call_command("announce_classroom_bot", "--send", "--only", second, stdout=StringIO())
         self.assertEqual(self.tg.messages, [(second, T.ANNOUNCE)])
+
+    def test_an_only_id_that_matches_no_group_is_refused_and_named(self):
+        with self.assertRaises(CommandError) as cm:
+            call_command("announce_classroom_bot", "--send", "--only", "-100999", stdout=StringIO())
+        self.assertIn("-100999", str(cm.exception))
+        self.assertEqual(self.tg.messages, [])
+
+    def test_an_unknown_only_id_is_refused_on_a_dry_run_too(self):
+        with self.assertRaises(CommandError) as cm:
+            call_command("announce_classroom_bot", "--only", "-100999", stdout=StringIO())
+        self.assertIn("-100999", str(cm.exception))
+
+    def test_an_unknown_only_id_beside_a_real_one_posts_nothing(self):
+        with self.assertRaises(CommandError):
+            call_command(
+                "announce_classroom_bot", "--send", "--only", CHAT, "--only", "-100999", stdout=StringIO(),
+            )
+        self.assertEqual(self.tg.messages, [])

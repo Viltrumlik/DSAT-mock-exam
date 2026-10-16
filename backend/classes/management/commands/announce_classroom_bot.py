@@ -49,7 +49,11 @@ class Command(BaseCommand):
         for room in rooms:
             chats.setdefault(tg.chat_id_for(room), []).append(room.name)
         if options["only"] is not None:
-            wanted = {str(chat).strip() for chat in options["only"]}
+            wanted = [str(chat).strip() for chat in options["only"]]
+            unmatched = [chat for chat in wanted if chat not in chats]
+            if unmatched:
+                # A mistyped id must not look like a finished retry: refuse before anything is posted.
+                raise CommandError(f"no class group has chat id {', '.join(unmatched)} — nothing posted")
             chats = {chat: names for chat, names in chats.items() if chat in wanted}
         markup = {"inline_keyboard": [[{"text": T.ANNOUNCE_BUTTON, "url": url}]]}
         posted = 0
