@@ -1179,6 +1179,46 @@ class _AppTextFieldState extends State<AppTextField> {
   }
 }
 
+/// A labelled control (Field.tsx): the label (14/600) over the control, then the error
+/// (13/500, danger) or else the hint (13, muted), 6 apart.
+class AppField extends StatelessWidget {
+  const AppField({super.key, required this.child, this.label, this.hint, this.error});
+
+  final String? label;
+  final String? hint;
+
+  /// Shown instead of [hint] when set.
+  final String? error;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final note = error ?? hint;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (label != null) ...[
+          Text(label!, style: AppText.body.copyWith(fontWeight: FontWeight.w600, height: 1.43, color: AppColors.textPrimary)),
+          const SizedBox(height: 6),
+        ],
+        child,
+        if (note != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            note,
+            style: AppText.small.copyWith(
+              fontWeight: error != null ? FontWeight.w500 : FontWeight.w400,
+              height: 1.45,
+              color: error != null ? AppColors.dangerForeground : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 /// Shows a modal dialog with no transition (instant, like a native dialog) over the website's
 /// Modal backdrop: --overlay-scrim with a 2 px blur.
 Future<T?> showAppDialog<T>(BuildContext context, {required WidgetBuilder builder, bool dismissible = true}) {
