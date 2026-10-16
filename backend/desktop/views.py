@@ -1,4 +1,9 @@
-"""The Windows app's own endpoints: "Sign in with browser", and the browser exemptions.
+"""The Windows app's own endpoints: sign-in (password, and the older "Sign in with browser"), and
+the browser exemptions.
+
+Password sign-in: ``POST auth/login/ {identifier, password}`` — the app's own login form. The same
+credentials the website takes (email, username or phone), checked the same way, and the same token
+pair the browser flow's exchange hands over.
 
 Sign in with browser (RFC 7636 PKCE). Google refuses to sign in inside an embedded WebView and
 Telegram's popup is unreliable there, so the app hands sign-in to the real browser:
@@ -21,7 +26,7 @@ import logging
 import re
 from datetime import timedelta
 
-from django.contrib.auth import get_user_model
+from django.contrib.auth import authenticate, get_user_model
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -36,10 +41,13 @@ from midterms.views_teacher import IsTeacherOrStaff, _display_name
 from users.audience import NATIVE_APP_REFUSAL, is_public_learner
 from users.auth_cookies import is_native_client, set_auth_cookies
 from users.models import RefreshSession
+from users.security_churn import observe_new_session
+from users.security_risk import clear_security_step_up
 from users.views import _console_refusal_for, _session_fingerprint
 
 from .models import DesktopAuthCode, DesktopExemption
 from .proof import new_secret, pkce_challenge, sha256_hex
+from .throttles import DesktopLoginPerIdentifierThrottle, login_identifier
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -49,6 +57,41 @@ CODE_TTL_SECONDS = 120
 #: RFC 7636: a challenge is base64url(sha256), 43 characters; a verifier is 43–128 unreserved.
 _CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _VERIFIER_RE = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
+
+
+def _signed_in(request, user) -> Response:
+    """The app's token pair for ``user``, and the session row every sign-in leaves behind."""
+    refresh = RefreshToken.for_user(user)
+    access_str = str(refresh.access_token)
+    refresh_str = str(refresh)
+    # The native app holds the pair itself and sends `Authorization: Bearer`, so it gets the
+    # tokens in the body and NO cookie — exactly as login and /api/auth/refresh/ treat native
+    # clients. Planting a cookie would be worse than useless: the app's HTTP client keeps a
+    # cookie jar, and a request that carries an auth cookie is no longer a native one, so every
+    # POST after sign-in would hit the browser CSRF rule. A browser caller gets {"ok": True}
+    # and the HttpOnly cookies, unchanged.
+    if is_native_client(request):
+        resp = Response({"ok": True, "access": access_str, "refresh": refresh_str})
+    else:
+        resp = Response({"ok": True})
+        set_auth_cookies(
+            response=resp,
+            request=request,
+            access=access_str,
+            refresh=refresh_str,
+            remember_me=True,
+        )
+    # Recorded like every other sign-in, so the laptop shows up in the student's session
+    # list and "sign out everywhere" reaches it.
+    try:
+        ip, ua = _session_fingerprint(request)
+        RefreshSession.objects.update_or_create(
+            refresh_jti=str(refresh.get("jti") or ""),
+            defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
+        )
+    except Exception:  # pragma: no cover - a missing session row must not undo a sign-in
+        logger.exception("desktop_auth_session_row_failed user_id=%s", user.pk)
+    return resp
 
 
 class AuthCodeView(APIView):
@@ -111,38 +154,7 @@ class AuthExchangeView(APIView):
         denied = _console_refusal_for(request, user)
         if denied is not None:
             return denied
-
-        refresh = RefreshToken.for_user(user)
-        access_str = str(refresh.access_token)
-        refresh_str = str(refresh)
-        # The native app holds the pair itself and sends `Authorization: Bearer`, so it gets the
-        # tokens in the body and NO cookie — exactly as login and /api/auth/refresh/ treat native
-        # clients. Planting a cookie would be worse than useless: the app's HTTP client keeps a
-        # cookie jar, and a request that carries an auth cookie is no longer a native one, so every
-        # POST after sign-in would hit the browser CSRF rule. A browser caller gets {"ok": True}
-        # and the HttpOnly cookies, unchanged.
-        if is_native_client(request):
-            resp = Response({"ok": True, "access": access_str, "refresh": refresh_str})
-        else:
-            resp = Response({"ok": True})
-            set_auth_cookies(
-                response=resp,
-                request=request,
-                access=access_str,
-                refresh=refresh_str,
-                remember_me=True,
-            )
-        # Recorded like every other sign-in, so the laptop shows up in the student's session
-        # list and "sign out everywhere" reaches it.
-        try:
-            ip, ua = _session_fingerprint(request)
-            RefreshSession.objects.update_or_create(
-                refresh_jti=str(refresh.get("jti") or ""),
-                defaults={"user": user, "revoked_at": None, "ip": ip, "user_agent": ua},
-            )
-        except Exception:  # pragma: no cover - a missing session row must not undo a sign-in
-            logger.exception("desktop_auth_session_row_failed user_id=%s", user.pk)
-        return resp
+        return _signed_in(request, user)
 
     @staticmethod
     def _refused():
@@ -150,6 +162,87 @@ class AuthExchangeView(APIView):
             {"detail": "This sign-in link has expired. Sign in again from the app."},
             status=status.HTTP_400_BAD_REQUEST,
         )
+
+
+#: One answer for a missing field, an unknown account, a wrong password and a deactivated one —
+#: the same words the website's login uses — so the form never tells anyone which accounts exist.
+_INVALID_CREDENTIALS = "Invalid credentials."
+PASSWORD_NOT_SET = "Set your password on mastersat.uz first, then sign in here."
+
+
+class DesktopPasswordLoginView(APIView):
+    """`POST /api/desktop/auth/login/ {identifier, password}` — the app's own login form.
+
+    ``identifier`` is anything the website's login takes: email, username, or an Uzbek phone
+    however it is typed (``email`` is accepted as its alias). Native clients only: a browser signs
+    in on the website, where the cookies belong. Answers like the exchange — ``{ok, access,
+    refresh}`` in the body, no cookie — or:
+
+    * 401 ``Invalid credentials.`` — blank fields, no such account, wrong password, deactivated;
+    * 403 ``password_not_set`` — an lc-up account still on its phone + four digits first sign-in:
+      the app is no place to choose a password, the website is;
+    * 403 — the sign-in refusals every path shares (a public learner, a teacher on the main site);
+    * 429 with ``Retry-After`` — per address, and per account (``desktop.throttles``).
+    """
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle, DesktopLoginPerIdentifierThrottle]
+    throttle_scope = "desktop_login"
+
+    def post(self, request):
+        if not is_native_client(request):
+            return Response(
+                {"detail": "Sign in on the website, or in the MasterSAT app."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        identifier = login_identifier(request)
+        try:
+            raw_password = (request.data or {}).get("password")
+        except Exception:
+            raw_password = None
+        # Not stripped: a password is exactly what was typed, as on the website.
+        password = raw_password if isinstance(raw_password, str) else ""
+        if not identifier or not password:
+            return self._invalid()
+
+        # The website's login asks exactly this (simplejwt's TokenObtainSerializer, keyed on
+        # USERNAME_FIELD): every backend in AUTHENTICATION_BACKENDS gets its turn — email or
+        # username, a phone however it is typed, and an lc-up claim's phone + four digits last.
+        # The backends also burn a hash for an unknown account, so the timing stays uniform.
+        user = authenticate(request, **{User.USERNAME_FIELD: identifier, "password": password})
+        if user is None or not user.is_active:
+            logger.info("desktop_login_failed reason=invalid_credentials")
+            return self._invalid()
+        if not user.has_usable_password():
+            # Only an lc-up claim gets here (a real password is never unusable once it is set).
+            # A claim is a first sign-in, and its next step is choosing a password — a page the
+            # website has and the app does not.
+            return Response(
+                {"code": "password_not_set", "detail": PASSWORD_NOT_SET},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        denied = _console_refusal_for(request, user)
+        if denied is not None:
+            return denied
+
+        # A password sign-in is the re-authentication a security step-up asks for — the website's
+        # login clears it the same way (MyTokenObtainPairSerializer.validate).
+        try:
+            clear_security_step_up(user_id=int(user.pk))
+        except Exception:
+            logger.exception("desktop_login_step_up_clear_failed user_id=%s", user.pk)
+        resp = _signed_in(request, user)
+        try:
+            ip, _ua = _session_fingerprint(request)
+            observe_new_session(user_id=int(user.pk), ip=ip, request=request)
+        except Exception:  # pragma: no cover - risk counters must never undo a sign-in
+            logger.exception("desktop_login_observe_failed user_id=%s", user.pk)
+        return resp
+
+    @staticmethod
+    def _invalid():
+        return Response({"detail": _INVALID_CREDENTIALS}, status=status.HTTP_401_UNAUTHORIZED)
 
 
 def _student_brief(user) -> dict:
