@@ -91,27 +91,55 @@ nm -gU "$APP/Contents/Frameworks/libmastersat_native.dylib" | grep -q "_ms_init"
 test -f "$APP/Contents/Resources/island/content.html" || { echo "::error::the island is missing from the app"; exit 1; }
 echo "::endgroup::"
 
-echo "::group::deployment target (diagnose + enforce a macOS 12 launch floor)"
-# Sequoia 15.8.2 shows "You can't use this version ... with this version of macOS" even though we
-# set MACOSX_DEPLOYMENT_TARGET = 12.0, which means the Flutter 3.47 / Xcode 27 toolchain stamped a
-# newer minimum than we asked for. Print what actually landed (LaunchServices reads the app's
-# LSMinimumSystemVersion; dyld reads each Mach-O's LC_BUILD_VERSION minos) so we can see the real
-# floor, then pin LSMinimumSystemVersion back to 12.0.
+echo "::group::normalise macOS build versions (minos + SDK) and pin the launch floor"
+# The app runs fine (dyld loads it; see the smoke test), but Finder on Sequoia 15.8.2 refuses it
+# with "You can't use this version ... with this version of macOS". Every value in the bundle is
+# already macOS 12 EXCEPT FlutterMacOS.framework, which Flutter 3.47.7 shipped built against a beta
+# macOS SDK (26.2). LaunchServices rejects a bundle carrying a framework stamped with a *future*
+# SDK, even though the code is deployment-target 12.0 and loads correctly. So rewrite every embedded
+# Mach-O's LC_BUILD_VERSION to macOS 12.0 / SDK 12.0 (both minos and sdk, a released value <= the
+# user's OS); codesign below re-seals every rewritten binary, and pin LSMinimumSystemVersion to 12.0.
 PLIST="$APP/Contents/Info.plist"
-echo "Xcode: $(xcodebuild -version 2>/dev/null | tr '\n' ' ')"
-echo "macOS SDK: $(xcrun --show-sdk-version 2>/dev/null || true)"
-echo "LSMinimumSystemVersion (as built): $(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo '?')"
-for b in "$EXE" \
-         "$APP/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS" \
-         "$APP/Contents/Frameworks/App.framework/App" \
-         "$APP/Contents/Frameworks/libmastersat_native.dylib"; do
-  [ -e "$b" ] || continue
-  echo "--- ${b##*Frameworks/} ($(basename "$b"))"
-  otool -l "$b" 2>/dev/null | grep -A4 'LC_BUILD_VERSION' | grep -E 'platform|minos|sdk' || true
-done
-# Force the LaunchServices gate down to macOS 12.0 (codesign below re-seals the patched plist).
+echo "Xcode: $(xcodebuild -version 2>/dev/null | tr '\n' ' ') | running SDK $(xcrun --show-sdk-version 2>/dev/null)"
+show_builds() {
+  local b
+  for b in "$EXE" "$APP"/Contents/Frameworks/*.dylib "$APP"/Contents/Frameworks/*.framework/Versions/*/*; do
+    [ -f "$b" ] || continue
+    file "$b" 2>/dev/null | grep -q 'Mach-O' || continue
+    echo "  ${b#"$APP"/Contents/} -> $(otool -l "$b" 2>/dev/null | awk '/LC_BUILD_VERSION/{f=1} f&&/ minos /{m=$2} f&&/ sdk /{s=$2;f=0} END{print "minos="m" sdk="s}')"
+  done
+}
+# Rewrite one Mach-O (thin or fat) to macOS 12.0 / SDK 12.0; vtool rewrites per-slice, so fat files
+# are split with lipo, rewritten, and recombined. vtool drops the signature, which codesign redoes.
+retarget() {
+  local b="$1" a archs parts=()
+  file "$b" 2>/dev/null | grep -q 'Mach-O' || return 0
+  archs=$(lipo -archs "$b" 2>/dev/null)
+  if [ "$(printf '%s' "$archs" | wc -w)" -le 1 ]; then
+    xcrun vtool -set-build-version macos 12.0 12.0 -replace -output "$b.rt" "$b" 2>/dev/null \
+      && mv "$b.rt" "$b" || echo "::warning::vtool could not retarget $b"
+    return 0
+  fi
+  for a in $archs; do
+    lipo "$b" -thin "$a" -output "$b.$a" 2>/dev/null || continue
+    xcrun vtool -set-build-version macos 12.0 12.0 -replace -output "$b.$a.rt" "$b.$a" 2>/dev/null \
+      && parts+=("$b.$a.rt")
+    rm -f "$b.$a"
+  done
+  if [ "${#parts[@]}" -gt 0 ]; then
+    lipo -create "${parts[@]}" -output "$b.rt" 2>/dev/null && mv "$b.rt" "$b"
+    rm -f "${parts[@]}" 2>/dev/null || true
+  fi
+}
+echo "before:"; show_builds
+set +e
+while IFS= read -r -d '' b; do
+  file "$b" 2>/dev/null | grep -q 'Mach-O' && retarget "$b"
+done < <(find "$APP/Contents" -type f -print0)
+set -e
+echo "after:"; show_builds
 plutil -replace LSMinimumSystemVersion -string "12.0" "$PLIST"
-echo "LSMinimumSystemVersion (enforced): $(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo '?')"
+echo "LSMinimumSystemVersion: $(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo '?')"
 echo "::endgroup::"
 
 echo "::group::codesign"
