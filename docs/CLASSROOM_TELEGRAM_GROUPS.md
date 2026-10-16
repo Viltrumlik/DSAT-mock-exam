@@ -293,9 +293,26 @@ re-run it after deploying, because Telegram sends nothing it was not asked for.
 
 ### Switch-on order
 
-deploy → `set_classroom_bot_webhook --base-url https://mastersat.uz` (then `--show` must list
-`callback_query`) → test end to end in one group with one test student (sign in, ➕, join,
-freeze, removal message, unfreeze, menu) → the bot is an admin in every class group (Invite users
-+ Ban users) and each group's `/chatid` is pasted into /ops → set the flags
-(`CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=True`; `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` to the
-switch-on moment) → `announce_classroom_bot` (dry run), then `--send`.
+The order matters: the sign-in, the menu buttons and the unfreeze note only run once the flag is
+on **and** a bot token is configured (`bot_login_enabled()` is both), and the class page only
+shows the bot button for a class that already has its chat id. So the test group and the flag come
+before the end-to-end test, and the payment flag comes last.
+
+1. **Deploy**, zero-downtime, with a backup first. The two migrations (`classes.0056`,
+   `lcup.0007`) are additive and nullable, so migrating first is safe.
+2. `python manage.py set_classroom_bot_webhook --base-url https://mastersat.uz`, then
+   `python manage.py set_classroom_bot_webhook --show` — `callback_query` must be in the list.
+3. **One test group first.** Make the bot an administrator there (Invite users + Ban users), send
+   `/chatid` in the group, and paste the id into that class in /ops.
+4. Set `CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=True` and restart. Keep a bot token configured
+   (`CLASSROOM_TELEGRAM_BOT_TOKEN`, or the `TELEGRAM_BOT_TOKEN` it falls back to): without it the
+   flag does nothing.
+5. **Test end to end in that group** with one test student in that class: sign in, ➕, join,
+   freeze (the removal message names the group), unfreeze (the menu comes back with ➕).
+6. **The remaining groups:** for each one, the bot as an administrator, `/chatid`, and the id
+   pasted into /ops.
+7. With the owner's go-ahead, `python manage.py announce_classroom_bot` (dry run), then
+   `announce_classroom_bot --send`. If any group fails, retry only those with
+   `--only CHAT_ID` (repeatable).
+8. Set `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` to the switch-on moment (ISO date-time), so only
+   payments lc-up creates after it are announced.
