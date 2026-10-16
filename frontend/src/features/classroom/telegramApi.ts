@@ -21,6 +21,12 @@ export interface TelegramGroupState {
   /** The legacy static invite link. Still shown for classes that have only this. */
   group_url: string;
   /**
+   * The bot's sign-in link (`t.me/<bot>?start=login`), set when the bot's own sign-in is switched
+   * on for a class it runs (plan 2026-10-16). The header button then opens the bot instead of the
+   * join dialog. Empty while that is off.
+   */
+  bot_url: string;
+  /**
    * True once the **bot** has met this student — they opened it on their own `/start` link
    * and it recorded which Telegram account pressed Start. Not the same thing as having
    * signed in with Telegram: that gives the site an OIDC subject, which is a different
