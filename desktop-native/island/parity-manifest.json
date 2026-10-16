@@ -169,7 +169,7 @@
     {
       "path": "frontend/src/features/testing-simulation/pages/ExamRunnerPage.tsx",
       "use": "ported",
-      "blob": "4469e087bbe8b78d8868f2eb3401f91b39c57f26",
+      "blob": "24aa172df4025e642cca9c3e23ef9bed2f76cb63",
       "island": [
         "src/content/card.ts",
         "src/content/island.ts"
@@ -205,7 +205,7 @@
     {
       "path": "frontend/src/app/review/[attemptId]/page.tsx",
       "use": "ported",
-      "blob": "a0910748630ec84526594dc94c4e1cca143329e6",
+      "blob": "8e9e21e0feb14a3db8887d06bb204f7c93983e1d",
       "island": [
         "src/ported/AnswerPane.ts",
         "src/ported/ChoiceList.ts"
