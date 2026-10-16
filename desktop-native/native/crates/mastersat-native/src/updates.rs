@@ -111,12 +111,10 @@ mod imp {
         }
     }
 
-    /// `ms_startup`'s Velopack part. Install/update hooks (re)write the URL scheme, the uninstall
-    /// hook removes it; Velopack then EXITS the process. Otherwise it returns and startup goes on
-    /// (applying an already-downloaded update first, Velopack's default, before any window).
-    /// Velopack ships on Windows and macOS (the two platforms the app runs on); on macOS the URL
-    /// scheme is Info.plist's, so register_current is a harmless no-op there.
-    #[cfg(any(windows, target_os = "macos"))]
+    /// `ms_startup`'s Velopack part on Windows: the install/update hooks (re)write mastersat://,
+    /// the uninstall hook removes it; Velopack then EXITS the process. Otherwise it returns and
+    /// startup goes on (applying an already-downloaded update first, Velopack's default).
+    #[cfg(windows)]
     pub fn startup(args: Vec<String>) {
         use velopack::VelopackApp;
         fn register_current() {
@@ -132,6 +130,15 @@ mod imp {
                 let _ = crate::protocol::unregister();
             })
             .run();
+    }
+
+    /// macOS: Velopack applies an already-downloaded update and returns. The install/update/
+    /// uninstall fast-callback hooks are Windows-only in the crate, and the URL scheme is declared
+    /// in Info.plist, so there is nothing to register here.
+    #[cfg(target_os = "macos")]
+    pub fn startup(args: Vec<String>) {
+        use velopack::VelopackApp;
+        VelopackApp::build().set_args(args).run();
     }
 
     /// Elsewhere (the Linux CI host) there is no installer, so nothing to run.

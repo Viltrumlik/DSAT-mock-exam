@@ -361,7 +361,7 @@ mod macos {
     }
 
     fn main_queue() -> *const c_void {
-        unsafe { std::ptr::addr_of!(_dispatch_main_q) as *const c_void }
+        std::ptr::addr_of!(_dispatch_main_q) as *const c_void
     }
 
     fn on_main_thread() -> bool {
