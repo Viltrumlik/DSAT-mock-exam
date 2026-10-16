@@ -332,9 +332,66 @@ def class_history_part(room, request=None) -> dict:
     return {"items": items, "truncated": len(events) > HISTORY_LIMIT}
 
 
+def class_telegram_part(room, request=None) -> dict:
+    """The class Telegram group for /ops (plan 2026-10-16): the bot's health in it, who the site
+    knows is inside, which of them the bot looks after, and who is frozen — the admin's list
+    for removing old members by hand. Telegram gives a head count, never a list, so "in_group"
+    and "known" differ until everybody has signed in."""
+    from users.audience import FROZEN_LCUP_DEBT
+
+    from . import telegram_group as tg
+    from .models_telegram import ClassroomTelegramMember
+
+    if not tg.chat_id_for(room):
+        return {
+            "configured": False,
+            "health": None,
+            "counts": {"in_group": None, "known": 0, "managed": 0, "frozen_in_group": 0},
+            "members": [],
+        }
+    health = tg.group_health(room)
+    rows = (
+        ClassroomTelegramMember.objects.filter(classroom=room)
+        .select_related("user")
+        .order_by("status", "-updated_at")[:500]
+    )
+    members = []
+    for r in rows:
+        u = r.user
+        members.append({
+            "id": r.pk,
+            "user_id": r.user_id,
+            "name": display_name(u),
+            "telegram_user_id": r.telegram_user_id,
+            "telegram_username": r.telegram_username,
+            "telegram_display_name": r.telegram_display_name,
+            "status": r.status,
+            "managed": r.is_managed,
+            "frozen": bool(u and u.is_frozen),
+            "frozen_for_debt": bool(u and u.is_frozen and u.frozen_reason == FROZEN_LCUP_DEBT),
+            "joined_at": iso(r.joined_at) if r.joined_at else None,
+        })
+    inside = [m for m in members if m["status"] == ClassroomTelegramMember.STATUS_JOINED]
+    return {
+        "configured": True,
+        "health": {
+            "ok": health.ok, "title": health.title,
+            "member_count": health.member_count, "problem": health.problem,
+        },
+        "counts": {
+            "in_group": health.member_count,
+            "known": len(inside),
+            "managed": sum(1 for m in inside if m["managed"]),
+            "frozen_in_group": sum(1 for m in inside if m["frozen"]),
+        },
+        "members": members,
+    }
+
+
 CLASS_PARTS = {
     "roster": roster_part,
     "attendance": class_attendance_part,
     "homework": homework_part,
     "history": class_history_part,
+    "telegram": class_telegram_part,
 }

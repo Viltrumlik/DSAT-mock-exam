@@ -109,7 +109,30 @@ export type ClassroomHomework = {
 
 export type ClassroomHistory = { items: { at: string; title: string; by: string }[]; truncated: boolean };
 
-export type ClassroomPartName = "roster" | "attendance" | "homework" | "history";
+export type ClassroomTelegramMember = {
+  id: number;
+  user_id: number | null;
+  name: string;
+  telegram_user_id: number | null;
+  telegram_username: string;
+  telegram_display_name: string;
+  status: "PENDING" | "JOINED" | "LEFT" | "REMOVED";
+  /** The bot acts on them by itself: it watched them arrive, or they signed in to the bot. */
+  managed: boolean;
+  frozen: boolean;
+  frozen_for_debt: boolean;
+  joined_at: string | null;
+};
+
+export type ClassroomTelegram = {
+  configured: boolean;
+  health: { ok: boolean; title: string; member_count: number | null; problem: string } | null;
+  /** `in_group` is Telegram's own head count (bot and admins included); the rest are people known here. */
+  counts: { in_group: number | null; known: number; managed: number; frozen_in_group: number };
+  members: ClassroomTelegramMember[];
+};
+
+export type ClassroomPartName = "roster" | "attendance" | "homework" | "history" | "telegram";
 
 /** The filter keys the list understands (anything else in the address is not sent). */
 export const CLASSROOM_FILTER_KEYS = ["subject", "level", "teacher", "branch", "days", "lcup", "status"] as const;
@@ -174,4 +197,9 @@ export function serverReason(err: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+/** An admin takes one person out of the class Telegram group (forced past the bot's own rules). */
+export async function removeTelegramMember(id: number, memberId: number): Promise<{ removed: boolean }> {
+  return (await api.post(`/classes/admin/classrooms/${id}/telegram/remove/`, { member_id: memberId })).data;
 }

@@ -88,6 +88,7 @@ const PARTS: Record<string, unknown> = {
   attendance: { sessions: [], rate: null },
   homework: { assignments: [] },
   history: { items: [], truncated: false },
+  telegram: { configured: false, health: null, counts: { in_group: null, known: 0, managed: 0, frozen_in_group: 0 }, members: [] },
 };
 
 function route(room: ClassroomCore) {

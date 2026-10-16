@@ -19,6 +19,7 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from rest_framework import status as http
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
@@ -26,6 +27,7 @@ from rest_framework.views import APIView
 
 from users.permissions import IsAuthenticatedAndNotFrozen
 
+from . import telegram_bot
 from . import telegram_group as tg
 from .capabilities import classroom_capabilities
 from .models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
@@ -33,6 +35,10 @@ from .permissions import IsClassMemberCap
 from .views_rankings import _ClassroomScopedView, _display_name
 
 logger = logging.getLogger("classes.telegram_group")
+
+#: Telegram re-sends an update it thinks we missed. A sign-in step handled twice would count
+#: one wrong password as two, so each update is handled once.
+UPDATE_SEEN_SECONDS = 24 * 3600
 
 
 class TelegramJoinThrottle(UserRateThrottle):
@@ -184,6 +190,18 @@ class ClassroomTelegramWebhookView(APIView):
             return Response({"detail": "Forbidden."}, status=http.HTTP_403_FORBIDDEN)
 
         payload = request.data if isinstance(request.data, dict) else {}
+        update_id = payload.get("update_id")
+        if update_id is not None:
+            try:
+                first_time = cache.add(f"tgbot:update:{update_id}", 1, timeout=UPDATE_SEEN_SECONDS)
+            except Exception as exc:
+                # The dedupe is a convenience. If the cache is down, handling an update twice
+                # is better than a 500, which makes Telegram resend the whole backlog. The
+                # payload is not logged: in a private chat it can be a password.
+                logger.warning("telegram webhook update dedupe unavailable: %s", type(exc).__name__)
+                first_time = True
+            if not first_time:
+                return Response({"ok": True}, status=http.HTTP_200_OK)
 
         # Telegram retries any update it does not get a 200 for, and it retries the whole
         # backlog in order — one poisoned update would wedge every later join behind it. So
@@ -204,6 +222,12 @@ class ClassroomTelegramWebhookView(APIView):
         my_chat_member = payload.get("my_chat_member")
         if isinstance(my_chat_member, dict):
             self._handle_bot_status(my_chat_member)
+            return
+
+        callback = payload.get("callback_query")
+        if isinstance(callback, dict):
+            if tg.bot_login_enabled():
+                logger.info("telegram_bot callback -> %s", telegram_bot.handle_callback_query(callback))
             return
 
         message = payload.get("message")
@@ -250,6 +274,10 @@ class ClassroomTelegramWebhookView(APIView):
         """
         chat = message.get("chat") if isinstance(message.get("chat"), dict) else {}
         chat_id = chat.get("id")
+        if str(chat.get("type") or "") == "private" and tg.bot_login_enabled():
+            # The tag only, never the text: in the sign-in step the text is a password.
+            logger.info("telegram_bot message -> %s", telegram_bot.handle_private_message(message))
+            return
         text = str(message.get("text") or "").strip()
         parts = text.split()
         command = (parts[0].lower().split("@", 1)[0]) if parts else ""

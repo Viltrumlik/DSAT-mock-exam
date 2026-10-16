@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, Copy, BookOpen, Calculator, Send, DoorClosed } from "lucide-react";
+import { ArrowLeft, Check, Copy, BookOpen, Calculator, DoorClosed } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { formatLessonDaysShort } from "@/lib/classroomSchedule";
 import { useMe } from "@/hooks/useMe";
@@ -10,8 +10,8 @@ import { Tabs } from "../ui/Tabs";
 import { Pill } from "../ui/Pill";
 import { capabilitiesFor, memberTitle, normalizeRole } from "../capabilities";
 import { useRankings } from "../rankingsHooks";
-import { useTelegramGroup } from "../telegramHooks";
 import type { ClassroomWithRole } from "../types";
+import { TelegramHeaderButton } from "./TelegramHeaderButton";
 import { TelegramJoinDialog } from "./TelegramJoinDialog";
 import { visibleTabs, type ClassroomTabId } from "./tabs";
 
@@ -92,17 +92,6 @@ export function ClassroomShell({
   const lessonTime = (classroom as { lesson_time?: string }).lesson_time;
   const joinCode = classroom.join_code;
   const room = (classroom.room_number || "").trim();
-  // Read next to the other classroom fields, and rendered in the meta row BELOW the
-  // student/staff split further down — the group is the same group whoever is looking at it,
-  // and a button placed on the right-hand side would reach only one of the two audiences.
-  const telegram = (classroom.telegram_group_url || "").trim();
-  // A managed group is one the bot administers: the button opens the join dialog and the
-  // student leaves with a single-use invite. A class with only the old static link keeps the
-  // old behaviour — a plain anchor — so nothing regresses for the classes nobody has set up
-  // yet. A failed lookup lands in that same branch, which is the right way to fail: the
-  // legacy link still works, and the dialog explains itself properly if they get that far.
-  const { data: tgState } = useTelegramGroup(classId);
-  const tgManaged = Boolean(tgState?.managed);
   const [tgOpen, setTgOpen] = useState(false);
 
   return (
@@ -131,29 +120,11 @@ export function ClassroomShell({
               )}
               {title && <span>· {title}</span>}
             </div>
-            {tgManaged ? (
-              <button
-                type="button"
-                onClick={() => setTgOpen(true)}
-                className="ds-ring mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3 py-1.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
-              >
-                <Send className="h-[15px] w-[15px]" aria-hidden />
-                {tgState?.status === "JOINED" ? "Telegram group" : "Join Telegram group"}
-              </button>
-            ) : (
-              telegram && (
-                <a
-                  href={telegram}
-                  target="_blank"
-                  // `noopener` is the security half — a new tab must not get `window.opener`
-                  // back into this app. `noreferrer` follows it because they are the pair.
-                  rel="noopener noreferrer"
-                  className="ds-ring mt-2.5 inline-flex items-center gap-1.5 rounded-xl bg-[#2AABEE] px-3 py-1.5 text-[13px] font-bold text-white transition-opacity hover:opacity-90"
-                >
-                  <Send className="h-[15px] w-[15px]" aria-hidden /> Join Telegram group
-                </a>
-              )
-            )}
+            <TelegramHeaderButton
+              classId={classId}
+              legacyUrl={classroom.telegram_group_url || ""}
+              onOpenDialog={() => setTgOpen(true)}
+            />
           </div>
         </div>
 

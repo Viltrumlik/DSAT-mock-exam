@@ -144,6 +144,13 @@ CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES = int(os.getenv('CLASSROOM_TELEGRAM_INVITE
 # Classrooms per sweep. A cap, not a target: the sweep is polite to the Bot API and a school
 # with hundreds of groups should spread the work over several runs rather than one long one.
 CLASSROOM_TELEGRAM_AUDIT_BATCH = int(os.getenv('CLASSROOM_TELEGRAM_AUDIT_BATCH', '60'))
+# The class bot's own sign-in (login + password in the chat) and its groups menu (plan
+# 2026-10-16). Off: the bot keeps its old /start reply and the class page keeps the join dialog.
+CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED = os.getenv('CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED', 'False').lower() == 'true'
+# From when lc-up payments are announced in the bot (ISO date-time, e.g.
+# 2026-10-20T00:00:00+05:00). Empty = off. Only payments lc-up created after this moment are
+# announced, so switching it on never replays the history.
+CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM = os.getenv('CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM', '').strip()
 # Optional passcode to gate /start (empty = anyone who messages the bot can subscribe).
 QUESTION_REPORT_BOT_JOIN_CODE = os.getenv('QUESTION_REPORT_BOT_JOIN_CODE', '').strip()
 

@@ -50,6 +50,7 @@ from notifications import constants as note_const
 from notifications.services import notify
 
 from . import telegram_group_api as api
+from . import telegram_texts as T
 from .models import Classroom, ClassroomMembership
 from .models_telegram import (
     ClassroomTelegramEvent,
@@ -219,6 +220,93 @@ def start_link(*, user, classroom: Optional[Classroom] = None) -> str:
     return f"https://t.me/{username}?start={token}"
 
 
+# ── The bot's own sign-in (plan 2026-10-16) ──────────────────────────────────
+
+
+def bot_login_enabled() -> bool:
+    """The bot's sign-in, groups menu and unfreeze note. Off keeps the 2026-09 flow untouched."""
+    return bool(getattr(settings, "CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED", False)) and api.is_configured()
+
+
+def bot_start_url() -> str:
+    """Where the class page sends a student: the bot, which then asks for their login. Empty
+    when the bot cannot be reached — the caller shows no button rather than a broken one."""
+    username = api.bot_username()
+    return f"https://t.me/{username}?start=login" if username else ""
+
+
+def student_classrooms(user) -> list[Classroom]:
+    """The active classes this person sits in as a student, whose group the bot runs."""
+    ids = list(
+        ClassroomMembership.objects.filter(user=user, role=ClassroomMembership.ROLE_STUDENT)
+        .exclude(status=ClassroomMembership.STATUS_REMOVED)
+        .values_list("classroom_id", flat=True)
+    )
+    return list(
+        Classroom.objects.filter(pk__in=ids, is_active=True)
+        .exclude(telegram_chat_id="")
+        .exclude(telegram_chat_id=None)
+        .order_by("name", "pk")
+    )
+
+
+GROUP_IN = "in"
+GROUP_OUT = "out"
+GROUP_UNKNOWN = "unknown"
+
+
+def identify_memberships(user) -> dict[int, str]:
+    """Which of this student's class groups are they inside right now? Asked of Telegram, one
+    ``getChatMember`` per class. Each class maps to one of three answers: ``GROUP_IN`` and
+    ``GROUP_OUT`` when Telegram answered, and ``GROUP_UNKNOWN`` when it could not be asked (a
+    timeout, a 403, a bad chat id) — which says nothing about whether they are inside, so
+    nothing is written for it.
+
+    Finding them inside is decision 3's door into management: a member from before the bot
+    who signs in becomes ``identified_at`` and is the bot's from then on. Except somebody frozen
+    at that moment — an old debtor stays the admin's to remove by hand, and is written down so
+    the admin can see them.
+    """
+    telegram_id = bot_id_for(user)
+    found: dict[int, str] = {}
+    if not telegram_id:
+        return found
+    now = timezone.now()
+    frozen = bool(getattr(user, "is_frozen", False))
+    for classroom in student_classrooms(user):
+        probe = api.get_chat_member(chat_id_for(classroom), int(telegram_id))
+        if not probe.ok:
+            found[classroom.pk] = GROUP_UNKNOWN
+            continue
+        status = str((probe.result or {}).get("status") or "")
+        if status not in api.IN_CHAT_STATUSES:
+            found[classroom.pk] = GROUP_OUT
+            continue
+        found[classroom.pk] = GROUP_IN
+        row = _row_for_user(classroom, user)
+        first_sighting = row.status != ClassroomTelegramMember.STATUS_JOINED
+        newly_identified = row.identified_at is None and not frozen
+        row.status = ClassroomTelegramMember.STATUS_JOINED
+        row.joined_at = row.joined_at or now
+        row.last_checked_at = now
+        if newly_identified:
+            row.identified_at = now
+        row.save()
+        if newly_identified or (first_sighting and frozen):
+            log_event(
+                classroom=classroom,
+                action=ClassroomTelegramEvent.ACTION_RECONCILED,
+                user=user,
+                telegram_user_id=int(telegram_id),
+                detail=(
+                    "identified by signing in to the bot"
+                    if newly_identified
+                    else "in the group while frozen; left for an admin to remove"
+                ),
+            )
+    return found
+
+
 def may_enforce_against(user, chat_status: str) -> bool:
     """The two *identity* rules from the module docstring, in one place.
 
@@ -242,7 +330,7 @@ def may_remove(row: ClassroomTelegramMember, chat_status: str) -> bool:
     is a member of a group that existed before it, and the group was not handed over to be
     emptied. They are left alone until they leave and come back of their own accord.
     """
-    if not row.is_watched:
+    if not row.is_managed:
         return False
     return may_enforce_against(row.user, chat_status)
 
@@ -377,7 +465,7 @@ def _clear_ticket(row: ClassroomTelegramMember, *, revoke: bool = True) -> None:
 # ── Issuing a link ───────────────────────────────────────────────────────────
 
 
-def issue_invite(*, user, classroom: Classroom) -> dict:
+def issue_invite(*, user, classroom: Classroom, send_dm: bool = True) -> dict:
     """Mint this student's single-use way into the class group.
 
     Raises :class:`TelegramGroupError` with a message meant for the student's screen.
@@ -492,11 +580,13 @@ def issue_invite(*, user, classroom: Classroom) -> dict:
 
     # A courtesy copy, if this student has ever opened a chat with the bot. The site is
     # showing them the same link on screen, so a failure here costs nothing.
-    api.send_message(
-        int(telegram_id),
-        f"Your one-time invite to <b>{api.esc(classroom.name)}</b>:\n{link}\n\n"
-        f"It works once, for this account only, and expires in {invite_ttl_minutes()} minutes.",
-    )
+    # The bot's own button sends its Uzbek message instead (plan 2026-10-16).
+    if send_dm:
+        api.send_message(
+            int(telegram_id),
+            f"Your one-time invite to <b>{api.esc(classroom.name)}</b>:\n{link}\n\n"
+            f"It works once, for this account only, and expires in {invite_ttl_minutes()} minutes.",
+        )
 
     return {"already_member": False, "invite_link": link, "expires_at": expires_at}
 
@@ -532,13 +622,32 @@ def student_state(*, user, classroom: Classroom) -> dict:
         "invite_expires_at": row.invite_expires_at if live_ticket else None,
         "rules": JOIN_RULES,
         "invite_ttl_minutes": invite_ttl_minutes(),
+        # The bot's sign-in link (plan 2026-10-16): the class page's button opens the bot, which
+        # asks for the login. Empty while that is switched off — the page keeps the join dialog.
+        "bot_url": bot_start_url() if bot_login_enabled() and is_managed(classroom) else "",
     }
 
 
 # ── Removing somebody ────────────────────────────────────────────────────────
 
 
-def _notify_removed(user, classroom: Classroom, reason: str) -> None:
+def _removal_dm(user, names: list[str], reason: str) -> str:
+    """The bot's Uzbek note for coming out of one or more groups (plan 2026-10-16)."""
+    groups = T.group_list(names)
+    if reason == ClassroomTelegramMember.REASON_FROZEN:
+        from users.audience import FROZEN_LCUP_DEBT
+
+        debt = str(getattr(user, "frozen_reason", "") or "") == FROZEN_LCUP_DEBT
+        return (T.REMOVED_DEBT if debt else T.REMOVED_FROZEN).format(groups=groups)
+    if reason == ClassroomTelegramMember.REASON_NOT_IN_CLASS:
+        return T.REMOVED_NOT_IN_CLASS.format(groups=groups)
+    if reason == ClassroomTelegramMember.REASON_IDENTITY_MISMATCH:
+        return T.REMOVED_MISMATCH
+    return T.REMOVED_MANUAL.format(groups=groups)
+
+
+def _notify_removed(user, classroom: Classroom, reason: str, *, dm: bool = True) -> None:
+    """The site's notification (English, one per class) and, unless ``dm`` is off, the bot's."""
     if user is None:
         return
     if reason == ClassroomTelegramMember.REASON_FROZEN:
@@ -568,8 +677,8 @@ def _notify_removed(user, classroom: Classroom, reason: str) -> None:
         dedupe_key=f"tg-group:{classroom.pk}:{user.pk}:{reason}",
     )
     telegram_id = bot_id_for(user)
-    if telegram_id:
-        api.send_message(int(telegram_id), f"<b>{api.esc(classroom.name)}</b>\n{body}")
+    if dm and telegram_id:
+        api.send_message(int(telegram_id), _removal_dm(user, [classroom.name], reason))
 
 
 def remove_member(
@@ -578,11 +687,17 @@ def remove_member(
     reason: str,
     notify_student: bool = True,
     chat_status: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     """Take one person out of one class group. Returns True if Telegram was asked to act.
 
     Passing ``chat_status`` skips the ``getChatMember`` probe when the caller has just made
     one — the sweep has, and doubling every check would double the API traffic of the run.
+
+    ``force`` is an admin removing somebody by hand from /ops: it skips rules 1 and 3
+    (unknown accounts, people from before the bot), never rule 2 (chat admins).
+    A forced removal needs a readable chat status: if the probe failed, the person is left
+    in place and the call returns False, because without the status rule 2 cannot be checked.
     """
     classroom = row.classroom
     chat = chat_id_for(classroom)
@@ -614,7 +729,31 @@ def remove_member(
         row.save()
         return False
 
-    if not row.is_watched:
+    if force and not chat_status:
+        # The probe failed, so this person might be a chat admin and we cannot tell. A forced
+        # removal has set rules 1 and 3 aside, which leaves rule 2 as the only thing between
+        # an unprobed teacher's second account and the kick, and rule 2 reads the status we
+        # do not have. Refuse; the admin presses the button again once Telegram answers.
+        #
+        # The ticket is burned as in every other leave-in-place branch: it does not depend on
+        # knowing who this is.
+        _clear_ticket(row)
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR,
+            user=row.user,
+            telegram_user_id=int(telegram_id),
+            reason=reason,
+            detail=(
+                "forced removal refused: could not read this account's status in the group "
+                "(it may be a chat admin), so it was left in place"
+            ),
+        )
+        row.last_checked_at = timezone.now()
+        row.save()
+        return False
+
+    if not force and not row.is_managed:
         # Rule 3, and it is not a judgement about this person: it is the bot declining to
         # act on a group it joined late. They were inside before it was watching, so being
         # inside now tells us nothing it is entitled to act on.
@@ -638,7 +777,9 @@ def remove_member(
         row.save()
         return False
 
-    if not may_enforce_against(row.user, chat_status):
+    if chat_status in api.CHAT_ADMIN_STATUSES or (
+        not force and not may_enforce_against(row.user, chat_status)
+    ):
         log_event(
             classroom=classroom,
             action=ClassroomTelegramEvent.ACTION_RECONCILED,
@@ -711,13 +852,25 @@ def enforce_for_user(user, *, reason: str) -> dict:
         .exclude(status=ClassroomTelegramMember.STATUS_REMOVED)
         .select_related("classroom", "user")
     )
+    removed_from: list[Classroom] = []
     for row in rows:
         if not chat_id_for(row.classroom):
             continue
         if row.invite_link:
             revoked += 1
-        if remove_member(row, reason=reason):
+        # The student hears it once, naming every group — not once per group.
+        if remove_member(row, reason=reason, notify_student=False):
             removed += 1
+            removed_from.append(row.classroom)
+    if removed_from:
+        for classroom in removed_from:
+            _notify_removed(user, classroom, reason, dm=False)
+        telegram_id = bot_id_for(user)
+        if telegram_id:
+            api.send_message(
+                int(telegram_id),
+                _removal_dm(user, sorted(c.name for c in removed_from), reason),
+            )
     return {"removed": removed, "tickets_revoked": revoked}
 
 

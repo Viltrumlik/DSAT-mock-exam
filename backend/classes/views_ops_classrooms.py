@@ -78,3 +78,41 @@ class ClassroomPartView(APIView):
         if room is None:
             return Response({"detail": "Not found."}, status=404)
         return Response(build(room, request=request))
+
+
+class ClassroomTelegramRemoveView(APIView):
+    """``POST /api/classes/admin/classrooms/<pk>/telegram/remove/`` {member_id} — an admin takes one
+    person out of the class Telegram group by hand. Forced: the bot's own rules keep it away
+    from members it never watched arrive and from accounts it cannot place, and this is the
+    admin deciding about exactly those (decision 3). A chat administrator is never removed."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        from . import telegram_group as tg
+        from .models_telegram import ClassroomTelegramMember
+
+        if not is_ops_admin(request.user):
+            return Response({"detail": "Admins only."}, status=403)
+        try:
+            member_id = int(request.data.get("member_id"))
+        except (TypeError, ValueError):
+            return Response({"detail": "member_id is required."}, status=400)
+        row = (
+            ClassroomTelegramMember.objects.select_related("classroom", "user")
+            .filter(classroom_id=pk, pk=member_id)
+            .first()
+        )
+        if row is None:
+            return Response({"detail": "Not found."}, status=404)
+        if not tg.remove_member(row, reason=ClassroomTelegramMember.REASON_MANUAL, force=True):
+            return Response(
+                {
+                    "detail": (
+                        "Telegram did not remove them: they may have left already, be an admin "
+                        "of the group, or Telegram could not be reached — try again."
+                    )
+                },
+                status=409,
+            )
+        return Response({"removed": True})

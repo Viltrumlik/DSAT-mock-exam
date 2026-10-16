@@ -1,0 +1,88 @@
+"""Post the "sign in to the bot" note into every class Telegram group, once (plan 2026-10-16).
+
+Members from before the bot are untouchable until they are identified, and signing in is how
+they are identified — so every group is asked, with a button that opens the bot.
+
+    python manage.py announce_classroom_bot          # dry run: lists the groups
+    python manage.py announce_classroom_bot --send   # posts it
+    python manage.py announce_classroom_bot --send --only -1001234567890   # retries one group
+
+Run --send only with the owner's go-ahead: it speaks in every class group at once. It also
+refuses to run until CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED is on: the button opens the bot's
+sign-in, and with the flag off the old handler answers it "That link has already been used" —
+in every group, and a post cannot be taken back. A dry run works either way.
+If a post fails, the command exits with an error naming the groups that did not get the note.
+Retry just those with --only (repeatable), so the groups that already received it are not
+asked twice.
+"""
+
+from __future__ import annotations
+
+from django.core.management.base import BaseCommand, CommandError
+
+from classes import telegram_group as tg
+from classes import telegram_texts as T
+from classes.models import Classroom
+
+
+class Command(BaseCommand):
+    help = "Post the class-bot sign-in note into every class Telegram group (dry run unless --send)."
+
+    def add_arguments(self, parser):
+        parser.add_argument("--send", action="store_true", help="Actually post. Without it, only list.")
+        parser.add_argument(
+            "--only",
+            action="append",
+            default=None,
+            metavar="CHAT_ID",
+            help="Limit to this chat id (repeatable). Use it to retry the groups that failed.",
+        )
+
+    def handle(self, *args, **options):
+        url = tg.bot_start_url()
+        if not url:
+            raise CommandError("The bot is not reachable (no token, or getMe failed).")
+        if not tg.bot_login_enabled():
+            if options["send"]:
+                raise CommandError(
+                    "Switch CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED on first — the button opens the bot sign-in."
+                )
+            self.stdout.write(
+                "warning: CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED is off — --send will refuse until it is on."
+            )
+        chats: dict[str, list[str]] = {}
+        rooms = (
+            Classroom.objects.filter(is_active=True)
+            .exclude(telegram_chat_id="")
+            .exclude(telegram_chat_id=None)
+            .order_by("pk")
+        )
+        for room in rooms:
+            chats.setdefault(tg.chat_id_for(room), []).append(room.name)
+        if options["only"] is not None:
+            wanted = [str(chat).strip() for chat in options["only"]]
+            unmatched = [chat for chat in wanted if chat not in chats]
+            if unmatched:
+                # A mistyped id must not look like a finished retry: refuse before anything is posted.
+                raise CommandError(f"no class group has chat id {', '.join(unmatched)} — nothing posted")
+            chats = {chat: names for chat, names in chats.items() if chat in wanted}
+        markup = {"inline_keyboard": [[{"text": T.ANNOUNCE_BUTTON, "url": url}]]}
+        posted = 0
+        failed: list[str] = []
+        for chat, names in chats.items():
+            if not options["send"]:
+                self.stdout.write(f"would post to {chat}: {', '.join(names)}")
+                continue
+            result = tg.api.send_message(chat, T.ANNOUNCE, reply_markup=markup)
+            posted += int(result.ok)
+            if not result.ok:
+                failed.append(chat)
+            self.stdout.write(
+                f"{'posted' if result.ok else 'FAILED'} {chat}: {', '.join(names)} {result.description}".rstrip()
+            )
+        tail = f"posted {posted}" if options["send"] else "dry run — nothing posted"
+        self.stdout.write(f"{len(chats)} group(s); {tail}")
+        if options["send"] and posted < len(chats):
+            raise CommandError(
+                f"{len(failed)} of {len(chats)} group(s) failed: {', '.join(failed)} — retry with --only"
+            )
