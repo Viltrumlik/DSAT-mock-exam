@@ -175,6 +175,14 @@ class IdentifyTests(TelegramGroupBase):
         self.assertEqual(tg.identify_memberships(self.student), {self.classroom.pk: tg.GROUP_OUT})
         self.assertIsNone(self.row(self.student))
 
+    def test_a_group_telegram_cannot_be_read_is_unknown_not_out(self):
+        # A timeout, a 403 or a bad chat id says nothing about whether they are inside.
+        self.tg.join(1001)
+        self.tg.probe_should_fail = True
+        self.assertEqual(tg.identify_memberships(self.student), {self.classroom.pk: tg.GROUP_UNKNOWN})
+        self.assertIsNone(self.row(self.student))
+        self.assertFalse(ClassroomTelegramEvent.objects.filter(user=self.student).exists())
+
     def test_only_active_student_seats_in_classes_with_a_group_count(self):
         no_group = Classroom.objects.create(
             name="No group", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,

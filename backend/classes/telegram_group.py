@@ -251,11 +251,15 @@ def student_classrooms(user) -> list[Classroom]:
 
 GROUP_IN = "in"
 GROUP_OUT = "out"
+GROUP_UNKNOWN = "unknown"
 
 
 def identify_memberships(user) -> dict[int, str]:
     """Which of this student's class groups are they inside right now? Asked of Telegram, one
-    ``getChatMember`` per class.
+    ``getChatMember`` per class. Each class maps to one of three answers: ``GROUP_IN`` and
+    ``GROUP_OUT`` when Telegram answered, and ``GROUP_UNKNOWN`` when it could not be asked (a
+    timeout, a 403, a bad chat id) — which says nothing about whether they are inside, so
+    nothing is written for it.
 
     Finding them inside is decision 3's door into management: a member from before the bot
     who signs in becomes ``identified_at`` and is the bot's from then on. Except somebody frozen
@@ -270,7 +274,10 @@ def identify_memberships(user) -> dict[int, str]:
     frozen = bool(getattr(user, "is_frozen", False))
     for classroom in student_classrooms(user):
         probe = api.get_chat_member(chat_id_for(classroom), int(telegram_id))
-        status = str((probe.result or {}).get("status") or "") if probe.ok else ""
+        if not probe.ok:
+            found[classroom.pk] = GROUP_UNKNOWN
+            continue
+        status = str((probe.result or {}).get("status") or "")
         if status not in api.IN_CHAT_STATUSES:
             found[classroom.pk] = GROUP_OUT
             continue
