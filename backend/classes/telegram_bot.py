@@ -38,8 +38,9 @@ STATE_SECONDS = 10 * 60
 STEP_LOGIN = "login"
 STEP_PASSWORD = "password"
 
-#: What the bot answers as a command. At the password step nothing else starting with "/" is
-#: one: a password may begin with a slash, and read as a command it would stay in the chat.
+#: What the bot answers as a command. At the password step a message is a command only when it
+#: is exactly one of these (or one addressed to this bot as ``/start@TheBot``): a password may
+#: begin with a slash, and read as a command it would stay in the chat.
 COMMANDS = frozenset({"/start", "/chiqish", "/guruhlar"})
 
 
@@ -58,8 +59,14 @@ def _lock_key(kind: str, value) -> str:
     return f"tgbot:lock:{kind}:{value}"
 
 
-def _login_key(login: str) -> str:
-    """One spelling per account, so "+998 90…" and "99890…" share a lock."""
+def _login_key(login: str, account) -> str:
+    """What the per-login counter and lock are keyed on: the ACCOUNT the login names, not how it
+    was typed. A username, an email and a phone spelling of one account all land on
+    ``user:<pk>``; counting by spelling would give an attacker with several Telegram accounts
+    five tries per spelling. Only a login that names nobody falls back to its own spelling
+    (case and phone formatting folded), so guessing at unknown logins is still bounded."""
+    if account is not None:
+        return f"user:{account.pk}"
     return (_phone_username(login) or login).strip().lower()[:150]
 
 
@@ -100,18 +107,33 @@ def _clear_failures(tg_id: int, login_key: str) -> None:
 
 
 def _account_for(login: str):
-    """The account a login names, the way the site's own sign-in finds it — used only to tell
-    "no password set yet" apart from "wrong password", and to put a failure on the right
-    account's audit trail."""
-    login = login.strip()
+    """The account a login names — the single resolver for this module, and the same pick
+    ``EmailOrUsernameModelBackend.authenticate`` makes (the email match wins, then the lowest
+    id among username/email matches, then the account whose username is the typed phone), so
+    the lock, the audit trail and the password check always concern the same account."""
     if not login:
         return None
-    user = User.objects.filter(Q(username__iexact=login) | Q(email__iexact=login)).order_by("id").first()
+    matches = User.objects.filter(Q(username__iexact=login) | Q(email__iexact=login))
+    user = matches.filter(email__iexact=login).first() or matches.order_by("id").first()
     if user is None:
         phone = _phone_username(login)
-        if phone:
+        if phone and phone != login:
             user = User.objects.filter(username=phone).first()
     return user
+
+
+def _exact_command(text: str) -> str:
+    """The bot command ``text`` is on its own, or "". Used at the password step, where anything
+    else — "/start@2024", "/guruhlar 1", "/x" — is a password and must be deleted and checked.
+    A command may carry the bot's own @name ("/start@MasterSATBot", as a group client sends);
+    one addressed to a different bot is not ours."""
+    word = text.strip().lower()
+    if word in COMMANDS:
+        return word
+    command, at, target = word.partition("@")
+    if at and command in COMMANDS and target and target == (tg.api.bot_username() or "").lower():
+        return command
+    return ""
 
 
 def _audit(user, event_type: str, tg_id: int, *, severity: str = SecurityAuditEvent.SEVERITY_INFO) -> None:
@@ -185,8 +207,8 @@ def handle_private_message(message: dict) -> str:
     command = text.split()[0].lower().split("@", 1)[0] if text.startswith("/") else ""
     user = User.objects.filter(telegram_bot_user_id=tg_id).first()
     state = cache.get(_state_key(tg_id)) or {}
-    if command and command not in COMMANDS and state.get("step") == STEP_PASSWORD:
-        command = ""  # a password that happens to begin with "/"
+    if state.get("step") == STEP_PASSWORD:
+        command = _exact_command(text)  # anything else is the password, even one starting "/"
 
     if command == "/start":
         if user is not None:
@@ -235,7 +257,8 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
     if not deleted.ok:
         _send(chat_id, T.DELETE_FAILED)
 
-    key = _login_key(login)
+    known = _account_for(login)
+    key = _login_key(login, known)
     if _locked(tg_id, key):
         _send(chat_id, T.LOCKED.format(minutes=LOCK_SECONDS // 60))
         return "locked"
@@ -244,7 +267,6 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
         None, username=login, password=str(message.get("text") or "")
     )
     if user is None:
-        known = _account_for(login)
         count = _count_failure(tg_id, key)
         if known is not None and not known.has_usable_password():
             _send(chat_id, T.NO_PASSWORD_YET)
@@ -265,7 +287,7 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
         _send(chat_id, T.TG_TAKEN)
         return "taken"
 
-    _clear_failures(tg_id, key)
+    _clear_failures(tg_id, _login_key(login, user))
     user.telegram_bot_user_id = tg_id
     user.save(update_fields=["telegram_bot_user_id"])
     _audit(user, "telegram_bot_login", tg_id)

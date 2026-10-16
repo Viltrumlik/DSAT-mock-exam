@@ -306,7 +306,7 @@ class SignInTests(BotBase):
         self.newbie.refresh_from_db()
         self.assertIsNone(self.newbie.telegram_bot_user_id)
         # The lock is a cache key that lives 15 minutes; its lapse is the key going away.
-        cache.delete_many([f"tgbot:lock:tg:{self.NEW_TG}", "tgbot:lock:login:newbie@t.com"])
+        cache.delete_many([f"tgbot:lock:tg:{self.NEW_TG}", f"tgbot:lock:login:user:{self.newbie.pk}"])
         self.sign_in()
         self.newbie.refresh_from_db()
         self.assertEqual(self.newbie.telegram_bot_user_id, self.NEW_TG)
@@ -316,6 +316,38 @@ class SignInTests(BotBase):
             self.sign_in(password="nope")
         self.sign_in(tg_id=6006)
         self.assertEqual(self.last(6006), T.LOCKED.format(minutes=15))
+
+    def test_the_lock_is_the_accounts_not_the_spellings(self):
+        # Four tries by the email and one by the username are five tries on ONE account. Each
+        # try comes from its own Telegram, so only the account's own counter can reach five.
+        for n in range(4):
+            self.sign_in(login="newbie@t.com", password="nope", tg_id=7000 + n)
+        self.sign_in(login="newbie", password="nope", tg_id=7004)
+        self.assertEqual(self.last(7004), T.LOCKED.format(minutes=15))
+        # The right password, from fresh Telegrams, by either spelling: still refused.
+        self.sign_in(login="newbie@t.com", tg_id=7005)
+        self.assertEqual(self.last(7005), T.LOCKED.format(minutes=15))
+        self.sign_in(login="NewBie", tg_id=7006)
+        self.assertEqual(self.last(7006), T.LOCKED.format(minutes=15))
+        self.newbie.refresh_from_db()
+        self.assertIsNone(self.newbie.telegram_bot_user_id)
+
+    def test_every_phone_spelling_and_the_email_share_one_lock(self):
+        phone = User.objects.create_user("p@t.com", self.PASSWORD, username="998901234567")
+        spellings = ["p@t.com", "+998 90 123 45 67", "998901234567", "90-123-45-67", "P@T.com"]
+        for n, login in enumerate(spellings):
+            self.sign_in(login=login, password="nope", tg_id=7100 + n)
+        self.sign_in(login="998901234567", tg_id=7200)
+        self.assertEqual(self.last(7200), T.LOCKED.format(minutes=15))
+        phone.refresh_from_db()
+        self.assertIsNone(phone.telegram_bot_user_id)
+
+    def test_a_login_naming_no_account_is_still_locked_by_its_spelling(self):
+        for n in range(5):
+            self.sign_in(login="Nobody@T.com", password="nope", tg_id=7300 + n)
+        self.assertEqual(self.last(7304), T.LOCKED.format(minutes=15))
+        self.sign_in(login="nobody@t.com", password="nope", tg_id=7400)
+        self.assertEqual(self.last(7400), T.LOCKED.format(minutes=15))
 
     def test_an_account_with_no_password_yet_is_sent_to_the_site(self):
         self.newbie.set_unusable_password()
@@ -359,6 +391,37 @@ class SignInTests(BotBase):
         message_id = self.sign_in(password="/nope")
         self.assertIn((str(self.NEW_TG), message_id), self.tg.deleted)
         self.assertEqual(self.last(), T.WRONG.format(n=1, max=5))
+
+    def test_a_password_that_only_begins_like_a_command_is_a_password(self):
+        # "/start@2024" and "/guruhlar 1" are not the bot's commands, they are what a
+        # student typed as a password: deleted, checked, counted.
+        for password in ("/start@2024", "/guruhlar 1"):
+            cache.clear()
+            self.tg.deleted.clear()
+            message_id = self.sign_in(password=password)
+            self.assertIn((str(self.NEW_TG), message_id), self.tg.deleted)
+            self.assertEqual(self.last(), T.WRONG.format(n=1, max=5))
+
+    def test_such_a_password_signs_in_when_it_is_the_right_one(self):
+        self.newbie.set_password("/start@2024")
+        self.newbie.save()
+        message_id = self.sign_in(password="/start@2024")
+        self.assertIn((str(self.NEW_TG), message_id), self.tg.deleted)
+        self.newbie.refresh_from_db()
+        self.assertEqual(self.newbie.telegram_bot_user_id, self.NEW_TG)
+
+    def test_the_command_addressed_to_this_bot_still_works_at_the_password_step(self):
+        self.say("/start")
+        self.say("newbie@t.com")
+        self.say("/START@MasterSATTestBot")
+        self.assertEqual(self.last(), T.ASK_LOGIN)
+        self.assertEqual(self.tg.deleted, [])
+
+    def test_a_command_addressed_to_another_bot_is_a_password_at_that_step(self):
+        self.say("/start")
+        self.say("newbie@t.com")
+        message_id = self.say("/start@SomeOtherBot")
+        self.assertIn((str(self.NEW_TG), message_id), self.tg.deleted)
 
     def test_the_bots_own_commands_still_work_at_the_password_step(self):
         self.say("/start")
