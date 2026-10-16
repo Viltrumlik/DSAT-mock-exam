@@ -18,6 +18,7 @@ import 'package:mastersat_app/exam/session_contract.dart';
 import 'package:mastersat_app/features/home/home_screen.dart';
 import 'package:mastersat_app/features/library/booklet_card.dart';
 import 'package:mastersat_app/features/results/pastpaper_result_screen.dart';
+import 'package:mastersat_app/features/shell/app_shell.dart';
 import 'package:mastersat_app/island/protocol.dart';
 
 import '../exam/runner/support/runner_harness.dart' show loadRunnerFonts;
@@ -25,6 +26,11 @@ import 'support/app_rig.dart';
 
 Future<void> pressCard(AppRig rig, int paperId, String label) async {
   final card = find.byWidgetPredicate((w) => w is BookletCard && w.item.paper.id == paperId);
+  if (card.evaluate().isEmpty) {
+    // The app landed on Midterms (one is open now): Past papers is the sidebar's first row.
+    await rig.tester.tap(find.descendant(of: find.byType(AppSidebar), matching: find.text('Past papers')));
+    await rig.settle();
+  }
   final button = find.descendant(of: card, matching: find.text(label));
   await rig.tester.ensureVisible(button);
   await rig.tester.pump();

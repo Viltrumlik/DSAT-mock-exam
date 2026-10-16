@@ -1,6 +1,7 @@
-// Settings / Diagnostics (architecture §2.3): version and update channel, "Copy diagnostics"
-// (one JSON document for support — no tokens, no answers), and "Delete data on this computer",
-// which is blocked while answers saved here have not reached MasterSAT yet.
+// Settings / Diagnostics (architecture §2.3), the sidebar's third page: version and update
+// channel, "Copy diagnostics" (one JSON document for support — no tokens, no answers), and
+// "Delete data on this computer", which is blocked while answers saved here have not reached
+// MasterSAT yet. Drawn in the website's UI kit (Geist, Card.tsx cards, Field.tsx labels).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import '../../core/theme/toast.dart';
 import '../../core/theme/tokens.dart';
 import '../home/app_header.dart';
 import '../home/update_controller.dart';
+import '../shell/shell_page.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -119,66 +121,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final services = _services;
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: Column(
-        children: [
-          AppHeader(backLabel: 'Your tests', onBack: () => Navigator.of(context).maybePop(), showSettings: false),
-          Expanded(
-            child: SingleChildScrollView(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 760),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(32, 28, 32, 48),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Text('SETTINGS', style: AppText.eyebrow),
-                        const SizedBox(height: 8),
-                        Text('Settings', style: AppText.title),
-                        const SizedBox(height: 24),
-                        _AppCard(services: services, onChannel: (c) => unawaited(_setChannel(c))),
-                        const SizedBox(height: 16),
-                        _SettingsCard(
-                          icon: LucideIcons.clipboardList,
-                          title: 'Diagnostics',
-                          body: "If something isn't working, copy these details and send them to your teacher or "
-                              'MasterSAT support. They never include your password or your answers.',
-                          child: AppButton(
-                            label: 'Copy diagnostics',
-                            icon: LucideIcons.copy,
-                            tone: AppButtonTone.secondary,
-                            busy: _copying,
-                            busyLabel: 'Copying…',
-                            onPressed: () => unawaited(_copyDiagnostics()),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        _SettingsCard(
-                          icon: LucideIcons.hardDrive,
-                          title: 'Data on this computer',
-                          body: 'Your sign-in, a copy of your tests and anything waiting to be sent are kept on this '
-                              'computer so the app opens instantly and keeps working offline.',
-                          footer: _UnsentLine(unsent: _unsent),
-                          child: AppButton(
-                            label: 'Delete data on this computer',
-                            icon: LucideIcons.trash2,
-                            tone: AppButtonTone.dangerOutline,
-                            busy: _deleting,
-                            busyLabel: 'Deleting…',
-                            onPressed: () => unawaited(_deleteData()),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
+    return ShellPage(
+      board: false,
+      maxWidth: 760,
+      children: [
+        const HomeBanners(),
+        const PageHeading(eyebrow: 'SETTINGS', title: 'Settings'),
+        const SizedBox(height: 24),
+        _AppCard(services: services, onChannel: (c) => unawaited(_setChannel(c))),
+        const SizedBox(height: 16),
+        _SettingsCard(
+          icon: LucideIcons.clipboardList,
+          title: 'Diagnostics',
+          body: "If something isn't working, copy these details and send them to your teacher or "
+              'MasterSAT support. They never include your password or your answers.',
+          child: AppButton(
+            label: 'Copy diagnostics',
+            icon: LucideIcons.copy,
+            tone: AppButtonTone.secondary,
+            busy: _copying,
+            busyLabel: 'Copying…',
+            onPressed: () => unawaited(_copyDiagnostics()),
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 16),
+        _SettingsCard(
+          icon: LucideIcons.hardDrive,
+          title: 'Data on this computer',
+          body: 'Your sign-in, a copy of your tests and anything waiting to be sent are kept on this '
+              'computer so the app opens instantly and keeps working offline.',
+          footer: _UnsentLine(unsent: _unsent),
+          child: AppButton(
+            label: 'Delete data on this computer',
+            icon: LucideIcons.trash2,
+            tone: AppButtonTone.dangerOutline,
+            busy: _deleting,
+            busyLabel: 'Deleting…',
+            onPressed: () => unawaited(_deleteData()),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -210,6 +192,7 @@ class _AppCard extends StatelessWidget {
                 alignment: Alignment.centerLeft,
                 child: SegmentedFilter<UpdateChannel>(
                   label: '',
+                  tray: AppColors.surface2,
                   selected: settings?.updateChannel ?? UpdateChannel.stable,
                   onChanged: onChannel,
                   options: const [
@@ -252,7 +235,7 @@ class _AppCard extends StatelessWidget {
     );
   }
 
-  static final _value = AppText.body.copyWith(fontWeight: FontWeight.w700, color: AppColors.ink);
+  static final _value = AppText.body.copyWith(fontWeight: FontWeight.w600, color: AppColors.textPrimary);
 }
 
 /// The one line that says where the updater is.
@@ -306,28 +289,33 @@ class _SettingsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(color: AppColors.indigoSoft, borderRadius: BorderRadius.circular(10)),
-                child: Icon(icon, size: 17, color: AppColors.indigo),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(color: AppColors.primarySoft, borderRadius: BorderRadius.circular(AppRadii.sm)),
+                child: Icon(icon, size: 18, color: AppColors.primary),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Text(title, style: AppText.cardTitle)),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppText.cardTitle.copyWith(fontWeight: FontWeight.w600, height: 1.4, color: AppColors.textPrimary),
+                ),
+              ),
             ],
           ),
           if (body != null) ...[
             const SizedBox(height: 10),
-            Text(body!, style: AppText.bodyMuted.copyWith(height: 1.5)),
+            Text(body!, style: AppText.body.copyWith(fontWeight: FontWeight.w400, height: 1.6, color: AppColors.textSecondary)),
           ],
-          const SizedBox(height: 14),
-          if (footer != null) ...[footer!, const SizedBox(height: 14)],
+          const SizedBox(height: 16),
+          if (footer != null) ...[footer!, const SizedBox(height: 16)],
           Align(alignment: Alignment.centerLeft, child: child),
         ],
       ),
@@ -348,7 +336,7 @@ class _Row extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 12),
       decoration: BoxDecoration(
-        border: last ? null : const Border(bottom: BorderSide(color: AppColors.line)),
+        border: last ? null : const Border(bottom: BorderSide(color: AppColors.border)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -357,7 +345,10 @@ class _Row extends StatelessWidget {
             width: 160,
             child: ConstrainedBox(
               constraints: const BoxConstraints(minHeight: 34),
-              child: Align(alignment: Alignment.centerLeft, child: Text(label, style: AppText.small)),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(label, style: AppText.body.copyWith(fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+              ),
             ),
           ),
           Expanded(
@@ -366,7 +357,10 @@ class _Row extends StatelessWidget {
               children: [
                 ConstrainedBox(constraints: const BoxConstraints(minHeight: 34), child: Align(alignment: Alignment.centerLeft, child: child)),
                 if (hint != null)
-                  Padding(padding: const EdgeInsets.only(top: 6), child: Text(hint!, style: AppText.caption)),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(hint!, style: AppText.small.copyWith(fontWeight: FontWeight.w400, color: AppColors.textSecondary)),
+                  ),
               ],
             ),
           ),

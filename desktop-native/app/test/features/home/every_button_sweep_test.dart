@@ -25,7 +25,23 @@ import '../../core/harness/app_harness.dart';
 typedef Scenario = Future<Finder> Function(WidgetTester tester, AppHarness h);
 
 final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
-  'Home': (AppHarness.start, (tester, h) async => find.byType(Scaffold)),
+  // The landing page (a midterm is open now): the shell — sidebar, top bar — and Midterms.
+  'Home (Midterms)': (AppHarness.start, (tester, h) async => find.byType(Scaffold)),
+  'Past papers': (
+    AppHarness.start,
+    (tester, h) async {
+      await openPage(tester, 'Past papers');
+      return find.byType(Scaffold);
+    },
+  ),
+  'Account menu': (
+    AppHarness.start,
+    (tester, h) async {
+      await tester.tap(find.bySemanticsLabel('Your account'));
+      await settleApp(tester);
+      return find.bySemanticsLabel('Account menu');
+    },
+  ),
   'Home, offline with a cached copy': (
     () async {
       final store = await UserStore.memory(77);
@@ -55,6 +71,7 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
   'History dialog': (
     AppHarness.start,
     (tester, h) async {
+      await openPage(tester, 'Past papers');
       final link = find.text('History · 2 attempts');
       await tester.ensureVisible(link);
       await tester.tap(link);
@@ -79,7 +96,7 @@ final Map<String, (Future<AppHarness> Function(), Scenario)> scenarios = {
     (tester, h) async {
       unawaited(openSettings(h.services.navigatorKey.currentContext!));
       await settleApp(tester);
-      return find.byType(Scaffold).last;
+      return find.byType(Scaffold);
     },
   ),
   'Delete-data confirmation': (

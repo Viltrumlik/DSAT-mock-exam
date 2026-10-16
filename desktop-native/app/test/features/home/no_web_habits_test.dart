@@ -1,7 +1,7 @@
 // No browser habits outside the exam (owner decision; architecture §2.3): no ink ripples, no
-// hand cursor, nothing selectable but inputs, no right-click menu; and the Home behaviours
-// that are not buttons — a countdown reaching zero asks the server, coming back to the window
-// refreshes, and Home's "update available" banner.
+// hand cursor, nothing selectable but inputs, no right-click menu — on every page of the shell,
+// its sidebar and menu included; and the behaviours that are not buttons — a countdown reaching
+// zero asks the server, coming back to the window refreshes, and the "update available" banner.
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -10,6 +10,7 @@ import 'package:mastersat_app/app.dart';
 import 'package:mastersat_app/core/api/fixture_v1_api.dart';
 import 'package:mastersat_app/core/api/v1_api.dart';
 import 'package:mastersat_app/core/models/models.dart';
+import 'package:mastersat_app/features/shell/app_shell.dart';
 import 'package:mastersat_app/native/native_bridge.dart';
 
 import '../../core/harness/app_harness.dart';
@@ -39,10 +40,12 @@ Future<void> expectNoWebHabits(WidgetTester tester, String screen) async {
 }
 
 void main() {
-  testWidgets('Home, a result, Settings and sign-in have no web habits', (tester) async {
+  testWidgets('Midterms, Past papers, a result, Settings, the account menu and sign-in have no web habits', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
-    await expectNoWebHabits(tester, 'Home');
+    await expectNoWebHabits(tester, 'Midterms');
+    await openPage(tester, 'Past papers');
+    await expectNoWebHabits(tester, 'Past papers');
 
     final ctx = h.services.navigatorKey.currentContext!;
     openPastpaperResult(ctx, attemptId: 8801).ignore();
@@ -52,7 +55,9 @@ void main() {
     openSettings(ctx).ignore();
     await settleApp(tester);
     await expectNoWebHabits(tester, 'Settings');
-    h.services.navigatorKey.currentState!.pop();
+    await tester.tap(find.bySemanticsLabel('Your account'));
+    await settleApp(tester);
+    await expectNoWebHabits(tester, 'the account menu');
     await h.services.auth.signOut();
     await settleApp(tester);
     await expectNoWebHabits(tester, 'sign-in');
@@ -67,6 +72,10 @@ void main() {
     await gesture.addPointer(location: tester.getCenter(find.text('Sign out')));
     await tester.pump();
     expect(RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1), SystemMouseCursors.basic);
+    await gesture.moveTo(tester.getCenter(find.descendant(of: find.byType(AppSidebar), matching: find.text('Past papers'))));
+    await tester.pump();
+    expect(RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1), SystemMouseCursors.basic, reason: 'the sidebar too');
+    await openPage(tester, 'Past papers');
     await tester.ensureVisible(find.byType(TextField));
     await settleApp(tester);
     await gesture.moveTo(tester.getCenter(find.byType(TextField)));
@@ -79,6 +88,7 @@ void main() {
   testWidgets('right-clicking the search box opens no context menu', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    await openPage(tester, 'Past papers');
     await tester.enterText(find.byType(TextField), 'june');
     await tester.tap(find.byType(TextField), buttons: kSecondaryMouseButton, kind: PointerDeviceKind.mouse);
     await settleApp(tester);

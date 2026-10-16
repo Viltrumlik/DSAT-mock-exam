@@ -18,6 +18,7 @@ import 'package:mastersat_app/core/store/app_paths.dart';
 import 'package:mastersat_app/core/store/user_store.dart';
 import 'package:mastersat_app/features/home/home_controller.dart';
 import 'package:mastersat_app/features/results/results_controller.dart';
+import 'package:mastersat_app/features/shell/app_shell.dart';
 import 'package:mastersat_app/main.dart';
 import 'package:mastersat_app/native/fake_native_bridge.dart';
 
@@ -152,3 +153,13 @@ Future<void> settleApp(WidgetTester tester, {int frames = 12}) async {
     if (!tester.binding.hasScheduledFrame) break;
   }
 }
+
+/// Opens a page of the shell the way a student does: its row in the sidebar ("Past papers",
+/// "Midterms", "Settings").
+Future<void> openPage(WidgetTester tester, String label) async {
+  await tester.tap(find.descendant(of: find.byType(AppSidebar), matching: find.text(label)));
+  await settleApp(tester);
+}
+
+/// A midterm bucket's heading on the Midterms timeline ("Available now", "Past attempts").
+Finder midtermSection(String title) => find.byKey(ValueKey('midterms.section.$title'));

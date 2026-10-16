@@ -25,62 +25,29 @@ class HistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final entries = paper.history;
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 560),
-        child: Container(
-          margin: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: AppColors.panel,
-            borderRadius: BorderRadius.circular(AppRadii.xl),
-            boxShadow: dialogShadow,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 20, 14, 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('History', style: AppText.heading.copyWith(fontSize: 18)),
-                          const SizedBox(height: 2),
-                          Text('${sectionTitle(paper)} · ${subjectLabel(paper.subject)} · ${fmtMonth(paper.practiceDate)}',
-                              style: AppText.small),
-                        ],
-                      ),
-                    ),
-                    AppIconButton(icon: LucideIcons.x, semanticLabel: 'Close', onPressed: () => Navigator.of(context).pop()),
-                  ],
-                ),
+    return AppModal(
+      title: 'History',
+      description: '${sectionTitle(paper)} · ${subjectLabel(paper.subject)} · ${fmtMonth(paper.practiceDate)}',
+      onClose: () => Navigator.of(context).pop(),
+      maxWidth: 480,
+      maxHeight: 560,
+      bodyPadding: EdgeInsets.zero,
+      child: entries.isEmpty
+          ? Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('No finished sittings yet.', style: AppText.bodyMuted),
+            )
+          : ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.all(16),
+              itemCount: entries.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, i) => _HistoryRow(
+                entry: entries[i],
+                number: entries.length - i,
+                latest: i == 0,
               ),
-              if (entries.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-                  child: Text('No finished sittings yet.', style: AppText.bodyMuted),
-                )
-              else
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    itemCount: entries.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 6),
-                    itemBuilder: (context, i) => _HistoryRow(
-                      entry: entries[i],
-                      number: entries.length - i,
-                      latest: i == 0,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
+            ),
     );
   }
 }
@@ -99,17 +66,17 @@ class _HistoryRow extends StatelessWidget {
       semanticLabel: 'Attempt $number, score ${entry.score ?? 'pending'}',
       builder: (context, s) => FocusRing(
         visible: s.focused,
-        radius: AppRadii.md,
+        radius: AppRadii.kitMd,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
             color: s.pressed ? AppColors.surface3 : (s.hovered ? AppColors.surface2 : AppColors.panel),
-            borderRadius: BorderRadius.circular(AppRadii.md),
-            border: Border.all(color: AppColors.line),
+            borderRadius: BorderRadius.circular(AppRadii.kitMd),
+            border: Border.all(color: s.hovered ? AppColors.borderStrong : AppColors.border),
           ),
           child: Row(
             children: [
-              Text('Attempt $number', style: AppText.body.copyWith(fontWeight: FontWeight.w700)),
+              Text('Attempt $number', style: AppText.body.copyWith(fontWeight: FontWeight.w600)),
               if (latest) ...[
                 const SizedBox(width: 8),
                 const StatusBadge(label: 'Latest', foreground: AppColors.indigo, background: AppColors.indigoSoft),
@@ -117,7 +84,7 @@ class _HistoryRow extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(child: Text(fmtDay(entry.completedAt), style: AppText.small)),
               Text.rich(TextSpan(children: [
-                TextSpan(text: '${entry.score ?? '—'}', style: AppText.heading.copyWith(fontSize: 18)),
+                TextSpan(text: '${entry.score ?? '—'}', style: AppText.cardTitle.copyWith(fontSize: 18)),
                 TextSpan(text: ' / 800', style: AppText.caption.copyWith(color: AppColors.faint)),
               ])),
               const SizedBox(width: 10),

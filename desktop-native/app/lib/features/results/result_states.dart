@@ -75,7 +75,7 @@ class _Waiting extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppCard(
+    return AppCard.board(
       padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
       child: Column(
         children: [

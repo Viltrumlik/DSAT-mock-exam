@@ -318,7 +318,8 @@ class _FieldLabel extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 6),
     child: ExcludeSemantics(
-      child: Text(text, style: AppText.small.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+      // The website's Field.tsx label (and AppField's): 14 px, semibold.
+      child: Text(text, style: AppText.body.copyWith(color: AppColors.textPrimary, fontWeight: FontWeight.w600, height: 1.43)),
     ),
   );
 }

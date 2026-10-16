@@ -1,4 +1,4 @@
-// The midterm flow's look, matched to the website's exam frame (Tailwind values from
+// The midterm flow's look, matched to the website's exam frame (Tailwind v4 values from
 // frontend/src/features/testing-simulation/components/{DesktopScreens,MidtermRulesScreen,
 // OffscreenWarning,SatColorRule}.tsx): the white page between two Bluebook colour rules, the
 // centred card, the blue pill buttons.
@@ -11,42 +11,45 @@ import 'dart:math' as math;
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-/// Tailwind's palette, the values the website's classes resolve to.
+/// Tailwind's palette, the values the website's classes resolve to. The website is on
+/// Tailwind v4, whose palette is OKLCH: each value is its sRGB rendering (the runner's
+/// lib/exam/tokens/bluebook_tokens.dart `TwColors` uses the same conversion; the OKLCH source
+/// is in each comment).
 abstract final class MidtermColors {
   static const white = Color(0xFFFFFFFF);
-  static const slate50 = Color(0xFFF8FAFC);
-  static const slate100 = Color(0xFFF1F5F9);
-  static const slate200 = Color(0xFFE2E8F0);
-  static const slate300 = Color(0xFFCBD5E1);
-  static const slate400 = Color(0xFF94A3B8);
-  static const slate500 = Color(0xFF64748B);
-  static const slate600 = Color(0xFF475569);
-  static const slate700 = Color(0xFF334155);
-  static const slate800 = Color(0xFF1E293B);
-  static const slate900 = Color(0xFF0F172A);
-  static const blue50 = Color(0xFFEFF6FF);
-  static const blue500 = Color(0xFF3B82F6);
-  static const blue600 = Color(0xFF2563EB);
-  static const blue700 = Color(0xFF1D4ED8);
-  static const blue800 = Color(0xFF1E40AF);
-  static const red50 = Color(0xFFFEF2F2);
-  static const red200 = Color(0xFFFECACA);
-  static const red500 = Color(0xFFEF4444);
-  static const red600 = Color(0xFFDC2626);
-  static const red700 = Color(0xFFB91C1C);
-  static const red800 = Color(0xFF991B1B);
-  static const red900 = Color(0xFF7F1D1D);
-  static const red950 = Color(0xFF450A0A);
-  static const amber50 = Color(0xFFFFFBEB);
-  static const amber100 = Color(0xFFFEF3C7);
-  static const amber200 = Color(0xFFFDE68A);
-  static const amber600 = Color(0xFFD97706);
-  static const amber900 = Color(0xFF78350F);
-  static const emerald50 = Color(0xFFECFDF5);
-  static const emerald600 = Color(0xFF059669);
-  static const emerald700 = Color(0xFF047857);
-  static const green700 = Color(0xFF15803D);
-  static const yellow600 = Color(0xFFCA8A04);
+  static const slate50 = Color(0xFFF8FAFC); // oklch(98.4% 0.003 247.858)
+  static const slate100 = Color(0xFFF1F5F9); // oklch(96.8% 0.007 247.896)
+  static const slate200 = Color(0xFFE2E8F0); // oklch(92.9% 0.013 255.508)
+  static const slate300 = Color(0xFFCAD5E2); // oklch(86.9% 0.022 252.894)
+  static const slate400 = Color(0xFF90A1B9); // oklch(70.4% 0.04 256.788)
+  static const slate500 = Color(0xFF62748E); // oklch(55.4% 0.046 257.417)
+  static const slate600 = Color(0xFF45556C); // oklch(44.6% 0.043 257.281)
+  static const slate700 = Color(0xFF314158); // oklch(37.2% 0.044 257.287)
+  static const slate800 = Color(0xFF1D293D); // oklch(27.9% 0.041 260.031)
+  static const slate900 = Color(0xFF0F172B); // oklch(20.8% 0.042 265.755)
+  static const blue50 = Color(0xFFEFF6FF); // oklch(97% 0.014 254.604)
+  static const blue500 = Color(0xFF2B7FFF); // oklch(62.3% 0.214 259.815)
+  static const blue600 = Color(0xFF155DFC); // oklch(54.6% 0.245 262.881)
+  static const blue700 = Color(0xFF1447E6); // oklch(48.8% 0.243 264.376)
+  static const blue800 = Color(0xFF193CB8); // oklch(42.4% 0.199 265.638)
+  static const red50 = Color(0xFFFEF2F2); // oklch(97.1% 0.013 17.38)
+  static const red200 = Color(0xFFFFC9C9); // oklch(88.5% 0.062 18.334)
+  static const red500 = Color(0xFFFB2C36); // oklch(63.7% 0.237 25.331)
+  static const red600 = Color(0xFFE7000B); // oklch(57.7% 0.245 27.325)
+  static const red700 = Color(0xFFC10007); // oklch(50.5% 0.213 27.518)
+  static const red800 = Color(0xFF9F0712); // oklch(44.4% 0.177 26.899)
+  static const red900 = Color(0xFF82181A); // oklch(39.6% 0.141 25.723)
+  static const red950 = Color(0xFF460809); // oklch(25.8% 0.092 26.042)
+  static const amber50 = Color(0xFFFFFBEB); // oklch(98.7% 0.022 95.277)
+  static const amber100 = Color(0xFFFEF3C6); // oklch(96.2% 0.059 95.617)
+  static const amber200 = Color(0xFFFEE685); // oklch(92.4% 0.12 95.746)
+  static const amber600 = Color(0xFFE17100); // oklch(66.6% 0.179 58.318)
+  static const amber900 = Color(0xFF7B3306); // oklch(41.4% 0.112 45.904)
+  static const emerald50 = Color(0xFFECFDF5); // oklch(97.9% 0.021 166.113)
+  static const emerald600 = Color(0xFF009966); // oklch(59.6% 0.145 163.225)
+  static const emerald700 = Color(0xFF007A55); // oklch(50.8% 0.118 165.612)
+  static const green700 = Color(0xFF008236); // oklch(52.7% 0.154 150.069)
+  static const yellow600 = Color(0xFFD08700); // oklch(68.1% 0.162 75.834)
 }
 
 /// The exam frame's font: the website's stack resolves to Arial on Windows.
@@ -120,7 +123,9 @@ class SatColorRule extends StatelessWidget {
 class _SatRulePainter extends CustomPainter {
   const _SatRulePainter();
 
-  static const _colors = [MidtermColors.red700, MidtermColors.yellow600, MidtermColors.green700, MidtermColors.slate900];
+  // SatColorRule.tsx names these as hex literals (Tailwind v3's red-700 / yellow-600 /
+  // green-700 / slate-900), not as classes, so they stay as written.
+  static const _colors = [Color(0xFFB91C1C), Color(0xFFCA8A04), Color(0xFF15803D), Color(0xFF0F172A)];
 
   @override
   void paint(Canvas canvas, Size size) {

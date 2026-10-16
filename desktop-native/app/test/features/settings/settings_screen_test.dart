@@ -10,6 +10,7 @@ import 'package:mastersat_app/core/auth/auth_controller.dart';
 import 'package:mastersat_app/core/store/settings_store.dart';
 import 'package:mastersat_app/core/store/user_store.dart';
 import 'package:mastersat_app/features/settings/settings_screen.dart';
+import 'package:mastersat_app/features/shell/app_shell.dart';
 import 'package:mastersat_app/features/signin/sign_in_screen.dart';
 import 'package:mastersat_app/native/native_bridge.dart';
 
@@ -27,7 +28,9 @@ Future<AppHarness> openSettingsScreen(WidgetTester tester, {UserStore? store}) a
 void main() {
   testWidgets('shows the version, the channel, the update state and the data status', (tester) async {
     final h = await openSettingsScreen(tester);
-    expect(find.text('Settings'), findsOneWidget);
+    expect(find.descendant(of: find.byType(SettingsScreen), matching: find.text('Settings')), findsOneWidget);
+    expect(find.descendant(of: find.byType(AppSidebar), matching: find.text('Settings')), findsOneWidget,
+        reason: 'a page of the shell, its sidebar beside it');
     expect(find.text('0.2.0'), findsOneWidget);
     expect(find.text('Stable'), findsOneWidget);
     expect(find.text('Beta'), findsOneWidget);
