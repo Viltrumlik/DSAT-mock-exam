@@ -12,12 +12,13 @@ import json
 from unittest import mock
 
 from django.contrib.auth import get_user_model
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 from django.utils import timezone
 
 from classes import telegram_group as tg
 from classes import telegram_group_api as api
 from classes import telegram_texts as T
+from classes.models import Classroom, ClassroomMembership
 from classes.models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
 from classes.tests_telegram_group import CHAT, TelegramGroupBase
 
@@ -149,3 +150,57 @@ class ManagedRowTests(TelegramGroupBase):
 
         self.assertEqual(result["removed"], 0)
         self.assertEqual(self.tg.kicked, [])
+
+
+class IdentifyTests(TelegramGroupBase):
+    def test_a_student_found_in_the_group_is_identified(self):
+        self.tg.join(1001)
+        self.assertEqual(tg.identify_memberships(self.student), {self.classroom.pk: tg.GROUP_IN})
+        row = self.row(self.student)
+        self.assertEqual(row.status, JOINED)
+        self.assertIsNotNone(row.identified_at)
+        self.assertTrue(row.is_managed)
+
+    def test_a_frozen_student_is_found_but_left_for_the_admin(self):
+        self.tg.join(1001)
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason="lcup_debt")
+        self.student.refresh_from_db()
+        self.assertEqual(tg.identify_memberships(self.student), {self.classroom.pk: tg.GROUP_IN})
+        self.assertIsNone(self.row(self.student).identified_at)
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(user=self.student, detail__contains="frozen").exists()
+        )
+
+    def test_a_student_outside_the_group_is_out_and_gets_no_row(self):
+        self.assertEqual(tg.identify_memberships(self.student), {self.classroom.pk: tg.GROUP_OUT})
+        self.assertIsNone(self.row(self.student))
+
+    def test_only_active_student_seats_in_classes_with_a_group_count(self):
+        no_group = Classroom.objects.create(
+            name="No group", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+        )
+        ClassroomMembership.objects.create(classroom=no_group, user=self.student, role=ClassroomMembership.ROLE_STUDENT)
+        left = Classroom.objects.create(
+            name="Left", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin, telegram_chat_id="-100777",
+        )
+        ClassroomMembership.objects.create(
+            classroom=left, user=self.student, role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_REMOVED,
+        )
+        self.assertEqual([c.pk for c in tg.student_classrooms(self.student)], [self.classroom.pk])
+        self.assertEqual(tg.student_classrooms(self.teacher), [])
+
+    @override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=True)
+    def test_the_class_page_gets_the_bot_link_when_switched_on(self):
+        state = tg.student_state(user=self.student, classroom=self.classroom)
+        self.assertEqual(state["bot_url"], "https://t.me/MasterSATTestBot?start=login")
+
+    def test_switched_off_the_class_page_has_no_bot_link(self):
+        self.assertEqual(tg.student_state(user=self.student, classroom=self.classroom)["bot_url"], "")
+
+    def test_an_invite_can_be_minted_without_the_english_courtesy_copy(self):
+        tg.issue_invite(user=self.student, classroom=self.classroom, send_dm=False)
+        self.assertEqual(len(self.tg.links), 1)
+        self.assertEqual(self.tg.messages, [])
