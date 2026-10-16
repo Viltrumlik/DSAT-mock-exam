@@ -419,6 +419,17 @@ def _rosters(run: _Run) -> None:
             run.counts[key] += value
 
 
+def _queue_payment_messages(run: _Run) -> None:
+    """Announce this run's new payments in the class bot, once the run has committed. A dry run
+    is rolled back and must never message anybody, so it queues nothing."""
+    if run.dry_run:
+        return
+    from classes.tasks import send_telegram_payment_messages
+    from classes.telegram_group_hooks import _dispatch
+
+    _dispatch(send_telegram_payment_messages)
+
+
 def _run_stages(client, run: _Run) -> None:
     _stage(run, "filials", lambda: _filials(client, run))
     _stage(run, "teachers", lambda: _teachers(client, run))
@@ -435,6 +446,9 @@ def _run_stages(client, run: _Run) -> None:
     # After rosters: the seat rule reads this run's seats — the roster adding a returning student
     # makes them a student again, and one it took out of their last class becomes public.
     _stage(run, "audience", lambda: audience.apply(run))
+    # Before the freeze stage, so "paid" reaches the student before "your groups are open
+    # again". The balance it quotes was refreshed by the students stage.
+    _stage(run, "payment_messages", lambda: _queue_payment_messages(run))
     # After the balances (students) and the roles (audience): an unpaid month freezes, a paid one lifts.
     _stage(run, "debt_freeze", lambda: finance.apply_freeze(run))
     _stage(run, "reasons", lambda: _reasons(client, run))

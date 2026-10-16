@@ -283,6 +283,10 @@ class LcupPayment(models.Model):
     note = models.CharField(max_length=300, blank=True, default="")
     created_in_lcup = models.DateTimeField(null=True, blank=True)
     synced_at = models.DateTimeField()
+    #: When the class bot told the student about this payment, or found it could not (no
+    #: Telegram on the account) — plan 2026-10-16. Null = not yet. Set once, so a payment that
+    #: every sync re-reads is announced once.
+    bot_notified_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-paid_on", "-lcup_payment_id"]

@@ -189,6 +189,14 @@ def notify_telegram_unfrozen(user_id: int) -> dict:
     return {"status": "ok", "user_id": user_id, "sent": telegram_bot.send_unfrozen_menu(user)}
 
 
+@shared_task(name="classes.tasks.send_telegram_payment_messages")
+def send_telegram_payment_messages() -> dict:
+    """Queued by every real lc-up sync: announce its new payments in the class bot."""
+    from .telegram_payments import notify_new_payments
+
+    return notify_new_payments()
+
+
 @shared_task(name="classes.tasks.enforce_telegram_group_membership")
 def enforce_telegram_group_membership(classroom_id: int, user_id: int, reason: str) -> dict:
     """Take one account out of ONE class group. Raised by a removal from the class."""
