@@ -153,7 +153,19 @@ pub fn release(hwnd_raw: isize) {
 
 /// NSApplicationPresentationOptions kiosk mask: HideDock | HideMenuBar | DisableAppleMenu |
 /// DisableProcessSwitching | DisableForceQuit | DisableSessionTermination | DisableHideApplication.
-const KIOSK: usize = (1 << 1) | (1 << 3) | (1 << 2) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8);
+///
+/// DisableAppleMenu is `1 << 4` (16). It must NOT be `1 << 2` (4, AutoHideMenuBar): AppKit forbids
+/// AutoHideMenuBar together with HideMenuBar (`1 << 3`) and `setPresentationOptions:` then raises
+/// NSInvalidArgumentException, which aborts the process across the FFI boundary. (Not caught by the
+/// tests: off the main thread `MainThreadMarker::new()` is `None`, so `engage` skips this call.)
+const KIOSK: usize = (1 << 1) | (1 << 3) | (1 << 4) | (1 << 5) | (1 << 6) | (1 << 7) | (1 << 8);
+
+// Compile-time guard for the constraint the tests cannot reach (they run off the main thread).
+// AutoHideMenuBar (1<<2) with HideMenuBar (1<<3) is rejected by AppKit at runtime; HideMenuBar
+// requires HideDock (1<<1). Break either rule and the macOS build fails here instead of aborting
+// the exam app the moment the lockdown engages.
+const _: () = assert!(KIOSK & (1 << 2) == 0, "KIOSK must not set AutoHideMenuBar with HideMenuBar");
+const _: () = assert!(KIOSK & (1 << 1) != 0, "KIOSK sets HideMenuBar, which requires HideDock");
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 unsafe fn window_ref<'a>(hwnd_raw: isize) -> Option<&'a NSWindow> {
