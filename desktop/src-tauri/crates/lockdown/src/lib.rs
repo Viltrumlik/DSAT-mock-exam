@@ -163,7 +163,8 @@ mod imp {
         VK_MENU,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CallNextHookEx, EnumWindows, GetClassNameW, GetForegroundWindow, GetMessageW, GetSystemMetrics, GetWindow,
+        CallNextHookEx, EnumWindows, GetAncestor, GetClassNameW, GetForegroundWindow, GetMessageW, GetSystemMetrics,
+        GetWindow, GA_ROOTOWNER,
         GetWindowLongPtrW, GetWindowTextLengthW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible,
         PeekMessageW, PostMessageW, PostThreadMessageW, SetForegroundWindow, SetTimer, SetWindowDisplayAffinity,
         SetWindowPos, SetWindowsHookExW, ShowWindowAsync, UnhookWindowsHookEx, EVENT_SYSTEM_FOREGROUND,
@@ -278,6 +279,18 @@ mod imp {
         let mut pid = 0u32;
         let thread = unsafe { GetWindowThreadProcessId(h, Some(&mut pid)) };
         (pid, thread)
+    }
+
+    /// The window belongs to this app: one of this process's, or a pop-up OWNED by one of them
+    /// (WebView2 draws a dropdown or a tooltip as a window of its own browser process, owned by
+    /// the exam window — that is still the exam, not "another app").
+    fn is_ours(h: HWND) -> bool {
+        let me = unsafe { GetCurrentProcessId() };
+        if pid_of(h).0 == me {
+            return true;
+        }
+        let root = unsafe { GetAncestor(h, GA_ROOTOWNER) };
+        !root.0.is_null() && root != h && pid_of(root).0 == me
     }
 
     /// One Alt+Tab-style test: a window a student could switch to (visible, not cloaked, not a
@@ -495,10 +508,9 @@ mod imp {
                 return;
             }
             let fg = GetForegroundWindow();
-            let me = GetCurrentProcessId();
             if !fg.0.is_null() {
-                let (pid, thread) = pid_of(fg);
-                if pid == me {
+                let (_, thread) = pid_of(fg);
+                if is_ours(fg) {
                     if IsIconic(ours).as_bool() {
                         let _ = ShowWindowAsync(ours, SW_RESTORE);
                     }
@@ -785,15 +797,8 @@ mod imp {
     }
 
     pub fn foreground_is_ours() -> bool {
-        unsafe {
-            let fg: HWND = GetForegroundWindow();
-            if fg.0.is_null() {
-                return false;
-            }
-            let mut pid: u32 = 0;
-            GetWindowThreadProcessId(fg, Some(&mut pid));
-            pid == GetCurrentProcessId()
-        }
+        let fg: HWND = unsafe { GetForegroundWindow() };
+        !fg.0.is_null() && is_ours(fg)
     }
 }
 
