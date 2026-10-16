@@ -148,7 +148,7 @@ void main() {
     test('every function of the header is exported, and the version is the crate\'s', () {
       final header = File('../native/include/mastersat_native.h').readAsStringSync();
       final names = RegExp(r'MS_API[^;]*?\b(ms_\w+)\s*\(').allMatches(header).map((m) => m.group(1)!).toList();
-      expect(names, hasLength(27));
+      expect(names, hasLength(29));
       final lib = DynamicLibrary.open(b.libraryPath);
       for (final n in names) {
         expect(lib.providesSymbol(n), isTrue, reason: n);
@@ -253,11 +253,16 @@ void main() {
     test('pre-check, battery, away, keep-awake, proxy, close-app, protocol', () {
       final report = b.precheck();
       expect(jsonDecode(report.raw), isA<Map<String, Object?>>());
+      // A midterm's strict pre-check (ms_precheck_json_ex, MS_LOCK_STRICT) lists at least what the
+      // plain one does — every other app with a window comes on top.
+      final strict = b.precheck(strict: true);
+      expect(strict.apps.map((a) => a.exe), containsAll(report.apps.map((a) => a.exe)));
       expect(() => b.proxyFor('not a url'), throwsNative(NativeStatus.errArg, 'ms_proxy_for: '));
       b.keepAwake(true);
       b.keepAwake(false);
       if (Platform.isWindows) return; // the rest are the development host's documented stubs
       expect(report.raw, stubPrecheck);
+      expect(strict.raw, stubPrecheck);
       expect(b.battery(), isNull);
       expect(b.awayNow(), isFalse);
       expect(b.proxyFor('https://mastersat.uz/api/desktop/v1/home'), 'DIRECT');
