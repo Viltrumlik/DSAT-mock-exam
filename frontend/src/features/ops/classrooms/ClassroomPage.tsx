@@ -37,16 +37,17 @@ import { classroomKeys, isNotFound, serverReason, useClassroom, type ClassroomCo
 import { ClassAttendanceSection, ClassHistorySection, ClassHomeworkSection } from "./sections/ClassParts";
 import { StaffSection } from "./sections/StaffSection";
 import { StudentsSection } from "./sections/StudentsSection";
+import { TelegramSection } from "./sections/TelegramSection";
 
 /**
  * One class's change form, in the same tabs and with the same header as a person's: the Overview
  * (its details beside a read-only Summary, the class's figures above), then Students, Staff,
- * Attendance, Homework and History, each fetched when its tab opens. A class that follows an lc-up
+ * Attendance, Homework, History and Telegram, each fetched when its tab opens. A class that follows an lc-up
  * group shows lc-up's fields locked, offers no student add or remove, no teacher change, no archive
  * and no delete — lc-up owns those.
  */
 
-type ClassTab = "overview" | "students" | "staff" | "attendance" | "homework" | "history";
+type ClassTab = "overview" | "students" | "staff" | "attendance" | "homework" | "history" | "telegram";
 
 const TABS: Tab<ClassTab>[] = [
   { key: "overview", label: "Overview", icon: LayoutGrid },
@@ -55,6 +56,7 @@ const TABS: Tab<ClassTab>[] = [
   { key: "attendance", label: "Attendance", icon: CalendarCheck },
   { key: "homework", label: "Homework", icon: BookCheck },
   { key: "history", label: "History", icon: History },
+  { key: "telegram", label: "Telegram", icon: Send },
 ];
 
 /**
@@ -238,6 +240,7 @@ export function ClassroomPage({ id }: { id: number }) {
         {tab === "attendance" ? <ClassAttendanceSection id={id} /> : null}
         {tab === "homework" ? <ClassHomeworkSection id={id} /> : null}
         {tab === "history" ? <ClassHistorySection id={id} /> : null}
+        {tab === "telegram" ? <TelegramSection id={id} /> : null}
       </div>
 
       {confirmDelete ? (
