@@ -330,7 +330,7 @@ mod macos {
 
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSScreen, NSWindow, NSWindowStyleMask};
-    use objc2_core_foundation::CGRect;
+    use objc2_foundation::NSRect;
 
     /// A midterm's window floats above ordinary windows, the counterpart of HWND_TOPMOST. The
     /// kiosk presentation options (mastersat-lockdown's engage) already stop app switching; this
@@ -429,7 +429,7 @@ mod macos {
     pub struct SavedWindow {
         style_mask: usize,
         level: isize,
-        frame: CGRect,
+        frame: NSRect,
     }
     unsafe impl Send for SavedWindow {}
 

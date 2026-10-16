@@ -62,3 +62,29 @@ stack trace from that build back into file and line.
   - Its minimum size is 1000 × 640 logical pixels, and it uses per-monitor DPI v2.
   - The title bar is always light.
   - Its placement is remembered in `HKCU\Software\MasterSAT\Exam`.
+
+
+## Build the macOS app (universal, Apple Silicon + Intel)
+
+On a Mac with Xcode, the pinned Flutter (`../.flutter-version`), Rust stable and Node 24:
+
+```sh
+export DESKTOP_PROOF_KEY='<key_id:hex>'     # omit for a test build without a proof key
+# optional signing: export MACOS_SIGN_IDENTITY='Developer ID Application: … (TEAMID)'
+desktop-native/packaging/macos/build-app.sh "$(cat desktop-native/VERSION)" 1 "$PWD/out-macos"
+desktop-native/packaging/macos/make-dmg.sh \
+  desktop-native/app/build/macos/Build/Products/Release/MasterSAT.app "$PWD/out-macos" "$(cat desktop-native/VERSION)"
+```
+
+`build-app.sh` builds `libmastersat_native.dylib` for both arches and `lipo`s them, builds the
+island, runs `flutter build macos --release`, embeds the dylib (`Contents/Frameworks`) and the
+island (`Contents/Resources/island`), proves the exe and the dylib are universal and carry no
+development key, and codesigns (Developer ID + hardened runtime when `MACOS_SIGN_IDENTITY` is set,
+else ad-hoc). `make-dmg.sh` wraps it in a drag-to-Applications DMG and, when
+`MACOS_NOTARY_APPLE_ID` / `MACOS_NOTARY_TEAM_ID` / `MACOS_NOTARY_PASSWORD` are set, notarizes and
+staples it. CI builds this on `macos-15` (the `macos-build` job) and uploads `MasterSAT-macOS-DMG`.
+
+The macOS app is NOT sandboxed (the lockdown enumerates and quits blocked apps, which the sandbox
+forbids), has the `mastersat://` scheme in Info.plist, keeps user data in
+`~/Library/Application Support/MasterSAT`, and self-updates via the server's Home policy + a new
+DMG (Velopack self-update is Windows-only for now).

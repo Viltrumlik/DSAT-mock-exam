@@ -1,15 +1,19 @@
-# desktop-native — the MasterSAT exam app for Windows
+# desktop-native — the MasterSAT exam app for Windows and macOS
 
-A fully native rewrite of the Windows exam app (`desktop/` is the 0.1.x Tauri app and stays
-buildable until it is retired). Design: `native-rewrite/design-panel/architecture.md`
+A fully native rewrite of the exam app, shipping on Windows (`.exe` installer) and macOS
+(universal `.app`/DMG, Apple Silicon + Intel). `desktop/` is the 0.1.x Tauri app and stays
+buildable until it is retired. The two platforms differ only in their native shell: one Flutter
+UI, one island, one Rust library, one server contract. Design: `native-rewrite/design-panel/architecture.md`
 (normative) and `design_data_server.md` (data layer + server contract).
 
 * **Flutter** draws every native pixel (`app/`).
 * **Exactly two WebView2 islands**: the question card and Desmos (`island/`, hosted by
   `plugins/ms_webview2/`), talking to native only through `island/protocol/schema.json`.
-* **Rust** `mastersat_native.dll` (`native/`) reuses the proof crate and `lockdown.rs`;
+* **Rust** `mastersat_native.dll` / `libmastersat_native.dylib` (`native/`) reuses the proof
+  crate and `lockdown.rs` (its macOS half is `desktop/src-tauri/crates/lockdown/src/macos.rs`);
   its C ABI is `native/include/mastersat_native.h`.
-* **Velopack** installer and updates (`packaging/`).
+* **Velopack** installer and updates on Windows; a signed/notarized universal DMG on macOS
+  (`packaging/`, `packaging/macos/`).
 
 Ownership and conventions: [`OWNERSHIP.md`](OWNERSHIP.md).
 
