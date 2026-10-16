@@ -54,6 +54,9 @@ class FakeTelegram:
         self.markups: list = []
         self.delete_should_fail = False
         self.send_should_fail = False
+        #: With ``send_should_fail``: the HTTP error Telegram answered with (403, 429, 502…).
+        #: ``None`` keeps the old shape, a transit failure that carries no code.
+        self.send_error_code: int | None = None
         #: A failing ``getChatMember`` for everyone but the bot — the status stays unreadable.
         self.probe_should_fail = False
 
@@ -98,6 +101,10 @@ class FakeTelegram:
 
     def send_message(self, chat_id, text, reply_markup=None):
         if self.send_should_fail:
+            if self.send_error_code is not None:
+                return tg.api.TgResult(
+                    False, error_code=self.send_error_code, description=f"HTTP {self.send_error_code}"
+                )
             # A network failure: no error_code, as `_call` reports a timeout.
             return tg.api.TgResult(False, description="URLError: timed out")
         self.messages.append((str(chat_id), text))

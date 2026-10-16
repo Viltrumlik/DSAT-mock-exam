@@ -107,6 +107,84 @@ class PaymentMessageTests(TestCase):
         notify_new_payments(now=at(16, 13))
         self.assertEqual(len(self.tg.messages), 1)
 
+    def test_throttling_and_server_errors_are_tried_again_next_time(self):
+        # 429 (slow down) and 5xx (Telegram's side) are passing; a message lost to either would
+        # never be sent, because nothing re-reads a payment that is marked.
+        for pid, code in ((1, 429), (2, 502)):
+            self.payment(pid)
+            self.tg.send_should_fail = True
+            self.tg.send_error_code = code
+            result = notify_new_payments(now=at(16, 12))
+            self.assertEqual(result["failed"], 1, code)
+            self.assertEqual(result["refused"], 0, code)
+            self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=pid).bot_notified_at, code)
+            self.tg.send_should_fail = False
+            result = notify_new_payments(now=at(16, 13))
+            self.assertEqual(result["sent"], 1, code)
+            self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=pid).bot_notified_at, code)
+        self.assertEqual(len(self.tg.messages), 2)
+
+    def test_a_refused_send_is_marked_and_counted_not_retried(self):
+        self.payment(1)
+        self.tg.send_should_fail = True
+        self.tg.send_error_code = 403  # the student blocked the bot
+        with self.assertLogs("classes.telegram_payments", level="INFO") as logged:
+            result = notify_new_payments(now=at(16, 12))
+        self.assertEqual((result["sent"], result["skipped"], result["failed"], result["refused"]), (0, 0, 0, 1))
+        self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
+        self.assertIn("refused=1", logged.output[0])
+        self.tg.send_should_fail = False
+        notify_new_payments(now=at(16, 13))
+        self.assertEqual(self.tg.messages, [])
+
+    def test_overlapping_runs_announce_a_payment_once(self):
+        # The first run is inside its send for payment 1 when a second run starts.
+        self.payment(1)
+        real_send = self.tg.send_message
+        entered = []
+        inner = []
+
+        def send(chat_id, text, reply_markup=None):
+            if not entered:
+                entered.append(True)
+                inner.append(notify_new_payments(now=at(16, 13)))
+            return real_send(chat_id, text, reply_markup)
+
+        with mock.patch("classes.telegram_group_api.send_message", side_effect=send):
+            notify_new_payments(now=at(16, 12))
+        self.assertEqual(len(self.tg.messages), 1)
+        self.assertEqual(inner[0]["sent"], 0)
+
+    def test_a_payment_another_run_claimed_after_the_list_was_read_is_skipped(self):
+        # The list this run reads holds payments 1 and 2; while 1 is being sent, another run
+        # claims 2. This run must not send 2 as well.
+        self.payment(1, created=at(16, 9))
+        self.payment(2, created=at(16, 10))
+        real_send = self.tg.send_message
+        taken = []
+
+        def send(chat_id, text, reply_markup=None):
+            if not taken:
+                taken.append(
+                    LcupPayment.objects.filter(lcup_payment_id=2).update(bot_notified_at=at(16, 12))
+                )
+            return real_send(chat_id, text, reply_markup)
+
+        with mock.patch("classes.telegram_group_api.send_message", side_effect=send):
+            result = notify_new_payments(now=at(16, 12))
+        self.assertEqual(taken, [1])
+        self.assertEqual(len(self.tg.messages), 1)
+        self.assertEqual(result["sent"], 1)
+
+    def test_a_crash_while_sending_releases_the_claim(self):
+        self.payment(1)
+        with mock.patch("classes.telegram_group_api.send_message", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                notify_new_payments(now=at(16, 12))
+        self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
+        notify_new_payments(now=at(16, 13))
+        self.assertEqual(len(self.tg.messages), 1)
+
     @override_settings(CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM="")
     def test_switched_off_nothing_is_sent(self):
         self.payment(1)
