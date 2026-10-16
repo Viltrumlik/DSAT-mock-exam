@@ -48,6 +48,12 @@ class FakeTelegram:
         self.messages: list[tuple[str, str]] = []
         self.create_should_fail = False
         self._n = 0
+        self.deleted: list[tuple[str, int]] = []
+        self.answered: list[str] = []
+        #: Parallel to ``messages``: the inline keyboard each one carried, or None.
+        self.markups: list = []
+        self.delete_should_fail = False
+        self.send_should_fail = False
 
     # ── reads ────────────────────────────────────────────────────────────────
     def get_chat_member(self, chat_id, user_id):
@@ -86,9 +92,23 @@ class FakeTelegram:
         self.members.pop((str(chat_id), int(user_id)), None)
         return tg.api.TgResult(True, {})
 
-    def send_message(self, chat_id, text):
+    def send_message(self, chat_id, text, reply_markup=None):
+        if self.send_should_fail:
+            # A network failure: no error_code, as `_call` reports a timeout.
+            return tg.api.TgResult(False, description="URLError: timed out")
         self.messages.append((str(chat_id), text))
+        self.markups.append(reply_markup)
         return tg.api.TgResult(True, {})
+
+    def delete_message(self, chat_id, message_id):
+        if self.delete_should_fail:
+            return tg.api.TgResult(False, error_code=400, description="message can't be deleted")
+        self.deleted.append((str(chat_id), int(message_id)))
+        return tg.api.TgResult(True, True)
+
+    def answer_callback_query(self, callback_query_id, text=""):
+        self.answered.append(str(callback_query_id))
+        return tg.api.TgResult(True, True)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def join(self, telegram_user_id, status="member"):
@@ -105,6 +125,8 @@ class FakeTelegram:
             revoke_invite_link=self.revoke_invite_link,
             kick_chat_member=self.kick_chat_member,
             send_message=self.send_message,
+            delete_message=self.delete_message,
+            answer_callback_query=self.answer_callback_query,
         )
 
 

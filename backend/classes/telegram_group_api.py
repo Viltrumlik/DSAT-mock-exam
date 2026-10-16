@@ -242,12 +242,12 @@ def esc(value) -> str:
     return html.escape(str(value or ""), quote=False)
 
 
-def send_message(chat_id: str | int, text: str) -> TgResult:
+def send_message(chat_id: str | int, text: str, *, reply_markup: dict | None = None) -> TgResult:
     """Best effort by nature: a bot may only message someone who has messaged it first.
 
     Most students never will have, so a failure here is the normal case rather than an
-    incident. Every message this integration sends is a courtesy copy of something the site
-    already says on screen — never the only telling.
+    incident. ``reply_markup`` carries the groups menu's inline buttons (plan 2026-10-16);
+    Telegram wants it as a JSON string inside the form body.
     """
     return _call(
         "sendMessage",
@@ -256,5 +256,17 @@ def send_message(chat_id: str | int, text: str) -> TgResult:
             "text": text,
             "parse_mode": "HTML",
             "disable_web_page_preview": "true",
+            "reply_markup": json.dumps(reply_markup) if reply_markup else None,
         },
     )
+
+
+def delete_message(chat_id: str | int, message_id) -> TgResult:
+    """Take a message out of a chat. In a private chat a bot may delete what the person sent it
+    — which is how a typed password leaves the chat the moment it arrives."""
+    return _call("deleteMessage", {"chat_id": chat_id, "message_id": message_id})
+
+
+def answer_callback_query(callback_query_id: str, text: str = "") -> TgResult:
+    """Stop the spinner on a pressed inline button. Telegram shows it until this is called."""
+    return _call("answerCallbackQuery", {"callback_query_id": callback_query_id, "text": text or None})

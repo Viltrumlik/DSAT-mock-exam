@@ -1,0 +1,50 @@
+"""The class bot's own conversation (plan 2026-10-16): sign-in, the groups menu, the freeze and
+unfreeze messages, and the rows the bot may act on.
+
+Reuses the stand-in group from ``tests_telegram_group``: every Bot API call lands on
+:class:`FakeTelegram`, so a test reads what the chat now holds — what was sent, what was
+deleted — rather than which function was called with what.
+"""
+
+from __future__ import annotations
+
+import json
+from unittest import mock
+
+from django.test import SimpleTestCase
+
+from classes import telegram_group_api as api
+from classes import telegram_texts as T
+
+
+class BotApiTests(SimpleTestCase):
+    def test_a_keyboard_is_sent_as_json(self):
+        keyboard = {"inline_keyboard": [[{"text": "A", "callback_data": "g:1"}]]}
+        with mock.patch.object(api, "_call", return_value=api.TgResult(True, {})) as call:
+            api.send_message(5, "hi", reply_markup=keyboard)
+        method, params = call.call_args[0]
+        self.assertEqual(method, "sendMessage")
+        self.assertEqual(json.loads(params["reply_markup"]), keyboard)
+
+    def test_no_keyboard_sends_no_markup(self):
+        with mock.patch.object(api, "_call", return_value=api.TgResult(True, {})) as call:
+            api.send_message(5, "hi")
+        self.assertIsNone(call.call_args[0][1]["reply_markup"])
+
+    def test_delete_and_answer_call_the_right_methods(self):
+        with mock.patch.object(api, "_call", return_value=api.TgResult(True, True)) as call:
+            api.delete_message(5, 77)
+            api.answer_callback_query("cq1")
+        self.assertEqual(call.call_args_list[0][0], ("deleteMessage", {"chat_id": 5, "message_id": 77}))
+        self.assertEqual(call.call_args_list[1][0][0], "answerCallbackQuery")
+        self.assertEqual(call.call_args_list[1][0][1]["callback_query_id"], "cq1")
+
+
+class TextsTests(SimpleTestCase):
+    def test_som_groups_thousands_with_spaces(self):
+        self.assertEqual(T.som(500000), "500 000")
+        self.assertEqual(T.som(1250000), "1 250 000")
+        self.assertEqual(T.som(0), "0")
+
+    def test_group_list_escapes_and_bullets(self):
+        self.assertEqual(T.group_list(["A & B", "C"]), "• A &amp; B\n• C")
