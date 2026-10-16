@@ -132,4 +132,20 @@ else
 fi
 echo "::endgroup::"
 
+echo "::group::launch smoke test (runner macOS $(sw_vers -productVersion 2>/dev/null))"
+# This runner is macOS 15, the same family as the user's 15.8.2, so a version/SDK rejection will
+# reproduce here. dyld enforces each Mach-O's platform/minos when the binary is exec'd; open(1)
+# routes through LaunchServices (the LSMinimumSystemVersion gate that showed the user the dialog).
+set +e
+echo "--- dyld: exec the universal binary directly ---"
+"$EXE" >/tmp/ms_exec.out 2>&1 &
+epid=$!; sleep 3; kill "$epid" 2>/dev/null; wait "$epid" 2>/dev/null
+echo "exec rc=$?"; sed -n '1,20p' /tmp/ms_exec.out 2>/dev/null
+echo "--- LaunchServices: open the bundle ---"
+open -n -g "$APP" 2>/tmp/ms_open.err; echo "open rc=$?"
+sed -n '1,20p' /tmp/ms_open.err 2>/dev/null
+sleep 2; pkill -x MasterSAT 2>/dev/null
+set -e
+echo "::endgroup::"
+
 echo "built $APP"
