@@ -40,7 +40,7 @@ from midterms.state_machine import WIRE_STATE
 from mobile.policy import get_policy
 from mobile.versioning import PLATFORM_WINDOWS, format_version
 
-from .conventions import SCHEMA, V1APIView, client_version, iso, iso_date, iso_from_string, ok
+from .conventions import SCHEMA, V1APIView, client_platform, client_version, iso, iso_date, iso_from_string, ok
 from .midterm_rows import midterm_rows as build_midterm_rows
 
 STATUS_NEW = "new"
@@ -55,7 +55,9 @@ def student_block(user) -> dict:
 
 
 def app_block(request) -> dict:
-    policy = get_policy(PLATFORM_WINDOWS)
+    # The native app ships on Windows and macOS; a browser (no client header) still sees the
+    # Windows policy, as before.
+    policy = get_policy(client_platform(request) or PLATFORM_WINDOWS)
     return {
         "latest_version": format_version(policy.latest) or None,
         "minimum_version": format_version(policy.minimum) or None,

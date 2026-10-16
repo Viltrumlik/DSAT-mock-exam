@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from config.reliability import idempotency_key_from_request
-from mobile.versioning import PLATFORM_WINDOWS, Version, parse_client_header
+from mobile.versioning import PLATFORM_MACOS, PLATFORM_WINDOWS, Version, parse_client_header
 
 SCHEMA = 1
 
@@ -194,10 +194,22 @@ def require_idempotency_key(request) -> str:
     return key
 
 
-def client_version(request) -> Version | None:
-    """The build in ``X-MasterSAT-Client: windows/<semver>``; None for anything else."""
+#: The desktop app ships on both; both are judged by their own release policy.
+_NATIVE_DESKTOP = (PLATFORM_WINDOWS, PLATFORM_MACOS)
+
+
+def client_platform(request) -> str | None:
+    """The native desktop platform in ``X-MasterSAT-Client`` (``windows`` or ``macos``), else None."""
     declared = parse_client_header(request.META.get("HTTP_X_MASTERSAT_CLIENT"))
-    if declared is None or declared[0] != PLATFORM_WINDOWS:
+    if declared is None or declared[0] not in _NATIVE_DESKTOP:
+        return None
+    return declared[0]
+
+
+def client_version(request) -> Version | None:
+    """The build in ``X-MasterSAT-Client: windows/<semver>`` or ``macos/<semver>``; None otherwise."""
+    declared = parse_client_header(request.META.get("HTTP_X_MASTERSAT_CLIENT"))
+    if declared is None or declared[0] not in _NATIVE_DESKTOP:
         return None
     return declared[1]
 

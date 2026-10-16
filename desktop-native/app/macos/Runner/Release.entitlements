@@ -1,17 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- macOS is the DEVELOPMENT runner only; it never ships. See DebugProfile.entitlements. -->
+<!--
+  The shipped MasterSAT exam app (Developer ID + notarization). NOT sandboxed: the lockdown
+  reads the list of running apps and force-quits a blocked one (NSWorkspace), which a sandboxed
+  app may not do. Hardened runtime is on (the signing step), with the exceptions the Flutter
+  engine and its bundled frameworks need.
+-->
 <plist version="1.0">
 <dict>
-	<key>com.apple.security.app-sandbox</key>
+	<key>com.apple.security.cs.allow-jit</key>
 	<true/>
-	<key>com.apple.security.network.client</key>
+	<key>com.apple.security.cs.allow-unsigned-executable-memory</key>
 	<true/>
-	<key>com.apple.security.network.server</key>
+	<key>com.apple.security.cs.disable-library-validation</key>
 	<true/>
-	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
-	<array>
-		<string>/</string>
-	</array>
 </dict>
 </plist>

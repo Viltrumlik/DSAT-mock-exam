@@ -33,6 +33,9 @@ PLATFORM_IOS = "ios"
 #: ``windows/<semver>`` on every request, so the gate below answers it with a 426 once the
 #: console's Windows minimum passes it, exactly as it does for ``ios/<semver>``.
 PLATFORM_WINDOWS = "windows"
+#: The native macOS exam app (`macos/<semver>`), the same build cadence as Windows (one VERSION
+#: file). Judged by the same release-policy machinery as Windows and iOS.
+PLATFORM_MACOS = "macos"
 
 
 def parse_version(raw: object) -> Version | None:

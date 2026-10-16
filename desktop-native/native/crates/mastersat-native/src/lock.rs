@@ -90,7 +90,12 @@ pub fn init(hwnd: isize, version: &str) -> MsResult<()> {
         return Err(MsError::arg(format!("hwnd {hwnd:#x} is not a window")));
     }
     let _ = APP_VERSION.set(version.to_string());
-    state().hwnd = hwnd;
+    // The first call wins the version; the window handle is updated only when a real one is given.
+    // On macOS the runner calls ms_init(window) first and Dart's development ms_init(0) must not
+    // then clear it (on Windows Dart never calls ms_init at all).
+    if hwnd != 0 {
+        state().hwnd = hwnd;
+    }
     window::install_dispatcher(window::window_thread(hwnd));
     lockdown::init_keyboard_guard();
     start_watchdog();

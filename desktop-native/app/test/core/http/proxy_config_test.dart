@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/core/clock/clock.dart';
+import 'package:mastersat_app/core/api/v1_api.dart';
 import 'package:mastersat_app/core/http/api_config.dart';
 import 'package:mastersat_app/core/http/proxy.dart';
 
@@ -61,7 +62,7 @@ void main() {
 
     test('client header, sign-in link and update feed', () {
       final c = ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0');
-      expect(c.clientHeader, 'windows/0.2.0');
+      expect(c.clientHeader, '${V1Headers.clientPlatform}/0.2.0');
       expect(c.signInLink('abc_DEF-123').toString(), 'https://mastersat.uz/desktop/link?challenge=abc_DEF-123');
       expect(c.updateFeed.toString(), 'https://mastersat.uz/downloads/desktop/');
       expect(c.resolve('/api/desktop/v1/home').toString(), 'https://mastersat.uz/api/desktop/v1/home');

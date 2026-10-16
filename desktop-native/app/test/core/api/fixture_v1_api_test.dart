@@ -259,7 +259,7 @@ void main() {
         '/api/desktop/v1/pastpapers/attempts/9123/result?have=301%3Asha256%3Aab');
     expect(IdempotencyKeys.sync(9123, 301, 12), 'sync.9123.301.12');
     expect(IdempotencyKeys.offscreen(5521, 'u'), 'off.5521.u');
-    expect(V1Headers.clientValue('0.2.0'), 'windows/0.2.0');
+    expect(V1Headers.clientValue('0.2.0'), '${V1Headers.clientPlatform}/0.2.0');
     expect(V1Paths.media(AttemptKind.midterm, 5521), '/api/desktop/v1/attempts/midterm/5521/media');
   });
 }

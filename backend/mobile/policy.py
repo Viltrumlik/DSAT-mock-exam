@@ -14,7 +14,7 @@ from django.conf import settings
 from django.core.cache import cache
 
 from .models import AppReleasePolicy
-from .versioning import PLATFORM_WINDOWS, Version, evaluate, format_version, parse_version
+from .versioning import PLATFORM_MACOS, PLATFORM_WINDOWS, Version, evaluate, format_version, parse_version
 
 CACHE_SECONDS = 60
 
@@ -33,6 +33,8 @@ def default_update_url(platform: str) -> str:
     """
     if platform == PLATFORM_WINDOWS:
         return str(getattr(settings, "DESKTOP_UPDATE_URL", "") or "")
+    if platform == PLATFORM_MACOS:
+        return str(getattr(settings, "DESKTOP_MAC_UPDATE_URL", "") or "")
     return ""
 
 

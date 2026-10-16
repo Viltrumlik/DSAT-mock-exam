@@ -80,6 +80,12 @@ class UpdateController extends ChangeNotifier {
       });
       _set(UpdatePhase.ready);
     } on NativeBridgeException catch (e) {
+      if (e.code == NativeStatus.errUnsupported) {
+        // Not installed by the updater (the macOS DMG, or a development build): nothing to do.
+        // The server's Home policy still surfaces a new version with a download link.
+        _set(UpdatePhase.upToDate);
+        return;
+      }
       _error = e.message ?? 'The update could not be downloaded.';
       _log?.add('update', 'failed: ${e.function} ${e.code}');
       _set(UpdatePhase.failed);

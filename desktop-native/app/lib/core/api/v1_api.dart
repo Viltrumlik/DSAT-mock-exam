@@ -10,6 +10,7 @@
 //  * [ApiError]        — the server answered with a non-2xx status (except 426);
 //  * [UpdateRequired]  — HTTP 426 from the version gate (or a lockdown `desktop_update_required`);
 //  * [NetworkError]    — no answer at all (DNS, connect, TLS, timeout, reset, bad JSON).
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import '../models/models.dart';
@@ -162,8 +163,12 @@ abstract final class V1Headers {
   static const ifNoneMatch = 'If-None-Match';
   static const etag = 'ETag';
 
-  /// `windows/<semver>` — what `is_native_client` and the version gate read.
-  static String clientValue(String appVersion) => 'windows/$appVersion';
+  /// The platform this native client runs on: `windows` or `macos`. The app ships on both;
+  /// the server's `is_native_client`, version gate and audience checks read this token.
+  static String get clientPlatform => Platform.isMacOS ? 'macos' : 'windows';
+
+  /// `windows/<semver>` or `macos/<semver>` — what `is_native_client` and the version gate read.
+  static String clientValue(String appVersion) => '$clientPlatform/$appVersion';
 }
 
 /// The typed server surface. Implementations attach auth, client and idempotency headers.

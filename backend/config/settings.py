@@ -314,6 +314,9 @@ DESKTOP_V1_SHIP_MODULE_2 = os.getenv(
 DESKTOP_MEDIA_URL_TTL_SECONDS = int(os.getenv("DESKTOP_MEDIA_URL_TTL_SECONDS", "21600"))
 DESKTOP_MIDTERM_MEDIA_URL_TTL_SECONDS = int(os.getenv("DESKTOP_MIDTERM_MEDIA_URL_TTL_SECONDS", "900"))
 # Where "Update" sends a Windows build when the console's Windows release policy has no URL.
+DESKTOP_MAC_UPDATE_URL = os.getenv(
+    "DESKTOP_MAC_UPDATE_URL", "https://mastersat.uz/downloads/desktop/MasterSAT.dmg"
+)
 DESKTOP_UPDATE_URL = os.getenv(
     "DESKTOP_UPDATE_URL", "https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe"
 ).strip()
