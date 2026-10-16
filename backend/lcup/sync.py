@@ -419,15 +419,27 @@ def _rosters(run: _Run) -> None:
             run.counts[key] += value
 
 
+#: How far before the start of a run a payment must have been created to be announced by it.
+#: The students stage reads the balances early in the run and the payments stage reads the payments
+#: later, so a payment lc-up recorded in between is not in the balance its message would quote
+#: ("Qolgan qarz: X" still counting it as unpaid), and each payment is announced only once. Payments
+#: from the last two minutes before the run began are held back too, to cover lc-up taking a moment
+#: to fold a new payment into the balance and the two clocks not agreeing exactly. Everything held
+#: back goes out with the next sync, whose balances include it.
+PAYMENT_CUTOFF_MARGIN_SECONDS = 120
+
+
 def _queue_payment_messages(run: _Run) -> None:
     """Announce this run's new payments in the class bot, once the run has committed. A dry run
-    is rolled back and must never message anybody, so it queues nothing."""
+    is rolled back and must never message anybody, so it queues nothing. Only payments created
+    before ``run.now`` less ``PAYMENT_CUTOFF_MARGIN_SECONDS`` are announced by this run."""
     if run.dry_run:
         return
     from classes.tasks import send_telegram_payment_messages
     from classes.telegram_group_hooks import _dispatch
 
-    _dispatch(send_telegram_payment_messages)
+    cutoff = run.now - timedelta(seconds=PAYMENT_CUTOFF_MARGIN_SECONDS)
+    _dispatch(send_telegram_payment_messages, cutoff.isoformat())
 
 
 def _run_stages(client, run: _Run) -> None:

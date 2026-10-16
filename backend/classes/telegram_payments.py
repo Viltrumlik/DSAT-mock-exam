@@ -14,7 +14,15 @@ message goes out, so two runs of the task that overlap — the sync's lock does 
 task — cannot both send it. A failure that may pass is released and left for the next run: no
 answer at all, 429 (slow down) and 5xx (Telegram's side). One Telegram refused (the student
 blocked the bot: 403, a bad chat: 400) stays marked and is counted as ``refused`` rather than
-retried for ever.
+retried for ever. A payment whose message raises (building it, or the send) is released the same
+way, logged by its id alone, and counted as ``failed``: the payments behind it still go out.
+
+``created_before`` keeps a message from quoting the balance from before its own payment. The
+sync reads the balances (students stage) before it reads the payments, so a payment lc-up
+recorded in between is announced beside a balance that still counts it as unpaid — and it is
+announced only once, so nothing would ever correct it. The sync therefore passes the moment it
+began, less a margin: later payments are left unmarked and go out with the next sync, which
+reads a balance that already includes them.
 """
 
 from __future__ import annotations
@@ -71,21 +79,20 @@ def _retryable(result) -> bool:
     return code is None or code == 429 or code >= 500
 
 
-def notify_new_payments(now=None) -> dict:
+def notify_new_payments(now=None, created_before=None) -> dict:
     since = payment_messages_since()
     if since is None or not tg.api.is_configured():
         return {"status": "off"}
     now = now or timezone.now()
-    rows = (
-        LcupPayment.objects.filter(
-            kind="payment",
-            bot_notified_at__isnull=True,
-            created_in_lcup__gte=since,
-            paid_on__gte=timezone.localdate(now) - timedelta(days=RECENT_DAYS),
-        )
-        .select_related("student__user", "group__classroom")
-        .order_by("created_in_lcup", "pk")
+    rows = LcupPayment.objects.filter(
+        kind="payment",
+        bot_notified_at__isnull=True,
+        created_in_lcup__gte=since,
+        paid_on__gte=timezone.localdate(now) - timedelta(days=RECENT_DAYS),
     )
+    if created_before is not None:
+        rows = rows.filter(created_in_lcup__lt=created_before)
+    rows = rows.select_related("student__user", "group__classroom").order_by("created_in_lcup", "pk")
     sent = skipped = failed = refused = 0
     for payment in rows:
         # Claim first. The list above was read a moment ago; another run may have taken this
@@ -103,8 +110,12 @@ def notify_new_payments(now=None) -> dict:
         try:
             result = tg.api.send_message(int(telegram_id), payment_text(payment))
         except Exception:
-            _release(payment, now)
-            raise
+            # One payment that cannot be built or sent must not hold up the ones behind it, so
+            # nothing propagates. The pk only: the text is the student's name and money.
+            logger.exception("telegram payment %s could not be announced", payment.pk)
+            _release(payment, now)  # the next run tries again
+            failed += 1
+            continue
         if result.ok:
             sent += 1
         elif _retryable(result):

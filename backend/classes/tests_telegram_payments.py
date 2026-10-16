@@ -3,7 +3,7 @@ never a refund, never before the switch-on moment, and never from a dry-run sync
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
@@ -14,7 +14,7 @@ from django.utils import timezone
 from access import constants as C
 from classes import telegram_texts as T
 from classes.models import Classroom
-from classes.telegram_payments import notify_new_payments
+from classes.telegram_payments import notify_new_payments, payment_text
 from classes.tests_telegram_group import CHAT, TOKEN, FakeTelegram
 from lcup.models import GroupLinkStatus, LcupGroupLink, LcupPayment, LcupStudentLink, LinkStatus
 from users.models import User
@@ -176,14 +176,115 @@ class PaymentMessageTests(TestCase):
         self.assertEqual(len(self.tg.messages), 1)
         self.assertEqual(result["sent"], 1)
 
-    def test_a_crash_while_sending_releases_the_claim(self):
-        self.payment(1)
-        with mock.patch("classes.telegram_group_api.send_message", side_effect=RuntimeError("boom")):
-            with self.assertRaises(RuntimeError):
-                notify_new_payments(now=at(16, 12))
+    def test_a_crash_while_sending_releases_the_claim_and_the_queue_moves_on(self):
+        # One payment that crashes must not hold up the ones behind it, and must not be lost.
+        self.payment(1, created=at(16, 9))
+        self.payment(2, created=at(16, 10))
+        real_send = self.tg.send_message
+        calls = []
+
+        def send(chat_id, text, reply_markup=None):
+            calls.append(text)
+            if len(calls) == 1:
+                raise RuntimeError("boom")
+            return real_send(chat_id, text, reply_markup)
+
+        with mock.patch("classes.telegram_group_api.send_message", side_effect=send):
+            with self.assertLogs("classes.telegram_payments", level="ERROR") as logged:
+                result = notify_new_payments(now=at(16, 12))  # nothing propagates
+        self.assertEqual((result["sent"], result["failed"]), (1, 1))
         self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
-        notify_new_payments(now=at(16, 13))
+        self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=2).bot_notified_at)
         self.assertEqual(len(self.tg.messages), 1)
+        # The log names the payment, never what it was going to say.
+        joined = "\n".join(logged.output)
+        self.assertIn(str(LcupPayment.objects.get(lcup_payment_id=1).pk), joined)
+        self.assertNotIn("Junior G21", joined)
+        self.assertNotIn("500 000", joined)
+        # The next run sends the one that crashed.
+        notify_new_payments(now=at(16, 13))
+        self.assertEqual(len(self.tg.messages), 2)
+
+    def test_a_crash_while_building_the_message_is_handled_the_same_way(self):
+        self.payment(1, created=at(16, 9))
+        self.payment(2, created=at(16, 10))
+        real_text = payment_text
+        built = []
+
+        def text(payment):
+            built.append(payment.pk)
+            if len(built) == 1:
+                raise ValueError("no text for you")
+            return real_text(payment)
+
+        with mock.patch("classes.telegram_payments.payment_text", side_effect=text):
+            with self.assertLogs("classes.telegram_payments", level="ERROR"):
+                result = notify_new_payments(now=at(16, 12))
+        self.assertEqual((result["sent"], result["failed"]), (1, 1))
+        self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
+        self.assertEqual(len(self.tg.messages), 1)
+
+    def test_a_payment_created_after_the_cutoff_waits_for_a_later_run(self):
+        # The students stage read the balances before this cut-off; a payment recorded later is
+        # not in them. It is left for the next sync, which reads a balance that includes it.
+        self.payment(1, created=at(16, 9))
+        self.payment(2, created=at(16, 11))
+        result = notify_new_payments(now=at(16, 12), created_before=at(16, 10))
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(len(self.tg.messages), 1)
+        self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
+        self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=2).bot_notified_at)
+        # The next run's cut-off is later than the payment: now it goes out.
+        result = notify_new_payments(now=at(16, 13), created_before=at(16, 12))
+        self.assertEqual(result["sent"], 1)
+        self.assertEqual(len(self.tg.messages), 2)
+        self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=2).bot_notified_at)
+
+    def test_no_cutoff_announces_everything_as_before(self):
+        self.payment(1, created=at(16, 9))
+        self.payment(2, created=at(16, 11))
+        self.assertEqual(notify_new_payments(now=at(16, 12))["sent"], 2)
+
+    def test_the_cutoff_excludes_a_payment_made_at_the_cutoff_itself(self):
+        self.payment(1, created=at(16, 10))
+        self.assertEqual(notify_new_payments(now=at(16, 12), created_before=at(16, 10))["sent"], 0)
+
+    def test_the_task_passes_the_cutoff_on_as_a_date_time(self):
+        from classes.tasks import send_telegram_payment_messages
+
+        with mock.patch("classes.telegram_payments.notify_new_payments", return_value={"status": "ok"}) as notify:
+            send_telegram_payment_messages(at(16, 10).isoformat())
+            send_telegram_payment_messages()
+        self.assertEqual(notify.call_args_list[0].kwargs, {"created_before": at(16, 10)})
+        self.assertEqual(notify.call_args_list[1].kwargs, {"created_before": None})
+
+    def test_the_sync_stage_holds_back_a_payment_from_the_last_two_minutes(self):
+        # The whole chain: stage -> dispatch -> task -> notifier, as a real sync runs it.
+        from lcup.sync import _queue_payment_messages
+
+        self.payment(1, created=at(16, 11))
+        self.payment(2, created=at(16, 12) - timedelta(seconds=30))
+        run = mock.Mock(dry_run=False, now=at(16, 12))
+        with self.captureOnCommitCallbacks(execute=True):
+            _queue_payment_messages(run)
+        self.assertEqual(len(self.tg.messages), 1)
+        self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
+        self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=2).bot_notified_at)
+        # The next sync starts later, so its cut-off no longer holds payment 2 back.
+        run = mock.Mock(dry_run=False, now=at(16, 13))
+        with self.captureOnCommitCallbacks(execute=True):
+            _queue_payment_messages(run)
+        self.assertEqual(len(self.tg.messages), 2)
+
+    def test_an_unreadable_cutoff_sends_nothing(self):
+        # Reading it as "no cut-off" would bring the stale balance back.
+        from classes.tasks import send_telegram_payment_messages
+
+        self.payment(1, created=at(16, 9))
+        result = send_telegram_payment_messages("not a date")
+        self.assertEqual(result["status"], "noop")
+        self.assertEqual(self.tg.messages, [])
+        self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
 
     @override_settings(CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM="")
     def test_switched_off_nothing_is_sent(self):
@@ -205,7 +306,15 @@ class SyncStageTests(TestCase):
         from classes.tasks import send_telegram_payment_messages
         from lcup.sync import _queue_payment_messages
 
-        run = mock.Mock(dry_run=False)
+        run = mock.Mock(dry_run=False, now=at(16, 12))
         with mock.patch("classes.telegram_group_hooks._dispatch") as dispatch:
             _queue_payment_messages(run)
-        dispatch.assert_called_once_with(send_telegram_payment_messages)
+        # The balances are read after the run starts; a payment from the two minutes before it
+        # may not be in them yet, so the task is told not to announce those.
+        cutoff = (at(16, 12) - timedelta(seconds=120)).isoformat()
+        dispatch.assert_called_once_with(send_telegram_payment_messages, cutoff)
+
+    def test_the_margin_is_two_minutes(self):
+        from lcup.sync import PAYMENT_CUTOFF_MARGIN_SECONDS
+
+        self.assertEqual(PAYMENT_CUTOFF_MARGIN_SECONDS, 120)

@@ -8,6 +8,7 @@ from io import StringIO
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.test import override_settings
 from django.utils import timezone
 
 from classes import telegram_texts as T
@@ -87,12 +88,37 @@ class OpsTelegramPartTests(TelegramGroupBase):
         self.assertEqual(r.status_code, 404)
 
 
+@override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=True)
 class AnnounceCommandTests(TelegramGroupBase):
     def test_a_dry_run_posts_nothing(self):
         out = StringIO()
         call_command("announce_classroom_bot", stdout=out)
         self.assertEqual(self.tg.messages, [])
         self.assertIn("dry run", out.getvalue())
+        self.assertNotIn("CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED", out.getvalue())
+
+    @override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=False)
+    def test_send_is_refused_while_the_sign_in_flag_is_off(self):
+        # The button opens "?start=login"; with the flag off the old handler answers it with
+        # "That link has already been used", in about thirty groups, and a post cannot be undone.
+        with self.assertRaises(CommandError) as cm:
+            call_command("announce_classroom_bot", "--send", stdout=StringIO())
+        self.assertIn("CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED", str(cm.exception))
+        self.assertEqual(self.tg.messages, [])
+
+    @override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=False)
+    def test_send_for_one_group_is_refused_while_the_flag_is_off(self):
+        with self.assertRaises(CommandError):
+            call_command("announce_classroom_bot", "--send", "--only", CHAT, stdout=StringIO())
+        self.assertEqual(self.tg.messages, [])
+
+    @override_settings(CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=False)
+    def test_a_dry_run_still_works_with_the_flag_off_and_warns(self):
+        out = StringIO()
+        call_command("announce_classroom_bot", stdout=out)
+        self.assertEqual(self.tg.messages, [])
+        self.assertIn("would post to", out.getvalue())
+        self.assertIn("CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED", out.getvalue())
 
     def test_send_posts_once_per_group_with_the_bot_button(self):
         # A second class meeting in the same group: one post, not two.

@@ -13,11 +13,14 @@ restart losing a half-typed sign-in costs the student one /start.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db.models import Q
+from django.utils import timezone
 
 from access import constants as acc_const
 from users.backends import EmailOrUsernameModelBackend, _phone_username
@@ -25,6 +28,7 @@ from users.models import SecurityAuditEvent
 
 from . import telegram_group as tg
 from . import telegram_texts as T
+from .models_telegram import ClassroomTelegramMember
 
 logger = logging.getLogger("classes.telegram_bot")
 
@@ -63,11 +67,14 @@ def _login_key(login: str, account) -> str:
     """What the per-login counter and lock are keyed on: the ACCOUNT the login names, not how it
     was typed. A username, an email and a phone spelling of one account all land on
     ``user:<pk>``; counting by spelling would give an attacker with several Telegram accounts
-    five tries per spelling. Only a login that names nobody falls back to its own spelling
-    (case and phone formatting folded), so guessing at unknown logins is still bounded."""
+    five tries per spelling. A login that names nobody falls back to ``name:<sha256 of its
+    spelling>`` (phone-folded and lower-cased), so guessing at unknown logins is still bounded.
+    The prefix keeps the two spaces apart and the hash makes the fallback impossible to type:
+    a login spelled "user:5" is a ``name:`` key, never the key of account 5."""
     if account is not None:
         return f"user:{account.pk}"
-    return (_phone_username(login) or login).strip().lower()[:150]
+    spelling = (_phone_username(login) or login).strip().lower()
+    return "name:" + hashlib.sha256(spelling.encode("utf-8")).hexdigest()
 
 
 # ── Lockouts ─────────────────────────────────────────────────────────────────
@@ -99,8 +106,12 @@ def _count_failure(tg_id: int, login_key: str) -> int:
     return shown
 
 
-def _clear_failures(tg_id: int, login_key: str) -> None:
-    cache.delete_many([_fail_key("tg", tg_id), _fail_key("login", login_key)])
+def _clear_login_failures(login_key: str) -> None:
+    """A real sign-in settles the ACCOUNT's count, and only that. The Telegram account's count
+    is deliberately left to expire by itself: clearing it would let one person try four
+    passwords on other people's logins, sign in to a login of their own, ``/chiqish`` and
+    start over from zero — unlimited guesses across accounts."""
+    cache.delete(_fail_key("login", login_key))
 
 
 # ── Accounts ─────────────────────────────────────────────────────────────────
@@ -126,13 +137,23 @@ def _exact_command(text: str) -> str:
     """The bot command ``text`` is on its own, or "". Used at the password step, where anything
     else — "/start@2024", "/guruhlar 1", "/x" — is a password and must be deleted and checked.
     A command may carry the bot's own @name ("/start@MasterSATBot", as a group client sends);
-    one addressed to a different bot is not ours."""
+    one addressed to a different bot is not ours.
+
+    One payload is the bot's own: ``/start login``, what its "open the bot" button sends. Mid
+    sign-in it is the student starting over, so it counts as ``/start`` (``/start@ThisBot
+    login`` too) and is never checked as a password. Any other payload stays a password."""
     word = text.strip().lower()
     if word in COMMANDS:
         return word
+    if word == "/start login":
+        return "/start"
     command, at, target = word.partition("@")
-    if at and command in COMMANDS and target and target == (tg.api.bot_username() or "").lower():
-        return command
+    if at and command in COMMANDS and target:
+        name, _, payload = target.partition(" ")
+        if name == (tg.api.bot_username() or "").lower() and (
+            not payload or (command == "/start" and payload == "login")
+        ):
+            return command
     return ""
 
 
@@ -287,7 +308,7 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
         _send(chat_id, T.TG_TAKEN)
         return "taken"
 
-    _clear_failures(tg_id, _login_key(login, user))
+    _clear_login_failures(_login_key(login, user))
     user.telegram_bot_user_id = tg_id
     user.save(update_fields=["telegram_bot_user_id"])
     _audit(user, "telegram_bot_login", tg_id)
@@ -298,6 +319,18 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
 
 
 # ── Button presses ───────────────────────────────────────────────────────────
+
+
+def _live_invite(user, classroom) -> tuple[str, int] | None:
+    """The link this student already holds for this class, if it still works: ``(link, minutes
+    left)`` with the minutes rounded up and at least one. None when there is none, or it ran out."""
+    row = ClassroomTelegramMember.objects.filter(classroom=classroom, user=user).first()
+    if row is None or not row.invite_link or row.invite_expires_at is None:
+        return None
+    left = (row.invite_expires_at - timezone.now()).total_seconds()
+    if left <= 0:
+        return None
+    return row.invite_link, max(1, math.ceil(left / 60))
 
 
 def handle_callback_query(callback: dict) -> str:
@@ -333,6 +366,13 @@ def handle_callback_query(callback: dict) -> str:
         debt = str(getattr(user, "frozen_reason", "") or "") == FROZEN_LCUP_DEBT
         _send(chat_id, (T.LOCKED_GROUP_DEBT if debt else T.LOCKED_GROUP_ADMIN).format(group=group))
         return "locked"
+    live = _live_invite(user, classroom)
+    if live is not None:
+        # A second tap, or a tap while the first link still works: send that same link. Minting
+        # again would revoke the link the first tap just delivered.
+        link, minutes = live
+        _send(chat_id, T.INVITE.format(group=group, link=link, minutes=minutes))
+        return "invite"
     try:
         issued = tg.issue_invite(user=user, classroom=classroom, send_dm=False)
     except tg.TelegramGroupError:

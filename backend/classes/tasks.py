@@ -190,11 +190,27 @@ def notify_telegram_unfrozen(user_id: int) -> dict:
 
 
 @shared_task(name="classes.tasks.send_telegram_payment_messages")
-def send_telegram_payment_messages() -> dict:
-    """Queued by every real lc-up sync: announce its new payments in the class bot."""
+def send_telegram_payment_messages(created_before: str | None = None) -> dict:
+    """Queued by every real lc-up sync: announce its new payments in the class bot.
+
+    ``created_before`` is an ISO date-time: only payments lc-up created before it are announced
+    (see ``telegram_payments``). One that cannot be read sends nothing — reading it as "no
+    cut-off" would bring back the stale balance the cut-off exists to prevent.
+    """
+    from django.utils.dateparse import parse_datetime
+
     from .telegram_payments import notify_new_payments
 
-    return notify_new_payments()
+    cutoff = None
+    if created_before:
+        try:
+            cutoff = parse_datetime(str(created_before))
+        except ValueError:
+            cutoff = None
+        if cutoff is None:
+            logger.warning("telegram payments: unreadable cut-off, nothing sent")
+            return {"status": "noop", "reason": "bad_cutoff"}
+    return notify_new_payments(created_before=cutoff)
 
 
 @shared_task(name="classes.tasks.enforce_telegram_group_membership")

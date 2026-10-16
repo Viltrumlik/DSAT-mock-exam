@@ -7,7 +7,10 @@ they are identified — so every group is asked, with a button that opens the bo
     python manage.py announce_classroom_bot --send   # posts it
     python manage.py announce_classroom_bot --send --only -1001234567890   # retries one group
 
-Run --send only with the owner's go-ahead: it speaks in every class group at once.
+Run --send only with the owner's go-ahead: it speaks in every class group at once. It also
+refuses to run until CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED is on: the button opens the bot's
+sign-in, and with the flag off the old handler answers it "That link has already been used" —
+in every group, and a post cannot be taken back. A dry run works either way.
 If a post fails, the command exits with an error naming the groups that did not get the note.
 Retry just those with --only (repeatable), so the groups that already received it are not
 asked twice.
@@ -39,6 +42,14 @@ class Command(BaseCommand):
         url = tg.bot_start_url()
         if not url:
             raise CommandError("The bot is not reachable (no token, or getMe failed).")
+        if not tg.bot_login_enabled():
+            if options["send"]:
+                raise CommandError(
+                    "Switch CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED on first — the button opens the bot sign-in."
+                )
+            self.stdout.write(
+                "warning: CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED is off — --send will refuse until it is on."
+            )
         chats: dict[str, list[str]] = {}
         rooms = (
             Classroom.objects.filter(is_active=True)

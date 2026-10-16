@@ -9,6 +9,7 @@ deleted — rather than which function was called with what.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -351,6 +352,54 @@ class SignInTests(BotBase):
         self.sign_in(login="nobody@t.com", password="nope", tg_id=7400)
         self.assertEqual(self.last(7400), T.LOCKED.format(minutes=15))
 
+    def test_signing_in_to_your_own_account_does_not_reset_the_telegrams_count(self):
+        # Password spraying: four wrong tries against other people's logins, one real sign-in
+        # to the attacker's own account (which used to wipe the Telegram's count), /chiqish,
+        # and the count would start again from zero for ever. The Telegram's count only
+        # expires on its own, so the fifth wrong try — however it is interleaved — locks.
+        for login in ("tg_s1@t.com", "tg_s2@t.com", "tg_teacher@t.com", "nobody@t.com"):
+            self.sign_in(login=login, password="nope")
+        self.assertEqual(self.last(), T.WRONG.format(n=4, max=5))
+        self.sign_in()  # newbie's own account, the right password
+        self.newbie.refresh_from_db()
+        self.assertEqual(self.newbie.telegram_bot_user_id, self.NEW_TG)
+        self.say("/chiqish")
+        self.sign_in(login="tg_s1@t.com", password="nope")
+        self.assertEqual(self.last(), T.LOCKED.format(minutes=15))
+
+    def test_signing_in_does_clear_that_accounts_own_count(self):
+        # The account's counter is the one a success settles: four wrong tries by its owner
+        # from four phones, then the owner signs in, and the next stranger starts from one.
+        for n in range(4):
+            self.sign_in(password="nope", tg_id=7600 + n)
+        self.assertIsNotNone(cache.get(f"tgbot:fail:login:user:{self.newbie.pk}"))
+        self.sign_in()
+        self.assertIsNone(cache.get(f"tgbot:fail:login:user:{self.newbie.pk}"))
+        self.say("/chiqish")
+        self.sign_in(password="nope", tg_id=7700)
+        self.assertEqual(cache.get(f"tgbot:fail:login:user:{self.newbie.pk}"), 1)
+
+    def test_a_login_typed_as_an_account_key_counts_against_nobody(self):
+        # "user:<pk>" names no account, so it must not land on the key of account <pk>.
+        for n in range(5):
+            self.sign_in(login=f"user:{self.newbie.pk}", password="nope", tg_id=7500 + n)
+        self.assertEqual(self.last(7504), T.LOCKED.format(minutes=15))
+        self.assertIsNone(cache.get(f"tgbot:lock:login:user:{self.newbie.pk}"))
+        self.sign_in()
+        self.newbie.refresh_from_db()
+        self.assertEqual(self.newbie.telegram_bot_user_id, self.NEW_TG)
+
+    def test_an_unknown_logins_key_is_a_hash_of_its_normalised_spelling(self):
+        import hashlib
+
+        from classes import telegram_bot
+
+        digest = hashlib.sha256(b"nobody@t.com").hexdigest()
+        self.assertEqual(telegram_bot._login_key("Nobody@T.com", None), f"name:{digest}")
+        phone = hashlib.sha256(b"998901234567").hexdigest()
+        self.assertEqual(telegram_bot._login_key("+998 90 123 45 67", None), f"name:{phone}")
+        self.assertEqual(telegram_bot._login_key("anything", self.newbie), f"user:{self.newbie.pk}")
+
     def test_an_account_with_no_password_yet_is_sent_to_the_site(self):
         self.newbie.set_unusable_password()
         self.newbie.save()
@@ -432,6 +481,52 @@ class SignInTests(BotBase):
         self.assertEqual(self.last(), T.ASK_LOGIN)
         self.assertEqual(self.tg.deleted, [])
 
+    def test_the_bots_own_deep_link_at_the_password_step_restarts_the_sign_in(self):
+        # The "open the bot" button sends "/start login". Pressed mid-sign-in it is the
+        # student starting over, not a password: no wrong try, nothing deleted.
+        self.say("/start")
+        self.say("newbie@t.com")
+        self.say("/start login")
+        self.assertEqual(self.last(), T.ASK_LOGIN)
+        self.assertEqual(self.tg.deleted, [])
+        self.assertIsNone(cache.get(f"tgbot:fail:tg:{self.NEW_TG}"))
+        self.assertIsNone(cache.get(f"tgbot:fail:login:user:{self.newbie.pk}"))
+        self.say("newbie@t.com")
+        self.assertEqual(self.last(), T.ASK_PASSWORD)
+
+    def test_the_deep_link_in_any_case_or_addressed_to_this_bot_restarts_too(self):
+        for text in ("  /START LOGIN ", "/start@MasterSATTestBot login", "/Start@mastersattestbot LOGIN"):
+            cache.clear()
+            self.tg.deleted.clear()
+            self.say("/start")
+            self.say("newbie@t.com")
+            self.say(text)
+            self.assertEqual(self.last(), T.ASK_LOGIN, text)
+            self.assertEqual(self.tg.deleted, [], text)
+            self.assertIsNone(cache.get(f"tgbot:fail:tg:{self.NEW_TG}"), text)
+
+    def test_other_start_text_at_the_password_step_is_still_a_password(self):
+        # Only the exact deep link is a command. A payload for another bot, an extra word or
+        # a different payload is what a student typed as a password.
+        for text in ("/start@SomeOtherBot login", "/start login now", "/start other", "/start  login"):
+            cache.clear()
+            self.tg.deleted.clear()
+            self.say("/start")
+            self.say("newbie@t.com")
+            message_id = self.say(text)
+            self.assertIn((str(self.NEW_TG), message_id), self.tg.deleted, text)
+            self.assertEqual(self.last(), T.WRONG.format(n=1, max=5), text)
+
+    def test_a_redis_error_in_the_update_dedupe_does_not_fail_the_webhook(self):
+        from classes import views_telegram
+
+        with mock.patch.object(views_telegram.cache, "add", side_effect=RuntimeError("redis down")):
+            with self.assertLogs("classes.telegram_group", level="WARNING") as logged:
+                self.say("/start")  # `post` asserts the webhook answered 200
+        self.assertEqual(self.last(), T.ASK_LOGIN)
+        self.assertIn("RuntimeError", "\n".join(logged.output))
+        self.assertNotIn("/start", "\n".join(logged.output))  # the update itself is not logged
+
     def test_a_repeated_update_is_handled_once(self):
         self.say("/start")
         self.say("newbie@t.com")
@@ -480,6 +575,50 @@ class MenuTests(BotBase):
         self.assertEqual(len([c for c, _ in self.tg.messages if c == "1001"]), 1)
         self.assertTrue(self.tg.answered)
         self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_PENDING)
+
+    def test_pressing_twice_resends_the_same_link_and_revokes_nothing(self):
+        # A second tap used to mint a new link and revoke the one the first tap had just sent.
+        self.press(f"g:{self.classroom.pk}")
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(len(self.tg.links), 1)
+        self.assertEqual(self.tg.revoked, [])
+        link = self.tg.links[0]
+        sent = [body for chat, body in self.tg.messages if chat == "1001"]
+        self.assertEqual(len(sent), 2)
+        self.assertTrue(all(link in body for body in sent), sent)
+        self.assertEqual(sent[1], T.INVITE.format(group="Junior G15 English", link=link, minutes=30))
+        row = self.row(self.student)
+        self.assertEqual(row.invite_link, link)
+        self.assertEqual(row.invite_issued_count, 1)
+
+    def test_the_minutes_left_are_rounded_up_and_never_below_one(self):
+        self.press(f"g:{self.classroom.pk}")
+        link = self.tg.links[0]
+        for seconds, minutes in ((90, 2), (3000, 50), (5, 1)):
+            ClassroomTelegramMember.objects.filter(classroom=self.classroom, user=self.student).update(
+                invite_expires_at=timezone.now() + timedelta(seconds=seconds)
+            )
+            self.press(f"g:{self.classroom.pk}")
+            self.assertEqual(
+                self.last(1001),
+                T.INVITE.format(group="Junior G15 English", link=link, minutes=minutes),
+                seconds,
+            )
+        self.assertEqual(len(self.tg.links), 1)
+
+    def test_an_expired_link_is_replaced_by_the_next_press(self):
+        self.press(f"g:{self.classroom.pk}")
+        first = self.tg.links[0]
+        ClassroomTelegramMember.objects.filter(classroom=self.classroom, user=self.student).update(
+            invite_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(len(self.tg.links), 2)
+        second = self.tg.links[1]
+        self.assertNotEqual(first, second)
+        self.assertIn(first, self.tg.revoked)
+        self.assertIn(second, self.last(1001))
+        self.assertEqual(self.row(self.student).invite_link, second)
 
     def test_pressing_a_group_you_are_in_mints_nothing(self):
         self.tg.join(1001)

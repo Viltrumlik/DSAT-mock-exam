@@ -191,10 +191,17 @@ class ClassroomTelegramWebhookView(APIView):
 
         payload = request.data if isinstance(request.data, dict) else {}
         update_id = payload.get("update_id")
-        if update_id is not None and not cache.add(
-            f"tgbot:update:{update_id}", 1, timeout=UPDATE_SEEN_SECONDS
-        ):
-            return Response({"ok": True}, status=http.HTTP_200_OK)
+        if update_id is not None:
+            try:
+                first_time = cache.add(f"tgbot:update:{update_id}", 1, timeout=UPDATE_SEEN_SECONDS)
+            except Exception as exc:
+                # The dedupe is a convenience. If the cache is down, handling an update twice
+                # is better than a 500, which makes Telegram resend the whole backlog. The
+                # payload is not logged: in a private chat it can be a password.
+                logger.warning("telegram webhook update dedupe unavailable: %s", type(exc).__name__)
+                first_time = True
+            if not first_time:
+                return Response({"ok": True}, status=http.HTTP_200_OK)
 
         # Telegram retries any update it does not get a 200 for, and it retries the whole
         # backlog in order — one poisoned update would wedge every later join behind it. So
