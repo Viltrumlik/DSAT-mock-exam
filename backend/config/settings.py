@@ -972,6 +972,12 @@ REST_FRAMEWORK = {
         # Windows app "Sign in with browser" code exchange, per client address. A whole class
         # signs in at once from behind one school NAT, hence the headroom.
         'desktop_auth': os.getenv('DESKTOP_AUTH_THROTTLE', '300/hour'),
+        # Windows app password sign-in (desktop.views.DesktopPasswordLoginView): per client
+        # address with the same NAT headroom, and per account typed — the cap that actually
+        # bounds guessing one student's password. "10/15m" = ten tries per fifteen minutes
+        # (desktop.throttles parses the multiple; DRF's own parser takes only 1 unit).
+        'desktop_login': os.getenv('DESKTOP_LOGIN_THROTTLE', '300/hour'),
+        'desktop_login_identifier': os.getenv('DESKTOP_LOGIN_IDENTIFIER_THROTTLE', '10/15m'),
         # Windows app v1 midterm prepare (per student), and — counted separately — the
         # prepares that carry a 6-digit access code, so the code cannot be guessed through it.
         'desktop_v1_prepare': os.getenv('DESKTOP_V1_PREPARE_THROTTLE', '120/hour'),
