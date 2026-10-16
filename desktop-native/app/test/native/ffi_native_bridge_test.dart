@@ -181,19 +181,20 @@ void main() {
       try {
         captured = b.lockEnter();
       } on NativeBridgeException catch (e) {
-        if (Platform.isWindows && e.code == NativeStatus.errNotInit) {
-          markTestSkipped('Windows without the runner: ms_init is the runner\'s call');
+        final desktop = Platform.isWindows || Platform.isMacOS;
+        if (desktop && e.code == NativeStatus.errNotInit) {
+          markTestSkipped('without the runner: ms_init is the runner\'s call');
           return;
         }
-        if (Platform.isWindows && e.code == NativeStatus.errPrecheck) {
+        if (desktop && e.code == NativeStatus.errPrecheck) {
           expect(PrecheckReport.parse(e.message!).ok, isFalse, reason: 'the refusal carries the failing report');
-          markTestSkipped('this Windows machine fails the pre-check; the locked path is not exercised');
+          markTestSkipped('this machine fails the pre-check (a CI runner is a VM); the locked path is not exercised');
           return;
         }
         rethrow;
       }
       addTearDown(b.lockExit);
-      if (!Platform.isWindows) expect(captured.raw, stubPrecheck);
+      if (!Platform.isWindows && !Platform.isMacOS) expect(captured.raw, stubPrecheck);
       expect(captured.ok, isTrue);
       expect(b.heartbeat(), isTrue);
 
@@ -237,9 +238,9 @@ void main() {
       if (!Platform.isWindows) expect(key.lengthSync(), 32, reason: 'dev hosts: raw key (Windows: a DPAPI blob)');
     });
 
-    test('protect/unprotect: DPAPI on Windows, unsupported elsewhere', () {
+    test('protect/unprotect: DPAPI on Windows, an at-rest key on macOS, unsupported on Linux', () {
       final token = Uint8List.fromList(utf8.encode('refresh-token-abc'));
-      if (Platform.isWindows) {
+      if (Platform.isWindows || Platform.isMacOS) {
         final blob = b.protect(token);
         expect(blob, isNot(token));
         expect(b.unprotect(blob), token);
@@ -256,7 +257,9 @@ void main() {
       expect(() => b.proxyFor('not a url'), throwsNative(NativeStatus.errArg, 'ms_proxy_for: '));
       b.keepAwake(true);
       b.keepAwake(false);
-      if (Platform.isWindows) return; // the rest are the development host's documented stubs
+      // The rest are the Linux development host's documented stubs; Windows and macOS have the
+      // real readings (covered by native/crates/mastersat-native/tests/c_abi.rs).
+      if (Platform.isWindows || Platform.isMacOS) return;
       expect(report.raw, stubPrecheck);
       expect(b.battery(), isNull);
       expect(b.awayNow(), isFalse);

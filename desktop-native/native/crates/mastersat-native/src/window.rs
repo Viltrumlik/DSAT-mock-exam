@@ -17,7 +17,9 @@ pub const MARSHAL_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[cfg(windows)]
 pub use imp::*;
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+pub use macos::*;
+#[cfg(all(not(windows), not(target_os = "macos")))]
 pub use stub::*;
 
 #[cfg(windows)]
@@ -313,7 +315,229 @@ mod imp {
     }
 }
 
-#[cfg(not(windows))]
+// ─────────────────────────────── macOS ─────────────────────────────────────
+// The Mac exam window (Apple Silicon + Intel): run window work on the main thread (AppKit's
+// rule, like the Windows window thread), borderless fullscreen + a floating level over the
+// student's monitor for a midterm (replacing Win32's styles + HWND_TOPMOST), and an IOKit power
+// assertion for keep-awake. The marshalling uses Grand Central Dispatch's main queue — the
+// Flutter engine pumps the main run loop, so a job posted from the watchdog or a background
+// isolate runs there.
+#[cfg(target_os = "macos")]
+mod macos {
+    use std::ffi::{c_int, c_void};
+    use std::sync::Mutex;
+    use std::time::Duration;
+
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSScreen, NSWindow, NSWindowStyleMask};
+    use objc2_core_foundation::CGRect;
+
+    /// A midterm's window floats above ordinary windows, the counterpart of HWND_TOPMOST. The
+    /// kiosk presentation options (mastersat-lockdown's engage) already stop app switching; this
+    /// keeps the exam above a stray utility window. NSStatusWindowLevel.
+    const LOCK_LEVEL: isize = 25;
+
+    pub fn is_window(raw: isize) -> bool {
+        raw != 0
+    }
+
+    // The window-thread concept is Windows-only; on macOS the main queue is always reachable.
+    pub fn window_thread(_raw: isize) -> u32 {
+        0
+    }
+    pub fn current_thread() -> u32 {
+        0
+    }
+    pub fn install_dispatcher(_window_thread: u32) -> bool {
+        true
+    }
+
+    // ── main-thread marshalling (Grand Central Dispatch) ─────────────────────────────────────
+
+    extern "C" {
+        static _dispatch_main_q: [u8; 0];
+        fn dispatch_async_f(queue: *const c_void, context: *mut c_void, work: extern "C" fn(*mut c_void));
+        fn pthread_main_np() -> c_int;
+    }
+
+    fn main_queue() -> *const c_void {
+        unsafe { std::ptr::addr_of!(_dispatch_main_q) as *const c_void }
+    }
+
+    fn on_main_thread() -> bool {
+        unsafe { pthread_main_np() != 0 }
+    }
+
+    type Job = Box<dyn FnOnce() + Send + 'static>;
+
+    extern "C" fn trampoline(ctx: *mut c_void) {
+        // Reclaim the boxed job and run it (once). A panic must not unwind across the C frame.
+        let job: Box<Job> = unsafe { Box::from_raw(ctx as *mut Job) };
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || (*job)()));
+    }
+
+    /// Run `f` on the main thread. Inline when already there; otherwise posted to the main queue
+    /// and — when `wait` is Some — waited for (dispatch_sync, no timeout: the main run loop is
+    /// pumped by the Flutter engine). Returns None only for a fire-and-forget (`wait` = None).
+    pub fn on_window_thread<R, F>(f: F, wait: Option<Duration>) -> Option<R>
+    where
+        R: Send + 'static,
+        F: FnOnce() -> R + Send + 'static,
+    {
+        if on_main_thread() {
+            return Some(f());
+        }
+        // Always ASYNC, then wait on a channel (like the Windows window thread). dispatch_sync
+        // to the main queue would deadlock when nothing pumps the main run loop — true in a
+        // `cargo test` / `flutter test` binary. The production app always pumps it (NSApplication),
+        // so the job runs in well under the timeout; a test without a run loop simply times out
+        // and the geometry/keep-awake is skipped rather than hanging CI.
+        match wait {
+            Some(timeout) => {
+                let (tx, rx) = std::sync::mpsc::sync_channel::<R>(1);
+                let job: Job = Box::new(move || {
+                    let _ = tx.send(f());
+                });
+                let ctx = Box::into_raw(Box::new(job)) as *mut c_void;
+                unsafe { dispatch_async_f(main_queue(), ctx, trampoline) };
+                rx.recv_timeout(timeout).ok()
+            }
+            None => {
+                let job: Job = Box::new(move || {
+                    f();
+                });
+                let ctx = Box::into_raw(Box::new(job)) as *mut c_void;
+                unsafe { dispatch_async_f(main_queue(), ctx, trampoline) };
+                None
+            }
+        }
+    }
+
+    pub fn on_window_thread_wait<R, F>(f: F) -> Option<R>
+    where
+        R: Send + 'static,
+        F: FnOnce() -> R + Send + 'static,
+    {
+        on_window_thread(f, Some(super::MARSHAL_TIMEOUT))
+    }
+
+    // ── fullscreen ───────────────────────────────────────────────────────────────────────────
+
+    /// What `enter_fullscreen` changed, so `restore` can put it back. CGRect and the integer
+    /// style mask / level are plain data, so this crosses threads (lock.rs holds it in its state).
+    #[derive(Clone, Copy)]
+    pub struct SavedWindow {
+        style_mask: usize,
+        level: isize,
+        frame: CGRect,
+    }
+    unsafe impl Send for SavedWindow {}
+
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
+    unsafe fn window_ref<'a>(raw: isize) -> Option<&'a NSWindow> {
+        if raw == 0 {
+            None
+        } else {
+            Some(&*(raw as *const NSWindow))
+        }
+    }
+
+    /// Borderless over the window's monitor, floating above ordinary windows. `save` captures the
+    /// current style, level and frame first (skipped when re-entering an engaged lock).
+    pub fn enter_fullscreen(raw: isize, save: bool) -> Result<Option<SavedWindow>, String> {
+        #[allow(unused_unsafe)]
+        unsafe {
+            let window = window_ref(raw).ok_or_else(|| "no window".to_string())?;
+            let saved = if save {
+                Some(SavedWindow {
+                    style_mask: window.styleMask().bits() as usize,
+                    level: window.level(),
+                    frame: window.frame(),
+                })
+            } else {
+                None
+            };
+            let frame = window
+                .screen()
+                .map(|s| s.frame())
+                .or_else(|| MainThreadMarker::new().and_then(NSScreen::mainScreen).map(|s| s.frame()))
+                .ok_or_else(|| "no screen".to_string())?;
+            // Borderless (the Flutter window overrides canBecomeKey, so it keeps focus), floating,
+            // covering the whole monitor.
+            window.setStyleMask(NSWindowStyleMask::empty());
+            window.setLevel(LOCK_LEVEL);
+            window.setFrame_display(frame, true);
+            window.makeKeyAndOrderFront(None);
+            Ok(saved)
+        }
+    }
+
+    /// Undo [`enter_fullscreen`]. Without a saved state only drops the floating level.
+    pub fn restore(raw: isize, saved: Option<SavedWindow>) {
+        #[allow(unused_unsafe)]
+        unsafe {
+            let Some(window) = window_ref(raw) else { return };
+            match saved {
+                Some(s) => {
+                    window.setStyleMask(NSWindowStyleMask::from_bits_retain(s.style_mask));
+                    window.setLevel(s.level);
+                    window.setFrame_display(s.frame, true);
+                }
+                None => {
+                    window.setLevel(0); // NSNormalWindowLevel
+                }
+            }
+        }
+    }
+
+    // ── keep awake (IOKit power assertion, the ms_keep_awake API) ────────────────────────────
+
+    type CFTypeRef = *const c_void;
+
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFStringCreateWithCString(alloc: CFTypeRef, c_str: *const std::ffi::c_char, encoding: u32) -> CFTypeRef;
+        fn CFRelease(cf: CFTypeRef);
+    }
+    #[link(name = "IOKit", kind = "framework")]
+    extern "C" {
+        fn IOPMAssertionCreateWithName(kind: CFTypeRef, level: u32, name: CFTypeRef, id: *mut u32) -> i32;
+        fn IOPMAssertionRelease(id: u32) -> i32;
+    }
+
+    static ASSERTION: Mutex<Option<u32>> = Mutex::new(None);
+
+    pub fn set_keep_awake(on: bool) {
+        let mut slot = ASSERTION.lock().unwrap_or_else(|p| p.into_inner());
+        if on {
+            if slot.is_some() {
+                return;
+            }
+            unsafe {
+                let kind = CFStringCreateWithCString(std::ptr::null(), c"PreventUserIdleDisplaySleep".as_ptr(), 0x0800_0100);
+                let name = CFStringCreateWithCString(std::ptr::null(), c"MasterSAT".as_ptr(), 0x0800_0100);
+                if !kind.is_null() && !name.is_null() {
+                    let mut id: u32 = 0;
+                    if IOPMAssertionCreateWithName(kind, 255, name, &mut id) == 0 {
+                        *slot = Some(id);
+                    }
+                }
+                if !kind.is_null() {
+                    CFRelease(kind);
+                }
+                if !name.is_null() {
+                    CFRelease(name);
+                }
+            }
+        } else if let Some(id) = slot.take() {
+            unsafe {
+                IOPMAssertionRelease(id);
+            }
+        }
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 mod stub {
     use std::time::Duration;
 

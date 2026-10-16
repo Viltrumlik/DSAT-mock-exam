@@ -8,10 +8,36 @@ rust-version = "1.77"
 # `src/lib.rs` is the Tauri app's former `src/lockdown.rs`, moved VERBATIM so that the 0.1.x
 # Tauri shell (desktop/src-tauri) and the native rewrite's mastersat_native.dll
 # (desktop-native/native) share one implementation. Behaviour changes go here, once, for both.
-# Tauri-free, like crates/proof: it builds (with portable stubs) on any host.
+# Tauri-free, like crates/proof: it builds (with portable stubs) on a Linux host, with the real
+# Win32 lockdown on Windows and the real AppKit/CoreGraphics/IOKit lockdown on macOS (the native
+# rewrite ships on both; see `src/macos.rs`).
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# The macOS half of the lockdown (src/macos.rs): the same things a web page cannot do, the AppKit
+# way — count displays, read the battery, see a non-console (remote/screen-shared) session, spot a
+# VM, list and quit a blocked app, keep the Mac awake and exclude the exam window from screen
+# capture. objc2 gives the typed, arch-correct Objective-C message sends (NSRect struct returns
+# differ between Apple Silicon and Intel); the plain C frameworks (CoreGraphics, IOKit,
+# CoreFoundation) are called through `#[link]` extern blocks in src/macos.rs.
+objc2 = "0.6.0"
+objc2-foundation = { version = "0.3.0", default-features = false, features = [
+  "std",
+  "NSString",
+  "NSArray",
+  "NSEnumerator",
+] }
+objc2-app-kit = { version = "0.3.0", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSApplication",
+  "NSResponder",
+  "NSWindow",
+  "NSRunningApplication",
+  "NSWorkspace",
+] }
 
 [target.'cfg(windows)'.dependencies]
 # Everything the shell can do that a web page cannot: count monitors, see a Remote Desktop

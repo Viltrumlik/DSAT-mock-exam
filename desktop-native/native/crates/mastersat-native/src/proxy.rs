@@ -232,7 +232,128 @@ pub fn proxy_for(url: &str) -> MsResult<String> {
     Ok(value)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod imp {
+    // The system proxy on macOS, read the Mac way: CFNetworkCopySystemProxySettings gives the
+    // fixed HTTP / HTTPS proxy and the exceptions list a school configures in Network settings
+    // (dart:io sees none of it, exactly as on Windows). A PAC / auto-config script is not run
+    // here (it needs a run loop); that falls back to DIRECT, as a failed WPAD does on Windows.
+    use std::ffi::{c_char, c_void};
+
+    use super::{bypassed, find_proxy_string, Target, DIRECT};
+
+    type CFTypeRef = *const c_void;
+    const UTF8: u32 = 0x0800_0100;
+    const SINT32: isize = 3;
+
+    #[link(name = "CFNetwork", kind = "framework")]
+    extern "C" {
+        fn CFNetworkCopySystemProxySettings() -> CFTypeRef;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFRelease(cf: CFTypeRef);
+        fn CFStringCreateWithCString(alloc: CFTypeRef, s: *const c_char, encoding: u32) -> CFTypeRef;
+        fn CFStringGetCString(s: CFTypeRef, buf: *mut c_char, size: isize, encoding: u32) -> u8;
+        fn CFDictionaryGetValue(d: CFTypeRef, key: CFTypeRef) -> CFTypeRef;
+        fn CFNumberGetValue(n: CFTypeRef, the_type: isize, value: *mut c_void) -> u8;
+        fn CFArrayGetCount(a: CFTypeRef) -> isize;
+        fn CFArrayGetValueAtIndex(a: CFTypeRef, i: isize) -> CFTypeRef;
+    }
+
+    unsafe fn cfstr(key: &std::ffi::CStr) -> CFTypeRef {
+        CFStringCreateWithCString(std::ptr::null(), key.as_ptr(), UTF8)
+    }
+
+    unsafe fn value(dict: CFTypeRef, key: &std::ffi::CStr) -> CFTypeRef {
+        let k = cfstr(key);
+        if k.is_null() {
+            return std::ptr::null();
+        }
+        let v = CFDictionaryGetValue(dict, k); // borrowed
+        CFRelease(k);
+        v
+    }
+
+    unsafe fn read_string(s: CFTypeRef) -> Option<String> {
+        if s.is_null() {
+            return None;
+        }
+        let mut buf = [0i8; 1024];
+        if CFStringGetCString(s, buf.as_mut_ptr(), buf.len() as isize, UTF8) == 0 {
+            return None;
+        }
+        let bytes: &[u8] = std::slice::from_raw_parts(buf.as_ptr() as *const u8, buf.len());
+        let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+        std::str::from_utf8(&bytes[..end]).ok().map(|s| s.to_string())
+    }
+
+    unsafe fn num_i32(dict: CFTypeRef, key: &std::ffi::CStr) -> Option<i32> {
+        let v = value(dict, key);
+        if v.is_null() {
+            return None;
+        }
+        let mut out: i32 = 0;
+        if CFNumberGetValue(v, SINT32, &mut out as *mut i32 as *mut c_void) != 0 {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    unsafe fn enabled(dict: CFTypeRef, key: &std::ffi::CStr) -> bool {
+        num_i32(dict, key) == Some(1)
+    }
+
+    unsafe fn exceptions(dict: CFTypeRef) -> String {
+        let mut out: Vec<String> = Vec::new();
+        let arr = value(dict, c"ExceptionsList");
+        if !arr.is_null() {
+            let count = CFArrayGetCount(arr);
+            for i in 0..count {
+                if let Some(s) = read_string(CFArrayGetValueAtIndex(arr, i)) {
+                    out.push(s);
+                }
+            }
+        }
+        if enabled(dict, c"ExcludeSimpleHostnames") {
+            out.push("<local>".to_string());
+        }
+        out.join(";")
+    }
+
+    pub fn lookup(_url: &str, target: &Target) -> String {
+        unsafe {
+            let settings = CFNetworkCopySystemProxySettings();
+            if settings.is_null() {
+                return DIRECT.to_string();
+            }
+            let decision = (|| {
+                if bypassed(&exceptions(settings), target) {
+                    return DIRECT.to_string();
+                }
+                // ws rides http, wss rides https (Target::proxy_scheme), the same as Windows.
+                let https = target.scheme == "https" || target.scheme == "wss";
+                let (enable, host_key, port_key) = if https {
+                    (c"HTTPSEnable", c"HTTPSProxy", c"HTTPSPort")
+                } else {
+                    (c"HTTPEnable", c"HTTPProxy", c"HTTPPort")
+                };
+                if enabled(settings, enable) {
+                    if let Some(host) = read_string(value(settings, host_key)).filter(|h| !h.trim().is_empty()) {
+                        let port = num_i32(settings, port_key).filter(|p| *p > 0).unwrap_or(if https { 443 } else { 80 });
+                        return find_proxy_string(&[format!("{}:{}", host.trim(), port)]);
+                    }
+                }
+                DIRECT.to_string()
+            })();
+            CFRelease(settings);
+            decision
+        }
+    }
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 mod imp {
     use super::{Target, DIRECT};
 
@@ -470,11 +591,24 @@ mod tests {
         assert_eq!(static_decision("", "", &target), "DIRECT");
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     #[test]
     fn other_hosts_are_direct_and_cached() {
         assert_eq!(proxy_for("https://mastersat.uz/api/desktop/v1/home").unwrap(), "DIRECT");
         assert_eq!(proxy_for("https://mastersat.uz/other").unwrap(), "DIRECT");
+        assert_eq!(proxy_for("nope").unwrap_err().code, MS_ERR_ARG);
+    }
+
+    // On macOS the real CFNetwork lookup runs; a CI runner has no system proxy, so the answer is
+    // still DIRECT, but only the argument handling and the shape are asserted (the runner's
+    // network settings are not under this test's control).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_proxy_lookup_is_well_formed_and_cached() {
+        let first = proxy_for("https://mastersat.uz/api/desktop/v1/home").unwrap();
+        assert!(first == "DIRECT" || first.starts_with("PROXY "), "{first}");
+        let second = proxy_for("https://mastersat.uz/api/desktop/v1/home").unwrap();
+        assert_eq!(first, second, "cached per host");
         assert_eq!(proxy_for("nope").unwrap_err().code, MS_ERR_ARG);
     }
 }
