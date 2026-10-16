@@ -194,15 +194,24 @@ reply, the old join dialog and the old `?start=<token>` bind exactly as they wer
   per Telegram account (whatever it types), and per **MasterSAT account** — a username, an email
   and a phone spelling of one account all count against the same account, so trying several
   spellings or several Telegram accounts does not multiply the five. A login that names nobody is
-  counted under its own spelling, so guessing at unknown logins is bounded too. This lock is the
+  counted under a hash of its spelling (`name:<sha256>`, phone-folded and lower-cased), so
+  guessing at unknown logins is bounded too, and a login typed as `user:5` cannot land on account
+  5's counter. A successful sign-in clears **only the account's** count; the **per-Telegram count
+  is never cleared on success** and expires by itself, so signing in to a login of one's own and
+  sending `/chiqish` does not buy a fresh five tries at other people's logins. This lock is the
   bot's only; the website's own login is unaffected. A half-typed sign-in expires after 10
   minutes. State and counters live in the cache (Redis in production); losing them in a restart
   costs a student one `/start`.
 - **At the password step only an exact command escapes** (`/start`, `/guruhlar`, `/chiqish`, or
   one addressed to this bot as `/start@TheBot`). Anything else — including `/x` or `/start@2024`
-  — is a password, and is deleted and checked. A password may begin with a slash.
+  — is a password, and is deleted and checked. A password may begin with a slash. The one
+  payload that is the bot's own is `/start login` (what its "open the bot" button sends, also as
+  `/start@TheBot login`): typed at the password step it restarts the sign-in and asks for the
+  login again, and it is neither deleted nor counted as a wrong try.
 - The webhook handles each Telegram `update_id` once (24 h), so a re-sent update cannot count
-  one wrong password as two.
+  one wrong password as two. If the cache is down, that dedupe is skipped — a warning with the
+  exception class and no payload is logged and the update is handled anyway — rather than
+  answering 500, which makes Telegram resend the whole backlog.
 
 ### The groups menu
 
@@ -210,7 +219,11 @@ reply, the old join dialog and the old `?start=<token>` bind exactly as they wer
   that has a Telegram group: **✅** inside, **➕** not yet, **🔒** frozen. Pressing ➕ replies, in
   the chat, with a one-time invite (single use, `CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`); a student
   already inside is told so; a frozen one gets a message saying why (debt vs admin wording) and no
-  link. The button does not also DM the 2026-09 English courtesy copy.
+  link. While the student still holds a live, unexpired link for that class, pressing ➕ again
+  **resends that same link** (with the minutes left, rounded up, at least 1) instead of minting:
+  nothing is probed, minted or revoked, so a second tap cannot revoke the link the first one
+  delivered. A new link is minted only when there is none or it has expired. The button does not
+  also DM the 2026-09 English courtesy copy.
 - Opening the menu asks Telegram where the student is (`identify_memberships`, one
   `getChatMember` per group). Each group answers **in**, **out**, or **unknown** — unknown means
   Telegram could not be asked (a timeout, a 403, a wrong chat id). Unknown says nothing about
@@ -247,11 +260,22 @@ the payment's own lc-up group and the amount ("500 000 so'm"), then either "no d
 "debt left: X so'm". The debt is lc-up's **overall** balance — lc-up keeps no balance per group
 (measured 2026-10-16), so the message does not pretend to one.
 
+The sync passes the task a **cut-off**: its own start minus 120 s
+(`PAYMENT_CUTOFF_MARGIN_SECONDS` in `lcup/sync.py`), and only payments lc-up created *before* it
+are announced. The students stage reads the balances before the payments stage reads the
+payments, so a payment recorded in between would be announced beside a balance that still counts
+it as unpaid, and it is announced only once. Later payments stay unmarked and go out on the next
+sync, whose balances include them. A cut-off the task cannot read sends nothing.
+
 - Each payment is **claimed first** (`bot_notified_at` set only if still empty) and only the run
   that changes the row sends it, so two overlapping runs cannot both send.
 - A failure that may pass — no answer from Telegram, 429, 5xx — gives the claim back and is
   retried by the next sync. One Telegram refused (the student blocked the bot, a bad chat: 403/400)
   stays marked and is counted as `refused`.
+- A payment whose message raises while being built or sent is logged (`logger.exception`, the
+  payment id only, never the text), its claim is given back, it is counted as `failed`, and the
+  run goes on with the next payment — nothing is re-raised, so one bad payment cannot block the
+  queue. It is tried again by the next sync.
 - A student with no bot connection is marked done and skipped; connecting later does not replay
   old payments.
 
@@ -274,6 +298,10 @@ had already left or are an admin of the group.
 `python manage.py announce_classroom_bot` lists every active class group (dry run);
 `--send` posts the one note — with a button that opens the bot — into each, once per distinct
 chat id. Run `--send` only with the owner's go-ahead: it speaks in every class group at once.
+`--send` **refuses** (a `CommandError`, nothing posted) while
+`CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED` is off: the button opens the bot's sign-in, and with the
+flag off the old handler answers it "That link has already been used" in every group, which
+cannot be undone. The dry run works either way and prints a warning line when the flag is off.
 If any post fails the command **exits non-zero** and names the groups that did not get it;
 retry exactly those with `--only CHAT_ID` (repeatable) so the others are not asked twice. An id
 that matches no class group is refused before anything is posted — a mistyped id must not look
@@ -312,7 +340,8 @@ before the end-to-end test, and the payment flag comes last.
 6. **The remaining groups:** for each one, the bot as an administrator, `/chatid`, and the id
    pasted into /ops.
 7. With the owner's go-ahead, `python manage.py announce_classroom_bot` (dry run), then
-   `announce_classroom_bot --send`. If any group fails, retry only those with
+   `announce_classroom_bot --send` (it refuses unless the flag from step 4 is on). If any group
+   fails, retry only those with
    `--only CHAT_ID` (repeatable).
 8. Set `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` to the switch-on moment (ISO date-time), so only
    payments lc-up creates after it are announced.
