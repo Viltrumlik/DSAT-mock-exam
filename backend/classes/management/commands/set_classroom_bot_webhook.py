@@ -22,9 +22,10 @@ from django.core.management.base import BaseCommand, CommandError
 
 from classes.telegram_group_api import bot_token
 
-#: ``message`` carries the /chatid helper; ``my_chat_member`` tells us the bot itself was
-#: added, promoted or removed. Everything else is noise we would only have to discard.
-ALLOWED_UPDATES = ["message", "chat_member", "my_chat_member"]
+#: ``message`` carries /chatid and the bot's sign-in chat; ``my_chat_member`` tells us the bot
+#: itself was added, promoted or removed; ``callback_query`` is a press on a groups-menu button
+#: (plan 2026-10-16). Everything else is noise we would only have to discard.
+ALLOWED_UPDATES = ["message", "chat_member", "my_chat_member", "callback_query"]
 
 WEBHOOK_PATH = "/api/classes/telegram/webhook/"
 

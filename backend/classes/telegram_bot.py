@@ -295,3 +295,62 @@ def _check_password(chat_id, tg_id: int, message: dict, login: str) -> str:
     _send(chat_id, T.WELCOME.format(name=tg.api.esc(name)))
     send_menu(chat_id, user)
     return "logged_in"
+
+
+# ── Button presses ───────────────────────────────────────────────────────────
+
+
+def handle_callback_query(callback: dict) -> str:
+    """A press on a menu button: ``g:<classroom pk>`` → this student's one-time invite."""
+    frm = callback.get("from") if isinstance(callback.get("from"), dict) else {}
+    try:
+        tg_id = int(frm.get("id") or 0)
+    except (TypeError, ValueError):
+        tg_id = 0
+    message = callback.get("message") if isinstance(callback.get("message"), dict) else {}
+    chat_id = (message.get("chat") or {}).get("id") or tg_id
+    data = str(callback.get("data") or "")
+    # Always, and first: Telegram spins the button until this arrives.
+    tg.api.answer_callback_query(str(callback.get("id") or ""))
+    if not tg_id:
+        return "ignored"
+
+    user = User.objects.filter(telegram_bot_user_id=tg_id).first()
+    if user is None:
+        _send(chat_id, T.NOT_BOUND)
+        return "not_bound"
+    if not data.startswith("g:") or not data[2:].isdigit():
+        return "ignored"
+    classroom = next((c for c in tg.student_classrooms(user) if c.pk == int(data[2:])), None)
+    if classroom is None:
+        _send(chat_id, T.NOT_YOUR_GROUP)
+        return "not_member"
+
+    group = tg.api.esc(classroom.name)
+    if getattr(user, "is_frozen", False):
+        from users.audience import FROZEN_LCUP_DEBT
+
+        debt = str(getattr(user, "frozen_reason", "") or "") == FROZEN_LCUP_DEBT
+        _send(chat_id, (T.LOCKED_GROUP_DEBT if debt else T.LOCKED_GROUP_ADMIN).format(group=group))
+        return "locked"
+    try:
+        issued = tg.issue_invite(user=user, classroom=classroom, send_dm=False)
+    except tg.TelegramGroupError:
+        _send(chat_id, T.INVITE_FAILED)
+        return "error"
+    if issued["already_member"]:
+        _send(chat_id, T.ALREADY_IN.format(group=group))
+        return "already_in"
+    _send(chat_id, T.INVITE.format(group=group, link=issued["invite_link"], minutes=tg.invite_ttl_minutes()))
+    return "invite"
+
+
+def send_unfrozen_menu(user) -> bool:
+    """A freeze lifted: offer every group back, one ➕ each. True if it was sent."""
+    telegram_id = tg.bot_id_for(user)
+    if not tg.bot_login_enabled() or not telegram_id:
+        return False
+    markup = menu_markup(user)
+    if markup is None:
+        return False
+    return bool(tg.api.send_message(int(telegram_id), T.UNFROZEN, reply_markup=markup).ok)

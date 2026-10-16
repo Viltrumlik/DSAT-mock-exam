@@ -456,3 +456,77 @@ class SignInTests(BotBase):
     def test_switched_off_the_bot_keeps_its_old_reply(self):
         self.say("/start")
         self.assertIn("MasterSAT class bot", self.last())
+
+
+class MenuTests(BotBase):
+    def press(self, data: str, tg_id: int = 1001) -> None:
+        self.post({"callback_query": {
+            "id": f"cq{self._update + 1}",
+            "from": {"id": tg_id},
+            "data": data,
+            "message": {"message_id": 1, "chat": {"id": tg_id, "type": "private"}},
+        }})
+
+    def test_pressing_a_group_sends_a_one_time_link(self):
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(len(self.tg.links), 1)
+        self.assertEqual(
+            self.last(1001),
+            T.INVITE.format(group="Junior G15 English", link=self.tg.links[0], minutes=30),
+        )
+        # One message, in Uzbek: the 2026-09 English courtesy copy is not sent as well.
+        self.assertEqual(len([c for c, _ in self.tg.messages if c == "1001"]), 1)
+        self.assertTrue(self.tg.answered)
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_PENDING)
+
+    def test_pressing_a_group_you_are_in_mints_nothing(self):
+        self.tg.join(1001)
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(self.tg.links, [])
+        self.assertEqual(self.last(1001), T.ALREADY_IN.format(group="Junior G15 English"))
+
+    def test_a_student_frozen_for_debt_sees_the_lock(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason="lcup_debt")
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(self.tg.links, [])
+        self.assertEqual(self.last(1001), T.LOCKED_GROUP_DEBT.format(group="Junior G15 English"))
+
+    def test_an_admin_freeze_says_to_ask_the_admin(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason="")
+        self.press(f"g:{self.classroom.pk}")
+        self.assertEqual(self.last(1001), T.LOCKED_GROUP_ADMIN.format(group="Junior G15 English"))
+
+    def test_a_class_you_are_not_in_is_refused(self):
+        other = Classroom.objects.create(
+            name="Other", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin, telegram_chat_id="-100999",
+        )
+        self.press(f"g:{other.pk}")
+        self.assertEqual(self.tg.links, [])
+        self.assertEqual(self.last(1001), T.NOT_YOUR_GROUP)
+
+    def test_an_unknown_telegram_is_asked_to_sign_in(self):
+        self.press(f"g:{self.classroom.pk}", tg_id=7777)
+        self.assertEqual(self.last(7777), T.NOT_BOUND)
+
+    def test_the_menu_marks_each_group(self):
+        self.tg.join(1001)
+        self.say("/guruhlar", tg_id=1001)
+        self.assertEqual(self.tg.markups[-1]["inline_keyboard"][0][0]["text"], "✅ Junior G15 English")
+
+    def test_a_frozen_menu_shows_locks(self):
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True, frozen_reason="lcup_debt")
+        self.say("/guruhlar", tg_id=1001)
+        self.assertEqual(self.tg.markups[-1]["inline_keyboard"][0][0]["text"], "🔒 Junior G15 English")
+
+    def test_the_unfrozen_menu_offers_every_group(self):
+        from classes import telegram_bot
+
+        self.assertTrue(telegram_bot.send_unfrozen_menu(self.student))
+        self.assertEqual(self.last(1001), T.UNFROZEN)
+        self.assertEqual(self.tg.markups[-1]["inline_keyboard"][0][0]["text"], "➕ Junior G15 English")
+
+    def test_the_webhook_asks_telegram_for_button_presses(self):
+        from classes.management.commands.set_classroom_bot_webhook import ALLOWED_UPDATES
+
+        self.assertIn("callback_query", ALLOWED_UPDATES)

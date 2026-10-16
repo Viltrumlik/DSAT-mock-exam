@@ -217,6 +217,12 @@ class ClassroomTelegramWebhookView(APIView):
             self._handle_bot_status(my_chat_member)
             return
 
+        callback = payload.get("callback_query")
+        if isinstance(callback, dict):
+            if tg.bot_login_enabled():
+                logger.info("telegram_bot callback -> %s", telegram_bot.handle_callback_query(callback))
+            return
+
         message = payload.get("message")
         if isinstance(message, dict):
             self._handle_message(message)
