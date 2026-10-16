@@ -24,6 +24,9 @@ mkdir -p "$OUT"
 echo "::group::mastersat_native.dylib (universal)"
 pushd "$ROOT/desktop-native/native" >/dev/null
 rustup target add aarch64-apple-darwin x86_64-apple-darwin
+# Compile the native dylib against a macOS 12.0 floor (Flutter 3.47 / Xcode 27's minimum) so both
+# the Intel and Apple-Silicon slices load on macOS 12 and every later release, including Sequoia.
+export MACOSX_DEPLOYMENT_TARGET=12.0
 # DESKTOP_PROOF_KEY (key_id:hex) is embedded when present; without it a release build has NO key
 # and refuses midterms (ms_prove -> MS_ERR_NO_KEY), exactly like the Windows build.
 for target in aarch64-apple-darwin x86_64-apple-darwin; do
@@ -86,6 +89,29 @@ for bin in "$EXE" "$APP/Contents/Frameworks/libmastersat_native.dylib"; do
 done
 nm -gU "$APP/Contents/Frameworks/libmastersat_native.dylib" | grep -q "_ms_init" || { echo "::error::the dylib does not export ms_init"; exit 1; }
 test -f "$APP/Contents/Resources/island/content.html" || { echo "::error::the island is missing from the app"; exit 1; }
+echo "::endgroup::"
+
+echo "::group::deployment target (diagnose + enforce a macOS 12 launch floor)"
+# Sequoia 15.8.2 shows "You can't use this version ... with this version of macOS" even though we
+# set MACOSX_DEPLOYMENT_TARGET = 12.0, which means the Flutter 3.47 / Xcode 27 toolchain stamped a
+# newer minimum than we asked for. Print what actually landed (LaunchServices reads the app's
+# LSMinimumSystemVersion; dyld reads each Mach-O's LC_BUILD_VERSION minos) so we can see the real
+# floor, then pin LSMinimumSystemVersion back to 12.0.
+PLIST="$APP/Contents/Info.plist"
+echo "Xcode: $(xcodebuild -version 2>/dev/null | tr '\n' ' ')"
+echo "macOS SDK: $(xcrun --show-sdk-version 2>/dev/null || true)"
+echo "LSMinimumSystemVersion (as built): $(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo '?')"
+for b in "$EXE" \
+         "$APP/Contents/Frameworks/FlutterMacOS.framework/FlutterMacOS" \
+         "$APP/Contents/Frameworks/App.framework/App" \
+         "$APP/Contents/Frameworks/libmastersat_native.dylib"; do
+  [ -e "$b" ] || continue
+  echo "--- ${b##*Frameworks/} ($(basename "$b"))"
+  otool -l "$b" 2>/dev/null | grep -A4 'LC_BUILD_VERSION' | grep -E 'platform|minos|sdk' || true
+done
+# Force the LaunchServices gate down to macOS 12.0 (codesign below re-seals the patched plist).
+plutil -replace LSMinimumSystemVersion -string "12.0" "$PLIST"
+echo "LSMinimumSystemVersion (enforced): $(plutil -extract LSMinimumSystemVersion raw "$PLIST" 2>/dev/null || echo '?')"
 echo "::endgroup::"
 
 echo "::group::codesign"
