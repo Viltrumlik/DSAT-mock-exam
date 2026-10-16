@@ -156,3 +156,146 @@ which is why every arrival is written down including the ones matching nobody he
   group?".
 * `classroom_telegram_members` — current state per person per class.
 * Both are read-only in the Django admin under **Classes**.
+
+## The bot's own sign-in (plan 2026-10-16)
+
+The 2026-09 flow above hands a student a one-time link from the site. This adds a second door
+that lives in the bot: the student signs in there with their MasterSAT login and password, and
+the bot shows their class groups as buttons. It exists for two reasons — students who never
+opened the bot cannot be messaged (freeze, unfreeze and payment notes all need a chat), and the
+members who were in a group before the bot cannot be managed until somebody identifies them.
+All bot text is Uzbek (Latin) and lives in `classes/telegram_texts.py`; the site stays English.
+
+Switched by `CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED` (default **off**). Off keeps the old `/start`
+reply, the old join dialog and the old `?start=<token>` bind exactly as they were. On:
+
+### Signing in
+
+- The class page's Telegram button opens `t.me/<bot>?start=login` (`bot_url` in the join-state
+  payload; empty while the flag is off, or for a class that is not managed). For a managed class
+  with the flag off the button still opens the join dialog, and for a class nobody has set up it
+  is still the static link.
+- Every private chat with the bot then goes to the sign-in (`classes/telegram_bot.py`), and the
+  `?start=<token>` bind is no longer consulted. The bot asks for the login (username, email or
+  phone), then the password. **The password message is deleted the moment it arrives**, before
+  anything else runs; if Telegram refuses the delete the student is told to remove it
+  themselves. The password is never logged, stored, or written to the audit trail — the webhook
+  log carries an outcome tag (`ask_password`, `wrong`, `locked`, `logged_in`…), never the text.
+- Success connects that Telegram account to the student: `User.telegram_bot_user_id`, the
+  **Bot API** id from the table above, not the OAuth one. Only learner roles qualify; a
+  Telegram account already connected to a different MasterSAT account must send `/chiqish`
+  first; an account with no usable password is told to set one on the site first. The lc-up
+  "last 4 digits" first-time code is **not** accepted here — only a real password, through
+  `EmailOrUsernameModelBackend`.
+- `/chiqish` disconnects (clears `telegram_bot_user_id`). Sign-in, wrong tries, lock-outs and
+  sign-out each leave a `SecurityAuditEvent` (`telegram_bot_login`, `_login_failed`,
+  `_login_locked`, `telegram_bot_logout`).
+- **Lock-out: 5 wrong tries, 15 minutes**, counted two ways at once and either one locks:
+  per Telegram account (whatever it types), and per **MasterSAT account** — a username, an email
+  and a phone spelling of one account all count against the same account, so trying several
+  spellings or several Telegram accounts does not multiply the five. A login that names nobody is
+  counted under its own spelling, so guessing at unknown logins is bounded too. This lock is the
+  bot's only; the website's own login is unaffected. A half-typed sign-in expires after 10
+  minutes. State and counters live in the cache (Redis in production); losing them in a restart
+  costs a student one `/start`.
+- **At the password step only an exact command escapes** (`/start`, `/guruhlar`, `/chiqish`, or
+  one addressed to this bot as `/start@TheBot`). Anything else — including `/x` or `/start@2024`
+  — is a password, and is deleted and checked. A password may begin with a slash.
+- The webhook handles each Telegram `update_id` once (24 h), so a re-sent update cannot count
+  one wrong password as two.
+
+### The groups menu
+
+- `/guruhlar` (and `/start` once connected) shows one button per active class the student sits in
+  that has a Telegram group: **✅** inside, **➕** not yet, **🔒** frozen. Pressing ➕ replies, in
+  the chat, with a one-time invite (single use, `CLASSROOM_TELEGRAM_INVITE_TTL_MINUTES`); a student
+  already inside is told so; a frozen one gets a message saying why (debt vs admin wording) and no
+  link. The button does not also DM the 2026-09 English courtesy copy.
+- Opening the menu asks Telegram where the student is (`identify_memberships`, one
+  `getChatMember` per group). Each group answers **in**, **out**, or **unknown** — unknown means
+  Telegram could not be asked (a timeout, a 403, a wrong chat id). Unknown says nothing about
+  whether they are inside, so nothing is written for it, and the menu shows ➕ for it (pressing
+  it probes again).
+- A member from before the bot who is found **in** becomes `identified_at` on their
+  `classroom_telegram_members` row, and is **managed from then on** — rule 3 above now reads
+  "the bot watched them arrive *or* they signed in and were found inside". The exception is a
+  student who is frozen at that moment: they are not identified, and a `RECONCILED` event
+  ("in the group while frozen; left for an admin to remove") is written so the admin can see
+  them, and they stay the admin's to remove by hand.
+
+### Messages the bot sends unprompted
+
+- **A freeze** sends one message naming every group the student was actually taken out of (not
+  one per group). Wording depends on why: lc-up debt (`FROZEN_LCUP_DEBT`) says the monthly
+  payment was not made and that they can rejoin through the bot after paying; any other freeze
+  says the account was frozen and to contact an administrator. Groups the bot left alone
+  (rule 1/2/3) are not listed. Leaving the class, a mismatched ticket and an admin's removal
+  have their own short wording.
+- **A lifted freeze** sends "🔓" plus the menu, one ➕ per group. Nobody is re-invited
+  automatically — unfreezing still waits for the student to press a button.
+- **A payment** (below).
+
+### Payments
+
+`CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` (ISO date-time, empty = off). A real lc-up sync queues
+`send_telegram_payment_messages` (a dry run queues nothing); it runs as the `payment_messages`
+stage, after the students' balances are refreshed and before the debt freeze, so "payment
+received" reaches a student before "your groups are open again". It announces only
+`kind="payment"` rows that lc-up created **after** that moment **and** that were paid in the last
+7 days, once each (`LcupPayment.bot_notified_at`). A refund is never announced. The text names
+the payment's own lc-up group and the amount ("500 000 so'm"), then either "no debt left" or
+"debt left: X so'm". The debt is lc-up's **overall** balance — lc-up keeps no balance per group
+(measured 2026-10-16), so the message does not pretend to one.
+
+- Each payment is **claimed first** (`bot_notified_at` set only if still empty) and only the run
+  that changes the row sends it, so two overlapping runs cannot both send.
+- A failure that may pass — no answer from Telegram, 429, 5xx — gives the claim back and is
+  retried by the next sync. One Telegram refused (the student blocked the bot, a bad chat: 403/400)
+  stays marked and is counted as `refused`.
+- A student with no bot connection is marked done and skipped; connecting later does not replay
+  old payments.
+
+### Ops: the class's Telegram part, and Remove
+
+/ops → class → **Telegram** (`GET /api/classes/admin/classrooms/<id>/telegram/`) shows the bot's
+health in the group, the head count Telegram reports (it cannot list members, so this differs
+from "known here" until everybody has signed in), who the site knows is inside, which of them the
+bot looks after (`managed`), and who is frozen. **Remove** (`POST …/telegram/remove/ {member_id}`,
+admins only) is the admin deciding about exactly the people the bot will not touch: members from
+before it who have not signed in, accounts it cannot place, frozen old debtors. It is a *forced*
+removal — rules 1 and 3 are set aside, **rule 2 never is** (a chat administrator is never removed).
+Because rule 2 needs the person's status, **a forced removal refuses when Telegram cannot report
+it** (the person is left in place, the ticket is burned, a `CONFIG_ERROR` event is written, and
+the endpoint answers 409 — press it again once Telegram answers). It also answers 409 when they
+had already left or are an admin of the group.
+
+### Asking the existing groups to sign in
+
+`python manage.py announce_classroom_bot` lists every active class group (dry run);
+`--send` posts the one note — with a button that opens the bot — into each, once per distinct
+chat id. Run `--send` only with the owner's go-ahead: it speaks in every class group at once.
+If any post fails the command **exits non-zero** and names the groups that did not get it;
+retry exactly those with `--only CHAT_ID` (repeatable) so the others are not asked twice. An id
+that matches no class group is refused before anything is posted — a mistyped id must not look
+like a finished retry.
+
+### Configuration and migrations
+
+| Variable | Default | What it is |
+|---|---|---|
+| `CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED` | `False` | The bot's sign-in, groups menu, unfreeze note and the class page's bot button. |
+| `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` | *(empty = off)* | ISO date-time; only lc-up payments created after it are announced. |
+
+Two additive, nullable migrations (no index): `classes.0056` adds
+`ClassroomTelegramMember.identified_at`; `lcup.0007` adds `LcupPayment.bot_notified_at`.
+`set_classroom_bot_webhook` now also allows `callback_query` (a press on a menu button) —
+re-run it after deploying, because Telegram sends nothing it was not asked for.
+
+### Switch-on order
+
+deploy → `set_classroom_bot_webhook --base-url https://mastersat.uz` (then `--show` must list
+`callback_query`) → test end to end in one group with one test student (sign in, ➕, join,
+freeze, removal message, unfreeze, menu) → the bot is an admin in every class group (Invite users
++ Ban users) and each group's `/chatid` is pasted into /ops → set the flags
+(`CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED=True`; `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` to the
+switch-on moment) → `announce_classroom_bot` (dry run), then `--send`.
