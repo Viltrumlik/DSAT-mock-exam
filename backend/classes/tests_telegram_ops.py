@@ -7,6 +7,7 @@ from io import StringIO
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.utils import timezone
 
 from classes import telegram_texts as T
@@ -103,3 +104,18 @@ class AnnounceCommandTests(TelegramGroupBase):
         self.assertEqual(self.tg.messages, [(CHAT, T.ANNOUNCE)])
         button = self.tg.markups[-1]["inline_keyboard"][0][0]
         self.assertEqual(button, {"text": T.ANNOUNCE_BUTTON, "url": "https://t.me/MasterSATTestBot?start=login"})
+
+    def test_a_failed_post_fails_the_command_and_names_the_group(self):
+        self.tg.send_should_fail = True
+        with self.assertRaises(CommandError) as cm:
+            call_command("announce_classroom_bot", "--send", stdout=StringIO())
+        self.assertIn(CHAT, str(cm.exception))
+
+    def test_only_retries_the_named_group(self):
+        second = "-1009876543210"
+        Classroom.objects.create(
+            name="Junior G15 Math", subject=Classroom.SUBJECT_MATH, lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin, telegram_chat_id=second,
+        )
+        call_command("announce_classroom_bot", "--send", "--only", second, stdout=StringIO())
+        self.assertEqual(self.tg.messages, [(second, T.ANNOUNCE)])

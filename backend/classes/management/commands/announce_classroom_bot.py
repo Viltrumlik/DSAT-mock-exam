@@ -5,8 +5,12 @@ they are identified — so every group is asked, with a button that opens the bo
 
     python manage.py announce_classroom_bot          # dry run: lists the groups
     python manage.py announce_classroom_bot --send   # posts it
+    python manage.py announce_classroom_bot --send --only -1001234567890   # retries one group
 
 Run --send only with the owner's go-ahead: it speaks in every class group at once.
+If a post fails, the command exits with an error naming the groups that did not get the note.
+Retry just those with --only (repeatable), so the groups that already received it are not
+asked twice.
 """
 
 from __future__ import annotations
@@ -23,6 +27,13 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--send", action="store_true", help="Actually post. Without it, only list.")
+        parser.add_argument(
+            "--only",
+            action="append",
+            default=None,
+            metavar="CHAT_ID",
+            help="Limit to this chat id (repeatable). Use it to retry the groups that failed.",
+        )
 
     def handle(self, *args, **options):
         url = tg.bot_start_url()
@@ -37,16 +48,26 @@ class Command(BaseCommand):
         )
         for room in rooms:
             chats.setdefault(tg.chat_id_for(room), []).append(room.name)
+        if options["only"] is not None:
+            wanted = {str(chat).strip() for chat in options["only"]}
+            chats = {chat: names for chat, names in chats.items() if chat in wanted}
         markup = {"inline_keyboard": [[{"text": T.ANNOUNCE_BUTTON, "url": url}]]}
         posted = 0
+        failed: list[str] = []
         for chat, names in chats.items():
             if not options["send"]:
                 self.stdout.write(f"would post to {chat}: {', '.join(names)}")
                 continue
             result = tg.api.send_message(chat, T.ANNOUNCE, reply_markup=markup)
             posted += int(result.ok)
+            if not result.ok:
+                failed.append(chat)
             self.stdout.write(
                 f"{'posted' if result.ok else 'FAILED'} {chat}: {', '.join(names)} {result.description}".rstrip()
             )
         tail = f"posted {posted}" if options["send"] else "dry run — nothing posted"
         self.stdout.write(f"{len(chats)} group(s); {tail}")
+        if options["send"] and posted < len(chats):
+            raise CommandError(
+                f"{len(failed)} of {len(chats)} group(s) failed: {', '.join(failed)} — retry with --only"
+            )
