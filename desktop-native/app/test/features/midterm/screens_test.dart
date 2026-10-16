@@ -389,6 +389,36 @@ void main() {
       expect(find.text('No chat or screen-sharing apps open'), findsOneWidget);
     });
 
+    testWidgets('a midterm (strict) lists every other app with a window and closes it politely; a past paper does not', (
+      tester,
+    ) async {
+      final native = FakeNativeBridge()
+        ..windowApps = [const BlockedApp(exe: 'chrome.exe', name: 'Google Chrome', closable: true)];
+      await pumpHost(tester, MidtermPrecheckScreen(native: native, resume: false, strict: true, onContinue: () async {}));
+      expect(native.lastPrecheckStrict, isTrue);
+      expect(find.text('Close Google Chrome'), findsOneWidget);
+      await tester.tap(find.text('Close'));
+      await tester.pump(); // "Closing…" paints first
+      await tester.pump();
+      expect(native.calls, contains('closeApp chrome.exe'));
+      expect(find.text('No other apps open'), findsOneWidget);
+
+      native.windowApps = [const BlockedApp(exe: 'chrome.exe', name: 'Google Chrome', closable: true)];
+      await pumpHost(
+        tester,
+        MidtermPrecheckScreen(
+          key: const ValueKey('pastpaper'),
+          native: native,
+          resume: false,
+          copy: PrecheckCopy.test,
+          onContinue: () async {},
+        ),
+      );
+      expect(native.lastPrecheckStrict, isFalse);
+      expect(find.text('Close Google Chrome'), findsNothing);
+      expect(find.text('No chat or screen-sharing apps open'), findsOneWidget);
+    });
+
     testWidgets('two screens, Remote Desktop, a VM: each says how to fix it; the 2 s re-check notices', (tester) async {
       final native = FakeNativeBridge(displays: 2, remote: true, vm: true);
       var continued = 0;
@@ -673,8 +703,8 @@ class _FlakyPrecheck extends FakeNativeBridge {
   bool broken = true;
 
   @override
-  PrecheckReport precheck() {
+  PrecheckReport precheck({bool strict = false}) {
     if (broken) throw const NativeBridgeException(NativeStatus.errOs, 'ms_precheck_json');
-    return super.precheck();
+    return super.precheck(strict: strict);
   }
 }

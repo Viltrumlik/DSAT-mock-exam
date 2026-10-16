@@ -457,6 +457,7 @@ class _MidtermFlowState extends State<MidtermFlow> {
         return MidtermPrecheckScreen(
           key: const ValueKey('precheck'),
           native: widget.native,
+          strict: true,
           resume: false,
           onContinue: c.lockAndOpen,
           onBack: c.backFromPrecheck,
@@ -465,6 +466,7 @@ class _MidtermFlowState extends State<MidtermFlow> {
         return MidtermPrecheckScreen(
           key: const ValueKey('resumePrecheck'),
           native: widget.native,
+          strict: true,
           resume: true,
           onContinue: c.relock,
           onBack: _exit,

@@ -30,6 +30,7 @@ import 'core/theme/app_theme.dart';
 import 'core/theme/controls.dart';
 import 'core/theme/toast.dart';
 import 'core/theme/tokens.dart';
+import 'exam/engine/lockdown_controller.dart' show LockdownController;
 import 'exam/engine/media_cache.dart' show MediaFetcher;
 import 'exam/launch/exam_runtime_host.dart';
 import 'exam/launch/island_guard.dart' show IslandDiagnostics;
@@ -426,12 +427,13 @@ class _MasterSatAppState extends State<MasterSatApp> {
         final s = widget.services;
         if (s.auth.isSignedIn) unawaited(s.home.refresh());
       },
-      onExitRequested: exams == null
-          ? null
-          : () async {
-              await exams.closeGracefully();
-              return AppExitResponse.exit;
-            },
+      onExitRequested: () async {
+        // A midterm's strict lock is one window, one app: the window does not close either
+        // (Alt+F4 is swallowed natively; this is the taskbar's or Task Manager's polite close).
+        if (LockdownController.strictEngaged) return AppExitResponse.cancel;
+        if (exams != null) await exams.closeGracefully();
+        return AppExitResponse.exit;
+      },
     );
   }
 

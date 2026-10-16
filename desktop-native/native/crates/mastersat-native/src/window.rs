@@ -44,7 +44,7 @@ mod imp {
         SC_RESTORE, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SWP_SHOWWINDOW,
         SW_RESTORE, SW_SHOWMINIMIZED, SW_SHOWNORMAL, WINDOWPLACEMENT, WINDOW_EX_STYLE, WINDOW_STYLE, WM_APP,
         WM_SYSCOMMAND, WNDCLASSEXW, WS_CAPTION, WS_EX_CLIENTEDGE, WS_EX_DLGMODALFRAME, WS_EX_STATICEDGE,
-        WS_EX_WINDOWEDGE, WS_THICKFRAME,
+        WS_EX_WINDOWEDGE, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_SYSMENU, WS_THICKFRAME,
     };
 
     fn hwnd(raw: isize) -> HWND {
@@ -200,8 +200,9 @@ mod imp {
 
     /// Borderless fullscreen on the monitor the window is on, above every other window.
     /// `save` = capture the current placement first (false when re-entering an engaged lock, so
-    /// the saved placement stays the pre-lock one).
-    pub fn enter_fullscreen(raw: isize, save: bool) -> Result<Option<SavedWindow>, String> {
+    /// the saved placement stays the pre-lock one). `strict` (a midterm) also drops the window
+    /// menu and the minimise/maximise boxes, so nothing can minimise the exam.
+    pub fn enter_fullscreen(raw: isize, save: bool, strict: bool) -> Result<Option<SavedWindow>, String> {
         let h = hwnd(raw);
         unsafe {
             let saved = if save {
@@ -229,7 +230,11 @@ mod imp {
             }
 
             let style = GetWindowLongPtrW(h, GWL_STYLE);
-            SetWindowLongPtrW(h, GWL_STYLE, style & !((WS_CAPTION | WS_THICKFRAME).0 as isize));
+            let mut drop = WS_CAPTION | WS_THICKFRAME;
+            if strict {
+                drop |= WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
+            }
+            SetWindowLongPtrW(h, GWL_STYLE, style & !(drop.0 as isize));
             let ex = GetWindowLongPtrW(h, GWL_EXSTYLE);
             let frame = WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE;
             SetWindowLongPtrW(h, GWL_EXSTYLE, ex & !(frame.0 as isize));
@@ -348,7 +353,7 @@ mod stub {
     #[derive(Clone, Copy, Debug)]
     pub struct SavedWindow;
 
-    pub fn enter_fullscreen(_raw: isize, save: bool) -> Result<Option<SavedWindow>, String> {
+    pub fn enter_fullscreen(_raw: isize, save: bool, _strict: bool) -> Result<Option<SavedWindow>, String> {
         Ok(save.then_some(SavedWindow))
     }
     pub fn restore(_raw: isize, _saved: Option<SavedWindow>) {}

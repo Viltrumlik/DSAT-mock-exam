@@ -103,7 +103,8 @@ class MidtermEngine extends ExamEngine {
     required this.midtermId,
     required super.studentName,
     LockdownController? lockdown,
-  })  : lockdown = lockdown ?? LockdownController(native: deps.native, heartbeatPeriod: deps.timings.lockHeartbeat),
+  })  : lockdown = lockdown ??
+            LockdownController(native: deps.native, heartbeatPeriod: deps.timings.lockHeartbeat, strict: true),
         _ownsLockdown = lockdown == null,
         super(deps, kind: ExamKind.midterm) {
     guard = OffscreenGuard(

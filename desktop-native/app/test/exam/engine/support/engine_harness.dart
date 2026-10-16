@@ -38,12 +38,12 @@ class ScriptedNativeBridge extends FakeNativeBridge {
   }
 
   @override
-  PrecheckReport lockEnter() {
+  PrecheckReport lockEnter({bool strict = false}) {
     if (failLockEnter) {
       calls.add('lockEnter');
       throw const NativeBridgeException(NativeStatus.errOs, 'ms_lock_enter', 'failed');
     }
-    return super.lockEnter();
+    return super.lockEnter(strict: strict);
   }
 }
 

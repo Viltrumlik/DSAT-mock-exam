@@ -142,8 +142,23 @@ MS_API int32_t ms_uninstall_legacy(char** out_json);
  * For the pre-check screen. SLOW-ish (process enumeration, ~50 ms). */
 MS_API int32_t ms_precheck_json(char** out_json);
 
+/* Lock flags for the _ex calls. MS_LOCK_STRICT = a midterm's lock (one window,
+ * one app): the precheck also lists every other program that has a window a
+ * student could switch to (closable: ms_close_app asks its windows to close,
+ * WM_CLOSE — never kills it), and while locked a foreground guard minimises
+ * whatever takes the foreground and takes it back; Alt+Space, PrintScreen and
+ * the browser/mail/app-launch keys are swallowed too; the window loses its
+ * window menu and minimise box. Unknown bits -> MS_ERR_ARG.
+ * (Written "0x1u" so it is never read as a status code.) */
+#define MS_LOCK_STRICT 0x1u
+
+/* ms_precheck_json with lock flags (0 = exactly ms_precheck_json). */
+MS_API int32_t ms_precheck_json_ex(uint32_t flags, char** out_json);
+
 /* lockdown::close_app(exe) with the same allow-list (only exes the precheck
- * lists as closable). `exe` is the image name, e.g. "telegram.exe".
+ * lists as closable): a blocked program is terminated; a program the strict
+ * precheck listed for its window is asked to close (WM_CLOSE) and may ask the
+ * student to save first. `exe` is the image name, e.g. "telegram.exe".
  * MS_ERR_NOT_FOUND if it is not running; MS_ERR_ARG if not on the list. */
 MS_API int32_t ms_close_app(const char* exe);
 
@@ -154,6 +169,11 @@ MS_API int32_t ms_close_app(const char* exe);
  * is CAPTURED — *out_precheck_json receives that exact string (the one
  * ms_prove signs and the server receives). Requires ms_init (MS_ERR_NOT_INIT). */
 MS_API int32_t ms_lock_enter(char** out_precheck_json);
+
+/* ms_lock_enter with lock flags (0 = exactly ms_lock_enter; MS_LOCK_STRICT =
+ * the midterm's lock, see above). The strict state lasts until ms_lock_exit or
+ * a watchdog release. */
+MS_API int32_t ms_lock_enter_ex(uint32_t flags, char** out_precheck_json);
 
 /* lockdown::release(hwnd), restore the window placement saved by
  * ms_lock_enter, clear the captured precheck. Safe when not locked (MS_OK). */

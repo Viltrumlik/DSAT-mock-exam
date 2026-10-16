@@ -107,6 +107,11 @@ typedef MsBytesNative = Int32 Function(Pointer<Uint8>, Size, Pointer<Pointer<Uin
 typedef MsBytesDart = int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef MsOutNative = Int32 Function(MsOutStr);
 typedef MsOutDart = int Function(MsOutStr);
+typedef MsFlagsOutNative = Int32 Function(Uint32, MsOutStr);
+typedef MsFlagsOutDart = int Function(int, MsOutStr);
+
+/// `MS_LOCK_STRICT` (mastersat_native.h): a midterm's lock — one window, one app.
+const int msLockStrict = 0x1;
 typedef MsStrNative = Int32 Function(Pointer<Utf8>);
 typedef MsStrDart = int Function(Pointer<Utf8>);
 typedef MsVoidNative = Int32 Function();
@@ -128,9 +133,9 @@ final class MsBindings {
       init = library.lookupFunction<Int32 Function(IntPtr, Pointer<Utf8>), int Function(int, Pointer<Utf8>)>('ms_init'),
       registerProtocol = library.lookupFunction<MsStrNative, MsStrDart>('ms_register_protocol'),
       uninstallLegacy = library.lookupFunction<MsOutNative, MsOutDart>('ms_uninstall_legacy'),
-      precheckJson = library.lookupFunction<MsOutNative, MsOutDart>('ms_precheck_json'),
+      precheckJson = library.lookupFunction<MsFlagsOutNative, MsFlagsOutDart>('ms_precheck_json_ex'),
       closeApp = library.lookupFunction<MsStrNative, MsStrDart>('ms_close_app'),
-      lockEnter = library.lookupFunction<MsOutNative, MsOutDart>('ms_lock_enter'),
+      lockEnter = library.lookupFunction<MsFlagsOutNative, MsFlagsOutDart>('ms_lock_enter_ex'),
       lockExit = library.lookupFunction<MsVoidNative, MsVoidDart>('ms_lock_exit'),
       heartbeat = library.lookupFunction<MsVoidNative, MsVoidDart>('ms_heartbeat'),
       awayNow = library.lookupFunction<MsVoidNative, MsVoidDart>('ms_away_now'),
@@ -168,9 +173,9 @@ final class MsBindings {
   final int Function(int, Pointer<Utf8>) init;
   final MsStrDart registerProtocol;
   final MsOutDart uninstallLegacy;
-  final MsOutDart precheckJson;
+  final MsFlagsOutDart precheckJson;
   final MsStrDart closeApp;
-  final MsOutDart lockEnter;
+  final MsFlagsOutDart lockEnter;
   final MsVoidDart lockExit;
   final MsVoidDart heartbeat;
   final MsVoidDart awayNow;
@@ -377,7 +382,9 @@ class FfiNativeBridge implements NativeBridge {
   // ---- lockdown ---------------------------------------------------------------------------
 
   @override
-  PrecheckReport precheck() => PrecheckReport.parse(_c.outString('ms_precheck_json', _b.precheckJson));
+  PrecheckReport precheck({bool strict = false}) => PrecheckReport.parse(
+        _c.outString('ms_precheck_json', (out) => _b.precheckJson(strict ? msLockStrict : 0, out)),
+      );
 
   @override
   void closeApp(String exe) {
@@ -385,10 +392,10 @@ class FfiNativeBridge implements NativeBridge {
   }
 
   @override
-  PrecheckReport lockEnter() {
+  PrecheckReport lockEnter({bool strict = false}) {
     final out = calloc<Pointer<Utf8>>();
     try {
-      final code = _b.lockEnter(out);
+      final code = _b.lockEnter(strict ? msLockStrict : 0, out);
       if (code == NativeStatus.errPrecheck && out.value != nullptr) {
         // The one documented exception to "NULL on error": the failing report, which the
         // pre-check screen shows (FakeNativeBridge puts it in the message the same way).

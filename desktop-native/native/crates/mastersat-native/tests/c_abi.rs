@@ -372,6 +372,14 @@ fn development_host_stubs_behave() {
         out_str(|o| unsafe { ms_precheck_json(o) }),
         (0, Some(STUB_PRECHECK.to_string()))
     );
+    // The strict (midterm) flag reads the same stub on a dev host; an unknown flag is refused,
+    // so an older DLL can never silently ignore a flag a newer app relies on.
+    assert_eq!(
+        out_str(|o| unsafe { ms_precheck_json_ex(1, o) }),
+        (0, Some(STUB_PRECHECK.to_string()))
+    );
+    assert_eq!(out_str(|o| unsafe { ms_precheck_json_ex(2, o) }).0, -1, "MS_ERR_ARG");
+    assert_eq!(out_str(|o| unsafe { ms_lock_enter_ex(4, o) }).0, -1, "MS_ERR_ARG");
     assert_eq!(
         out_str(|o| unsafe { ms_battery_json(o) }),
         (0, Some("null".to_string()))

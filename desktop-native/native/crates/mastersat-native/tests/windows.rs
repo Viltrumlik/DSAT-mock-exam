@@ -141,7 +141,7 @@ fn fullscreen_covers_the_monitor_and_restore_puts_the_window_back() {
     use windows::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DestroyWindow, GetWindowLongPtrW, GetWindowRect, RegisterClassExW, ShowWindow,
         GWL_EXSTYLE, GWL_STYLE, HMENU, SW_SHOWNORMAL, WINDOW_EX_STYLE, WNDCLASSEXW, WS_CAPTION, WS_EX_TOPMOST,
-        WS_OVERLAPPEDWINDOW,
+        WS_MINIMIZEBOX, WS_OVERLAPPEDWINDOW, WS_SYSMENU,
     };
 
     unsafe extern "system" fn proc_(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT {
@@ -182,7 +182,7 @@ fn fullscreen_covers_the_monitor_and_restore_puts_the_window_back() {
         let before = rect(h);
         let style_before = GetWindowLongPtrW(h, GWL_STYLE);
 
-        let saved = mastersat_native::window::enter_fullscreen(raw, true).expect("enter_fullscreen");
+        let saved = mastersat_native::window::enter_fullscreen(raw, true, false).expect("enter_fullscreen");
         assert!(saved.is_some(), "the pre-lock placement is saved");
         let mut info = MONITORINFO {
             cbSize: std::mem::size_of::<MONITORINFO>() as u32,
@@ -208,6 +208,18 @@ fn fullscreen_covers_the_monitor_and_restore_puts_the_window_back() {
             GetWindowLongPtrW(h, GWL_EXSTYLE) & WS_EX_TOPMOST.0 as isize,
             0,
             "no longer topmost"
+        );
+
+        // The strict (midterm) lock: no window menu and no minimise box, so Alt+Space or a
+        // taskbar click cannot minimise the exam; all of it comes back afterwards.
+        let saved = mastersat_native::window::enter_fullscreen(raw, true, true).expect("strict");
+        let style = GetWindowLongPtrW(h, GWL_STYLE);
+        assert_eq!(style & (WS_SYSMENU | WS_MINIMIZEBOX).0 as isize, 0, "no window menu, no minimise box");
+        mastersat_native::window::restore(raw, saved);
+        assert_eq!(
+            GetWindowLongPtrW(h, GWL_STYLE) & (WS_SYSMENU | WS_MINIMIZEBOX).0 as isize,
+            style_before & (WS_SYSMENU | WS_MINIMIZEBOX).0 as isize,
+            "the window menu and minimise box are back"
         );
         let _ = DestroyWindow(h);
     }

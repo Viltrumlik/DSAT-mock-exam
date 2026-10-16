@@ -107,6 +107,7 @@ fn rust_to_c(t: &str) -> String {
         "usize" => "size_t",
         "isize" => "intptr_t",
         "i32" => "int32_t",
+        "u32" => "uint32_t",
         "i64" => "int64_t",
         "()" | "" => "void",
         other => panic!("no C mapping for Rust type {other:?} — extend rust_to_c and the header"),
@@ -208,8 +209,10 @@ fn exports_have_the_declared_types() {
     let _: unsafe extern "C" fn(*const c_char) -> i32 = ms_register_protocol;
     let _: unsafe extern "C" fn(*mut *mut c_char) -> i32 = ms_uninstall_legacy;
     let _: unsafe extern "C" fn(*mut *mut c_char) -> i32 = ms_precheck_json;
+    let _: unsafe extern "C" fn(u32, *mut *mut c_char) -> i32 = ms_precheck_json_ex;
     let _: unsafe extern "C" fn(*const c_char) -> i32 = ms_close_app;
     let _: unsafe extern "C" fn(*mut *mut c_char) -> i32 = ms_lock_enter;
+    let _: unsafe extern "C" fn(u32, *mut *mut c_char) -> i32 = ms_lock_enter_ex;
     let _: extern "C" fn() -> i32 = ms_lock_exit;
     let _: extern "C" fn() -> i32 = ms_heartbeat;
     let _: extern "C" fn() -> i32 = ms_away_now;

@@ -136,13 +136,31 @@ pub unsafe extern "C" fn ms_uninstall_legacy(out_json: *mut *mut c_char) -> i32 
 
 #[no_mangle]
 pub unsafe extern "C" fn ms_precheck_json(out_json: *mut *mut c_char) -> i32 {
+    ms_precheck_json_ex(0, out_json)
+}
+
+/// `ms_precheck_json` with lock flags: MS_LOCK_STRICT also lists every other app with a window.
+#[no_mangle]
+pub unsafe extern "C" fn ms_precheck_json_ex(flags: u32, out_json: *mut *mut c_char) -> i32 {
     clear_out_str(out_json);
     boundary("ms_precheck_json", || {
         require_out(out_json, "out_json")?;
-        let report = mastersat_lockdown::precheck();
+        let strict = lock_flags(flags)?;
+        let report = mastersat_lockdown::precheck_with(strict);
         let json = serde_json::to_string(&report).map_err(|e| MsError::os(e.to_string()))?;
         write_str(out_json, json, "out_json")
     })
+}
+
+/// MS_LOCK_STRICT (a midterm: one window, one app). Unknown bits are an argument error, so an
+/// older DLL can never silently ignore a flag a newer app relies on.
+pub const MS_LOCK_STRICT: u32 = 1;
+
+fn lock_flags(flags: u32) -> MsResult<bool> {
+    if flags & !MS_LOCK_STRICT != 0 {
+        return Err(MsError::arg(format!("unknown lock flags {flags:#x}")));
+    }
+    Ok(flags & MS_LOCK_STRICT != 0)
 }
 
 #[no_mangle]
@@ -154,10 +172,17 @@ pub unsafe extern "C" fn ms_close_app(exe: *const c_char) -> i32 {
 /// "outputs are NULL on error") — still to be freed by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn ms_lock_enter(out_precheck_json: *mut *mut c_char) -> i32 {
+    ms_lock_enter_ex(0, out_precheck_json)
+}
+
+/// `ms_lock_enter` with lock flags (MS_LOCK_STRICT: the midterm's strict lock).
+#[no_mangle]
+pub unsafe extern "C" fn ms_lock_enter_ex(flags: u32, out_precheck_json: *mut *mut c_char) -> i32 {
     clear_out_str(out_precheck_json);
     boundary("ms_lock_enter", || {
         require_out(out_precheck_json, "out_precheck_json")?;
-        match lock::enter()? {
+        let strict = lock_flags(flags)?;
+        match lock::enter(strict)? {
             lock::EnterOutcome::Locked(json) => write_str(out_precheck_json, json, "out_precheck_json"),
             lock::EnterOutcome::Refused(json) => {
                 write_str(out_precheck_json, json, "out_precheck_json")?;

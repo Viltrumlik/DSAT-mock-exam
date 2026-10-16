@@ -198,16 +198,18 @@ abstract class NativeBridge {
 
   // ---- lockdown ---------------------------------------------------------------------------
 
-  /// `ms_precheck_json` (pre-check screen).
-  PrecheckReport precheck();
+  /// `ms_precheck_json_ex` (pre-check screen). [strict] = a midterm's pre-check (one window,
+  /// one app): every other program with a window a student could switch to is listed too.
+  PrecheckReport precheck({bool strict = false});
 
   /// `ms_close_app` — close one listed program.
   void closeApp(String exe);
 
   /// `ms_lock_enter` — throws [NativeBridgeException] with [NativeStatus.errPrecheck] (and the
   /// failing report in the message) when the machine is not ready. Returns the captured
-  /// precheck that [prove] will sign.
-  PrecheckReport lockEnter();
+  /// precheck that [prove] will sign. [strict] = a midterm's lock (`MS_LOCK_STRICT`): the strict
+  /// pre-check, plus the foreground guard and the extra keys while locked.
+  PrecheckReport lockEnter({bool strict = false});
 
   /// `ms_lock_exit` (safe when not locked).
   void lockExit();
