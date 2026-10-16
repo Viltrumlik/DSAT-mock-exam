@@ -54,9 +54,13 @@ class FakeTelegram:
         self.markups: list = []
         self.delete_should_fail = False
         self.send_should_fail = False
+        #: A failing ``getChatMember`` for everyone but the bot — the status stays unreadable.
+        self.probe_should_fail = False
 
     # ── reads ────────────────────────────────────────────────────────────────
     def get_chat_member(self, chat_id, user_id):
+        if self.probe_should_fail and int(user_id) != BOT_ID:
+            return tg.api.TgResult(False, description="URLError: timed out")
         status = self.members.get((str(chat_id), int(user_id)))
         if status is None:
             return tg.api.TgResult(True, {"status": "left"})

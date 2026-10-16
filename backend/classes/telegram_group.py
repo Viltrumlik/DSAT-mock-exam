@@ -587,6 +587,8 @@ def remove_member(
 
     ``force`` is an admin removing somebody by hand from /ops: it skips rules 1 and 3
     (unknown accounts, people from before the bot), never rule 2 (chat admins).
+    A forced removal needs a readable chat status: if the probe failed, the person is left
+    in place and the call returns False, because without the status rule 2 cannot be checked.
     """
     classroom = row.classroom
     chat = chat_id_for(classroom)
@@ -614,6 +616,30 @@ def remove_member(
         row.status = ClassroomTelegramMember.STATUS_REMOVED
         row.removed_reason = reason
         row.removed_at = timezone.now()
+        row.last_checked_at = timezone.now()
+        row.save()
+        return False
+
+    if force and not chat_status:
+        # The probe failed, so this person might be a chat admin and we cannot tell. A forced
+        # removal has set rules 1 and 3 aside, which leaves rule 2 as the only thing between
+        # an unprobed teacher's second account and the kick, and rule 2 reads the status we
+        # do not have. Refuse; the admin presses the button again once Telegram answers.
+        #
+        # The ticket is burned as in every other leave-in-place branch: it does not depend on
+        # knowing who this is.
+        _clear_ticket(row)
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR,
+            user=row.user,
+            telegram_user_id=int(telegram_id),
+            reason=reason,
+            detail=(
+                "forced removal refused: could not read this account's status in the group "
+                "(it may be a chat admin), so it was left in place"
+            ),
+        )
         row.last_checked_at = timezone.now()
         row.save()
         return False

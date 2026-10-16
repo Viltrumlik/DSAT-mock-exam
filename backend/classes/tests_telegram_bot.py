@@ -11,14 +11,17 @@ from __future__ import annotations
 import json
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase
 from django.utils import timezone
 
 from classes import telegram_group as tg
 from classes import telegram_group_api as api
 from classes import telegram_texts as T
-from classes.models_telegram import ClassroomTelegramMember
+from classes.models_telegram import ClassroomTelegramEvent, ClassroomTelegramMember
 from classes.tests_telegram_group import CHAT, TelegramGroupBase
+
+User = get_user_model()
 
 JOINED = ClassroomTelegramMember.STATUS_JOINED
 MANUAL = ClassroomTelegramMember.REASON_MANUAL
@@ -100,4 +103,49 @@ class ManagedRowTests(TelegramGroupBase):
     def test_force_never_removes_a_chat_admin(self):
         row = self.member(self.student, 1001, status="administrator")
         self.assertFalse(tg.remove_member(row, reason=MANUAL, force=True))
+        self.assertEqual(self.tg.kicked, [])
+
+    def test_force_leaves_somebody_in_place_when_their_status_cannot_be_read(self):
+        # A failed probe leaves the status empty, and an empty status matches no chat-admin
+        # check. Forced past rules 1 and 3, an unprobed teacher's second account would go.
+        row = self.member(self.student, 1001, status="administrator")
+        row.invite_link = "https://t.me/+stale"
+        row.save(update_fields=["invite_link"])
+        self.tg.probe_should_fail = True
+
+        self.assertFalse(tg.remove_member(row, reason=MANUAL, force=True))
+
+        self.assertEqual(self.tg.kicked, [])
+        row.refresh_from_db()
+        self.assertEqual(row.status, JOINED)
+        self.assertEqual(row.invite_link, "")
+        self.assertIn("https://t.me/+stale", self.tg.revoked)
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                classroom=self.classroom,
+                action=ClassroomTelegramEvent.ACTION_CONFIG_ERROR,
+                telegram_user_id=1001,
+            ).exists()
+        )
+
+    def test_the_sweep_removes_an_identified_frozen_member(self):
+        self.member(self.student, 1001, identified=True)
+        # Frozen without the hook, as when a worker was down at the time.
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 1)
+        self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
+        self.assertEqual(
+            self.row(self.student).removed_reason, ClassroomTelegramMember.REASON_FROZEN
+        )
+
+    def test_the_sweep_leaves_an_unidentified_frozen_member_alone(self):
+        self.member(self.student, 1001)
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 0)
         self.assertEqual(self.tg.kicked, [])
