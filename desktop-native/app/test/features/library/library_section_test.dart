@@ -1,6 +1,9 @@
-// The library on Home: chips with counts, search (Ctrl+F focuses, Esc clears), Clear
-// filters, the empty state, filters saved per student, and every card action.
+// The Past papers page: chips with counts, search (Ctrl+F opens the page and focuses it, Esc
+// clears), Clear filters, the empty state, filters saved per student, every card action, and
+// the booklet's hover lift.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/app.dart';
@@ -8,6 +11,7 @@ import 'package:mastersat_app/core/store/settings_store.dart';
 import 'package:mastersat_app/core/store/user_store.dart';
 import 'package:mastersat_app/features/library/booklet_card.dart';
 import 'package:mastersat_app/features/library/history_dialog.dart';
+import 'package:mastersat_app/features/library/past_papers_page.dart';
 import 'package:mastersat_app/features/library/pastpaper_model.dart';
 import 'package:mastersat_app/features/results/pastpaper_result_screen.dart';
 
@@ -19,16 +23,14 @@ Finder _segment(String label) => find.byWidgetPredicate(
 List<int> _shownPaperIds(WidgetTester tester) =>
     tester.widgetList<BookletCard>(find.byType(BookletCard)).map((c) => c.item.paper.id).toList();
 
-Future<void> _scrollToLibrary(WidgetTester tester) async {
-  await tester.scrollUntilVisible(find.text('Past papers'), 300, scrollable: find.byType(Scrollable).first);
-  await settleApp(tester);
-}
+/// The fixture has a midterm open now, so the app lands on Midterms: open Past papers.
+Future<void> _openLibrary(WidgetTester tester) => openPage(tester, 'Past papers');
 
 void main() {
   testWidgets('chips show counts and filter the cards; Clear filters resets everything', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
-    await _scrollToLibrary(tester);
+    await _openLibrary(tester);
 
     expect(_segment('US 4'), findsOneWidget);
     expect(_segment('International 2'), findsOneWidget);
@@ -52,15 +54,17 @@ void main() {
     await h.dispose(tester);
   });
 
-  testWidgets('search ignores case and accents; Esc clears it; Ctrl+F focuses it', (tester) async {
+  testWidgets('search ignores case and accents; Esc clears it; Ctrl+F opens Past papers and focuses it', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    expect(find.byType(PastPapersPage), findsNothing, reason: 'the app landed on Midterms');
     final field = find.byType(TextField);
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
     await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await settleApp(tester);
+    expect(find.byType(PastPapersPage), findsOneWidget);
     expect(tester.widget<TextField>(field).focusNode!.hasFocus, isTrue);
 
     await tester.enterText(field, 'JÚNE');
@@ -77,6 +81,7 @@ void main() {
   testWidgets('nothing matching shows "No matching papers" with its own Clear filters', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    await _openLibrary(tester);
     await tester.enterText(find.byType(TextField), 'zzz no such paper');
     await settleApp(tester);
     expect(find.text('No matching papers'), findsOneWidget);
@@ -94,7 +99,7 @@ void main() {
     final store = await UserStore.memory(77);
     final h = await AppHarness.start(openStore: (_) async => store);
     await h.pump(tester);
-    await _scrollToLibrary(tester);
+    await _openLibrary(tester);
     await tester.tap(_segment('US 4'));
     await tester.enterText(find.byType(TextField), 'june');
     await settleApp(tester);
@@ -112,6 +117,7 @@ void main() {
   testWidgets('card actions: Start, Resume and Start again open the exam; See score opens the result', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    await _openLibrary(tester);
 
     Future<void> press(int paperId, String label) async {
       final card = find.byWidgetPredicate((w) => w is BookletCard && w.item.paper.id == paperId);
@@ -139,6 +145,7 @@ void main() {
   testWidgets('History lists every sitting newest first and opens the one picked', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    await _openLibrary(tester);
     final history = find.text('History · 2 attempts');
     await tester.ensureVisible(history);
     await tester.tap(history);
@@ -156,9 +163,38 @@ void main() {
     await h.dispose(tester);
   });
 
+  testWidgets('a booklet lifts 4 px with the website\'s shadow under the mouse; the cursor stays the arrow', (tester) async {
+    final h = await AppHarness.start();
+    await h.pump(tester);
+    await _openLibrary(tester);
+    final card = find.byWidgetPredicate((w) => w is BookletCard && w.item.paper.id == 52);
+    await tester.ensureVisible(card);
+    await settleApp(tester);
+    final lift = find.descendant(of: card, matching: find.byType(AnimatedContainer)).first;
+    double dy() => tester.widget<AnimatedContainer>(lift).transform!.getTranslation().y;
+    expect(dy(), 0);
+
+    // A mouse user (the taps above were touches, which hide hover highlights).
+    FocusManager.instance.highlightStrategy = FocusHighlightStrategy.alwaysTraditional;
+    addTearDown(() => FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic);
+    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(gesture.removePointer);
+    await gesture.addPointer(location: tester.getCenter(card));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(dy(), -4);
+    expect(RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1), SystemMouseCursors.basic);
+
+    await gesture.moveTo(Offset.zero);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(dy(), 0);
+    await h.dispose(tester);
+  });
+
   testWidgets('a whole card is one keyboard stop: Enter on it runs its main action', (tester) async {
     final h = await AppHarness.start();
     await h.pump(tester);
+    await _openLibrary(tester);
     final card = find.byWidgetPredicate((w) => w is BookletCard && w.item.paper.id == 52);
     await tester.ensureVisible(card);
     final focus = Focus.of(tester.element(find.descendant(of: card, matching: find.byType(Container)).first));

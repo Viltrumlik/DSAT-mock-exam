@@ -1,16 +1,19 @@
 // Real fonts in widget tests and goldens. flutter_test draws every glyph as a box (the
 // "FlutterTest" font) unless fonts are loaded by hand.
 //
-// * Icons: every font in the test asset bundle's FontManifest (lucide_icons_flutter).
-// * Text: the app asks for "Segoe UI" (Windows' system font, architecture §2.3).
+// * Every family in the test asset bundle's FontManifest: the app's own bundled faces — Geist
+//   and Plus Jakarta Sans (pubspec.yaml `fonts:`), the very files the app ships, so screens
+//   outside the exam render here exactly as on Windows — and the icons (lucide_icons_flutter).
+// * "Segoe UI" (and "Arial"): the exam runner's chrome asks for them, and the app falls back
+//   to Segoe UI for glyphs its faces lack (arrows, maths signs).
 //     - Windows: the real Segoe UI from C:\Windows\Fonts.
 //     - macOS: Segoe UI is not installed (and not redistributable); its open metric-compatible
 //       twin Selawik is not installed either, so the system Arial is loaded under the
 //       "Segoe UI" family name. Arial is a few percent narrower than Segoe UI at the same size,
-//       so a line can break slightly differently from Windows; overflow, clipping and overlap
-//       still show.
+//       so a runner line can break slightly differently from Windows; overflow, clipping and
+//       overlap still show.
 //     - Linux: Liberation Sans or DejaVu Sans when present.
-//   Without any of these, text stays in the test font.
+//   Without any of these, that text stays in the test font.
 // * Goldens are recorded and compared on macOS only ([goldensSupported]).
 import 'dart:convert';
 import 'dart:io';
@@ -58,7 +61,7 @@ String? get goldenSkipReason => goldensSupported
 
 bool _loaded = false;
 
-/// Loads the icon fonts and Segoe UI (or its stand-in) once per test isolate.
+/// Loads the bundled faces, the icon fonts and Segoe UI (or its stand-in) once per test isolate.
 Future<void> loadAppFonts() async {
   if (_loaded) return;
   _loaded = true;

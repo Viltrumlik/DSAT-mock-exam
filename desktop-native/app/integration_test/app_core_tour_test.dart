@@ -20,6 +20,7 @@ import 'package:mastersat_app/core/store/app_paths.dart';
 import 'package:mastersat_app/features/home/home_screen.dart';
 import 'package:mastersat_app/features/library/history_dialog.dart';
 import 'package:mastersat_app/features/library/pastpaper_model.dart';
+import 'package:mastersat_app/features/shell/shell_controller.dart';
 import 'package:mastersat_app/features/signin/sign_in_screen.dart';
 import 'package:mastersat_app/main.dart' as app;
 
@@ -71,8 +72,11 @@ void main() {
     await services.auth.signIn(); // debug + in-process fixtures: no browser trip
     await _settle(tester, 40);
     expect(find.byType(HomeScreen), findsOneWidget);
-    await shot('home');
+    await shot('home'); // Midterms: a midterm is open now
 
+    services.shell.select(ShellSection.pastPapers);
+    await _settle(tester);
+    await shot('past_papers');
     await tester.ensureVisible(find.text('OCTOBER 2025'));
     await shot('library');
 
@@ -94,7 +98,7 @@ void main() {
 
     unawaited(openSettings(ctx()));
     await shot('settings');
-    nav.pop();
+    services.shell.select(ShellSection.midterms);
     await _settle(tester);
 
     final midterm = services.home.home!.midterms.firstWhere((m) => m.midtermId == 9);

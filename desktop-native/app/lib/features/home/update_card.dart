@@ -2,6 +2,7 @@
 // Home's policy says `update: "required"` (architecture §6). One-click Velopack update with
 // real download progress, and the website's installer link as the fallback.
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -34,7 +35,13 @@ class UpdateRequiredGate extends StatelessWidget {
         return Stack(
           children: [
             ExcludeFocus(child: ExcludeSemantics(child: child)),
-            const Positioned.fill(child: ColoredBox(color: AppColors.scrim)),
+            // The website's Modal backdrop: --overlay-scrim with a 2 px blur.
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                child: const ColoredBox(color: AppColors.scrim),
+              ),
+            ),
             Positioned.fill(
               child: UpdateRequiredCard(
                 updates: services.updates,
@@ -63,14 +70,16 @@ class UpdateRequiredCard extends StatelessWidget {
     final services = AppScope.of(context);
     return Center(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 480),
+        constraints: const BoxConstraints(maxWidth: 512),
+        // The website's Modal panel: radius 16, hairline border, the modal shadow.
         child: Container(
-          margin: const EdgeInsets.all(24),
+          margin: const EdgeInsets.all(16),
           padding: const EdgeInsets.fromLTRB(28, 26, 28, 24),
           decoration: BoxDecoration(
-            color: AppColors.panel,
-            borderRadius: BorderRadius.circular(AppRadii.xl),
-            boxShadow: dialogShadow,
+            color: AppColors.card,
+            borderRadius: BorderRadius.circular(AppRadii.kitLg),
+            border: Border.all(color: AppColors.border),
+            boxShadow: AppShadows.lg,
           ),
           child: ListenableBuilder(
             listenable: updates,
@@ -82,12 +91,12 @@ class UpdateRequiredCard extends StatelessWidget {
                 children: [
                   const BrandLogo(size: 34),
                   const SizedBox(height: 16),
-                  Text('Update required', style: AppText.heading.copyWith(fontSize: 22)),
+                  Text('Update required', style: AppText.heading.copyWith(fontSize: 22, color: AppColors.textPrimary)),
                   const SizedBox(height: 8),
                   Text(
                     detail ??
                         'This version of MasterSAT is out of date. Update to keep going — it only takes a minute, and your saved answers stay on this computer.',
-                    style: AppText.bodyMuted.copyWith(height: 1.5, color: AppColors.textSecondary),
+                    style: AppText.body.copyWith(fontWeight: FontWeight.w400, height: 1.6, color: AppColors.textSecondary),
                   ),
                   if (minimumVersion != null) ...[
                     const SizedBox(height: 6),
@@ -131,7 +140,7 @@ class UpdateRequiredCard extends StatelessWidget {
                           busyLabel: phase == UpdatePhase.checking ? 'Checking…' : 'Downloading…',
                           onPressed: () => unawaited(updates.checkAndDownload()),
                         ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 12),
                       if (updateUrl != null && updateUrl!.isNotEmpty)
                         AppButton(
                           label: 'Download from the website',

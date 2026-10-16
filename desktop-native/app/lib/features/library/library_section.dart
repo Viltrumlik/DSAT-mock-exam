@@ -1,6 +1,7 @@
-// Home → Past papers (architecture §8): Region / Year / Status / Subject chips with counts,
-// a search that ignores case and accents (Ctrl+F focuses it, Esc clears it), "Clear filters",
-// and booklet cards grouped by month, newest first.
+// Past papers (architecture §8; the website's pastpapers/page.tsx): Region / Year / Status /
+// Subject chips with counts, a search that ignores case and accents (Ctrl+F focuses it, Esc
+// clears it), "Clear filters", and booklet cards grouped by month, newest first, in as many
+// 380 px+ columns as fit (gap 18).
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -61,7 +62,6 @@ class _LibrarySectionState extends State<LibrarySection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SectionHeader(title: 'Past papers', hint: 'Full SAT sections, timed like test day.'),
             Wrap(
               spacing: 24,
               runSpacing: 12,
@@ -97,17 +97,17 @@ class _LibrarySectionState extends State<LibrarySection> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 20),
             Row(
               children: [
-                ConstrainedBox(
-                  key: widget.searchKey,
-                  constraints: const BoxConstraints(maxWidth: 520),
-                  child: SizedBox(
-                    width: 520,
+                Flexible(
+                  child: ConstrainedBox(
+                    key: widget.searchKey,
+                    constraints: const BoxConstraints(maxWidth: 560),
                     child: AppTextField(
                       controller: _search,
                       focusNode: widget.searchFocus,
+                      look: AppFieldLook.search,
                       hint: 'Search past papers…',
                       prefixIcon: LucideIcons.search,
                       semanticLabel: 'Search past papers',
@@ -120,15 +120,16 @@ class _LibrarySectionState extends State<LibrarySection> {
                 const SizedBox(width: 14),
                 if (f.hasFilter) AppLinkButton(label: 'Clear filters', icon: LucideIcons.x, onPressed: _clearAll),
                 const Spacer(),
+                const SizedBox(width: 14),
                 Text(
                   view.shown == view.total
                       ? '${view.total} ${view.total == 1 ? 'paper' : 'papers'}'
                       : '${view.shown} of ${view.total} papers',
-                  style: AppText.caption,
+                  style: AppText.caption.copyWith(fontSize: 13),
                 ),
               ],
             ),
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
             if (view.groups.isEmpty)
               f.hasFilter
                   ? EmptyState(
@@ -146,9 +147,9 @@ class _LibrarySectionState extends State<LibrarySection> {
                     )
             else
               for (final g in view.groups) ...[
+                if (g != view.groups.first) const SizedBox(height: 30),
                 GroupHeader(label: g.name, count: g.items.length),
                 _CardGrid(items: g.items),
-                const SizedBox(height: 26),
               ],
           ],
         );
@@ -157,14 +158,14 @@ class _LibrarySectionState extends State<LibrarySection> {
   }
 }
 
-/// Booklet cards in equal-height rows: as many 340 px+ columns as fit.
+/// Booklet cards in equal-height rows: `repeat(auto-fill, minmax(380px, 1fr))`, gap 18.
 class _CardGrid extends StatelessWidget {
   const _CardGrid({required this.items});
 
   final List<PaperItem> items;
 
   static const _gap = 18.0;
-  static const _minWidth = 340.0;
+  static const _minWidth = 380.0;
 
   @override
   Widget build(BuildContext context) {

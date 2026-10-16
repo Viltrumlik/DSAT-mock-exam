@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/widgets.dart';
 
+import 'app_theme.dart';
 import 'tokens.dart';
 
 const String _logoPngBase64 =
@@ -115,13 +116,15 @@ class BrandWordmark extends StatelessWidget {
         SizedBox(width: size * 0.38),
         Text(
           'MasterSAT',
+          // The shell's brand name: Geist extrabold, `tracking-tight` (-.025em).
           style: TextStyle(
-            fontFamily: 'Segoe UI',
-            fontFamilyFallback: const ['Segoe UI Variable Text', 'Selawik', 'Arial'],
+            fontFamily: AppFonts.ui,
+            fontFamilyFallback: AppFonts.fallback,
             fontSize: size * 0.68,
             fontWeight: FontWeight.w800,
             color: color,
-            letterSpacing: -0.2,
+            letterSpacing: size * 0.68 * -0.025,
+            height: 1.2,
             decoration: TextDecoration.none,
           ),
         ),
