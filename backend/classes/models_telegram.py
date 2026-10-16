@@ -129,6 +129,13 @@ class ClassroomTelegramMember(models.Model):
     #: an observed arrival writes this field, which is what makes it safe to enforce on.
     observed_arrival_at = models.DateTimeField(null=True, blank=True)
 
+    #: When the student signed in to the bot and the bot found them already inside the group —
+    #: the second way somebody comes under the bot's management (the first is an arrival it
+    #: watched). The owner's decision of 2026-10-16: members from before the bot are asked to
+    #: sign in, and that identifies them. Never set for somebody frozen at that moment: an old
+    #: debtor is the admin's to remove by hand, once.
+    identified_at = models.DateTimeField(null=True, blank=True)
+
     joined_at = models.DateTimeField(null=True, blank=True)
     left_at = models.DateTimeField(null=True, blank=True)
     removed_at = models.DateTimeField(null=True, blank=True)
@@ -173,6 +180,11 @@ class ClassroomTelegramMember(models.Model):
     def is_watched(self) -> bool:
         """Did the bot see this account come in? Nobody else is ever removed."""
         return self.observed_arrival_at is not None
+
+    @property
+    def is_managed(self) -> bool:
+        """May the bot act on this row on its own? Watched arriving, or identified by signing in."""
+        return self.observed_arrival_at is not None or self.identified_at is not None
 
 
 class ClassroomTelegramEvent(models.Model):

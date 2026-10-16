@@ -242,7 +242,7 @@ def may_remove(row: ClassroomTelegramMember, chat_status: str) -> bool:
     is a member of a group that existed before it, and the group was not handed over to be
     emptied. They are left alone until they leave and come back of their own accord.
     """
-    if not row.is_watched:
+    if not row.is_managed:
         return False
     return may_enforce_against(row.user, chat_status)
 
@@ -578,11 +578,15 @@ def remove_member(
     reason: str,
     notify_student: bool = True,
     chat_status: Optional[str] = None,
+    force: bool = False,
 ) -> bool:
     """Take one person out of one class group. Returns True if Telegram was asked to act.
 
     Passing ``chat_status`` skips the ``getChatMember`` probe when the caller has just made
     one — the sweep has, and doubling every check would double the API traffic of the run.
+
+    ``force`` is an admin removing somebody by hand from /ops: it skips rules 1 and 3
+    (unknown accounts, people from before the bot), never rule 2 (chat admins).
     """
     classroom = row.classroom
     chat = chat_id_for(classroom)
@@ -614,7 +618,7 @@ def remove_member(
         row.save()
         return False
 
-    if not row.is_watched:
+    if not force and not row.is_managed:
         # Rule 3, and it is not a judgement about this person: it is the bot declining to
         # act on a group it joined late. They were inside before it was watching, so being
         # inside now tells us nothing it is entitled to act on.
@@ -638,7 +642,9 @@ def remove_member(
         row.save()
         return False
 
-    if not may_enforce_against(row.user, chat_status):
+    if chat_status in api.CHAT_ADMIN_STATUSES or (
+        not force and not may_enforce_against(row.user, chat_status)
+    ):
         log_event(
             classroom=classroom,
             action=ClassroomTelegramEvent.ACTION_RECONCILED,

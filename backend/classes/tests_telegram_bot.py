@@ -12,9 +12,16 @@ import json
 from unittest import mock
 
 from django.test import SimpleTestCase
+from django.utils import timezone
 
+from classes import telegram_group as tg
 from classes import telegram_group_api as api
 from classes import telegram_texts as T
+from classes.models_telegram import ClassroomTelegramMember
+from classes.tests_telegram_group import CHAT, TelegramGroupBase
+
+JOINED = ClassroomTelegramMember.STATUS_JOINED
+MANUAL = ClassroomTelegramMember.REASON_MANUAL
 
 
 class BotApiTests(SimpleTestCase):
@@ -48,3 +55,49 @@ class TextsTests(SimpleTestCase):
 
     def test_group_list_escapes_and_bullets(self):
         self.assertEqual(T.group_list(["A & B", "C"]), "• A &amp; B\n• C")
+
+
+class ManagedRowTests(TelegramGroupBase):
+    """Rule 3 now has two ways in: an arrival the bot watched, or a sign-in that found the
+    student already inside (decision 3). An admin's removal is forced past rules 1 and 3."""
+
+    def member(self, user, tg_id, *, identified=False, status="member"):
+        self.tg.join(tg_id, status=status)
+        return ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, user=user, telegram_user_id=tg_id, status=JOINED,
+            joined_at=timezone.now(), identified_at=timezone.now() if identified else None,
+        )
+
+    def freeze(self, user):
+        with self.captureOnCommitCallbacks(execute=True):
+            user.is_frozen = True
+            user.save(update_fields=["is_frozen"])
+
+    def test_an_identified_member_comes_out_on_freeze(self):
+        self.member(self.student, 1001, identified=True)
+        self.freeze(self.student)
+        self.assertIn((CHAT, 1001), self.tg.kicked)
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_REMOVED)
+
+    def test_an_unidentified_old_member_still_stays(self):
+        self.member(self.student, 1001)
+        self.freeze(self.student)
+        self.assertEqual(self.tg.kicked, [])
+
+    def test_force_removes_an_old_member(self):
+        row = self.member(self.student, 1001)
+        self.assertTrue(tg.remove_member(row, reason=MANUAL, force=True))
+        self.assertIn((CHAT, 1001), self.tg.kicked)
+
+    def test_force_removes_an_account_matching_nobody(self):
+        self.tg.join(4242)
+        row = ClassroomTelegramMember.objects.create(
+            classroom=self.classroom, telegram_user_id=4242, status=JOINED
+        )
+        self.assertTrue(tg.remove_member(row, reason=MANUAL, force=True))
+        self.assertIn((CHAT, 4242), self.tg.kicked)
+
+    def test_force_never_removes_a_chat_admin(self):
+        row = self.member(self.student, 1001, status="administrator")
+        self.assertFalse(tg.remove_member(row, reason=MANUAL, force=True))
+        self.assertEqual(self.tg.kicked, [])
