@@ -65,7 +65,7 @@ IslandHostFactory islandHostFactory({
       final folder = dir != null && dir.trim().isNotEmpty ? dir.trim() : null;
       return (kind) => TextureIslandHost(kind, islandFolder: folder);
     case IslandHostMode.macosDev:
-      final source = macosSource ?? resolveDevIslandSource(environment: env);
+      final source = macosSource ?? bundleIslandSource() ?? resolveDevIslandSource(environment: env);
       if (source == null) {
         return (kind) => MacosIslandHost.unavailable(
           kind,

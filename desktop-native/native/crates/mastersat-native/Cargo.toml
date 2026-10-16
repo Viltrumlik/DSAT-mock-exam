@@ -56,6 +56,35 @@ windows = { version = "0.58", features = [
 ] }
 winreg = "0.52"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The macOS half of mastersat_native.dylib (Apple Silicon + Intel). objc2 gives arch-correct
+# Objective-C message sends for the exam window (NSWindow borderless fullscreen + floating level,
+# NSScreen) and NSWorkspace; the plain C frameworks (Security for the token key in the Keychain,
+# CFNetwork for the system proxy, IOKit for keep-awake) are called through `#[link]` blocks in
+# the per-module `macos` code. The lockdown itself is the shared mastersat-lockdown crate.
+objc2 = "0.6.0"
+objc2-foundation = { version = "0.3.0", default-features = false, features = [
+  "std",
+  "NSString",
+  "NSArray",
+  "NSEnumerator",
+  "NSGeometry",
+] }
+objc2-app-kit = { version = "0.3.0", default-features = false, features = [
+  "std",
+  "objc2-core-foundation",
+  "NSApplication",
+  "NSResponder",
+  "NSWindow",
+  "NSScreen",
+  "NSRunningApplication",
+  "NSWorkspace",
+] }
+objc2-core-foundation = { version = "0.3.0", default-features = false, features = [
+  "std",
+  "CFBase",
+] }
+
 [dev-dependencies]
 # Independent implementations for the C-ABI tests (the crate itself signs through mastersat-proof).
 hmac = "0.12"

@@ -335,11 +335,20 @@ mod imp {
     }
 }
 
-// ─────────────────────────────── other hosts ───────────────────────────────
-// A developer's Mac and the Linux CI job that runs `cargo test` compile these no-ops. They are
-// never shipped — the installer is built on Windows — so they only need to be honest placeholders.
+// ───────────────────────────────── macOS ───────────────────────────────────
+// The native rewrite ships on macOS too (Apple Silicon and Intel). `src/macos.rs` is the real
+// lockdown there — the AppKit/CoreGraphics/IOKit counterpart of the Win32 block above, exposing
+// exactly the same functions.
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[path = "macos.rs"]
+mod imp;
+
+// ─────────────────────────────── other hosts ───────────────────────────────
+// The Linux CI job that runs `cargo test` compiles these no-ops. They are never shipped — the
+// installer is built on Windows and macOS — so they only need to be honest placeholders.
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 mod imp {
     use super::{BatteryStatus, PrecheckReport};
 

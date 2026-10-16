@@ -59,8 +59,28 @@ pub fn is_running(exe: &str) -> bool {
     }
 }
 
-/// A developer's Mac runs none of the blocked Windows programs.
-#[cfg(not(windows))]
+/// macOS: whether an app with this bundle id is running (NSWorkspace).
+#[cfg(target_os = "macos")]
+pub fn is_running(exe: &str) -> bool {
+    let target = exe.to_ascii_lowercase();
+    #[allow(unused_unsafe)]
+    unsafe {
+        let workspace = objc2_app_kit::NSWorkspace::sharedWorkspace();
+        let apps = workspace.runningApplications();
+        for i in 0..apps.count() {
+            let app = apps.objectAtIndex(i);
+            if let Some(id) = app.bundleIdentifier() {
+                if id.to_string().to_ascii_lowercase() == target {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// The Linux CI host runs none of the blocked programs.
+#[cfg(all(not(windows), not(target_os = "macos")))]
 pub fn is_running(_exe: &str) -> bool {
     false
 }
@@ -75,9 +95,18 @@ mod tests {
         assert_eq!(close_app("  ").unwrap_err().code, MS_ERR_ARG);
     }
 
-    #[cfg(not(windows))]
+    #[cfg(all(not(windows), not(target_os = "macos")))]
     #[test]
     fn on_a_development_host_nothing_is_running() {
         assert_eq!(close_app("telegram.exe").unwrap_err().code, MS_ERR_NOT_FOUND);
+    }
+
+    // On macOS the allow-list is keyed by bundle id: a Windows ".exe" name is not on it (ARG),
+    // and a real bundle id that is not running is NOT_FOUND.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn mac_close_app_checks_the_bundle_id_allow_list() {
+        assert_eq!(close_app("telegram.exe").unwrap_err().code, MS_ERR_ARG);
+        assert_eq!(close_app("org.telegram.desktop").unwrap_err().code, MS_ERR_NOT_FOUND);
     }
 }

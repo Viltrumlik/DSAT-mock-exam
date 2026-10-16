@@ -231,7 +231,8 @@ class FixtureServer {
         'update_url': 'https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe',
       };
 
-  static final _semver = RegExp(r'^windows/(\d+)\.(\d+)\.(\d+)');
+  // The desktop app ships on Windows and macOS; both are native clients, judged by version.
+  static final _semver = RegExp(r'^(?:windows|macos)/(\d+)\.(\d+)\.(\d+)');
 
   /// True when the client header is below [minimumVersion].
   bool _tooOld(HttpRequest r) {
@@ -436,7 +437,8 @@ class FixtureServer {
       await _json(r, 400, refused);
       return;
     }
-    final native = (r.headers.value(V1Headers.client) ?? '').startsWith('windows/');
+    final client = r.headers.value(V1Headers.client) ?? '';
+    final native = client.startsWith('windows/') || client.startsWith('macos/');
     await _json(r, 200, native ? {'ok': true, ..._mint()} : {'ok': true});
   }
 

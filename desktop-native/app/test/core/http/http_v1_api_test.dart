@@ -72,7 +72,7 @@ void main() {
     final r = t.requests.single;
     expect(r.method, 'GET');
     expect(r.url.toString(), 'https://mastersat.uz/api/desktop/v1/home');
-    expect(r.headers['X-MasterSAT-Client'], 'windows/0.2.0');
+    expect(r.headers['X-MasterSAT-Client'], '${V1Headers.clientPlatform}/0.2.0');
     expect(r.headers['Accept'], 'application/json');
     expect(r.headers['Authorization'], 'Bearer access-1');
     expect(r.headers.containsKey('If-None-Match'), isFalse);

@@ -458,3 +458,92 @@ jobs:
           MASTERSAT_NATIVE_LIB: ${{ github.workspace }}\desktop-native\native\target\debug\mastersat_native.dll
           MASTERSAT_NATIVE_REQUIRE: "1"
         run: flutter test --exclude-tags golden
+
+  macos-build:
+    name: universal app + DMG (macOS)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # The release app's API origin is https://mastersat.uz. Nothing in this job runs the app,
+      # but map the names to a black hole anyway, the same discipline as the Windows job.
+      - name: Keep the production API unreachable from this machine
+        run: |
+          printf '0.0.0.0 mastersat.uz\n0.0.0.0 www.mastersat.uz\n0.0.0.0 api.mastersat.uz\n' | sudo tee -a /etc/hosts >/dev/null
+
+      - name: Read pinned versions
+        run: |
+          echo "FLUTTER_VERSION=$(tr -d '[:space:]' < desktop-native/.flutter-version)" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$(tr -d '[:space:]' < desktop-native/VERSION)" >> "$GITHUB_ENV"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-native/native
+
+      # Developer ID signing is optional: with the certificate secret the app is signed for
+      # distribution; without it the job ad-hoc signs and the DMG opens with right-click > Open.
+      - name: Import the Developer ID certificate (when present)
+        id: cert
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE_P12" ]; then
+            echo "::warning::MACOS_CERTIFICATE_P12 is not set - the app will be ad-hoc signed"
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/mastersat-signing.keychain-db"
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$MACOS_CERTIFICATE_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build the universal MasterSAT.app
+        id: build
+        env:
+          # A release build embeds the proof key when the secret is present; a pull request
+          # without it produces an app that cannot sign lockdown proofs (named *-NO-PROOF-KEY).
+          DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
+          # The website's public Desmos key (unset -> the island's built-in default).
+          DESMOS_API_KEY: ${{ vars.NEXT_PUBLIC_DESMOS_API_KEY }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          desktop-native/packaging/macos/build-app.sh "$APP_VERSION" "$GITHUB_RUN_NUMBER" "$RUNNER_TEMP/macos"
+          if [ -n "$DESKTOP_PROOF_KEY" ]; then echo "proof_key=embedded" >> "$GITHUB_OUTPUT"; else echo "proof_key=missing" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Make the DMG (notarize when credentials are set)
+        env:
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          APP="desktop-native/app/build/macos/Build/Products/Release/MasterSAT.app"
+          desktop-native/packaging/macos/make-dmg.sh "$APP" "$RUNNER_TEMP/macos" "$APP_VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-macOS-DMG${{ steps.build.outputs.proof_key != 'embedded' && '-NO-PROOF-KEY' || '' }}
+          path: |
+            ${{ runner.temp }}/macos/MasterSAT-*.dmg
+            ${{ runner.temp }}/macos/MasterSAT.dmg
+          if-no-files-found: error
+          compression-level: 0

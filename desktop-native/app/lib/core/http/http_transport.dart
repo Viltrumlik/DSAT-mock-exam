@@ -71,7 +71,7 @@ class HttpTransport implements Transport {
       ..connectionTimeout = config.connectTimeout
       ..maxConnectionsPerHost = config.maxConnectionsPerHost
       ..autoUncompress = true
-      ..userAgent = 'MasterSAT-Windows/${config.appVersion}';
+      ..userAgent = 'MasterSAT-${Platform.isMacOS ? 'macOS' : 'Windows'}/${config.appVersion}';
     final proxy = _proxy;
     if (proxy != null) c.findProxy = proxy.findProxy;
     return c;

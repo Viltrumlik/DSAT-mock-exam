@@ -109,7 +109,7 @@ fn lock_or_skip() -> Option<String> {
     if code == -4 {
         let report: serde_json::Value = serde_json::from_str(captured.as_deref().unwrap()).unwrap();
         assert_eq!(report["ok"], false, "MS_ERR_PRECHECK carries the failing report");
-        if cfg!(not(windows)) {
+        if cfg!(all(not(windows), not(target_os = "macos"))) {
             panic!("only a real machine can fail the pre-check");
         }
         eprintln!("this machine fails the pre-check ({report}); the locked path is not exercised here");
@@ -217,7 +217,7 @@ fn proof_vector_through_the_c_abi() {
 
     // Lock: the captured pre-check comes back verbatim.
     let Some(captured) = lock_or_skip() else { return };
-    if cfg!(not(windows)) {
+    if cfg!(all(not(windows), not(target_os = "macos"))) {
         assert_eq!(captured, STUB_PRECHECK);
     }
     assert_eq!(ms_heartbeat(), 1);
@@ -359,7 +359,7 @@ fn seal_and_open_round_trip_through_the_c_abi() {
     assert!(out.is_null());
 }
 
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 #[test]
 fn development_host_stubs_behave() {
     init();
@@ -404,6 +404,66 @@ fn development_host_stubs_behave() {
     let argv = [argv0.as_ptr(), argv1.as_ptr()];
     assert_eq!(unsafe { ms_startup(2, argv.as_ptr()) }, 0);
     assert_eq!(unsafe { ms_startup(0, null()) }, 0);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_native_behaviours() {
+    init();
+
+    // Tokens seal and open again (ms_protect / ms_unprotect, the DPAPI counterpart: a dedicated
+    // at-rest key under MASTERSAT_DATA_DIR).
+    let (code, sealed) = out_bytes(ms_protect, b"a refresh token");
+    assert_eq!(code, 0, "{:?}", last_error());
+    let (code, opened) = out_bytes(ms_unprotect, &sealed.unwrap());
+    assert_eq!(code, 0);
+    assert_eq!(opened.unwrap(), b"a refresh token");
+
+    // The pre-check and battery are the real AppKit/IOKit readings — valid JSON, never a stub.
+    let (code, precheck) = out_str(|o| unsafe { ms_precheck_json(o) });
+    assert_eq!(code, 0, "{:?}", last_error());
+    let report: serde_json::Value = serde_json::from_str(&precheck.unwrap()).unwrap();
+    assert!(report["ok"].is_boolean());
+    assert!(report["displays"].as_i64().unwrap() >= 1);
+    let (code, battery) = out_str(|o| unsafe { ms_battery_json(o) });
+    assert_eq!(code, 0);
+    serde_json::from_str::<serde_json::Value>(&battery.unwrap()).expect("battery is JSON");
+
+    // The system proxy comes back well-formed; a bad URL is MS_ERR_ARG.
+    let url = CString::new("https://mastersat.uz/api/desktop/v1/home").unwrap();
+    let (code, proxy) = out_str(|o| unsafe { ms_proxy_for(url.as_ptr(), o) });
+    assert_eq!(code, 0, "{:?}", last_error());
+    let proxy = proxy.unwrap();
+    assert!(proxy == "DIRECT" || proxy.starts_with("PROXY "), "{proxy}");
+    let bad = CString::new("not a url").unwrap();
+    assert_eq!(out_str(|o| unsafe { ms_proxy_for(bad.as_ptr(), o) }), (-1, None));
+
+    // close_app's allow-list is keyed by bundle id: a Windows ".exe" name is rejected (ARG), a
+    // real bundle id that is not running is NOT_FOUND.
+    let exe_name = CString::new("telegram.exe").unwrap();
+    assert_eq!(unsafe { ms_close_app(exe_name.as_ptr()) }, -1);
+    let bundle = CString::new("org.telegram.desktop").unwrap();
+    assert_eq!(unsafe { ms_close_app(bundle.as_ptr()) }, -9);
+    assert_eq!(unsafe { ms_close_app(null()) }, -1);
+
+    // The URL scheme is declared in Info.plist on macOS, so ms_register_protocol is unsupported,
+    // and there is no 0.1.x Tauri install to remove.
+    let app = CString::new("/Applications/MasterSAT.app").unwrap();
+    assert_eq!(unsafe { ms_register_protocol(app.as_ptr()) }, -7);
+    assert_eq!(
+        out_str(|o| unsafe { ms_uninstall_legacy(o) }),
+        (0, Some(r#"{"found":false,"ran":false,"exit_code":null}"#.to_string()))
+    );
+
+    // Velopack's startup is a no-op on a copy that was not installed by the updater.
+    let argv0 = CString::new("/Applications/MasterSAT.app/Contents/MacOS/MasterSAT").unwrap();
+    let argv = [argv0.as_ptr()];
+    assert_eq!(unsafe { ms_startup(1, argv.as_ptr()) }, 0);
+
+    // keep-awake answers OK whether or not a run loop is pumping (it times out and skips in a
+    // test binary with no NSApplication run loop, never hangs).
+    assert_eq!(ms_keep_awake(1), 0);
+    assert_eq!(ms_keep_awake(0), 0);
 }
 
 #[test]

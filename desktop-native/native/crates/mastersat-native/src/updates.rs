@@ -111,9 +111,9 @@ mod imp {
         }
     }
 
-    /// `ms_startup`'s Velopack part. Install/update hooks (re)write mastersat://, the uninstall
-    /// hook removes it; Velopack then EXITS the process. Otherwise it returns and startup goes on
-    /// (applying an already-downloaded update first, Velopack's default, before any window).
+    /// `ms_startup`'s Velopack part on Windows: the install/update hooks (re)write mastersat://,
+    /// the uninstall hook removes it; Velopack then EXITS the process. Otherwise it returns and
+    /// startup goes on (applying an already-downloaded update first, Velopack's default).
     #[cfg(windows)]
     pub fn startup(args: Vec<String>) {
         use velopack::VelopackApp;
@@ -132,8 +132,17 @@ mod imp {
             .run();
     }
 
-    /// Velopack's hooks are Windows-only, and the app is only ever installed on Windows.
-    #[cfg(not(windows))]
+    /// macOS: Velopack applies an already-downloaded update and returns. The install/update/
+    /// uninstall fast-callback hooks are Windows-only in the crate, and the URL scheme is declared
+    /// in Info.plist, so there is nothing to register here.
+    #[cfg(target_os = "macos")]
+    pub fn startup(args: Vec<String>) {
+        use velopack::VelopackApp;
+        VelopackApp::build().set_args(args).run();
+    }
+
+    /// Elsewhere (the Linux CI host) there is no installer, so nothing to run.
+    #[cfg(not(any(windows, target_os = "macos")))]
     pub fn startup(_args: Vec<String>) {}
 
     pub fn check(feed_url: &str, channel: &str) -> MsResult<CheckOutcome> {
@@ -228,8 +237,9 @@ mod imp {
         manager.apply_updates_and_restart(&info).map_err(map_err)
     }
 
-    /// See the module comment. Windows only; other hosts keep their environment as it is.
-    #[cfg(windows)]
+    /// See the module comment. Windows and macOS (both read the system proxy natively); other
+    /// hosts keep their environment as it is.
+    #[cfg(any(windows, target_os = "macos"))]
     fn export_system_proxy(feed_url: &str) {
         use std::sync::OnceLock;
         const VARS: [&str; 2] = ["HTTPS_PROXY", "HTTP_PROXY"];
@@ -254,7 +264,7 @@ mod imp {
         }
     }
 
-    #[cfg(not(windows))]
+    #[cfg(not(any(windows, target_os = "macos")))]
     fn export_system_proxy(_feed_url: &str) {}
 }
 

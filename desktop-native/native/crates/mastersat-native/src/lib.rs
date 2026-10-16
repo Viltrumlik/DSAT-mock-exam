@@ -268,11 +268,19 @@ fn protect_op(data: &[u8]) -> MsResult<Vec<u8>> {
 fn unprotect_op(data: &[u8]) -> MsResult<Vec<u8>> {
     dpapi::unprotect(data, None)
 }
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn protect_op(data: &[u8]) -> MsResult<Vec<u8>> {
+    crypto::protect(data)
+}
+#[cfg(target_os = "macos")]
+fn unprotect_op(data: &[u8]) -> MsResult<Vec<u8>> {
+    crypto::unprotect(data)
+}
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn protect_op(_data: &[u8]) -> MsResult<Vec<u8>> {
     Err(MsError::unsupported("DPAPI (ms_protect)"))
 }
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn unprotect_op(_data: &[u8]) -> MsResult<Vec<u8>> {
     Err(MsError::unsupported("DPAPI (ms_unprotect)"))
 }

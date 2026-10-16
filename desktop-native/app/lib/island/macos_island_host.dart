@@ -94,6 +94,16 @@ IslandSource? resolveDevIslandSource({
   return null;
 }
 
+/// A shipped macOS app serves the island from its bundle: `MasterSAT.app/Contents/Resources/
+/// island`. Null when there is none there (a `flutter run` build that did not embed it; the dev
+/// resolver then finds the repository's build).
+IslandSource? bundleIslandSource({String? executable, bool Function(String path)? fileExists}) {
+  final exists = fileExists ?? (String path) => File(path).existsSync();
+  final exe = executable ?? Platform.resolvedExecutable; // …/MasterSAT.app/Contents/MacOS/MasterSAT
+  final resources = p.join(p.dirname(p.dirname(exe)), 'Resources', 'island');
+  return exists(p.join(resources, 'content.html')) ? IslandSource.folder(resources) : null;
+}
+
 /// The nearest `desktop-native` folder at or above [start] (recognised by its VERSION file and
 /// app/pubspec.yaml).
 String? _findDesktopNative(String start, bool Function(String) exists) {

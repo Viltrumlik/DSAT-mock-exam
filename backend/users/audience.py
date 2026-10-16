@@ -69,8 +69,8 @@ def self_signup_role() -> str:
 #: The iOS and Windows apps are the learning center's: classes, homework and midterms, all closed
 #: to a public learner. A clear "no" at sign-in beats an app full of error states.
 NATIVE_APP_REFUSAL = "This app is for learning center students. Please use mastersat.uz in your browser."
-#: ``windows/<version>`` is the native Windows app; a bare ``desktop`` is its 0.1.x predecessor.
-_CENTRE_APP_CLIENTS = ("ios/", "windows/", "desktop")
+#: ``windows/`` and ``macos/`` are the native desktop app; a bare ``desktop`` is its 0.1.x predecessor.
+_CENTRE_APP_CLIENTS = ("ios/", "windows/", "macos/", "desktop")
 
 
 def is_public_learner(user) -> bool:

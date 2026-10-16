@@ -10,6 +10,7 @@
 //
 // It returns the ExamOutcome openExam() acts on: a finished sitting opens its result.
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 
@@ -108,7 +109,8 @@ class ExamLauncherWiring {
     final engine = s.exams!.track(rt.midterm(r.midterm.midtermId, studentName: _studentName(s)));
     final nav = Navigator.of(context);
     final policyUrl = s.home.home?.app.updateUrl ?? '';
-    final download = Uri.tryParse(policyUrl.isNotEmpty ? policyUrl : s.config.origin.replace(path: '/downloads/desktop/MasterSAT-Setup.exe').toString());
+    final installer = Platform.isMacOS ? '/downloads/desktop/MasterSAT.dmg' : '/downloads/desktop/MasterSAT-Setup.exe';
+    final download = Uri.tryParse(policyUrl.isNotEmpty ? policyUrl : s.config.origin.replace(path: installer).toString());
     return nav.push<ExamOutcome>(instantRoute(
       settings: RouteSettings(name: '/exam/midterm/${r.midterm.midtermId}'),
       (_) => MidtermSittingScreen(

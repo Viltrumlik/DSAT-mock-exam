@@ -71,11 +71,11 @@ pub trait KeyWrap {
 }
 
 /// The data key in `dir/key.bin`, created (and wrapped) on first use.
-pub fn load_or_create(dir: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
-    let path = dir.join(KEY_FILE);
+pub fn load_or_create(dir: &Path, name: &str, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
+    let path = dir.join(name);
     match fs::read(&path) {
         Ok(blob) => unwrap_key(&blob, wrap),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => create_key(dir, &path, wrap),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => create_key(dir, name, &path, wrap),
         Err(e) => Err(MsError::os(format!("cannot read {}: {e}", path.display()))),
     }
 }
@@ -87,7 +87,7 @@ fn unwrap_key(blob: &[u8], wrap: &dyn KeyWrap) -> MsResult<DataKey> {
         .map_err(|_| MsError::crypto(format!("{KEY_FILE} holds a {}-byte key, expected {KEY_LEN}", key.len())))
 }
 
-fn create_key(dir: &Path, path: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
+fn create_key(dir: &Path, name: &str, path: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> {
     fs::create_dir_all(dir).map_err(|e| MsError::os(format!("cannot create {}: {e}", dir.display())))?;
     let key: DataKey = random_bytes()?;
     let blob = wrap.wrap(&key)?;
@@ -95,7 +95,7 @@ fn create_key(dir: &Path, path: &Path, wrap: &dyn KeyWrap) -> MsResult<DataKey> 
     // Write a temp file, then publish it with a hard link: the link fails if key.bin appeared
     // meanwhile (another process won the race), so a key that may already seal data is never
     // overwritten, and a crash mid-write never leaves a truncated key.bin behind.
-    let tmp = dir.join(format!("{KEY_FILE}.{}.tmp", std::process::id()));
+    let tmp = dir.join(format!("{name}.{}.tmp", std::process::id()));
     {
         let mut f = fs::File::create(&tmp).map_err(|e| MsError::os(format!("cannot create {}: {e}", tmp.display())))?;
         restrict_permissions(&f);
@@ -205,7 +205,7 @@ pub fn data_key() -> MsResult<DataKey> {
     if let Some(key) = *slot {
         return Ok(key);
     }
-    let key = load_or_create(&data_dir()?, &PlatformWrap)?;
+    let key = load_or_create(&data_dir()?, KEY_FILE, &PlatformWrap)?;
     *slot = Some(key);
     Ok(key)
 }
@@ -216,6 +216,40 @@ pub fn seal(plain: &[u8]) -> MsResult<Vec<u8>> {
 
 pub fn open(sealed: &[u8]) -> MsResult<Vec<u8>> {
     open_with(&data_key()?, sealed)
+}
+
+// ── macOS: ms_protect / ms_unprotect ────────────────────────────────────────────────────────
+// DPAPI's counterpart on the Mac. Windows has CryptProtectData (bound to the Windows login); the
+// Mac's user accounts are protected at rest by FileVault, and the app's data folder is the
+// current user's. Tokens are sealed under a SEPARATE 32-byte key (`token-key.bin`, 0600) — a key
+// distinct from the data key, the same entropy separation DPAPI gives `ms_protect` vs `ms_seal`.
+// This is promptless (no Keychain dialog can ever block a student mid-sign-in); the key file is
+// created once on first use.
+#[cfg(target_os = "macos")]
+pub const TOKEN_KEY_FILE: &str = "token-key.bin";
+
+#[cfg(target_os = "macos")]
+static TOKEN_KEY: Mutex<Option<DataKey>> = Mutex::new(None);
+
+#[cfg(target_os = "macos")]
+fn token_key() -> MsResult<DataKey> {
+    let mut slot = TOKEN_KEY.lock().unwrap_or_else(|p| p.into_inner());
+    if let Some(key) = *slot {
+        return Ok(key);
+    }
+    let key = load_or_create(&data_dir()?, TOKEN_KEY_FILE, &PlatformWrap)?;
+    *slot = Some(key);
+    Ok(key)
+}
+
+#[cfg(target_os = "macos")]
+pub fn protect(plain: &[u8]) -> MsResult<Vec<u8>> {
+    seal_with(&token_key()?, plain)
+}
+
+#[cfg(target_os = "macos")]
+pub fn unprotect(blob: &[u8]) -> MsResult<Vec<u8>> {
+    open_with(&token_key()?, blob)
 }
 
 #[cfg(test)]
@@ -299,8 +333,8 @@ pub(crate) mod tests {
     fn the_key_is_created_once_wrapped_then_reused() {
         let dir = temp_dir("keystore").join("nested");
         let wrap = XorWrap { wraps: Cell::new(0) };
-        let first = load_or_create(&dir, &wrap).unwrap();
-        let second = load_or_create(&dir, &wrap).unwrap();
+        let first = load_or_create(&dir, KEY_FILE, &wrap).unwrap();
+        let second = load_or_create(&dir, KEY_FILE, &wrap).unwrap();
         assert_eq!(first, second);
         assert_eq!(wrap.wraps.get(), 1, "created once");
 
@@ -318,12 +352,12 @@ pub(crate) mod tests {
         let dir = temp_dir("badkey");
         fs::write(dir.join(KEY_FILE), b"garbage").unwrap();
         let wrap = XorWrap { wraps: Cell::new(0) };
-        assert_eq!(load_or_create(&dir, &wrap).unwrap_err().code, MS_ERR_CRYPTO);
+        assert_eq!(load_or_create(&dir, KEY_FILE, &wrap).unwrap_err().code, MS_ERR_CRYPTO);
         assert_eq!(fs::read(dir.join(KEY_FILE)).unwrap(), b"garbage");
         assert_eq!(wrap.wraps.get(), 0);
 
         fs::write(dir.join(KEY_FILE), b"W1short").unwrap();
-        assert_eq!(load_or_create(&dir, &wrap).unwrap_err().code, MS_ERR_CRYPTO);
+        assert_eq!(load_or_create(&dir, KEY_FILE, &wrap).unwrap_err().code, MS_ERR_CRYPTO);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

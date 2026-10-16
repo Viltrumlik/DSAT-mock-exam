@@ -13,7 +13,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from access.host_guard import SubdomainAPIGuardMiddleware
 from mobile.models import AppReleasePolicy
 from mobile.policy import forget_policy, get_policy
-from mobile.versioning import PLATFORM_WINDOWS, parse_client_header
+from mobile.versioning import PLATFORM_MACOS, PLATFORM_WINDOWS, parse_client_header
 from users.auth_cookies import ACCESS_COOKIE, is_native_client
 
 from desktop.v1 import content
@@ -247,6 +247,43 @@ class WindowsBuildHeaderTests(V1TestCase):
         self.assertEqual(get_policy(PLATFORM_WINDOWS).update_url, "https://example.org/setup.exe")
         forget_policy("ios")
         self.assertEqual(get_policy("ios").update_url, "")
+
+
+class MacosBuildHeaderTests(V1TestCase):
+    """``X-MasterSAT-Client: macos/<semver>``: the native macOS app, a desktop client judged by
+    its own release policy, exactly as the Windows app is."""
+
+    def tearDown(self):
+        forget_policy(PLATFORM_MACOS)
+        super().tearDown()
+
+    def test_header_parses_as_the_macos_platform(self):
+        self.assertEqual(parse_client_header("macos/0.2.6"), (PLATFORM_MACOS, (0, 2, 6)))
+        self.assertEqual(parse_client_header("macos/1.10.3 (macOS 15)"), (PLATFORM_MACOS, (1, 10, 3)))
+
+    def test_is_native_client_accepts_macos(self):
+        rf = RequestFactory()
+        self.assertTrue(is_native_client(rf.get("/api/x", HTTP_X_MASTERSAT_CLIENT="macos/0.2.6")))
+
+    def test_macos_home_reports_the_macos_policy_and_the_dmg(self):
+        student = make_student()
+        res = AppClient(student, header="macos/0.2.6").get("home")
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.json()["app"]["update_url"], "https://mastersat.uz/downloads/desktop/MasterSAT.dmg")
+
+    def test_old_macos_build_gets_426(self):
+        AppReleasePolicy.objects.create(platform=PLATFORM_MACOS, minimum_version="0.3.0", latest_version="0.3.1")
+        forget_policy(PLATFORM_MACOS)
+        student = make_student()
+        res = AppClient(student, header="macos/0.2.6").get("home")
+        self.assertEqual(res.status_code, 426)
+        self.assertEqual(res.json()["minimum_version"], "0.3.0")
+        self.assertEqual(res.json()["update_url"], "https://mastersat.uz/downloads/desktop/MasterSAT.dmg")
+        self.assertEqual(AppClient(student, header="macos/0.3.0").get("home").status_code, 200)
+
+    def test_macos_policy_falls_back_to_the_dmg(self):
+        forget_policy(PLATFORM_MACOS)
+        self.assertEqual(get_policy(PLATFORM_MACOS).update_url, "https://mastersat.uz/downloads/desktop/MasterSAT.dmg")
 
     def test_bearer_token_write_needs_no_csrf_token(self):
         """The real path the app takes: Authorization: Bearer + the windows header, no cookie,
