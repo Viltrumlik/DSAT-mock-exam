@@ -52,6 +52,11 @@ class PostSerializer(serializers.ModelSerializer):
     event_id = serializers.SerializerMethodField()
     event_title = serializers.SerializerMethodField()
     audience_label = serializers.SerializerMethodField()
+    #: Who the post reaches NOW (`audience.post_audience`): a reminder follows its event's
+    #: current audience, so the console's count and label match what will be sent.
+    subjects = serializers.SerializerMethodField()
+    levels = serializers.SerializerMethodField()
+    classroom_ids = serializers.SerializerMethodField()
     next_send_at = serializers.SerializerMethodField()
     last_run = serializers.SerializerMethodField()
     state = serializers.SerializerMethodField()
@@ -89,9 +94,16 @@ class PostSerializer(serializers.ModelSerializer):
         return obj.event.title if obj.event_id else ""
 
     def get_audience_label(self, obj):
-        return audience.label(
-            subjects=obj.subjects or (), levels=obj.levels or (), classroom_ids=obj.classroom_ids or ()
-        )
+        return audience.label(**audience.post_audience(obj))
+
+    def get_subjects(self, obj):
+        return audience.post_audience(obj)["subjects"]
+
+    def get_levels(self, obj):
+        return audience.post_audience(obj)["levels"]
+
+    def get_classroom_ids(self, obj):
+        return audience.post_audience(obj)["classroom_ids"]
 
     def get_next_send_at(self, obj):
         moment = schedule.next_at(obj, self._now())

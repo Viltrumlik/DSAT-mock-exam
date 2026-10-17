@@ -154,6 +154,27 @@ class EventTelegramTests(TestCase):
         announce = GroupPost.objects.select_related("event").get(event=event, kind=GroupPost.KIND_EVENT_ANNOUNCE)
         self.assertEqual([t.chat_id for t in audience.for_post(announce)], ["-1001"])
 
+    def test_the_console_labels_a_reminder_with_the_groups_it_will_reach(self):
+        event = self.draft(telegram_audience={"subjects": ["MATH"], "levels": []})
+        self.publish(event)
+        reminder = GroupPost.objects.get(event=event, kind=GroupPost.KIND_EVENT_REMINDER)
+        announce = GroupPost.objects.get(event=event, kind=GroupPost.KIND_EVENT_ANNOUNCE)
+
+        def rows():
+            posts = self.client.get("/api/telegram-posts/admin/").json()["posts"]
+            return {p["id"]: p for p in posts}
+
+        self.assertEqual(rows()[reminder.pk]["audience_label"], "Math · all levels")
+        Event.objects.filter(pk=event.pk).update(telegram_audience={"subjects": ["ENGLISH"], "levels": []})
+        row = rows()[reminder.pk]
+        self.assertEqual((row["audience_label"], row["subjects"], row["levels"]), ("English · all levels", ["ENGLISH"], []))
+        self.assertEqual(row["classroom_ids"], [])
+        detail = self.client.get(f"/api/telegram-posts/admin/{reminder.pk}/").json()
+        self.assertEqual((detail["audience_label"], detail["subjects"]), ("English · all levels", ["ENGLISH"]))
+        # The announcement was sent to Math and says so.
+        sent = rows()[announce.pk]
+        self.assertEqual((sent["audience_label"], sent["subjects"]), ("Math · all levels", ["MATH"]))
+
     def test_unticking_the_box_after_publishing_cancels_the_reminder(self):
         event = self.draft()
         self.publish(event)

@@ -113,6 +113,26 @@ class ForPostTests(TestCase):
                 reminder = self.post(event, GroupPost.KIND_EVENT_REMINDER)
                 self.assertEqual(self.chats(reminder), ["-1001"])
 
+    def test_post_audience_is_the_one_answer_the_console_and_the_sender_share(self):
+        event = make_event(telegram_audience={"subjects": [ENGLISH], "levels": ["junior"]})
+        reminder = self.post(event, GroupPost.KIND_EVENT_REMINDER, classroom_ids=[7])
+        announce = self.post(event, GroupPost.KIND_EVENT_ANNOUNCE, classroom_ids=[7])
+        self.assertEqual(
+            audience.post_audience(reminder), {"subjects": [ENGLISH], "levels": ["junior"], "classroom_ids": []}
+        )
+        self.assertEqual(
+            audience.post_audience(announce), {"subjects": [MATH], "levels": [], "classroom_ids": [7]}
+        )
+        self.assertEqual(audience.post_audience(GroupPost(subjects=None, levels=None, classroom_ids=None)),
+                         {"subjects": [], "levels": [], "classroom_ids": []})
+
+    def test_post_audience_falls_back_to_the_posts_own_copy_when_the_events_cannot_be_read(self):
+        event = make_event(telegram_audience={"subjects": ["PHYSICS"]})
+        reminder = self.post(event, GroupPost.KIND_EVENT_REMINDER)
+        self.assertEqual(
+            audience.post_audience(reminder), {"subjects": [MATH], "levels": [], "classroom_ids": []}
+        )
+
     def test_a_written_post_ignores_events_entirely(self):
         manual = GroupPost.objects.create(
             kind=GroupPost.KIND_MANUAL, when=GroupPost.WHEN_NOW, subjects=[ENGLISH], levels=[],

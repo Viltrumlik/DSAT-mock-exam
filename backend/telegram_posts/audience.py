@@ -50,19 +50,30 @@ def resolve(*, subjects=(), levels=(), classroom_ids=()) -> list[Target]:
     return [Target(chat, ", ".join(names)[:300]) for chat, names in by_chat.items()]
 
 
+def post_audience(post) -> dict:
+    """{"subjects", "levels", "classroom_ids"}: who the post reaches, as the sender will resolve it.
+
+    The one answer the sender (`for_post`) and the console (its label and its lists) share.
+    An event reminder reads the event when it goes out, like its start time: the audience the
+    event names now, not the copy taken at Publish. The announcement keeps its copy — it was
+    sent at Publish. An event audience that cannot be read falls back to the post's own copy.
+    """
+    own = {
+        "subjects": list(post.subjects or []),
+        "levels": list(post.levels or []),
+        "classroom_ids": list(post.classroom_ids or []),
+    }
+    if post.kind != GroupPost.KIND_EVENT_REMINDER or not post.event_id:
+        return own
+    try:
+        chosen = normalize(post.event.telegram_audience)
+    except (ValueError, TypeError):
+        return own
+    return {**chosen, "classroom_ids": []}
+
+
 def for_post(post) -> list[Target]:
-    subjects, levels = post.subjects or (), post.levels or ()
-    if post.kind == GroupPost.KIND_EVENT_REMINDER and post.event_id:
-        # The reminder reads the event when it goes out, like its start time: the audience the
-        # event names now, not the copy taken at Publish. The announcement keeps its copy — it
-        # was sent at Publish.
-        try:
-            chosen = normalize(post.event.telegram_audience)
-        except (ValueError, TypeError):
-            pass  # an audience that cannot be read: the post's own copy still works
-        else:
-            subjects, levels = chosen["subjects"], chosen["levels"]
-    return resolve(subjects=subjects, levels=levels, classroom_ids=post.classroom_ids or ())
+    return resolve(**post_audience(post))
 
 
 def label(*, subjects=(), levels=(), classroom_ids=()) -> str:
