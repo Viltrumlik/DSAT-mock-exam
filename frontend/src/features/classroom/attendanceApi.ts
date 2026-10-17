@@ -41,6 +41,8 @@ export interface RosterRow {
   reason_id?: number | null;
   /** Frozen because this month is unpaid (lc-up): a badge for the teacher, never an amount. */
   frozen_for_debt?: boolean;
+  /** Paused in lc-up's group: shown, never marked — lc-up takes no attendance for them (owner, 2026-10-17). */
+  frozen_in_lcup?: boolean;
 }
 
 /** One of lc-up's reasons for an excused absence. A class paired with lc-up lists them, and an

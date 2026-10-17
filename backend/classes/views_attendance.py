@@ -162,6 +162,7 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
         classroom = self.get_classroom()
         session = self._get_session(classroom)
         records = {r.student_id: r for r in session.records.all()}
+        frozen = _frozen_in_lcup(classroom)
         roster = []
         # The roster as it stood on the lesson's own date, so a student added last week is
         # not offered for a lesson held the week before they arrived.
@@ -175,6 +176,8 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
                 "reason_id": r.lcup_reason_id if r else None,
                 # The register is the teaching team's: the badge, never the amount.
                 "frozen_for_debt": bool(m.user.is_frozen and m.user.frozen_reason == FROZEN_LCUP_DEBT),
+                # Paused in lc-up: shown, never marked — lc-up takes no attendance for them.
+                "frozen_in_lcup": m.user_id in frozen,
             })
         return Response({
             **_session_brief(session, classroom=classroom, user=request.user),
@@ -188,6 +191,14 @@ def _excuse_reasons(classroom) -> list[dict]:
     from lcup.attendance_guard import excuse_reasons
 
     return excuse_reasons(classroom)
+
+
+def _frozen_in_lcup(classroom) -> set[int]:
+    """Students lc-up holds frozen in this class's group: on the register, but never marked
+    (owner, 2026-10-17). lc-up refuses their marks, so one written here would be ours alone."""
+    from lcup.attendance_guard import frozen_in_lcup
+
+    return frozen_in_lcup(classroom)
 
 
 def _window_refusal(request, classroom, session):
@@ -226,6 +237,9 @@ class AttendanceMarkView(_ClassroomScopedView):
         # simply posts every student id it knows, must not be able to mark somebody for a
         # lesson held before they joined. The view is the security boundary, not the UI.
         allowed = {m.user_id for m in _active_students(classroom, on_date=session.date)}
+        # A student lc-up holds frozen is never marked: lc-up would refuse the mark. Named back,
+        # so a register opened before lc-up froze them says why the mark did not stick.
+        frozen = _frozen_in_lcup(classroom)
         # A class paired with lc-up sends an excused absence to lc-up as an absence WITH one of its
         # reasons (owner, 2026-10-12), so the mark must name one — checked before anything is written.
         reasons = {r["id"] for r in _excuse_reasons(classroom)}
@@ -234,10 +248,14 @@ class AttendanceMarkView(_ClassroomScopedView):
         ):
             return Response({"detail": "Choose a reason for the excused absence."}, status=status.HTTP_400_BAD_REQUEST)
         updated = 0
+        refused_frozen = []
         for e in entries:
             sid = e.get("student_id")
             st = e.get("status")
             if sid not in allowed or st not in _VALID_STATUS:
+                continue
+            if sid in frozen:
+                refused_frozen.append(sid)
                 continue
             AttendanceRecord.objects.update_or_create(
                 session=session, student_id=sid,
@@ -249,7 +267,7 @@ class AttendanceMarkView(_ClassroomScopedView):
                 },
             )
             updated += 1
-        return Response({"status": "marked", "updated": updated})
+        return Response({"status": "marked", "updated": updated, "frozen_in_lcup": sorted(refused_frozen)})
 
 
 class AttendanceMarkAllPresentView(_ClassroomScopedView):
@@ -272,8 +290,12 @@ class AttendanceMarkAllPresentView(_ClassroomScopedView):
         if refused is not None:
             return refused
         existing = {r.student_id: r.status for r in session.records.all()}
+        frozen = _frozen_in_lcup(classroom)
         updated = 0
         for m in _active_students(classroom, on_date=session.date):
+            # Not "present": lc-up holds them frozen and takes no attendance for them.
+            if m.user_id in frozen:
+                continue
             # Preserve an existing EXCUSED mark; set everyone else to PRESENT.
             if existing.get(m.user_id) == AttendanceRecord.STATUS_EXCUSED:
                 continue

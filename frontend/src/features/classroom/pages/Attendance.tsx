@@ -193,12 +193,15 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
 
   const excuseReasons = data?.excuse_reasons ?? [];
   const needsReason = excuseReasons.length > 0;
+  // A student lc-up holds frozen is never marked, so their row neither counts as a change nor is sent.
+  const markable = useMemo(() => new Set((data?.roster ?? []).filter((r) => !r.frozen_in_lcup).map((r) => r.student_id)), [data]);
   const dirty = useMemo(() => {
     if (!data?.roster) return false;
     return data.roster.some(
       (r) =>
-        local[r.student_id] !== r.status ||
-        (needsReason && local[r.student_id] === "EXCUSED" && (reasons[r.student_id] ?? null) !== (r.reason_id ?? null)),
+        !r.frozen_in_lcup &&
+        (local[r.student_id] !== r.status ||
+          (needsReason && local[r.student_id] === "EXCUSED" && (reasons[r.student_id] ?? null) !== (r.reason_id ?? null))),
     );
   }, [data, local, reasons, needsReason]);
 
@@ -217,7 +220,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
 
   async function save() {
     const records = Object.entries(local)
-      .filter(([, st]) => st)
+      .filter(([sid, st]) => st && markable.has(Number(sid)))
       .map(([sid, st]) => {
         const reasonId = reasons[Number(sid)];
         return needsReason && st === "EXCUSED" && reasonId
@@ -269,51 +272,63 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
       </div>
 
       <div className="mt-4 divide-y divide-border">
-        {data.roster.map((r: RosterRow) => (
-          <div key={r.student_id} className="py-2.5">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
-                {r.frozen_for_debt ? (
-                  <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
-                    Frozen — unpaid
-                  </span>
-                ) : null}
-              </span>
-              <div className="flex shrink-0 gap-1">
-                {STATUSES.map((st) => {
-                  const selected = local[r.student_id] === st;
-                  return (
-                    <button key={st} title={META[st].label} disabled={!writable}
-                      onClick={() => setLocal((p) => ({ ...p, [r.student_id]: st }))}
-                      className={cn("h-8 w-8 rounded-lg border text-xs font-bold transition-colors",
-                        selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2",
-                        !writable && "cursor-not-allowed opacity-50 hover:bg-transparent")}>
-                      {META[st].letter}
-                    </button>
-                  );
-                })}
+        {data.roster.map((r: RosterRow) => {
+          // Paused in lc-up: on the register, but lc-up takes no mark for them, so none is offered.
+          const locked = !writable || !!r.frozen_in_lcup;
+          return (
+            <div key={r.student_id} className="py-2.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
+                  {r.frozen_for_debt ? (
+                    <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                      Frozen — unpaid
+                    </span>
+                  ) : null}
+                  {r.frozen_in_lcup ? (
+                    <span
+                      title="lc-up takes no attendance for a frozen student. Unfreeze them in lc-up to mark them."
+                      className="shrink-0 rounded-full bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:text-sky-300"
+                    >
+                      Frozen in lc-up
+                    </span>
+                  ) : null}
+                </span>
+                <div className="flex shrink-0 gap-1">
+                  {STATUSES.map((st) => {
+                    const selected = local[r.student_id] === st;
+                    return (
+                      <button key={st} title={r.frozen_in_lcup ? "Frozen in lc-up" : META[st].label} disabled={locked}
+                        onClick={() => setLocal((p) => ({ ...p, [r.student_id]: st }))}
+                        className={cn("h-8 w-8 rounded-lg border text-xs font-bold transition-colors",
+                          selected ? META[st].active : "border-border text-muted-foreground hover:bg-surface-2",
+                          locked && "cursor-not-allowed opacity-50 hover:bg-transparent")}>
+                        {META[st].letter}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
+              {needsReason && local[r.student_id] === "EXCUSED" && (
+                <div className="mt-2 sm:ml-auto sm:w-64">
+                  <Select
+                    aria-label={`Reason for ${r.name}`}
+                    value={reasons[r.student_id] ?? ""}
+                    disabled={locked}
+                    onChange={(e) =>
+                      setReasons((p) => ({ ...p, [r.student_id]: e.target.value ? Number(e.target.value) : null }))
+                    }
+                  >
+                    <option value="">Choose a reason</option>
+                    {excuseReasons.map((reason) => (
+                      <option key={reason.id} value={reason.id}>{reason.title}</option>
+                    ))}
+                  </Select>
+                </div>
+              )}
             </div>
-            {needsReason && local[r.student_id] === "EXCUSED" && (
-              <div className="mt-2 sm:ml-auto sm:w-64">
-                <Select
-                  aria-label={`Reason for ${r.name}`}
-                  value={reasons[r.student_id] ?? ""}
-                  disabled={!writable}
-                  onChange={(e) =>
-                    setReasons((p) => ({ ...p, [r.student_id]: e.target.value ? Number(e.target.value) : null }))
-                  }
-                >
-                  <option value="">Choose a reason</option>
-                  {excuseReasons.map((reason) => (
-                    <option key={reason.id} value={reason.id}>{reason.title}</option>
-                  ))}
-                </Select>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {data.roster.length === 0 && <p className="py-4 text-center text-sm text-muted-foreground">No students enrolled yet.</p>}
       </div>
     </Card>
