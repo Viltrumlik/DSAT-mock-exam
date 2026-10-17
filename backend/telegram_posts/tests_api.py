@@ -62,6 +62,61 @@ class AccessTests(ApiFixture):
         self.assertEqual(response.status_code, 200)
 
 
+class EveryRouteIsGuardedTests(ApiFixture):
+    """Each view calls `_guard` by hand, so dropping it from one method would pass the tests that
+    only look at `GET admin/`. This runs every route as an anonymous caller, a student and a
+    teacher, and checks that the answer is a refusal AND that nothing happened behind it."""
+
+    def _seed(self, *, paused: bool):
+        """A post with a failed, a missed and a sent delivery, so every action would do something."""
+        GroupPost.objects.all().delete()
+        today = timezone.localdate()
+        post = GroupPost.objects.create(
+            text="Original", when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0),
+            last_run_on=today, is_paused=paused,
+        )
+        for chat, status, extra in [
+            ("-1001", "FAILED", {}),
+            ("-1002", "MISSED", {}),
+            ("-1003", "SENT", {"message_id": 11, "sent_at": timezone.now()}),
+        ]:
+            GroupPostDelivery.objects.create(post=post, run_on=today, chat_id=chat, status=status, **extra)
+        return post
+
+    def _cases(self):
+        by_id = lambda suffix="": (lambda post: f"{URL}{post.pk}/{suffix}")  # noqa: E731
+        cases = [
+            ("GET admin/", "get", lambda post: URL, None, False),
+            ("POST admin/", "post", lambda post: URL, {"text": "Intruder", "when": "NOW"}, False),
+            ("GET admin/groups/", "get", lambda post: f"{URL}groups/", None, False),
+            ("GET admin/<id>/", "get", by_id(), None, False),
+            ("PATCH admin/<id>/", "patch", by_id(), {"text": "Hijacked"}, False),
+        ]
+        for action in ("pause", "resume", "retry", "send-missed", "delete-from-groups"):
+            # `resume` does nothing to a post that is not paused, so that one starts paused.
+            cases.append((f"POST admin/<id>/{action}/", "post", by_id(f"{action}/"), None, action == "resume"))
+        return cases
+
+    def test_every_route_refuses_anonymous_students_and_teachers_and_does_nothing(self):
+        callers = [("anonymous", None, 401), ("student", self.student, 403), ("teacher", self.teacher, 403)]
+        for label, method, url_of, body, paused in self._cases():
+            for who, user, expected in callers:
+                with self.subTest(route=label, caller=who):
+                    post = self._seed(paused=paused)
+                    before = (post.is_paused, post.deleted_at, post.text)
+                    deliveries = list(post.deliveries.order_by("id").values_list("chat_id", "status"))
+                    client = self.as_(user) if user else APIClient()
+                    kwargs = {"format": "json"} if body is not None else {}
+                    with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+                        response = getattr(client, method)(url_of(post), body, **kwargs)
+                    self.assertEqual(response.status_code, expected, response.content)
+                    self.assertEqual(GroupPost.objects.count(), 1)  # nothing was created
+                    post.refresh_from_db()
+                    self.assertEqual((post.is_paused, post.deleted_at, post.text), before)
+                    self.assertEqual(list(post.deliveries.order_by("id").values_list("chat_id", "status")), deliveries)
+                    self.assertEqual((tg.messages, tg.photos, tg.deleted), ([], [], []))  # and nothing was sent
+
+
 class CreateTests(ApiFixture):
     def test_a_now_post_goes_out(self):
         with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
@@ -114,6 +169,28 @@ class CreateTests(ApiFixture):
         with fake_api(), self.captureOnCommitCallbacks(execute=True):
             accepted = self.as_(self.admin).post(URL, plain, format="multipart")
         self.assertEqual(accepted.status_code, 201, accepted.content)
+
+    def test_a_post_without_when_is_refused_not_sent_to_everyone(self):
+        """`when` has no default on create: a forgotten field must never mean "now, to every group"."""
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            response = self.as_(self.admin).post(URL, {"text": "Ertaga mock!"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["when"], ["Choose when it goes out."])
+        self.assertEqual(GroupPost.objects.count(), 0)
+        self.assertEqual((tg.messages, tg.photos), ([], []))
+
+    def test_the_audience_lists_are_deduplicated_in_first_seen_order(self):
+        room = Classroom.objects.get(name="Senior G1 Math")
+        body = {
+            "text": "Mock", "when": "ONCE", "send_at": (timezone.now() + timedelta(days=2)).isoformat(),
+            "subjects": ["MATH", "ENGLISH", "MATH"], "levels": ["senior", "junior", "senior"],
+            "classroom_ids": [room.pk, room.pk],
+        }
+        payload = self.as_(self.admin).post(URL, body, format="json").json()
+        self.assertEqual(payload["subjects"], ["MATH", "ENGLISH"])
+        self.assertEqual(payload["levels"], ["senior", "junior"])
+        self.assertEqual(payload["classroom_ids"], [room.pk])
+        self.assertEqual(payload["audience_label"], "1 chosen group")  # not "2 chosen groups"
 
     @override_settings(TELEGRAM_GROUP_POSTS_ENABLED=False)
     def test_with_the_flag_off_it_is_saved_but_not_sent(self):
@@ -179,6 +256,13 @@ class EditAndActionTests(ApiFixture):
         response = self.as_(self.admin).patch(f"{URL}{post.pk}/", {"text": "Yangi matn"}, format="json")
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["text"], "Yangi matn")
+
+    def test_a_patch_does_not_need_when(self):
+        """`when` is required to create a post, not to edit one."""
+        post = GroupPost.objects.create(text="a", when=GroupPost.WHEN_ONCE, send_at=timezone.now() + timedelta(days=2))
+        response = self.as_(self.admin).patch(f"{URL}{post.pk}/", {"text": "Yangi matn"}, format="json")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual((response.json()["text"], response.json()["when"]), ("Yangi matn", "ONCE"))
 
     def test_a_weekly_post_that_has_run_cannot_become_a_once_post(self):
         post = GroupPost.objects.create(

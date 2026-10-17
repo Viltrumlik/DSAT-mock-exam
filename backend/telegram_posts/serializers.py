@@ -111,8 +111,12 @@ class PostWriteSerializer(serializers.ModelSerializer):
     levels = JsonListField(child=serializers.ChoiceField(choices=audience.LEVELS), required=False)
     classroom_ids = JsonListField(child=serializers.IntegerField(min_value=1), required=False)
     weekdays = JsonListField(child=serializers.IntegerField(min_value=0, max_value=6), required=False)
+    # Required to create a post, never defaulted: a forgotten field must not mean "now, to every
+    # group". DRF skips required checks on a partial update, so an edit may leave it out.
     when = serializers.ChoiceField(
-        choices=[GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE, GroupPost.WHEN_WEEKLY], required=False
+        choices=[GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE, GroupPost.WHEN_WEEKLY],
+        required=True,
+        error_messages={"required": "Choose when it goes out."},
     )
 
     class Meta:
@@ -135,6 +139,11 @@ class PostWriteSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         inst = self.instance
+        # The same value twice is one value: a class picked twice must not read as "2 chosen
+        # groups". The first occurrence keeps its place. `weekdays` is de-duplicated below.
+        for field in ("subjects", "levels", "classroom_ids"):
+            if field in attrs:
+                attrs[field] = list(dict.fromkeys(attrs[field]))
 
         def current(field, default=None):
             if field in attrs:
