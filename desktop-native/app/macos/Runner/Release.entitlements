@@ -1,17 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- The MacBook app (packaging/macos/build-app.sh). Sandboxed; the network for the MasterSAT API
-     (client) and for the loopback server the question pages are served from to WKWebView
-     (server, 127.0.0.1 only — macos_island_host.dart). The question pages are inside the app, so
-     no file access outside the sandbox is needed (the development runner's DebugProfile reads
-     the repository's island build). -->
+<!-- The MacBook app (packaging/macos/build-app.sh). NOT sandboxed, like other exam browsers: the
+     midterm lock must ask other apps to quit and hide whatever comes to the front
+     (NSRunningApplication terminate / hide), which a sandboxed app may not do. Distributed
+     outside the App Store (Developer ID), where the sandbox is optional. The development runner
+     keeps its sandboxed DebugProfile. -->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
-	<true/>
-	<key>com.apple.security.network.client</key>
-	<true/>
-	<key>com.apple.security.network.server</key>
-	<true/>
+	<false/>
 </dict>
 </plist>

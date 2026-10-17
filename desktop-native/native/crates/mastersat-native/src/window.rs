@@ -357,5 +357,10 @@ mod stub {
         Ok(save.then_some(SavedWindow))
     }
     pub fn restore(_raw: isize, _saved: Option<SavedWindow>) {}
-    pub fn set_keep_awake(_on: bool) {}
+    /// The MacBook app keeps the display awake with an IOKit assertion (mac.rs); other
+    /// development hosts have nothing to do.
+    pub fn set_keep_awake(_on: bool) {
+        #[cfg(target_os = "macos")]
+        mastersat_lockdown::set_keep_awake(_on);
+    }
 }
