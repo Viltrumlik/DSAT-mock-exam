@@ -388,7 +388,7 @@ reminder the evening before (18:00 Tashkent), and the posts written in `/ops/tel
 - Reminder wording: the evening before it says "Ertaga". If it goes out on the event day itself
   (a late send) it says "Bugun". It never goes out once the event has started.
 - An announcement is never sent once its event has started, not even by Retry.
-- A paused post cannot be switched to *Now* or *Once*. Resume it first.
+- A paused post cannot be switched to *Now*. Resume it first.
 - Tables: `telegram_group_posts`, `telegram_group_post_deliveries`. Beat: `telegram-posts-sweep`
   every minute (worker AND beat must be restarted when this ships — new tasks, new schedule;
   otherwise the old worker rejects the new `telegram_posts.*` tasks as unregistered).
