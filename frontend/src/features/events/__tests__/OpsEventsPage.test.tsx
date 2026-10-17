@@ -186,6 +186,53 @@ describe("OpsEventsPage", () => {
     expect(String(confirmSpy.mock.calls[0][0])).toContain("post to 1 Telegram group");
   });
 
+  it("still mentions Telegram in the confirm while the groups are loading", async () => {
+    useTelegramGroups.mockReturnValue({ data: undefined, isPending: true, isError: false });
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: true, telegram_audience: { subjects: [], levels: [] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      "Publish “Robotics open day”, email every student and post to the Telegram groups? This can't be undone.",
+    );
+  });
+
+  it("still mentions Telegram in the confirm when the groups failed to load", async () => {
+    useTelegramGroups.mockReturnValue({ data: undefined, isPending: false, isError: true });
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: true, telegram_audience: { subjects: [], levels: [] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain("post to the Telegram groups");
+  });
+
+  it("leaves Telegram out of the confirm only when the server has posting switched off", async () => {
+    useTelegramGroups.mockReturnValue({ data: { enabled: false, groups: [] }, isPending: false, isError: false });
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: true, telegram_audience: { subjects: [], levels: [] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      "Publish “Robotics open day” and email every student? This can't be undone.",
+    );
+  });
+
+  it("says so when the audience reaches no group, rather than hiding Telegram", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: true, telegram_audience: { subjects: ["ENGLISH"], levels: ["senior"] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain("post to 0 Telegram groups");
+  });
+
   it("leaves Telegram out of the confirm when the box is unticked", async () => {
     useAdminEvents.mockReturnValue({
       data: [event({ telegram_post: false, telegram_audience: { subjects: [], levels: [] }, telegram: null })],
@@ -211,6 +258,37 @@ describe("OpsEventsPage", () => {
     await act(async () => buttonLabelled("Add an event")!.click());
     expect(text()).toContain("Post to Telegram groups");
     expect(text()).toContain("Goes to 2 Telegram groups.");
+  });
+
+  it("offers the Telegram choice when editing a draft, without the published hint", async () => {
+    await render();
+    await act(async () => buttonLabelled("Edit")!.click());
+    expect(text()).toContain("Post to Telegram groups");
+    expect(text()).toContain("Posted when you publish");
+    expect(text()).not.toContain("Already published");
+  });
+
+  it("keeps the Telegram choice on a published event, and says it only moves the reminder", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED", telegram_post: true, telegram_audience: { subjects: [], levels: [] } })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Edit")!.click());
+    expect(text()).toContain("Post to Telegram groups");
+    expect(text()).toContain("Already published — this changes the evening-before reminder only.");
+    expect(text()).not.toContain("Posted when you publish");
+  });
+
+  it("hides the Telegram choice on a cancelled event", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "CANCELLED", telegram_post: true, telegram_audience: { subjects: [], levels: [] } })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Edit")!.click());
+    expect(text()).toContain("Edit event");
+    expect(text()).not.toContain("Post to Telegram groups");
   });
 
   it("says the list failed rather than showing an empty console", async () => {

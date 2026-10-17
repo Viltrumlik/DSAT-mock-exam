@@ -13,6 +13,7 @@ import { ArrowLeft } from "lucide-react";
 import { Alert, Badge, Button } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { errorBody } from "./apiError";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, plainText, scheduleLabel } from "./audience";
 import type { DeliveryStatus, PostAction } from "./telegramPostsApi";
@@ -30,9 +31,12 @@ const DELIVERY_BADGE: Record<DeliveryStatus, { variant: BadgeVariant; label: str
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function errorText(e: unknown): string {
-  const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
-  return typeof data?.detail === "string" ? data.detail : "That didn't work. Try again.";
+  const detail = errorBody(e)?.detail;
+  return typeof detail === "string" ? detail : "That didn't work. Try again.";
 }
+
+/** Telegram lets a bot delete its own message for 48 hours after it was sent. */
+const DELETE_WINDOW_MS = 48 * 3_600_000;
 
 export function TelegramPostPage({ id }: { id: number }) {
   const post = useTelegramPost(id);
@@ -41,6 +45,17 @@ export function TelegramPostPage({ id }: { id: number }) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // A disabled v5 query reports "pending" forever, so a bad address has to be caught first.
+  if (!Number.isInteger(id) || id <= 0) {
+    return (
+      <div className="space-y-2 px-5 py-8 text-center">
+        <p className="text-sm font-semibold text-foreground">That post doesn&apos;t exist.</p>
+        <Link href="/ops/telegram-posts" className="text-sm font-bold text-primary underline">
+          Back to Telegram posts
+        </Link>
+      </div>
+    );
+  }
   if (post.isPending) return <p className="text-sm text-muted-foreground">Loading…</p>;
   if (post.isError || !post.data) {
     return (
@@ -58,6 +73,7 @@ export function TelegramPostPage({ id }: { id: number }) {
   const last = p.last_run;
   const live = !p.deleted_at;
   const repeats = p.when === "WEEKLY" || p.when === "EVENT";
+  const busy = action.isPending;
   const editable = live && p.kind === "MANUAL" && (p.when === "WEEKLY" || !last);
 
   const perform = (verb: PostAction, describe: (result: Record<string, number>) => string) => {
@@ -69,11 +85,32 @@ export function TelegramPostPage({ id }: { id: number }) {
     });
   };
 
+  const retry = () => {
+    const n = last?.failed ?? 0;
+    if (!window.confirm(`Send this post again to ${plural(n, "Telegram group")}?`)) return;
+    perform("retry", (r) => `Sending again to ${plural(r.queued ?? 0, "group")}.`);
+  };
+
+  const sendMissed = () => {
+    const n = last?.missed ?? 0;
+    if (!window.confirm(`Send this post now to ${plural(n, "Telegram group")} that missed it?`)) return;
+    perform("send-missed", (r) => `Sending to ${plural(r.queued ?? 0, "group")} now.`);
+  };
+
   const deleteFromGroups = () => {
-    const sent = last?.sent ?? 0;
-    const question =
-      `Delete this post from ${plural(sent, "Telegram group")}${repeats ? " and stop it for good" : ""}? ` +
-      "The bot can only delete what it sent in the last 48 hours.";
+    // What the bot can still take down is read off the rows, not off the last run: a weekly
+    // post's last run may be days old, and a run's `sent` counts messages already out of reach.
+    const deliveries = p.runs.flatMap((r) => r.deliveries);
+    const reachable = new Set(
+      deliveries
+        .filter((d) => d.status === "SENT" && d.sent_at && Date.now() - new Date(d.sent_at).getTime() < DELETE_WINDOW_MS)
+        .map((d) => d.chat_id),
+    );
+    const everSent = deliveries.some((d) => d.sent_at);
+    const question = everSent
+      ? `Delete this post from ${plural(reachable.size, "Telegram group")} and stop it for good? ` +
+        "Messages older than 48 hours can't be deleted by the bot."
+      : "Stop this post for good? It hasn't been sent to any group yet.";
     if (!window.confirm(question)) return;
     perform("delete-from-groups", (r) =>
       [
@@ -102,24 +139,29 @@ export function TelegramPostPage({ id }: { id: number }) {
             {editable ? <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit</Button> : null}
             {live && repeats ? (
               p.is_paused ? (
-                <Button size="sm" variant="secondary" onClick={() => perform("resume", () => "Resumed. What the pause covered stays skipped.")}>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => perform("resume", () => "Resumed. What the pause covered stays skipped.")}
+                >
                   Resume
                 </Button>
               ) : (
-                <Button size="sm" variant="secondary" onClick={() => perform("pause", () => "Paused.")}>Pause</Button>
+                <Button size="sm" variant="secondary" disabled={busy} onClick={() => perform("pause", () => "Paused.")}>
+                  Pause
+                </Button>
               )
             ) : null}
             {live && last?.failed ? (
-              <Button size="sm" onClick={() => perform("retry", (r) => `Sending again to ${plural(r.queued ?? 0, "group")}.`)}>
-                Retry failed
-              </Button>
+              <Button size="sm" disabled={busy} onClick={retry}>Retry failed</Button>
             ) : null}
             {live && last?.missed ? (
-              <Button size="sm" onClick={() => perform("send-missed", (r) => `Sending to ${plural(r.queued ?? 0, "group")} now.`)}>
-                Send missed now
-              </Button>
+              <Button size="sm" disabled={busy} onClick={sendMissed}>Send missed now</Button>
             ) : null}
-            {live ? <Button size="sm" variant="danger" onClick={deleteFromGroups}>Delete from groups</Button> : null}
+            {live ? (
+              <Button size="sm" variant="danger" disabled={busy} onClick={deleteFromGroups}>Delete from groups</Button>
+            ) : null}
           </div>
         }
       />
