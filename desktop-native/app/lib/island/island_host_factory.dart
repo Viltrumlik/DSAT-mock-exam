@@ -49,7 +49,8 @@ IslandHostMode islandHostModeFor({TargetPlatform? platform, Map<String, String>?
 /// * Windows: `TextureIslandHost`. Development builds honour `MS_ISLAND_DIR` (serve the island
 ///   from that folder instead of `<exe dir>\data\island`); release builds never do.
 /// * macOS: `MacosIslandHost` over [macosSource]. A release build uses only the island bundled
-///   in the app (bundledIslandSource); a development run resolveDevIslandSource().
+///   in the app (bundledIslandSource); a development run resolveDevIslandSource(), then the
+///   bundled one (a test copy installed outside the repository).
 IslandHostFactory islandHostFactory({
   IslandHostMode? mode,
   Map<String, String>? environment,
@@ -66,7 +67,8 @@ IslandHostFactory islandHostFactory({
       final folder = dir != null && dir.trim().isNotEmpty ? dir.trim() : null;
       return (kind) => TextureIslandHost(kind, islandFolder: folder);
     case IslandHostMode.macosDev:
-      final source = macosSource ?? (release ? bundledIslandSource() : resolveDevIslandSource(environment: env));
+      final source = macosSource ??
+          (release ? bundledIslandSource() : resolveDevIslandSource(environment: env) ?? bundledIslandSource());
       if (source == null) {
         return (kind) => MacosIslandHost.unavailable(
           kind,
