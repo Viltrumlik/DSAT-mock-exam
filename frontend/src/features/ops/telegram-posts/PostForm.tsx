@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { Alert, Button, Checkbox, Field, Input, Modal, Textarea } from "@/components/ui";
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
 import { AudiencePicker } from "./AudiencePicker";
+import { errorBody } from "./apiError";
 import { WEEKDAYS, draftChats, draftFrom, draftToFields, type AudienceDraft } from "./audience";
 import type { GroupPostDetail, PostWhen } from "./telegramPostsApi";
 import { useSavePost, useTelegramGroups } from "./telegramPostsHooks";
@@ -17,14 +18,17 @@ type When = Exclude<PostWhen, "EVENT">;
 const WHEN_LABEL: Record<When, string> = { NOW: "Now", ONCE: "Once, at a set time", WEEKLY: "Every week" };
 
 function errorText(e: unknown): string {
-  const data = (e as { response?: { data?: Record<string, unknown> } })?.response?.data;
-  if (typeof data?.detail === "string") return data.detail;
-  return data ? Object.values(data).flat().join(" ") : "Couldn't save that. Try again.";
+  const body = errorBody(e);
+  if (typeof body?.detail === "string") return body.detail;
+  // DRF field errors: { field: ["message", …] }. Only strings are words; anything else is noise.
+  const messages = body ? Object.values(body).flat().filter((m): m is string => typeof m === "string") : [];
+  return messages.length ? messages.join(" ") : "Couldn't save that. Try again.";
 }
 
 export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onClose: () => void }) {
   const save = useSavePost();
   const groups = useTelegramGroups();
+  const uid = useId();
   const [text, setText] = useState(post?.text ?? "");
   const [file, setFile] = useState<File | null>(null);
   const [buttonText, setButtonText] = useState(post?.button_text ?? "");
@@ -89,9 +93,13 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
   return (
     <Modal open onClose={onClose} title={post ? "Edit post" : "New post"}>
       <div className="space-y-3">
+        {groups.data?.enabled === false ? (
+          <Alert tone="warning">Posting is switched off on this server — this will be saved, not sent.</Alert>
+        ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
-        <Field label="Message" hint={`${length}/${limit} characters`}>
+        <Field label="Message" htmlFor={`${uid}-text`} hint={`${length}/${limit} characters`}>
           <Textarea
+            id={`${uid}-text`}
             rows={6}
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -100,16 +108,28 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
         </Field>
         <Field
           label="Picture"
+          htmlFor={`${uid}-picture`}
           hint={post?.image_url && !file ? "The current picture is kept." : "Optional. Under a picture Telegram takes 1024 characters."}
         >
-          <input type="file" accept="image/*" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-sm" />
+          <input
+            id={`${uid}-picture`}
+            type="file"
+            accept="image/*"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            className="text-sm"
+          />
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Button label" hint="Optional.">
-            <Input value={buttonText} onChange={(e) => setButtonText(e.target.value)} placeholder="Ro'yxatdan o'tish" />
+          <Field label="Button label" htmlFor={`${uid}-button-text`} hint="Optional.">
+            <Input
+              id={`${uid}-button-text`}
+              value={buttonText}
+              onChange={(e) => setButtonText(e.target.value)}
+              placeholder="Ro'yxatdan o'tish"
+            />
           </Field>
-          <Field label="Button link" hint="https://…">
-            <Input value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} />
+          <Field label="Button link" htmlFor={`${uid}-button-url`} hint="https://…">
+            <Input id={`${uid}-button-url`} value={buttonUrl} onChange={(e) => setButtonUrl(e.target.value)} />
           </Field>
         </div>
         <Field label="To">
@@ -126,8 +146,8 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
           </div>
         </Field>
         {when === "ONCE" ? (
-          <Field label="Goes out at">
-            <Input type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} />
+          <Field label="Goes out at" htmlFor={`${uid}-send-at`}>
+            <Input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} />
           </Field>
         ) : null}
         {when === "WEEKLY" ? (

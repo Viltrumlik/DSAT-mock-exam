@@ -10,19 +10,17 @@ import { createRoot, type Root } from "react-dom/client";
 const save = vi.fn();
 const confirmSpy = vi.fn();
 
+const GROUPS = [
+  { id: 1, name: "Senior G1 Math", subject: "MATH", level: "senior", chat_id: "-1001" },
+  { id: 2, name: "Junior G2 Math", subject: "MATH", level: "junior", chat_id: "-1002" },
+  { id: 3, name: "Senior G3 English", subject: "ENGLISH", level: "senior", chat_id: "-1003" },
+  { id: 4, name: "Senior G4 English", subject: "ENGLISH", level: "senior", chat_id: "-1003" },
+];
+let groupsEnabled = true;
+
 vi.mock("@/features/ops/telegram-posts/telegramPostsHooks", () => ({
   useSavePost: () => ({ mutate: save, isPending: false }),
-  useTelegramGroups: () => ({
-    data: {
-      enabled: true,
-      groups: [
-        { id: 1, name: "Senior G1 Math", subject: "MATH", level: "senior", chat_id: "-1001" },
-        { id: 2, name: "Junior G2 Math", subject: "MATH", level: "junior", chat_id: "-1002" },
-        { id: 3, name: "Senior G3 English", subject: "ENGLISH", level: "senior", chat_id: "-1003" },
-        { id: 4, name: "Senior G4 English", subject: "ENGLISH", level: "senior", chat_id: "-1003" },
-      ],
-    },
-  }),
+  useTelegramGroups: () => ({ data: { enabled: groupsEnabled, groups: GROUPS } }),
 }));
 
 const { PostForm } = await import("@/features/ops/telegram-posts/PostForm");
@@ -33,6 +31,9 @@ let root: Root;
 const text = () => document.body.textContent ?? "";
 const button = (label: string) =>
   Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent?.trim() === label)!;
+/** The control a visible label is bound to — what a click on the label focuses. */
+const controlOf = (label: string) =>
+  Array.from(document.body.querySelectorAll("label")).find((l) => l.textContent?.trim() === label)!.control;
 const radio = (label: string) =>
   Array.from(document.body.querySelectorAll("label")).find((l) => l.textContent?.trim() === label)!.querySelector("input")!;
 
@@ -76,6 +77,8 @@ beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   confirmSpy.mockReturnValue(true);
   vi.stubGlobal("confirm", confirmSpy);
+  groupsEnabled = true;
+  save.mockReset();
 });
 
 afterEach(async () => {
@@ -129,6 +132,60 @@ describe("PostForm", () => {
     expect(body).toBeInstanceOf(FormData);
     expect(body.get("subjects")).toBe("[]");
     expect(body.get("image")).toBe(file);
+  });
+
+  it("warns when posting is switched off on the server, and not otherwise", async () => {
+    await render();
+    expect(text()).not.toContain("Posting is switched off");
+    await act(async () => root.unmount());
+    container.remove();
+
+    groupsEnabled = false;
+    await render();
+    expect(text()).toContain("Posting is switched off on this server — this will be saved, not sent.");
+  });
+
+  it("shows the server's reason when a save is refused", async () => {
+    save.mockImplementation((_vars: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError({ response: { data: { code: "already_ran", detail: "This post has already run — its timing can't change." } } }),
+    );
+    await render();
+    await typeMessage("Ertaga mock!");
+    await act(async () => button("Post now").click());
+    expect(text()).toContain("This post has already run — its timing can't change.");
+  });
+
+  it("joins the field errors of a refused save", async () => {
+    save.mockImplementation((_vars: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError({ response: { data: { button_url: ["Enter a valid URL."], text: ["Too long."] } } }),
+    );
+    await render();
+    await typeMessage("Ertaga mock!");
+    await act(async () => button("Post now").click());
+    expect(text()).toContain("Enter a valid URL. Too long.");
+  });
+
+  it("says a plain sentence, not the body's letters, when the refusal is not JSON", async () => {
+    save.mockImplementation((_vars: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError({ response: { data: "<html>413 Request Entity Too Large</html>" } }),
+    );
+    await render();
+    await typeMessage("Ertaga mock!");
+    await act(async () => button("Post now").click());
+    expect(text()).toContain("Couldn't save that. Try again.");
+    expect(text()).not.toContain("< h t m l >");
+    expect(text()).not.toContain("413");
+  });
+
+  it("binds each label to the control it names", async () => {
+    await render();
+    expect(controlOf("Message")).toBe(document.body.querySelector("textarea"));
+    expect(controlOf("Picture")).toBe(document.body.querySelector('input[type="file"]'));
+    expect(controlOf("Button label")?.tagName).toBe("INPUT");
+    expect(controlOf("Button link")?.tagName).toBe("INPUT");
+    expect(controlOf("Button label")).not.toBe(controlOf("Button link"));
+    await act(async () => radio("Once, at a set time").click());
+    expect(controlOf("Goes out at")).toBe(document.body.querySelector('input[type="datetime-local"]'));
   });
 
   it("lets a post that has not run change its timing", async () => {

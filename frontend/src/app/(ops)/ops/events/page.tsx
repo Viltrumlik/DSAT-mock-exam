@@ -72,7 +72,10 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
   );
   const [file, setFile] = useState<File | null>(null);
   const groups = useTelegramGroups();
-  const telegramOn = groups.data?.enabled === true;
+  // Shown while the event can still reach the groups: a draft posts on Publish, a published one
+  // keeps a reminder due the evening before. A cancelled event posts nothing, so it has no choice.
+  const telegramOn = groups.data?.enabled === true && event?.status !== "CANCELLED";
+  const published = event?.status === "PUBLISHED";
   const [telegramPost, setTelegramPost] = useState(event?.telegram_post ?? true);
   const [audience, setAudience] = useState<AudienceDraft>(draftFrom(event?.telegram_audience));
   const [error, setError] = useState<string | null>(null);
@@ -191,7 +194,9 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
               />
             ) : null}
             <p className="text-xs text-muted-foreground">
-              Posted when you publish, with a reminder the evening before at 18:00.
+              {published
+                ? "Already published — this changes the evening-before reminder only."
+                : "Posted when you publish, with a reminder the evening before at 18:00."}
             </p>
           </div>
         ) : null}
@@ -415,14 +420,16 @@ export default function OpsEventsPage() {
                         onClick={() => {
                           // Publishing IS the send — about 370 emails and, when ticked, a post
                           // in every chosen class group. There is no test send and no undo.
+                          // Telegram is left out only when the server says posting is off or
+                          // the box is unticked. Groups that have not loaded (or failed to) are
+                          // no reason to hide that the post will happen — only the count waits.
                           const tg = telegramGroups.data;
-                          const n =
-                            tg?.enabled && event.telegram_post !== false
-                              ? draftChats(tg.groups, draftFrom(event.telegram_audience)).length
-                              : 0;
-                          const question = n
-                            ? `Publish “${event.title}”, email every student and post to ${n} Telegram group${n === 1 ? "" : "s"}? This can't be undone.`
-                            : `Publish “${event.title}” and email every student? This can't be undone.`;
+                          let question = `Publish “${event.title}” and email every student? This can't be undone.`;
+                          if (event.telegram_post !== false && tg?.enabled !== false) {
+                            const n = tg ? draftChats(tg.groups, draftFrom(event.telegram_audience)).length : null;
+                            const where = n === null ? "the Telegram groups" : `${n} Telegram group${n === 1 ? "" : "s"}`;
+                            question = `Publish “${event.title}”, email every student and post to ${where}? This can't be undone.`;
+                          }
                           if (window.confirm(question)) publish.mutate(event.id);
                         }}
                       >
