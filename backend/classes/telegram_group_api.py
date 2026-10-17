@@ -161,11 +161,16 @@ def _send(req: urllib.request.Request, method: str) -> TgResult:
 
 
 def _retry_after(body) -> Optional[int]:
-    """A 429's wait, in seconds. Telegram puts it in ``parameters``, not in a header."""
+    """A 429's wait, in seconds. Telegram puts it in ``parameters``, not in a header.
+
+    Never raises: a malformed body means "no wait given", not a crash in an error handler.
+    """
     params = body.get("parameters") if isinstance(body, dict) else None
+    if not isinstance(params, dict):
+        return None
     try:
-        value = int((params or {}).get("retry_after"))
-    except (TypeError, ValueError):
+        value = int(params.get("retry_after"))
+    except (TypeError, ValueError, OverflowError):  # OverflowError: int(float("inf"))
         return None
     return value if value > 0 else None
 
@@ -350,12 +355,27 @@ def send_photo(
 
 
 def largest_photo_file_id(result) -> str:
-    """The id of the biggest size in a sent photo — the one worth reusing."""
+    """The id of the biggest size in a sent photo — the one worth reusing.
+
+    Never raises: entries that are not dicts are skipped, an unreadable size counts as 0, and
+    anything without a string file_id gives "".
+    """
     sizes = result.get("photo") if isinstance(result, dict) else None
-    if not sizes:
+    if not isinstance(sizes, list):
         return ""
-    best = max(sizes, key=lambda s: (int(s.get("file_size") or 0), int(s.get("width") or 0)))
-    return str(best.get("file_id") or "")
+    entries = [s for s in sizes if isinstance(s, dict)]
+    if not entries:
+        return ""
+    best = max(entries, key=lambda s: (_as_int(s.get("file_size")), _as_int(s.get("width"))))
+    file_id = best.get("file_id")
+    return file_id if isinstance(file_id, str) else ""
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
 
 
 def delete_message(chat_id: str | int, message_id) -> TgResult:

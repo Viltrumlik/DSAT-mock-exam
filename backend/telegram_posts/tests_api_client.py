@@ -90,11 +90,51 @@ class RetryAfterTests(SimpleTestCase):
         self.assertEqual(result.error_code, 429)
         self.assertEqual(result.retry_after, 7)
 
+    def test_a_non_dict_parameters_is_no_retry_after_on_a_429(self):
+        body = json.dumps({
+            "ok": False, "error_code": 429, "description": "Too Many Requests",
+            "parameters": "7",
+        }).encode()
+        err = urllib.error.HTTPError(
+            "https://api.telegram.org", 429, "Too Many Requests", hdrs=None, fp=io.BytesIO(body)
+        )
+        with mock.patch.object(api.urllib.request, "urlopen", side_effect=err):
+            result = api.send_message("-1001", "hi")
+        self.assertIsInstance(result, api.TgResult)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, 429)
+        self.assertIsNone(result.retry_after)
+
+    def test_a_non_dict_parameters_is_no_retry_after_on_an_ok_false_body(self):
+        seen, patch = _capture({
+            "ok": False, "error_code": 400, "description": "Bad Request", "parameters": ["7"],
+        })
+        with patch:
+            result = api.send_message("-1001", "hi")
+        self.assertIsInstance(result, api.TgResult)
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, 400)
+        self.assertIsNone(result.retry_after)
+
+    def test_an_infinite_retry_after_is_no_retry_after(self):
+        # json.loads accepts the bare token Infinity, and int(inf) raises OverflowError.
+        body = b'{"ok": false, "error_code": 429, "parameters": {"retry_after": Infinity}}'
+        err = urllib.error.HTTPError(
+            "https://api.telegram.org", 429, "Too Many Requests", hdrs=None, fp=io.BytesIO(body)
+        )
+        with mock.patch.object(api.urllib.request, "urlopen", side_effect=err):
+            result = api.send_message("-1001", "hi")
+        self.assertEqual(result.error_code, 429)
+        self.assertIsNone(result.retry_after)
+
     def test_other_failures_have_none(self):
-        with mock.patch.object(api.urllib.request, "urlopen", side_effect=TimeoutError("timed out")):
+        with mock.patch.object(
+            api.urllib.request, "urlopen", side_effect=TimeoutError("timed out")
+        ), self.assertLogs("classes.telegram_group", "WARNING") as logs:
             result = api.send_message("-1001", "hi")
         self.assertIsNone(result.retry_after)
         self.assertIsNone(result.error_code)
+        self.assertIn("sendMessage failed: timed out", logs.output[0])
 
 
 class LargestPhotoTests(SimpleTestCase):
@@ -109,3 +149,23 @@ class LargestPhotoTests(SimpleTestCase):
     def test_no_photo_is_empty(self):
         self.assertEqual(api.largest_photo_file_id({"message_id": 1}), "")
         self.assertEqual(api.largest_photo_file_id(None), "")
+
+    def test_a_malformed_photo_list_is_empty_not_an_error(self):
+        # Non-dict entries are skipped; an unreadable size counts as 0, so a valid entry
+        # still wins over it. Anything with no usable file_id is "".
+        self.assertEqual(api.largest_photo_file_id({"photo": "not-a-list"}), "")
+        self.assertEqual(api.largest_photo_file_id({"photo": [None, 7, "junk"]}), "")
+        self.assertEqual(api.largest_photo_file_id({"photo": [{"file_id": ["x"]}]}), "")
+        self.assertEqual(
+            api.largest_photo_file_id({"photo": [
+                None,
+                {"file_id": "a", "file_size": "big"},
+                {"file_id": "b", "file_size": 50},
+                "junk",
+            ]}),
+            "b",
+        )
+        self.assertEqual(
+            api.largest_photo_file_id({"photo": [{"file_id": "a", "file_size": float("inf")}]}),
+            "a",
+        )
