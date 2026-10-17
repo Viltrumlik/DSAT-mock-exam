@@ -5,6 +5,11 @@ pattern), so two overlapping beats, or a beat and a "send now", open a run once 
 Each row is then claimed PENDING → SENDING before its message goes, so a retry racing the sweep
 cannot send one group the same post twice. A row found still SENDING long after is marked
 Failed, never re-sent: the message may well have arrived, and only a person can look.
+
+Nothing here may strand a run. The claim and the opening of its rows are one transaction, so a
+run that cannot be opened is un-claimed and the next beat tries again; an error while sending
+fails the rows that were never attempted (they cannot double-send) and leaves the rest of the
+sweep running; and a row left PENDING for an hour is failed by the sweep itself.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import time
 from datetime import date, timedelta
 
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -27,11 +33,17 @@ from .models import GroupPost, GroupPostDelivery
 logger = logging.getLogger("telegram_posts")
 
 MAX_TRIES = 3
-#: Telegram's 429 says how long to wait; past this it is better to fail the row and let a
-#: person press Retry than to hold a worker for minutes.
+#: Telegram's 429 says how long to wait. We wait at most this many seconds and then retry; if
+#: Telegram still wants longer, the retry meets another 429 and, after MAX_TRIES, the row fails
+#: and a person presses Retry — better than holding a worker for minutes.
 RETRY_AFTER_CAP = 30
 INTERRUPTED_AFTER = timedelta(minutes=10)
+#: A row still PENDING this long after it was last touched was never attempted (the run died
+#: after opening it): the sweep fails it so the console shows it and Retry can send it.
+STALE_PENDING_AFTER = timedelta(hours=1)
 INTERRUPTED = "Interrupted while sending — it may or may not have arrived. Check the group before retrying."
+NEVER_SENT = "Never sent — an internal error stopped this run. Retry sends it."
+NO_ANSWER = "No answer from Telegram — it may have arrived. Check the group before Retry. ({})"
 LATE = "More than an hour late — not sent on its own."
 
 _sleep = time.sleep  # tests replace it
@@ -42,8 +54,9 @@ def enabled() -> bool:
 
 
 def claim_run(post, due) -> bool:
+    """Win the right to open this run. A post deleted or paused since the caller read it is not claimed."""
     claimed = (
-        GroupPost.objects.filter(pk=post.pk)
+        GroupPost.objects.filter(pk=post.pk, deleted_at__isnull=True, is_paused=False)
         .filter(Q(last_run_on__isnull=True) | Q(last_run_on__lt=due.run_on))
         .update(last_run_on=due.run_on)
     )
@@ -81,7 +94,7 @@ def send_pending(post, run_on: date) -> dict:
             pk__in=[r.pk for r in rows], status=GroupPostDelivery.STATUS_PENDING
         ).update(
             status=GroupPostDelivery.STATUS_MISSED,
-            error="Nothing to send: the event is no longer published.",
+            error="Nothing to send: the event was cancelled or has started.",
             updated_at=timezone.now(),
         )
         stats["skipped"] = len(rows)
@@ -102,10 +115,12 @@ def send_pending(post, run_on: date) -> dict:
             )
             stats["sent"] += 1
         else:
+            reason = _reason(result)
             GroupPostDelivery.objects.filter(pk=row.pk).update(
-                status=GroupPostDelivery.STATUS_FAILED, attempts=tries, error=_reason(result),
+                status=GroupPostDelivery.STATUS_FAILED, attempts=tries, error=reason,
                 updated_at=timezone.now(),
             )
+            logger.warning("telegram post %s → %s failed: %s", post.pk, row.chat_id, reason)
             stats["failed"] += 1
     return stats
 
@@ -127,10 +142,20 @@ def _deliver(post, rendered, markup, chat_id):
     return result, MAX_TRIES
 
 
+def _never_reached_telegram(result) -> bool:
+    """No code and a URLError: the connection failed (DNS, refused, connect timeout), so the request
+    never got to Telegram. Any other no-code failure (a read timeout, a dropped connection) may
+    have happened after Telegram took the message."""
+    return result.error_code is None and (result.description or "").startswith("URLError")
+
+
 def _worth_retrying(result) -> bool:
-    """A 429, a 5xx, or no answer at all. A 400/403 will say the same thing next time."""
+    """A 429, a 5xx, or a connection that never opened. A 400/403 will say the same thing next
+    time, and an answer that never came may mean the message did arrive: a retry would post twice."""
     code = result.error_code
-    return code is None or code == 429 or code >= 500
+    if code is None:
+        return _never_reached_telegram(result)
+    return code == 429 or code >= 500
 
 
 def _send_once(post, rendered, markup, chat_id):
@@ -177,15 +202,73 @@ def _message_id(result):
 
 
 def _reason(result) -> str:
+    if result.error_code is None and not _never_reached_telegram(result):
+        return NO_ANSWER.format(result.description or "no details")[:400]
     prefix = "The bot is not in this group any more, or may not post. " if result.error_code == 403 else ""
     code = f"{result.error_code}: " if result.error_code else ""
     return (prefix + code + (result.description or "Telegram did not answer."))[:400]
 
 
 def _fail_interrupted(now) -> int:
-    return GroupPostDelivery.objects.filter(
+    interrupted = GroupPostDelivery.objects.filter(
         status=GroupPostDelivery.STATUS_SENDING, updated_at__lt=now - INTERRUPTED_AFTER
     ).update(status=GroupPostDelivery.STATUS_FAILED, error=INTERRUPTED, updated_at=now)
+    unsent = GroupPostDelivery.objects.filter(
+        status=GroupPostDelivery.STATUS_PENDING, updated_at__lt=now - STALE_PENDING_AFTER
+    ).update(status=GroupPostDelivery.STATUS_FAILED, error=NEVER_SENT, updated_at=now)
+    return interrupted + unsent
+
+
+def _start_run(post, due) -> bool:
+    """Claim the run and open its rows as one unit. False: another worker has it, or it could
+    not be opened — in which case the claim is rolled back and the next beat tries again."""
+    previous = post.last_run_on
+    try:
+        with transaction.atomic():
+            if not claim_run(post, due):
+                return False
+            open_run(post, due)
+    except Exception:
+        post.last_run_on = previous
+        logger.exception(
+            "telegram post %s: the run of %s could not be opened; the next beat retries it",
+            post.pk, due.run_on,
+        )
+        return False
+    return True
+
+
+def _guarded_send(post, run_on: date) -> dict:
+    """`send_pending`, except an error fails the rows that were never attempted instead of
+    stranding them PENDING. A row that was mid-send stays SENDING for `_fail_interrupted`: it may
+    have arrived. (An interrupted run does not report the messages it did send.)"""
+    try:
+        return send_pending(post, run_on)
+    except Exception:
+        logger.exception("telegram post %s: sending the run of %s stopped on an error", post.pk, run_on)
+    failed = 0
+    try:
+        failed = GroupPostDelivery.objects.filter(
+            post=post, run_on=run_on, status=GroupPostDelivery.STATUS_PENDING
+        ).update(status=GroupPostDelivery.STATUS_FAILED, error=NEVER_SENT, updated_at=timezone.now())
+    except Exception:
+        logger.exception("telegram post %s: could not fail the unsent rows of %s", post.pk, run_on)
+    return {"sent": 0, "failed": failed, "skipped": 0}
+
+
+def _sweep_post(post, now, stats: dict) -> None:
+    due = schedule.due(post, now)
+    if due is None or not _start_run(post, due):
+        return
+    stats["runs"] += 1
+    if due.late:
+        stats["missed"] += post.deliveries.filter(
+            run_on=due.run_on, status=GroupPostDelivery.STATUS_MISSED
+        ).count()
+        return
+    result = _guarded_send(post, due.run_on)
+    stats["sent"] += result["sent"]
+    stats["failed"] += result["failed"]
 
 
 def sweep(*, now=None) -> dict:
@@ -201,19 +284,11 @@ def sweep(*, now=None) -> dict:
         .select_related("event")
     )
     for post in posts:
-        due = schedule.due(post, now)
-        if due is None or not claim_run(post, due):
-            continue
-        stats["runs"] += 1
-        open_run(post, due)
-        if due.late:
-            stats["missed"] += post.deliveries.filter(
-                run_on=due.run_on, status=GroupPostDelivery.STATUS_MISSED
-            ).count()
-            continue
-        result = send_pending(post, due.run_on)
-        stats["sent"] += result["sent"]
-        stats["failed"] += result["failed"]
+        try:
+            _sweep_post(post, now, stats)
+        except Exception:
+            # One bad post must not stop the others from going out.
+            logger.exception("telegram post %s: the sweep stopped on it", post.pk)
     if stats["runs"]:
         logger.info("telegram_posts sweep %s", stats)
     return stats
@@ -223,11 +298,14 @@ def send_post_now(post_id: int) -> dict:
     """A "Now" post or an event's announcement, dispatched on commit: nobody waits a minute."""
     if not enabled():
         return {}
-    post = GroupPost.objects.select_related("event").filter(pk=post_id).first()
-    if post is None:
+    try:
+        post = GroupPost.objects.select_related("event").filter(pk=post_id).first()
+        if post is None:
+            return {}
+        due = schedule.due(post, timezone.now())
+        if due is None or not _start_run(post, due):
+            return {}
+        return {} if due.late else _guarded_send(post, due.run_on)
+    except Exception:
+        logger.exception("telegram post %s: send now stopped on an error", post_id)
         return {}
-    due = schedule.due(post, timezone.now())
-    if due is None or not claim_run(post, due):
-        return {}
-    open_run(post, due)
-    return {} if due.late else send_pending(post, due.run_on)
