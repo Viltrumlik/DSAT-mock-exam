@@ -345,3 +345,44 @@ before the end-to-end test, and the payment flag comes last.
    `--only CHAT_ID` (repeatable).
 8. Set `CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM` to the switch-on moment (ISO date-time), so only
    payments lc-up creates after it are announced.
+
+## Group posts (2026-10-17)
+
+The bot also posts *into* the class groups: an event's announcement when it is published, its
+reminder the evening before (18:00 Tashkent), and the posts written in `/ops/telegram-posts`
+(now, once at a time, or every week — the Saturday 18:00 "ertaga mock" post is one of these).
+
+- Flag: `TELEGRAM_GROUP_POSTS_ENABLED` (default off). Off: nothing is sent, Publish creates no
+  posts, the pages say so. Turning it on is not retroactive.
+- Who gets it: active classes with a chat id, by subject × level or chosen classes; one message
+  per chat. The confirm names the count.
+- Length: the limits (1024 with a picture, 4096 without) are counted in UTF-16 units, the same
+  way the console's counter counts, so an emoji such as 📢 counts two.
+- `when` is required when creating a post. Editing a post that has already run cannot change its
+  `when`; edits apply to future sends only.
+- Late: a run more than 60 min behind (server down) is recorded *Missed* and never sent on its
+  own; "Send missed now" is the admin's call.
+- Retries: 429 waits Telegram's `retry_after` (≤ 30 s); a connection-phase failure or a 5xx is
+  tried up to 3 times; 400/403 fail at once with the reason on the post's page. A **read
+  timeout is not retried automatically**: Telegram may have delivered the message, so a second
+  send could double-post. That row says "may have arrived — check the group before Retry".
+  "Retry failed" re-queues only the failed groups.
+- Stuck rows: the sweep marks a PENDING row untouched for 1 h (never attempted) and a SENDING row
+  untouched for 10 min (interrupted; it may or may not have arrived) as *Failed*, so they show in
+  the console and Retry can pick them up.
+- Taking it back: "Delete from groups" removes the bot's message wherever it is under 48 h old
+  and stops the post for good; older ones are listed as "too old — remove by hand". It works
+  with the flag off. If a group is being sent to at that moment, the message is taken down as it
+  lands; the result reports those as `in_flight`.
+- Event reminders follow the event as it is *now*: its current "Post to Telegram groups" box and
+  audience decide who gets the reminder, so unticking the box after Publish stops the reminder.
+  A cancelled event, or one that has already started, gets none; a moved start moves it.
+- Tables: `telegram_group_posts`, `telegram_group_post_deliveries`. Beat: `telegram-posts-sweep`
+  every minute (worker AND beat must be restarted when this ships — new tasks, new schedule).
+
+Switch-on:
+1. Deploy (migrate-first: `telegram_posts.0001`, `events.0003`, both additive).
+2. Append `TELEGRAM_GROUP_POSTS_ENABLED=True` to `shared/backend.env`; reload gunicorn
+   (TTIN×3/TTOU×3) and restart celery worker + beat outside the quarter-hour sync slot.
+3. In `/ops/telegram-posts`, a *Now* post to the `test` group only (Specific groups → test).
+4. Owner checks it in Telegram; then the real weekly post (Sat 18:00, all groups).
