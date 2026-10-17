@@ -239,6 +239,10 @@ class SubdomainAPIGuardMiddleware:
             # marks who came. The student-facing page is on the apex, which needs no entry.
             if path.startswith("/api/events/"):
                 return self.get_response(request)
+            # Telegram group posts: written, scheduled and taken down from the admin console
+            # (plan 2026-10-17). Staff-only in the view; there is no student surface.
+            if path.startswith("/api/telegram-posts/"):
+                return self.get_response(request)
             # Live quiz: an admin can open and watch a room for any class. Students play on
             # the apex, which needs no entry here.
             if path.startswith("/api/livequiz/"):
