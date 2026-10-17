@@ -72,13 +72,15 @@ class Rig {
 }
 
 void main() {
-  test('ready replays init → module.load → media.put → question.show', () async {
+  test('ready replays init → view.set (the input lock) → module.load → media.put → question.show', () async {
     final r = Rig(FakeExamSession.math(initialPhase: ExamPhase.running, tick: false));
     await r.open();
     expect(r.bridge.ready, isTrue);
     final types = r.types;
     expect(types.first, 'init');
-    expect(types[1], 'module.load');
+    expect(types[1], 'view.set');
+    expect(r.host.postedOf<ViewSetMessage>().first.inputLocked, isFalse);
+    expect(types[2], 'module.load');
     expect(types.where((t) => t == 'media.put'), hasLength(5)); // q4 graph + q6's four choices
     expect(types.last, 'question.show');
     final init = r.host.postedOf<InitMessage>().single;
@@ -369,6 +371,29 @@ void main() {
     await settle();
     expect(r.last<ViewSetMessage>().inputLocked, isFalse);
     await r.dispose();
+  });
+
+  test('a runner attaching to a page the last one left locked unlocks it (midterm module 2)', () async {
+    // Module 1 ends locked (0:00, the transition); module 2's runner gets the same page, which
+    // already said `ready` — the bridge replays without one, and the page keeps its lock
+    // through `init`. The 0.3.0 MacBook app left every module-2 choice and highlight dead.
+    final first = Rig(FakeExamSession.readingWriting(tick: false));
+    await first.open();
+    first.session.openReview();
+    await settle();
+    expect(first.last<ViewSetMessage>().inputLocked, isTrue);
+    await first.bridge.dispose();
+
+    final session = FakeExamSession.readingWriting(tick: false);
+    final before = first.host.posted.length;
+    final second = ContentIslandBridge(session: session, host: first.host)..attach();
+    await settle();
+    final replay = first.host.posted.skip(before).toList();
+    expect(replay.first, isA<InitMessage>());
+    expect(replay.whereType<ViewSetMessage>().map((m) => m.inputLocked).whereType<bool>(), [false]);
+    await second.dispose();
+    session.dispose();
+    first.session.dispose();
   });
 
   test('module 2 is loaded after the hand-in (past paper)', () async {
