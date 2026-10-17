@@ -181,8 +181,8 @@ impl KeyWrap for PlatformWrap {
 #[cfg(windows)]
 const KEY_ENTROPY: &[u8] = b"MasterSAT data key v1";
 
-/// Development hosts have no DPAPI: the key file holds the raw key (0600). Never shipped — the
-/// installer is Windows-only.
+/// No DPAPI off Windows: the key file holds the raw key (0600). On the MacBook app that file is
+/// inside the app's sandbox container, readable by this user only — DPAPI's boundary too.
 #[cfg(not(windows))]
 pub struct PlatformWrap;
 

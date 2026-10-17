@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- macOS is the DEVELOPMENT runner only; it never ships. See DebugProfile.entitlements. -->
+<!-- The MacBook app (packaging/macos/build-app.sh). Sandboxed; the network for the MasterSAT API
+     (client) and for the loopback server the question pages are served from to WKWebView
+     (server, 127.0.0.1 only — macos_island_host.dart). The question pages are inside the app, so
+     no file access outside the sandbox is needed (the development runner's DebugProfile reads
+     the repository's island build). -->
 <plist version="1.0">
 <dict>
 	<key>com.apple.security.app-sandbox</key>
@@ -9,9 +13,5 @@
 	<true/>
 	<key>com.apple.security.network.server</key>
 	<true/>
-	<key>com.apple.security.temporary-exception.files.absolute-path.read-only</key>
-	<array>
-		<string>/</string>
-	</array>
 </dict>
 </plist>

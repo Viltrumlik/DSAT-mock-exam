@@ -32,6 +32,12 @@ class _Rig {
   int calls(String m) => api.calls.where((c) => c.method == m).length;
 }
 
+/// A token store whose writes fail (no protection available on this computer).
+class _FailingStore extends MemoryTokenStore {
+  @override
+  Future<void> write(AuthSession s) async => throw StateError('ms_protect is only available on Windows');
+}
+
 AuthSession session(DateTime now, {Duration left = const Duration(hours: 3), String refresh = 'eyJhbGciOiJIUzI1NiJ9.fixture-refresh.sig'}) =>
     AuthSession(access: fakeJwt(expires: now.add(left)), refresh: refresh, obtainedAt: now, userId: 77);
 
@@ -95,6 +101,21 @@ void main() {
       await r.auth.signIn('aziza', 'p');
       expect(r.calls('authLogin'), 1, reason: 'already signed in');
       r.auth.dispose();
+    });
+
+    test('a sign-in that cannot be saved on this computer says so instead of spinning forever', () async {
+      // The MacBook app's first build had no token protection: the server said yes, saving the
+      // tokens threw, and the form stayed on "Signing in…" for good.
+      final store = _FailingStore();
+      final clock = ManualClock(DateTime.utc(2026, 10, 11, 9));
+      final auth = AuthController(api: FixtureV1Api(now: clock.now), store: store, unsentWork: UnsentWork(), clock: clock);
+      await auth.restore();
+      await auth.signIn('aziza', 'p');
+      expect(auth.status, AuthStatus.signedOut);
+      expect(auth.problem!.kind, AuthProblemKind.server);
+      expect(auth.problem!.canRetry, isTrue);
+      expect(auth.problem!.message, contains("couldn't finish signing you in"));
+      auth.dispose();
     });
 
     test('a blank login or password sends nothing', () async {

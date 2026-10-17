@@ -363,9 +363,20 @@ fn seal_and_open_round_trip_through_the_c_abi() {
 #[test]
 fn development_host_stubs_behave() {
     init();
-    // DPAPI is Windows-only.
-    assert_eq!(out_bytes(ms_protect, b"token"), (-7, None));
-    assert_eq!(out_bytes(ms_unprotect, b"blob"), (-7, None));
+    if cfg!(target_os = "macos") {
+        // The MacBook app seals tokens with the data key (DPAPI's job on Windows): a round trip
+        // works, the sealed bytes are not the plain ones, and a foreign blob is refused.
+        let (code, sealed) = out_bytes(ms_protect, b"token");
+        assert_eq!(code, 0);
+        let sealed = sealed.unwrap();
+        assert_ne!(sealed, b"token".to_vec());
+        assert_eq!(out_bytes(ms_unprotect, &sealed), (0, Some(b"token".to_vec())));
+        assert_eq!(out_bytes(ms_unprotect, b"blob").0, -5, "MS_ERR_CRYPTO");
+    } else {
+        // DPAPI is Windows-only.
+        assert_eq!(out_bytes(ms_protect, b"token"), (-7, None));
+        assert_eq!(out_bytes(ms_unprotect, b"blob"), (-7, None));
+    }
 
     // lockdown.rs's stubs, serialised.
     assert_eq!(
