@@ -9,6 +9,7 @@ MONTHS = (
 
 ANNOUNCE_HEAD = "📢 <b>{title}</b>"
 REMINDER_HEAD = "⏰ <b>Ertaga: {title}</b>"
+REMINDER_HEAD_TODAY = "⏰ <b>Bugun: {title}</b>"
 WHEN_LINE = "🗓 {when}"
 PLACE_LINE = "📍 {place}"
 SEATS_LINE = "👥 {seats} ta joy"

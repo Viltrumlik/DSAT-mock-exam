@@ -113,14 +113,25 @@ def event_announcement(event) -> Rendered:
     return Rendered(text=text, image=image, button=(T.SIGN_UP_BUTTON, events_url()))
 
 
-def event_reminder(event) -> Optional[Rendered]:
+def event_reminder(event, *, preview: bool = False) -> Optional[Rendered]:
+    """The evening-before reminder, worded for the day it is read: "Ertaga" (tomorrow) the evening
+    before, "Bugun" (today) when a retry or "Send missed now" brings it out on the day itself.
+    Anything else is untrue and gives None: an event already under way, or still two or more days
+    off. `preview` is the console's view of what the reminder WILL say, so it skips the day rule —
+    a reminder planned a week ahead still shows its text."""
     if event.status != Event.STATUS_PUBLISHED:
         return None
     if event.starts_at <= timezone.now():
-        # "Ertaga" is untrue once the event is under way: a retry or a late send must not post it.
+        return None
+    days_off = (timezone.localtime(event.starts_at).date() - timezone.localdate()).days
+    if days_off == 0:
+        head = T.REMINDER_HEAD_TODAY
+    elif days_off == 1 or preview:
+        head = T.REMINDER_HEAD
+    else:
         return None
     left = event.seats_left
-    lines = [T.REMINDER_HEAD.format(title=esc(event.title)), ""] + _when_and_place(event)
+    lines = [head.format(title=esc(event.title)), ""] + _when_and_place(event)
     lines.append(T.SEATS_LEFT.format(n=left) if left > 0 else T.SEATS_FULL)
     # A full event's button would open a page that says "full": the line says it already.
     button = (T.SIGN_UP_BUTTON, events_url()) if left > 0 else None
@@ -136,13 +147,20 @@ def manual(post) -> Rendered:
     return Rendered(text=text, image=image, button=button)
 
 
-def render(post) -> Optional[Rendered]:
-    """None means there is nothing true left to say (the event behind it is not published)."""
+def render(post, *, preview: bool = False) -> Optional[Rendered]:
+    """None means there is nothing true left to say: the event behind it is not published, has
+    started (the sign-up button would be a lie) or, for a reminder, is not due tomorrow or today.
+
+    `preview` is for the console, which shows what a post says rather than whether it still goes
+    out: it skips the started and the day rules (never the cancelled one).
+    """
     if post.kind == GroupPost.KIND_EVENT_ANNOUNCE:
         event = post.event if post.event_id else None
         if event is None or event.status != Event.STATUS_PUBLISHED:
             return None
+        if not preview and event.starts_at <= timezone.now():
+            return None
         return event_announcement(event)
     if post.kind == GroupPost.KIND_EVENT_REMINDER:
-        return event_reminder(post.event) if post.event_id else None
+        return event_reminder(post.event, preview=preview) if post.event_id else None
     return manual(post)

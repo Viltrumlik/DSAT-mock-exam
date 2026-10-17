@@ -116,6 +116,50 @@ class EventTextTests(TestCase):
             self.assertIsNone(render.event_reminder(event))
             self.assertIsNone(render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event)))
 
+    def test_the_reminder_says_ertaga_only_on_the_evening_before(self):
+        event = make_event()  # starts Sunday 25 Oct, 12:30
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 24, 18, 0)):
+            self.assertTrue(render.event_reminder(event).text.startswith("⏰ <b>Ertaga: Admission Workshop</b>"))
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 24, 23, 59)):  # still tomorrow
+            self.assertTrue(render.event_reminder(event).text.startswith("⏰ <b>Ertaga:"))
+
+    def test_a_reminder_that_goes_out_on_the_day_says_bugun(self):
+        # A retry, or "Send missed now", the next morning: "tomorrow" would be untrue.
+        event = make_event()
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 8, 0)):
+            result = render.event_reminder(event)
+            self.assertTrue(result.text.startswith("⏰ <b>Bugun: Admission Workshop</b>\n\n🗓 Yakshanba, 25-oktabr"))
+            self.assertNotIn("Ertaga", result.text)
+            self.assertEqual(render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event)).text, result.text)
+
+    def test_no_reminder_two_days_before_the_event(self):
+        event = make_event()
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 23, 20, 0)):
+            self.assertIsNone(render.event_reminder(event))
+            self.assertIsNone(render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event)))
+
+    def test_the_day_is_the_tashkent_day_not_the_utc_one(self):
+        # 25 Oct 00:30 Tashkent is still 24 Oct in UTC: the event, 25 Oct 12:30, is "today" for the reader.
+        event = make_event()
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 0, 30)):
+            self.assertTrue(render.event_reminder(event).text.startswith("⏰ <b>Bugun:"))
+
+    def test_the_console_preview_shows_the_reminder_as_it_will_go_out_even_days_ahead(self):
+        event = make_event()
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 20, 10, 0)):
+            self.assertIsNone(render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event)))
+            preview = render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event), preview=True)
+        self.assertTrue(preview.text.startswith("⏰ <b>Ertaga: Admission Workshop</b>"))
+
+    def test_the_announcement_is_not_rendered_once_its_event_has_started(self):
+        event = make_event()  # starts 25 Oct 12:30
+        post = GroupPost(kind=GroupPost.KIND_EVENT_ANNOUNCE, event=event)
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 12, 29)):
+            self.assertIsNotNone(render.render(post))
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 12, 30)):
+            self.assertIsNone(render.render(post))  # a retry can never post a sign-up button now
+            self.assertTrue(render.render(post, preview=True).text.startswith("📢"))  # the console still shows it
+
     def test_a_cut_fills_the_text_limit_exactly(self):
         text = render.event_announcement(make_event(description="x" * 5000)).text
         self.assertEqual(render.visible_len(text), render.TEXT_MAX)

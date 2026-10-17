@@ -77,7 +77,7 @@ class PostSerializer(serializers.ModelSerializer):
         return services.last_run(obj, self.context.get("counts") or {})
 
     def get_preview(self, obj):
-        rendered = render.render(obj)
+        rendered = render.render(obj, preview=True)
         return rendered.text if rendered else ""
 
     def get_image_url(self, obj):
