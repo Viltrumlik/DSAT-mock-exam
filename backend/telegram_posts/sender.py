@@ -309,3 +309,19 @@ def send_post_now(post_id: int) -> dict:
     except Exception:
         logger.exception("telegram post %s: send now stopped on an error", post_id)
         return {}
+
+
+def send_run(post_id: int, run_on: date) -> dict:
+    """Send what a retry or "send missed now" put back to Pending.
+
+    Like `send_post_now`, nothing escapes: an error is logged and the task ends. An error while
+    sending fails the rows that were never attempted (`_guarded_send`) so none is left Pending.
+    """
+    if not enabled():
+        return {}
+    try:
+        post = GroupPost.objects.select_related("event").filter(pk=post_id, deleted_at__isnull=True).first()
+        return _guarded_send(post, run_on) if post else {}
+    except Exception:
+        logger.exception("telegram post %s: sending the run of %s stopped on an error", post_id, run_on)
+        return {}
