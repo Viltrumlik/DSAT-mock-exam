@@ -554,9 +554,12 @@ pub fn engage_with(_hwnd_raw: isize, strict: bool) {
         let first = SAVED.lock().unwrap_or_else(|p| p.into_inner()).is_none();
         if first {
             let style: u64 = msg(window, "styleMask");
+            let options: u64 = msg(NSApp, "presentationOptions");
             let mut saved = Saved {
                 window: window as usize,
-                options: msg(NSApp, "presentationOptions"),
+                // macOS full screen's own options are valid only in full screen (AppKit throws
+                // otherwise); release puts the window back there, which sets them again.
+                options: if options & OPTION_FULL_SCREEN != 0 { 0 } else { options },
                 style: style & !STYLE_FULL_SCREEN,
                 level: msg(window, "level"),
                 sharing: msg(window, "sharingType"),
