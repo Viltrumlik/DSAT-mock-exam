@@ -4,11 +4,14 @@ discovery imports it and finds nothing to run. The name stays, because later tes
 from __future__ import annotations
 
 import base64
+from contextlib import contextmanager
 from datetime import datetime, timedelta
+from unittest import mock
 
 from django.utils import timezone
 
 from access import constants as C
+from classes import telegram_group_api as real_api
 from classes.models import Classroom
 from events.models import Event
 from users.models import User
@@ -49,3 +52,59 @@ def make_event(**kw):
     kw.setdefault("published_at", at(2026, 10, 20, 9))
     kw.setdefault("created_by", staff())
     return Event.objects.create(starts_at=start, **kw)
+
+
+class FakeApi:
+    """Stands in for `classes.telegram_group_api` inside `telegram_posts.sender`.
+
+    Every call succeeds unless `script` holds answers for that chat: a list of TgResults
+    returned in order before the calls start succeeding. ``script["delete:<chat>"]`` does the
+    same for `delete_message`.
+    """
+
+    TgResult = real_api.TgResult
+    largest_photo_file_id = staticmethod(real_api.largest_photo_file_id)
+
+    def __init__(self):
+        self.messages: list[tuple[str, str, dict | None]] = []
+        self.photos: list[tuple[str, str, str, dict | None]] = []  # (chat, caption, "upload"|file_id, markup)
+        self.deleted: list[tuple[str, int]] = []
+        self.script: dict[str, list] = {}
+        self._next_id = 100
+
+    def is_configured(self):
+        return True
+
+    def _answer(self, key, payload):
+        queue = self.script.get(key)
+        if queue:
+            return queue.pop(0)
+        self._next_id += 1
+        return real_api.TgResult(True, {"message_id": self._next_id, **payload})
+
+    def send_message(self, chat_id, text, *, reply_markup=None):
+        result = self._answer(str(chat_id), {})
+        if result.ok:
+            self.messages.append((str(chat_id), text, reply_markup))
+        return result
+
+    def send_photo(self, chat_id, *, caption, photo=None, filename="photo.jpg",
+                   content_type="image/jpeg", file_id="", reply_markup=None):
+        sizes = {"photo": [{"file_id": "FID-small", "file_size": 10}, {"file_id": "FID-big", "file_size": 999}]}
+        result = self._answer(str(chat_id), sizes)
+        if result.ok:
+            self.photos.append((str(chat_id), caption, file_id or "upload", reply_markup))
+        return result
+
+    def delete_message(self, chat_id, message_id):
+        result = self._answer(f"delete:{chat_id}", {})
+        if result.ok:
+            self.deleted.append((str(chat_id), int(message_id)))
+        return result
+
+
+@contextmanager
+def fake_api():
+    fake = FakeApi()
+    with mock.patch("telegram_posts.sender.api", fake):
+        yield fake

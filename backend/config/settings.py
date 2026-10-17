@@ -571,6 +571,12 @@ CELERY_BEAT_SCHEDULE = {
         "task": "events.send_due_event_reminders",
         "schedule": crontab(minute="*/10"),
     },
+    # Telegram group posts (plan 2026-10-17): whatever is due, every minute. A no-op while
+    # TELEGRAM_GROUP_POSTS_ENABLED is off.
+    "telegram-posts-sweep": {
+        "task": "telegram_posts.sweep",
+        "schedule": crontab(),
+    },
     # Full mocks never pause, so an attempt whose student closed the tab mid-module sits
     # ACTIVE with a dead clock forever — never scored, and blocking that student from ever
     # starting the mock again (uniq_active_mock_attempt_per_student). The reaper existed
