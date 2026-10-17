@@ -53,6 +53,29 @@ class OnceTests(SimpleTestCase):
         post = GroupPost(when=GroupPost.WHEN_NOW, send_at=at(2026, 10, 24, 10), active_from=at(2026, 10, 24, 10))
         self.assertEqual(schedule.due(post, at(2026, 10, 24, 10)).run_on, date(2026, 10, 24))
 
+    def test_a_future_once_is_next(self):
+        self.assertEqual(schedule.next_at(once(at(2026, 10, 24, 18)), at(2026, 10, 21)), at(2026, 10, 24, 18))
+
+    def test_resumed_after_its_time_is_not_next(self):
+        # Resume sets active_from to the resume moment: 18:00 is never due, so it is not next either.
+        post = once(at(2026, 10, 24, 18), active_from=at(2026, 10, 24, 19, 30))
+        self.assertIsNone(schedule.due(post, at(2026, 10, 24, 19, 31)))
+        self.assertIsNone(schedule.next_at(post, at(2026, 10, 24, 19, 31)))
+        # Resumed twenty minutes late: within LATE_LIMIT, so only active_from rules it out.
+        post = once(at(2026, 10, 24, 18), active_from=at(2026, 10, 24, 18, 20))
+        self.assertIsNone(schedule.due(post, at(2026, 10, 24, 18, 25)))
+        self.assertIsNone(schedule.next_at(post, at(2026, 10, 24, 18, 25)))
+
+    def test_more_than_an_hour_past_and_unclaimed_is_not_next(self):
+        post = once(at(2026, 10, 24, 18))
+        self.assertEqual(schedule.next_at(post, at(2026, 10, 24, 19, 0)), at(2026, 10, 24, 18))
+        self.assertIsNone(schedule.next_at(post, at(2026, 10, 24, 19, 1)))
+        # Still due, so the sender records it Missed.
+        self.assertTrue(schedule.due(post, at(2026, 10, 24, 19, 1)).late)
+
+    def test_no_time_means_never(self):
+        self.assertIsNone(schedule.next_at(once(None), at(2026, 10, 21)))
+
 
 class WeeklyTests(SimpleTestCase):
     def test_its_day_and_hour(self):

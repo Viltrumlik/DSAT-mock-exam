@@ -1,4 +1,8 @@
-"""When a post goes out. Pure functions of the post, its event and `now` — no queries."""
+"""When a post goes out. Pure functions of the post, its event and `now`; `now` is always passed in.
+
+`due` and `next_at` make no queries only when the caller has loaded `post.event`
+(`select_related("event")`). An event post whose event is not loaded queries it once per call.
+"""
 
 from __future__ import annotations
 
@@ -73,7 +77,13 @@ def next_at(post, now) -> Optional[datetime]:
     if post.deleted_at or post.is_paused:
         return None
     if post.when in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE):
-        return post.send_at if post.last_run_on is None else None
+        # The same gates as `due`: a moment before active_from (a resume after it) or more than
+        # LATE_LIMIT behind is never sent, so the console must not show it as scheduled.
+        if post.last_run_on is not None or post.send_at is None:
+            return None
+        if post.send_at < post.active_from or now - post.send_at > LATE_LIMIT:
+            return None
+        return post.send_at
     if post.when == GroupPost.WHEN_WEEKLY:
         if post.time_of_day is None or not post.weekdays:
             return None
