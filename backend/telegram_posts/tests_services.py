@@ -162,23 +162,40 @@ class ServiceTests(TestCase):
             active_from=at(2026, 10, 1), is_paused=True,
         )
 
-    def test_a_paused_post_cannot_be_moved_to_now_or_once(self):
-        # NOW or ONCE would set a send time the claim then refuses (the post is paused) and a
-        # later resume moves active_from past it: the post would never go out.
-        for data in (
-            {"when": GroupPost.WHEN_NOW},
-            {"when": GroupPost.WHEN_ONCE, "send_at": timezone.now() + timedelta(days=1)},
-        ):
-            with self.subTest(when=data["when"]):
-                post = self.paused_weekly()
-                with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
-                    with self.assertRaises(services.PostRefused) as caught:
-                        services.update_post(post, data)
-                self.assertEqual(caught.exception.code, "paused")
-                self.assertEqual(caught.exception.message, "Resume the post first, then change when it goes out.")
-                self.assertEqual(tg.messages, [])
-                post.refresh_from_db()
-                self.assertEqual(post.when, GroupPost.WHEN_WEEKLY)
+    def test_a_paused_post_edited_to_now_is_refused_and_sends_nothing(self):
+        # A Now post is sent at once, but the claim refuses a paused post: the send would be stranded.
+        post = self.paused_weekly()
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(services.PostRefused) as caught:
+                services.update_post(post, {"when": GroupPost.WHEN_NOW, "text": "changed"})
+        self.assertEqual(caught.exception.code, "paused")
+        self.assertEqual(caught.exception.message, "Resume the post first, then send it now.")
+        self.assertEqual(tg.messages, [])
+        self.assertEqual((post.when, post.text), (GroupPost.WHEN_WEEKLY, "a"))  # not even in memory
+        post.refresh_from_db()
+        self.assertEqual((post.when, post.text, post.send_at), (GroupPost.WHEN_WEEKLY, "a", None))
+
+    def test_a_paused_once_post_can_have_its_text_edited_and_nothing_is_sent(self):
+        # The form always sends `when`; a due post must not be stuck with its old text until a resume.
+        post = GroupPost.objects.create(
+            text="a", when=GroupPost.WHEN_ONCE, send_at=timezone.now() + timedelta(days=1), is_paused=True,
+        )
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            services.update_post(
+                post, {"when": GroupPost.WHEN_ONCE, "send_at": post.send_at, "text": "b"}
+            )
+        self.assertEqual(tg.messages, [])
+        post.refresh_from_db()
+        self.assertEqual((post.text, post.when, post.is_paused), ("b", GroupPost.WHEN_ONCE, True))
+
+    def test_a_paused_weekly_post_can_become_once(self):
+        post = self.paused_weekly()
+        send_at = timezone.now() + timedelta(days=1)
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            services.update_post(post, {"when": GroupPost.WHEN_ONCE, "send_at": send_at})
+        self.assertEqual(tg.messages, [])
+        post.refresh_from_db()
+        self.assertEqual((post.when, post.send_at, post.is_paused), (GroupPost.WHEN_ONCE, send_at, True))
 
     def test_a_paused_weekly_post_can_still_change_its_text_and_days(self):
         post = self.paused_weekly()

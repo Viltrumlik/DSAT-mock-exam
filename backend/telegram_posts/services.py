@@ -88,10 +88,11 @@ def ensure_editable(post, data: dict | None = None) -> None:
         raise PostRefused(
             "already_ran", "This post has already run — its timing can't change. Pause it and write a new post."
         )
-    # A paused post is never claimed, so a send time set on it passes unsent, and resume then moves
-    # active_from beyond it: the post would be stranded for good.
-    if post.is_paused and data and data.get("when") in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE):
-        raise PostRefused("paused", "Resume the post first, then change when it goes out.")
+    # A Now post is dispatched at once, but a paused post is never claimed, so the send would be lost
+    # and the post stranded. ONCE and WEEKLY edits are fine: nothing is due while paused, and resume
+    # restarts `active_from`.
+    if post.is_paused and data and data.get("when") == GroupPost.WHEN_NOW:
+        raise PostRefused("paused", "Resume the post first, then send it now.")
 
 
 def update_post(post, data: dict, *, now=None) -> GroupPost:
