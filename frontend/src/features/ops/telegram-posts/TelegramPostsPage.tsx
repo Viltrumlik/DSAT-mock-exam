@@ -8,15 +8,18 @@
  */
 
 import Link from "next/link";
+import { useState } from "react";
 import { Send } from "lucide-react";
 
-import { Alert, Badge } from "@/components/ui";
+import { Alert, Badge, Button } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
+import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, scheduleLabel, sentLabel } from "./audience";
 import { useTelegramPosts } from "./telegramPostsHooks";
 
 export function TelegramPostsPage() {
   const posts = useTelegramPosts();
+  const [creating, setCreating] = useState(false);
   const rows = posts.data?.posts ?? [];
 
   return (
@@ -25,6 +28,12 @@ export function TelegramPostsPage() {
         section="Telegram posts"
         title="Telegram posts"
         description="What the bot posts into the class Telegram groups — event posts and the posts written here."
+        actions={
+          <Button onClick={() => setCreating(true)}>
+            <Send className="mr-1.5 h-4 w-4" aria-hidden />
+            New post
+          </Button>
+        }
       />
 
       {posts.data && !posts.data.enabled ? (
@@ -95,6 +104,8 @@ export function TelegramPostsPage() {
           </ul>
         )}
       </div>
+
+      {creating ? <PostForm post={null} onClose={() => setCreating(false)} /> : null}
     </div>
   );
 }

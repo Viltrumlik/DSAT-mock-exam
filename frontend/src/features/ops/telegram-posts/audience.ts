@@ -82,3 +82,26 @@ export function sentLabel(post: Pick<GroupPost, "last_run">): string {
   if (run.missed) parts.push(`${run.missed} missed`);
   return parts.join(" · ");
 }
+
+/** The picker's state: an audience plus which half of it is in use. */
+export interface AudienceDraft extends Audience {
+  mode: "filter" | "groups";
+}
+
+export function draftFrom(saved: Partial<Audience> | undefined): AudienceDraft {
+  const ids = saved?.classroom_ids ?? [];
+  return { mode: ids.length ? "groups" : "filter", subjects: saved?.subjects ?? [], levels: saved?.levels ?? [], classroom_ids: ids };
+}
+
+export function draftChats(groups: TelegramGroup[], draft: AudienceDraft): string[] {
+  if (draft.mode === "groups") {
+    return (draft.classroom_ids ?? []).length ? targetChats(groups, draft) : [];
+  }
+  return targetChats(groups, { subjects: draft.subjects, levels: draft.levels });
+}
+
+export function draftToFields(draft: AudienceDraft): Required<Audience> {
+  return draft.mode === "groups"
+    ? { subjects: [], levels: [], classroom_ids: draft.classroom_ids ?? [] }
+    : { subjects: draft.subjects, levels: draft.levels, classroom_ids: [] };
+}

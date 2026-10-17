@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { firstLine, kindLabel, scheduleLabel, sentLabel, targetChats } from "../audience";
+import {
+  draftChats, draftFrom, draftToFields, firstLine, kindLabel, scheduleLabel, sentLabel, targetChats,
+} from "../audience";
 import type { TelegramGroup } from "../telegramPostsApi";
 
 const groups: TelegramGroup[] = [
@@ -41,5 +43,26 @@ describe("labels", () => {
       sentLabel({ last_run: { run_on: "2026-10-24", total: 26, sent: 24, failed: 2, missed: 0, pending: 0, deleted: 0 } }),
     ).toBe("Sent 24/26 · 2 failed");
     expect(sentLabel({ last_run: null })).toBe("");
+  });
+});
+
+describe("audience drafts", () => {
+  it("starts in the mode the saved audience implies", () => {
+    expect(draftFrom(undefined)).toEqual({ mode: "filter", subjects: [], levels: [], classroom_ids: [] });
+    expect(draftFrom({ subjects: [], levels: [], classroom_ids: [3] }).mode).toBe("groups");
+  });
+
+  it("reaches no group when specific groups is chosen and none is ticked", () => {
+    expect(draftChats(groups, { mode: "groups", subjects: [], levels: [], classroom_ids: [] })).toEqual([]);
+    expect(draftChats(groups, { mode: "filter", subjects: ["MATH"], levels: [], classroom_ids: [3] })).toEqual(["-1001", "-1002"]);
+  });
+
+  it("sends only the half of the draft its mode uses", () => {
+    expect(draftToFields({ mode: "groups", subjects: ["MATH"], levels: [], classroom_ids: [3] })).toEqual({
+      subjects: [], levels: [], classroom_ids: [3],
+    });
+    expect(draftToFields({ mode: "filter", subjects: ["MATH"], levels: [], classroom_ids: [3] })).toEqual({
+      subjects: ["MATH"], levels: [], classroom_ids: [],
+    });
   });
 });
