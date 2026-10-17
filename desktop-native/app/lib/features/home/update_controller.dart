@@ -39,6 +39,10 @@ class UpdateController extends ChangeNotifier {
   Future<void>? _running;
   bool _disposed = false;
 
+  /// This build has no updater (the MacBook app: the feed is Windows-only): never a failure,
+  /// and no more checks.
+  bool _unsupported = false;
+
   /// A 426 seen on any request (the blocking card shows while set).
   final ValueNotifier<UpdateRequired?> required = ValueNotifier<UpdateRequired?>(null);
 
@@ -62,7 +66,7 @@ class UpdateController extends ChangeNotifier {
   Future<void> checkAndDownload() => _running ??= _run().whenComplete(() => _running = null);
 
   Future<void> _run() async {
-    if (_phase == UpdatePhase.ready) return;
+    if (_phase == UpdatePhase.ready || _unsupported) return;
     _error = null;
     _set(UpdatePhase.checking);
     try {
@@ -80,6 +84,12 @@ class UpdateController extends ChangeNotifier {
       });
       _set(UpdatePhase.ready);
     } on NativeBridgeException catch (e) {
+      if (e.code == NativeStatus.errUnsupported) {
+        _unsupported = true;
+        stopPeriodic();
+        _set(UpdatePhase.idle);
+        return;
+      }
       _error = e.message ?? 'The update could not be downloaded.';
       _log?.add('update', 'failed: ${e.function} ${e.code}');
       _set(UpdatePhase.failed);

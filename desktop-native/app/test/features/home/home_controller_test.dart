@@ -185,6 +185,18 @@ void main() {
       u.dispose();
     });
 
+    test('a build without an updater (the MacBook app) is not a failure, and is not asked again', () async {
+      final native = _NoUpdater();
+      final u = make(native);
+      u.startPeriodic();
+      await u.checkAndDownload();
+      expect(u.phase, UpdatePhase.idle);
+      expect(u.error, isNull);
+      await u.checkAndDownload();
+      expect(native.checks, 1, reason: 'no updater: one look, then never again');
+      u.dispose();
+    });
+
     test('a failure is shown and can be retried; checks never overlap', () async {
       final native = _FailingUpdates();
       final u = UpdateController(
@@ -224,5 +236,15 @@ class _FailingUpdates extends FakeNativeBridge {
     checks++;
     await Future<void>.delayed(const Duration(milliseconds: 5));
     throw const NativeBridgeException(NativeStatus.errOs, 'ms_update_check', 'feed unreachable');
+  }
+}
+
+class _NoUpdater extends FakeNativeBridge {
+  int checks = 0;
+
+  @override
+  Future<UpdateInfo> updateCheck({required String feedUrl, required String channel}) async {
+    checks++;
+    throw const NativeBridgeException(NativeStatus.errUnsupported, 'ms_update_check', 'updates are Windows-only');
   }
 }
