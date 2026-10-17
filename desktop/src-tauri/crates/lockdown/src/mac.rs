@@ -4,12 +4,15 @@
 //!   * pre-check: one display, not a virtual machine, no blocked program (matched by bundle id);
 //!     the STRICT (midterm) pre-check also lists every other regular app that is running — one
 //!     window, one app. Close asks the app to quit (it may ask to save first).
-//!   * engage: the kiosk presentation options — the Dock and the menu bar hidden, Cmd+Tab off;
-//!     strict also turns off Force Quit, the Apple menu, logging out and hiding the app. The
-//!     window covers the whole screen, is excluded from screenshots and screen sharing, and the
-//!     display stays awake. Strict also takes the close / minimise / resize controls away and runs
+//!   * engage: full screen without a Space of its own — the window loses its title bar and
+//!     buttons (no close / minimise / zoom / green full screen) and covers the whole display,
+//!     the Dock and the menu bar are hidden and Cmd+Tab is off; it is excluded from screenshots
+//!     and screen sharing, and the display stays awake. A window that was in macOS full screen
+//!     leaves it first (another Space could be swiped to). Strict also turns off Force Quit,
+//!     the Apple menu, logging out and hiding the app, puts the window on every Space, and runs
 //!     a foreground guard: any other app that comes to the front (Spotlight, a notification) is
-//!     hidden and the exam comes back.
+//!     hidden at once and the exam comes back; an app opened during the midterm is asked to quit.
+//!     A maintenance tick re-applies all of it, so whatever undid a part is undone at once.
 //!   * release: everything back as it was.
 //!
 //! Only inside the app itself: a process without an NSApplication (`cargo test`) behaves like the
@@ -92,18 +95,30 @@ const DISABLE_FORCE_QUIT: u64 = 1 << 6;
 const DISABLE_SESSION_TERMINATION: u64 = 1 << 7;
 const DISABLE_HIDE_APPLICATION: u64 = 1 << 8;
 // NSWindowStyleMask
+const STYLE_BORDERLESS: u64 = 0;
 const STYLE_CLOSABLE: u64 = 1 << 1;
 const STYLE_MINIATURIZABLE: u64 = 1 << 2;
 const STYLE_RESIZABLE: u64 = 1 << 3;
 const STYLE_FULL_SCREEN: u64 = 1 << 14;
-/// kCGFloatingWindowLevel: above every ordinary app window.
-const FLOATING_LEVEL: i64 = 3;
+/// NSApplicationPresentationFullScreen: set while a window is in (or animating out of) macOS
+/// full screen — the kiosk options are invalid then (AppKit throws).
+const OPTION_FULL_SCREEN: u64 = 1 << 10;
+/// NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton.
+const WINDOW_BUTTONS: [u64; 3] = [0, 1, 2];
+/// NSStatusWindowLevel: above every app window and floating panel (pop-up menus, the IME and
+/// the system's own alerts still draw above it).
+const LOCK_LEVEL: i64 = 25;
+// NSWindowCollectionBehavior
+const ON_ALL_SPACES: u64 = 1 << 0;
+const STATIONARY: u64 = 1 << 4;
+const IGNORES_CYCLE: u64 = 1 << 6;
+const FULL_SCREEN_NONE: u64 = 1 << 9;
 /// NSWindowSharingNone: left out of screenshots, recordings and screen sharing.
 const SHARING_NONE: u64 = 0;
 /// NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps
 const ACTIVATE_FRONT: u64 = 1 | 2;
 const UTF8: u32 = 0x0800_0100;
-const GUARD_TICK_NS: u64 = 250_000_000;
+const GUARD_TICK_NS: u64 = 100_000_000;
 
 /// Programs that could show answers or share the screen, by bundle id (the Windows list's
 /// macOS names), plus the system's own Screen Sharing.
@@ -132,6 +147,9 @@ static RECLAIMS: AtomicU32 = AtomicU32::new(0);
 static AWAKE: AtomicU32 = AtomicU32::new(0);
 static KEEP_AWAKE: AtomicU32 = AtomicU32::new(0);
 static GUARD_ONCE: Once = Once::new();
+/// When the strict lock engaged (seconds since 1970): an app launched after it was opened
+/// during the midterm.
+static ENGAGED_AT: Mutex<f64> = Mutex::new(0.0);
 
 /// What engage changed, so release can put it back.
 struct Saved {
@@ -140,9 +158,18 @@ struct Saved {
     style: u64,
     level: i64,
     sharing: u64,
+    collection: u64,
     frame: Rect,
+    /// It was in macOS full screen; release sends it back there.
+    full_screen: bool,
+    /// The window may go borderless (it can still become key — the Flutter window can); a
+    /// window that cannot keeps a title bar with its buttons hidden instead.
+    borderless: bool,
 }
 static SAVED: Mutex<Option<Saved>> = Mutex::new(None);
+/// When the lock last asked a full-screen window to leave full screen (the animation takes about
+/// a second; asking again meanwhile would send it back in).
+static LEFT_FULL_SCREEN: Mutex<Option<std::time::Instant>> = Mutex::new(None);
 
 // ── Objective-C plumbing ─────────────────────────────────────────────────────────────────
 
@@ -352,25 +379,127 @@ pub fn close_app(bundle: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The exam window: the one engage saved, else the app's largest visible window (the Flutter
+/// window — not a menu, a tooltip or a WebView pop-up), else the main / key window.
 unsafe fn the_window() -> Id {
+    if let Some(s) = SAVED.lock().unwrap_or_else(|p| p.into_inner()).as_ref() {
+        return s.window as Id;
+    }
+    let windows: Id = msg(NSApp, "windows");
+    let n: usize = msg(windows, "count");
+    let mut best: Id = std::ptr::null_mut();
+    let mut best_area = 0.0;
+    for i in 0..n {
+        let w: Id = msg1(windows, "objectAtIndex:", i);
+        let visible: u8 = msg(w, "isVisible");
+        if visible == 0 {
+            continue;
+        }
+        let f = frame_of(w);
+        if f.w * f.h > best_area {
+            best_area = f.w * f.h;
+            best = w;
+        }
+    }
+    if !best.is_null() {
+        return best;
+    }
     let main: Id = msg(NSApp, "mainWindow");
     if !main.is_null() {
         return main;
     }
-    let key: Id = msg(NSApp, "keyWindow");
-    if !key.is_null() {
-        return key;
+    msg(NSApp, "keyWindow")
+}
+
+fn desired_options(strict: bool) -> u64 {
+    let mut options = HIDE_DOCK | HIDE_MENU_BAR | DISABLE_PROCESS_SWITCHING;
+    if strict {
+        options |= DISABLE_FORCE_QUIT | DISABLE_SESSION_TERMINATION | DISABLE_HIDE_APPLICATION | DISABLE_APPLE_MENU;
     }
-    let windows: Id = msg(NSApp, "windows");
-    let n: usize = msg(windows, "count");
-    for i in 0..n {
-        let w: Id = msg1(windows, "objectAtIndex:", i);
-        let visible: u8 = msg(w, "isVisible");
-        if visible != 0 {
-            return w;
+    options
+}
+
+/// The style the locked window wears.
+fn locked_style(base: u64, strict: bool, borderless: bool) -> u64 {
+    if borderless {
+        return STYLE_BORDERLESS;
+    }
+    let mut style = base & !(STYLE_MINIATURIZABLE | STYLE_RESIZABLE | STYLE_FULL_SCREEN);
+    if strict {
+        style &= !STYLE_CLOSABLE;
+    }
+    style
+}
+
+/// Puts the lock on the window — idempotent, re-run by the maintenance tick, so whatever undid
+/// part of it (a Space switch, a relaunched Dock, a minimise) is undone at once.
+unsafe fn apply_lock(window: Id, strict: bool) {
+    let style: u64 = msg(window, "styleMask");
+    let current: u64 = msg(NSApp, "presentationOptions");
+    if style & STYLE_FULL_SCREEN != 0 || current & OPTION_FULL_SCREEN != 0 {
+        // macOS full screen (a Space of its own, which swiping leaves): out of it first; a later
+        // tick, once the animation is over, locks the window.
+        if style & STYLE_FULL_SCREEN != 0 {
+            let mut left = LEFT_FULL_SCREEN.lock().unwrap_or_else(|p| p.into_inner());
+            if left.map_or(true, |t| t.elapsed() > std::time::Duration::from_secs(2)) {
+                *left = Some(std::time::Instant::now());
+                let _: () = msg1(window, "toggleFullScreen:", std::ptr::null_mut::<c_void>());
+            }
+        }
+        return;
+    }
+    let miniaturized: u8 = msg(window, "isMiniaturized");
+    if miniaturized != 0 {
+        let _: () = msg1(window, "deminiaturize:", std::ptr::null_mut::<c_void>());
+    }
+    if strict {
+        let hidden: u8 = msg(NSApp, "isHidden");
+        if hidden != 0 {
+            let _: () = msg1(NSApp, "unhide:", std::ptr::null_mut::<c_void>());
         }
     }
-    std::ptr::null_mut()
+    let options = desired_options(strict);
+    if current != options {
+        let _: () = msg1(NSApp, "setPresentationOptions:", options);
+    }
+    let saved = SAVED.lock().unwrap_or_else(|p| p.into_inner()).as_ref().map(|s| (s.style, s.collection, s.borderless));
+    let (base_style, base_collection, borderless) = saved.unwrap_or((style, msg(window, "collectionBehavior"), false));
+    let wanted = locked_style(base_style, strict, borderless);
+    if style != wanted {
+        let _: () = msg1(window, "setStyleMask:", wanted);
+    }
+    if !borderless {
+        for (button, kind) in WINDOW_BUTTONS.iter().enumerate() {
+            let b: Id = msg1(window, "standardWindowButton:", *kind);
+            if !b.is_null() {
+                let _: () = msg1(b, "setHidden:", (button != 0 || strict) as i8);
+            }
+        }
+    }
+    // No macOS full screen of its own; a midterm's window is on every Space and stays put in
+    // Mission Control, so swiping to another desktop still shows only the exam.
+    let mut collection = (base_collection & !((1 << 7) | (1 << 8))) | FULL_SCREEN_NONE;
+    if strict {
+        collection |= ON_ALL_SPACES | STATIONARY | IGNORES_CYCLE;
+    }
+    let current_collection: u64 = msg(window, "collectionBehavior");
+    if current_collection != collection {
+        let _: () = msg1(window, "setCollectionBehavior:", collection);
+    }
+    let screen = CGDisplayBounds(CGMainDisplayID());
+    let f = frame_of(window);
+    let off = (f.x - screen.x).abs() + (f.y - screen.y).abs() + (f.w - screen.w).abs() + (f.h - screen.h).abs();
+    if off > 2.0 {
+        let _: () = msg2(window, "setFrame:display:", screen, 1i8);
+    }
+    let sharing: u64 = msg(window, "sharingType");
+    if sharing != SHARING_NONE {
+        let _: () = msg1(window, "setSharingType:", SHARING_NONE);
+    }
+    let level: i64 = msg(window, "level");
+    if level != LOCK_LEVEL {
+        let _: () = msg1(window, "setLevel:", LOCK_LEVEL);
+    }
 }
 
 fn assertion(kind: &str, slot: &AtomicU32, on: bool) {
@@ -419,49 +548,50 @@ pub fn engage_with(_hwnd_raw: isize, strict: bool) {
     }
     pooled(|| unsafe {
         let window = the_window();
-        let mut saved = SAVED.lock().unwrap_or_else(|p| p.into_inner());
-        if saved.is_none() && !window.is_null() {
-            *saved = Some(Saved {
-                window: window as usize,
-                options: msg(NSApp, "presentationOptions"),
-                style: msg(window, "styleMask"),
-                level: msg(window, "level"),
-                sharing: msg(window, "sharingType"),
-                frame: frame_of(window),
-            });
-        }
-        let original_style = saved.as_ref().map(|s| s.style);
-        drop(saved);
         if window.is_null() {
             return;
         }
-        let mut options = HIDE_DOCK | HIDE_MENU_BAR | DISABLE_PROCESS_SWITCHING;
-        if strict {
-            options |= DISABLE_FORCE_QUIT | DISABLE_SESSION_TERMINATION | DISABLE_HIDE_APPLICATION | DISABLE_APPLE_MENU;
-        }
-        let style: u64 = msg(window, "styleMask");
-        // In a native full-screen Space these options are invalid (AppKit would throw): there the
-        // window already covers the screen and the foreground guard does the work.
-        if style & STYLE_FULL_SCREEN == 0 {
-            let _: () = msg1(NSApp, "setPresentationOptions:", options);
-            let mut locked_style = original_style.unwrap_or(style) & !(STYLE_MINIATURIZABLE | STYLE_RESIZABLE);
-            if strict {
-                locked_style &= !STYLE_CLOSABLE;
+        let first = SAVED.lock().unwrap_or_else(|p| p.into_inner()).is_none();
+        if first {
+            let style: u64 = msg(window, "styleMask");
+            let mut saved = Saved {
+                window: window as usize,
+                options: msg(NSApp, "presentationOptions"),
+                style: style & !STYLE_FULL_SCREEN,
+                level: msg(window, "level"),
+                sharing: msg(window, "sharingType"),
+                collection: msg(window, "collectionBehavior"),
+                frame: frame_of(window),
+                full_screen: style & STYLE_FULL_SCREEN != 0,
+                borderless: false,
+            };
+            if !saved.full_screen {
+                // Borderless only if the window can still take the keyboard that way (the Flutter
+                // window says yes; a plain NSWindow would not).
+                let _: () = msg1(window, "setStyleMask:", STYLE_BORDERLESS);
+                let key: u8 = msg(window, "canBecomeKeyWindow");
+                saved.borderless = key != 0;
+                if !saved.borderless {
+                    let _: () = msg1(window, "setStyleMask:", saved.style);
+                }
+            } else {
+                // Decided once it is out of full screen (the next ticks), from the window class.
+                let key: u8 = msg(window, "canBecomeKeyWindow");
+                saved.borderless = key != 0;
             }
-            let _: () = msg1(window, "setStyleMask:", locked_style);
-            let screen = CGDisplayBounds(CGMainDisplayID());
-            let _: () = msg2(window, "setFrame:display:", screen, 1i8);
+            *SAVED.lock().unwrap_or_else(|p| p.into_inner()) = Some(saved);
         }
-        let _: () = msg1(window, "setSharingType:", SHARING_NONE);
-        let _: () = msg1(window, "setLevel:", FLOATING_LEVEL);
+        if strict {
+            let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0.0, |d| d.as_secs_f64());
+            *ENGAGED_AT.lock().unwrap_or_else(|p| p.into_inner()) = now;
+        }
+        apply_lock(window, strict);
         let _: () = msg1(window, "makeKeyAndOrderFront:", std::ptr::null_mut::<c_void>());
         assertion("PreventUserIdleDisplaySleep", &AWAKE, true);
     });
     LOCKED.store(true, Ordering::SeqCst);
     STRICT.store(strict, Ordering::SeqCst);
-    if strict {
-        start_foreground_guard();
-    }
+    start_foreground_guard();
 }
 
 extern "C" fn release_on_main(_: *mut c_void) {
@@ -476,14 +606,25 @@ fn release_now() {
         let saved = SAVED.lock().unwrap_or_else(|p| p.into_inner()).take();
         if let Some(s) = saved {
             let window = s.window as Id;
+            let _: () = msg1(NSApp, "setPresentationOptions:", s.options);
+            let _: () = msg1(window, "setCollectionBehavior:", s.collection);
             let style: u64 = msg(window, "styleMask");
             if style & STYLE_FULL_SCREEN == 0 {
-                let _: () = msg1(NSApp, "setPresentationOptions:", s.options);
                 let _: () = msg1(window, "setStyleMask:", s.style);
                 let _: () = msg2(window, "setFrame:display:", s.frame, 1i8);
             }
+            for kind in WINDOW_BUTTONS {
+                let b: Id = msg1(window, "standardWindowButton:", kind);
+                if !b.is_null() {
+                    let _: () = msg1(b, "setHidden:", 0i8);
+                }
+            }
             let _: () = msg1(window, "setSharingType:", s.sharing);
             let _: () = msg1(window, "setLevel:", s.level);
+            let _: () = msg1(window, "makeKeyAndOrderFront:", std::ptr::null_mut::<c_void>());
+            if s.full_screen && style & STYLE_FULL_SCREEN == 0 {
+                let _: () = msg1(window, "toggleFullScreen:", std::ptr::null_mut::<c_void>());
+            }
         }
         assertion("PreventUserIdleDisplaySleep", &AWAKE, false);
     });
@@ -522,10 +663,18 @@ pub fn foreground_is_ours() -> bool {
 // ── the strict lock's foreground guard ───────────────────────────────────────────────────
 
 extern "C" fn guard_tick(_: *mut c_void) {
-    if !STRICT.load(Ordering::SeqCst) || !LOCKED.load(Ordering::SeqCst) {
+    if !LOCKED.load(Ordering::SeqCst) {
         return;
     }
+    let strict = STRICT.load(Ordering::SeqCst);
     pooled(|| unsafe {
+        let window = the_window();
+        if !window.is_null() {
+            apply_lock(window, strict);
+        }
+        if !strict {
+            return;
+        }
         let workspace: Id = msg(class("NSWorkspace"), "sharedWorkspace");
         let front: Id = msg(workspace, "frontmostApplication");
         if front.is_null() {
@@ -537,6 +686,9 @@ extern "C" fn guard_tick(_: *mut c_void) {
         }
         RECLAIMS.fetch_add(1, Ordering::Relaxed);
         let _: u8 = msg(front, "hide");
+        if opened_during_midterm(front) {
+            let _: u8 = msg(front, "terminate");
+        }
         let me: Id = msg(class("NSRunningApplication"), "currentApplication");
         let _: u8 = msg1(me, "activateWithOptions:", ACTIVATE_FRONT);
         let window = the_window();
@@ -546,7 +698,24 @@ extern "C" fn guard_tick(_: *mut c_void) {
     });
 }
 
-/// A 250 ms timer on the main queue (AppKit's thread); idle unless a strict lock is engaged.
+/// A regular app (not part of macOS) launched after the strict lock engaged — the pre-check had
+/// every other one closed, so this one was opened during the midterm (from Spotlight, say).
+unsafe fn opened_during_midterm(app: Id) -> bool {
+    let policy: isize = msg(app, "activationPolicy");
+    if policy != 0 || SYSTEM_BUNDLES.contains(&string(msg(app, "bundleIdentifier")).as_str()) {
+        return false;
+    }
+    let launched: Id = msg(app, "launchDate");
+    if launched.is_null() {
+        return false;
+    }
+    let at: f64 = msg(launched, "timeIntervalSince1970");
+    let engaged = *ENGAGED_AT.lock().unwrap_or_else(|p| p.into_inner());
+    engaged > 0.0 && at > engaged
+}
+
+/// A 100 ms timer on the main queue (AppKit's thread): keeps any lock in place, and for a strict
+/// one brings the exam back to the front. Idle while nothing is locked.
 fn start_foreground_guard() {
     GUARD_ONCE.call_once(|| unsafe {
         let source = dispatch_source_create(&_dispatch_source_type_timer as *const c_void, 0, 0, main_queue());
