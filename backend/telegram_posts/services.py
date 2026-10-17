@@ -1,0 +1,377 @@
+"""What the console does to a post. The rules live here, not in the views: the ops page, the
+Django shell and the event hooks all come through these functions."""
+
+from __future__ import annotations
+
+import logging
+from collections import Counter, defaultdict
+from datetime import timedelta
+
+from django.db import transaction
+from django.db.models import Count, Q
+from django.utils import timezone
+
+from events.models import Event
+
+from . import audience, schedule, sender
+from .models import GroupPost, GroupPostDelivery
+
+logger = logging.getLogger("telegram_posts")
+
+#: Telegram lets a bot delete its own group messages for this long.
+DELETE_WINDOW = timedelta(hours=48)
+SCHEDULE_FIELDS = {"when", "send_at", "weekdays", "time_of_day"}
+
+
+class PostRefused(Exception):
+    """A refusal with a code the page can branch on and a sentence it can show."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+def _dispatch_now(post) -> None:
+    from classes.telegram_group_hooks import _dispatch
+
+    from .tasks import send_group_post_now
+
+    _dispatch(send_group_post_now, post.pk)
+
+
+def _dispatch_run(post, run_on) -> None:
+    from classes.telegram_group_hooks import _dispatch
+
+    from .tasks import send_group_post_run
+
+    _dispatch(send_group_post_run, post.pk, run_on.isoformat())
+
+
+# ── create / edit ────────────────────────────────────────────────────────────
+
+
+_OFF_FOR_NOW = "Posting to Telegram groups is switched off on this server — a Now post can't go out."
+
+
+def _refuse_now_while_off(when: str) -> None:
+    """A "Now" post saved while posting is off would sit at "now" forever: nothing sends it, and
+    switching posting on later does not (it is a one-time dispatch). Scheduled posts are different —
+    their time is still ahead, and the sweep sends them once posting is on."""
+    if when == GroupPost.WHEN_NOW and not sender.enabled():
+        raise PostRefused("off", _OFF_FOR_NOW)
+
+
+def create_post(*, data: dict, user, now=None) -> GroupPost:
+    now = now or timezone.now()
+    post = GroupPost(kind=GroupPost.KIND_MANUAL, created_by=user, active_from=now, **data)
+    _refuse_now_while_off(post.when)
+    if post.when == GroupPost.WHEN_NOW:
+        post.send_at = now
+    post.save()
+    if post.when == GroupPost.WHEN_NOW:
+        _dispatch_now(post)
+    return post
+
+
+def ensure_editable(post, data: dict | None = None) -> None:
+    """Refuse an edit that cannot work. `data` is the edit itself, when it is known."""
+    if post.is_event_post:
+        raise PostRefused("event_post", "This post comes from an event — edit the event instead.")
+    if post.deleted_at:
+        raise PostRefused("deleted", "This post was deleted from the groups.")
+    if post.when in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE) and post.last_run_on:
+        raise PostRefused("already_sent", "This post's time has passed. Write a new post, or use Send missed now.")
+    # A post that has run keeps its kind of timing. Weekly → once would never send (the sweep skips a
+    # post with a run), and weekly → now on the day it ran would send nothing (`due` sees the run).
+    if data and "when" in data and data["when"] != post.when and post.last_run_on:
+        raise PostRefused(
+            "already_ran", "This post has already run — its timing can't change. Pause it and write a new post."
+        )
+    # A Now post is dispatched at once, but a paused post is never claimed, so the send would be lost
+    # and the post stranded. ONCE and WEEKLY edits are fine: nothing is due while paused, and resume
+    # restarts `active_from`.
+    if post.is_paused and data and data.get("when") == GroupPost.WHEN_NOW:
+        raise PostRefused("paused", "Resume the post first, then send it now.")
+
+
+def update_post(post, data: dict, *, now=None) -> GroupPost:
+    """Edits change future sends only. A message already in a group is never rewritten.
+
+    Saves only the fields the edit touched: the sweep may have claimed a run (`last_run_on`) or an
+    admin deleted the post since this copy was loaded, and a whole-row save would write that back.
+    """
+    now = now or timezone.now()
+    ensure_editable(post, data)
+    _refuse_now_while_off(data.get("when", post.when))
+    concrete = {f.name for f in GroupPost._meta.concrete_fields}
+    touched = {field for field in data if field in concrete}
+    for field, value in data.items():
+        setattr(post, field, value)
+    if "image" in data:
+        post.image_file_id = ""
+        touched.add("image_file_id")
+    if SCHEDULE_FIELDS & set(data):
+        post.active_from = now
+        touched.add("active_from")
+    if post.when == GroupPost.WHEN_NOW:
+        post.send_at = now
+        touched.add("send_at")
+    post.save(update_fields=sorted(touched | {"updated_at"}))
+    if post.when == GroupPost.WHEN_NOW:
+        _dispatch_now(post)
+    return post
+
+
+def pause(post) -> None:
+    if post.deleted_at:
+        raise PostRefused("deleted", "This post was deleted from the groups.")
+    post.is_paused = True
+    post.save(update_fields=["is_paused", "updated_at"])
+
+
+def resume(post, *, now=None) -> None:
+    if post.deleted_at:
+        raise PostRefused("deleted", "This post was deleted from the groups.")
+    if not post.is_paused:
+        # Nothing to resume. Moving active_from now would skip a run that is due this very minute.
+        return
+    post.is_paused = False
+    # What the pause covered stays skipped: resuming is not a burst of everything missed.
+    post.active_from = now or timezone.now()
+    post.save(update_fields=["is_paused", "active_from", "updated_at"])
+
+
+# ── retry / missed ───────────────────────────────────────────────────────────
+
+
+def _requeue(post, status: str, *, skip_uncertain: bool = False) -> tuple[int, int]:
+    """Put the last run's rows of `status` back to Pending and dispatch them: `(queued, uncertain)`.
+
+    With `skip_uncertain`, a FAILED row whose message may already be in its group
+    (`sender.is_uncertain`) stays as it is and is only counted.
+    """
+    if post.deleted_at:
+        raise PostRefused("deleted", "This post was deleted from the groups.")
+    if not sender.enabled():
+        raise PostRefused("off", "Posting to Telegram groups is switched off on this server.")
+    if not post.last_run_on:
+        return 0, 0
+    rows = GroupPostDelivery.objects.filter(post=post, run_on=post.last_run_on, status=status)
+    uncertain = 0
+    if skip_uncertain:
+        found = list(rows.values_list("pk", "error"))
+        keep = [pk for pk, error in found if not sender.is_uncertain(error)]
+        uncertain = len(found) - len(keep)
+        rows = rows.filter(pk__in=keep)  # still filtered by status: a row that moved on is not re-queued
+    queued = rows.update(status=GroupPostDelivery.STATUS_PENDING, error="", updated_at=timezone.now())
+    if queued:
+        _dispatch_run(post, post.last_run_on)
+    return queued, uncertain
+
+
+def retry_failed(post) -> dict:
+    """Re-send the last run's failed rows, except the uncertain ones: an interrupted send or an
+    unanswered request may have delivered, and a second copy in a class group cannot be unsent in
+    bulk. Those are counted so the page can tell the admin to look at them by hand."""
+    queued, uncertain = _requeue(post, GroupPostDelivery.STATUS_FAILED, skip_uncertain=True)
+    return {"queued": queued, "uncertain": uncertain}
+
+
+def send_missed_now(post, *, now=None) -> dict:
+    now = now or timezone.now()
+    if post.kind == GroupPost.KIND_EVENT_REMINDER and (post.event is None or post.event.starts_at <= now):
+        raise PostRefused("too_late", "The event has started — its reminder would be wrong now.")
+    return {"queued": _requeue(post, GroupPostDelivery.STATUS_MISSED)[0]}
+
+
+# ── delete from groups ───────────────────────────────────────────────────────
+
+
+def delete_from_groups(post, *, now=None) -> dict:
+    """Take the post out of every group the bot can, and stop it for good.
+
+    Works with the flag off as well: taking a wrong message down is the one thing that must
+    never wait for a setting.
+    """
+    now = now or timezone.now()
+    stats = {"deleted": 0, "too_old": 0, "failed": 0, "in_flight": 0, "unknown": 0}
+    GroupPost.objects.filter(pk=post.pk, deleted_at__isnull=True).update(deleted_at=now, updated_at=now)
+    post.deleted_at = post.deleted_at or now
+    # Never sent: nothing to take down, and nothing will send them now.
+    never_sent = GroupPostDelivery.objects.filter(
+        post=post,
+        status__in=[GroupPostDelivery.STATUS_PENDING, GroupPostDelivery.STATUS_MISSED, GroupPostDelivery.STATUS_FAILED],
+    )
+    # ...except a failure that may have delivered (an interrupted send, no answer): the message
+    # could be in the group, and with no message id the bot cannot take it down. It stays Failed
+    # and is reported, so the admin knows to look.
+    uncertain = list(
+        never_sent.filter(status=GroupPostDelivery.STATUS_FAILED)
+        .filter(sender.uncertain_q())
+        .values_list("pk", flat=True)
+    )
+    stats["unknown"] = len(uncertain)
+    never_sent.exclude(pk__in=uncertain).update(
+        status=GroupPostDelivery.STATUS_DELETED, deleted_at=now, updated_at=now
+    )
+    # Mid-send right now: the message may land after this call returns. `send_pending` sees the
+    # post is deleted when such a row finishes and takes the message down itself; the count tells
+    # the admin it is not done yet.
+    stats["in_flight"] = GroupPostDelivery.objects.filter(
+        post=post, status=GroupPostDelivery.STATUS_SENDING
+    ).count()
+
+    for row in GroupPostDelivery.objects.filter(post=post, status=GroupPostDelivery.STATUS_SENT).order_by("id"):
+        if not row.message_id or (row.sent_at and now - row.sent_at > DELETE_WINDOW):
+            stats["too_old"] += 1
+            continue
+        gone, why = sender.take_down(row.chat_id, row.message_id)
+        if gone:
+            GroupPostDelivery.objects.filter(pk=row.pk).update(
+                status=GroupPostDelivery.STATUS_DELETED, deleted_at=now, updated_at=now
+            )
+            stats["deleted"] += 1
+        else:
+            GroupPostDelivery.objects.filter(pk=row.pk).update(
+                error=f"Delete failed: {why}"[:400], updated_at=now
+            )
+            stats["failed"] += 1
+    logger.info("telegram_post_deleted post=%s %s", post.pk, stats)
+    return stats
+
+
+# ── what the console shows ───────────────────────────────────────────────────
+
+
+#: A key in a run's Counter beside the statuses: how many of its FAILED rows are uncertain
+#: (`sender.is_uncertain`). Not a status, so it is left out of every sum of the run's rows.
+UNCERTAIN = "uncertain"
+
+
+def delivery_counts(post_ids) -> dict:
+    out: dict = defaultdict(lambda: defaultdict(Counter))
+    rows = (
+        GroupPostDelivery.objects.filter(post_id__in=list(post_ids))
+        .order_by()
+        .values("post_id", "run_on", "status")
+        .annotate(
+            n=Count("id"),
+            unsure=Count("id", filter=Q(status=GroupPostDelivery.STATUS_FAILED) & sender.uncertain_q()),
+        )
+    )
+    for row in rows:
+        out[row["post_id"]][row["run_on"]][row["status"]] += row["n"]
+        out[row["post_id"]][row["run_on"]][UNCERTAIN] += row["unsure"]
+    return out
+
+
+def last_run(post, counts) -> dict | None:
+    if not post.last_run_on:
+        return None
+    c = counts.get(post.pk, {}).get(post.last_run_on) or Counter()
+    return {
+        "run_on": post.last_run_on,
+        "total": sum(n for key, n in c.items() if key != UNCERTAIN),
+        "sent": c[GroupPostDelivery.STATUS_SENT],
+        "failed": c[GroupPostDelivery.STATUS_FAILED],
+        "missed": c[GroupPostDelivery.STATUS_MISSED],
+        "pending": c[GroupPostDelivery.STATUS_PENDING] + c[GroupPostDelivery.STATUS_SENDING],
+        "deleted": c[GroupPostDelivery.STATUS_DELETED],
+        "uncertain": c[UNCERTAIN],
+    }
+
+
+def post_state(post, last, now) -> str:
+    if post.deleted_at:
+        return "deleted"
+    if post.event_id and post.event.status == Event.STATUS_CANCELLED:
+        return "event_cancelled"
+    if post.is_paused:
+        return "paused"
+    if last:
+        if last["pending"]:
+            return "sending"
+        if last["failed"]:
+            return "failed"
+        if last["missed"]:
+            return "missed"
+    if schedule.next_at(post, now):
+        return "scheduled"
+    return "sent" if last else "done"
+
+
+def runs(post, *, limit: int = 12) -> list[dict]:
+    days = list(
+        GroupPostDelivery.objects.filter(post=post)
+        .order_by("-run_on")
+        .values_list("run_on", flat=True)
+        .distinct()[:limit]
+    )
+    grouped: dict = {day: [] for day in days}
+    for row in GroupPostDelivery.objects.filter(post=post, run_on__in=days).order_by("-run_on", "id"):
+        grouped[row.run_on].append(row)
+    return [{"run_on": day, "deliveries": grouped[day]} for day in days]
+
+
+# ── events ───────────────────────────────────────────────────────────────────
+
+
+def on_event_published(event, *, now=None):
+    """Publish's two posts: the announcement, sent now, and the evening-before reminder.
+
+    Idempotent through the (event, kind) constraint: a second Publish finds both and sends
+    nothing. Nothing at all while the flag is off or the event's box is unticked — and an event
+    published then stays unposted when the flag comes on; the switch is not retroactive.
+    """
+    if not sender.enabled() or not getattr(event, "telegram_post", False):
+        return None
+    now = now or timezone.now()
+    chosen = audience.normalize(event.telegram_audience)
+    common = {
+        "subjects": chosen["subjects"], "levels": chosen["levels"],
+        "active_from": now, "created_by": event.created_by,
+    }
+    # A savepoint: a failure here must not poison the caller's transaction.
+    with transaction.atomic():
+        announce, created = GroupPost.objects.get_or_create(
+            event=event, kind=GroupPost.KIND_EVENT_ANNOUNCE,
+            defaults={**common, "when": GroupPost.WHEN_NOW, "send_at": now},
+        )
+        GroupPost.objects.get_or_create(
+            event=event, kind=GroupPost.KIND_EVENT_REMINDER,
+            defaults={**common, "when": GroupPost.WHEN_EVENT},
+        )
+    if created:
+        _dispatch_now(announce)
+    return announce
+
+
+def event_summaries(event_ids) -> dict:
+    """Per event, how its announcement went. A row taken down (DELETED) is not part of `total` or
+    `sent`: it counts apart, so a fully deleted announcement reads as deleted, not as "0/0"."""
+    posts = dict(
+        GroupPost.objects.filter(event_id__in=list(event_ids), kind=GroupPost.KIND_EVENT_ANNOUNCE)
+        .values_list("pk", "event_id")
+    )
+    out = {
+        event_id: {"post_id": post_id, "sent": 0, "failed": 0, "total": 0, "deleted": 0}
+        for post_id, event_id in posts.items()
+    }
+    rows = (
+        GroupPostDelivery.objects.filter(post_id__in=list(posts))
+        .order_by()
+        .values("post_id", "status")
+        .annotate(n=Count("id"))
+    )
+    for row in rows:
+        summary = out[posts[row["post_id"]]]
+        if row["status"] == GroupPostDelivery.STATUS_DELETED:
+            summary["deleted"] += row["n"]
+            continue
+        summary["total"] += row["n"]
+        if row["status"] == GroupPostDelivery.STATUS_SENT:
+            summary["sent"] += row["n"]
+        elif row["status"] == GroupPostDelivery.STATUS_FAILED:
+            summary["failed"] += row["n"]
+    return out

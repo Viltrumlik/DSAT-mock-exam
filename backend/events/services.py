@@ -329,6 +329,14 @@ def publish_and_announce(event: Event, *, now=None) -> bool:
         return False
     event_notifications.announce_published(event, active_students())
     event_mail.enqueue_event_announcement(event.pk)
+    try:
+        from telegram_posts import services as telegram_posts
+
+        telegram_posts.on_event_published(event, now=now)
+    except Exception:
+        # The bell, the push and the emails have gone. A Telegram failure must not turn a
+        # published event into a 500; /ops/telegram-posts shows what did and did not go out.
+        logger.exception("event_telegram_posts_failed event=%s", event.pk)
     return True
 
 

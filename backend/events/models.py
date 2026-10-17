@@ -49,6 +49,10 @@ class Event(models.Model):
     #: Claim for the day-before reminder. Set by the sweep before it sends, cleared when the
     #: start moves more than REMINDER_LEAD away. See `services.send_due_reminders`.
     reminder_sent_at = models.DateTimeField(null=True, blank=True)
+    #: Post it into the class Telegram groups when it is published (plan 2026-10-17).
+    telegram_post = models.BooleanField(default=True)
+    #: Which groups: {"subjects": [...], "levels": [...]}; empty lists mean every group.
+    telegram_audience = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="+",

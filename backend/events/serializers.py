@@ -105,11 +105,16 @@ class EventWriteSerializer(serializers.ModelSerializer):
     """Ops create/update. Multipart when a picture is attached, like `StoryWriteSerializer`."""
 
     cover_image = serializers.ImageField(required=False, allow_null=True)
+    #: `default=True` matters on multipart: DRF reads a missing multipart boolean as False
+    #: unless the field has a default, which would silently untick the box.
+    telegram_post = serializers.BooleanField(required=False, default=True)
+    telegram_audience = serializers.JSONField(required=False)
 
     class Meta:
         model = Event
         fields = [
             "title", "description", "cover_image", "starts_at", "ends_at", "location", "seats",
+            "telegram_post", "telegram_audience",
         ]
 
     def validate_title(self, value):
@@ -122,6 +127,14 @@ class EventWriteSerializer(serializers.ModelSerializer):
         if int(value) < 1:
             raise serializers.ValidationError("An event needs at least one seat.")
         return value
+
+    def validate_telegram_audience(self, value):
+        from telegram_posts.audience import normalize
+
+        try:
+            return normalize(value)
+        except (ValueError, TypeError) as exc:
+            raise serializers.ValidationError(str(exc)) from exc
 
     def validate_cover_image(self, value):
         """Same rule as the profile photo: an image, and not a phone original."""

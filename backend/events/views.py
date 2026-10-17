@@ -158,8 +158,22 @@ class _StaffView(APIView):
         return None
 
 
-def _ops_payload(event, request):
-    return EventSerializer(event, context={"request": request, "my_rows": {}}).data
+def _telegram_part(event, summaries=None) -> dict:
+    """The console's view of an event's group posts. Never in a student's payload."""
+    from telegram_posts import services as telegram_posts
+
+    summaries = summaries if summaries is not None else telegram_posts.event_summaries([event.pk])
+    chosen = event.telegram_audience or {}
+    return {
+        "telegram_post": event.telegram_post,
+        "telegram_audience": {"subjects": chosen.get("subjects", []), "levels": chosen.get("levels", [])},
+        "telegram": summaries.get(event.pk),
+    }
+
+
+def _ops_payload(event, request, summaries=None):
+    data = EventSerializer(event, context={"request": request, "my_rows": {}}).data
+    return {**data, **_telegram_part(event, summaries)}
 
 
 class AdminEventsView(_StaffView):
@@ -169,12 +183,11 @@ class AdminEventsView(_StaffView):
         denied = self._guard(request)
         if denied:
             return denied
-        events = _with_counts(Event.objects.all()).order_by("-starts_at")
-        return Response({
-            "events": EventSerializer(
-                events, many=True, context={"request": request, "my_rows": {}}
-            ).data
-        })
+        from telegram_posts import services as telegram_posts
+
+        events = list(_with_counts(Event.objects.all()).order_by("-starts_at"))
+        summaries = telegram_posts.event_summaries([e.pk for e in events])
+        return Response({"events": [_ops_payload(e, request, summaries) for e in events]})
 
     def post(self, request):
         denied = self._guard(request)

@@ -61,6 +61,7 @@ urlpatterns = [
     path('api/shop/', include('shop.urls')),
     path('api/stories/', include('stories.urls')),
     path('api/events/', include('events.urls')),
+    path('api/telegram-posts/', include('telegram_posts.urls')),
     path('api/livequiz/', include('livequiz.urls')),
     path('api/notifications/', include('notifications.urls')),
     path('api/mobile/', include('mobile.urls')),

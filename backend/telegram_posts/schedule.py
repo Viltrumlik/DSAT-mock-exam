@@ -1,0 +1,122 @@
+"""When a post goes out. Pure functions of the post, its event and `now`; `now` is always passed in.
+
+`due` and `next_at` make no queries only when the caller has loaded `post.event`
+(`select_related("event")`). An event post whose event is not loaded queries it once per call.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime, time, timedelta
+from typing import Optional
+
+from django.utils import timezone
+
+from events.models import Event
+
+from .models import GroupPost
+
+#: A run further behind than this (the server was down) is recorded Missed and never sent on
+#: its own: "tomorrow's mock" at 23:00 is worse than no message.
+LATE_LIMIT = timedelta(minutes=60)
+#: The event reminder goes out at this Tashkent wall-clock time, the day before the start.
+REMINDER_TIME = time(18, 0)
+
+
+@dataclass(frozen=True)
+class Due:
+    run_on: date
+    scheduled_at: datetime
+    late: bool
+
+
+def _at(day: date, at: time) -> datetime:
+    return timezone.make_aware(datetime.combine(day, at))
+
+
+def reminder_at(event) -> datetime:
+    return _at(timezone.localtime(event.starts_at).date() - timedelta(days=1), REMINDER_TIME)
+
+
+def _live_event(post, now) -> Optional[Event]:
+    """The event behind a reminder, if the reminder should still go out.
+
+    Read at send time, so every later change counts: a cancelled or started event, a moved
+    start, and the Telegram box being unticked after Publish.
+    """
+    event = post.event
+    if (
+        event is None
+        or event.status != Event.STATUS_PUBLISHED
+        or event.starts_at <= now
+        or not event.telegram_post
+    ):
+        return None
+    return event
+
+
+def _moment(post, now) -> Optional[datetime]:
+    """The one scheduled moment that could be due at `now`."""
+    if post.when in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE):
+        return post.send_at
+    if post.when == GroupPost.WHEN_WEEKLY:
+        today = timezone.localtime(now).date()
+        if post.time_of_day is None or today.weekday() not in (post.weekdays or []):
+            return None
+        return _at(today, post.time_of_day)
+    if post.when == GroupPost.WHEN_EVENT:
+        event = _live_event(post, now)
+        return reminder_at(event) if event else None
+    return None
+
+
+def due(post, now) -> Optional[Due]:
+    if post.deleted_at or post.is_paused:
+        return None
+    moment = _moment(post, now)
+    if moment is None or moment > now or moment < post.active_from:
+        return None
+    run_on = timezone.localtime(moment).date()
+    if post.last_run_on and post.last_run_on >= run_on:
+        return None
+    return Due(run_on=run_on, scheduled_at=moment, late=now - moment > LATE_LIMIT)
+
+
+def next_at(post, now) -> Optional[datetime]:
+    """When it next goes out, for the console. None when nothing more is scheduled."""
+    if post.deleted_at or post.is_paused:
+        return None
+    if post.when in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE):
+        # The same gates as `due`: a moment before active_from (a resume after it) or more than
+        # LATE_LIMIT behind is never sent, so the console must not show it as scheduled.
+        if post.last_run_on is not None or post.send_at is None:
+            return None
+        if post.send_at < post.active_from or now - post.send_at > LATE_LIMIT:
+            return None
+        return post.send_at
+    if post.when == GroupPost.WHEN_WEEKLY:
+        if post.time_of_day is None or not post.weekdays:
+            return None
+        today = timezone.localtime(now).date()
+        for offset in range(8):
+            day = today + timedelta(days=offset)
+            if day.weekday() not in post.weekdays:
+                continue
+            moment = _at(day, post.time_of_day)
+            if moment < post.active_from or (post.last_run_on and post.last_run_on >= day):
+                continue
+            if now - moment > LATE_LIMIT:
+                continue
+            return moment
+        return None
+    if post.when == GroupPost.WHEN_EVENT:
+        event = _live_event(post, now)
+        if event is None:
+            return None
+        moment = reminder_at(event)
+        if moment < post.active_from or now - moment > LATE_LIMIT:
+            return None
+        if post.last_run_on and post.last_run_on >= timezone.localtime(moment).date():
+            return None
+        return moment
+    return None
