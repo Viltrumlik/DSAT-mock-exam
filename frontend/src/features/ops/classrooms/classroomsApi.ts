@@ -185,7 +185,6 @@ export function useClassroomPart<T>(id: number, part: ClassroomPartName) {
   });
 }
 
-/** The server's reason for a refusal (`detail`, else the first field error), or `fallback`. */
 /**
  * The server's own rule for a class's Telegram chat id (classes/serializers.py,
  * `validate_telegram_chat_id`), checked before the save so a stray letter in a pasted /chatid
@@ -200,6 +199,7 @@ export function telegramChatIdProblem(value: string): string | null {
   return v === "" || /^-?[0-9]+$/.test(v) ? null : TELEGRAM_CHAT_ID_MESSAGE;
 }
 
+/** The server's reason for a refusal (`detail`, else the first field error), or `fallback`. */
 export function serverReason(err: unknown, fallback: string): string {
   const data = (err as { response?: { data?: unknown } })?.response?.data;
   if (data && typeof data === "object") {
