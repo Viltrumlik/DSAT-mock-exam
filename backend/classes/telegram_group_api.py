@@ -17,9 +17,11 @@ from __future__ import annotations
 import html
 import json
 import logging
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Optional
@@ -50,6 +52,8 @@ class TgResult:
     result: Any = None
     error_code: Optional[int] = None
     description: str = ""
+    #: Seconds Telegram asked us to wait (a 429's ``parameters.retry_after``), else None.
+    retry_after: Optional[int] = None
 
     def __bool__(self) -> bool:  # `if api.get_chat(...)` reads naturally
         return self.ok
@@ -122,6 +126,10 @@ def _call(method: str, params: dict, *, token: str = "") -> TgResult:
         {k: v for k, v in params.items() if v is not None}
     ).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
+    return _send(req, method)
+
+
+def _send(req: urllib.request.Request, method: str) -> TgResult:
     try:
         with urllib.request.urlopen(req, timeout=API_TIMEOUT_SECONDS) as resp:
             body = json.loads(resp.read().decode("utf-8"))
@@ -137,6 +145,7 @@ def _call(method: str, params: dict, *, token: str = "") -> TgResult:
             False,
             error_code=int(body.get("error_code") or exc.code),
             description=str(body.get("description") or "")[:400],
+            retry_after=_retry_after(body),
         )
     except Exception as exc:  # timeouts, DNS, TLS
         logger.warning("telegram %s failed: %s", method, exc)
@@ -144,8 +153,59 @@ def _call(method: str, params: dict, *, token: str = "") -> TgResult:
 
     if not isinstance(body, dict) or not body.get("ok"):
         desc = str((body or {}).get("description") or "")[:400]
-        return TgResult(False, error_code=(body or {}).get("error_code"), description=desc)
+        return TgResult(
+            False, error_code=(body or {}).get("error_code"), description=desc,
+            retry_after=_retry_after(body),
+        )
     return TgResult(True, result=body.get("result"))
+
+
+def _retry_after(body) -> Optional[int]:
+    """A 429's wait, in seconds. Telegram puts it in ``parameters``, not in a header."""
+    params = body.get("parameters") if isinstance(body, dict) else None
+    try:
+        value = int((params or {}).get("retry_after"))
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _call_multipart(
+    method: str, fields: dict, files: dict[str, tuple[str, bytes, str]], *, token: str = ""
+) -> TgResult:
+    """Like `_call`, for a method that takes a file: a picture leaves as bytes, not a URL.
+
+    Media is in a private bucket, so a URL handed to Telegram would be either unsigned (404)
+    or signed for an hour and then dead in any retry. The bytes always work.
+    """
+    tok = token or bot_token()
+    if not tok:
+        return TgResult(False, description="Telegram bot token is not configured.")
+
+    boundary = f"----mastersat{uuid.uuid4().hex}"
+    body = bytearray()
+    for name, value in fields.items():
+        if value is None:
+            continue
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n'.encode()
+        body += str(value).encode("utf-8") + b"\r\n"
+    for name, (filename, content, content_type) in files.items():
+        # Anything outside this set could end the header early (a quote) or break it (a CRLF).
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", filename or "file") or "file"
+        body += (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"; filename="{safe}"\r\n'
+            f"Content-Type: {content_type}\r\n\r\n"
+        ).encode()
+        body += content + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{tok}/{method}",
+        data=bytes(body),
+        method="POST",
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    return _send(req, method)
 
 
 # ── Reads ────────────────────────────────────────────────────────────────────
@@ -259,6 +319,43 @@ def send_message(chat_id: str | int, text: str, *, reply_markup: dict | None = N
             "reply_markup": json.dumps(reply_markup) if reply_markup else None,
         },
     )
+
+
+def send_photo(
+    chat_id: str | int,
+    *,
+    caption: str,
+    photo: bytes | None = None,
+    filename: str = "photo.jpg",
+    content_type: str = "image/jpeg",
+    file_id: str = "",
+    reply_markup: dict | None = None,
+) -> TgResult:
+    """A picture with an HTML caption (plan 2026-10-17, group posts).
+
+    The first group gets the bytes; every later group gets the ``file_id`` Telegram gave back
+    (`largest_photo_file_id`), so a post to 26 groups uploads its picture once.
+    """
+    fields = {
+        "chat_id": chat_id,
+        "caption": caption,
+        "parse_mode": "HTML",
+        "reply_markup": json.dumps(reply_markup) if reply_markup else None,
+    }
+    if file_id:
+        return _call("sendPhoto", {**fields, "photo": file_id})
+    if not photo:
+        return TgResult(False, description="No picture to send.")
+    return _call_multipart("sendPhoto", fields, {"photo": (filename, photo, content_type)})
+
+
+def largest_photo_file_id(result) -> str:
+    """The id of the biggest size in a sent photo — the one worth reusing."""
+    sizes = result.get("photo") if isinstance(result, dict) else None
+    if not sizes:
+        return ""
+    best = max(sizes, key=lambda s: (int(s.get("file_size") or 0), int(s.get("width") or 0)))
+    return str(best.get("file_id") or "")
 
 
 def delete_message(chat_id: str | int, message_id) -> TgResult:
