@@ -9,13 +9,18 @@
  * so it is the one action on this page that asks first.
  */
 
+import Link from "next/link";
 import { useState } from "react";
 import { CalendarClock, CalendarPlus, Check, Pencil, Users, X } from "lucide-react";
 
-import { Alert, Badge, Button, Field, Input, Modal, Textarea } from "@/components/ui";
+import { Alert, Badge, Button, Checkbox, Field, Input, Modal, Textarea } from "@/components/ui";
 import type { BadgeVariant } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import type { LearningEvent } from "@/features/events/eventsApi";
+import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
+import { AudiencePicker } from "@/features/ops/telegram-posts/AudiencePicker";
+import { draftChats, draftFrom, type AudienceDraft } from "@/features/ops/telegram-posts/audience";
+import { useTelegramGroups } from "@/features/ops/telegram-posts/telegramPostsHooks";
 import {
   useAdminEvents,
   useCancelEvent,
@@ -35,21 +40,6 @@ const EMPTY = {
   starts_at: "",
   ends_at: "",
 };
-
-/** `datetime-local` speaks local wall-clock with no zone; the API speaks ISO with one. */
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromLocalInput(value: string): string | null {
-  if (!value) return null;
-  const d = new Date(value);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
 
 /** Same date + time format the event list already prints, just for a registration's row. */
 function fmtRegisteredAt(iso: string): string {
@@ -81,6 +71,10 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
       : EMPTY,
   );
   const [file, setFile] = useState<File | null>(null);
+  const groups = useTelegramGroups();
+  const telegramOn = groups.data?.enabled === true;
+  const [telegramPost, setTelegramPost] = useState(event?.telegram_post ?? true);
+  const [audience, setAudience] = useState<AudienceDraft>(draftFrom(event?.telegram_audience));
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
@@ -97,12 +91,17 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
       seats: Number(form.seats),
       starts_at: fromLocalInput(form.starts_at),
       ends_at: fromLocalInput(form.ends_at),
+      telegram_post: telegramPost,
+      // Events store subjects × levels only (the picker hides "specific groups" here).
+      telegram_audience: { subjects: audience.subjects, levels: audience.levels },
     };
 
     let body: FormData | Record<string, unknown>;
     if (file) {
       const fd = new FormData();
-      Object.entries(fields).forEach(([k, v]) => fd.append(k, v === null ? "" : String(v)));
+      Object.entries(fields).forEach(([k, v]) =>
+        fd.append(k, v === null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v)),
+      );
       fd.append("cover_image", file);
       body = fd;
     } else {
@@ -176,6 +175,26 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
             onChange={(e) => setForm({ ...form, seats: e.target.value })}
           />
         </Field>
+        {telegramOn ? (
+          <div className="space-y-2 rounded-xl border border-border p-3">
+            <Checkbox
+              label="Post to Telegram groups"
+              checked={telegramPost}
+              onChange={(e) => setTelegramPost(e.target.checked)}
+            />
+            {telegramPost ? (
+              <AudiencePicker
+                groups={groups.data?.groups ?? []}
+                value={audience}
+                onChange={setAudience}
+                allowSpecific={false}
+              />
+            ) : null}
+            <p className="text-xs text-muted-foreground">
+              Posted when you publish, with a reminder the evening before at 18:00.
+            </p>
+          </div>
+        ) : null}
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
           <Button onClick={submit} loading={save.isPending}>Save draft</Button>
@@ -308,6 +327,7 @@ export default function OpsEventsPage() {
   const publish = usePublishEvent();
   const cancelEvent = useCancelEvent();
   const remove = useDeleteEvent();
+  const telegramGroups = useTelegramGroups();
   const [editing, setEditing] = useState<LearningEvent | null | undefined>(undefined);
   const [viewing, setViewing] = useState<LearningEvent | null>(null);
 
@@ -316,7 +336,7 @@ export default function OpsEventsPage() {
       <OpsPageHeader
         section="Events"
         title="Events"
-        description="Workshops, talks and open days. Publishing one emails every student."
+        description="Workshops, talks and open days. Publishing one emails every student and, when ticked, posts it into the class Telegram groups."
         actions={
           <Button onClick={() => setEditing(null)}>
             <CalendarPlus className="mr-1.5 h-4 w-4" aria-hidden />
@@ -379,6 +399,12 @@ export default function OpsEventsPage() {
                         <Users className="h-3 w-3" aria-hidden />
                         {taken}/{event.seats}
                       </span>
+                      {event.telegram ? (
+                        <Link href={`/ops/telegram-posts/${event.telegram.post_id}`} className="underline">
+                          Telegram {event.telegram.sent}/{event.telegram.total}
+                          {event.telegram.failed ? ` · ${event.telegram.failed} failed` : ""}
+                        </Link>
+                      ) : null}
                     </p>
                   </div>
 
@@ -387,15 +413,17 @@ export default function OpsEventsPage() {
                       <Button
                         size="sm"
                         onClick={() => {
-                          // Publishing IS the send — about 370 emails, and there is no test
-                          // send and no undo.
-                          if (
-                            window.confirm(
-                              `Publish “${event.title}” and email every student? This can't be undone.`,
-                            )
-                          ) {
-                            publish.mutate(event.id);
-                          }
+                          // Publishing IS the send — about 370 emails and, when ticked, a post
+                          // in every chosen class group. There is no test send and no undo.
+                          const tg = telegramGroups.data;
+                          const n =
+                            tg?.enabled && event.telegram_post !== false
+                              ? draftChats(tg.groups, draftFrom(event.telegram_audience)).length
+                              : 0;
+                          const question = n
+                            ? `Publish “${event.title}”, email every student and post to ${n} Telegram group${n === 1 ? "" : "s"}? This can't be undone.`
+                            : `Publish “${event.title}” and email every student? This can't be undone.`;
+                          if (window.confirm(question)) publish.mutate(event.id);
                         }}
                       >
                         Publish
