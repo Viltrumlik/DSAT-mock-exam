@@ -15,6 +15,7 @@ import {
   NotebookText,
   RefreshCw,
   School,
+  Send,
   ShoppingBag,
   Smartphone,
   Timer,
@@ -107,6 +108,8 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     items: [
       // Workshops, talks and open days: the desk publishes them and marks who came.
       { href: "/ops/events", label: "Events", icon: CalendarDays },
+      // What the class bot posts into the class Telegram groups: event posts and written ones.
+      { href: "/ops/telegram-posts", label: "Telegram posts", icon: Send },
       // The ring of circles across the top of every student's dashboard.
       { href: "/ops/stories", label: "Stories", icon: Images },
       { href: "/ops/surveys", label: "Surveys", icon: ClipboardList, superAdminOnly: true },

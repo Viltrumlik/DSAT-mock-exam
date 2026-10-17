@@ -2,11 +2,12 @@
  * What an `admin` sees in the ops console.
  *
  * The school's list, verbatim: Dashboard, Classrooms, Branches, Support, Shop, Access,
- * Users and Events — Users now being three sections (Students, Public users, Staff). Everything
- * else in the console — Journals, Midterms, Mock sittings, Surveys, Stories, Exam dates, and
- * the old Assignments notice — is not shown to an admin at all, neither in the sidebar nor by
- * typing its address. Events sits next to Stories in the nav because the two are the same kind
- * of job, but only Events made the school's list — Stories stays out of a scoped admin's reach.
+ * Users and Events (with its Telegram posts) — Users now being three sections (Students, Public
+ * users, Staff). Everything else in the console — Journals, Midterms, Mock sittings, Surveys,
+ * Stories, Exam dates, and the old Assignments notice — is not shown to an admin at all, neither
+ * in the sidebar nor by typing its address. Events sits next to Stories in the nav because the
+ * two are the same kind of job, but only Events made the school's list — Stories stays out of a
+ * scoped admin's reach.
  *
  * Scoped to the `admin` ROLE and nothing wider. Teachers and test auditors can also open
  * this console and see all of it; the school asked about admins, so nobody else's view
@@ -31,6 +32,8 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   "/ops/staff",
   "/ops/users",
   "/ops/events",
+  // The class bot's group posts (plan 2026-10-17): the same desk that publishes events.
+  "/ops/telegram-posts",
   // lc-up (the centre's CRM): the owner decided on 2026-10-12 that admins and super admins run
   // the pairing and review in /ops/lcup.
   "/ops/lcup",

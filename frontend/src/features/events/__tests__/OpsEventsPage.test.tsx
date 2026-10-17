@@ -28,6 +28,16 @@ vi.mock("@/features/events/eventsHooks", () => ({
   useTicket: (code: string) => useTicket(code),
 }));
 
+const useTelegramGroups = vi.fn();
+vi.mock("@/features/ops/telegram-posts/telegramPostsHooks", () => ({
+  useTelegramGroups: () => useTelegramGroups(),
+}));
+vi.mock("next/link", () => ({
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+}));
+
 const OpsEventsPage = (await import("@/app/(ops)/ops/events/page")).default;
 
 function event(over: Record<string, unknown> = {}) {
@@ -117,6 +127,15 @@ beforeEach(() => {
     isPending: false, isError: false, refetch: vi.fn(),
   });
   useTicket.mockReturnValue({ data: undefined, isPending: false, isError: false, refetch: vi.fn() });
+  useTelegramGroups.mockReturnValue({
+    data: {
+      enabled: true,
+      groups: [
+        { id: 1, name: "Senior G1 Math", subject: "MATH", level: "senior", chat_id: "-1001" },
+        { id: 2, name: "Junior G2 English", subject: "ENGLISH", level: "junior", chat_id: "-1002" },
+      ],
+    },
+  });
 });
 
 afterEach(async () => {
@@ -155,6 +174,43 @@ describe("OpsEventsPage", () => {
     });
     await render();
     expect(buttonLabelled("Publish")).toBeUndefined();
+  });
+
+  it("names the Telegram groups in the Publish confirm", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: true, telegram_audience: { subjects: ["MATH"], levels: [] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain("post to 1 Telegram group");
+  });
+
+  it("leaves Telegram out of the confirm when the box is unticked", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ telegram_post: false, telegram_audience: { subjects: [], levels: [] }, telegram: null })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => buttonLabelled("Publish")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).not.toContain("Telegram");
+  });
+
+  it("links a published event to its Telegram post", async () => {
+    useAdminEvents.mockReturnValue({
+      data: [event({ status: "PUBLISHED", telegram: { post_id: 9, sent: 25, failed: 1, total: 26 } })],
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    const link = document.querySelector<HTMLAnchorElement>('a[href="/ops/telegram-posts/9"]');
+    expect(link?.textContent).toBe("Telegram 25/26 · 1 failed");
+  });
+
+  it("offers the Telegram choice in the form", async () => {
+    await render();
+    await act(async () => buttonLabelled("Add an event")!.click());
+    expect(text()).toContain("Post to Telegram groups");
+    expect(text()).toContain("Goes to 2 Telegram groups.");
   });
 
   it("says the list failed rather than showing an empty console", async () => {
