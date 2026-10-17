@@ -68,6 +68,21 @@ class PushTests(ReconcileFixture):
         self.assertEqual(client.posts, [])
         self.assertIn(self.link.name, push_held_reason(self.link))
 
+    def test_a_member_lcup_holds_frozen_is_not_sent(self):
+        # lc-up refuses a frozen member's mark (not_in_group, 13 of 13 on prod by 2026-10-16).
+        link = LcupStudentLink.objects.get(lcup_student_id=101)
+        LcupMembership.objects.create(group=self.link, student=link, lcup_status="frozen")
+        client = FakeLcupClient({})
+        self.push(client)
+        self.assertEqual(client.posts, [(10, DAY, [{"student_id": 102, "status": "absent", "reason_id": 3035}])])
+
+    def test_a_member_who_has_left_their_freeze_behind_is_sent(self):
+        link = LcupStudentLink.objects.get(lcup_student_id=101)
+        LcupMembership.objects.create(group=self.link, student=link, lcup_status="active")
+        client = FakeLcupClient({})
+        self.push(client)
+        self.assertEqual([r["student_id"] for r in client.posts[0][2]], [101, 102])
+
     def test_a_sent_register_is_never_sent_again(self):
         client = FakeLcupClient({})
         self.push(client)
