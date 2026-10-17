@@ -392,3 +392,52 @@ describe("the tabs", () => {
     expect(host.textContent).toContain("This class does not exist.");
   });
 });
+
+describe("the Telegram chat id", () => {
+  // Word for word what the server says (classes/serializers.py), so the field and a refusal agree.
+  const MESSAGE = "Telegram chat id must be the number /chatid gave you (e.g. -1001234567890).";
+
+  it("says at the field that a pasted id is not a number, and does not send it", async () => {
+    route(core(UNPAIRED));
+    classes.governanceUpdate.mockResolvedValue({});
+    await renderPage();
+    const chat = control("Telegram chat id");
+    expect(chat.getAttribute("aria-invalid")).toBeNull();
+
+    // The 2026-10-17 paste: /chatid's answer with a stray letter on the end.
+    typeInto(chat, "-1001234569860v");
+    expect(chat.getAttribute("aria-invalid")).toBe("true");
+    expect(document.getElementById(chat.getAttribute("aria-describedby")!)?.textContent).toBe(MESSAGE);
+    act(() => button(box("Details")!, "Save")!.click());
+    await settle();
+    expect(classes.governanceUpdate).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(chat);
+
+    typeInto(chat, "  -1001234569860 ");
+    expect(box("Details")!.textContent).not.toContain(MESSAGE);
+    act(() => button(box("Details")!, "Save")!.click());
+    await settle();
+    expect(classes.governanceUpdate.mock.calls[0][1]).toMatchObject({ telegram_chat_id: "-1001234569860" });
+  });
+
+  it("lets an emptied id through — the class has no group", async () => {
+    route(core({ ...UNPAIRED, telegram_chat_id: "-1001234567890" }));
+    classes.governanceUpdate.mockResolvedValue({});
+    await renderPage();
+    typeInto(control("Telegram chat id"), "   ");
+    expect(box("Details")!.textContent).not.toContain(MESSAGE);
+    act(() => button(box("Details")!, "Save")!.click());
+    await settle();
+    expect(classes.governanceUpdate.mock.calls[0][1]).toMatchObject({ telegram_chat_id: "" });
+  });
+
+  it("still shows the server's word when it refuses one", async () => {
+    route(core(UNPAIRED));
+    classes.governanceUpdate.mockRejectedValue({ response: { data: { telegram_chat_id: ["That chat id is refused."] } } });
+    await renderPage();
+    typeInto(control("Telegram chat id"), "-1001234567890");
+    act(() => button(box("Details")!, "Save")!.click());
+    await settle();
+    expect(box("Details")!.querySelector('[role="alert"]')?.textContent).toBe("That chat id is refused.");
+  });
+});

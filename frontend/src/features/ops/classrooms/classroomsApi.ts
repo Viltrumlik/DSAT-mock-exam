@@ -186,6 +186,20 @@ export function useClassroomPart<T>(id: number, part: ClassroomPartName) {
 }
 
 /** The server's reason for a refusal (`detail`, else the first field error), or `fallback`. */
+/**
+ * The server's own rule for a class's Telegram chat id (classes/serializers.py,
+ * `validate_telegram_chat_id`), checked before the save so a stray letter in a pasted /chatid
+ * answer shows at the field. Blank means "no group". The server stays the authority: whatever it
+ * refuses still comes back through `serverReason`.
+ */
+export const TELEGRAM_CHAT_ID_MESSAGE = "Telegram chat id must be the number /chatid gave you (e.g. -1001234567890).";
+
+/** Null when `value` would be accepted, else the message to show. */
+export function telegramChatIdProblem(value: string): string | null {
+  const v = value.trim();
+  return v === "" || /^-?[0-9]+$/.test(v) ? null : TELEGRAM_CHAT_ID_MESSAGE;
+}
+
 export function serverReason(err: unknown, fallback: string): string {
   const data = (err as { response?: { data?: unknown } })?.response?.data;
   if (data && typeof data === "object") {
