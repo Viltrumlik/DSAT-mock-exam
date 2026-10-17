@@ -38,8 +38,8 @@ export function TelegramPostsPage() {
 
       {posts.data && !posts.data.enabled ? (
         <Alert tone="warning">
-          Posting is switched off on this server (TELEGRAM_GROUP_POSTS_ENABLED). Posts are saved, but
-          nothing is sent until it is on.
+          Posting is switched off on this server — Now posts are refused; scheduled posts go out at
+          their time once it is on.
         </Alert>
       ) : null}
 

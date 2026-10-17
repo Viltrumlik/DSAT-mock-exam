@@ -26,7 +26,7 @@ function post(over: Record<string, unknown> = {}) {
     when: "WEEKLY", send_at: null, weekdays: [5], time_of_day: "18:00:00", is_paused: false, deleted_at: null,
     event_id: null, event_title: "", created_at: "2026-10-17T10:00:00+05:00", audience_label: "All groups",
     next_send_at: "2026-10-24T18:00:00+05:00",
-    last_run: { run_on: "2026-10-17", total: 26, sent: 25, failed: 1, missed: 0, pending: 0, deleted: 0 },
+    last_run: { run_on: "2026-10-17", total: 26, sent: 25, failed: 1, missed: 0, pending: 0, deleted: 0, uncertain: 0 },
     state: "failed",
     ...over,
   };
@@ -68,7 +68,9 @@ describe("TelegramPostsPage", () => {
   it("warns when posting is switched off on the server", async () => {
     useTelegramPosts.mockReturnValue({ data: { enabled: false, posts: [] }, isPending: false, isError: false, refetch: vi.fn() });
     await render();
-    expect(text()).toContain("Posting is switched off");
+    expect(text()).toContain(
+      "Posting is switched off on this server — Now posts are refused; scheduled posts go out at their time once it is on.",
+    );
     expect(text()).toContain("No posts yet");
   });
 

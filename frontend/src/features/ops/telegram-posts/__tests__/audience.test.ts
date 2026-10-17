@@ -40,7 +40,7 @@ describe("labels", () => {
 
   it("sums up the last run", () => {
     expect(
-      sentLabel({ last_run: { run_on: "2026-10-24", total: 26, sent: 24, failed: 2, missed: 0, pending: 0, deleted: 0 } }),
+      sentLabel({ last_run: { run_on: "2026-10-24", total: 26, sent: 24, failed: 2, missed: 0, pending: 0, deleted: 0, uncertain: 0 } }),
     ).toBe("Sent 24/26 · 2 failed");
     expect(sentLabel({ last_run: null })).toBe("");
   });

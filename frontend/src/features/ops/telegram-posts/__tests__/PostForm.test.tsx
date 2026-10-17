@@ -142,7 +142,9 @@ describe("PostForm", () => {
 
     groupsEnabled = false;
     await render();
-    expect(text()).toContain("Posting is switched off on this server — this will be saved, not sent.");
+    expect(text()).toContain(
+      "Posting is switched off on this server — Now posts are refused; scheduled posts go out at their time once it is on.",
+    );
   });
 
   it("shows the server's reason when a save is refused", async () => {
@@ -188,6 +190,13 @@ describe("PostForm", () => {
     expect(controlOf("Goes out at")).toBe(document.body.querySelector('input[type="datetime-local"]'));
   });
 
+  it("says the send time is read in the device's time zone", async () => {
+    await render();
+    expect(text()).not.toContain("Your device's time.");
+    await act(async () => radio("Once, at a set time").click());
+    expect(text()).toContain("Your device's time.");
+  });
+
   it("lets a post that has not run change its timing", async () => {
     await render(weeklyPost());
     expect(radio("Now").disabled).toBe(false);
@@ -198,7 +207,7 @@ describe("PostForm", () => {
 
   it("locks the timing of a post that has already run, but not the rest", async () => {
     await render(
-      weeklyPost({ last_run: { run_on: "2026-10-17", total: 26, sent: 26, failed: 0, missed: 0, pending: 0, deleted: 0 } }),
+      weeklyPost({ last_run: { run_on: "2026-10-17", total: 26, sent: 26, failed: 0, missed: 0, pending: 0, deleted: 0, uncertain: 0 } }),
     );
     expect(text()).toContain("This post has already run — its timing can't change.");
     expect(radio("Now").disabled).toBe(true);
@@ -214,7 +223,7 @@ describe("PostForm", () => {
 
   it("saves an edit of a post that has run, keeping its timing kind", async () => {
     await render(
-      weeklyPost({ last_run: { run_on: "2026-10-17", total: 26, sent: 26, failed: 0, missed: 0, pending: 0, deleted: 0 } }),
+      weeklyPost({ last_run: { run_on: "2026-10-17", total: 26, sent: 26, failed: 0, missed: 0, pending: 0, deleted: 0, uncertain: 0 } }),
     );
     await act(async () => button("Schedule").click());
     expect(String(confirmSpy.mock.calls[0][0])).toContain("Schedule this for 3 Telegram groups?");

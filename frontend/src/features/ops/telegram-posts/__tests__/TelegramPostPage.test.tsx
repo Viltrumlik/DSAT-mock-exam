@@ -25,8 +25,8 @@ const { TelegramPostPage } = await import("@/features/ops/telegram-posts/Telegra
 
 const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
 
-function run(sent: number, failed: number, missed = 0) {
-  return { run_on: "2026-10-17", total: sent + failed + missed, sent, failed, missed, pending: 0, deleted: 0 };
+function run(sent: number, failed: number, missed = 0, uncertain = 0) {
+  return { run_on: "2026-10-17", total: sent + failed + missed, sent, failed, missed, pending: 0, deleted: 0, uncertain };
 }
 
 function detail(over: Record<string, unknown> = {}) {
@@ -124,6 +124,56 @@ describe("TelegramPostPage", () => {
     expect(act_).not.toHaveBeenCalled();
   });
 
+  it("asks to retry only the groups that certainly did not get it, and says how many it leaves alone", async () => {
+    useTelegramPost.mockReturnValue({
+      // 3 failed, 1 of them uncertain: it may already be in its group, so it is not resent.
+      data: detail({ last_run: run(23, 3, 0, 1), state: "failed" }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => button("Retry failed")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      "Send this post again to 2 Telegram groups? 1 may already be in their group and are not resent — check them by hand.",
+    );
+    expect(act_.mock.calls[0][0]).toBe("retry");
+  });
+
+  it("asks without the warning when every failure is certain", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ last_run: run(24, 2, 0, 0), state: "failed" }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => button("Retry failed")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toBe("Send this post again to 2 Telegram groups?");
+  });
+
+  it("does nothing, and says why, when every failure may already be in its group", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ last_run: run(24, 2, 0, 2), state: "failed" }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => button("Retry failed")!.click());
+    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(act_).not.toHaveBeenCalled();
+    expect(text()).toContain("Nothing to resend — the failed groups may already have the post. Check them by hand.");
+  });
+
+  it("reports the failures a retry left alone", async () => {
+    act_.mockImplementation((_action: string, opts: { onSuccess: (d: unknown) => void }) =>
+      opts.onSuccess({ result: { queued: 2, uncertain: 1 }, post: detail() }),
+    );
+    useTelegramPost.mockReturnValue({
+      data: detail({ last_run: run(23, 3, 0, 1), state: "failed" }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    await act(async () => button("Retry failed")!.click());
+    expect(text()).toContain("Sending again to 2 groups.");
+    expect(text()).toContain("1 may already be in their group and were not resent — check them by hand.");
+  });
+
   it("asks before sending the missed ones, naming how many groups missed — and sends nothing if declined", async () => {
     useTelegramPost.mockReturnValue({
       data: detail({ last_run: run(23, 0, 3), state: "missed" }),
@@ -152,6 +202,25 @@ describe("TelegramPostPage", () => {
     expect(act_.mock.calls[0][0]).toBe("delete-from-groups");
     expect(text()).toContain("1 too old — remove it by hand.");
     expect(text()).not.toContain("still sending");
+  });
+
+  it("says how many groups may still hold the post after a delete", async () => {
+    act_.mockImplementation((_action: string, opts: { onSuccess: (d: unknown) => void }) =>
+      opts.onSuccess({ result: { deleted: 1, too_old: 0, failed: 0, in_flight: 0, unknown: 2 }, post: detail() }),
+    );
+    await render();
+    await act(async () => button("Delete from groups")!.click());
+    expect(text()).toContain("Deleted from 1 group.");
+    expect(text()).toContain("2 may still be in their group — check by hand.");
+  });
+
+  it("does not mention groups that may still hold the post when there are none", async () => {
+    act_.mockImplementation((_action: string, opts: { onSuccess: (d: unknown) => void }) =>
+      opts.onSuccess({ result: { deleted: 1, too_old: 0, failed: 0, in_flight: 0, unknown: 0 }, post: detail() }),
+    );
+    await render();
+    await act(async () => button("Delete from groups")!.click());
+    expect(text()).not.toContain("may still be in their group");
   });
 
   it("counts the groups to delete from the sends of the last 48 hours, not from the last run", async () => {
@@ -263,6 +332,78 @@ describe("TelegramPostPage", () => {
     expect(text()).toContain("That post doesn't exist.");
     expect(text()).not.toContain("Loading…");
     expect(document.querySelector('a[href="/ops/telegram-posts"]')).not.toBeNull();
+  });
+
+  it("offers Resume on a paused once-post, which has no Pause", async () => {
+    // The server lets any post be paused; a once-post paused that way must not be stranded.
+    useTelegramPost.mockReturnValue({
+      data: detail({ when: "ONCE", send_at: "2026-10-24T18:00:00+05:00", weekdays: [], time_of_day: null, is_paused: true, state: "paused", next_send_at: null, last_run: null, runs: [] }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(button("Resume")).toBeDefined();
+    expect(button("Pause")).toBeUndefined();
+    await act(async () => button("Resume")!.click());
+    expect(act_.mock.calls[0][0]).toBe("resume");
+  });
+
+  it("offers no Pause on a once-post that is not paused", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ when: "ONCE", send_at: "2026-10-24T18:00:00+05:00", weekdays: [], time_of_day: null, last_run: null, runs: [] }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(button("Pause")).toBeUndefined();
+    expect(button("Resume")).toBeUndefined();
+  });
+
+  it("offers no Resume on a deleted post", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ is_paused: true, deleted_at: hoursAgo(1), state: "deleted", runs: [] }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(button("Resume")).toBeUndefined();
+  });
+
+  it("keeps Delete from groups while a message from the last 48 hours is still up, even on a deleted post", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({
+        deleted_at: hoursAgo(1), state: "deleted", last_run: run(1, 0),
+        runs: [{
+          run_on: "2026-10-17",
+          deliveries: [
+            // The take-down failed for this group: the message is still there, and the verb is idempotent.
+            { id: 1, chat_id: "-1001", group_names: "Senior G1 Math", status: "SENT", error: "Delete failed: kicked", sent_at: hoursAgo(2), attempts: 1 },
+            { id: 2, chat_id: "-1002", group_names: "Junior G2 Math", status: "DELETED", error: "", sent_at: hoursAgo(2), attempts: 1 },
+          ],
+        }],
+      }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(button("Delete from groups")).toBeDefined();
+    await act(async () => button("Delete from groups")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain("Delete this post from 1 Telegram group");
+    expect(act_.mock.calls[0][0]).toBe("delete-from-groups");
+  });
+
+  it("drops Delete from groups on a deleted post with nothing left that the bot can take down", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({
+        deleted_at: hoursAgo(1), state: "deleted",
+        runs: [{
+          run_on: "2026-10-10",
+          deliveries: [
+            { id: 1, chat_id: "-1001", group_names: "Senior G1 Math", status: "SENT", error: "", sent_at: hoursAgo(24 * 7), attempts: 1 },
+            { id: 2, chat_id: "-1002", group_names: "Junior G2 Math", status: "DELETED", error: "", sent_at: hoursAgo(1), attempts: 1 },
+          ],
+        }],
+      }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(button("Delete from groups")).toBeUndefined();
   });
 
   it("sends an event's post back to its event for edits", async () => {

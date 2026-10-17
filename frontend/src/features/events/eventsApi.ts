@@ -42,8 +42,11 @@ export interface LearningEvent {
   telegram_post?: boolean;
   /** Ops payload only: which groups — empty lists mean every group. */
   telegram_audience?: { subjects: string[]; levels: string[] };
-  /** Ops payload only: how the announcement went, once it exists. */
-  telegram?: { post_id: number; sent: number; failed: number; total: number } | null;
+  /**
+   * Ops payload only: how the announcement went, once it exists. `total` and `sent` leave out
+   * messages taken down (`deleted`); null when no announcement was ever made.
+   */
+  telegram?: { post_id: number; sent: number; failed: number; total: number; deleted: number } | null;
 }
 
 export interface EventCounts {

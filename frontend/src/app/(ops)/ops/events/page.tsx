@@ -76,6 +76,11 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
   // keeps a reminder due the evening before. A cancelled event posts nothing, so it has no choice.
   const telegramOn = groups.data?.enabled === true && event?.status !== "CANCELLED";
   const published = event?.status === "PUBLISHED";
+  // A published event with no announcement was published without Telegram (the box unticked, or
+  // posting off at the time): it has no reminder either, and the switch is not retroactive, so
+  // offering the choice would promise a post that never comes.
+  const unposted = published && event?.telegram === null;
+  const showTelegram = telegramOn && !unposted;
   const [telegramPost, setTelegramPost] = useState(event?.telegram_post ?? true);
   const [audience, setAudience] = useState<AudienceDraft>(draftFrom(event?.telegram_audience));
   const [error, setError] = useState<string | null>(null);
@@ -94,10 +99,13 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
       seats: Number(form.seats),
       starts_at: fromLocalInput(form.starts_at),
       ends_at: fromLocalInput(form.ends_at),
-      telegram_post: telegramPost,
-      // Events store subjects × levels only (the picker hides "specific groups" here).
-      telegram_audience: { subjects: audience.subjects, levels: audience.levels },
     };
+    if (showTelegram) {
+      // Only what the form shows is sent: a hidden choice must not overwrite what is stored.
+      fields.telegram_post = telegramPost;
+      // Events store subjects × levels only (the picker hides "specific groups" here).
+      fields.telegram_audience = { subjects: audience.subjects, levels: audience.levels };
+    }
 
     let body: FormData | Record<string, unknown>;
     if (file) {
@@ -178,7 +186,10 @@ function EventForm({ event, onClose }: { event: LearningEvent | null; onClose: (
             onChange={(e) => setForm({ ...form, seats: e.target.value })}
           />
         </Field>
-        {telegramOn ? (
+        {telegramOn && unposted ? (
+          <p className="text-xs text-muted-foreground">Published without Telegram posts — changing this posts nothing.</p>
+        ) : null}
+        {showTelegram ? (
           <div className="space-y-2 rounded-xl border border-border p-3">
             <Checkbox
               label="Post to Telegram groups"
@@ -406,8 +417,11 @@ export default function OpsEventsPage() {
                       </span>
                       {event.telegram ? (
                         <Link href={`/ops/telegram-posts/${event.telegram.post_id}`} className="underline">
-                          Telegram {event.telegram.sent}/{event.telegram.total}
-                          {event.telegram.failed ? ` · ${event.telegram.failed} failed` : ""}
+                          {event.telegram.total === 0 && event.telegram.deleted > 0
+                            ? "Telegram post deleted"
+                            : `Telegram ${event.telegram.sent}/${event.telegram.total}${
+                                event.telegram.failed ? ` · ${event.telegram.failed} failed` : ""
+                              }`}
                         </Link>
                       ) : null}
                     </p>

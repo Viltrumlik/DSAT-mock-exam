@@ -21,6 +21,26 @@ export interface RunCounts {
   missed: number;
   pending: number;
   deleted: number;
+  /**
+   * Of the `failed`, how many may already be in their group (an interrupted send, no answer from
+   * Telegram). Retry never resends those and Delete never marks them gone — a person looks.
+   */
+  uncertain: number;
+}
+
+/** What an action reports. Each verb fills its own keys; the rest are absent. */
+export interface PostActionResult {
+  /** retry, send-missed: rows put back to send. */
+  queued?: number;
+  /** retry: failed rows left alone because the message may already be in the group. */
+  uncertain?: number;
+  /** delete-from-groups. */
+  deleted?: number;
+  too_old?: number;
+  failed?: number;
+  in_flight?: number;
+  /** delete-from-groups: uncertain failed rows, left as they were — they may still be in their group. */
+  unknown?: number;
 }
 
 export interface GroupPost {
@@ -100,8 +120,8 @@ export const telegramPostsApi = {
     const { data } = await api.patch<GroupPostDetail>(`/telegram-posts/admin/${id}/`, body);
     return data;
   },
-  async action(id: number, action: PostAction): Promise<{ result: Record<string, number>; post: GroupPostDetail }> {
-    const { data } = await api.post<{ result: Record<string, number>; post: GroupPostDetail }>(
+  async action(id: number, action: PostAction): Promise<{ result: PostActionResult; post: GroupPostDetail }> {
+    const { data } = await api.post<{ result: PostActionResult; post: GroupPostDetail }>(
       `/telegram-posts/admin/${id}/${action}/`,
     );
     return data;

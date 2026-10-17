@@ -16,7 +16,7 @@ import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { errorBody } from "./apiError";
 import { PostForm } from "./PostForm";
 import { STATE_BADGE, firstLine, kindLabel, plainText, scheduleLabel } from "./audience";
-import type { DeliveryStatus, PostAction } from "./telegramPostsApi";
+import type { DeliveryStatus, PostAction, PostActionResult } from "./telegramPostsApi";
 import { usePostAction, useTelegramPost } from "./telegramPostsHooks";
 
 const DELIVERY_BADGE: Record<DeliveryStatus, { variant: BadgeVariant; label: string }> = {
@@ -44,6 +44,7 @@ export function TelegramPostPage({ id }: { id: number }) {
   const [editing, setEditing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hint, setHint] = useState<string | null>(null);
 
   // A disabled v5 query reports "pending" forever, so a bad address has to be caught first.
   if (!Number.isInteger(id) || id <= 0) {
@@ -76,9 +77,21 @@ export function TelegramPostPage({ id }: { id: number }) {
   const busy = action.isPending;
   const editable = live && p.kind === "MANUAL" && (p.when === "WEEKLY" || !last);
 
-  const perform = (verb: PostAction, describe: (result: Record<string, number>) => string) => {
+  // What the bot can still take down is read off the rows, not off the last run: a weekly post's
+  // last run may be days old, and a run's `sent` counts messages already out of reach. It also keeps
+  // the button for a post that is already deleted, so a message that would not come down can be
+  // tried again (the server's verb is idempotent).
+  const reachable = new Set(
+    p.runs
+      .flatMap((r) => r.deliveries)
+      .filter((d) => d.status === "SENT" && d.sent_at && Date.now() - new Date(d.sent_at).getTime() < DELETE_WINDOW_MS)
+      .map((d) => d.chat_id),
+  );
+
+  const perform = (verb: PostAction, describe: (result: PostActionResult) => string) => {
     setError(null);
     setNotice(null);
+    setHint(null);
     action.mutate(verb, {
       onSuccess: (data) => setNotice(describe(data.result)),
       onError: (e) => setError(errorText(e)),
@@ -86,9 +99,26 @@ export function TelegramPostPage({ id }: { id: number }) {
   };
 
   const retry = () => {
-    const n = last?.failed ?? 0;
-    if (!window.confirm(`Send this post again to ${plural(n, "Telegram group")}?`)) return;
-    perform("retry", (r) => `Sending again to ${plural(r.queued ?? 0, "group")}.`);
+    // Retry never resends a failure that may already be in its group (an interrupted send, no
+    // answer from Telegram): a second copy in a class group cannot be unsent in bulk.
+    const uncertain = last?.uncertain ?? 0;
+    const n = (last?.failed ?? 0) - uncertain;
+    if (n <= 0) {
+      setError(null);
+      setNotice(null);
+      setHint("Nothing to resend — the failed groups may already have the post. Check them by hand.");
+      return;
+    }
+    const question =
+      `Send this post again to ${plural(n, "Telegram group")}?` +
+      (uncertain > 0 ? ` ${uncertain} may already be in their group and are not resent — check them by hand.` : "");
+    if (!window.confirm(question)) return;
+    perform("retry", (r) =>
+      [
+        `Sending again to ${plural(r.queued ?? 0, "group")}.`,
+        r.uncertain ? `${r.uncertain} may already be in their group and were not resent — check them by hand.` : "",
+      ].filter(Boolean).join(" "),
+    );
   };
 
   const sendMissed = () => {
@@ -98,15 +128,7 @@ export function TelegramPostPage({ id }: { id: number }) {
   };
 
   const deleteFromGroups = () => {
-    // What the bot can still take down is read off the rows, not off the last run: a weekly
-    // post's last run may be days old, and a run's `sent` counts messages already out of reach.
-    const deliveries = p.runs.flatMap((r) => r.deliveries);
-    const reachable = new Set(
-      deliveries
-        .filter((d) => d.status === "SENT" && d.sent_at && Date.now() - new Date(d.sent_at).getTime() < DELETE_WINDOW_MS)
-        .map((d) => d.chat_id),
-    );
-    const everSent = deliveries.some((d) => d.sent_at);
+    const everSent = p.runs.some((r) => r.deliveries.some((d) => d.sent_at));
     const question = everSent
       ? `Delete this post from ${plural(reachable.size, "Telegram group")} and stop it for good? ` +
         "Messages older than 48 hours can't be deleted by the bot."
@@ -118,6 +140,7 @@ export function TelegramPostPage({ id }: { id: number }) {
         r.too_old ? `${r.too_old} too old — remove it by hand.` : "",
         r.failed ? `${r.failed} could not be deleted.` : "",
         r.in_flight ? `${r.in_flight} still sending — removed as they land.` : "",
+        r.unknown ? `${r.unknown} may still be in their group — check by hand.` : "",
       ].filter(Boolean).join(" "),
     );
   };
@@ -137,21 +160,20 @@ export function TelegramPostPage({ id }: { id: number }) {
         actions={
           <div className="flex flex-wrap gap-2">
             {editable ? <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit</Button> : null}
-            {live && repeats ? (
-              p.is_paused ? (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  disabled={busy}
-                  onClick={() => perform("resume", () => "Resumed. What the pause covered stays skipped.")}
-                >
-                  Resume
-                </Button>
-              ) : (
-                <Button size="sm" variant="secondary" disabled={busy} onClick={() => perform("pause", () => "Paused.")}>
-                  Pause
-                </Button>
-              )
+            {/* Resume for anything paused, whatever its kind: the server lets any post be paused. */}
+            {live && p.is_paused ? (
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={busy}
+                onClick={() => perform("resume", () => "Resumed. What the pause covered stays skipped.")}
+              >
+                Resume
+              </Button>
+            ) : live && repeats ? (
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => perform("pause", () => "Paused.")}>
+                Pause
+              </Button>
             ) : null}
             {live && last?.failed ? (
               <Button size="sm" disabled={busy} onClick={retry}>Retry failed</Button>
@@ -159,7 +181,7 @@ export function TelegramPostPage({ id }: { id: number }) {
             {live && last?.missed ? (
               <Button size="sm" disabled={busy} onClick={sendMissed}>Send missed now</Button>
             ) : null}
-            {live ? (
+            {live || reachable.size > 0 ? (
               <Button size="sm" variant="danger" disabled={busy} onClick={deleteFromGroups}>Delete from groups</Button>
             ) : null}
           </div>
@@ -173,6 +195,7 @@ export function TelegramPostPage({ id }: { id: number }) {
       </div>
 
       {notice ? <Alert tone="success">{notice}</Alert> : null}
+      {hint ? <Alert tone="warning">{hint}</Alert> : null}
       {error ? <Alert tone="danger">{error}</Alert> : null}
 
       <div className="rounded-2xl border border-border bg-card p-4">

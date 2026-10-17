@@ -94,7 +94,10 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
     <Modal open onClose={onClose} title={post ? "Edit post" : "New post"}>
       <div className="space-y-3">
         {groups.data?.enabled === false ? (
-          <Alert tone="warning">Posting is switched off on this server — this will be saved, not sent.</Alert>
+          <Alert tone="warning">
+            Posting is switched off on this server — Now posts are refused; scheduled posts go out at their time once it
+            is on.
+          </Alert>
         ) : null}
         {error ? <Alert tone="danger">{error}</Alert> : null}
         <Field label="Message" htmlFor={`${uid}-text`} hint={`${length}/${limit} characters`}>
@@ -146,7 +149,7 @@ export function PostForm({ post, onClose }: { post: GroupPostDetail | null; onCl
           </div>
         </Field>
         {when === "ONCE" ? (
-          <Field label="Goes out at" htmlFor={`${uid}-send-at`}>
+          <Field label="Goes out at" htmlFor={`${uid}-send-at`} hint="Your device's time.">
             <Input id={`${uid}-send-at`} type="datetime-local" value={sendAt} onChange={(e) => setSendAt(e.target.value)} />
           </Field>
         ) : null}
