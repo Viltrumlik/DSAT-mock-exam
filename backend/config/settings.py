@@ -151,6 +151,10 @@ CLASSROOM_TELEGRAM_BOT_LOGIN_ENABLED = os.getenv('CLASSROOM_TELEGRAM_BOT_LOGIN_E
 # 2026-10-20T00:00:00+05:00). Empty = off. Only payments lc-up created after this moment are
 # announced, so switching it on never replays the history.
 CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM = os.getenv('CLASSROOM_TELEGRAM_PAYMENT_MESSAGES_FROM', '').strip()
+# Posts the class bot makes into the class Telegram groups: event announcements, the evening-
+# before reminder, and the posts written in /ops/telegram-posts (plan 2026-10-17). Off: nothing
+# is sent and publishing an event creates no posts.
+TELEGRAM_GROUP_POSTS_ENABLED = os.getenv('TELEGRAM_GROUP_POSTS_ENABLED', 'False').lower() == 'true'
 # Optional passcode to gate /start (empty = anyone who messages the bot can subscribe).
 QUESTION_REPORT_BOT_JOIN_CODE = os.getenv('QUESTION_REPORT_BOT_JOIN_CODE', '').strip()
 
@@ -190,6 +194,7 @@ INSTALLED_APPS = [
     'shop.apps.ShopConfig',
     'stories.apps.StoriesConfig',
     'events.apps.EventsConfig',
+    'telegram_posts.apps.TelegramPostsConfig',
     'notifications.apps.NotificationsConfig',
     'annotations.apps.AnnotationsConfig',
     'mobile.apps.MobileConfig',
