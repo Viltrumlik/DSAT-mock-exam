@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from classes.models import Classroom
 from classes.telegram_group import chat_id_for
 
+from .models import GroupPost
+
 SUBJECTS = (Classroom.SUBJECT_MATH, Classroom.SUBJECT_ENGLISH)
 LEVELS = tuple(code for code, _label in Classroom.LEVEL_CHOICES)
 
@@ -49,9 +51,18 @@ def resolve(*, subjects=(), levels=(), classroom_ids=()) -> list[Target]:
 
 
 def for_post(post) -> list[Target]:
-    return resolve(
-        subjects=post.subjects or (), levels=post.levels or (), classroom_ids=post.classroom_ids or ()
-    )
+    subjects, levels = post.subjects or (), post.levels or ()
+    if post.kind == GroupPost.KIND_EVENT_REMINDER and post.event_id:
+        # The reminder reads the event when it goes out, like its start time: the audience the
+        # event names now, not the copy taken at Publish. The announcement keeps its copy — it
+        # was sent at Publish.
+        try:
+            chosen = normalize(post.event.telegram_audience)
+        except (ValueError, TypeError):
+            pass  # an audience that cannot be read: the post's own copy still works
+        else:
+            subjects, levels = chosen["subjects"], chosen["levels"]
+    return resolve(subjects=subjects, levels=levels, classroom_ids=post.classroom_ids or ())
 
 
 def label(*, subjects=(), levels=(), classroom_ids=()) -> str:

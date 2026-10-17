@@ -6,7 +6,8 @@ from django.test import TestCase
 
 from classes.models import Classroom
 from telegram_posts import audience
-from telegram_posts.testkit import make_room
+from telegram_posts.models import GroupPost
+from telegram_posts.testkit import make_event, make_room
 
 MATH, ENGLISH = Classroom.SUBJECT_MATH, Classroom.SUBJECT_ENGLISH
 
@@ -67,3 +68,55 @@ class LabelTests(TestCase):
         self.assertEqual(audience.label(subjects=[MATH, ENGLISH], levels=["junior"]), "Math + English · junior")
         self.assertEqual(audience.label(classroom_ids=[4, 9]), "2 chosen groups")
         self.assertEqual(audience.label(classroom_ids=[4]), "1 chosen group")
+
+
+
+class ForPostTests(TestCase):
+    """An event reminder reaches the groups the event names NOW; the announcement keeps its copy."""
+
+    def setUp(self):
+        make_room("Senior G1 Math", subject=MATH, level="senior", chat="-1001")
+        make_room("Junior G2 English", subject=ENGLISH, level="junior", chat="-1002")
+
+    def post(self, event, kind, **kw):
+        kw.setdefault("subjects", [MATH])
+        kw.setdefault("levels", [])
+        return GroupPost.objects.create(
+            event=event, kind=kind, when=GroupPost.WHEN_EVENT, active_from=event.published_at, **kw
+        )
+
+    def chats(self, post):
+        return [t.chat_id for t in audience.for_post(post)]
+
+    def test_a_reminder_follows_the_events_current_audience(self):
+        event = make_event(telegram_audience={"subjects": [MATH], "levels": []})
+        reminder = self.post(event, GroupPost.KIND_EVENT_REMINDER)
+        self.assertEqual(self.chats(reminder), ["-1001"])
+        event.telegram_audience = {"subjects": [ENGLISH], "levels": []}
+        event.save()
+        reminder = GroupPost.objects.get(pk=reminder.pk)
+        self.assertEqual(self.chats(reminder), ["-1002"])
+
+    def test_an_emptied_audience_means_every_group(self):
+        event = make_event(telegram_audience={})
+        self.assertEqual(self.chats(self.post(event, GroupPost.KIND_EVENT_REMINDER)), ["-1001", "-1002"])
+
+    def test_the_announcement_keeps_its_own_copy(self):
+        event = make_event(telegram_audience={"subjects": [ENGLISH], "levels": []})
+        announce = self.post(event, GroupPost.KIND_EVENT_ANNOUNCE)
+        self.assertEqual(self.chats(announce), ["-1001"])
+
+    def test_an_audience_that_cannot_be_read_falls_back_to_the_posts_own(self):
+        # ValueError (an unknown subject) and TypeError (a number where a list belongs).
+        for bad in ({"subjects": ["PHYSICS"]}, {"subjects": 5}, ["MATH"]):
+            with self.subTest(bad=bad):
+                event = make_event(telegram_audience=bad)
+                reminder = self.post(event, GroupPost.KIND_EVENT_REMINDER)
+                self.assertEqual(self.chats(reminder), ["-1001"])
+
+    def test_a_written_post_ignores_events_entirely(self):
+        manual = GroupPost.objects.create(
+            kind=GroupPost.KIND_MANUAL, when=GroupPost.WHEN_NOW, subjects=[ENGLISH], levels=[],
+            active_from=make_event().published_at,
+        )
+        self.assertEqual(self.chats(manual), ["-1002"])

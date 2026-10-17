@@ -39,8 +39,18 @@ def reminder_at(event) -> datetime:
 
 
 def _live_event(post, now) -> Optional[Event]:
+    """The event behind a reminder, if the reminder should still go out.
+
+    Read at send time, so every later change counts: a cancelled or started event, a moved
+    start, and the Telegram box being unticked after Publish.
+    """
     event = post.event
-    if event is None or event.status != Event.STATUS_PUBLISHED or event.starts_at <= now:
+    if (
+        event is None
+        or event.status != Event.STATUS_PUBLISHED
+        or event.starts_at <= now
+        or not event.telegram_post
+    ):
         return None
     return event
 

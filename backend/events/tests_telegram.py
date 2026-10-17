@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 from access import constants as C
 from classes.models import Classroom
 from events.models import Event
+from telegram_posts import audience, schedule, services as telegram_posts
 from telegram_posts.models import GroupPost
 from telegram_posts.testkit import TOKEN, fake_api, make_room, staff
 from users.models import User
@@ -119,9 +120,50 @@ class EventTelegramTests(TestCase):
     def test_a_telegram_failure_never_breaks_publishing(self):
         event = self.draft()
         with mock.patch("telegram_posts.services.on_event_published", side_effect=RuntimeError("boom")):
-            response = self.client.post(f"/api/events/admin/{event.pk}/publish/")
+            with self.assertLogs("events.services", "ERROR") as logged:
+                response = self.client.post(f"/api/events/admin/{event.pk}/publish/")
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.json()["announced"])
+        self.assertIn("event_telegram_posts_failed", logged.output[0])
+        self.assertIn("boom", "\n".join(logged.output))
+
+    def test_on_event_published_twice_makes_two_posts_and_sends_once(self):
+        event = self.draft(status=Event.STATUS_PUBLISHED, published_at=self.now)
+        with fake_api() as tg:
+            # on-commit callbacks run when each block closes, so each call is sent (or not) in turn
+            with self.captureOnCommitCallbacks(execute=True):
+                first = telegram_posts.on_event_published(event, now=self.now)
+            sent_after_first = list(tg.messages)
+            with self.captureOnCommitCallbacks(execute=True):
+                second = telegram_posts.on_event_published(event, now=self.now)
+        self.assertEqual(second.pk, first.pk)
+        self.assertEqual(GroupPost.objects.filter(event=event).count(), 2)
+        self.assertEqual(sorted(m[0] for m in sent_after_first), ["-1001", "-1002"])
+        self.assertEqual(tg.messages, sent_after_first)  # the second call sent nothing
+
+    # ── the reminder reads the event when it goes out ──────────────────────
+    def test_the_reminder_follows_a_changed_audience(self):
+        event = self.draft(telegram_audience={"subjects": ["MATH"], "levels": []})
+        self.publish(event)
+        reminder = GroupPost.objects.get(event=event, kind=GroupPost.KIND_EVENT_REMINDER)
+        self.assertEqual([t.chat_id for t in audience.for_post(reminder)], ["-1001"])
+        Event.objects.filter(pk=event.pk).update(telegram_audience={"subjects": ["ENGLISH"], "levels": []})
+        reminder = GroupPost.objects.select_related("event").get(pk=reminder.pk)
+        self.assertEqual([t.chat_id for t in audience.for_post(reminder)], ["-1002"])
+        # The announcement was sent at Publish and keeps what it was sent to.
+        announce = GroupPost.objects.select_related("event").get(event=event, kind=GroupPost.KIND_EVENT_ANNOUNCE)
+        self.assertEqual([t.chat_id for t in audience.for_post(announce)], ["-1001"])
+
+    def test_unticking_the_box_after_publishing_cancels_the_reminder(self):
+        event = self.draft()
+        self.publish(event)
+        reminder = GroupPost.objects.select_related("event").get(event=event, kind=GroupPost.KIND_EVENT_REMINDER)
+        evening = schedule.reminder_at(reminder.event)
+        self.assertIsNotNone(schedule.due(reminder, evening))
+        Event.objects.filter(pk=event.pk).update(telegram_post=False)
+        reminder = GroupPost.objects.select_related("event").get(pk=reminder.pk)
+        self.assertIsNone(schedule.due(reminder, evening))
+        self.assertIsNone(schedule.next_at(reminder, self.now))
 
     # ── what the ops row shows ─────────────────────────────────────────────
     def test_the_ops_payload_carries_the_summary(self):

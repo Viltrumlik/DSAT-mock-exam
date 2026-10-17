@@ -141,3 +141,14 @@ class EventReminderTests(SimpleTestCase):
 
     def test_next_at(self):
         self.assertEqual(schedule.next_at(self.post(self.event()), at(2026, 10, 21)), at(2026, 10, 24, 18, 0))
+
+    def test_an_unticked_telegram_box_cancels_the_reminder(self):
+        # The reminder reads the event when it is due, as a moved start already does: the box
+        # is the event's current choice, not a copy taken at Publish.
+        event = self.event(telegram_post=True)
+        post = self.post(event)
+        self.assertIsNotNone(schedule.due(post, at(2026, 10, 24, 18, 0)))
+        self.assertIsNotNone(schedule.next_at(post, at(2026, 10, 21)))
+        event.telegram_post = False
+        self.assertIsNone(schedule.due(post, at(2026, 10, 24, 18, 0)))
+        self.assertIsNone(schedule.next_at(post, at(2026, 10, 21)))
