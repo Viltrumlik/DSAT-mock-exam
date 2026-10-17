@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from events.models import Event
@@ -51,9 +51,21 @@ def _dispatch_run(post, run_on) -> None:
 # ── create / edit ────────────────────────────────────────────────────────────
 
 
+_OFF_FOR_NOW = "Posting to Telegram groups is switched off on this server — a Now post can't go out."
+
+
+def _refuse_now_while_off(when: str) -> None:
+    """A "Now" post saved while posting is off would sit at "now" forever: nothing sends it, and
+    switching posting on later does not (it is a one-time dispatch). Scheduled posts are different —
+    their time is still ahead, and the sweep sends them once posting is on."""
+    if when == GroupPost.WHEN_NOW and not sender.enabled():
+        raise PostRefused("off", _OFF_FOR_NOW)
+
+
 def create_post(*, data: dict, user, now=None) -> GroupPost:
     now = now or timezone.now()
     post = GroupPost(kind=GroupPost.KIND_MANUAL, created_by=user, active_from=now, **data)
+    _refuse_now_while_off(post.when)
     if post.when == GroupPost.WHEN_NOW:
         post.send_at = now
     post.save()
@@ -76,21 +88,35 @@ def ensure_editable(post, data: dict | None = None) -> None:
         raise PostRefused(
             "already_ran", "This post has already run — its timing can't change. Pause it and write a new post."
         )
+    # A paused post is never claimed, so a send time set on it passes unsent, and resume then moves
+    # active_from beyond it: the post would be stranded for good.
+    if post.is_paused and data and data.get("when") in (GroupPost.WHEN_NOW, GroupPost.WHEN_ONCE):
+        raise PostRefused("paused", "Resume the post first, then change when it goes out.")
 
 
 def update_post(post, data: dict, *, now=None) -> GroupPost:
-    """Edits change future sends only. A message already in a group is never rewritten."""
+    """Edits change future sends only. A message already in a group is never rewritten.
+
+    Saves only the fields the edit touched: the sweep may have claimed a run (`last_run_on`) or an
+    admin deleted the post since this copy was loaded, and a whole-row save would write that back.
+    """
     now = now or timezone.now()
     ensure_editable(post, data)
+    _refuse_now_while_off(data.get("when", post.when))
+    concrete = {f.name for f in GroupPost._meta.concrete_fields}
+    touched = {field for field in data if field in concrete}
     for field, value in data.items():
         setattr(post, field, value)
     if "image" in data:
         post.image_file_id = ""
+        touched.add("image_file_id")
     if SCHEDULE_FIELDS & set(data):
         post.active_from = now
+        touched.add("active_from")
     if post.when == GroupPost.WHEN_NOW:
         post.send_at = now
-    post.save()
+        touched.add("send_at")
+    post.save(update_fields=sorted(touched | {"updated_at"}))
     if post.when == GroupPost.WHEN_NOW:
         _dispatch_now(post)
     return post
@@ -118,30 +144,44 @@ def resume(post, *, now=None) -> None:
 # ── retry / missed ───────────────────────────────────────────────────────────
 
 
-def _requeue(post, status: str) -> int:
+def _requeue(post, status: str, *, skip_uncertain: bool = False) -> tuple[int, int]:
+    """Put the last run's rows of `status` back to Pending and dispatch them: `(queued, uncertain)`.
+
+    With `skip_uncertain`, a FAILED row whose message may already be in its group
+    (`sender.is_uncertain`) stays as it is and is only counted.
+    """
     if post.deleted_at:
         raise PostRefused("deleted", "This post was deleted from the groups.")
     if not sender.enabled():
         raise PostRefused("off", "Posting to Telegram groups is switched off on this server.")
     if not post.last_run_on:
-        return 0
-    queued = GroupPostDelivery.objects.filter(
-        post=post, run_on=post.last_run_on, status=status
-    ).update(status=GroupPostDelivery.STATUS_PENDING, error="", updated_at=timezone.now())
+        return 0, 0
+    rows = GroupPostDelivery.objects.filter(post=post, run_on=post.last_run_on, status=status)
+    uncertain = 0
+    if skip_uncertain:
+        found = list(rows.values_list("pk", "error"))
+        keep = [pk for pk, error in found if not sender.is_uncertain(error)]
+        uncertain = len(found) - len(keep)
+        rows = rows.filter(pk__in=keep)  # still filtered by status: a row that moved on is not re-queued
+    queued = rows.update(status=GroupPostDelivery.STATUS_PENDING, error="", updated_at=timezone.now())
     if queued:
         _dispatch_run(post, post.last_run_on)
-    return queued
+    return queued, uncertain
 
 
 def retry_failed(post) -> dict:
-    return {"queued": _requeue(post, GroupPostDelivery.STATUS_FAILED)}
+    """Re-send the last run's failed rows, except the uncertain ones: an interrupted send or an
+    unanswered request may have delivered, and a second copy in a class group cannot be unsent in
+    bulk. Those are counted so the page can tell the admin to look at them by hand."""
+    queued, uncertain = _requeue(post, GroupPostDelivery.STATUS_FAILED, skip_uncertain=True)
+    return {"queued": queued, "uncertain": uncertain}
 
 
 def send_missed_now(post, *, now=None) -> dict:
     now = now or timezone.now()
     if post.kind == GroupPost.KIND_EVENT_REMINDER and (post.event is None or post.event.starts_at <= now):
         raise PostRefused("too_late", "The event has started — its reminder would be wrong now.")
-    return {"queued": _requeue(post, GroupPostDelivery.STATUS_MISSED)}
+    return {"queued": _requeue(post, GroupPostDelivery.STATUS_MISSED)[0]}
 
 
 # ── delete from groups ───────────────────────────────────────────────────────
@@ -154,14 +194,26 @@ def delete_from_groups(post, *, now=None) -> dict:
     never wait for a setting.
     """
     now = now or timezone.now()
-    stats = {"deleted": 0, "too_old": 0, "failed": 0, "in_flight": 0}
+    stats = {"deleted": 0, "too_old": 0, "failed": 0, "in_flight": 0, "unknown": 0}
     GroupPost.objects.filter(pk=post.pk, deleted_at__isnull=True).update(deleted_at=now, updated_at=now)
     post.deleted_at = post.deleted_at or now
     # Never sent: nothing to take down, and nothing will send them now.
-    GroupPostDelivery.objects.filter(
+    never_sent = GroupPostDelivery.objects.filter(
         post=post,
         status__in=[GroupPostDelivery.STATUS_PENDING, GroupPostDelivery.STATUS_MISSED, GroupPostDelivery.STATUS_FAILED],
-    ).update(status=GroupPostDelivery.STATUS_DELETED, deleted_at=now, updated_at=now)
+    )
+    # ...except a failure that may have delivered (an interrupted send, no answer): the message
+    # could be in the group, and with no message id the bot cannot take it down. It stays Failed
+    # and is reported, so the admin knows to look.
+    uncertain = list(
+        never_sent.filter(status=GroupPostDelivery.STATUS_FAILED)
+        .filter(sender.uncertain_q())
+        .values_list("pk", flat=True)
+    )
+    stats["unknown"] = len(uncertain)
+    never_sent.exclude(pk__in=uncertain).update(
+        status=GroupPostDelivery.STATUS_DELETED, deleted_at=now, updated_at=now
+    )
     # Mid-send right now: the message may land after this call returns. `send_pending` sees the
     # post is deleted when such a row finishes and takes the message down itself; the count tells
     # the admin it is not done yet.
@@ -191,16 +243,25 @@ def delete_from_groups(post, *, now=None) -> dict:
 # ── what the console shows ───────────────────────────────────────────────────
 
 
+#: A key in a run's Counter beside the statuses: how many of its FAILED rows are uncertain
+#: (`sender.is_uncertain`). Not a status, so it is left out of every sum of the run's rows.
+UNCERTAIN = "uncertain"
+
+
 def delivery_counts(post_ids) -> dict:
     out: dict = defaultdict(lambda: defaultdict(Counter))
     rows = (
         GroupPostDelivery.objects.filter(post_id__in=list(post_ids))
         .order_by()
         .values("post_id", "run_on", "status")
-        .annotate(n=Count("id"))
+        .annotate(
+            n=Count("id"),
+            unsure=Count("id", filter=Q(status=GroupPostDelivery.STATUS_FAILED) & sender.uncertain_q()),
+        )
     )
     for row in rows:
         out[row["post_id"]][row["run_on"]][row["status"]] += row["n"]
+        out[row["post_id"]][row["run_on"]][UNCERTAIN] += row["unsure"]
     return out
 
 
@@ -210,12 +271,13 @@ def last_run(post, counts) -> dict | None:
     c = counts.get(post.pk, {}).get(post.last_run_on) or Counter()
     return {
         "run_on": post.last_run_on,
-        "total": sum(c.values()),
+        "total": sum(n for key, n in c.items() if key != UNCERTAIN),
         "sent": c[GroupPostDelivery.STATUS_SENT],
         "failed": c[GroupPostDelivery.STATUS_FAILED],
         "missed": c[GroupPostDelivery.STATUS_MISSED],
         "pending": c[GroupPostDelivery.STATUS_PENDING] + c[GroupPostDelivery.STATUS_SENDING],
         "deleted": c[GroupPostDelivery.STATUS_DELETED],
+        "uncertain": c[UNCERTAIN],
     }
 
 
@@ -285,12 +347,14 @@ def on_event_published(event, *, now=None):
 
 
 def event_summaries(event_ids) -> dict:
+    """Per event, how its announcement went. A row taken down (DELETED) is not part of `total` or
+    `sent`: it counts apart, so a fully deleted announcement reads as deleted, not as "0/0"."""
     posts = dict(
         GroupPost.objects.filter(event_id__in=list(event_ids), kind=GroupPost.KIND_EVENT_ANNOUNCE)
         .values_list("pk", "event_id")
     )
     out = {
-        event_id: {"post_id": post_id, "sent": 0, "failed": 0, "total": 0}
+        event_id: {"post_id": post_id, "sent": 0, "failed": 0, "total": 0, "deleted": 0}
         for post_id, event_id in posts.items()
     }
     rows = (
@@ -301,6 +365,9 @@ def event_summaries(event_ids) -> dict:
     )
     for row in rows:
         summary = out[posts[row["post_id"]]]
+        if row["status"] == GroupPostDelivery.STATUS_DELETED:
+            summary["deleted"] += row["n"]
+            continue
         summary["total"] += row["n"]
         if row["status"] == GroupPostDelivery.STATUS_SENT:
             summary["sent"] += row["n"]

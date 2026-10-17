@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 
 from access import constants as C
 from classes.models import Classroom
+from telegram_posts import sender
 from telegram_posts.models import GroupPost, GroupPostDelivery
 from telegram_posts.testkit import PNG_1PX, TOKEN, fake_api, make_event, make_room, staff
 from users.models import User
@@ -193,10 +194,18 @@ class CreateTests(ApiFixture):
         self.assertEqual(payload["audience_label"], "1 chosen group")  # not "2 chosen groups"
 
     @override_settings(TELEGRAM_GROUP_POSTS_ENABLED=False)
-    def test_with_the_flag_off_it_is_saved_but_not_sent(self):
+    def test_with_the_flag_off_a_now_post_is_refused_and_a_scheduled_one_is_saved(self):
         with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
-            response = self.as_(self.admin).post(URL, {"text": "a", "when": "NOW"}, format="json")
-        self.assertEqual(response.status_code, 201)
+            refused = self.as_(self.admin).post(URL, {"text": "a", "when": "NOW"}, format="json")
+        self.assertEqual(refused.status_code, 400, refused.content)
+        self.assertEqual(refused.json()["code"], "off")
+        self.assertEqual(GroupPost.objects.count(), 0)  # nothing was created: no row stuck at "now"
+        self.assertEqual(tg.messages, [])
+        later = {"text": "a", "when": "ONCE", "send_at": (timezone.now() + timedelta(days=2)).isoformat()}
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            saved = self.as_(self.admin).post(URL, later, format="json")
+        self.assertEqual(saved.status_code, 201, saved.content)
+        self.assertEqual(GroupPost.objects.count(), 1)
         self.assertEqual(tg.messages, [])
         self.assertFalse(self.as_(self.admin).get(URL).json()["enabled"])
 
@@ -284,7 +293,7 @@ class EditAndActionTests(ApiFixture):
         GroupPostDelivery.objects.create(post=post, run_on=timezone.localdate(), chat_id="-1001", status="SENT", message_id=11, sent_at=timezone.now())
         with fake_api() as tg:
             payload = self.as_(self.admin).post(f"{URL}{post.pk}/delete-from-groups/").json()
-        self.assertEqual(payload["result"], {"deleted": 1, "too_old": 0, "failed": 0, "in_flight": 0})
+        self.assertEqual(payload["result"], {"deleted": 1, "too_old": 0, "failed": 0, "in_flight": 0, "unknown": 0})
         self.assertEqual(payload["post"]["state"], "deleted")
         self.assertEqual(tg.deleted, [("-1001", 11)])
 
@@ -293,8 +302,37 @@ class EditAndActionTests(ApiFixture):
         GroupPostDelivery.objects.create(post=post, run_on=timezone.localdate(), chat_id="-1001", status="FAILED")
         with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
             payload = self.as_(self.admin).post(f"{URL}{post.pk}/retry/").json()
-        self.assertEqual(payload["result"], {"queued": 1})
+        self.assertEqual(payload["result"], {"queued": 1, "uncertain": 0})
         self.assertEqual([m[0] for m in tg.messages], ["-1001"])
+
+    def test_retry_reports_the_rows_it_would_not_resend(self):
+        post = GroupPost.objects.create(text="a", when=GroupPost.WHEN_ONCE, send_at=timezone.now(), last_run_on=timezone.localdate())
+        today = timezone.localdate()
+        GroupPostDelivery.objects.create(post=post, run_on=today, chat_id="-1001", status="FAILED", error="403: Forbidden")
+        GroupPostDelivery.objects.create(post=post, run_on=today, chat_id="-1002", status="FAILED", error=sender.INTERRUPTED)
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            payload = self.as_(self.admin).post(f"{URL}{post.pk}/retry/").json()
+        self.assertEqual(payload["result"], {"queued": 1, "uncertain": 1})
+        self.assertEqual(payload["post"]["last_run"]["failed"], 1)  # the certain one went out; the uncertain remains
+        self.assertEqual(payload["post"]["last_run"]["uncertain"], 1)
+        self.assertEqual([m[0] for m in tg.messages], ["-1001"])
+
+    def test_a_paused_post_cannot_be_moved_to_now(self):
+        post = GroupPost.objects.create(
+            text="a", when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0), is_paused=True
+        )
+        response = self.as_(self.admin).patch(f"{URL}{post.pk}/", {"when": "NOW"}, format="json")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "paused"))
+        post.refresh_from_db()
+        self.assertEqual(post.when, GroupPost.WHEN_WEEKLY)
+
+    @override_settings(TELEGRAM_GROUP_POSTS_ENABLED=False)
+    def test_an_edit_to_now_is_refused_while_posting_is_off(self):
+        post = GroupPost.objects.create(text="a", when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0))
+        response = self.as_(self.admin).patch(f"{URL}{post.pk}/", {"when": "NOW"}, format="json")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "off"))
+        post.refresh_from_db()
+        self.assertEqual(post.when, GroupPost.WHEN_WEEKLY)
 
     def test_an_unknown_action_is_404(self):
         post = GroupPost.objects.create(text="a")

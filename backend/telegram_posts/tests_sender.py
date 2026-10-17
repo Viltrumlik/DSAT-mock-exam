@@ -149,6 +149,47 @@ class SweepTests(TestCase):
         post.refresh_from_db()
         self.assertEqual(post.image_file_id, "FID-big")
 
+    def sends_a_picture_post(self, answer):
+        """Sweep a picture post whose first group's answer is `answer`; returns (post, rows, fake)."""
+        post = self.post(image=SimpleUploadedFile("mock.png", PNG_1PX, content_type="image/png"))
+        with fake_api() as tg:
+            tg.script["-1001"] = [answer]
+            sender.sweep(now=self.now)
+        post.refresh_from_db()
+        return post, self.rows(post), tg
+
+    def test_a_file_id_too_long_to_cache_is_skipped_and_the_send_still_counts(self):
+        long_id = "F" * 300  # more than the column holds: Postgres would raise after the message was delivered
+        answer = TgResult(True, {"message_id": 5, "photo": [{"file_id": long_id, "file_size": 999}]})
+        with self.assertLogs("telegram_posts", "WARNING"):
+            post, rows, tg = self.sends_a_picture_post(answer)
+        self.assertEqual((rows["-1001"].status, rows["-1001"].message_id), (SENT, 5))
+        self.assertEqual(rows["-1002"].status, SENT)
+        # Nothing was cached from the first group, so the second uploaded the picture itself (and
+        # cached its own, ordinary id).
+        self.assertEqual([p[2] for p in tg.photos], ["upload", "upload"])
+        self.assertEqual(post.image_file_id, "FID-big")
+
+    def test_a_cache_write_that_fails_after_delivery_never_raises(self):
+        from django.db import DatabaseError
+        from django.db.models.query import QuerySet
+
+        real_update = QuerySet.update
+
+        def update(queryset, **kwargs):
+            if "image_file_id" in kwargs:
+                raise DatabaseError("value too long")
+            return real_update(queryset, **kwargs)
+
+        answer = TgResult(True, {"message_id": 5, "photo": [{"file_id": "FID-ok", "file_size": 999}]})
+        with mock.patch.object(QuerySet, "update", autospec=True, side_effect=update), \
+                self.assertLogs("telegram_posts", "ERROR"):
+            post, rows, tg = self.sends_a_picture_post(answer)
+        self.assertEqual(post.image_file_id, "")
+        self.assertEqual(rows["-1001"].status, SENT)  # delivered, so recorded as delivered
+        self.assertEqual(rows["-1002"].status, SENT)
+        self.assertEqual([p[2] for p in tg.photos], ["upload", "upload"])  # nothing cached: each group uploads
+
     def test_the_button_rides_along(self):
         self.post(button_text="Ro'yxat", button_url="https://mastersat.uz/events")
         with fake_api() as tg:
@@ -368,6 +409,33 @@ class SweepTests(TestCase):
         row = post.deliveries.get()
         self.assertEqual(row.status, MISSED)
         self.assertEqual(row.error, "Nothing to send: the event was cancelled or has started.")
+
+
+class UncertainTests(SimpleTestCase):
+    """One rule says which failures may already be in the group: the bulk actions never touch those."""
+
+    def test_the_rule(self):
+        for error in (
+            sender.INTERRUPTED,
+            sender.NO_ANSWER.format("timed out"),
+            sender.NO_ANSWER.format("no details"),
+        ):
+            with self.subTest(error=error):
+                self.assertTrue(sender.is_uncertain(error))
+        for error in (
+            "", None, sender.NEVER_SENT, sender.LATE, "403: Forbidden", "The bot is not in this group any more, or may not post. 403: Forbidden",
+            "URLError: refused", "Delete failed: x",
+        ):
+            with self.subTest(error=error):
+                self.assertFalse(sender.is_uncertain(error))
+
+    def test_what_the_sender_writes_is_judged_by_the_rule(self):
+        # The strings are built in `_reason`: a read timeout (no code, not a URLError) is uncertain.
+        self.assertTrue(sender.is_uncertain(sender._reason(TgResult(False, description="timed out"))))
+        self.assertTrue(sender.is_uncertain(sender._reason(TgResult(False))))
+        self.assertFalse(sender.is_uncertain(sender._reason(TgResult(False, description="URLError: refused"))))
+        self.assertFalse(sender.is_uncertain(sender._reason(TgResult(False, error_code=403, description="Forbidden"))))
+        self.assertFalse(sender.is_uncertain(sender._reason(TgResult(False, error_code=400, description="chat not found"))))
 
 
 class WiringTests(SimpleTestCase):

@@ -192,7 +192,7 @@ class EventTelegramTests(TestCase):
         self.publish(event)
         row = self.client.get("/api/events/admin/").json()["events"][0]
         summary = row["telegram"]
-        self.assertEqual((summary["sent"], summary["failed"], summary["total"]), (2, 0, 2))
+        self.assertEqual((summary["sent"], summary["failed"], summary["total"], summary["deleted"]), (2, 0, 2, 0))
         self.assertEqual(row["telegram_audience"], {"subjects": [], "levels": []})
         self.assertTrue(row["telegram_post"])
         detail = self.client.get(f"/api/events/admin/{event.pk}/").json()

@@ -74,7 +74,10 @@ class AdminPostsView(_StaffView):
             return denied
         serializer = PostWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        post = services.create_post(data=dict(serializer.validated_data), user=request.user)
+        try:
+            post = services.create_post(data=dict(serializer.validated_data), user=request.user)
+        except services.PostRefused as exc:
+            return _refused(exc)
         return Response(_detail(post, request), status=http.HTTP_201_CREATED)
 
 

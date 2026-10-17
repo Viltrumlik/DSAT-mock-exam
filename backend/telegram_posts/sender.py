@@ -48,6 +48,11 @@ INTERRUPTED = "Interrupted while sending — it may or may not have arrived. Che
 NEVER_SENT = "Never sent — an internal error stopped this run. Retry sends it."
 NO_ANSWER = "No answer from Telegram — it may have arrived. Check the group before Retry. ({})"
 LATE = "More than an hour late — not sent on its own."
+#: A FAILED row that begins like this is uncertain: the message may already be in the group, so no
+#: bulk action (Retry, Delete from groups) treats it as "never sent". The one place the rule lives.
+UNCERTAIN_PREFIXES = (INTERRUPTED, NO_ANSWER.split("{}")[0])
+#: Telegram's file ids fit `GroupPost.image_file_id` (max_length=200); a longer one is not cached.
+FILE_ID_MAX = 200
 #: What Telegram answers to deleting a message that is already gone. That is the outcome we want.
 ALREADY_GONE = "message to delete not found"
 
@@ -56,6 +61,20 @@ _sleep = time.sleep  # tests replace it
 
 def enabled() -> bool:
     return bool(getattr(settings, "TELEGRAM_GROUP_POSTS_ENABLED", False)) and api.is_configured()
+
+
+def is_uncertain(error: str) -> bool:
+    """True for a failure whose message may have reached the group (an interrupted send, no answer
+    from Telegram). Such a row is never re-sent or marked deleted in bulk: a person looks first."""
+    return (error or "").startswith(UNCERTAIN_PREFIXES)
+
+
+def uncertain_q() -> Q:
+    """`is_uncertain` as a filter on `GroupPostDelivery` (combine it with a FAILED status filter)."""
+    q = Q()
+    for prefix in UNCERTAIN_PREFIXES:
+        q |= Q(error__startswith=prefix)
+    return q
 
 
 def claim_run(post, due) -> bool:
@@ -212,11 +231,23 @@ def _send_once(post, rendered, markup, chat_id):
         content_type=content_type, reply_markup=markup,
     )
     if result.ok:
-        file_id = api.largest_photo_file_id(result.result)
-        if file_id:
-            GroupPost.objects.filter(pk=post.pk).update(image_file_id=file_id)
-            post.image_file_id = file_id
+        _remember_file_id(post, api.largest_photo_file_id(result.result))
     return result
+
+
+def _remember_file_id(post, file_id) -> None:
+    """Cache Telegram's name for the picture so later groups skip the upload. The message is
+    already delivered, so nothing here may raise: a failure only costs the next group an upload."""
+    if not file_id:
+        return
+    if len(file_id) > FILE_ID_MAX:
+        logger.warning("telegram post %s: picture file id too long to cache (%s characters)", post.pk, len(file_id))
+        return
+    try:
+        GroupPost.objects.filter(pk=post.pk).update(image_file_id=file_id)
+        post.image_file_id = file_id
+    except Exception:
+        logger.exception("telegram post %s: could not cache the picture file id", post.pk)
 
 
 def _image_bytes(field) -> tuple[bytes, str, str]:
