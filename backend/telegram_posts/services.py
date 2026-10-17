@@ -7,12 +7,13 @@ import logging
 from collections import Counter, defaultdict
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
 
 from events.models import Event
 
-from . import schedule, sender
+from . import audience, schedule, sender
 from .models import GroupPost, GroupPostDelivery
 
 logger = logging.getLogger("telegram_posts")
@@ -248,3 +249,61 @@ def runs(post, *, limit: int = 12) -> list[dict]:
     for row in GroupPostDelivery.objects.filter(post=post, run_on__in=days).order_by("-run_on", "id"):
         grouped[row.run_on].append(row)
     return [{"run_on": day, "deliveries": grouped[day]} for day in days]
+
+
+# ── events ───────────────────────────────────────────────────────────────────
+
+
+def on_event_published(event, *, now=None):
+    """Publish's two posts: the announcement, sent now, and the evening-before reminder.
+
+    Idempotent through the (event, kind) constraint: a second Publish finds both and sends
+    nothing. Nothing at all while the flag is off or the event's box is unticked — and an event
+    published then stays unposted when the flag comes on; the switch is not retroactive.
+    """
+    if not sender.enabled() or not getattr(event, "telegram_post", False):
+        return None
+    now = now or timezone.now()
+    chosen = audience.normalize(event.telegram_audience)
+    common = {
+        "subjects": chosen["subjects"], "levels": chosen["levels"],
+        "active_from": now, "created_by": event.created_by,
+    }
+    # A savepoint: a failure here must not poison the caller's transaction.
+    with transaction.atomic():
+        announce, created = GroupPost.objects.get_or_create(
+            event=event, kind=GroupPost.KIND_EVENT_ANNOUNCE,
+            defaults={**common, "when": GroupPost.WHEN_NOW, "send_at": now},
+        )
+        GroupPost.objects.get_or_create(
+            event=event, kind=GroupPost.KIND_EVENT_REMINDER,
+            defaults={**common, "when": GroupPost.WHEN_EVENT},
+        )
+    if created:
+        _dispatch_now(announce)
+    return announce
+
+
+def event_summaries(event_ids) -> dict:
+    posts = dict(
+        GroupPost.objects.filter(event_id__in=list(event_ids), kind=GroupPost.KIND_EVENT_ANNOUNCE)
+        .values_list("pk", "event_id")
+    )
+    out = {
+        event_id: {"post_id": post_id, "sent": 0, "failed": 0, "total": 0}
+        for post_id, event_id in posts.items()
+    }
+    rows = (
+        GroupPostDelivery.objects.filter(post_id__in=list(posts))
+        .order_by()
+        .values("post_id", "status")
+        .annotate(n=Count("id"))
+    )
+    for row in rows:
+        summary = out[posts[row["post_id"]]]
+        summary["total"] += row["n"]
+        if row["status"] == GroupPostDelivery.STATUS_SENT:
+            summary["sent"] += row["n"]
+        elif row["status"] == GroupPostDelivery.STATUS_FAILED:
+            summary["failed"] += row["n"]
+    return out

@@ -6,6 +6,7 @@ one message there, not two — the same rule as `announce_classroom_bot`.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 
 from classes.models import Classroom
@@ -78,3 +79,26 @@ def picker_rows() -> list[dict]:
                 {"id": r.pk, "name": r.name, "subject": r.subject, "level": r.level, "chat_id": chat}
             )
     return rows
+
+
+def normalize(value) -> dict:
+    """{"subjects": [...], "levels": [...]} from what a form sent (a dict, or a JSON string).
+
+    Raises ValueError naming the bad value. Sorted in a fixed order, so the same choice is
+    always stored the same way.
+    """
+    if value in (None, ""):
+        return {"subjects": [], "levels": []}
+    if isinstance(value, str):
+        value = json.loads(value)
+    if not isinstance(value, dict):
+        raise ValueError('Expected {"subjects": [...], "levels": [...]}.')
+    subjects = [str(s) for s in value.get("subjects") or []]
+    levels = [str(level) for level in value.get("levels") or []]
+    bad = [s for s in subjects if s not in SUBJECTS] + [lv for lv in levels if lv not in LEVELS]
+    if bad:
+        raise ValueError(f"Unknown subject or level: {', '.join(bad)}.")
+    return {
+        "subjects": sorted(set(subjects), key=SUBJECTS.index),
+        "levels": sorted(set(levels), key=LEVELS.index),
+    }
