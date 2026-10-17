@@ -70,7 +70,6 @@ class LabelTests(TestCase):
         self.assertEqual(audience.label(classroom_ids=[4]), "1 chosen group")
 
 
-
 class ForPostTests(TestCase):
     """An event reminder reaches the groups the event names NOW; the announcement keeps its copy."""
 
