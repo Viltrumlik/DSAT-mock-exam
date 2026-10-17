@@ -2,7 +2,8 @@ import Cocoa
 import FlutterMacOS
 import WebKit
 
-// macOS is the DEVELOPMENT runner only; it never ships (the app ships on Windows).
+// The MacBook app's window. During a test the lock (lockdown/src/mac.rs) makes it borderless
+// and full screen; a borderless NSWindow normally refuses the keyboard, this one keeps it.
 //
 // MethodChannel("mastersat/dev_capture") lets the integration tour save what the window shows
 // without Screen Recording permission (this Mac has none to give):
@@ -14,6 +15,9 @@ import WebKit
 // platform views it cannot see, so the tour composites these snapshots over it.
 class MainFlutterWindow: NSWindow {
   private var captureChannel: FlutterMethodChannel?
+
+  override var canBecomeKey: Bool { true }
+  override var canBecomeMain: Bool { true }
 
   override func awakeFromNib() {
     let flutterViewController = FlutterViewController()

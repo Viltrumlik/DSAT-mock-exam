@@ -176,6 +176,15 @@ class AuthController extends ChangeNotifier implements AccessTokenSource {
       _fail(const AuthProblem(AuthProblemKind.updateRequired, 'Update the MasterSAT app to continue.'));
     } on ApiError catch (e) {
       _fail(_problemFor(e));
+    } on Object catch (e) {
+      // Anything else (the sign-in could not be saved on this computer, an answer that does not
+      // parse): never leave the form spinning on "Signing in…".
+      debugPrint('MasterSAT sign-in failed: $e');
+      _fail(const AuthProblem(
+        AuthProblemKind.server,
+        "MasterSAT couldn't finish signing you in on this computer. Press Try again.",
+        canRetry: true,
+      ));
     }
   }
 

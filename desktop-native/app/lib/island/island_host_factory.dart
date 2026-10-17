@@ -1,7 +1,7 @@
 // Picks the IslandHost implementation for this platform (architecture §2.6):
 //
 //   Windows        TextureIslandHost  (WebView2 in a Flutter texture, ms_webview2)
-//   macOS          MacosIslandHost    (development only: WKWebView, same protocol)
+//   macOS          MacosIslandHost    (WKWebView, same protocol; the MacBook app and dev runs)
 //   flutter test   FakeIslandHost     (and on any other platform)
 //
 // The runner and the engine only ever see IslandHost; they get their factory from
@@ -48,7 +48,9 @@ IslandHostMode islandHostModeFor({TargetPlatform? platform, Map<String, String>?
 ///
 /// * Windows: `TextureIslandHost`. Development builds honour `MS_ISLAND_DIR` (serve the island
 ///   from that folder instead of `<exe dir>\data\island`); release builds never do.
-/// * macOS: `MacosIslandHost` over [macosSource] (default: resolveDevIslandSource()).
+/// * macOS: `MacosIslandHost` over [macosSource]. A release build uses only the island bundled
+///   in the app (bundledIslandSource); a development run resolveDevIslandSource(), then the
+///   bundled one (a test copy installed outside the repository).
 IslandHostFactory islandHostFactory({
   IslandHostMode? mode,
   Map<String, String>? environment,
@@ -65,12 +67,15 @@ IslandHostFactory islandHostFactory({
       final folder = dir != null && dir.trim().isNotEmpty ? dir.trim() : null;
       return (kind) => TextureIslandHost(kind, islandFolder: folder);
     case IslandHostMode.macosDev:
-      final source = macosSource ?? resolveDevIslandSource(environment: env);
+      final source = macosSource ??
+          (release ? bundledIslandSource() : resolveDevIslandSource(environment: env) ?? bundledIslandSource());
       if (source == null) {
         return (kind) => MacosIslandHost.unavailable(
           kind,
-          'build the island (cd desktop-native/island && npm ci && npm run build) '
-          'or set MS_ISLAND_DIR / MS_ISLAND_URL',
+          release
+              ? 'this copy of MasterSAT has no question pages inside it; install it again'
+              : 'build the island (cd desktop-native/island && npm ci && npm run build) '
+                  'or set MS_ISLAND_DIR / MS_ISLAND_URL',
         );
       }
       return (kind) => MacosIslandHost(kind, source: source);

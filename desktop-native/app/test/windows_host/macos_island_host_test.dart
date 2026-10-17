@@ -12,6 +12,22 @@ import 'package:mastersat_app/island/texture_island_host.dart';
 import 'package:path/path.dart' as p;
 
 void main() {
+  group('bundledIslandSource (the installed MacBook app)', skip: Platform.isWindows ? 'POSIX paths' : null, () {
+    const exe = '/Applications/MasterSAT.app/Contents/MacOS/MasterSAT';
+    test('the island inside the app bundle: Contents/Resources/island', () {
+      final s = bundledIslandSource(
+        executable: exe,
+        fileExists: (path) => path == '/Applications/MasterSAT.app/Contents/Resources/island/content.html',
+      );
+      expect(s!.folder, '/Applications/MasterSAT.app/Contents/Resources/island');
+      expect(s.isProbe, isFalse);
+    });
+
+    test('a bundle without one has none (never the repo, never an environment override)', () {
+      expect(bundledIslandSource(executable: exe, fileExists: (_) => false), isNull);
+    });
+  });
+
   // A macOS development helper; its cases are written with POSIX paths.
   group('resolveDevIslandSource', skip: Platform.isWindows ? 'macOS dev host only (POSIX paths)' : null, () {
     const root = '/repo/desktop-native';
@@ -56,7 +72,7 @@ void main() {
       final s = resolveDevIslandSource(
         environment: const {},
         workingDirectory: '/',
-        executable: '$root/app/build/macos/Build/Products/Debug/mastersat_app.app/Contents/MacOS/mastersat_app',
+        executable: '$root/app/build/macos/Build/Products/Debug/MasterSAT.app/Contents/MacOS/MasterSAT',
         fileExists: exists,
       );
       expect(s!.folder, '$root/island/build/island');

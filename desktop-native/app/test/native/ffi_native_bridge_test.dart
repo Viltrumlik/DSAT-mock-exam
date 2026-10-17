@@ -237,9 +237,9 @@ void main() {
       if (!Platform.isWindows) expect(key.lengthSync(), 32, reason: 'dev hosts: raw key (Windows: a DPAPI blob)');
     });
 
-    test('protect/unprotect: DPAPI on Windows, unsupported elsewhere', () {
+    test('protect/unprotect: DPAPI on Windows, the sealed data key on the MacBook app', () {
       final token = Uint8List.fromList(utf8.encode('refresh-token-abc'));
-      if (Platform.isWindows) {
+      if (Platform.isWindows || Platform.isMacOS) {
         final blob = b.protect(token);
         expect(blob, isNot(token));
         expect(b.unprotect(blob), token);

@@ -1,6 +1,6 @@
-// MacosIslandHost — DEVELOPMENT ONLY (architecture §2.6, §9 tier B): the same island protocol on
-// the macOS dev runner, through webview_flutter's WKWebView. It checks flows, not looks; nothing
-// here ships (the Windows app uses TextureIslandHost).
+// MacosIslandHost (architecture §2.6, §9 tier B): the same island protocol on macOS, through
+// webview_flutter's WKWebView. Born as the development host; since 0.3.1 it is also the MacBook
+// app's host (the Windows app uses TextureIslandHost).
 //
 // Transport (the island's `webkit` transport, island/src/transport.ts):
 //   web → native  webkit.messageHandlers.ms.postMessage(JSON text)  → JavaScriptChannel "ms"
@@ -12,7 +12,10 @@
 // http://127.0.0.1:<port>/<page>. Navigation away from that origin is refused, like the Windows
 // policy (plugins/ms_webview2/windows/ms_policy.cc).
 //
-// Where the island comes from (resolveDevIslandSource), first match wins:
+// A release (installed) app loads ONLY the island bundled inside it, MasterSAT.app/Contents/
+// Resources/island (bundledIslandSource; packaging/macos/build-app.sh puts it there).
+//
+// Where a development run's island comes from (resolveDevIslandSource), first match wins:
 //   1. MS_ISLAND_URL  an already running dev server (e.g. `npm run dev` → http://127.0.0.1:5317/)
 //   2. MS_ISLAND_DIR  a folder with content.html
 //   3. desktop-native/island/build/island   (`npm run build`), found by walking up from the
@@ -49,6 +52,15 @@ class IslandSource {
 
   @override
   String toString() => folder != null ? 'folder $folder${isProbe ? ' (S0 probe)' : ''}' : 'url $url';
+}
+
+/// The island inside the installed app: `<App>.app/Contents/MacOS/<exe>` →
+/// `<App>.app/Contents/Resources/island`. Null when the bundle has none (a bare `flutter build`).
+IslandSource? bundledIslandSource({String? executable, bool Function(String path)? fileExists}) {
+  final exists = fileExists ?? (String path) => File(path).existsSync();
+  final exe = executable ?? Platform.resolvedExecutable;
+  final folder = p.join(p.dirname(p.dirname(exe)), 'Resources', 'island');
+  return exists(p.join(folder, 'content.html')) ? IslandSource.folder(p.normalize(folder)) : null;
 }
 
 /// Finds the island for development runs (see the file comment for the order). Null when there
@@ -230,6 +242,11 @@ class WkIslandWebview implements IslandWebview {
   final IslandSource source;
 
   WebViewController? _controller;
+
+  /// The controller once [initialize] made it. [build] listens: a host widget built before
+  /// then (the review screen builds once and only rebuilds on Next) must show the page the
+  /// moment it exists — 0.3.0 drew an empty box until the next rebuild.
+  final ValueNotifier<WebViewController?> _ready = ValueNotifier(null);
   IslandFolderServer? _server;
   Uri? _base;
 
@@ -286,6 +303,7 @@ class WkIslandWebview implements IslandWebview {
       ),
     );
     _controller = controller;
+    _ready.value = controller;
   }
 
   @override
@@ -339,11 +357,11 @@ class WkIslandWebview implements IslandWebview {
   Future<void> releaseFocus() async {}
 
   @override
-  Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller == null) return const SizedBox.expand();
-    return WebViewWidget(controller: controller);
-  }
+  Widget build(BuildContext context) => ValueListenableBuilder<WebViewController?>(
+        valueListenable: _ready,
+        builder: (context, controller, _) =>
+            controller == null ? const SizedBox.expand() : WebViewWidget(controller: controller),
+      );
 
   @override
   Future<void> dispose() async {

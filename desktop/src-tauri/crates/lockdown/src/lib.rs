@@ -57,6 +57,7 @@ pub struct BatteryStatus {
 /// Programs that could show answers or share the screen. Matched case-insensitively against the
 /// running process image names. Extend by adding a row; the display name is what the pre-check
 /// screen shows, and `closable` is whether the shell offers to close it.
+#[cfg_attr(not(windows), allow(dead_code))]
 const BLOCKED: &[(&str, &str, bool)] = &[
     ("telegram.exe", "Telegram", true),
     ("discord.exe", "Discord", true),
@@ -86,6 +87,7 @@ fn is_ok(displays: i32, remote: bool, vm: bool, apps: &[BlockedApp]) -> bool {
 /// Window classes that belong to Windows' own shell (taskbar, desktop, Start, Task View, search,
 /// notification flyouts). They are never "an app" to close, and the guard never minimises them —
 /// taking the foreground back is enough to dismiss them.
+#[cfg_attr(not(windows), allow(dead_code))]
 const SHELL_CLASSES: &[&str] = &[
     "Shell_TrayWnd",
     "Shell_SecondaryTrayWnd",
@@ -104,6 +106,7 @@ const SHELL_CLASSES: &[&str] = &[
 ];
 
 /// Processes whose windows are part of Windows itself (input, Start, search, lock screen).
+#[cfg_attr(not(windows), allow(dead_code))]
 const SYSTEM_EXES: &[&str] = &[
     "textinputhost.exe",
     "searchhost.exe",
@@ -121,6 +124,7 @@ const SYSTEM_EXES: &[&str] = &[
 
 /// The name the pre-check shows for a program found by its window, when its file has no
 /// description: the image name without ".exe".
+#[cfg_attr(not(windows), allow(dead_code))]
 fn exe_stem(exe: &str) -> String {
     let stem = exe.strip_suffix(".exe").unwrap_or(exe);
     let mut c = stem.chars();
@@ -802,11 +806,18 @@ mod imp {
     }
 }
 
-// ─────────────────────────────── other hosts ───────────────────────────────
-// A developer's Mac and the Linux CI job that runs `cargo test` compile these no-ops. They are
-// never shipped — the installer is built on Windows — so they only need to be honest placeholders.
+// ───────────────────────────────── macOS ───────────────────────────────────
+// The MacBook app (mac.rs): AppKit's kiosk options, the foreground guard, the strict pre-check.
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+#[path = "mac.rs"]
+mod imp;
+
+// ─────────────────────────────── other hosts ───────────────────────────────
+// The Linux CI job that runs `cargo test` compiles these no-ops. They are never shipped, so they
+// only need to be honest placeholders.
+
+#[cfg(not(any(windows, target_os = "macos")))]
 mod imp {
     use super::{BatteryStatus, PrecheckReport};
 

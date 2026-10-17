@@ -199,12 +199,18 @@ fn release_on_window_thread(r: Release, wait: bool) {
     }
 }
 
+/// Whether `ms_lock_exit` has a lock to undo. On Windows a 0 handle means ms_init never ran, so
+/// nothing was engaged (a dev host's lockdown release is a no-op anyway). The MacBook app has no
+/// handle at all — it calls `ms_init(0, …)` and mac.rs finds the window through AppKit — and its
+/// lock is real: skipping the release there left the machine locked after the paper was in.
+fn releases_on_exit(hwnd: isize) -> bool {
+    hwnd != 0 || cfg!(target_os = "macos")
+}
+
 /// `ms_lock_exit`: safe when not locked.
 pub fn exit() {
     let r = take_release(&mut state());
-    if r.hwnd == 0 {
-        // ms_init never ran (Windows: nothing was engaged), or a dev host, which has no window
-        // and whose lockdown.rs release is a no-op.
+    if !releases_on_exit(r.hwnd) {
         return;
     }
     release_on_window_thread(r, true);
@@ -345,6 +351,13 @@ mod tests {
         let mut s = Shared::new();
         s.last_heartbeat = t0;
         assert!(watchdog_tick(&mut s, t0 + Duration::from_secs(3600)).is_none());
+    }
+
+    #[test]
+    fn exit_releases_a_windows_lock_and_every_macbook_lock() {
+        assert!(releases_on_exit(42));
+        // The MacBook app calls ms_init(0, …): its 0 handle still holds a real lock.
+        assert_eq!(releases_on_exit(0), cfg!(target_os = "macos"));
     }
 
     #[test]

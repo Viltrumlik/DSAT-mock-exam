@@ -26,6 +26,10 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<!-- Skia, not Impeller (as the Windows runner, launch_policy.h): Impeller's Metal glyph atlas
+	     garbled text while scrolling the past-paper list on a MacBook (0.3.0). -->
+	<key>FLTEnableImpeller</key>
+	<false/>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 	<key>NSAppTransportSecurity</key>

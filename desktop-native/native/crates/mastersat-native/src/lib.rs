@@ -293,11 +293,22 @@ fn protect_op(data: &[u8]) -> MsResult<Vec<u8>> {
 fn unprotect_op(data: &[u8]) -> MsResult<Vec<u8>> {
     dpapi::unprotect(data, None)
 }
-#[cfg(not(windows))]
+/// The MacBook app: sealed (AES-256-GCM) with this user's data key, which lives in the app's own
+/// sandbox container (`key.bin`, 0600). Same boundary as DPAPI's current-user scope: another
+/// account on the Mac cannot read the tokens; this account's own processes could, on Windows too.
+#[cfg(target_os = "macos")]
+fn protect_op(data: &[u8]) -> MsResult<Vec<u8>> {
+    crypto::seal(data)
+}
+#[cfg(target_os = "macos")]
+fn unprotect_op(data: &[u8]) -> MsResult<Vec<u8>> {
+    crypto::open(data)
+}
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn protect_op(_data: &[u8]) -> MsResult<Vec<u8>> {
     Err(MsError::unsupported("DPAPI (ms_protect)"))
 }
-#[cfg(not(windows))]
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn unprotect_op(_data: &[u8]) -> MsResult<Vec<u8>> {
     Err(MsError::unsupported("DPAPI (ms_unprotect)"))
 }

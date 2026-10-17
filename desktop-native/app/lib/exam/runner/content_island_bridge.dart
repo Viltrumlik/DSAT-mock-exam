@@ -191,7 +191,9 @@ class ContentIslandBridge {
       ),
     );
     _view = v;
-    if (v.inputLocked) _post(const ViewSetMessage(inputLocked: true));
+    // Always say which: the page keeps its lock through `init`, and a runner attaching to a page
+    // that is already up (midterm module 2 after module 1's 0:00) must lift it explicitly.
+    _post(ViewSetMessage(inputLocked: v.inputLocked));
     _sync();
   }
 
