@@ -77,6 +77,16 @@ describe("TelegramPostPage", () => {
     expect(text()).toContain("403: Forbidden: bot was kicked");
   });
 
+  it("names a post that goes out now without an empty slot in its header", async () => {
+    useTelegramPost.mockReturnValue({
+      data: detail({ when: "NOW", weekdays: [], time_of_day: null, next_send_at: null }),
+      isPending: false, isError: false, refetch: vi.fn(),
+    });
+    await render();
+    expect(text()).toContain("Now · All groups");
+    expect(text()).not.toContain("·  ·");
+  });
+
   it("retries only when something failed", async () => {
     await render();
     await act(async () => button("Retry failed")!.click());

@@ -80,6 +80,7 @@ export function TelegramPostsPage() {
             {rows.map((post) => {
               const state = STATE_BADGE[post.state];
               const sent = sentLabel(post);
+              const schedule = scheduleLabel(post);
               return (
                 <li key={post.id} className="flex flex-wrap items-center gap-3 px-5 py-3.5">
                   <div className="min-w-0 flex-1">
@@ -92,7 +93,7 @@ export function TelegramPostsPage() {
                     <p className="flex flex-wrap items-center gap-x-2 text-xs font-semibold text-muted-foreground">
                       <Badge variant={state.variant}>{state.label}</Badge>
                       <span>{kindLabel(post)}</span>
-                      <span>{scheduleLabel(post)}</span>
+                      {schedule ? <span>{schedule}</span> : null}
                       <span>{post.audience_label}</span>
                       {post.next_send_at ? <span>Next: {new Date(post.next_send_at).toLocaleString()}</span> : null}
                       {sent ? <span>{sent}</span> : null}

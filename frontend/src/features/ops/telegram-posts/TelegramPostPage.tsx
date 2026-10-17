@@ -95,7 +95,8 @@ export function TelegramPostPage({ id }: { id: number }) {
       <OpsPageHeader
         section="Telegram posts"
         title={firstLine(p.preview || p.text) || "Post"}
-        description={`${kindLabel(p)} · ${scheduleLabel(p)} · ${p.audience_label}`}
+        // A "Now" post has no schedule to name; an empty slot would leave "Now ·  · All groups".
+        description={[kindLabel(p), scheduleLabel(p), p.audience_label].filter(Boolean).join(" · ")}
         actions={
           <div className="flex flex-wrap gap-2">
             {editable ? <Button size="sm" variant="secondary" onClick={() => setEditing(true)}>Edit</Button> : null}
