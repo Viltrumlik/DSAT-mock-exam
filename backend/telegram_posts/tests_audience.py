@@ -52,6 +52,12 @@ class ResolveTests(TestCase):
             {"id": self.m_sen.pk, "name": "Senior G1 Math", "subject": MATH, "level": "senior", "chat_id": "-1001"},
         )
 
+    def test_a_blank_chat_id_is_no_group(self):
+        blank = make_room("Blank chat", chat="   ")
+        self.assertNotIn(blank.pk, [r["id"] for r in audience.picker_rows()])
+        self.assertTrue(all(r["chat_id"] for r in audience.picker_rows()))
+        self.assertFalse(any("Blank chat" in t.names for t in audience.resolve()))
+
 
 class LabelTests(TestCase):
     def test_labels(self):

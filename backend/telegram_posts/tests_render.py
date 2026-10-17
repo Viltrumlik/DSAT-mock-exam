@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import html
 import re
+from unittest import mock
 
 from django.test import SimpleTestCase, TestCase, override_settings
 
@@ -12,6 +14,12 @@ from telegram_posts import texts as T
 from telegram_posts.models import GroupPost
 from telegram_posts.testkit import at, make_event
 from users.models import User
+
+
+def telegram_units(markup: str) -> int:
+    """Telegram's count, worked out here independently of `render.visible_len`."""
+    plain = html.unescape(re.sub(r"<[^>]+>", "", markup))
+    return len(plain.encode("utf-16-le")) // 2
 
 
 class WhenTests(SimpleTestCase):
@@ -33,6 +41,13 @@ class WhenTests(SimpleTestCase):
 
 @override_settings(EMAIL_SITE_URL="https://mastersat.uz")
 class EventTextTests(TestCase):
+    def setUp(self):
+        # A reminder reads the clock. Pin it to the evening before make_event's 25 Oct start,
+        # so the reminder tests keep their meaning when the calendar passes that date.
+        clock = mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 24, 18, 0))
+        clock.start()
+        self.addCleanup(clock.stop)
+
     def test_the_announcement_lines(self):
         event = make_event(title="Admission <Workshop> & Q&A", description="Bring your questions.")
         result = render.event_announcement(event)
@@ -93,6 +108,27 @@ class EventTextTests(TestCase):
         event.status = Event.STATUS_CANCELLED
         self.assertIsNone(render.render(GroupPost(kind=GroupPost.KIND_EVENT_ANNOUNCE, event=event)))
 
+    def test_no_reminder_once_the_event_has_started(self):
+        event = make_event()  # starts 25 Oct at 12:30
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 12, 29)):
+            self.assertIsNotNone(render.event_reminder(event))
+        with mock.patch("django.utils.timezone.now", return_value=at(2026, 10, 25, 12, 30)):
+            self.assertIsNone(render.event_reminder(event))
+            self.assertIsNone(render.render(GroupPost(kind=GroupPost.KIND_EVENT_REMINDER, event=event)))
+
+    def test_a_cut_fills_the_text_limit_exactly(self):
+        text = render.event_announcement(make_event(description="x" * 5000)).text
+        self.assertEqual(render.visible_len(text), render.TEXT_MAX)
+        self.assertTrue(text.endswith(T.MORE_ON_SITE))
+
+    def test_emoji_count_two_units_against_the_caption_limit(self):
+        event = make_event(description="😀" * 900)
+        event.cover_image = "events/cover.png"
+        text = render.event_announcement(event).text
+        self.assertLessEqual(telegram_units(text), render.CAPTION_MAX)
+        self.assertTrue(text.endswith(T.MORE_ON_SITE))
+        self.assertGreaterEqual(telegram_units(text), render.CAPTION_MAX - 1)  # the room is used
+
 
 class ManualTextTests(SimpleTestCase):
     def test_text_is_escaped(self):
@@ -112,3 +148,23 @@ class ManualTextTests(SimpleTestCase):
         post = GroupPost(text="y" * 2000)
         post.image = "telegram_posts/p.png"
         self.assertLessEqual(render.visible_len(render.manual(post).text), render.CAPTION_MAX)
+
+    def test_an_over_limit_picture_post_ends_with_a_bare_ellipsis(self):
+        post = GroupPost(text="y" * 2000)
+        post.image = "telegram_posts/p.png"
+        text = render.manual(post).text
+        self.assertTrue(text.endswith("…"))
+        self.assertNotIn(T.MORE_ON_SITE, text)  # the site has no copy of an admin's post
+        self.assertLessEqual(render.visible_len(text), render.CAPTION_MAX)
+
+    def test_a_cut_fills_the_text_limit_exactly(self):
+        text = render.manual(GroupPost(text="x" * 5000)).text
+        self.assertEqual(render.visible_len(text), render.TEXT_MAX)
+        self.assertTrue(text.endswith("…"))
+
+
+class TgLenTests(SimpleTestCase):
+    def test_telegram_counts_utf16_units(self):
+        self.assertEqual(render.tg_len("a"), 1)
+        self.assertEqual(render.tg_len("📢"), 2)
+        self.assertEqual(render.visible_len("<b>📢</b> &amp;"), 4)  # 📢 is 2, the space 1, & 1

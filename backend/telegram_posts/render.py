@@ -46,22 +46,46 @@ def when_uz(starts_at, ends_at=None) -> str:
     return out
 
 
+def tg_len(s: str) -> int:
+    """Telegram's length of `s` in UTF-16 code units: what JavaScript's ``string.length`` counts,
+    so the console's counter agrees with the server. An emoji is 2 here, though Python counts 1.
+    """
+    return len(s.encode("utf-16-le")) // 2
+
+
 def visible_len(markup: str) -> int:
-    """How long Telegram counts this: tags dropped, entities as one character each."""
-    return len(html.unescape(re.sub(r"<[^>]+>", "", markup)))
+    """How long Telegram counts this: tags dropped, entities decoded, in UTF-16 units."""
+    return tg_len(html.unescape(re.sub(r"<[^>]+>", "", markup)))
 
 
-def _fit(head: str, body: str, limit: int) -> str:
-    """``head + esc(body)``, with `body` cut so the whole fits `limit`.
+def _cut(body: str, budget: int) -> str:
+    """The longest start of `body` whose `tg_len` is at most `budget`.
+
+    Taken one character at a time, so a surrogate pair (an emoji) is never split.
+    """
+    out: list[str] = []
+    used = 0
+    for ch in body[: max(0, budget)]:  # each character is at least one unit: `budget` is enough
+        n = tg_len(ch)
+        if used + n > budget:
+            break
+        out.append(ch)
+        used += n
+    return "".join(out)
+
+
+def _fit(head: str, body: str, limit: int, suffix: str = T.MORE_ON_SITE) -> str:
+    """``head + esc(body)``, with `body` cut so the whole fits `limit` (UTF-16 units).
 
     The cut is made on the RAW text, before escaping: cutting the escaped text could split
     "&amp;" into "&am", and Telegram rejects the whole message over one broken entity.
+    A cut ends with `suffix`.
     """
     whole = head + esc(body)
     if visible_len(whole) <= limit:
         return whole
-    budget = limit - visible_len(head) - visible_len(T.MORE_ON_SITE)
-    return head + esc(body[: max(0, budget)].rstrip()) + T.MORE_ON_SITE
+    budget = limit - visible_len(head) - visible_len(suffix)
+    return head + esc(_cut(body, budget).rstrip()) + suffix
 
 
 def events_url() -> str:
@@ -92,6 +116,9 @@ def event_announcement(event) -> Rendered:
 def event_reminder(event) -> Optional[Rendered]:
     if event.status != Event.STATUS_PUBLISHED:
         return None
+    if event.starts_at <= timezone.now():
+        # "Ertaga" is untrue once the event is under way: a retry or a late send must not post it.
+        return None
     left = event.seats_left
     lines = [T.REMINDER_HEAD.format(title=esc(event.title)), ""] + _when_and_place(event)
     lines.append(T.SEATS_LEFT.format(n=left) if left > 0 else T.SEATS_FULL)
@@ -102,7 +129,9 @@ def event_reminder(event) -> Optional[Rendered]:
 
 def manual(post) -> Rendered:
     image = post.image if post.image else None
-    text = _fit("", (post.text or "").strip(), CAPTION_MAX if image else TEXT_MAX)
+    text = _fit(
+        "", (post.text or "").strip(), CAPTION_MAX if image else TEXT_MAX, suffix=T.MANUAL_CUT
+    )
     button = (post.button_text, post.button_url) if post.button_text and post.button_url else None
     return Rendered(text=text, image=image, button=button)
 

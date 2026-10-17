@@ -66,8 +66,15 @@ def label(*, subjects=(), levels=(), classroom_ids=()) -> str:
 
 
 def picker_rows() -> list[dict]:
-    """Every class a post can reach, for the console's audience picker and its group count."""
-    return [
-        {"id": r.pk, "name": r.name, "subject": r.subject, "level": r.level, "chat_id": chat_id_for(r)}
-        for r in _rooms()
-    ]
+    """Every class a post can reach, for the console's audience picker and its group count.
+
+    A chat id that is only spaces is no group, so the class is no row: `resolve` drops it too.
+    """
+    rows = []
+    for r in _rooms():
+        chat = chat_id_for(r)
+        if chat:
+            rows.append(
+                {"id": r.pk, "name": r.name, "subject": r.subject, "level": r.level, "chat_id": chat}
+            )
+    return rows

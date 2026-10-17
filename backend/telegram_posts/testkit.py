@@ -1,4 +1,5 @@
-"""Helpers shared by this app's tests. Named so test discovery (``test*.py``) skips it."""
+"""Helpers shared by this app's tests. This file holds no tests: it matches ``test*.py``, so
+discovery imports it and finds nothing to run. The name stays, because later tests import it."""
 
 from __future__ import annotations
 
