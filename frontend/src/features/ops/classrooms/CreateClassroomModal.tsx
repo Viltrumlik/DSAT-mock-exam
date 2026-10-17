@@ -5,7 +5,7 @@ import { classesApi, examsAdminApi } from "@/lib/api";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { useBranches, useRegions } from "@/features/org/orgHooks";
 import { Alert, Button, Checkbox, Field, Input, Modal, Select } from "@/components/ui";
-import { serverReason } from "./classroomsApi";
+import { serverReason, telegramChatIdProblem } from "./classroomsApi";
 
 /**
  * "Add classroom" — moved unchanged from the old Classroom governance page when Classrooms became a
@@ -98,12 +98,14 @@ export function CreateClassroomModal({
   );
   /** Does the school have anywhere to put a classroom at all? */
   const hasAnyBranch = (branches.data ?? []).some((b) => b.is_active);
+  const chatIdProblem = telegramChatIdProblem(form.telegramChatId);
 
   async function submit() {
     if (!form.name.trim()) return setError("Give the classroom a name.");
     if (!form.level) return setError("Choose a level for the classroom.");
     // Required only once the school has a branch: a school without regions is not blocked.
     if (hasAnyBranch && !form.branchId) return setError("Choose the region and branch this class meets at.");
+    if (chatIdProblem) return setError(chatIdProblem);
     setBusy(true);
     setError(null);
     try {
@@ -325,6 +327,7 @@ export function CreateClassroomModal({
         <Field
           label="Telegram group"
           htmlFor="create-telegram-chat"
+          error={chatIdProblem}
           hint="Optional, and the only way to attach a group. Add the bot to it as an administrator (invite + ban rights), send /chatid there, and paste the number here. Each student then gets their own single-use invite from the class page, and a frozen account is taken out automatically."
         >
           <Input
@@ -332,6 +335,7 @@ export function CreateClassroomModal({
             value={form.telegramChatId}
             onChange={(e) => setForm({ ...form, telegramChatId: e.target.value })}
             placeholder="-1001234567890"
+            invalid={!!chatIdProblem}
           />
         </Field>
       </div>
