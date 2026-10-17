@@ -25,7 +25,7 @@ describe("OPS_NAV_GROUPS", () => {
       "Exam dates",
     ]);
     expect(OPS_NAV_GROUPS[3].items.map((i) => i.label)).toEqual(["lc-up", "Finance", "Support", "Shop"]);
-    expect(OPS_NAV_GROUPS[4].items.map((i) => i.label)).toEqual(["Events", "Stories", "Surveys"]);
+    expect(OPS_NAV_GROUPS[4].items.map((i) => i.label)).toEqual(["Events", "Telegram posts", "Stories", "Surveys"]);
     expect(OPS_NAV_GROUPS[5].items.map((i) => i.label)).toEqual(["Mobile app", "Broadcast"]);
   });
 
@@ -74,8 +74,9 @@ describe("visibleNav", () => {
       "/ops/support",
       "/ops/shop",
       "/ops/events",
+      "/ops/telegram-posts",
     ]);
-    // Content keeps Events only; System is gone.
+    // Content keeps Events and Telegram posts; System is gone.
     expect(captions(groups)).toEqual([null, "People", "Teaching", "Centre", "Content"]);
   });
 
