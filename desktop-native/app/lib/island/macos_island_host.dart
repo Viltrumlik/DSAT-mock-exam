@@ -242,6 +242,11 @@ class WkIslandWebview implements IslandWebview {
   final IslandSource source;
 
   WebViewController? _controller;
+
+  /// The controller once [initialize] made it. [build] listens: a host widget built before
+  /// then (the review screen builds once and only rebuilds on Next) must show the page the
+  /// moment it exists — 0.3.0 drew an empty box until the next rebuild.
+  final ValueNotifier<WebViewController?> _ready = ValueNotifier(null);
   IslandFolderServer? _server;
   Uri? _base;
 
@@ -298,6 +303,7 @@ class WkIslandWebview implements IslandWebview {
       ),
     );
     _controller = controller;
+    _ready.value = controller;
   }
 
   @override
@@ -351,11 +357,11 @@ class WkIslandWebview implements IslandWebview {
   Future<void> releaseFocus() async {}
 
   @override
-  Widget build(BuildContext context) {
-    final controller = _controller;
-    if (controller == null) return const SizedBox.expand();
-    return WebViewWidget(controller: controller);
-  }
+  Widget build(BuildContext context) => ValueListenableBuilder<WebViewController?>(
+        valueListenable: _ready,
+        builder: (context, controller, _) =>
+            controller == null ? const SizedBox.expand() : WebViewWidget(controller: controller),
+      );
 
   @override
   Future<void> dispose() async {
