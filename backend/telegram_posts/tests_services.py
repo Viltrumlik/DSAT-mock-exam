@@ -59,6 +59,55 @@ class ServiceTests(TestCase):
             services.update_post(post, {"text": "x"})
         self.assertEqual(caught.exception.code, "event_post")
 
+    def ran_weekly(self, **kw):
+        kw.setdefault("text", "a")
+        return GroupPost.objects.create(
+            when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0),
+            active_from=at(2026, 10, 1), last_run_on=date(2026, 10, 24), **kw,
+        )
+
+    def test_a_post_that_has_run_cannot_become_a_once_post(self):
+        post = self.ran_weekly()
+        with self.assertRaises(services.PostRefused) as caught:
+            services.update_post(
+                post, {"when": GroupPost.WHEN_ONCE, "send_at": at(2026, 10, 31, 18)}, now=at(2026, 10, 24, 19),
+            )
+        self.assertEqual(caught.exception.code, "already_ran")
+        post.refresh_from_db()
+        self.assertEqual(post.when, GroupPost.WHEN_WEEKLY)
+
+    def test_a_post_that_has_run_cannot_become_a_now_post(self):
+        post = self.ran_weekly()
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            with self.assertRaises(services.PostRefused) as caught:
+                services.update_post(post, {"when": GroupPost.WHEN_NOW}, now=at(2026, 10, 24, 19))
+        self.assertEqual(caught.exception.code, "already_ran")
+        self.assertEqual(tg.messages, [])
+
+    def test_a_weekly_post_that_has_not_run_can_become_now_and_goes_out(self):
+        post = GroupPost.objects.create(
+            text="a", when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0), active_from=at(2026, 10, 1),
+        )
+        with fake_api() as tg, self.captureOnCommitCallbacks(execute=True):
+            services.update_post(post, {"when": GroupPost.WHEN_NOW})
+        self.assertEqual(len(tg.messages), 2)
+        post.refresh_from_db()
+        self.assertEqual(post.last_run_on, timezone.localdate())
+
+    def test_a_weekly_days_and_time_edit_after_a_run_is_still_allowed(self):
+        post = self.ran_weekly()
+        now = at(2026, 10, 24, 19)
+        services.update_post(post, {"weekdays": [4, 5], "time_of_day": time(19, 0), "text": "b"}, now=now)
+        post.refresh_from_db()
+        self.assertEqual((post.weekdays, post.time_of_day, post.text), ([4, 5], time(19, 0), "b"))
+        self.assertEqual(post.active_from, now)
+        self.assertEqual(post.last_run_on, date(2026, 10, 24))
+
+    def test_the_already_sent_refusal_points_to_what_can_be_done(self):
+        with self.assertRaises(services.PostRefused) as caught:
+            services.update_post(self.sent_post(), {"text": "x"})
+        self.assertEqual(caught.exception.message, "This post's time has passed. Write a new post, or use Send missed now.")
+
     def test_a_post_that_has_gone_out_is_not_edited(self):
         with self.assertRaises(services.PostRefused) as caught:
             services.update_post(self.sent_post(), {"text": "x"})
@@ -94,6 +143,17 @@ class ServiceTests(TestCase):
         services.resume(post, now=at(2026, 10, 24, 18, 30))
         self.assertIsNone(schedule.due(post, at(2026, 10, 24, 18, 31)))
         self.assertEqual(schedule.next_at(post, at(2026, 10, 24, 18, 31)), at(2026, 10, 31, 18, 0))
+
+    def test_resume_on_a_post_that_is_not_paused_changes_nothing(self):
+        # A stray Resume at 18:00:30 must not move active_from past the 18:00 run still due.
+        post = GroupPost.objects.create(
+            text="a", when=GroupPost.WHEN_WEEKLY, weekdays=[5], time_of_day=time(18, 0), active_from=at(2026, 10, 1),
+        )
+        just_after = at(2026, 10, 24, 18, 0) + timedelta(seconds=30)
+        services.resume(post, now=just_after)
+        post.refresh_from_db()
+        self.assertEqual(post.active_from, at(2026, 10, 1))
+        self.assertIsNotNone(schedule.due(post, just_after))
 
     # ── retry / missed ─────────────────────────────────────────────────────
     def test_retry_requeues_only_the_failed_rows_of_the_last_run(self):
@@ -162,7 +222,7 @@ class ServiceTests(TestCase):
         never = D.objects.create(post=post, run_on=date(2026, 10, 24), chat_id="-1003", status=D.STATUS_FAILED)
         with fake_api() as tg:
             stats = services.delete_from_groups(post, now=now)
-        self.assertEqual(stats, {"deleted": 1, "too_old": 1, "failed": 0})
+        self.assertEqual(stats, {"deleted": 1, "too_old": 1, "failed": 0, "in_flight": 0})
         self.assertEqual(tg.deleted, [("-1001", 11)])
         post.refresh_from_db()
         self.assertEqual(post.deleted_at, now)
@@ -279,3 +339,99 @@ class SendRunTests(TestCase):
             result = tasks.send_group_post_run(self.post.pk, "2026-10-24")
         self.assertEqual(result["sent"], 2)
         self.assertEqual(len(tg.messages), 2)
+
+
+@override_settings(
+    TELEGRAM_GROUP_POSTS_ENABLED=True, CLASSROOM_TELEGRAM_BOT_TOKEN=TOKEN,
+    CELERY_TASK_ALWAYS_EAGER=True, CELERY_BROKER_URL="",
+)
+class DeleteDuringSendTests(TestCase):
+    """A row SENDING when "Delete from groups" runs finishes as SENT: the sender takes it down."""
+
+    def setUp(self):
+        patch = mock.patch("telegram_posts.sender._sleep")
+        patch.start()
+        self.addCleanup(patch.stop)
+        make_room("Senior G1 Math", chat="-1001")
+        make_room("Junior G2 Math", level="junior", chat="-1002")
+        self.run_on = date(2026, 10, 24)
+        self.post = GroupPost.objects.create(
+            text="Mock!", when=GroupPost.WHEN_ONCE, send_at=at(2026, 10, 24, 18), last_run_on=self.run_on,
+        )
+
+    def row(self, chat, status):
+        return D.objects.create(post=self.post, run_on=self.run_on, chat_id=chat, status=status)
+
+    def delete_inside_the_first_send(self, tg):
+        """Make the fake's send_message delete the post, as an admin's click would mid-send."""
+        seen = {}
+        real_send = tg.send_message
+
+        def send_then_delete(chat_id, text, *, reply_markup=None):
+            if not seen:
+                seen["stats"] = services.delete_from_groups(self.post)
+            return real_send(chat_id, text, reply_markup=reply_markup)
+
+        tg.send_message = send_then_delete
+        return seen
+
+    def test_a_row_still_sending_is_reported_in_flight(self):
+        sending = self.row("-1001", D.STATUS_SENDING)
+        with fake_api() as tg:
+            stats = services.delete_from_groups(self.post, now=at(2026, 10, 24, 20))
+        self.assertEqual(stats, {"deleted": 0, "too_old": 0, "failed": 0, "in_flight": 1})
+        self.assertEqual(tg.deleted, [])
+        sending.refresh_from_db()
+        self.assertEqual(sending.status, D.STATUS_SENDING)
+
+    def test_a_send_that_finishes_after_the_delete_takes_its_message_down(self):
+        first, second = self.row("-1001", D.STATUS_PENDING), self.row("-1002", D.STATUS_PENDING)
+        with fake_api() as tg:
+            seen = self.delete_inside_the_first_send(tg)
+            sender.send_pending(self.post, self.run_on)
+        self.assertEqual(seen["stats"]["in_flight"], 1)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, D.STATUS_DELETED)
+        self.assertIsNotNone(first.deleted_at)
+        self.assertEqual(tg.deleted, [("-1001", first.message_id)])
+        self.assertEqual([m[0] for m in tg.messages], ["-1001"])  # the other group was never sent to
+        self.assertEqual(second.status, D.STATUS_DELETED)
+
+    def test_a_message_already_gone_still_ends_deleted(self):
+        row = self.row("-1001", D.STATUS_PENDING)
+        with fake_api() as tg:
+            self.delete_inside_the_first_send(tg)
+            tg.script["delete:-1001"] = [TgResult(False, error_code=400, description="Bad Request: message to delete not found")]
+            sender.send_pending(self.post, self.run_on)
+        row.refresh_from_db()
+        self.assertEqual(row.status, D.STATUS_DELETED)
+
+    def test_a_take_down_that_fails_leaves_the_row_sent_with_the_reason(self):
+        row = self.row("-1001", D.STATUS_PENDING)
+        with fake_api() as tg:
+            self.delete_inside_the_first_send(tg)
+            tg.script["delete:-1001"] = [TgResult(False, error_code=403, description="Forbidden: bot was kicked")]
+            sender.send_pending(self.post, self.run_on)
+        row.refresh_from_db()
+        self.assertEqual(row.status, D.STATUS_SENT)
+        self.assertIn("Delete failed", row.error)
+        self.assertIn("kicked", row.error)
+
+    def test_a_take_down_that_raises_does_not_break_the_send(self):
+        row = self.row("-1001", D.STATUS_PENDING)
+        with fake_api() as tg:
+            self.delete_inside_the_first_send(tg)
+            tg.delete_message = mock.Mock(side_effect=RuntimeError("boom"))
+            with self.assertLogs("telegram_posts", level="ERROR"):
+                stats = sender.send_pending(self.post, self.run_on)
+        self.assertEqual(stats["sent"], 1)
+        row.refresh_from_db()
+        self.assertEqual(row.status, D.STATUS_SENT)
+
+    def test_a_post_that_was_not_deleted_is_never_taken_down(self):
+        self.row("-1001", D.STATUS_PENDING)
+        with fake_api() as tg:
+            sender.send_pending(self.post, self.run_on)
+        self.assertEqual(tg.deleted, [])
+        self.assertEqual(self.post.deliveries.get().status, D.STATUS_SENT)

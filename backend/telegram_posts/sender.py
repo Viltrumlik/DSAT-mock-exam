@@ -10,6 +10,9 @@ Nothing here may strand a run. The claim and the opening of its rows are one tra
 run that cannot be opened is un-claimed and the next beat tries again; an error while sending
 fails the rows that were never attempted (they cannot double-send) and leaves the rest of the
 sweep running; and a row left PENDING for an hour is failed by the sweep itself.
+
+A post deleted from the groups while a row of it is mid-send is handled where that row finishes:
+`send_pending` checks the post once the message is in, and takes it straight back down.
 """
 
 from __future__ import annotations
@@ -45,6 +48,8 @@ INTERRUPTED = "Interrupted while sending — it may or may not have arrived. Che
 NEVER_SENT = "Never sent — an internal error stopped this run. Retry sends it."
 NO_ANSWER = "No answer from Telegram — it may have arrived. Check the group before Retry. ({})"
 LATE = "More than an hour late — not sent on its own."
+#: What Telegram answers to deleting a message that is already gone. That is the outcome we want.
+ALREADY_GONE = "message to delete not found"
 
 _sleep = time.sleep  # tests replace it
 
@@ -114,6 +119,7 @@ def send_pending(post, run_on: date) -> dict:
                 attempts=tries, sent_at=timezone.now(), error="", updated_at=timezone.now(),
             )
             stats["sent"] += 1
+            _take_down_if_deleted(post, row.pk, row.chat_id, _message_id(result))
         else:
             reason = _reason(result)
             GroupPostDelivery.objects.filter(pk=row.pk).update(
@@ -123,6 +129,39 @@ def send_pending(post, run_on: date) -> dict:
             logger.warning("telegram post %s → %s failed: %s", post.pk, row.chat_id, reason)
             stats["failed"] += 1
     return stats
+
+
+def take_down(chat_id, message_id) -> tuple[bool, str]:
+    """Delete our message from a group. `(True, "")` when it is gone, whether we removed it or it
+    already was; `(False, why)` when it is still there."""
+    result = api.delete_message(chat_id, message_id)
+    if result.ok or ALREADY_GONE in (result.description or "").lower():
+        return True, ""
+    return False, result.description or "Telegram did not answer."
+
+
+def _take_down_if_deleted(post, row_pk, chat_id, message_id) -> None:
+    """The post was deleted from the groups while this row was mid-send, so `delete_from_groups`
+    left the row alone (it was SENDING) and the message has just landed in the group: take it
+    down at once. Never raises: the send itself succeeded, and the rest of the run must go on."""
+    if not message_id:
+        return
+    try:
+        if not GroupPost.objects.filter(pk=post.pk, deleted_at__isnull=False).exists():
+            return
+        gone, why = take_down(chat_id, message_id)
+        now = timezone.now()
+        if gone:
+            GroupPostDelivery.objects.filter(pk=row_pk).update(
+                status=GroupPostDelivery.STATUS_DELETED, deleted_at=now, updated_at=now
+            )
+        else:
+            GroupPostDelivery.objects.filter(pk=row_pk).update(
+                error=f"Delete failed: {why}"[:400], updated_at=now
+            )
+            logger.warning("telegram post %s → %s: deleted mid-send, take-down failed: %s", post.pk, chat_id, why)
+    except Exception:
+        logger.exception("telegram post %s → %s: could not take down a message of a deleted post", post.pk, chat_id)
 
 
 def _markup(rendered):
