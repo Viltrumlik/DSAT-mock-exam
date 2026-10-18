@@ -346,3 +346,52 @@
    - the debt settings show on, 10:00, #64942 / #52393.
 3. A test SMS from the panel to 998880032508.
 4. Owner review. Then phase 2: replace lc-up's automatic SMS, as its own brainstorm.
+
+## Review fixes (2026-10-18)
+
+The independent review of the finished branch (Task 13) found these. Each was fixed TDD: a test that failed on the reviewed code, then the fix. The API contract file records every new field and code.
+
+### Backend (`backend/sms`)
+
+- **B1. Stuck campaigns.**
+  - `send_campaign` bumps `started_at` every `HEARTBEAT_EVERY` (20) recipients.
+  - `campaigns.resume_stuck(client, now)` runs from the per-minute `send_due_campaigns`, which now returns `{sent, resumed}`. It re-claims each SENDING campaign whose `started_at` is older than `STUCK_AFTER` (15 min) with one `UPDATE … WHERE status='SENDING' AND started_at < cutoff SET started_at=now`, then runs `send_campaign` again.
+  - A campaign's SMS are now filed under `run_on = localdate(scheduled_at)`, not the day the send runs. A resume or a retry on a later day would otherwise make new dedupe claims and send everyone again.
+- **B2. Circuit breaker.**
+  - `BREAKER_AFTER` (5) sends in a row that came back FAILED or UNCERTAIN, or that raised, stop the campaign: FAILED, `error = "eskiz kept failing — stopped after N sent; press Retry to continue"`.
+  - The rest stay unclaimed. An already-sent recipient (deliver returns None) neither counts nor resets the run.
+  - `FakeEskiz(outcome, outcomes=[…])` scripts the first sends.
+- **B3. Retry = resume.**
+  - `campaigns.retry(campaign)` (called by the view) refuses anything but DONE/FAILED (`not_done`). It counts what a resume would send (`to_resend`: the recipients as of now with no message or a FAILED one), then claims SENDING in one UPDATE, so a second click is `not_done`.
+  - The view also refuses `not_configured`. The task `retry_campaign` → `campaigns.resume` sends the claimed campaign through `send_campaign`.
+  - `retry_failed`/`check_retry` are gone.
+- **B4. Stale balances.** `resolve` skips `stale_balance` (`debt_warnings.STALE_AFTER`, 24 h; also a missing `balance_seen_at`) for the debtors audience and for any campaign with a `debt` slot. This applies at preview, create and send. `SKIP_REASONS` now includes it.
+- **B5. Non-object bodies.** POST campaigns/, campaigns/preview/, templates/, test/ and PATCH settings/ return 400 `code: "body"`. `campaigns.clean` refuses a non-dict too.
+- **B6. Test SMS dedupe.** The key is `test:<phone>:<template_id>:<YYYYmmddHHMM>` (Tashkent). A repeat in the same minute is 400 `duplicate` with no SMS. A FAILED one may go again.
+- **B7. Balance stampede.** `_balance()` asks eskiz only under `cache.add("sms:balance-lock", 1, 30)`. Otherwise it answers from the cache, or null.
+- **B8. `debt_hour` moved earlier.** At hour+1/+2 the tick runs a normal (catch-up) run when today has no `debt_warning` message, and retry-only otherwise.
+- **B9. Debt preview.** It adds `sent_today` and `to_send`. `cost` is now the `to_send` ones'. `count` and the overview's `next_count` stay the planned count.
+
+### Frontend (`frontend/src/features/ops/sms`)
+
+- **F1.**
+  - Every SMS mutation spreads `MUTATION_DEFAULTS = { retry: false }`. QueryProvider retries mutations once by default.
+  - Create campaign, send-now and test SMS invalidate `["sms"]` on an error with no HTTP response (`panelKit.mayHaveBeenSent`). Their forms show `MAYBE_SENT` through `paidErrorText`.
+  - `__tests__/smsHooks.test.ts` mocks `useMutation`/`useQuery` and asserts the options.
+- **F2. DebtPanel.**
+  - The button is "Send now to N students" with N = `to_send`, and the confirm costs `to_send`. It is disabled when `blocked` is set.
+  - When `to_send` is 0 and `sent_today` > 0 it shows "Already sent today" and no button. The line shows "N already sent today · M to send".
+  - After Send now, `useDebtPreview(day, pollUntil)` and `useDebtRuns(pollUntil)` poll every `DEBT_POLL_MS` (5 s) for at most `DEBT_POLL_FOR_MS` (2 min). The preview polls only while `to_send > 0`, and polling stops once it reaches 0.
+- **F3. Wizard.**
+  - Back is disabled while the preview is pending.
+  - A preview whose draft JSON differs from the current draft (a ref synced in an effect) is dropped.
+  - The confirm reads "Send template #ID to <Debtors | Group: name | N students> now: N SMS (~cost)?", or "Schedule … for <date>: …".
+- **F4.**
+  - The wizard's template and class lists and DebtPanel's template list show `LoadError` with "Try again".
+  - The Overview says "Switched off — no warning day ahead until it is on." when `next_day` is null and the warning is off.
+- **F5. CampaignPage.**
+  - `useSmsCampaign` polls every `CAMPAIGN_POLL_MS` (5 s) while SCHEDULED or SENDING.
+  - Cancel is hidden once `scheduled_at` has passed ("Starting…").
+  - Retry shows for DONE with FAILED rows, or for FAILED ("Retry", whose confirm names the not-yet-reached too). After a Retry the page refetches, and the button stays hidden until an answer fetched after it (`dataUpdatedAt`).
+  - The confirm says "~ cost unknown" without a price.
+- **F6.** `SkipReason` gains `same_phone` and `stale_balance`. The labels are "Same phone — one SMS between siblings" and "Balance out of date".
