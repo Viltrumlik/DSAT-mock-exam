@@ -1925,3 +1925,15 @@ gh pr create --base main --title "SMS through eskiz.uz: the warning before the d
 5. **Test SMS.** Run `manage.py sms_test --phone 998880032508 --send` (the owner's test number). The owner confirms it arrived.
 6. **Dry run.** Run `manage.py sms_debt_warnings_report --day 2026-11-01` and show the owner the masked list.
 7. **Switch on.** On the owner's yes, set `SMS_DEBT_WARNINGS_ENABLED=True` in `backend.env` and reload the celery worker. The first real run is **2026-11-01 10:00**. Check `SmsMessage` that morning, and again at 11:30 for delivery.
+
+---
+
+## Review fixes (2026-10-18, after Tasks 1–6)
+
+A Django review found no duplicate-SMS, data-loss or security defect. It found five failure-handling gaps, and all five are fixed with tests:
+
+1. **Refused login.** A refused login (or a freshly issued token refused) sets `eskiz:login-refused` for 10 minutes (`LOGIN_BACKOFF`), and no login is attempted while it is set. Before this, a wrong key cost one refused login per SMS on the account lc-up shares.
+2. **FAILED retry.** A FAILED SMS (eskiz never reached, nothing left) may be claimed again. This is one `UPDATE … WHERE status='FAILED'`, so exactly one run wins, and `attempts` counts the runs. A second beat entry, `sms-debt-warnings-retry` (11:00 and 12:00, `sms.tasks.retry_debt_warnings`), resends ONLY today's FAILED warnings and never a new one. SENT, UNCERTAIN and PENDING are never sent again.
+3. **Expired token.** Only the exact "Token has expired" counts as an expired token on a 500. Any other 500 may have come after eskiz took the SMS.
+4. **Errors.** An exception for one student is logged by its type alone (the message may quote the phone), and the run goes on.
+5. **Small balances.** A balance between −1 and 0 so'm is not warned about (`under_one_sum`).
