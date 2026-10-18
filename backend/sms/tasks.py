@@ -4,26 +4,75 @@ from django.utils import timezone
 
 from . import conf
 
-#: Beat fires once at 10:00; a person re-running it while it is still going is not doubled.
+#: One run at a time: the beat, a retry and "Send now" from /ops/sms are never doubled.
 RUNNING_KEY = "sms:debt-warnings-running"
+#: After the hour set in /ops/sms, this many hourly runs send again only what never left (FAILED).
+RETRY_HOURS = 2
+
+
+@shared_task(name="sms.tasks.debt_warnings_tick")
+def debt_warnings_tick() -> dict:
+    """Every hour at :00. At ``SmsSettings.debt_hour`` (10:00 unless /ops/sms changed it) the warning
+    run; the next RETRY_HOURS hours only what that run could not get out — never a new warning, the
+    owner's time is the hour he set. Days 1..LCUP_DEBT_FREEZE_DAY-1 it warns; on any other day the
+    plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code.
+
+    Unless today has no warning at all: the hour was moved earlier after it had passed (10 → 9 at
+    09:30), so its tick never ran. Then the first tick of the window is the day's run (a catch-up)."""
+    return _tick(timezone.now())
+
+
+def _warned_today(now) -> bool:
+    from .models import SmsMessage
+
+    return SmsMessage.objects.filter(kind=SmsMessage.KIND_DEBT_WARNING, run_on=timezone.localdate(now)).exists()
+
+
+def _tick(now) -> dict:
+    from . import switchboard
+
+    hour, start = timezone.localtime(now).hour, switchboard.current().debt_hour
+    if hour == start:
+        return _warn(retry_only=False)
+    if start < hour <= start + RETRY_HOURS:
+        return _warn(retry_only=_warned_today(now))
+    return {"skipped": "not the hour"}
+
+
+@shared_task(name="sms.tasks.debt_warnings_now")
+def debt_warnings_now() -> dict:
+    """"Send now" from /ops/sms: today's warning run, at once, through the same ``send``. Whatever it
+    sent, today's later scheduled run finds the rows and sends nothing again."""
+    return _send_now(timezone.now())
+
+
+def _send_now(now) -> dict:
+    from . import debt_warnings as warnings
+
+    if not warnings.switched_on():
+        return {"skipped": "disabled"}
+    if not warnings.is_warning_day(timezone.localdate(now)):
+        return {"skipped": "not a warning day"}
+    return _warn(retry_only=False)
 
 
 @shared_task(name="sms.tasks.debt_warnings")
 def debt_warnings() -> dict:
-    """Days 1..LCUP_DEBT_FREEZE_DAY-1: the warning SMS (``sms.debt_warnings``). Every other day the
-    plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code."""
+    """The warning run by hand (``celery call``); the beat uses ``debt_warnings_tick``."""
     return _warn(retry_only=False)
 
 
 @shared_task(name="sms.tasks.retry_debt_warnings")
 def retry_debt_warnings() -> dict:
-    """11:00 and 12:00: only what 10:00 could not get out (FAILED) goes again — never a new warning,
-    since the owner's time is 10:00, and never one that may already have left."""
+    """Only what today's run could not get out (FAILED) goes again — never a new warning, and never
+    one that may already have left. By hand; the beat's retries are ``debt_warnings_tick``'s."""
     return _warn(retry_only=True)
 
 
 def _warn(*, retry_only: bool) -> dict:
-    if not conf.debt_warnings_enabled():
+    from . import switchboard
+
+    if not switchboard.debt_enabled():
         return {"skipped": "disabled"}
     if not conf.is_configured():
         return {"skipped": "eskiz is not configured"}
@@ -36,6 +85,53 @@ def _warn(*, retry_only: bool) -> dict:
         return warnings.send(eskiz.default_client(), timezone.now(), retry_only=retry_only)
     finally:
         cache.delete(RUNNING_KEY)
+
+
+@shared_task(name="sms.tasks.sync_templates")
+def sync_templates() -> dict:
+    """09:00: eskiz's template list into ``EskizTemplate``, so a template moderated overnight shows in
+    /ops/sms. One read; a login only if no token is cached."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import eskiz, eskiz_templates
+
+    try:
+        return eskiz_templates.sync(eskiz.default_client())
+    except eskiz.EskizError as exc:
+        return {"error": str(exc)}
+
+
+@shared_task(name="sms.tasks.send_due_campaigns")
+def send_due_campaigns() -> dict:
+    """Every minute, and at once after a "now" campaign is created: every campaign whose time has
+    come goes out, each claimed once (``campaigns.dispatch_due``), and every one a dead worker left
+    SENDING is finished (``campaigns.resume_stuck``). Neither, no client at all."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import campaigns, eskiz
+
+    now = timezone.now()
+    if not campaigns.due(now).exists() and not campaigns.stuck(now).exists():
+        return {"skipped": "nothing due"}
+    client = eskiz.default_client()
+    return {"sent": campaigns.dispatch_due(client, now), "resumed": campaigns.resume_stuck(client, now)}
+
+
+@shared_task(name="sms.tasks.retry_campaign")
+def retry_campaign(campaign_id: int) -> dict:
+    """Retry on a campaign, queued by the panel once ``campaigns.retry`` claimed it SENDING: a
+    resume — the unreached sent, the FAILED sent again, nothing that may have left."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import campaigns, eskiz
+    from .models import SmsCampaign
+
+    if not SmsCampaign.objects.filter(pk=campaign_id, status=SmsCampaign.STATUS_SENDING).exists():
+        return {"skipped": "not sending"}
+    campaign = campaigns.resume(eskiz.default_client(), campaign_id)
+    if campaign is None:
+        return {"skipped": "not sending"}
+    return {"status": campaign.status, "sent": campaign.result.get("sent", 0)}
 
 
 @shared_task(name="sms.tasks.check_statuses")

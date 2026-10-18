@@ -19,10 +19,25 @@ import re
 from dataclasses import dataclass
 
 SLOT = re.compile(r"%(d|w)(?:\{(\d+),(\d+)\})?")
+#: lc-up's "(STUDENT)" and the "{name}" style, in an ``original_text``.
+_PLACEHOLDER = re.compile(r"\(([A-Z_]+)\)|\{(\w+)\}")
+#: Punctuation right after a placeholder: eskiz moderated "(STUDENT), sizda" into "%w{1,4} sizda",
+#: so the comma has to travel inside the name's words.
+_SUFFIX = re.compile(r"[,.!?:;]*")
+_STUDENT_PLACEHOLDERS = frozenset({"STUDENT", "name", "student"})
 _DIGITS = re.compile(r"^[0-9]+$")
 _APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "ʻ": "'", "ʼ": "'", "`": "'"})
 #: Values that name one student: a template using one is sent per student, not per phone.
 PERSONAL_VALUES = frozenset({"student", "first_name", "last_name"})
+
+
+#: What fills a slot, chosen per slot in /ops/sms: the student's lc-up name, their debt, or one typed text.
+ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT = "student", "debt", "text"
+ROLES = (ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT)
+
+#: GSM-7 is 160 characters in one SMS, 153 a part once split; one non-ASCII character makes it UCS-2.
+GSM_SINGLE, GSM_PART = 160, 153
+UCS2_SINGLE, UCS2_PART = 70, 67
 
 
 class TemplateError(ValueError):
@@ -50,6 +65,50 @@ def is_gsm_safe(text) -> bool:
     return all(ord(ch) < 128 for ch in str(text))
 
 
+def parts(text) -> int:
+    """How many SMS eskiz bills for ``text`` — what every cost on /ops/sms is counted from."""
+    text = str(text or "")
+    single, part = (GSM_SINGLE, GSM_PART) if is_gsm_safe(text) else (UCS2_SINGLE, UCS2_PART)
+    return 1 if len(text) <= single else -(-len(text) // part)
+
+
+def slots(pattern) -> list[dict]:
+    """Each ``%d`` / ``%w`` / ``%w{a,b}`` of a moderated pattern, in order, with its word counts."""
+    return [
+        {"kind": m.group(1), "min": int(m.group(2) or 1), "max": int(m.group(3) or 1)}
+        for m in SLOT.finditer(str(pattern or ""))
+    ]
+
+
+def _placeholders(original, pattern):
+    """The placeholders of ``original`` when there is one per slot of ``pattern``; else None — eskiz
+    merged or dropped some, and which slot is which cannot be told."""
+    found = list(_PLACEHOLDER.finditer(str(original or "")))
+    return found if len(found) == len(SLOT.findall(str(pattern or ""))) else None
+
+
+def placeholders_match(original, pattern) -> bool:
+    """Whether ``original`` has exactly one placeholder per slot, so roles and suffixes can be read."""
+    return _placeholders(original, pattern) is not None
+
+
+def guess_roles(original, pattern) -> list[str]:
+    """A first guess at each slot's role from the submitted text; the admin can change it."""
+    found = _placeholders(original, pattern)
+    if found is None:
+        return [ROLE_TEXT] * len(SLOT.findall(str(pattern or "")))
+    return [ROLE_STUDENT if (m.group(1) or m.group(2)) in _STUDENT_PLACEHOLDERS else ROLE_TEXT for m in found]
+
+
+def role_suffixes(original, pattern) -> list[str]:
+    """Per slot, the punctuation that followed its placeholder in ``original`` ("" when unknown)."""
+    found = _placeholders(original, pattern)
+    if found is None:
+        return [""] * len(SLOT.findall(str(pattern or "")))
+    text = str(original)
+    return [_SUFFIX.match(text, m.end()).group(0) for m in found]
+
+
 def render(template: SmsTemplate, values: dict) -> str:
     slots = iter(template.slots)
 
@@ -73,21 +132,22 @@ def render(template: SmsTemplate, values: dict) -> str:
 #: Owner, 2026-10-18: days 1..LCUP_DEBT_FREEZE_DAY-2 #64942, the last day before the freeze #52393
 #: ("Bugun oxirgi kun!"). eskiz's moderated patterns as ``manage.py eskiz_account`` read them that day.
 #: ``student`` is the name as lc-up holds it, up to four words, with the comma (``debt_warnings``).
-#: While DEBT_WARNING is None nothing is sent; without DEBT_LAST_DAY the last day gets DEBT_WARNING.
-DEBT_WARNING: SmsTemplate | None = SmsTemplate(
+#: Since /ops/sms these are only ``SmsSettings``' defaults: the warning reads its templates from the
+#: settings row (``sms.switchboard``), which starts as exactly these.
+DEBT_WARNING: SmsTemplate = SmsTemplate(
     "debt_warning",
     "MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan "
     "administratsiyaga uchrang!",
     ("student",),
 )
-DEBT_LAST_DAY: SmsTemplate | None = SmsTemplate(
+DEBT_LAST_DAY: SmsTemplate = SmsTemplate(
     "debt_last_day",
     "Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. Guruhdan chetlatilishingiz "
     "mumkin. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
     ("student",),
 )
 
-#: What ``manage.py sms_test`` fills a template with.
+#: What ``manage.py sms_test`` and the panel's test SMS fill a template with.
 SAMPLE_VALUES = {
     "student": "Test Testov,", "first_name": "Test", "last_name": "Testov", "debt": 100000, "freeze_day": 6,
     "days_left": 1,

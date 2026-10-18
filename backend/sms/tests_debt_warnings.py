@@ -11,28 +11,36 @@ from django.utils import timezone
 from lcup.models import LcupStudentLink, LinkStatus
 from sms import debt_warnings
 from sms.eskiz import FAILED
-from sms.models import SmsMessage
+from sms.models import EskizTemplate, SmsMessage
 from sms.templates import SmsTemplate
-from sms.testing import FakeEskiz
+from sms.testing import FakeEskiz, configure
 from users.models import User
 
 WARN = SmsTemplate(
-    "debt_warning",
-    "Hurmatli ota-ona, %w ning %d so'm qarzi bor. %d-sanada akkaunt muzlatiladi.",
-    ("first_name", "debt", "freeze_day"),
+    "debt_warning", "Hurmatli ota-ona, %w{1,4} farzandingizning %d so'm qarzi bor.", ("student", "debt"),
 )
-NO_NAME = SmsTemplate("debt_warning", "Markazga qarzingiz bor. %d-sanagacha to'lang.", ("freeze_day",))
-AZIZ_TEXT = "Hurmatli ota-ona, Aziz ning 150000 so'm qarzi bor. 6-sanada akkaunt muzlatiladi."
+NO_NAME = SmsTemplate("debt_warning", "Markazga qarzingiz bor. To'lovni amalga oshiring.", ())
+AZIZ_TEXT = "Hurmatli ota-ona, Testov Aziz, farzandingizning 150000 so'm qarzi bor."
+
+
+def use(template, *, last_day=None, **extra):
+    """The panel's settings naming ``template`` (and ``last_day``, else the same) for the debt warning."""
+    last_day = last_day or template
+    return configure(
+        warning_pattern=template.text, warning_slots=list(template.slots),
+        last_day_pattern=last_day.text, last_day_slots=list(last_day.slots), **extra,
+    )
 
 
 def at(day, month=11, hour=10):
     return timezone.make_aware(datetime(2026, month, day, hour, 0))
 
 
-@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6)
-@mock.patch("sms.templates.DEBT_WARNING", WARN)
-@mock.patch("sms.templates.DEBT_LAST_DAY", None)
+@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6, SMS_DEBT_WARNINGS_ENABLED=True)
 class DebtWarningTests(TestCase):
+    def setUp(self):
+        use(WARN)
+
     def learner(self, lcup_id, username, *, balance, phone="998901234567", seen=None, **link_extra):
         user = User.objects.create_user(
             None, password=None, username=username, role="student", first_name=username.title(), last_name="Testov"
@@ -91,9 +99,46 @@ class DebtWarningTests(TestCase):
     def test_nothing_without_an_approved_template(self):
         self.learner(101, "aziz", balance=-150000)
         fake = FakeEskiz()
-        with mock.patch("sms.templates.DEBT_WARNING", None):
-            self.assertEqual(debt_warnings.send(fake, at(1))["blocked"], "no approved template yet")
+        configure(warning_pattern="", warning_slots=[])
+        self.assertEqual(debt_warnings.send(fake, at(1))["blocked"], "no approved template yet")
         self.assertEqual(fake.sent, [])
+
+    def test_nothing_while_the_panel_switch_is_off_but_the_list_still_shows(self):
+        self.learner(101, "aziz", balance=-150000)
+        configure(debt_enabled=False)
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1))["blocked"], "the debt warning is switched off")
+        self.assertEqual(fake.sent, [])
+        self.assertEqual(len(debt_warnings.plan(at(1)).warnings), 1)
+
+    @override_settings(SMS_DEBT_WARNINGS_ENABLED=False)
+    def test_nothing_while_the_env_master_switch_is_off(self):
+        self.learner(101, "aziz", balance=-150000)
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1))["blocked"], "the debt warning is switched off")
+        self.assertEqual(fake.sent, [])
+
+    def test_a_template_with_a_typed_text_slot_is_refused(self):
+        self.learner(101, "aziz", balance=-150000)
+        use(SmsTemplate("debt_warning", "Salom %w{1,4} %w", ("student", "text")))
+        fake = FakeEskiz()
+        self.assertIn("only the student's name and debt", debt_warnings.send(fake, at(1))["blocked"])
+        self.assertEqual(fake.sent, [])
+
+    def test_slots_that_do_not_fit_the_pattern_are_refused(self):
+        self.learner(101, "aziz", balance=-150000)
+        configure(warning_pattern="Salom %w{1,4} %d", warning_slots=["student"])
+        self.assertIn("do not fit", debt_warnings.send(FakeEskiz(), at(1))["blocked"])
+
+    def test_the_name_takes_the_punctuation_of_the_cached_original(self):
+        self.learner(101, "aziz", balance=-150000)
+        EskizTemplate.objects.create(
+            eskiz_id=64942, pattern=WARN.text, original="Hurmatli ota-ona, (STUDENT)! farzandingizning (SUM) so'm qarzi bor.",
+            status="service", synced_at=at(1),
+        )
+        fake = FakeEskiz()
+        debt_warnings.send(fake, at(1))
+        self.assertEqual(fake.sent[0][1], "Hurmatli ota-ona, Testov Aziz! farzandingizning 150000 so'm qarzi bor.")
 
     def test_siblings_on_one_phone_get_one_each_when_the_text_names_them(self):
         self.learner(101, "aziz", balance=-150000)
@@ -106,9 +151,9 @@ class DebtWarningTests(TestCase):
         self.learner(101, "aziz", balance=-150000)
         self.learner(102, "malika", balance=-90000)
         fake = FakeEskiz()
-        with mock.patch("sms.templates.DEBT_WARNING", NO_NAME):
-            counts = debt_warnings.send(fake, at(1))
-        self.assertEqual(fake.sent, [("998901234567", "Markazga qarzingiz bor. 6-sanagacha to'lang.", mock.ANY)])
+        use(NO_NAME)
+        counts = debt_warnings.send(fake, at(1))
+        self.assertEqual(fake.sent, [("998901234567", "Markazga qarzingiz bor. To'lovni amalga oshiring.", mock.ANY)])
         self.assertEqual(counts["skipped"], {"same_phone": 1})
 
     def test_too_many_at_once_wait_for_a_person(self):
@@ -164,8 +209,37 @@ class DebtWarningTests(TestCase):
         self.assertEqual(counts["skipped"], {"under_one_sum": 1})
 
 
+    def test_the_last_day_gets_its_own_template(self):
+        self.learner(101, "aziz", balance=-150000, seen=at(5, hour=9))
+        use(WARN, last_day=SmsTemplate("debt_last_day", "Bugun oxirgi kun! %w{1,4} %d so'm.", ("student", "debt")))
+        fake = FakeEskiz()
+        debt_warnings.send(fake, at(5))
+        self.assertEqual(fake.sent[0][1], "Bugun oxirgi kun! Testov Aziz, 150000 so'm.")
 
-@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6)
+
+class RunsTests(TestCase):
+    def msg(self, run_on, key, status, *, kind=SmsMessage.KIND_DEBT_WARNING, text="x", parts=None):
+        return SmsMessage.objects.create(
+            kind=kind, run_on=run_on, dedupe_key=key, phone="998901234567", text=text, status=status, parts=parts,
+        )
+
+    @override_settings(SMS_PRICE_PER_PART=170)
+    def test_one_row_per_day_newest_first_with_the_billed_parts(self):
+        self.msg(date(2026, 10, 1), "student:1", SmsMessage.STATUS_DELIVERED)
+        self.msg(date(2026, 10, 1), "student:2", SmsMessage.STATUS_UNDELIVERED, parts=2)
+        self.msg(date(2026, 10, 1), "student:3", SmsMessage.STATUS_FAILED)  # never left: not billed
+        self.msg(date(2026, 10, 2), "student:1", SmsMessage.STATUS_DELIVERED)
+        self.msg(date(2026, 10, 2), "test:1", SmsMessage.STATUS_DELIVERED, kind=SmsMessage.KIND_TEST)
+        self.msg(date(2026, 7, 1), "student:1", SmsMessage.STATUS_DELIVERED)  # older than 60 days
+        rows = debt_warnings.runs(now=at(18, month=10))
+        self.assertEqual(rows, [
+            {"run_on": "2026-10-02", "total": 1, "by_status": {"DELIVERED": 1}, "parts": 1, "cost": 170},
+            {"run_on": "2026-10-01", "total": 3, "by_status": {"DELIVERED": 1, "UNDELIVERED": 1, "FAILED": 1},
+             "parts": 3, "cost": 510},
+        ])
+
+
+@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6, SMS_DEBT_WARNINGS_ENABLED=True)
 class ApprovedTextTests(TestCase):
     """Owner, 2026-10-18: days 1–4 #64942, day 5 #52393 ("Bugun oxirgi kun!"); the name as lc-up holds it."""
 

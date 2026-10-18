@@ -25,6 +25,12 @@ describe("isAdminOpsPath", () => {
     expect(isAdminOpsPath("/ops/users/5/edit")).toBe(true);
   });
 
+  it("opens the SMS panel and its campaign pages to an admin", () => {
+    expect(isAdminOpsPath("/ops/sms")).toBe(true);
+    expect(isAdminOpsPath("/ops/sms/campaigns/7")).toBe(true);
+    expect(isAdminOpsPath("/ops/smsx")).toBe(false);
+  });
+
   it("opens the three People sections that replaced Users, and keeps Users for its redirect", () => {
     for (const path of ["/ops/students", "/ops/public", "/ops/staff", "/ops/users", "/ops/students/42"]) {
       expect(isAdminOpsPath(path)).toBe(true);

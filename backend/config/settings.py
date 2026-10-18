@@ -318,6 +318,8 @@ ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "").strip()
 ESKIZ_SECRET_KEY = os.getenv("ESKIZ_SECRET_KEY", "")
 ESKIZ_FROM = os.getenv("ESKIZ_FROM", "4546").strip()
 SMS_DEBT_WARNINGS_ENABLED = os.getenv("SMS_DEBT_WARNINGS_ENABLED", "False").lower() == "true"
+# What /ops/sms counts an estimate at: so'm per SMS part (measured 2026-10-18). The panel's costs only.
+SMS_PRICE_PER_PART = int(os.getenv("SMS_PRICE_PER_PART", "170") or 170)
 
 # Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"
@@ -653,17 +655,23 @@ CELERY_BEAT_SCHEDULE = {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
     },
-    # SMS before the debt freeze (backend/sms): fires every day at 10:00 (CELERY_TIMEZONE is Tashkent)
-    # and the code decides — days 1..LCUP_DEBT_FREEZE_DAY-1 it warns, other days it sends nothing.
-    # Returns at once while SMS_DEBT_WARNINGS_ENABLED is off.
-    "sms-debt-warnings": {
-        "task": "sms.tasks.debt_warnings",
-        "schedule": crontab(hour=10, minute=0),
+    # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
+    # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,
+    # the next two hours it sends again only what could not get out, every other hour nothing. Returns at
+    # once while SMS_DEBT_WARNINGS_ENABLED (the master) or the panel's switch is off.
+    "sms-debt-warnings-tick": {
+        "task": "sms.tasks.debt_warnings_tick",
+        "schedule": crontab(minute=0),
     },
-    # What 10:00 could not get out (eskiz unreachable, a refused login) goes again — only that.
-    "sms-debt-warnings-retry": {
-        "task": "sms.tasks.retry_debt_warnings",
-        "schedule": crontab(hour="11,12", minute=0),
+    # eskiz's template list into /ops/sms, so one moderated overnight can be picked in the morning.
+    "sms-sync-templates": {
+        "task": "sms.tasks.sync_templates",
+        "schedule": crontab(hour=9, minute=0),
+    },
+    # Campaigns from /ops/sms whose time has come (each claimed once). Nothing due: one SELECT, no request.
+    "sms-send-due-campaigns": {
+        "task": "sms.tasks.send_due_campaigns",
+        "schedule": crontab(),
     },
     # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
     "sms-check-statuses": {

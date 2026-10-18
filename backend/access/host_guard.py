@@ -264,6 +264,10 @@ class SubdomainAPIGuardMiddleware:
             # first-password step is on the apex, which needs no entry.
             if path.startswith("/api/lcup/"):
                 return self.get_response(request)
+            # SMS panel (/ops/sms): the balance, the journal, campaigns, the debt warning's settings and
+            # eskiz's templates. Admin-only in the view; there is no student surface.
+            if path.startswith("/api/sms/"):
+                return self.get_response(request)
             # Assessments: admin assigns sets as homework + needs to list sets.
             if path.startswith("/api/assessments/"):
                 # Allow homework assignment and read-only browsing on admin console.

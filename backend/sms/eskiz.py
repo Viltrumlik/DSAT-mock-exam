@@ -18,8 +18,8 @@ balance) with a 200; a send is accepted only when the body says ``status == "wai
 ``id``, the request id its delivery status is read by.
 
 ``send`` and ``status`` never raise: an eskiz outage must not break the task that calls them. The
-account reads (``templates``, ``nicks``, ``balance``) are for a person at a terminal and raise
-:class:`EskizError`. Nothing here writes a phone number into an error: eskiz's messages quote it.
+account reads (``templates``, ``nicks``, ``balance``) and ``submit_template`` are for a person at a
+terminal or in /ops/sms and raise :class:`EskizError`. Nothing here writes a phone number into an error: eskiz's messages quote it.
 """
 
 from __future__ import annotations
@@ -193,13 +193,19 @@ class EskizClient:
         except (TypeError, ValueError):
             return None
 
-    def _read(self, method: str, path: str):
+    def submit_template(self, text: str) -> dict:
+        """A new text to eskiz's moderation (``POST /user/template``). It shows up in ``templates()``
+        as ``moderation`` until eskiz decides. Raises like the reads: a person is waiting on it."""
+        body = self._read("POST", "/user/template", data={"template": text})
+        return body if isinstance(body, dict) else {}
+
+    def _read(self, method: str, path: str, *, data=None):
         if not (self.email and self.secret):
             raise EskizError("eskiz is not configured")
         token = None
         for _ in range(2):
             token = self._token(stale=token)
-            resp = self._send(method, path, token=token)
+            resp = self._send(method, path, token=token, data=data)
             if not _expired(resp):
                 if resp.status_code >= 400:
                     raise EskizError(_mask(f"HTTP {resp.status_code} on {path}: {_message(resp)}"))

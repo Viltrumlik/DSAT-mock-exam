@@ -217,3 +217,24 @@ class ReadTests(SimpleTestCase):
         eskiz, _ = client([FakeResponse(404, {"message": "Not found"})], self.cache)
         with self.assertRaises(EskizError):
             eskiz.nicks()
+
+
+class SubmitTemplateTests(SimpleTestCase):
+    def setUp(self):
+        self.cache = fresh_cache()
+        self.cache.set(TOKEN_KEY, "jwt-cached")
+
+    def test_posts_the_text_as_the_template_field(self):
+        body = {"success": True, "message": "Template created"}
+        eskiz, session = client([FakeResponse(200, body)], self.cache)
+        self.assertEqual(eskiz.submit_template("Salom (STUDENT)!"), body)
+        (request,) = session.requests
+        self.assertEqual((request["method"], request["url"]), ("POST", "https://eskiz.test/api/user/template"))
+        self.assertEqual(request["data"], {"template": "Salom (STUDENT)!"})
+        self.assertEqual(request["headers"]["Authorization"], "Bearer jwt-cached")
+
+    def test_a_refusal_raises_with_eskizs_words(self):
+        eskiz, _ = client([FakeResponse(422, {"message": {"template": ["The template field is required."]}})], self.cache)
+        with self.assertRaises(EskizError) as caught:
+            eskiz.submit_template("")
+        self.assertIn("template field is required", str(caught.exception))

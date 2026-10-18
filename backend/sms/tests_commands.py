@@ -9,10 +9,14 @@ from django.utils import timezone
 from lcup.models import LcupStudentLink, LinkStatus
 from sms.models import SmsMessage
 from sms.templates import SmsTemplate
-from sms.testing import FakeEskiz
+from sms.testing import FakeEskiz, configure
 from users.models import User
 
-WARN = SmsTemplate("debt_warning", "Hurmatli ota-ona, %w ning %d so'm qarzi bor.", ("first_name", "debt"))
+WARN = SmsTemplate("debt_warning", "Hurmatli ota-ona, %w{1,4} farzandingizning %d so'm qarzi bor.", ("student", "debt"))
+
+
+def use_warn():
+    configure(warning_pattern=WARN.text, warning_slots=list(WARN.slots))
 CONFIGURED = {"ESKIZ_EMAIL": "ops@example.uz", "ESKIZ_SECRET_KEY": "key"}
 
 
@@ -53,17 +57,23 @@ class EskizAccountTests(TestCase):
 
 
 @override_settings(**CONFIGURED)
-@mock.patch("sms.templates.DEBT_WARNING", WARN)
 class SmsTestTests(TestCase):
+    def test_the_live_text_until_the_panel_changes_it(self):
+        self.assertIn("MASTER SAT'dan yozyabmiz. Test Testov, sizda", run("sms_test", "--phone", "998901234567"))
+        out = run("sms_test", "--phone", "998901234567", "--last-day")
+        self.assertIn("Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. Test Testov, sizda", out)
+
     def test_without_send_only_prints(self):
+        use_warn()
         fake = FakeEskiz()
         with mock.patch("sms.management.commands.sms_test.default_client", return_value=fake):
             out = run("sms_test", "--phone", "+998 90 123 45 67")
-        self.assertIn("Hurmatli ota-ona, Test ning 100000 so'm qarzi bor.", out)
+        self.assertIn("Hurmatli ota-ona, Test Testov, farzandingizning 100000 so'm qarzi bor.", out)
         self.assertIn("not sent", out)
         self.assertEqual(fake.sent, [])
 
     def test_send_sends_one_test_sms(self):
+        use_warn()
         fake = FakeEskiz()
         with mock.patch("sms.management.commands.sms_test.default_client", return_value=fake):
             run("sms_test", "--phone", "998901234567", "--send")
@@ -78,10 +88,10 @@ class SmsTestTests(TestCase):
             run("sms_test", "--phone", "12345")
 
 
-@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6)
-@mock.patch("sms.templates.DEBT_WARNING", WARN)
+@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6, SMS_DEBT_WARNINGS_ENABLED=True)
 class ReportTests(TestCase):
     def test_lists_who_would_be_warned_masked_and_changes_nothing(self):
+        use_warn()
         user = User.objects.create_user(None, password=None, username="aziz", role="student", first_name="Aziz")
         LcupStudentLink.objects.create(
             lcup_student_id=101, name="Testov Aziz", user=user, status=LinkStatus.CONFIRMED, phone="998901234567",
@@ -90,5 +100,5 @@ class ReportTests(TestCase):
         out = run("sms_debt_warnings_report", "--day", "2026-11-01")
         self.assertIn("99890***4567", out)
         self.assertNotIn("998901234567", out)
-        self.assertIn("Aziz ning 150000", out)
+        self.assertIn("Testov Aziz, farzandingizning 150000", out)
         self.assertEqual(SmsMessage.objects.count(), 0)

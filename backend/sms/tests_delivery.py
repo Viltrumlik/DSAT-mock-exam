@@ -97,3 +97,20 @@ class RetryTests(TestCase):
         fake = FakeEskiz()
         self.assertIsNone(send(fake))
         self.assertEqual(fake.sent, [])
+
+
+class CampaignFieldsTests(TestCase):
+    def test_the_campaign_and_who_sent_it_are_recorded(self):
+        from sms.models import SmsCampaign
+        from users.models import User
+
+        admin = User.objects.create_user(None, password=None, username="boss", role="admin")
+        campaign = SmsCampaign.objects.create(
+            template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=NOW,
+        )
+        msg = deliver(
+            FakeEskiz(), kind=SmsMessage.KIND_CAMPAIGN, run_on=DAY, dedupe_key=f"campaign:{campaign.pk}:student:1",
+            phone="998901234567", text="x", campaign=campaign, created_by=admin,
+        )
+        msg.refresh_from_db()
+        self.assertEqual((msg.campaign, msg.created_by), (campaign, admin))
