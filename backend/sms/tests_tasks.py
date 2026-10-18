@@ -155,3 +155,34 @@ class SyncTemplatesTaskTests(TestCase):
     @override_settings(ESKIZ_EMAIL="")
     def test_without_credentials(self):
         self.assertEqual(tasks.sync_templates(), {"skipped": "eskiz is not configured"})
+
+
+@override_settings(**CONFIGURED)
+class CampaignTaskTests(TestCase):
+    def test_nothing_due_means_no_client(self):
+        with mock.patch("sms.eskiz.default_client") as client:
+            self.assertEqual(tasks.send_due_campaigns(), {"skipped": "nothing due"})
+        client.assert_not_called()
+
+    def test_due_campaigns_are_sent(self):
+        from sms.models import SmsCampaign
+
+        SmsCampaign.objects.create(
+            template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
+        )
+        with mock.patch("sms.eskiz.default_client", return_value=FakeEskiz()):
+            self.assertEqual(tasks.send_due_campaigns(), {"sent": 1})
+        self.assertEqual(SmsCampaign.objects.get().status, SmsCampaign.STATUS_DONE)
+
+    @override_settings(ESKIZ_EMAIL="")
+    def test_without_credentials_they_wait(self):
+        self.assertEqual(tasks.send_due_campaigns(), {"skipped": "eskiz is not configured"})
+
+    def test_retry_of_a_campaign_that_is_not_done(self):
+        from sms.models import SmsCampaign
+
+        campaign = SmsCampaign.objects.create(
+            template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
+        )
+        with mock.patch("sms.eskiz.default_client", return_value=FakeEskiz()):
+            self.assertEqual(tasks.retry_campaign(campaign.pk), {"skipped": "not_done"})

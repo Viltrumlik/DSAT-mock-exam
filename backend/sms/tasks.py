@@ -92,6 +92,37 @@ def sync_templates() -> dict:
         return {"error": str(exc)}
 
 
+@shared_task(name="sms.tasks.send_due_campaigns")
+def send_due_campaigns() -> dict:
+    """Every minute, and at once after a "now" campaign is created: every campaign whose time has
+    come goes out, each claimed once (``campaigns.dispatch_due``). Nothing due, no client at all."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import campaigns, eskiz
+
+    now = timezone.now()
+    if not campaigns.due(now).exists():
+        return {"skipped": "nothing due"}
+    return {"sent": campaigns.dispatch_due(eskiz.default_client(), now)}
+
+
+@shared_task(name="sms.tasks.retry_campaign")
+def retry_campaign(campaign_id: int) -> dict:
+    """"Retry failed" on a campaign: its SMS that never left go again (``campaigns.retry_failed``)."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    from . import campaigns, eskiz
+    from .models import SmsCampaign
+
+    campaign = SmsCampaign.objects.filter(pk=campaign_id).select_related("created_by").first()
+    if campaign is None:
+        return {"skipped": "no such campaign"}
+    try:
+        return {"sent_again": campaigns.retry_failed(campaign, eskiz.default_client())}
+    except campaigns.CampaignRefused as exc:
+        return {"skipped": exc.code}
+
+
 @shared_task(name="sms.tasks.check_statuses")
 def check_statuses() -> dict:
     """eskiz's word on what went out in the last two days. With nothing to ask about, no request at

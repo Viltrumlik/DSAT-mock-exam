@@ -36,9 +36,12 @@ def mask_phone(phone) -> str:
     return f"{phone[:5]}***{phone[-4:]}" if len(phone) >= 9 else "***"
 
 
-def deliver(client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_student_id=None) -> SmsMessage | None:
-    """The SMS, once. None when today's row for this key is already there and is not FAILED."""
-    msg = _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id)
+def deliver(
+    client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_student_id=None, campaign=None, created_by=None,
+) -> SmsMessage | None:
+    """The SMS, once. None when today's row for this key is already there and is not FAILED.
+    ``campaign`` and ``created_by`` are recorded on a new row (a FAILED one re-claimed keeps its own)."""
+    msg = _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by)
     if msg is None:
         return None
     result = client.send(phone, text, user_sms_id=f"m{msg.pk}")
@@ -50,12 +53,12 @@ def deliver(client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_st
     return msg
 
 
-def _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id) -> SmsMessage | None:
+def _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by) -> SmsMessage | None:
     try:
         with transaction.atomic():
             return SmsMessage.objects.create(
                 kind=kind, run_on=run_on, dedupe_key=dedupe_key, phone=phone, text=text,
-                user=user, lcup_student_id=lcup_student_id,
+                user=user, lcup_student_id=lcup_student_id, campaign=campaign, created_by=created_by,
             )
     except IntegrityError:
         pass

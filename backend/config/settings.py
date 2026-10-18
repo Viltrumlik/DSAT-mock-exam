@@ -668,6 +668,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sms.tasks.sync_templates",
         "schedule": crontab(hour=9, minute=0),
     },
+    # Campaigns from /ops/sms whose time has come (each claimed once). Nothing due: one SELECT, no request.
+    "sms-send-due-campaigns": {
+        "task": "sms.tasks.send_due_campaigns",
+        "schedule": crontab(),
+    },
     # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
     "sms-check-statuses": {
         "task": "sms.tasks.check_statuses",
