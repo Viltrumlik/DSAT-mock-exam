@@ -132,21 +132,22 @@ def render(template: SmsTemplate, values: dict) -> str:
 #: Owner, 2026-10-18: days 1..LCUP_DEBT_FREEZE_DAY-2 #64942, the last day before the freeze #52393
 #: ("Bugun oxirgi kun!"). eskiz's moderated patterns as ``manage.py eskiz_account`` read them that day.
 #: ``student`` is the name as lc-up holds it, up to four words, with the comma (``debt_warnings``).
-#: While DEBT_WARNING is None nothing is sent; without DEBT_LAST_DAY the last day gets DEBT_WARNING.
-DEBT_WARNING: SmsTemplate | None = SmsTemplate(
+#: Since /ops/sms these are only ``SmsSettings``' defaults: the warning reads its templates from the
+#: settings row (``sms.switchboard``), which starts as exactly these.
+DEBT_WARNING: SmsTemplate = SmsTemplate(
     "debt_warning",
     "MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan "
     "administratsiyaga uchrang!",
     ("student",),
 )
-DEBT_LAST_DAY: SmsTemplate | None = SmsTemplate(
+DEBT_LAST_DAY: SmsTemplate = SmsTemplate(
     "debt_last_day",
     "Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. Guruhdan chetlatilishingiz "
     "mumkin. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
     ("student",),
 )
 
-#: What ``manage.py sms_test`` fills a template with.
+#: What ``manage.py sms_test`` and the panel's test SMS fill a template with.
 SAMPLE_VALUES = {
     "student": "Test Testov,", "first_name": "Test", "last_name": "Testov", "debt": 100000, "freeze_day": 6,
     "days_left": 1,

@@ -655,17 +655,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
     },
-    # SMS before the debt freeze (backend/sms): fires every day at 10:00 (CELERY_TIMEZONE is Tashkent)
-    # and the code decides — days 1..LCUP_DEBT_FREEZE_DAY-1 it warns, other days it sends nothing.
-    # Returns at once while SMS_DEBT_WARNINGS_ENABLED is off.
-    "sms-debt-warnings": {
-        "task": "sms.tasks.debt_warnings",
-        "schedule": crontab(hour=10, minute=0),
+    # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
+    # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,
+    # the next two hours it sends again only what could not get out, every other hour nothing. Returns at
+    # once while SMS_DEBT_WARNINGS_ENABLED (the master) or the panel's switch is off.
+    "sms-debt-warnings-tick": {
+        "task": "sms.tasks.debt_warnings_tick",
+        "schedule": crontab(minute=0),
     },
-    # What 10:00 could not get out (eskiz unreachable, a refused login) goes again — only that.
-    "sms-debt-warnings-retry": {
-        "task": "sms.tasks.retry_debt_warnings",
-        "schedule": crontab(hour="11,12", minute=0),
+    # eskiz's template list into /ops/sms, so one moderated overnight can be picked in the morning.
+    "sms-sync-templates": {
+        "task": "sms.tasks.sync_templates",
+        "schedule": crontab(hour=9, minute=0),
     },
     # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
     "sms-check-statuses": {

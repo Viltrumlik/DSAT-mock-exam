@@ -4,7 +4,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from lcup.phones import normalize_phone
-from sms import conf
+from sms import conf, switchboard
 from sms import templates as T
 from sms.delivery import deliver
 from sms.eskiz import default_client
@@ -12,7 +12,10 @@ from sms.models import SmsMessage
 
 
 class Command(BaseCommand):
-    help = "The debt warning filled with sample values; with --send, one real SMS to --phone (logged as a test)."
+    help = (
+        "The debt warning set in /ops/sms, filled with sample values; with --send, one real SMS to --phone "
+        "(logged as a test)."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--phone", required=True)
@@ -23,9 +26,10 @@ class Command(BaseCommand):
         phone = normalize_phone(options["phone"])
         if not phone:
             raise CommandError("not an Uzbek phone number (998XXXXXXXXX)")
-        template = T.DEBT_LAST_DAY if options["last_day"] else T.DEBT_WARNING
-        if template is None:
-            raise CommandError("no approved template yet: copy it in from manage.py eskiz_account")
+        warning, last_day = switchboard.debt_templates()  # what /ops/sms has set
+        template = last_day if options["last_day"] else warning
+        if not template.text.strip():
+            raise CommandError("no approved template yet: pick one in /ops/sms")
         text = T.render(template, T.SAMPLE_VALUES)
         plain = "plain" if T.is_gsm_safe(text) else "NOT plain"
         self.stdout.write(f"{text}\n({len(text)} characters, {plain} ASCII)")
