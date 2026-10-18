@@ -6,10 +6,14 @@ from .eskiz import ACCEPTED, EskizError, SendResult, StatusResult
 class FakeEskiz:
     """``template_rows`` is the account's template list as eskiz answers it; a submitted text joins
     it as ``moderation``. ``account_error`` makes every account read and the submit raise, as an
-    unreachable eskiz or a refused login does."""
+    unreachable eskiz or a refused login does. ``outcomes`` answers the first sends one by one
+    before ``outcome`` takes over: ``FakeEskiz(FAILED, outcomes=[ACCEPTED] * 2)`` fails after two."""
 
-    def __init__(self, outcome=ACCEPTED, statuses=None, *, template_rows=None, balance=125000, account_error=""):
+    def __init__(
+        self, outcome=ACCEPTED, statuses=None, *, outcomes=(), template_rows=None, balance=125000, account_error="",
+    ):
         self.outcome = outcome
+        self.outcomes = list(outcomes)
         self.statuses = dict(statuses or {})
         self.sent = []
         self.template_rows = [dict(row) for row in template_rows or []]
@@ -20,9 +24,10 @@ class FakeEskiz:
 
     def send(self, phone, text, *, user_sms_id=""):
         self.sent.append((phone, text, user_sms_id))
-        if self.outcome == ACCEPTED:
+        outcome = self.outcomes.pop(0) if self.outcomes else self.outcome
+        if outcome == ACCEPTED:
             return SendResult(ACCEPTED, request_id=f"req-{len(self.sent)}")
-        return SendResult(self.outcome, error="refused by the fake")
+        return SendResult(outcome, error="refused by the fake")
 
     def status(self, request_id):
         status = self.statuses.get(request_id)

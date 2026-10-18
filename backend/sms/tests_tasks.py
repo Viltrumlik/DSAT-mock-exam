@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import mock
 
 from django.core.cache import cache
@@ -82,11 +82,36 @@ class TickTests(TestCase):
             result = tasks._tick(local(hour))
         return result, send
 
+    def ran_today(self, day=1, status=None):
+        """Today's run left a warning behind (sent, or FAILED to be retried)."""
+        from sms.models import SmsMessage
+
+        SmsMessage.objects.create(
+            kind=SmsMessage.KIND_DEBT_WARNING, run_on=local(10, day=day).date(), dedupe_key="student:101",
+            phone="998901234567", text="x", status=status or SmsMessage.STATUS_SENT,
+        )
+
     def test_the_hour_runs_normally_and_the_next_two_retry(self):
+        self.ran_today()
         for hour, retry_only in ((10, False), (11, True), (12, True)):
             result, send = self.tick(hour)
             self.assertEqual(result, {"sent": 1})
             self.assertEqual(send.call_args.kwargs, {"retry_only": retry_only}, hour)
+
+    def test_an_hour_moved_earlier_after_it_passed_still_warns_today(self):
+        """10 → 9 at 09:30: the 09:00 tick ran under 10 and skipped; 10:00 must not be only a retry."""
+        configure(debt_hour=9)
+        self.assertEqual(self.tick(10)[1].call_args.kwargs, {"retry_only": False})
+
+    def test_the_catch_up_is_a_retry_once_today_has_a_warning(self):
+        configure(debt_hour=9)
+        self.ran_today(status="FAILED")
+        self.assertEqual(self.tick(10)[1].call_args.kwargs, {"retry_only": True})
+        self.assertEqual(self.tick(11)[1].call_args.kwargs, {"retry_only": True})
+
+    def test_yesterdays_warnings_do_not_count_as_today(self):
+        self.ran_today(day=2)
+        self.assertEqual(self.tick(11)[1].call_args.kwargs, {"retry_only": False})
 
     def test_any_other_hour_does_nothing(self):
         for hour in (9, 13, 0, 23):
@@ -97,6 +122,7 @@ class TickTests(TestCase):
     def test_a_changed_hour_is_honoured(self):
         configure(debt_hour=9)
         self.assertEqual(self.tick(9)[1].call_args.kwargs, {"retry_only": False})
+        self.ran_today()
         self.assertEqual(self.tick(10)[1].call_args.kwargs, {"retry_only": True})
         self.assertEqual(self.tick(12)[0], {"skipped": "not the hour"})
 
@@ -171,18 +197,38 @@ class CampaignTaskTests(TestCase):
             template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
         )
         with mock.patch("sms.eskiz.default_client", return_value=FakeEskiz()):
-            self.assertEqual(tasks.send_due_campaigns(), {"sent": 1})
+            self.assertEqual(tasks.send_due_campaigns(), {"sent": 1, "resumed": 0})
         self.assertEqual(SmsCampaign.objects.get().status, SmsCampaign.STATUS_DONE)
+
+    def test_a_stuck_campaign_is_resumed_by_the_minute_beat(self):
+        from sms.models import SmsCampaign
+
+        stuck = SmsCampaign.objects.create(
+            template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
+            status=SmsCampaign.STATUS_SENDING, started_at=timezone.now() - timedelta(minutes=20),
+        )
+        fresh = SmsCampaign.objects.create(
+            template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
+            status=SmsCampaign.STATUS_SENDING, started_at=timezone.now() - timedelta(minutes=2),
+        )
+        with mock.patch("sms.eskiz.default_client", return_value=FakeEskiz()):
+            self.assertEqual(tasks.send_due_campaigns(), {"sent": 0, "resumed": 1})
+        stuck.refresh_from_db()
+        fresh.refresh_from_db()
+        self.assertEqual((stuck.status, fresh.status), (SmsCampaign.STATUS_DONE, SmsCampaign.STATUS_SENDING))
 
     @override_settings(ESKIZ_EMAIL="")
     def test_without_credentials_they_wait(self):
         self.assertEqual(tasks.send_due_campaigns(), {"skipped": "eskiz is not configured"})
 
-    def test_retry_of_a_campaign_that_is_not_done(self):
+    def test_the_retry_task_sends_only_a_campaign_its_retry_claimed(self):
         from sms.models import SmsCampaign
 
         campaign = SmsCampaign.objects.create(
             template_eskiz_id=1, pattern="x", audience=SmsCampaign.AUDIENCE_DEBTORS, scheduled_at=timezone.now(),
         )
         with mock.patch("sms.eskiz.default_client", return_value=FakeEskiz()):
-            self.assertEqual(tasks.retry_campaign(campaign.pk), {"skipped": "not_done"})
+            self.assertEqual(tasks.retry_campaign(campaign.pk), {"skipped": "not sending"})
+            self.assertEqual(tasks.retry_campaign(999), {"skipped": "not sending"})
+            SmsCampaign.objects.filter(pk=campaign.pk).update(status=SmsCampaign.STATUS_SENDING, started_at=timezone.now())
+            self.assertEqual(tasks.retry_campaign(campaign.pk), {"status": "DONE", "sent": 0})

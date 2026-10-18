@@ -7,12 +7,14 @@ this codebase and is how an admin endpoint once shipped as AllowAny.
 Nothing here sends on its own: a campaign, "Send now" and a retry are queued to the same tasks the
 beat runs, after the commit; only the test SMS goes out in the request (one SMS, and the admin is
 waiting to see what eskiz said). eskiz is asked for its balance at most every BALANCE_TTL, and
-never with a fresh login while its last login was refused — the account is shared with lc-up.
+never with a fresh login while its last login was refused — the account is shared with lc-up —
+and by one request at a time (BALANCE_LOCK_KEY): ten admins opening the page ask once.
+
+A body that is not a JSON object (a list, a string, null) is a 400 with code ``body``, never a 500.
 """
 
 from __future__ import annotations
 
-import uuid
 from collections import Counter
 from datetime import date, timedelta
 
@@ -44,6 +46,9 @@ from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
 
 BALANCE_KEY = "sms:balance"
 BALANCE_TTL = 5 * 60
+#: Held while one request asks eskiz for the balance; the others answer from the cache, or null.
+BALANCE_LOCK_KEY = "sms:balance-lock"
+BALANCE_LOCK_TTL = 30
 #: An unanswered balance is asked again sooner, but not on every page load.
 BALANCE_ERROR_TTL = 60
 CAMPAIGN_LIST_MAX = 200
@@ -65,6 +70,13 @@ class _AdminView(APIView):
 
 def _refused(code: str, detail: str, status=http.HTTP_400_BAD_REQUEST) -> Response:
     return Response({"detail": detail, "code": code}, status=status)
+
+
+def _not_an_object(request) -> Response | None:
+    """The refusal for a body that is not a JSON object; None when it is one (an empty body is ``{}``)."""
+    if isinstance(request.data, dict):
+        return None
+    return _refused("body", "Send a JSON object.")
 
 
 def _iso(value):
@@ -189,11 +201,18 @@ def _balance():
         return cached["balance"]
     if not cache.get(eskiz.TOKEN_KEY) and cache.get(eskiz.LOGIN_REFUSED_KEY):
         return None
+    if not cache.add(BALANCE_LOCK_KEY, 1, BALANCE_LOCK_TTL):
+        # Another request is asking eskiz right now; it may have answered while we looked.
+        cached = cache.get(BALANCE_KEY)
+        return cached["balance"] if cached is not None else None
     try:
-        balance = eskiz.default_client().balance()
-    except eskiz.EskizError:
-        balance = None
-    cache.set(BALANCE_KEY, {"balance": balance}, timeout=BALANCE_TTL if balance is not None else BALANCE_ERROR_TTL)
+        try:
+            balance = eskiz.default_client().balance()
+        except eskiz.EskizError:
+            balance = None
+        cache.set(BALANCE_KEY, {"balance": balance}, timeout=BALANCE_TTL if balance is not None else BALANCE_ERROR_TTL)
+    finally:
+        cache.delete(BALANCE_LOCK_KEY)
     return balance
 
 
@@ -312,6 +331,8 @@ class CampaignListView(_AdminView):
         return Response({"campaigns": _campaign_rows(items)})
 
     def post(self, request):
+        if refused := _not_an_object(request):
+            return refused
         try:
             campaign = campaigns.create(request.data, request.user)
         except campaigns.CampaignRefused as exc:
@@ -321,6 +342,8 @@ class CampaignListView(_AdminView):
 
 class CampaignPreviewView(_AdminView):
     def post(self, request):
+        if refused := _not_an_object(request):
+            return refused
         try:
             return Response(campaigns.preview(request.data))
         except campaigns.CampaignRefused as exc:
@@ -349,14 +372,20 @@ class CampaignCancelView(_AdminView):
 
 
 class CampaignRetryView(_AdminView):
+    """Retry = resume, for a DONE or a stopped (FAILED) campaign: claimed SENDING here, at once (a
+    second click is refused), then sent by the queued task — the recipients worked out again, the
+    FAILED sent again, the never-reached sent, nothing that may have left."""
+
     def post(self, request, pk):
         campaign = _campaign(pk)
         try:
-            queued = campaigns.check_retry(campaign)
+            campaigns.check_retryable(campaign)
+            if not conf.is_configured():
+                return _refused("not_configured", "eskiz is not configured on the server.")
+            queued = campaigns.retry(campaign)
         except campaigns.CampaignRefused as exc:
             return _campaign_refused(exc)
-        if queued:
-            _on_commit(_queue_retry(campaign.pk))
+        _on_commit(_queue_retry(campaign.pk))
         return Response({"queued": queued})
 
 
@@ -409,7 +438,9 @@ class SettingsView(_AdminView):
         return Response(settings_row(switchboard.current()))
 
     def patch(self, request):
-        data = request.data if isinstance(request.data, dict) else {}
+        if refused := _not_an_object(request):
+            return refused
+        data = request.data
         row = switchboard.current()
         changed = []
         try:
@@ -449,6 +480,12 @@ class DebtPreviewView(_AdminView):
         else:
             day = warnings.next_warning_day(_today()) or _today()
         planned = warnings.plan(now, today=day)
+        # What that day's runs already did: a key with a row that is not FAILED never goes again.
+        out = set(
+            SmsMessage.objects.filter(kind=SmsMessage.KIND_DEBT_WARNING, run_on=day)
+            .exclude(status=SmsMessage.STATUS_FAILED)
+            .values_list("dedupe_key", flat=True)
+        )
         rows = [
             {
                 "lcup_student_id": w.link.lcup_student_id,
@@ -460,13 +497,16 @@ class DebtPreviewView(_AdminView):
             }
             for w in planned.warnings
         ]
+        left = [r for r, w in zip(rows, planned.warnings) if w.dedupe_key not in out]
         return Response({
             "day": day.isoformat(),
             "is_last_day": warnings.is_last_day(day),
             "blocked": planned.blocked,
             "skipped": planned.skipped,
             "count": len(rows),
-            "cost": sum(r["parts"] for r in rows) * switchboard.price_per_part(),
+            "sent_today": len(out),
+            "to_send": len(left),
+            "cost": sum(r["parts"] for r in left) * switchboard.price_per_part(),
             "warnings": rows,
         })
 
@@ -506,6 +546,8 @@ class TemplateListView(_AdminView):
         return Response({"templates": [template_row(t) for t in rows], "synced_at": _iso(synced_at)})
 
     def post(self, request):
+        if refused := _not_an_object(request):
+            return refused
         try:
             row, counts = eskiz_templates.submit(eskiz.default_client(), request.data.get("text"), request.user)
         except eskiz_templates.TemplateRefused as exc:
@@ -535,10 +577,16 @@ def _sample_text(template, texts) -> str:
 
 class TestSmsView(_AdminView):
     """One SMS to the phone typed, logged as a test. ``slot_texts`` has one entry per slot; only the
-    ``text`` slots' are used (the client sends "" for the rest)."""
+    ``text`` slots' are used (the client sends "" for the rest).
+
+    The same phone and template once a minute (Tashkent): the key is
+    ``test:<phone>:<template>:<YYYYmmddHHMM>``, so a double click — or a retried request — finds
+    the first one's row and sends nothing (``duplicate``); one that never left (FAILED) may go again."""
 
     def post(self, request):
-        data = request.data if isinstance(request.data, dict) else {}
+        if refused := _not_an_object(request):
+            return refused
+        data = request.data
         phone = normalize_phone(data.get("phone"))
         if not phone:
             return _refused("phone", "Not an Uzbek phone number (998XXXXXXXXX).")
@@ -557,10 +605,14 @@ class TestSmsView(_AdminView):
             return _refused("slots", str(exc))
         if not conf.is_configured():
             return _refused("not_configured", "eskiz is not configured on the server.")
+        now = timezone.localtime(timezone.now())
         msg = deliver(
-            eskiz.default_client(), kind=SmsMessage.KIND_TEST, run_on=timezone.localdate(),
-            dedupe_key=f"test:{uuid.uuid4().hex[:16]}", phone=phone, text=text, created_by=request.user,
+            eskiz.default_client(), kind=SmsMessage.KIND_TEST, run_on=now.date(),
+            dedupe_key=f"test:{phone}:{template.eskiz_id}:{now:%Y%m%d%H%M}", phone=phone, text=text,
+            created_by=request.user,
         )
+        if msg is None:
+            return _refused("duplicate", "This test SMS was just sent: check the journal before sending it again.")
         return Response({"message": message_row(SmsMessage.objects.select_related("user", "created_by").get(pk=msg.pk))})
 
 

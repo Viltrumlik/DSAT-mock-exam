@@ -8,8 +8,18 @@ link or no phone is skipped and listed, never guessed at.
 
 **Never twice.** ``dispatch_due`` claims a campaign SCHEDULED → SENDING in one UPDATE, so two beats
 (or the beat and the "now" task) cannot both send it. Every SMS then goes through
-``delivery.deliver`` under ``campaign:<id>:student:<lc-up id>`` with all its guarantees: UNCERTAIN
-(it may have left) is never sent again, FAILED (it never left) may be — ``retry_failed``.
+``delivery.deliver`` under ``campaign:<id>:student:<lc-up id>`` on the campaign's own day (the day
+it was scheduled for) with all its guarantees: UNCERTAIN (it may have left) is never sent again,
+FAILED (it never left) may be. So ``send_campaign`` can always run again on the same campaign —
+whatever already left is skipped — and three things do run it again:
+
+* **the reaper** (``resume_stuck``, every minute): a worker killed mid-send leaves its campaign
+  SENDING; one whose heartbeat (``started_at``, bumped every HEARTBEAT_EVERY recipients) is older
+  than STUCK_AFTER is claimed again in one UPDATE and finished;
+* **the circuit breaker**: BREAKER_AFTER failed or uncertain sends in a row stop the campaign
+  (FAILED) with the rest unclaimed — eskiz is down, and 300 failures help nobody;
+* **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again and sent
+  as a resume — the recipients worked out anew, FAILED ones re-claimed, the unreached sent.
 
 **At most LIMIT recipients**, checked at the preview, at create and again at send: a class or the
 debtor list can grow between the two, and a campaign that grew past it sends nothing.
@@ -34,6 +44,7 @@ from users.models import User
 
 from . import switchboard
 from . import templates as T
+from .debt_warnings import STALE_AFTER
 from .delivery import deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage
 
@@ -44,7 +55,17 @@ LIMIT = 300
 #: A "send at" a little in the past (the time it took to click Confirm) still means now.
 PAST_GRACE = timedelta(minutes=1)
 SAMPLES = 3
-SKIP_REASONS = ("no_link", "no_phone", "not_debtor", "bad_text")
+SKIP_REASONS = ("no_link", "no_phone", "stale_balance", "not_debtor", "bad_text")
+#: A send bumps its campaign's ``started_at`` at least this often (recipients): the reaper's heartbeat.
+HEARTBEAT_EVERY = 20
+#: A SENDING campaign whose heartbeat is older than this lost its worker. One eskiz request is at most
+#: ~25 s (eskiz.TIMEOUT), so a live send bumps it every ~8 min at worst.
+STUCK_AFTER = timedelta(minutes=15)
+#: This many FAILED or UNCERTAIN sends in a row stop a campaign: eskiz is down or refusing us.
+BREAKER_AFTER = 5
+_BROKEN = frozenset({SmsMessage.STATUS_FAILED, SmsMessage.STATUS_UNCERTAIN})
+#: What Retry may pick up again: finished, or stopped (the breaker, the limit).
+RETRYABLE = (SmsCampaign.STATUS_DONE, SmsCampaign.STATUS_FAILED)
 #: Siblings on a parent's phone whose texts come out the same get one SMS between them.
 SAME_PHONE = "same_phone"
 _DIGITS = re.compile(r"^[0-9]+$")
@@ -185,7 +206,10 @@ def _when(raw, now):
 
 def clean(data, *, now) -> Draft:
     """The body of a preview or a create, checked; refusals carry the API's ``code``."""
-    data = data or {}
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise CampaignRefused("body", "Send a JSON object.")
     template = usable_template(data.get("template_id"))
     roles, texts = clean_slots(template.pattern, data.get("slot_roles"), data.get("slot_texts"))
     audience, ids = _audience(data.get("audience"), data.get("audience_ids"))
@@ -258,9 +282,17 @@ def render_for(campaign, user, link, *, suffixes=None) -> str:
     return T.render(_template_of(campaign), values)
 
 
-def resolve(campaign) -> tuple[list[Recipient], dict]:
-    """(who gets it, who does not and why) — one SMS per lc-up student, worked out as of now."""
+def _stale(link, now) -> bool:
+    return link.balance_seen_at is None or link.balance_seen_at < now - STALE_AFTER
+
+
+def resolve(campaign, *, now=None) -> tuple[list[Recipient], dict]:
+    """(who gets it, who does not and why) — one SMS per lc-up student, worked out as of ``now``.
+    A debt named in the text, or a debtors list, needs a balance lc-up sent within STALE_AFTER:
+    an older one may have been paid since (``stale_balance``)."""
+    now = now or timezone.now()
     uses_debt = T.ROLE_DEBT in campaign.slot_roles
+    needs_balance = uses_debt or campaign.audience == SmsCampaign.AUDIENCE_DEBTORS
     suffixes = T.role_suffixes(campaign.original, campaign.pattern)
     recipients, skipped = [], {reason: [] for reason in SKIP_REASONS}
     students, texts = set(), set()
@@ -274,6 +306,9 @@ def resolve(campaign) -> tuple[list[Recipient], dict]:
         phone = normalize_phone(link.phone)
         if not phone:
             skipped["no_phone"].append(who)
+            continue
+        if needs_balance and _stale(link, now):
+            skipped["stale_balance"].append(who)
             continue
         if uses_debt and not _owes(link):
             skipped["not_debtor"].append(who)
@@ -293,8 +328,9 @@ def resolve(campaign) -> tuple[list[Recipient], dict]:
 
 
 def preview(data, *, now=None) -> dict:
-    draft = clean(data, now=now or timezone.now())
-    recipients, skipped = resolve(draft)
+    now = now or timezone.now()
+    draft = clean(data, now=now)
+    recipients, skipped = resolve(draft, now=now)
     parts = [T.parts(r.text) for r in recipients]
     total = sum(parts)
     return {
@@ -323,7 +359,7 @@ def create(data, user, *, now=None) -> SmsCampaign:
     """A campaign due now is queued at once (after the commit); a later one waits for the beat."""
     now = now or timezone.now()
     draft = clean(data, now=now)
-    recipients, _ = resolve(draft)
+    recipients, _ = resolve(draft, now=now)
     if not recipients:
         raise CampaignRefused("empty", "Nobody in that audience can get it: see who is skipped in the preview.")
     if len(recipients) > LIMIT:
@@ -344,6 +380,15 @@ def due(now):
     return SmsCampaign.objects.filter(status=SmsCampaign.STATUS_SCHEDULED, scheduled_at__lte=now)
 
 
+def stuck(now):
+    """SENDING with a heartbeat older than STUCK_AFTER: the worker sending it is gone."""
+    return SmsCampaign.objects.filter(status=SmsCampaign.STATUS_SENDING, started_at__lt=now - STUCK_AFTER)
+
+
+def _load(pk) -> SmsCampaign:
+    return SmsCampaign.objects.select_related("created_by").get(pk=pk)
+
+
 def dispatch_due(client, now) -> int:
     """Every campaign whose time has come, each claimed once. The number sent."""
     sent = 0
@@ -351,9 +396,23 @@ def dispatch_due(client, now) -> int:
         claimed = due(now).filter(pk=pk).update(status=SmsCampaign.STATUS_SENDING, started_at=now)
         if not claimed:
             continue  # another worker, or a cancel, got there first
-        send_campaign(client, SmsCampaign.objects.select_related("created_by").get(pk=pk), now)
+        send_campaign(client, _load(pk), now)
         sent += 1
     return sent
+
+
+def resume_stuck(client, now) -> int:
+    """Every campaign a dead worker left SENDING, claimed again in one UPDATE (a fresh heartbeat,
+    so the next beat leaves it alone) and finished. Whatever the dead worker got out is skipped:
+    its SMS rows are there. The number resumed."""
+    resumed = 0
+    for pk in list(stuck(now).order_by("started_at", "pk").values_list("pk", flat=True)):
+        if not stuck(now).filter(pk=pk).update(started_at=now):
+            continue  # another beat took it
+        logger.warning("campaign %s was left sending: resuming it", pk)
+        send_campaign(client, _load(pk), now)
+        resumed += 1
+    return resumed
 
 
 def _tally(campaign) -> dict:
@@ -381,11 +440,22 @@ def _key(campaign, link) -> str:
     return f"campaign:{campaign.pk}:student:{link.lcup_student_id}"
 
 
+def run_on(campaign):
+    """The day a campaign's SMS are filed under — the day it was scheduled for, not the day a resume
+    or a retry happens to run: (kind, day, key) is the claim, and a new day would be a new claim."""
+    return timezone.localdate(campaign.scheduled_at)
+
+
+def _heartbeat(campaign) -> None:
+    SmsCampaign.objects.filter(pk=campaign.pk, status=SmsCampaign.STATUS_SENDING).update(started_at=timezone.now())
+
+
 def send_campaign(client, campaign, now=None) -> SmsCampaign:
-    """A claimed (SENDING) campaign, out. One recipient going wrong does not stop the rest."""
+    """A claimed (SENDING) campaign, out. One recipient going wrong does not stop the rest;
+    BREAKER_AFTER going wrong in a row do. Safe to run again: what already left is skipped."""
     now = now or timezone.now()
     try:
-        recipients, skipped = resolve(campaign)
+        recipients, skipped = resolve(campaign, now=now)
     except Exception as exc:  # the type only: a message can quote a phone
         logger.warning("campaign %s: the recipients could not be worked out: %s", campaign.pk, type(exc).__name__)
         return _finish(campaign, SmsCampaign.STATUS_FAILED, now, error=f"the recipients could not be worked out ({type(exc).__name__})")
@@ -394,11 +464,13 @@ def send_campaign(client, campaign, now=None) -> SmsCampaign:
             campaign, SmsCampaign.STATUS_FAILED, now, skipped=skipped,
             error=f"{len(recipients)} recipients is more than {LIMIT}: nothing was sent",
         )
-    run_on, errors = timezone.localdate(now), 0
-    for r in recipients:
+    day, errors, in_a_row = run_on(campaign), 0, 0
+    for i, r in enumerate(recipients):
+        if i and i % HEARTBEAT_EVERY == 0:
+            _heartbeat(campaign)
         try:
-            deliver(
-                client, kind=SmsMessage.KIND_CAMPAIGN, run_on=run_on, dedupe_key=_key(campaign, r.link),
+            msg = deliver(
+                client, kind=SmsMessage.KIND_CAMPAIGN, run_on=day, dedupe_key=_key(campaign, r.link),
                 phone=r.phone, text=r.text, user=r.user, lcup_student_id=r.link.lcup_student_id,
                 campaign=campaign, created_by=campaign.created_by,
             )
@@ -407,6 +479,18 @@ def send_campaign(client, campaign, now=None) -> SmsCampaign:
                 "campaign %s to lc-up student %s went wrong: %s", campaign.pk, r.link.lcup_student_id, type(exc).__name__
             )
             errors += 1
+            in_a_row += 1
+        else:
+            if msg is None:
+                continue  # already out (a resume, a retry): not a send, either way
+            in_a_row = in_a_row + 1 if msg.status in _BROKEN else 0
+        if in_a_row >= BREAKER_AFTER:
+            tally = _tally(campaign)
+            logger.warning("campaign %s stopped: %s sends in a row went wrong", campaign.pk, in_a_row)
+            return _finish(
+                campaign, SmsCampaign.STATUS_FAILED, now, **tally, errors=errors, skipped=skipped,
+                error=f"eskiz kept failing — stopped after {tally['sent']} sent; press Retry to continue",
+            )
     return _finish(campaign, SmsCampaign.STATUS_DONE, now, **_tally(campaign), errors=errors, skipped=skipped)
 
 
@@ -421,30 +505,46 @@ def cancel(campaign, *, now=None) -> SmsCampaign:
     return campaign
 
 
-def check_retry(campaign) -> int:
-    """How many a retry would send again; refused unless the campaign is DONE."""
-    if campaign.status != SmsCampaign.STATUS_DONE:
-        raise CampaignRefused("not_done", "Only a finished campaign can be retried.")
-    return campaign.messages.filter(status=SmsMessage.STATUS_FAILED).count()
+def check_retryable(campaign) -> None:
+    """Retry is for a DONE or a stopped (FAILED) campaign only: ``not_done`` otherwise."""
+    if campaign.status not in RETRYABLE:
+        raise CampaignRefused("not_done", "Only a finished or stopped campaign can be retried.")
 
 
-def retry_failed(campaign, client) -> int:
-    """The SMS that never left (FAILED) go again, as they were written; UNCERTAIN ones never do."""
-    check_retry(campaign)
-    again = 0
-    for msg in campaign.messages.filter(status=SmsMessage.STATUS_FAILED).select_related("user"):
-        try:
-            sent = deliver(
-                client, kind=msg.kind, run_on=msg.run_on, dedupe_key=msg.dedupe_key, phone=msg.phone, text=msg.text,
-                user=msg.user, lcup_student_id=msg.lcup_student_id, campaign=campaign, created_by=campaign.created_by,
-            )
-        except Exception as exc:
-            logger.warning("campaign %s retry for message %s went wrong: %s", campaign.pk, msg.pk, type(exc).__name__)
-            continue
-        again += sent is not None
-    campaign.result = {**EMPTY_RESULT, **(campaign.result or {}), **_tally(campaign)}
-    campaign.save(update_fields=["result"])
-    return again
+def to_resend(campaign, *, now=None) -> int:
+    """How many a resume would send, best effort: the recipients as of now with no SMS yet or a FAILED one."""
+    try:
+        recipients, _ = resolve(campaign, now=now)
+    except Exception:  # the send will say why; the count falls back to what is known to have failed
+        return campaign.messages.filter(status=SmsMessage.STATUS_FAILED).count()
+    states = dict(campaign.messages.values_list("dedupe_key", "status"))
+    return sum(1 for r in recipients if states.get(_key(campaign, r.link)) in (None, SmsMessage.STATUS_FAILED))
+
+
+def retry(campaign, *, now=None) -> int:
+    """Retry, from the panel: a DONE or FAILED campaign is claimed SENDING again in one UPDATE (so
+    a second click, or a second admin, is refused) and ``resume`` sends it. How many it would send."""
+    now = now or timezone.now()
+    check_retryable(campaign)
+    queued = to_resend(campaign, now=now)
+    claimed = SmsCampaign.objects.filter(pk=campaign.pk, status__in=RETRYABLE).update(
+        status=SmsCampaign.STATUS_SENDING, started_at=now, finished_at=None, error="",
+    )
+    if not claimed:  # another click, another admin, got there first
+        raise CampaignRefused("not_done", "This campaign is already being sent again.")
+    campaign.refresh_from_db()
+    return queued
+
+
+def resume(client, campaign_id, *, now=None) -> SmsCampaign | None:
+    """The send a retry queued: the campaign, if it is still the SENDING one ``retry`` claimed (the
+    reaper may have finished it meanwhile), out again through ``send_campaign``."""
+    campaign = SmsCampaign.objects.select_related("created_by").filter(
+        pk=campaign_id, status=SmsCampaign.STATUS_SENDING
+    ).first()
+    if campaign is None:
+        return None
+    return send_campaign(client, campaign, now)
 
 
 # ── reading ───────────────────────────────────────────────────────────────

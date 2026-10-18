@@ -15,8 +15,17 @@ def debt_warnings_tick() -> dict:
     """Every hour at :00. At ``SmsSettings.debt_hour`` (10:00 unless /ops/sms changed it) the warning
     run; the next RETRY_HOURS hours only what that run could not get out — never a new warning, the
     owner's time is the hour he set. Days 1..LCUP_DEBT_FREEZE_DAY-1 it warns; on any other day the
-    plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code."""
+    plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code.
+
+    Unless today has no warning at all: the hour was moved earlier after it had passed (10 → 9 at
+    09:30), so its tick never ran. Then the first tick of the window is the day's run (a catch-up)."""
     return _tick(timezone.now())
+
+
+def _warned_today(now) -> bool:
+    from .models import SmsMessage
+
+    return SmsMessage.objects.filter(kind=SmsMessage.KIND_DEBT_WARNING, run_on=timezone.localdate(now)).exists()
 
 
 def _tick(now) -> dict:
@@ -26,7 +35,7 @@ def _tick(now) -> dict:
     if hour == start:
         return _warn(retry_only=False)
     if start < hour <= start + RETRY_HOURS:
-        return _warn(retry_only=True)
+        return _warn(retry_only=_warned_today(now))
     return {"skipped": "not the hour"}
 
 
@@ -95,32 +104,34 @@ def sync_templates() -> dict:
 @shared_task(name="sms.tasks.send_due_campaigns")
 def send_due_campaigns() -> dict:
     """Every minute, and at once after a "now" campaign is created: every campaign whose time has
-    come goes out, each claimed once (``campaigns.dispatch_due``). Nothing due, no client at all."""
+    come goes out, each claimed once (``campaigns.dispatch_due``), and every one a dead worker left
+    SENDING is finished (``campaigns.resume_stuck``). Neither, no client at all."""
     if not conf.is_configured():
         return {"skipped": "eskiz is not configured"}
     from . import campaigns, eskiz
 
     now = timezone.now()
-    if not campaigns.due(now).exists():
+    if not campaigns.due(now).exists() and not campaigns.stuck(now).exists():
         return {"skipped": "nothing due"}
-    return {"sent": campaigns.dispatch_due(eskiz.default_client(), now)}
+    client = eskiz.default_client()
+    return {"sent": campaigns.dispatch_due(client, now), "resumed": campaigns.resume_stuck(client, now)}
 
 
 @shared_task(name="sms.tasks.retry_campaign")
 def retry_campaign(campaign_id: int) -> dict:
-    """"Retry failed" on a campaign: its SMS that never left go again (``campaigns.retry_failed``)."""
+    """Retry on a campaign, queued by the panel once ``campaigns.retry`` claimed it SENDING: a
+    resume — the unreached sent, the FAILED sent again, nothing that may have left."""
     if not conf.is_configured():
         return {"skipped": "eskiz is not configured"}
     from . import campaigns, eskiz
     from .models import SmsCampaign
 
-    campaign = SmsCampaign.objects.filter(pk=campaign_id).select_related("created_by").first()
+    if not SmsCampaign.objects.filter(pk=campaign_id, status=SmsCampaign.STATUS_SENDING).exists():
+        return {"skipped": "not sending"}
+    campaign = campaigns.resume(eskiz.default_client(), campaign_id)
     if campaign is None:
-        return {"skipped": "no such campaign"}
-    try:
-        return {"sent_again": campaigns.retry_failed(campaign, eskiz.default_client())}
-    except campaigns.CampaignRefused as exc:
-        return {"skipped": exc.code}
+        return {"skipped": "not sending"}
+    return {"status": campaign.status, "sent": campaign.result.get("sent", 0)}
 
 
 @shared_task(name="sms.tasks.check_statuses")

@@ -262,6 +262,20 @@ class OverviewTests(ApiFixture):
         self.get("overview/")
         self.assertEqual(self.fake.balance_calls, 1)
 
+    def test_one_balance_request_at_a_time(self):
+        """Ten admins opening the page at once ask eskiz once: the others get null until it answers."""
+        cache.add(views.BALANCE_LOCK_KEY, 1, 30)
+        self.addCleanup(cache.delete, views.BALANCE_LOCK_KEY)
+        self.assertIsNone(self.get("overview/").json()["balance"])
+        self.assertEqual(self.fake.balance_calls, 0)
+        cache.set(views.BALANCE_KEY, {"balance": 777}, 60)
+        self.assertEqual(self.get("overview/").json()["balance"], 777)
+        self.assertEqual(self.fake.balance_calls, 0)
+
+    def test_the_balance_lock_is_let_go(self):
+        self.get("overview/")
+        self.assertIsNone(cache.get(views.BALANCE_LOCK_KEY))
+
     def test_no_login_for_the_balance_after_a_refused_one(self):
         cache.set(eskiz.LOGIN_REFUSED_KEY, "1")
         data = self.get("overview/").json()
@@ -339,7 +353,7 @@ class CampaignApiTests(ApiFixture):
         self.assertEqual((data["count"], data["over_limit"], data["limit"], data["parts_total"], data["cost"]), (1, False, 300, 1, 170))
         self.assertEqual(data["samples"][0]["text"][:40], "MASTER SAT'dan yozyabmiz. Karimova Malik")
         self.assertEqual(set(data["samples"][0]), {"name", "phone", "text", "parts"})
-        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "not_debtor", "bad_text"})
+        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "stale_balance", "not_debtor", "bad_text"})
 
     def test_create_queues_a_now_campaign(self):
         with self.captureOnCommitCallbacks(execute=True):
@@ -398,6 +412,39 @@ class CampaignApiTests(ApiFixture):
             response = self.post(f"campaigns/{campaign['id']}/retry/")
         self.assertEqual(response.json(), {"queued": 1})
         self.queued["retry_campaign"].assert_called_once_with(campaign["id"])
+        # Claimed at once: the page shows it sending, and a second click is refused.
+        self.assertEqual(self.get(f"campaigns/{campaign['id']}/").json()["campaign"]["status"], "SENDING")
+        again = self.post(f"campaigns/{campaign['id']}/retry/")
+        self.assertEqual((again.status_code, again.json()["code"]), (400, "not_done"))
+        self.queued["retry_campaign"].assert_called_once()
+
+    def stopped(self):
+        """A campaign the circuit breaker stopped: 1 sent, 5 FAILED, 1 never claimed."""
+        from sms import campaigns
+
+        for i in range(6):
+            self.learner(201 + i, f"d{i}", balance=-1000, phone=f"9989022222{i:02d}")
+        with self.captureOnCommitCallbacks(execute=True):
+            body = self.post("campaigns/", self.draft(audience="debtors", audience_ids=[])).json()
+        campaigns.dispatch_due(FakeEskiz(FAILED, outcomes=[eskiz.ACCEPTED]), timezone.now())
+        return body["campaign"]["id"]
+
+    def test_a_stopped_campaign_can_be_retried_and_the_count_is_what_is_left(self):
+        pk = self.stopped()
+        detail = self.get(f"campaigns/{pk}/").json()["campaign"]
+        self.assertEqual((detail["status"], detail["result"]["sent"], detail["result"]["failed"]), ("FAILED", 1, 5))
+        self.assertIn("press Retry", detail["error"])
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.post(f"campaigns/{pk}/retry/")
+        self.assertEqual(response.json(), {"queued": 6})
+        self.queued["retry_campaign"].assert_called_once_with(pk)
+
+    @override_settings(ESKIZ_EMAIL="")
+    def test_retry_refused_while_eskiz_is_not_configured(self):
+        pk = self.stopped()
+        response = self.post(f"campaigns/{pk}/retry/")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "not_configured"))
+        self.assertEqual(SmsCampaign.objects.get(pk=pk).status, "FAILED")
 
     def test_live_delivered_counts(self):
         with self.captureOnCommitCallbacks(execute=True):
@@ -472,8 +519,11 @@ class DebtApiTests(ApiFixture):
     def test_preview_of_the_next_warning_day(self):
         with mock.patch("sms.views._today", return_value=date(2026, 10, 18)):
             data = self.get("debt/preview/").json()
-        self.assertEqual(set(data), {"day", "is_last_day", "blocked", "skipped", "count", "cost", "warnings"})
+        self.assertEqual(
+            set(data), {"day", "is_last_day", "blocked", "skipped", "count", "sent_today", "to_send", "cost", "warnings"},
+        )
         self.assertEqual((data["day"], data["is_last_day"], data["blocked"], data["count"], data["cost"]), ("2026-11-01", False, "", 1, 170))
+        self.assertEqual((data["sent_today"], data["to_send"]), (0, 1))
         self.assertEqual(data["warnings"][0], {
             "lcup_student_id": 101, "name": "Karimova Malika", "phone": "998901234567", "debt": 150000,
             "text": "MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun "
@@ -490,6 +540,35 @@ class DebtApiTests(ApiFixture):
             self.assertEqual(self.get("debt/preview/").json()["day"], "2026-12-01")
         with mock.patch("sms.views._today", return_value=date(2026, 12, 20)):
             self.assertEqual(self.get("debt/preview/").json()["day"], "2027-01-01")
+
+    def test_preview_counts_what_today_already_sent(self):
+        """After "Send now" the list is the same; what is left to send, and its cost, is not."""
+        self.learner(102, "aziza", balance=-5000, phone="998902222222")
+        self.learner(103, "bek", balance=-5000, phone="998903333333")
+        today = date(2026, 11, 3)
+        for key, status in (("student:101", "DELIVERED"), ("student:102", "FAILED"), ("student:999", "UNCERTAIN")):
+            SmsMessage.objects.create(
+                kind="debt_warning", run_on=today, dedupe_key=key, phone="998901234567", text="x", status=status,
+            )
+        SmsMessage.objects.create(  # yesterday's, and another kind's, are not today's warning
+            kind="debt_warning", run_on=date(2026, 11, 2), dedupe_key="student:103", phone="998903333333", text="x",
+            status="DELIVERED",
+        )
+        SmsMessage.objects.create(
+            kind="campaign", run_on=today, dedupe_key="student:103", phone="998903333333", text="x", status="DELIVERED",
+        )
+        with mock.patch("sms.views._today", return_value=today):
+            data = self.get("debt/preview/").json()
+        # 101 went out; 102 FAILED and goes again; 103 never went.
+        self.assertEqual((data["count"], data["sent_today"], data["to_send"], data["cost"]), (3, 2, 2, 2 * 170))
+
+    def test_overview_next_count_stays_the_planned_count(self):
+        today = date(2026, 11, 3)
+        SmsMessage.objects.create(
+            kind="debt_warning", run_on=today, dedupe_key="student:101", phone="998901234567", text="x", status="SENT",
+        )
+        with mock.patch("sms.views._today", return_value=today):
+            self.assertEqual(self.get("overview/").json()["debt"]["next_count"], 1)
 
     def test_preview_of_a_given_day(self):
         data = self.get("debt/preview/", day="2026-11-05").json()
@@ -576,9 +655,12 @@ class TestSmsApiTests(ApiFixture):
 
     def test_non_text_slots_come_from_the_sample_and_ignore_what_was_sent(self):
         # #64950: "(STUDENT) (SUM)" — guessed student and text; the client sends "" for the student slot.
-        message = self.post("test/", {"phone": "998880032508", "template_id": 64950, "slot_texts": ["", "5000"]}).json()["message"]
+        minute = timezone.make_aware(datetime(2026, 10, 18, 17, 5))
+        with mock.patch("sms.views.timezone.now", return_value=minute):
+            message = self.post("test/", {"phone": "998880032508", "template_id": 64950, "slot_texts": ["", "5000"]}).json()["message"]
         self.assertEqual(message["text"], "Hurmatli Test Testov, 5000 so'm qarzingiz bor.")
-        message = self.post("test/", {"phone": "998880032508", "template_id": 64950, "slot_texts": ["Hacker Name", "7"]}).json()["message"]
+        with mock.patch("sms.views.timezone.now", return_value=minute + timedelta(minutes=1)):  # not a double click
+            message = self.post("test/", {"phone": "998880032508", "template_id": 64950, "slot_texts": ["Hacker Name", "7"]}).json()["message"]
         self.assertEqual(message["text"], "Hurmatli Test Testov, 7 so'm qarzingiz bor.")
 
     def test_the_student_is_the_sample_whatever_follows_the_placeholder(self):
@@ -606,10 +688,52 @@ class TestSmsApiTests(ApiFixture):
                 self.assertEqual((response.status_code, response.json()["code"]), (400, code))
         self.assertEqual(self.fake.sent, [])
 
+    def test_a_double_click_sends_one(self):
+        body = {"phone": "998880032508", "template_id": 64942, "slot_texts": [""]}
+        first_minute = timezone.make_aware(datetime(2026, 10, 18, 17, 5, 10))
+        with mock.patch("sms.views.timezone.now", return_value=first_minute):
+            first = self.post("test/", body)
+            second = self.post("test/", body)
+        self.assertEqual(first.status_code, 200, first.content)
+        self.assertEqual((second.status_code, second.json()["code"]), (400, "duplicate"))
+        self.assertTrue(second.json()["detail"])
+        self.assertEqual(len(self.fake.sent), 1)
+        self.assertEqual(SmsMessage.objects.get().dedupe_key, "test:998880032508:64942:202610181705")
+        with mock.patch("sms.views.timezone.now", return_value=first_minute + timedelta(minutes=1)):
+            self.assertEqual(self.post("test/", body).status_code, 200)
+        self.assertEqual(len(self.fake.sent), 2)
+
+    def test_a_test_that_never_left_may_go_again_the_same_minute(self):
+        body = {"phone": "998880032508", "template_id": 64942, "slot_texts": [""]}
+        self.fake.outcomes = [FAILED]
+        with mock.patch("sms.views.timezone.now", return_value=timezone.make_aware(datetime(2026, 10, 18, 17, 5))):
+            self.assertEqual(self.post("test/", body).json()["message"]["status"], "FAILED")
+            self.assertEqual(self.post("test/", body).json()["message"]["status"], "SENT")
+        self.assertEqual(len(self.fake.sent), 2)
+
     @override_settings(ESKIZ_EMAIL="")
     def test_not_configured(self):
         response = self.post("test/", {"phone": "998880032508", "template_id": 64942})
         self.assertEqual((response.status_code, response.json()["code"]), (400, "not_configured"))
+
+
+class NotAnObjectTests(ApiFixture):
+    """A list, a string or a number for a body is a 400 that says so, never a 500."""
+
+    def test_every_write_refuses_a_body_that_is_not_an_object(self):
+        routes = [
+            ("post", "campaigns/"), ("post", "campaigns/preview/"), ("post", "templates/"), ("post", "test/"),
+            ("patch", "settings/"),
+        ]
+        for method, path in routes:
+            for raw in ("[1]", '"x"', "5", "null"):
+                with self.subTest(route=f"{method.upper()} {path}", body=raw):
+                    response = getattr(self.as_(), method)(API + path, raw, content_type="application/json")
+                    self.assertEqual(response.status_code, 400, response.content)
+                    self.assertTrue(response.json()["detail"])
+                    self.assertEqual(response.json()["code"], "body")
+        self.assertEqual((SmsCampaign.objects.count(), self.fake.sent, self.fake.submitted), (0, [], []))
+        self.assertIsNone(SmsSettings.get().updated_at)
 
 
 class AudienceTests(ApiFixture):
