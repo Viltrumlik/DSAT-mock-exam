@@ -107,6 +107,19 @@ describe("OverviewPanel", () => {
     expect(text()).toContain("the server's master switch is off");
   });
 
+  it("says the warning is switched off, not that no day is ahead, while it is off", async () => {
+    await render({
+      data: data({ debt: { ...data().debt, enabled: false, db_enabled: false, next_day: null, next_count: 0 } }),
+    });
+    expect(text()).toContain("Switched off");
+    expect(text()).not.toContain("No warning day ahead");
+  });
+
+  it("says no warning day is ahead only while it is on", async () => {
+    await render({ data: data({ debt: { ...data().debt, next_day: null, next_count: 0 } }) });
+    expect(text()).toContain("No warning day ahead");
+  });
+
   it("names a refused login and the last error", async () => {
     await render({
       data: data({ eskiz: { token_cached: false, login_refused: true, last_error: "HTTP 422: mobile_phone" } }),

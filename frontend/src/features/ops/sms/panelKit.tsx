@@ -80,6 +80,22 @@ export function errorText(e: unknown, fallback = "That didn't work. Try again.")
   return fallback;
 }
 
+/**
+ * A paid POST that failed with no HTTP answer — the network, a timeout, or the auth layer's
+ * AUTH_TEMPORAL_STALE (which rejects an answer that did arrive) — may well have reached the
+ * server and sent its SMS. A refusal (any answer) means nothing went out.
+ */
+export function mayHaveBeenSent(e: unknown): boolean {
+  return !(e as { response?: unknown } | null | undefined)?.response;
+}
+
+export const MAYBE_SENT = "The server may already have sent this — check the list before trying again.";
+
+/** `errorText` for a POST that costs money: no answer is "it may have gone", never "try again". */
+export function paidErrorText(e: unknown, fallback?: string): string {
+  return mayHaveBeenSent(e) ? MAYBE_SENT : errorText(e, fallback);
+}
+
 /** Who a send leaves out, by reason, with their names. Reasons with nobody are left out. */
 export function SkippedList({ skipped }: { skipped: Skipped | undefined }) {
   const rows = Object.entries(skipped ?? {}).filter(([, people]) => (people?.length ?? 0) > 0);

@@ -21,7 +21,7 @@ import {
   statusBadge,
   templateOption,
 } from "./format";
-import { CAPTION_TEXT, Section, errorText } from "./panelKit";
+import { CAPTION_TEXT, Section, paidErrorText } from "./panelKit";
 import type { SmsMessage } from "./smsApi";
 import { useSendTestSms, useSmsTemplates } from "./smsHooks";
 
@@ -80,7 +80,7 @@ export function TestSmsForm({ pricePerPart }: { pricePerPart: number }) {
         template_id: template.eskiz_id,
         slot_texts: roles.map((r, i) => (r === "text" ? (typed[i] ?? "").trim() : "")),
       },
-      { onSuccess: (message) => setResult(message), onError: (e) => setError(errorText(e)) },
+      { onSuccess: (message) => setResult(message), onError: (e) => setError(paidErrorText(e)) },
     );
   };
 

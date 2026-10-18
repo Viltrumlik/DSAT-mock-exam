@@ -15,25 +15,40 @@ import { EVENT_TEMPLATE, LAST_DAY_TEMPLATE, REJECTED_TEMPLATE, template } from "
 const update = vi.fn();
 const sendNow = vi.fn();
 const confirmSpy = vi.fn();
+const previewCalls = vi.fn();
+const runsCalls = vi.fn();
+const templatesRefetch = vi.fn();
 let settings: SmsSettings;
 let preview: DebtPreview;
+let templatesFailed = false;
 
 vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsSettings: () => ({ data: settings, isPending: false, isError: false, refetch: vi.fn() }),
-  useSmsTemplates: () => ({
-    data: { templates: [template(), LAST_DAY_TEMPLATE, EVENT_TEMPLATE, REJECTED_TEMPLATE], synced_at: null },
-    isPending: false,
-    isError: false,
-  }),
+  useSmsTemplates: () =>
+    templatesFailed
+      ? { data: undefined, isPending: false, isError: true, refetch: templatesRefetch }
+      : {
+          data: { templates: [template(), LAST_DAY_TEMPLATE, EVENT_TEMPLATE, REJECTED_TEMPLATE], synced_at: null },
+          isPending: false,
+          isError: false,
+          refetch: templatesRefetch,
+        },
   useUpdateSmsSettings: () => ({ mutate: update, isPending: false }),
-  useDebtPreview: () => ({ data: preview, isPending: false, isError: false, refetch: vi.fn() }),
+  useDebtPreview: (...args: unknown[]) => {
+    previewCalls(...args);
+    return { data: preview, isPending: false, isError: false, refetch: vi.fn() };
+  },
   useDebtSendNow: () => ({ mutate: sendNow, isPending: false }),
-  useDebtRuns: () => ({
-    data: [{ run_on: "2026-10-01", total: 12, by_status: { DELIVERED: 11, UNDELIVERED: 1 }, parts: 12, cost: 2040 }],
-    isPending: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
+  useDebtRuns: (...args: unknown[]) => {
+    runsCalls(...args);
+    return {
+      data: [{ run_on: "2026-10-01", total: 12, by_status: { DELIVERED: 11, UNDELIVERED: 1 }, parts: 12, cost: 2040 }],
+      isPending: false,
+      isError: false,
+      refetch: vi.fn(),
+    };
+  },
+  DEBT_POLL_FOR_MS: 120_000,
 }));
 
 const { DebtPanel } = await import("@/features/ops/sms/DebtPanel");
@@ -64,6 +79,8 @@ function previewOf(over: Partial<DebtPreview> = {}): DebtPreview {
     blocked: "",
     skipped: { not_freezable: 22 },
     count: 2,
+    sent_today: 0,
+    to_send: 2,
     cost: 340,
     warnings: [
       {
@@ -78,8 +95,8 @@ function previewOf(over: Partial<DebtPreview> = {}): DebtPreview {
 let container: HTMLDivElement;
 let root: Root;
 const text = () => document.body.textContent ?? "";
-const button = (label: string) =>
-  Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent?.trim() === label);
+const buttons = () => Array.from(document.body.querySelectorAll("button"));
+const button = (label: string) => buttons().find((b) => b.textContent?.trim() === label);
 const controlOf = (label: string) =>
   Array.from(document.body.querySelectorAll("label")).find((l) => l.textContent?.trim().startsWith(label))!.control as
     | HTMLInputElement
@@ -106,6 +123,10 @@ beforeEach(() => {
   vi.stubGlobal("confirm", confirmSpy);
   update.mockReset();
   sendNow.mockReset();
+  previewCalls.mockReset();
+  runsCalls.mockReset();
+  templatesRefetch.mockReset();
+  templatesFailed = false;
   settings = settingsOf();
   preview = previewOf();
 });
@@ -162,6 +183,16 @@ describe("DebtPanel — settings", () => {
     expect(update.mock.calls[0][0]).toEqual({ debt_enabled: false });
   });
 
+  it("says so when the template list did not load, instead of offering none", async () => {
+    templatesFailed = true;
+    await render();
+    expect(text()).toContain("The template list didn't load.");
+    await act(async () => button("Try again")!.click());
+    expect(templatesRefetch).toHaveBeenCalled();
+    // The hour and the switch still save.
+    expect(controlOf("Send at").value).toBe("10");
+  });
+
   it("names the server's master switch when it holds the warning off, and locks the switch", async () => {
     settings = settingsOf({ env_enabled: false });
     await render();
@@ -195,24 +226,80 @@ describe("DebtPanel — the next warning day and the history", () => {
 
   it("has no Send now on a day that is not a warning day", async () => {
     await render();
-    expect(button("Send now")).toBeUndefined();
+    expect(buttons().some((b) => b.textContent?.startsWith("Send now"))).toBe(false);
   });
 
   it("offers Send now on a warning day, asking with the count and the price", async () => {
     preview = previewOf({ day: todayInTashkent() });
     sendNow.mockImplementation((_v: unknown, opts: { onSuccess: () => void }) => opts.onSuccess());
     await render();
-    await act(async () => button("Send now")!.click());
+    await act(async () => button("Send now to 2 students")!.click());
     expect(String(confirmSpy.mock.calls[0][0])).toContain(`now to 2 students (~${money(340)})?`);
     expect(sendNow).toHaveBeenCalled();
     expect(text()).toContain("Queued");
+  });
+
+  it("counts what is left to send today, not the whole list", async () => {
+    preview = previewOf({ day: todayInTashkent(), count: 5, sent_today: 3, to_send: 2, cost: 340 });
+    await render();
+    expect(text()).toContain("3 already sent today");
+    expect(button("Send now to 2 students")).toBeDefined();
+    await act(async () => button("Send now to 2 students")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toContain(`now to 2 students (~${money(340)})?`);
+  });
+
+  it("has no Send now once today's warnings are all out", async () => {
+    preview = previewOf({ day: todayInTashkent(), count: 2, sent_today: 2, to_send: 0, cost: 0 });
+    await render();
+    expect(text()).toContain("Already sent today");
+    expect(buttons().some((b) => b.textContent?.startsWith("Send now"))).toBe(false);
+  });
+
+  it("will not send now while the day is blocked, and says why", async () => {
+    preview = previewOf({ day: todayInTashkent(), blocked: "3 warnings is more than 2: a person checks lc-up's balances first" });
+    await render();
+    expect(button("Send now to 2 students")!.disabled).toBe(true);
+    expect(text()).toContain("a person checks lc-up's balances first");
+  });
+
+  it("follows the run after Send now: the list and the history poll for a while", async () => {
+    preview = previewOf({ day: todayInTashkent() });
+    sendNow.mockImplementation((_v: unknown, opts: { onSuccess: () => void }) => opts.onSuccess());
+    await render();
+    expect(previewCalls.mock.lastCall?.[1] ?? 0).toBe(0);
+    const before = Date.now();
+    await act(async () => button("Send now to 2 students")!.click());
+    const until = Number(previewCalls.mock.lastCall?.[1]);
+    expect(until).toBeGreaterThanOrEqual(before + 120_000);
+    expect(Number(runsCalls.mock.lastCall?.[0])).toBe(until);
+  });
+
+  it("warns that it may have gone out when Send now got no answer", async () => {
+    preview = previewOf({ day: todayInTashkent() });
+    sendNow.mockImplementation((_v: unknown, opts: { onError: (e: unknown) => void }) => opts.onError(new Error("Network Error")));
+    await render();
+    await act(async () => button("Send now to 2 students")!.click());
+    expect(text()).toContain("The server may already have sent this — check the list before trying again.");
+  });
+
+  it("stops following once nothing is left to send", async () => {
+    preview = previewOf({ day: todayInTashkent() });
+    sendNow.mockImplementation((_v: unknown, opts: { onSuccess: () => void }) => opts.onSuccess());
+    await render();
+    await act(async () => button("Send now to 2 students")!.click());
+    expect(Number(previewCalls.mock.lastCall?.[1])).toBeGreaterThan(0);
+    preview = previewOf({ day: todayInTashkent(), sent_today: 2, to_send: 0, cost: 0 });
+    await act(async () => root.render(<DebtPanel />));
+    await act(async () => root.render(<DebtPanel />));
+    expect(Number(previewCalls.mock.lastCall?.[1])).toBe(0);
+    expect(Number(runsCalls.mock.lastCall?.[0])).toBe(0);
   });
 
   it("will not send now while the warning is off", async () => {
     preview = previewOf({ day: todayInTashkent() });
     settings = settingsOf({ debt_enabled: false });
     await render();
-    expect(button("Send now")!.disabled).toBe(true);
+    expect(button("Send now to 2 students")!.disabled).toBe(true);
   });
 
   it("says why nothing would go out when the day is blocked", async () => {

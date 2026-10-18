@@ -11,10 +11,12 @@
  * The preview is the server's: it resolves the audience and prices it, so the count and the cost
  * the confirm names are the ones it would send now. The recipients are worked out again when it
  * sends, so a scheduled debtors campaign leaves out anyone who has paid by then. The draft that
- * was previewed is the one created — any change goes back through the preview.
+ * was previewed is the one created — any change goes back through the preview: Back is off while a
+ * preview is on its way, and a preview that comes back for a draft since changed is dropped. The
+ * last question names the template, who, when, the count and the cost.
  */
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 
 import { useToast } from "@/components/ToastProvider";
@@ -32,7 +34,7 @@ import {
   smsParts,
   templateOption,
 } from "./format";
-import { CAPTION_TEXT, SkippedList, errorText } from "./panelKit";
+import { CAPTION_TEXT, LoadError, SkippedList, errorText, paidErrorText } from "./panelKit";
 import type {
   AudienceKind,
   AudienceStudent,
@@ -121,6 +123,13 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
         }
       : null;
 
+  // What a preview must still match when it comes back: the draft as the steps now read.
+  const currentKey = JSON.stringify(draftOf(when === "at" ? fromLocalInput(at) : null));
+  const latestKey = useRef(currentKey);
+  useEffect(() => {
+    latestKey.current = currentKey;
+  });
+
   const runPreview = () => {
     let scheduledAt: string | null = null;
     if (when === "at") {
@@ -132,6 +141,7 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
     if (!draft) return setError("Pick a template.");
     previewer.mutate(draft, {
       onSuccess: (preview) => {
+        if (JSON.stringify(draft) !== latestKey.current) return; // the draft changed meanwhile
         setPreviewed({ draft, preview });
         setStep(4);
       },
@@ -160,12 +170,24 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
     setStep(Math.max(0, step - 1));
   };
 
+  /** "Debtors", "Group: <class>", "3 students" — who the last question names. */
+  const audienceText = (draft: CampaignDraft): string => {
+    if (draft.audience === "debtors") return "Debtors";
+    if (draft.audience === "group") {
+      const id = draft.audience_ids[0];
+      return `Group: ${(classrooms.data ?? []).find((c) => c.id === id)?.name ?? `#${id}`}`;
+    }
+    return plural(draft.audience_ids.length, "student");
+  };
+
   const send = () => {
     if (!previewed) return;
     const { draft, preview } = previewed;
+    const what = `template #${draft.template_id} to ${audienceText(draft)}`;
+    const figures = `${preview.count} SMS (~${money(preview.cost)})`;
     const question = draft.scheduled_at
-      ? `Schedule ${preview.count} SMS (~${money(preview.cost)}) for ${dateTime(draft.scheduled_at)}?`
-      : `Send ${preview.count} SMS (~${money(preview.cost)}) now?`;
+      ? `Schedule ${what} for ${dateTime(draft.scheduled_at)}: ${figures}?`
+      : `Send ${what} now: ${figures}?`;
     if (!window.confirm(question)) return;
     setError(null);
     creator.mutate(draft, {
@@ -178,7 +200,7 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
         });
         onClose();
       },
-      onError: (e) => setError(errorText(e, "Couldn't create the campaign. Try again.")),
+      onError: (e) => setError(paidErrorText(e, "Couldn't create the campaign. Try again.")),
     });
   };
 
@@ -194,7 +216,7 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
           Cancel
         </Button>
       ) : (
-        <Button size="sm" variant="secondary" onClick={back}>
+        <Button size="sm" variant="secondary" onClick={back} disabled={previewer.isPending}>
           Back
         </Button>
       )}
@@ -243,7 +265,9 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
                 ))}
               </Select>
             </Field>
-            {!templates.isPending && usable.length === 0 ? (
+            {templates.isError ? (
+              <LoadError what="template list" onRetry={() => void templates.refetch()} />
+            ) : !templates.isPending && usable.length === 0 ? (
               <p className="text-[13px] text-muted-foreground">
                 No usable template yet — refresh the list on the Templates tab.
               </p>
@@ -389,7 +413,9 @@ export function CampaignWizard({ onClose }: { onClose: () => void }) {
               </div>
             ) : null}
 
-            {audience === "group" ? (
+            {audience === "group" && classrooms.isError ? (
+              <LoadError what="class list" onRetry={() => void classrooms.refetch()} />
+            ) : audience === "group" ? (
               <Field label="Class" htmlFor={`${uid}-class`} hint="Its active students; the phone is always lc-up's.">
                 <Select
                   id={`${uid}-class`}

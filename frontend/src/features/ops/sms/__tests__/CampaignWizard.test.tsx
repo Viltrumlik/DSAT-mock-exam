@@ -3,7 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { fromLocalInput, toLocalInput } from "@/lib/datetimeLocal";
-import { money } from "../format";
+import { dateTime, money } from "../format";
 import type { CampaignPreview } from "../smsApi";
 import { EVENT_TEMPLATE, REJECTED_TEMPLATE, template } from "./fixtures";
 
@@ -19,21 +19,34 @@ const create = vi.fn();
 const toast = vi.fn();
 const confirmSpy = vi.fn();
 const studentsQuery = vi.fn();
+const refetchTemplates = vi.fn();
+const refetchClassrooms = vi.fn();
+let templatesFailed = false;
+let classroomsFailed = false;
+let previewPending = false;
 
 vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push: toast }) }));
 vi.mock("@/features/ops/sms/smsHooks", () => ({
-  useSmsTemplates: () => ({
-    data: { templates: [template(), EVENT_TEMPLATE, REJECTED_TEMPLATE], synced_at: null },
-    isPending: false,
-    isError: false,
-  }),
+  useSmsTemplates: () =>
+    templatesFailed
+      ? { data: undefined, isPending: false, isError: true, refetch: refetchTemplates }
+      : {
+          data: { templates: [template(), EVENT_TEMPLATE, REJECTED_TEMPLATE], synced_at: null },
+          isPending: false,
+          isError: false,
+          refetch: refetchTemplates,
+        },
   useAudienceStudents: (q: string) => studentsQuery(q),
-  useAudienceClassrooms: () => ({
-    data: [{ id: 61, name: "Junior G21 | Math", students: 14, with_phone: 12 }],
-    isPending: false,
-    isError: false,
-  }),
-  usePreviewCampaign: () => ({ mutate: preview, isPending: false }),
+  useAudienceClassrooms: () =>
+    classroomsFailed
+      ? { data: undefined, isPending: false, isError: true, refetch: refetchClassrooms }
+      : {
+          data: [{ id: 61, name: "Junior G21 | Math", students: 14, with_phone: 12 }],
+          isPending: false,
+          isError: false,
+          refetch: refetchClassrooms,
+        },
+  usePreviewCampaign: () => ({ mutate: preview, isPending: previewPending }),
   useCreateCampaign: () => ({ mutate: create, isPending: false }),
   STUDENT_SEARCH_MIN: 2,
 }));
@@ -106,6 +119,11 @@ beforeEach(() => {
   create.mockReset();
   toast.mockReset();
   onClose.mockReset();
+  refetchTemplates.mockReset();
+  refetchClassrooms.mockReset();
+  templatesFailed = false;
+  classroomsFailed = false;
+  previewPending = false;
   studentsQuery.mockReset().mockImplementation((q: string) => ({
     data: q.trim().length >= 2 ? STUDENTS : undefined,
     isPending: false,
@@ -224,7 +242,9 @@ describe("CampaignWizard", () => {
     expect(preview.mock.calls[0][0]).toEqual(draft);
 
     await click(button("Schedule for 2"));
-    expect(String(confirmSpy.mock.calls[0][0])).toContain(`Schedule 2 SMS (~${money(340)}) for `);
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      `Schedule template #70001 to 2 students for ${dateTime(fromLocalInput(at))}: 2 SMS (~${money(340)})?`,
+    );
     expect(create.mock.calls[0][0]).toEqual(draft);
   });
 
@@ -236,8 +256,86 @@ describe("CampaignWizard", () => {
     await click(button("Next"));
     await click(button("Preview"));
     await click(button("Send to 2"));
-    expect(String(confirmSpy.mock.calls[0][0])).toBe(`Send 2 SMS (~${money(340)}) now?`);
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(`Send template #70001 to Debtors now: 2 SMS (~${money(340)})?`);
     expect(create).not.toHaveBeenCalled();
+  });
+
+  it("names the class in the question", async () => {
+    await render();
+    await throughSlots();
+    await click(radio("A class"));
+    await setValue(controlOf("Class"), "61");
+    await click(button("Next"));
+    await click(button("Preview"));
+    await click(button("Send to 2"));
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      `Send template #70001 to Group: Junior G21 | Math now: 2 SMS (~${money(340)})?`,
+    );
+  });
+
+  it("will not go back while the preview is on its way", async () => {
+    previewPending = true;
+    preview.mockReset();
+    await render();
+    await throughSlots();
+    await click(radio("Debtors"));
+    await click(button("Next"));
+    expect(button("Back").disabled).toBe(true);
+  });
+
+  it("ignores a preview of a draft that changed while it was on its way", async () => {
+    const pending: ((p: CampaignPreview) => void)[] = [];
+    preview.mockReset().mockImplementation((_d: unknown, opts: { onSuccess: (p: CampaignPreview) => void }) =>
+      pending.push(opts.onSuccess),
+    );
+    await render();
+    await throughSlots();
+    await click(radio("Debtors"));
+    await click(button("Next"));
+    await click(radio("At a set time"));
+    await setValue(controlOf("Goes out at"), toLocalInput(new Date(Date.now() + 86_400_000).toISOString()));
+    await click(button("Preview"));
+    await setValue(controlOf("Goes out at"), toLocalInput(new Date(Date.now() + 2 * 86_400_000).toISOString()));
+    await act(async () => pending[0](previewOf({ count: 99 })));
+    expect(text()).not.toContain("99 recipients");
+    expect(text()).toContain("Goes out at");
+
+    await click(button("Preview"));
+    await act(async () => pending[1](previewOf()));
+    expect(text()).toContain("2 recipients");
+  });
+
+  it("says the template list did not load, with a retry, instead of offering none", async () => {
+    templatesFailed = true;
+    await render();
+    expect(text()).toContain("The template list didn't load.");
+    expect(text()).not.toContain("No usable template yet");
+    await click(button("Try again"));
+    expect(refetchTemplates).toHaveBeenCalled();
+  });
+
+  it("says the class list did not load, with a retry", async () => {
+    classroomsFailed = true;
+    await render();
+    await throughSlots();
+    await click(radio("A class"));
+    expect(text()).toContain("The class list didn't load.");
+    await click(button("Try again"));
+    expect(refetchClassrooms).toHaveBeenCalled();
+  });
+
+  it("warns that it may have gone out when the create got no answer", async () => {
+    create.mockImplementationOnce((_d: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(new Error("timeout of 30000ms exceeded")),
+    );
+    await render();
+    await throughSlots();
+    await click(radio("Debtors"));
+    await click(button("Next"));
+    await click(button("Preview"));
+    await click(button("Send to 2"));
+    expect(text()).toContain("The server may already have sent this — check the list before trying again.");
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("closes with a notice once created, and shows the server's reason when refused", async () => {

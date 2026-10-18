@@ -13,9 +13,14 @@
  * Save sends only what changed. A template id always travels with its slots, and the server
  * refuses one that is not usable — so the hour can be saved even before the template list has
  * been synced.
+ *
+ * "Send now" counts what is still to go today (`to_send`), not the whole list: after a run, the
+ * students already warned are never sent to again, so neither the button nor its price names them.
+ * Once it is queued the list and the history are asked again every few seconds until nothing is
+ * left to send (two minutes at most).
  */
 
-import { useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { Alert, Button, Field, Select, Switch } from "@/components/ui";
 import {
@@ -35,9 +40,10 @@ import {
   templateOption,
   todayInTashkent,
 } from "./format";
-import { BOX, CAPTION_TEXT, LoadError, Loading, Section, TABLE, TD, TH, TR, errorText } from "./panelKit";
+import { BOX, CAPTION_TEXT, LoadError, Loading, Section, TABLE, TD, TH, TR, errorText, paidErrorText } from "./panelKit";
 import type { EskizTemplate, SlotRole, SmsSettings, SmsSettingsPatch, TemplateSlot } from "./smsApi";
 import {
+  DEBT_POLL_FOR_MS,
   useDebtPreview,
   useDebtRuns,
   useDebtSendNow,
@@ -251,11 +257,28 @@ function SettingsForm({ settings: s, usable }: { settings: SmsSettings; usable: 
   );
 }
 
-function NextDay({ settings }: { settings: SmsSettings | undefined }) {
-  const preview = useDebtPreview();
+function NextDay({
+  settings,
+  pollUntil,
+  onSent,
+  onSettled,
+}: {
+  settings: SmsSettings | undefined;
+  /** Until when the list is asked again (0: not now). */
+  pollUntil: number;
+  onSent: () => void;
+  onSettled: () => void;
+}) {
+  const preview = useDebtPreview("", pollUntil);
   const sendNow = useDebtSendNow();
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const left = preview.data?.to_send;
+
+  // Everything went out: stop asking.
+  useEffect(() => {
+    if (pollUntil > 0 && left === 0) onSettled();
+  }, [pollUntil, left, onSettled]);
 
   if (preview.isPending) return <Loading />;
   if (preview.isError || !preview.data) {
@@ -267,14 +290,21 @@ function NextDay({ settings }: { settings: SmsSettings | undefined }) {
   const enabled = Boolean(settings && settings.env_enabled && settings.debt_enabled && settings.freeze_enabled);
   const skipped = Object.entries(p.skipped ?? {}).filter(([, n]) => n > 0);
 
+  const allOut = p.to_send === 0 && p.sent_today > 0;
+
   const onSendNow = () => {
     const at = settings ? ` The ${hourLabel(settings.debt_hour)} run then skips them.` : "";
-    if (!window.confirm(`Send today's debt warning now to ${plural(p.count, "student")} (~${money(p.cost)})?${at}`)) return;
+    if (!window.confirm(`Send today's debt warning now to ${plural(p.to_send, "student")} (~${money(p.cost)})?${at}`)) {
+      return;
+    }
     setNotice(null);
     setError(null);
     sendNow.mutate(undefined, {
-      onSuccess: () => setNotice("Queued — the warnings are going out now. The history below fills in as they land."),
-      onError: (e) => setError(errorText(e)),
+      onSuccess: () => {
+        setNotice("Queued — the warnings are going out now. The list and the history below follow them as they land.");
+        onSent();
+      },
+      onError: (e) => setError(paidErrorText(e)),
     });
   };
 
@@ -282,11 +312,18 @@ function NextDay({ settings }: { settings: SmsSettings | undefined }) {
     <Section
       title={`Next warning day · ${dayLabel(p.day)}${p.is_last_day ? " · the last day" : ""}`}
       actions={
-        isToday ? (
-          <Button size="sm" onClick={onSendNow} loading={sendNow.isPending} disabled={!enabled || p.count === 0}>
-            Send now
+        !isToday ? null : allOut ? (
+          <span className="text-[13px] font-medium text-foreground">Already sent today</span>
+        ) : (
+          <Button
+            size="sm"
+            onClick={onSendNow}
+            loading={sendNow.isPending}
+            disabled={!enabled || Boolean(p.blocked) || p.to_send === 0}
+          >
+            {`Send now to ${plural(p.to_send, "student")}`}
           </Button>
-        ) : null
+        )
       }
     >
       <div className="space-y-3 px-3 py-3">
@@ -297,7 +334,9 @@ function NextDay({ settings }: { settings: SmsSettings | undefined }) {
           <p className="text-[13px] text-muted-foreground">The warning is off, so it can&apos;t be sent now.</p>
         ) : null}
         <p className="text-[13px] tabular-nums text-foreground">
-          <span className="font-semibold">{plural(p.count, "student")}</span> · ~{money(p.cost)}
+          <span className="font-semibold">{plural(p.count, "student")}</span>
+          {isToday || p.sent_today > 0 ? ` · ${p.sent_today} already sent today · ${p.to_send} to send` : ""}
+          {` · ~${money(p.cost)}`}
           {skipped.length > 0 ? (
             <span className="text-muted-foreground">
               {" "}
@@ -342,8 +381,8 @@ function NextDay({ settings }: { settings: SmsSettings | undefined }) {
   );
 }
 
-function History() {
-  const runs = useDebtRuns();
+function History({ pollUntil }: { pollUntil: number }) {
+  const runs = useDebtRuns(pollUntil);
   if (runs.isPending) return <Loading />;
   if (runs.isError) return <LoadError what="history" onRetry={() => void runs.refetch()} />;
   const rows = runs.data ?? [];
@@ -393,9 +432,13 @@ export function DebtPanel() {
   const settings = useSmsSettings();
   const templates = useSmsTemplates();
   const usable = useMemo(() => (templates.data?.templates ?? []).filter((t) => t.usable), [templates.data]);
+  const [pollUntil, setPollUntil] = useState(0);
+  const onSent = () => setPollUntil(Date.now() + DEBT_POLL_FOR_MS);
+  const onSettled = useCallback(() => setPollUntil(0), []);
 
   return (
     <div className="space-y-4">
+      {templates.isError ? <LoadError what="template list" onRetry={() => void templates.refetch()} /> : null}
       {settings.isPending ? (
         <Loading />
       ) : settings.isError || !settings.data ? (
@@ -403,8 +446,8 @@ export function DebtPanel() {
       ) : (
         <SettingsForm settings={settings.data} usable={usable} />
       )}
-      <NextDay settings={settings.data} />
-      <History />
+      <NextDay settings={settings.data} pollUntil={pollUntil} onSent={onSent} onSettled={onSettled} />
+      <History pollUntil={pollUntil} />
     </div>
   );
 }

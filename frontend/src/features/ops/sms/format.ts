@@ -190,6 +190,8 @@ const SKIP_LABEL: Record<string, string> = {
   no_phone: "No phone in lc-up",
   not_debtor: "Not in debt",
   bad_text: "Text doesn't fit the template",
+  same_phone: "Same phone — one SMS between siblings",
+  stale_balance: "Balance out of date",
 };
 
 /** A reason the panel knows by name, or the server's code in words. */

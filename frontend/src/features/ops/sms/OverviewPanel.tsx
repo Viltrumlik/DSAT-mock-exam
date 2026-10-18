@@ -109,7 +109,9 @@ export function OverviewPanel() {
           <p className="text-foreground">
             {o.debt.next_day
               ? `Next: ${dayLabel(o.debt.next_day)} · ${plural(o.debt.next_count, "student")}`
-              : "No warning day ahead."}
+              : o.debt.enabled
+                ? "No warning day ahead."
+                : "Switched off — no warning day ahead until it is on."}
           </p>
         </Card>
 

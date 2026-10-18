@@ -104,6 +104,8 @@ describe("labels", () => {
     expect(roleLabel("text")).toBe("Same text for all");
     expect(skipLabel("no_phone")).toBe("No phone in lc-up");
     expect(skipLabel("not_freezable")).toBe("not freezable");
+    expect(skipLabel("same_phone")).toBe("Same phone — one SMS between siblings");
+    expect(skipLabel("stale_balance")).toBe("Balance out of date");
   });
 
   it("calls a reklama template ad price, and both moderation spellings moderation", () => {

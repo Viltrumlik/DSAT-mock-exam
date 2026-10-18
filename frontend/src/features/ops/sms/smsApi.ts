@@ -19,8 +19,12 @@ export type CampaignStatus = "SCHEDULED" | "SENDING" | "DONE" | "CANCELLED" | "F
 export type AudienceKind = "student" | "group" | "debtors";
 export type SlotRole = "student" | "debt" | "text";
 export type TemplateStatus = "service" | "reklama" | "moderation" | "inproccess" | "rejected" | "gone";
-/** Why a person a campaign meant to reach gets nothing. */
-export type SkipReason = "no_link" | "no_phone" | "not_debtor" | "bad_text";
+/**
+ * Why a person a campaign meant to reach gets nothing. `stale_balance`: a debtors list, or a text
+ * naming the debt, and lc-up's balance is older than 24 h. `same_phone`: a sibling on the same
+ * phone gets the same words, so one SMS goes between them.
+ */
+export type SkipReason = "no_link" | "no_phone" | "stale_balance" | "not_debtor" | "bad_text" | "same_phone";
 
 /** `{DELIVERED: 2}` — only the statuses that occurred are present. */
 export type StatusCounts = Partial<Record<SmsStatus, number>>;
@@ -219,7 +223,13 @@ export interface DebtPreview {
   blocked: string;
   /** Reason → how many. */
   skipped: Record<string, number>;
+  /** Everyone the plan would warn that day, sent or not. */
   count: number;
+  /** That day's warnings already out (any status but FAILED): never sent again. */
+  sent_today: number;
+  /** The planned warnings still to go: no SMS that day yet, or a FAILED one. */
+  to_send: number;
+  /** The `to_send` ones' parts × price_per_part. */
   cost: number;
   warnings: DebtWarningRow[];
 }

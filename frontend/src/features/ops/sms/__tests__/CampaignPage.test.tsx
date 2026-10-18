@@ -14,6 +14,7 @@ const detail = vi.fn();
 const cancel = vi.fn();
 const retry = vi.fn();
 const confirmSpy = vi.fn();
+let overviewData: { price_per_part: number } | undefined = { price_per_part: 170 };
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
@@ -24,7 +25,7 @@ vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsCampaign: () => detail(),
   useCancelCampaign: () => ({ mutate: cancel, isPending: false }),
   useRetryCampaign: () => ({ mutate: retry, isPending: false }),
-  useSmsOverview: () => ({ data: { price_per_part: 170 } }),
+  useSmsOverview: () => ({ data: overviewData }),
 }));
 
 const { CampaignPage } = await import("@/features/ops/sms/CampaignPage");
@@ -35,14 +36,18 @@ const text = () => document.body.textContent ?? "";
 const button = (label: string) =>
   Array.from(document.body.querySelectorAll("button")).find((b) => b.textContent?.trim() === label);
 
+const refetch = vi.fn();
+
 async function render(state: Record<string, unknown>, id = 7) {
-  detail.mockReturnValue({ isPending: false, isError: false, refetch: vi.fn(), ...state });
+  detail.mockReturnValue({ isPending: false, isError: false, refetch, dataUpdatedAt: 1, ...state });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => root.render(<CampaignPage id={id} />));
 }
 
+/** Waiting for a time still ahead. */
+const LATER = campaign({ scheduled_at: "2099-10-20T09:30:00+05:00" });
 const DONE = campaign({
   status: "DONE",
   started_at: "2026-10-20T09:30:00+05:00",
@@ -63,6 +68,8 @@ beforeEach(() => {
   vi.stubGlobal("confirm", confirmSpy);
   cancel.mockReset();
   retry.mockReset();
+  refetch.mockReset();
+  overviewData = { price_per_part: 170 };
 });
 
 afterEach(async () => {
@@ -73,7 +80,7 @@ afterEach(async () => {
 
 describe("CampaignPage", () => {
   it("shows Cancel while it is scheduled, and no Retry", async () => {
-    await render({ data: { campaign: campaign(), messages: [] } });
+    await render({ data: { campaign: LATER, messages: [] } });
     expect(text()).toContain("Scheduled");
     expect(text()).toContain("Group: Junior G21 | Math");
     expect(text()).toContain("Admin Aliyev");
@@ -83,7 +90,7 @@ describe("CampaignPage", () => {
   });
 
   it("cancels only after asking", async () => {
-    await render({ data: { campaign: campaign(), messages: [] } });
+    await render({ data: { campaign: LATER, messages: [] } });
     confirmSpy.mockReturnValueOnce(false);
     await act(async () => button("Cancel campaign")!.click());
     expect(cancel).not.toHaveBeenCalled();
@@ -115,6 +122,53 @@ describe("CampaignPage", () => {
     expect(text()).toContain("Sending again to 1 recipient.");
   });
 
+  it("says it is starting, with no Cancel, once its time has come", async () => {
+    await render({ data: { campaign: campaign({ scheduled_at: "2020-01-01T09:30:00+05:00" }), messages: [] } });
+    expect(button("Cancel campaign")).toBeUndefined();
+    expect(text()).toContain("Starting…");
+  });
+
+  it("offers Retry on a campaign that stopped, saying it also sends to the ones not reached", async () => {
+    const stopped = campaign({
+      ...DONE,
+      status: "FAILED",
+      error: "eskiz kept failing — stopped after 1 sent; press Retry to continue",
+    });
+    retry.mockImplementation((_v: unknown, opts: { onSuccess: (r: { queued: number }) => void }) => opts.onSuccess({ queued: 4 }));
+    await render({ data: { campaign: stopped, messages: DONE_MESSAGES } });
+    expect(text()).toContain("press Retry to continue");
+    await act(async () => button("Retry")!.click());
+    expect(String(confirmSpy.mock.calls[0][0])).toBe(
+      `Resume this campaign? It sends again to 1 recipient whose SMS failed (~${money(170)}) and to everyone it had not reached yet.`,
+    );
+    expect(text()).toContain("Sending again to 4 recipients.");
+  });
+
+  it("says the cost is unknown while the price has not loaded", async () => {
+    overviewData = undefined;
+    await render({ data: { campaign: DONE, messages: DONE_MESSAGES } });
+    await act(async () => button("Retry failed")!.click());
+    expect(confirmSpy).toHaveBeenCalledWith("Send again to 1 recipient whose SMS failed (~ cost unknown)?");
+  });
+
+  it("after a retry, refetches and hides Retry until the server answers again", async () => {
+    retry.mockImplementation((_v: unknown, opts: { onSuccess: (r: { queued: number }) => void }) => opts.onSuccess({ queued: 1 }));
+    await render({ data: { campaign: DONE, messages: DONE_MESSAGES }, dataUpdatedAt: 1 });
+    await act(async () => button("Retry failed")!.click());
+    expect(refetch).toHaveBeenCalled();
+    expect(button("Retry failed")).toBeUndefined();
+    // The same (old) answer again: still hidden.
+    await act(async () => root.render(<CampaignPage id={7} />));
+    expect(button("Retry failed")).toBeUndefined();
+    // A fresh answer that still has FAILED rows: back.
+    detail.mockReturnValue({
+      isPending: false, isError: false, refetch, dataUpdatedAt: Date.now() + 1_000,
+      data: { campaign: DONE, messages: DONE_MESSAGES },
+    });
+    await act(async () => root.render(<CampaignPage id={7} />));
+    expect(button("Retry failed")).toBeDefined();
+  });
+
   it("has no Retry when nothing failed", async () => {
     await render({ data: { campaign: DONE, messages: [message()] } });
     expect(button("Retry failed")).toBeUndefined();
@@ -124,7 +178,7 @@ describe("CampaignPage", () => {
     cancel.mockImplementation((_v: unknown, opts: { onError: (e: unknown) => void }) =>
       opts.onError({ response: { data: { code: "not_scheduled", detail: "It has already started." } } }),
     );
-    await render({ data: { campaign: campaign(), messages: [] } });
+    await render({ data: { campaign: LATER, messages: [] } });
     await act(async () => button("Cancel campaign")!.click());
     expect(text()).toContain("It has already started.");
   });

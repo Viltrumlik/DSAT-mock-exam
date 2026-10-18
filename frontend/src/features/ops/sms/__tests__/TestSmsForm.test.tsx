@@ -161,4 +161,24 @@ describe("TestSmsForm", () => {
     await act(async () => button("Send test SMS").click());
     expect(text()).toContain("eskiz is not configured.");
   });
+
+  it("warns that it may have gone out when the request got no answer", async () => {
+    mutate.mockImplementation((_body: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError(new Error("Network Error")),
+    );
+    await render();
+    await setValue(controlOf("Phone") as HTMLInputElement, "998880032508");
+    await act(async () => button("Send test SMS").click());
+    expect(text()).toContain("The server may already have sent this — check the list before trying again.");
+  });
+
+  it("names a double click for what it is", async () => {
+    mutate.mockImplementation((_body: unknown, opts: { onError: (e: unknown) => void }) =>
+      opts.onError({ response: { status: 400, data: { code: "duplicate", detail: "This test SMS was just sent: check the journal before sending it again." } } }),
+    );
+    await render();
+    await setValue(controlOf("Phone") as HTMLInputElement, "998880032508");
+    await act(async () => button("Send test SMS").click());
+    expect(text()).toContain("This test SMS was just sent");
+  });
 });

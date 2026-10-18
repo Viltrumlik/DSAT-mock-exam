@@ -3,10 +3,16 @@
 /**
  * /ops/sms/campaigns/<id> — one campaign: what it said, to whom, when, and how each SMS went.
  *
- * Only the buttons its state allows: Cancel while it is SCHEDULED (the server claims a campaign
- * SCHEDULED→SENDING in one update, so a cancel that loses that race is refused, and says so), and
- * Retry failed once it is DONE with FAILED messages. Retry never resends an UNCERTAIN message —
- * eskiz may already have it — so the count it asks about is the FAILED rows only.
+ * Only the buttons its state allows: Cancel while it is SCHEDULED for a time still ahead (the
+ * server claims a campaign SCHEDULED→SENDING in one update, so a cancel that loses that race is
+ * refused, and says so; once the time has come the page says "Starting…" instead), and Retry once
+ * it is DONE with FAILED messages, or stopped (FAILED: eskiz kept failing). Retry is a resume: the
+ * FAILED go again and, for a stopped one, everyone it had not reached yet. It never resends an
+ * UNCERTAIN message — eskiz may already have it.
+ *
+ * The page asks again every few seconds while the campaign waits or goes out (`useSmsCampaign`).
+ * After a Retry the button stays hidden until a fresh answer from the server still shows FAILED
+ * rows: the old answer on screen must not offer the same Retry twice.
  */
 
 import Link from "next/link";
@@ -65,6 +71,8 @@ export function CampaignPage({ id }: { id: number }) {
   const overview = useSmsOverview();
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** When the last Retry was accepted: Retry shows again only on an answer fetched after it. */
+  const [retriedAt, setRetriedAt] = useState(0);
 
   // A disabled v5 query reports "pending" forever, so a bad address has to be caught first.
   if (!Number.isInteger(id) || id <= 0) {
@@ -88,8 +96,11 @@ export function CampaignPage({ id }: { id: number }) {
   const { campaign: c, messages } = detail.data;
   const badge = campaignBadge(c.status);
   const failed = messages.filter((m) => m.status === "FAILED");
-  const canCancel = c.status === "SCHEDULED";
-  const canRetry = c.status === "DONE" && failed.length > 0;
+  const due = c.status === "SCHEDULED" && new Date(c.scheduled_at).getTime() <= Date.now();
+  const canCancel = c.status === "SCHEDULED" && !due;
+  const stopped = c.status === "FAILED";
+  const canRetry =
+    ((c.status === "DONE" && failed.length > 0) || stopped) && (detail.dataUpdatedAt ?? 0) > retriedAt;
   const busy = cancel.isPending || retry.isPending;
   const price = overview.data?.price_per_part;
   const started = c.status !== "SCHEDULED" && c.status !== "CANCELLED";
@@ -106,12 +117,20 @@ export function CampaignPage({ id }: { id: number }) {
 
   const onRetry = () => {
     const parts = failed.reduce((sum, m) => sum + (m.parts || 1), 0);
-    const cost = price ? ` (~${money(parts * price)})` : "";
-    if (!window.confirm(`Send again to ${plural(failed.length, "recipient")} whose SMS failed${cost}?`)) return;
+    const cost = price ? `~${money(parts * price)}` : "~ cost unknown";
+    const again = `${plural(failed.length, "recipient")} whose SMS failed (${cost})`;
+    const question = stopped
+      ? `Resume this campaign? It sends again to ${again} and to everyone it had not reached yet.`
+      : `Send again to ${again}?`;
+    if (!window.confirm(question)) return;
     setNotice(null);
     setError(null);
     retry.mutate(undefined, {
-      onSuccess: (r) => setNotice(`Sending again to ${plural(r.queued, "recipient")}.`),
+      onSuccess: (r) => {
+        setRetriedAt(Date.now());
+        setNotice(`Sending again to ${plural(r.queued, "recipient")}.`);
+        void detail.refetch();
+      },
       onError: (e) => setError(errorText(e)),
     });
   };
@@ -129,10 +148,14 @@ export function CampaignPage({ id }: { id: number }) {
               <Button size="sm" variant="danger" disabled={busy} onClick={onCancel}>
                 Cancel campaign
               </Button>
+            ) : due ? (
+              <span role="status" className="text-[13px] font-medium text-muted-foreground">
+                Starting…
+              </span>
             ) : null}
             {canRetry ? (
               <Button size="sm" disabled={busy} onClick={onRetry}>
-                Retry failed
+                {stopped ? "Retry" : "Retry failed"}
               </Button>
             ) : null}
           </>
