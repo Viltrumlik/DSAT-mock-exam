@@ -16,16 +16,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
 
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
-import { TabBar, activeTab, panelId, tabHref, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { TabBar, activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
 import { CampaignsPanel } from "./CampaignsPanel";
 import { DebtPanel } from "./DebtPanel";
 import { JournalPanel } from "./JournalPanel";
 import { OverviewPanel } from "./OverviewPanel";
+import { smsTabHref, type SmsTab } from "./smsTabs";
 import { TemplatesPanel } from "./TemplatesPanel";
-
-export type SmsTab = "overview" | "journal" | "campaigns" | "debt" | "templates";
-
-export const SMS_PATH = "/ops/sms";
 
 const TABS: Tab<SmsTab>[] = [
   { key: "overview", label: "Overview", icon: Gauge },
@@ -34,11 +31,6 @@ const TABS: Tab<SmsTab>[] = [
   { key: "debt", label: "Debt warnings", icon: BellRing },
   { key: "templates", label: "Templates", icon: FileText },
 ];
-
-/** The address of one tab. Nothing else is carried over: the journal's filters belong to the journal. */
-export function smsTabHref(key: SmsTab): string {
-  return tabHref(SMS_PATH, new URLSearchParams(), key, "overview");
-}
 
 export function SmsPage() {
   // useSearchParams needs a Suspense boundary above it, or the production build's prerender fails.
