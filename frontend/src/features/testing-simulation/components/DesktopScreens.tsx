@@ -14,7 +14,7 @@ import {
 
 import { desktop, type PrecheckReport } from "@/lib/desktop/bridge";
 import { DesktopBlockedError, type DesktopBlockReason } from "@/lib/desktop/lockdownSession";
-import { DESKTOP_DOWNLOAD_URL, openInAppLink } from "@/lib/desktop/routes";
+import { DOWNLOAD_PAGE, openInAppLink } from "@/lib/desktop/routes";
 import { isLowBattery, useBattery } from "@/lib/desktop/useBattery";
 
 import { PrecheckFailedError } from "../hooks/useDesktopLockdown";
@@ -248,19 +248,19 @@ export function OpenInAppScreen({ attemptId, reason }: { attemptId: number; reas
       <p className="mt-2 text-center text-sm font-medium text-slate-500">
         {elsewhere
           ? "Your answers are saved. Continue in the app on the computer where you started."
-          : "Midterms run in the MasterSAT app for Windows, which keeps the test window locked while you work."}
+          : "Midterms run in the MasterSAT app for Windows and Mac, which keeps the test window locked while you work."}
       </p>
       <a href={openInAppLink(`/exam/${attemptId}?src=midterm`)} className={`${primaryButton} mt-7`}>
         <Monitor className="h-5 w-5" /> Open in the MasterSAT app
       </a>
       <a
-        href={DESKTOP_DOWNLOAD_URL}
+        href={DOWNLOAD_PAGE}
         className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-slate-300 px-8 py-3 text-base font-bold text-slate-800 hover:bg-slate-50"
       >
-        <Download className="h-5 w-5" /> Download for Windows
+        <Download className="h-5 w-5" /> Download the app
       </a>
       <p className="mt-5 text-center text-xs font-medium text-slate-500">
-        Using a Mac or a Chromebook? Ask your teacher to let you take it in the browser.
+        Using a Chromebook? Ask your teacher to let you take it in the browser.
       </p>
     </Frame>
   );

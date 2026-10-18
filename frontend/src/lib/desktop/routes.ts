@@ -3,8 +3,20 @@
 export const DESKTOP_HOME = "/desktop";
 export const DESKTOP_LOGIN = "/desktop/login";
 
-/** The installer, served by nginx from the release's `downloads/desktop/` folder. */
+/** The Windows installer, served by nginx from the shared `downloads/desktop/` folder. */
 export const DESKTOP_DOWNLOAD_URL = "https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe";
+
+/** The Mac app's disk image, next to the Windows installer. */
+export const DESKTOP_MAC_DOWNLOAD_URL = "https://mastersat.uz/downloads/desktop/MasterSAT.dmg";
+
+/**
+ * Version, size and checksum of both downloads — replaced with each release, no site deploy.
+ * Relative: read from the page's own origin (nginx serves `/downloads/` on mastersat.uz).
+ */
+export const DESKTOP_RELEASE_MANIFEST_URL = "/downloads/desktop/latest.json";
+
+/** The download page: public, so it is a link a teacher can post anywhere. */
+export const DOWNLOAD_PAGE = "/download";
 
 export type DesktopPaperKind = "midterm" | "pastpaper";
 
