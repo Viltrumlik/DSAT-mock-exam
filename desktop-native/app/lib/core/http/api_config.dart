@@ -94,6 +94,10 @@ class ApiConfig {
   /// The Velopack feed folder (architecture §6: the live `/downloads/desktop/` block).
   Uri get updateFeed => origin.replace(path: '/downloads/desktop/');
 
+  /// The MacBook app's disk image, beside the feed. The server's `update_url` is the Windows
+  /// installer (one release policy for both), so a Mac's "Download from the website" uses this.
+  Uri get macDownload => origin.replace(path: '/downloads/desktop/MasterSAT.dmg');
+
   Uri resolve(String pathAndQuery) => origin.resolve(pathAndQuery);
 
   ApiConfig copyWith({

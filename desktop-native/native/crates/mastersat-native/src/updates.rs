@@ -1,6 +1,7 @@
 //! Velopack: the install/update/uninstall hooks run by `ms_startup`, and `ms_update_*`.
-//! Architecture §6. Behind the `updates` cargo feature (on by default); without it the hooks are
-//! skipped and the update calls answer MS_ERR_UNSUPPORTED.
+//! Architecture §6. Windows and the MacBook app (its packages are on the `osx` channels).
+//! Behind the `updates` cargo feature (on by default); without it the hooks are skipped and the
+//! update calls answer MS_ERR_UNSUPPORTED.
 //!
 //! Flow (Dart, Home only): `ms_update_check(feed, channel)` remembers what it found →
 //! `ms_update_download()` (blocking, on a background isolate; `ms_update_progress()` polled from
@@ -132,9 +133,14 @@ mod imp {
             .run();
     }
 
-    /// Velopack's hooks are Windows-only, and the app is only ever installed on Windows.
+    /// The MacBook app (vpk-packed .app with UpdateMac inside): no URL-scheme hooks to run, but
+    /// Velopack's startup still matters — an update downloaded last time is applied before any
+    /// window opens, and old packages are cleaned up. A copy vpk never packed (a development
+    /// build) has no locator: Velopack logs that and returns.
     #[cfg(not(windows))]
-    pub fn startup(_args: Vec<String>) {}
+    pub fn startup(args: Vec<String>) {
+        velopack::VelopackApp::build().set_args(args).run();
+    }
 
     pub fn check(feed_url: &str, channel: &str) -> MsResult<CheckOutcome> {
         check_inputs(feed_url, channel)?;

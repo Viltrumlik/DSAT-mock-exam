@@ -3,6 +3,7 @@
 // anything is unsent).
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Platform;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mastersat_app/app.dart';
@@ -45,7 +46,8 @@ void main() {
     await tester.tap(find.text('Beta'));
     await settleApp(tester);
     expect(store.settings.updateChannel, UpdateChannel.beta);
-    expect(h.native.calls.last, 'updateCheck beta');
+    // The MacBook app's packages are on the feed's `osx` channels.
+    expect(h.native.calls.last, Platform.isMacOS ? 'updateCheck osx-beta' : 'updateCheck beta');
     await h.dispose(tester);
   });
 

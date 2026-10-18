@@ -6,10 +6,12 @@
 //    THAT module — Dart and C++ share one set of Rust statics (the window handle, the lock, the
 //    pre-check captured at lock time). A full path to some other copy would load a second,
 //    uninitialised module, so the bare name is always tried first.
-//  * macOS (development only): `libmastersat_native.dylib` from the cargo target folder
-//    (`cargo build --manifest-path desktop-native/native/Cargo.toml`), or the app bundle's
-//    Frameworks folder, or MASTERSAT_NATIVE_LIB. Nobody else calls ms_init there, so [open] does
-//    (`ms_init(0, version)`: no window to manage), as the header's dev-host contract says.
+//  * macOS (the MacBook app, and development): `libmastersat_native.dylib` from the app bundle's
+//    Frameworks folder, the cargo target folder
+//    (`cargo build --manifest-path desktop-native/native/Cargo.toml`), or MASTERSAT_NATIVE_LIB.
+//    No runner there, so [open] calls ms_startup (Velopack: an update downloaded last time is
+//    applied before any window) and `ms_init(0, version)` (no window to manage), as the
+//    header's dev-host contract says.
 //
 // Conventions (the header's CONVENTIONS block): every output is Rust-allocated and freed here
 // with ms_free / ms_free_bytes; a non-OK status throws [NativeBridgeException] carrying
@@ -344,6 +346,7 @@ class FfiNativeBridge implements NativeBridge {
       // Binding outside the try: a library that opens but lacks a symbol is a version mismatch,
       // which must fail loudly rather than fall through to some other copy.
       final bridge = FfiNativeBridge._(_Calls(MsBindings(lib)), candidate);
+      if (Platform.isMacOS) bridge._startup();
       if (!Platform.isWindows) bridge._initDevHost(devAppVersion ?? bridge.libraryVersion);
       return bridge;
     }
@@ -360,6 +363,10 @@ class FfiNativeBridge implements NativeBridge {
 
   /// How often [updateDownload] samples `ms_update_progress`.
   static const progressInterval = Duration(milliseconds: 250);
+
+  /// What the Windows runner does first thing in wWinMain. argc 0: the library reads the
+  /// process's own arguments (Velopack's hook arguments, if any).
+  void _startup() => _c.check(_b.startup(0, nullptr), 'ms_startup');
 
   void _initDevHost(String appVersion) {
     _c.check(using((arena) => _b.init(0, appVersion.toNativeUtf8(allocator: arena))), 'ms_init');

@@ -3,8 +3,10 @@
 //  * "Restart to update" appears on Home only — never during a test or lockdown;
 //  * `home.app.update == "required"` or any 426 shows a blocking card with real progress and
 //    a "Download from the website" fallback.
-// The Velopack work is the native library's (ms_update_*); this is only its state.
+// The Velopack work is the native library's (ms_update_*); this is only its state. The MacBook
+// app checks the same feed on its own channels (`osx`, `osx-beta`).
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -23,13 +25,17 @@ class UpdateController extends ChangeNotifier {
     required this._channel,
     this._log,
     this.period = const Duration(hours: 6),
-  });
+    bool? macOS,
+  }) : _macOS = macOS ?? Platform.isMacOS;
 
   final NativeBridge _native;
   final ApiConfig _config;
   final UpdateChannel Function() _channel;
   final EventLog? _log;
   final Duration period;
+
+  /// Which packages to ask for: the MacBook app's (`osx` channels) or the Windows app's.
+  final bool _macOS;
 
   UpdatePhase _phase = UpdatePhase.idle;
   int _percent = 0;
@@ -39,8 +45,8 @@ class UpdateController extends ChangeNotifier {
   Future<void>? _running;
   bool _disposed = false;
 
-  /// This build has no updater (the MacBook app: the feed is Windows-only): never a failure,
-  /// and no more checks.
+  /// This copy has no updater (not installed from a MasterSAT package — a development build, or a
+  /// MacBook app from before 0.3.2): never a failure, and no more checks.
   bool _unsupported = false;
 
   /// A 426 seen on any request (the blocking card shows while set).
@@ -70,7 +76,7 @@ class UpdateController extends ChangeNotifier {
     _error = null;
     _set(UpdatePhase.checking);
     try {
-      final info = await _native.updateCheck(feedUrl: _config.updateFeed.toString(), channel: _channel().wire);
+      final info = await _native.updateCheck(feedUrl: _config.updateFeed.toString(), channel: _channel().feedChannel(macOS: _macOS));
       if (!info.available) {
         _set(UpdatePhase.upToDate);
         return;

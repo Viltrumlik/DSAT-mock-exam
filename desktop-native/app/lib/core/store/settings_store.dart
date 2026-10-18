@@ -17,6 +17,10 @@ enum UpdateChannel {
   final String wire;
 
   static UpdateChannel fromWire(String? s) => s == 'beta' ? beta : stable;
+
+  /// The channel the feed publishes this computer's packages under. One feed folder holds both
+  /// apps: Windows packages use [wire] as it is, the MacBook app's carry `osx` (`osx`, `osx-beta`).
+  String feedChannel({required bool macOS}) => !macOS ? wire : (this == stable ? 'osx' : 'osx-$wire');
 }
 
 /// The main window's last normal placement (restored by the Windows runner).
