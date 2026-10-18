@@ -1,5 +1,14 @@
 import type { BadgeVariant } from "@/components/ui";
-import type { CampaignStatus, EskizTemplate, SlotRole, SmsKind, SmsStatus, TemplateSlot, TemplateStatus } from "./smsApi";
+import type {
+  CampaignStatus,
+  EskizTemplate,
+  SlotRole,
+  SmsKind,
+  SmsStatus,
+  StatusCounts,
+  TemplateSlot,
+  TemplateStatus,
+} from "./smsApi";
 
 /**
  * The words and figures the SMS panel prints. The panel speaks English like the rest of /ops;
@@ -22,6 +31,13 @@ export function money(amount: number | null | undefined): string {
   const whole = Math.round(amount) || 0;
   const digits = String(Math.abs(whole)).replace(/\B(?=(\d{3})+(?!\d))/g, NB);
   return `${whole < 0 ? "-" : ""}${digits}${NB}so'm`;
+}
+
+/** Delivered, not delivered (eskiz or the operator said no), and the rest (still on its way, or unknown). */
+export function splitCounts(total: number, counts: StatusCounts) {
+  const delivered = counts.DELIVERED ?? 0;
+  const notDelivered = (counts.UNDELIVERED ?? 0) + (counts.REJECTED ?? 0) + (counts.FAILED ?? 0);
+  return { delivered, notDelivered, other: Math.max(0, total - delivered - notDelivered) };
 }
 
 export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n === 1 ? word : many}`;
@@ -68,6 +84,13 @@ export function fillPattern(pattern: string, values: string[]): string {
     const words = value.replace(APOSTROPHES, "'").split(/\s+/);
     return words.slice(0, max ? Number(max) : 1).join(" ");
   });
+}
+
+/** The slots of a pattern, in order — for a pattern the template list does not carry. */
+export function slotsOf(pattern: string): TemplateSlot[] {
+  return Array.from(pattern.matchAll(SLOT), (m) =>
+    m[1] === "d" ? { kind: "d", min: 1, max: 1 } : { kind: "w", min: Number(m[2] ?? 1), max: Number(m[3] ?? 1) },
+  );
 }
 
 /** The sample values for slots in these roles, with `texts` in the `text` slots. */

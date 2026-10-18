@@ -14,19 +14,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { Alert, Badge } from "@/components/ui";
-import { dayLabel, hourLabel, money, plural } from "./format";
+import { dayLabel, hourLabel, money, plural, splitCounts } from "./format";
 import { LoadError, Loading, Section, TEXT_BUTTON } from "./panelKit";
-import type { SmsOverview, StatusCounts } from "./smsApi";
+import type { SmsOverview } from "./smsApi";
 import { useSmsOverview } from "./smsHooks";
 import { smsTabHref } from "./smsTabs";
 import { TestSmsForm } from "./TestSmsForm";
-
-/** Delivered, not delivered (eskiz or the operator said no), and the rest (still on its way, or unknown). */
-export function splitCounts(total: number, counts: StatusCounts) {
-  const delivered = counts.DELIVERED ?? 0;
-  const notDelivered = (counts.UNDELIVERED ?? 0) + (counts.REJECTED ?? 0) + (counts.FAILED ?? 0);
-  return { delivered, notDelivered, other: Math.max(0, total - delivered - notDelivered) };
-}
 
 function Card({ title, children, foot }: { title: string; children: ReactNode; foot?: ReactNode }) {
   return (

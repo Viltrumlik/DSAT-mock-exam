@@ -10,7 +10,9 @@ import {
   roleLabel,
   skipLabel,
   slotLabel,
+  slotsOf,
   smsParts,
+  splitCounts,
   statusBadge,
   templateBadge,
   todayInTashkent,
@@ -118,6 +120,15 @@ describe("labels", () => {
     expect(campaignBadge("CANCELLED").label).toBe("Cancelled");
   });
 
+  it("reads a pattern's slots in order", () => {
+    expect(slotsOf("%w{1,4} sizda %d so'm. %w")).toEqual([
+      { kind: "w", min: 1, max: 4 },
+      { kind: "d", min: 1, max: 1 },
+      { kind: "w", min: 1, max: 1 },
+    ]);
+    expect(slotsOf("No slots here.")).toEqual([]);
+  });
+
   it("describes a slot", () => {
     expect(slotLabel({ kind: "w", min: 1, max: 4 })).toBe("1–4 words");
     expect(slotLabel({ kind: "w", min: 1, max: 1 })).toBe("1 word");
@@ -127,6 +138,17 @@ describe("labels", () => {
   it("writes an hour as a clock time", () => {
     expect(hourLabel(8)).toBe("08:00");
     expect(hourLabel(20)).toBe("20:00");
+  });
+});
+
+describe("splitCounts", () => {
+  it("counts undelivered, rejected and failed as not delivered, and the rest as other", () => {
+    expect(splitCounts(10, { DELIVERED: 5, UNDELIVERED: 1, REJECTED: 1, FAILED: 1, SENT: 1, UNCERTAIN: 1 })).toEqual({
+      delivered: 5,
+      notDelivered: 3,
+      other: 2,
+    });
+    expect(splitCounts(0, {})).toEqual({ delivered: 0, notDelivered: 0, other: 0 });
   });
 });
 
