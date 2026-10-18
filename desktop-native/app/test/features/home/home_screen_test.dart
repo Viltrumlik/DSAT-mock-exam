@@ -2,6 +2,8 @@
 // rule, both lists drawn from the cache on the first frame and refreshed with one conditional
 // request, midterms grouped, offline and update banners, sign-out from the sidebar and the
 // account menu (blocked while work is unsent).
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -180,7 +182,13 @@ void main() {
     expect(find.textContaining('version 0.3.0 or newer is needed'), findsOneWidget);
     await tester.tap(find.text('Download from the website'));
     await tester.pump();
-    expect(h.openedUrls.single.toString(), 'https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe');
+    // The server's update_url is the Windows installer; a Mac opens its own disk image instead.
+    expect(
+      h.openedUrls.single.toString(),
+      Platform.isMacOS
+          ? endsWith('/downloads/desktop/MasterSAT.dmg')
+          : 'https://mastersat.uz/downloads/desktop/MasterSAT-Setup.exe',
+    );
     await h.dispose(tester);
   });
 

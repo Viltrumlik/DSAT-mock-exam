@@ -20,6 +20,11 @@ name: desktop-native (Windows exam app)
 #            smoke test, and `flutter test --exclude-tags golden`.
 #          Artifacts: MasterSAT-Setup (Setup.exe), MasterSAT-full-nupkg,
 #          MasterSAT-symbols (--split-debug-info), s0-diagnostics.
+#  package-macos
+#          the MacBook app's update packages (packaging/macos/pack.sh): the universal
+#          dylib with the proof key, the island, `flutter build macos --release`, then
+#          `vpk pack` on the osx channel, signed ad-hoc. Artifacts: MasterSAT-mac (the
+#          DMG /download offers) and MasterSAT-mac-feed (nupkg + releases/assets.osx.json).
 #
 # Nothing here deploys anything, and nothing here may reach production: the
 # Windows job maps mastersat.uz to 0.0.0.0 before anything runs.
@@ -38,6 +43,11 @@ on:
       - "desktop/src-tauri/crates/**"
       - ".github/workflows/desktop-native.yml"
   workflow_dispatch:
+    inputs:
+      version:
+        description: "package-macos only: build the MacBook app as this x.y.z instead of VERSION (an older copy to test updating from)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -458,3 +468,88 @@ jobs:
           MASTERSAT_NATIVE_LIB: ${{ github.workspace }}\desktop-native\native\target\debug\mastersat_native.dll
           MASTERSAT_NATIVE_REQUIRE: "1"
         run: flutter test --exclude-tags golden
+
+  package-macos:
+    name: package (macOS)
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read pinned versions
+        run: |
+          echo "FLUTTER_VERSION=$(tr -d '[:space:]' < desktop-native/.flutter-version)" >> "$GITHUB_ENV"
+          version="${{ inputs.version }}"
+          [ -n "$version" ] || version=$(tr -d '[:space:]' < desktop-native/VERSION)
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          # vpk must match the velopack crate the dylib's updater is built from.
+          velopack=$(grep -A1 '^name = "velopack"$' desktop-native/native/Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')
+          [ -n "$velopack" ] || { echo "velopack is not in desktop-native/native/Cargo.lock"; exit 1; }
+          echo "VELOPACK_VERSION=$velopack" >> "$GITHUB_ENV"
+          echo "MasterSAT for macOS $version, velopack $velopack"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop-native/native
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Install vpk ${{ env.VELOPACK_VERSION }}
+        run: |
+          dotnet tool install -g vpk --version "$VELOPACK_VERSION"
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      # As for the Windows DLL: the release dylib embeds DESKTOP_PROOF_KEY at compile time; a pull
+      # request does not get the secret, and its artifacts say so in their name.
+      - name: pack.sh (dylib with the proof key, island, app, vpk pack, DMG)
+        id: pack
+        env:
+          DESKTOP_PROOF_KEY: ${{ secrets.DESKTOP_PROOF_KEY }}
+          MS_APP_VERSION: ${{ env.APP_VERSION }}
+          # tool/env.sh (sourced by build-app.sh) pins this Flutter, not a developer's own path.
+          MASTERSAT_FLUTTER_ROOT: ${{ env.FLUTTER_ROOT }}
+          ISLAND_BUILD_SUFFIX: +${{ github.sha }}
+          DESMOS_API_KEY: ${{ vars.NEXT_PUBLIC_DESMOS_API_KEY }}
+        run: |
+          if [ -z "$DESKTOP_PROOF_KEY" ]; then
+            if [ "${{ github.event_name }}" = pull_request ]; then
+              echo "::warning::DESKTOP_PROOF_KEY is not available to this pull request: the artifacts are named *-NO-PROOF-KEY"
+            else
+              echo "::error::DESKTOP_PROOF_KEY is not set: the MacBook app would have no proof key"; exit 1
+            fi
+            echo "suffix=-NO-PROOF-KEY" >> "$GITHUB_OUTPUT"
+          else
+            echo "suffix=" >> "$GITHUB_OUTPUT"
+          fi
+          desktop-native/packaging/macos/pack.sh --channel osx --out "$RUNNER_TEMP/velopack"
+          dylib=desktop-native/packaging/macos/out/libmastersat_native.dylib
+          if strings "$dylib" | grep -q 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff; then
+            echo "::error::the release dylib carries the development proof key"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-mac${{ steps.pack.outputs.suffix }}
+          path: ${{ runner.temp }}/velopack/MasterSAT-*.dmg
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MasterSAT-mac-feed${{ steps.pack.outputs.suffix }}
+          path: |
+            ${{ runner.temp }}/velopack/*-full.nupkg
+            ${{ runner.temp }}/velopack/releases.*.json
+            ${{ runner.temp }}/velopack/assets.*.json
+          if-no-files-found: error
+          compression-level: 0

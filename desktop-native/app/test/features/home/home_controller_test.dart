@@ -155,10 +155,12 @@ void main() {
   });
 
   group('UpdateController', () {
-    UpdateController make(FakeNativeBridge native, {UpdateChannel channel = UpdateChannel.stable}) => UpdateController(
+    UpdateController make(FakeNativeBridge native, {UpdateChannel channel = UpdateChannel.stable, bool macOS = false}) =>
+        UpdateController(
           native: native,
           config: ApiConfig(origin: Uri.parse('https://mastersat.uz'), appVersion: '0.2.0'),
           channel: () => channel,
+          macOS: macOS,
         );
 
     test('up to date', () async {
@@ -185,7 +187,21 @@ void main() {
       u.dispose();
     });
 
-    test('a build without an updater (the MacBook app) is not a failure, and is not asked again', () async {
+    test('the MacBook app asks the same feed for its own packages: osx, osx-beta', () async {
+      final stable = FakeNativeBridge();
+      final u = make(stable, macOS: true);
+      await u.checkAndDownload();
+      expect(stable.calls, ['updateCheck osx']);
+      u.dispose();
+
+      final beta = FakeNativeBridge();
+      final b = make(beta, channel: UpdateChannel.beta, macOS: true);
+      await b.checkAndDownload();
+      expect(beta.calls, ['updateCheck osx-beta']);
+      b.dispose();
+    });
+
+    test('a build without an updater (a development copy) is not a failure, and is not asked again', () async {
       final native = _NoUpdater();
       final u = make(native);
       u.startPeriodic();

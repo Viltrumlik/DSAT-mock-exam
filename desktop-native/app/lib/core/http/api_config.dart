@@ -11,7 +11,7 @@ import '../api/v1_api.dart';
 
 /// This build's version: `--dart-define=MASTERSAT_APP_VERSION=…`, which the packaging sets from
 /// desktop-native/VERSION. The default is kept equal to that file (a test checks it).
-const String appVersion = String.fromEnvironment('MASTERSAT_APP_VERSION', defaultValue: '0.3.1');
+const String appVersion = String.fromEnvironment('MASTERSAT_APP_VERSION', defaultValue: '0.3.2');
 
 /// The production origin.
 final Uri productionOrigin = Uri.parse('https://mastersat.uz');
@@ -93,6 +93,10 @@ class ApiConfig {
 
   /// The Velopack feed folder (architecture §6: the live `/downloads/desktop/` block).
   Uri get updateFeed => origin.replace(path: '/downloads/desktop/');
+
+  /// The MacBook app's disk image, beside the feed. The server's `update_url` is the Windows
+  /// installer (one release policy for both), so a Mac's "Download from the website" uses this.
+  Uri get macDownload => origin.replace(path: '/downloads/desktop/MasterSAT.dmg');
 
   Uri resolve(String pathAndQuery) => origin.resolve(pathAndQuery);
 

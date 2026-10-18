@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- What `vpk pack` (pack.sh) signs the MacBook app with. vpk always signs with the hardened
+     runtime; signed ad-hoc (no Developer ID yet), library validation would then refuse to load
+     the bundle's own ad-hoc frameworks (FlutterMacOS, libmastersat_native.dylib) — they share no
+     Team ID — so it is turned off. Not sandboxed, as Release.entitlements explains. -->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.app-sandbox</key>
+	<false/>
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

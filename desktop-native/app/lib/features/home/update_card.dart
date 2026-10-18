@@ -2,6 +2,7 @@
 // Home's policy says `update: "required"` (architecture §6). One-click Velopack update with
 // real download progress, and the website's installer link as the fallback.
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -46,7 +47,9 @@ class UpdateRequiredGate extends StatelessWidget {
               child: UpdateRequiredCard(
                 updates: services.updates,
                 detail: gate?.detail ?? (policy?.message.trim().isNotEmpty ?? false ? policy!.message.trim() : null),
-                updateUrl: (gate?.updateUrl.isNotEmpty ?? false) ? gate!.updateUrl : policy?.updateUrl,
+                updateUrl: Platform.isMacOS
+                    ? services.config.macDownload.toString()
+                    : (gate?.updateUrl.isNotEmpty ?? false) ? gate!.updateUrl : policy?.updateUrl,
                 minimumVersion: gate?.minimumVersion ?? policy?.minimumVersion,
               ),
             ),

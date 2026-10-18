@@ -5,7 +5,8 @@
 //                     header; on Windows it opens the DLL the runner already loaded.
 //  * FakeNativeBridge (this folder) — deterministic, for tests and macOS fixture mode.
 //
-// ms_startup / ms_init are called by the Windows runner in C++, never from Dart.
+// ms_startup / ms_init are called by the Windows runner in C++; on macOS (no runner) the FFI
+// bridge calls them when it opens the library.
 // Every method throws [NativeBridgeException] on a non-OK status. Calls are synchronous
 // (FFI); the few slow ones are Futures and run off the UI isolate.
 import 'dart:convert';
