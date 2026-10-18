@@ -39,6 +39,8 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   "/ops/lcup",
   // lc-up money (debtors, the debt freeze, payments): admins and super admins, on its own page.
   "/ops/finance",
+  // The SMS panel (plan 2026-10-18): the owner chose admins and super admins — they see and send.
+  "/ops/sms",
 ];
 
 /** `useMe` types the payload as an open record, so the fields are narrowed here. */

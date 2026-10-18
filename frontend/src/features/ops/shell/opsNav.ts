@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LifeBuoy,
   Megaphone,
+  MessageSquareText,
   NotebookText,
   RefreshCw,
   School,
@@ -96,6 +97,8 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
       { href: "/ops/lcup", label: "lc-up", icon: RefreshCw },
       // Money as lc-up keeps it. Its own page, not a tab of lc-up — the owner wanted them apart.
       { href: "/ops/finance", label: "Finance", icon: Wallet },
+      // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.
+      { href: "/ops/sms", label: "SMS", icon: MessageSquareText },
       // Who teaches support, and which hours they are available.
       { href: "/ops/support", label: "Support", icon: LifeBuoy },
       // Stock, prices and the collection queue — a desk job, not super_admin-only.
