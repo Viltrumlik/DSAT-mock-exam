@@ -2,7 +2,8 @@
 
 ``deliver`` writes the day's row before the request leaves. The unique (kind, day, key) is the
 lock: a second run the same day — the beat firing twice, a person re-running — finds the row and
-sends nothing. Its outcome is recorded once and never retried (see ``sms.eskiz``).
+sends nothing, unless that SMS is FAILED: eskiz was never reached, so nothing left and it may go
+again. SENT, UNCERTAIN (it may have left) and PENDING (being sent, or died mid-request) never do.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from . import eskiz
@@ -35,14 +37,9 @@ def mask_phone(phone) -> str:
 
 
 def deliver(client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_student_id=None) -> SmsMessage | None:
-    """The SMS, once. None when today's row for this key is already there."""
-    try:
-        with transaction.atomic():
-            msg = SmsMessage.objects.create(
-                kind=kind, run_on=run_on, dedupe_key=dedupe_key, phone=phone, text=text,
-                user=user, lcup_student_id=lcup_student_id,
-            )
-    except IntegrityError:
+    """The SMS, once. None when today's row for this key is already there and is not FAILED."""
+    msg = _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id)
+    if msg is None:
         return None
     result = client.send(phone, text, user_sms_id=f"m{msg.pk}")
     msg.status = _STATUS_OF[result.outcome]
@@ -51,6 +48,25 @@ def deliver(client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_st
     msg.sent_at = timezone.now() if result.outcome == eskiz.ACCEPTED else None
     msg.save(update_fields=["status", "request_id", "error", "sent_at", "updated_at"])
     return msg
+
+
+def _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id) -> SmsMessage | None:
+    try:
+        with transaction.atomic():
+            return SmsMessage.objects.create(
+                kind=kind, run_on=run_on, dedupe_key=dedupe_key, phone=phone, text=text,
+                user=user, lcup_student_id=lcup_student_id,
+            )
+    except IntegrityError:
+        pass
+    # One UPDATE, so of two runs re-claiming the same FAILED row exactly one wins.
+    claimed = SmsMessage.objects.filter(
+        kind=kind, run_on=run_on, dedupe_key=dedupe_key, status=SmsMessage.STATUS_FAILED
+    ).update(
+        status=SmsMessage.STATUS_PENDING, phone=phone, text=text, error="",
+        attempts=F("attempts") + 1, updated_at=timezone.now(),
+    )
+    return SmsMessage.objects.get(kind=kind, run_on=run_on, dedupe_key=dedupe_key) if claimed else None
 
 
 def check_statuses(client, now) -> dict:

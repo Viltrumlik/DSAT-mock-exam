@@ -90,6 +90,9 @@ def plan(now, *, today=None) -> Plan:
         if not freezable(link):
             skipped["not_freezable"] += 1
             continue
+        if int(abs(link.balance)) == 0:  # -0.40 would read "0 so'm qarz"
+            skipped["under_one_sum"] += 1
+            continue
         if link.balance_seen_at is None or link.balance_seen_at < now - STALE_AFTER:
             skipped["stale_balance"] += 1
             continue
@@ -115,7 +118,20 @@ def plan(now, *, today=None) -> Plan:
     return result
 
 
-def send(client, now) -> dict:
+def send(client, now, *, retry_only: bool = False) -> dict:
+    """``retry_only`` is the 11:00 and 12:00 runs: only the warnings an earlier run today could not
+    get out (FAILED — eskiz unreachable, a refused login) go again; never a new one, never one that
+    may have left. One student going wrong (the database, the cache) does not stop the rest."""
+    run_on = timezone.localdate(now)
+    retry = None
+    if retry_only:
+        retry = set(
+            SmsMessage.objects.filter(
+                kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, status=SmsMessage.STATUS_FAILED
+            ).values_list("dedupe_key", flat=True)
+        )
+        if not retry:
+            return {"skipped": {}, "blocked": "nothing to retry"}
     planned = plan(now)
     counts = {"skipped": planned.skipped}
     if planned.blocked:
@@ -123,13 +139,21 @@ def send(client, now) -> dict:
             logger.warning("debt warnings held back: %s", planned.blocked)
         counts["blocked"] = planned.blocked
         return counts
-    run_on = timezone.localdate(now)
     for warning in planned.warnings:
-        msg = deliver(
-            client, kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, dedupe_key=warning.dedupe_key,
-            phone=warning.phone, text=warning.text, user=warning.link.user,
-            lcup_student_id=warning.link.lcup_student_id,
-        )
+        if retry is not None and warning.dedupe_key not in retry:
+            continue
+        try:
+            msg = deliver(
+                client, kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, dedupe_key=warning.dedupe_key,
+                phone=warning.phone, text=warning.text, user=warning.link.user,
+                lcup_student_id=warning.link.lcup_student_id,
+            )
+        except Exception as exc:  # the type only: the message may quote the phone
+            logger.warning(
+                "debt warning for lc-up student %s went wrong: %s", warning.link.lcup_student_id, type(exc).__name__
+            )
+            counts["error"] = counts.get("error", 0) + 1
+            continue
         outcome = "already_sent" if msg is None else msg.status.lower()
         counts[outcome] = counts.get(outcome, 0) + 1
     return counts

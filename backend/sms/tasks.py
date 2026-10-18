@@ -12,6 +12,17 @@ RUNNING_KEY = "sms:debt-warnings-running"
 def debt_warnings() -> dict:
     """Days 1..LCUP_DEBT_FREEZE_DAY-1: the warning SMS (``sms.debt_warnings``). Every other day the
     plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code."""
+    return _warn(retry_only=False)
+
+
+@shared_task(name="sms.tasks.retry_debt_warnings")
+def retry_debt_warnings() -> dict:
+    """11:00 and 12:00: only what 10:00 could not get out (FAILED) goes again — never a new warning,
+    since the owner's time is 10:00, and never one that may already have left."""
+    return _warn(retry_only=True)
+
+
+def _warn(*, retry_only: bool) -> dict:
     if not conf.debt_warnings_enabled():
         return {"skipped": "disabled"}
     if not conf.is_configured():
@@ -22,7 +33,7 @@ def debt_warnings() -> dict:
         from . import debt_warnings as warnings
         from . import eskiz
 
-        return warnings.send(eskiz.default_client(), timezone.now())
+        return warnings.send(eskiz.default_client(), timezone.now(), retry_only=retry_only)
     finally:
         cache.delete(RUNNING_KEY)
 

@@ -10,6 +10,7 @@ from django.utils import timezone
 
 from lcup.models import LcupStudentLink, LinkStatus
 from sms import debt_warnings
+from sms.eskiz import FAILED
 from sms.models import SmsMessage
 from sms.templates import SmsTemplate
 from sms.testing import FakeEskiz
@@ -123,3 +124,40 @@ class DebtWarningTests(TestCase):
         planned = debt_warnings.plan(at(18, month=10), today=date(2026, 11, 1))
         self.assertEqual(planned.blocked, "")
         self.assertEqual([w.link.lcup_student_id for w in planned.warnings], [101])
+
+    def test_the_retry_run_sends_only_what_never_left(self):
+        self.learner(101, "aziz", balance=-150000, phone="998901111111")
+        debt_warnings.send(FakeEskiz(FAILED), at(1))
+        self.learner(102, "malika", balance=-90000, phone="998902222222")
+        fake = FakeEskiz()
+        counts = debt_warnings.send(fake, at(1, hour=11), retry_only=True)
+        self.assertEqual([phone for phone, _, _ in fake.sent], ["998901111111"])
+        self.assertEqual(counts["sent"], 1)
+
+    def test_the_retry_run_with_nothing_failed_sends_nothing(self):
+        self.learner(101, "aziz", balance=-150000)
+        debt_warnings.send(FakeEskiz(), at(1))
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1, hour=11), retry_only=True)["blocked"], "nothing to retry")
+        self.assertEqual(fake.sent, [])
+
+    def test_one_student_going_wrong_does_not_stop_the_rest(self):
+        self.learner(101, "aziz", balance=-150000, phone="998901111111")
+        self.learner(102, "malika", balance=-90000, phone="998902222222")
+        fake = FakeEskiz()
+        real = debt_warnings.deliver
+
+        def flaky(client, **fields):
+            if fields["lcup_student_id"] == 101:
+                raise RuntimeError("the database went away")
+            return real(client, **fields)
+
+        with mock.patch("sms.debt_warnings.deliver", side_effect=flaky):
+            counts = debt_warnings.send(fake, at(1))
+        self.assertEqual(counts["error"], 1)
+        self.assertEqual([phone for phone, _, _ in fake.sent], ["998902222222"])
+
+    def test_less_than_one_sum_is_not_a_debt_to_warn_about(self):
+        self.learner(101, "aziz", balance="-0.40")
+        counts = debt_warnings.send(FakeEskiz(), at(1))
+        self.assertEqual(counts["skipped"], {"under_one_sum": 1})

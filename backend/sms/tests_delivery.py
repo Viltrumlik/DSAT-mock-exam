@@ -81,3 +81,19 @@ class CheckStatusesTests(TestCase):
 class MaskTests(SimpleTestCase):
     def test_mask_phone(self):
         self.assertEqual(mask_phone("998901234567"), "99890***4567")
+
+
+class RetryTests(TestCase):
+    def test_an_sms_that_never_left_goes_again_on_the_next_run(self):
+        send(FakeEskiz(FAILED))
+        fake = FakeEskiz()
+        msg = send(fake)
+        msg.refresh_from_db()
+        self.assertEqual((msg.status, msg.attempts, msg.error), (SmsMessage.STATUS_SENT, 2, ""))
+        self.assertEqual(len(fake.sent), 1)
+
+    def test_one_that_may_have_left_never_goes_again(self):
+        send(FakeEskiz(UNCERTAIN))
+        fake = FakeEskiz()
+        self.assertIsNone(send(fake))
+        self.assertEqual(fake.sent, [])

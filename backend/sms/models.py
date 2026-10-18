@@ -46,6 +46,8 @@ class SmsMessage(models.Model):
     eskiz_status = models.CharField(max_length=32, blank=True, default="")
     parts = models.PositiveSmallIntegerField(null=True, blank=True)
     error = models.CharField(max_length=400, blank=True, default="")
+    #: 1, plus one for every later run that sent a FAILED one (it never left) again.
+    attempts = models.PositiveSmallIntegerField(default=1)
     sent_at = models.DateTimeField(null=True, blank=True)
     checked_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

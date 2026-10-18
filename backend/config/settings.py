@@ -660,6 +660,11 @@ CELERY_BEAT_SCHEDULE = {
         "task": "sms.tasks.debt_warnings",
         "schedule": crontab(hour=10, minute=0),
     },
+    # What 10:00 could not get out (eskiz unreachable, a refused login) goes again — only that.
+    "sms-debt-warnings-retry": {
+        "task": "sms.tasks.retry_debt_warnings",
+        "schedule": crontab(hour="11,12", minute=0),
+    },
     # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
     "sms-check-statuses": {
         "task": "sms.tasks.check_statuses",

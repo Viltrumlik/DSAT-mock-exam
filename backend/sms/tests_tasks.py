@@ -38,6 +38,18 @@ class DebtWarningsTaskTests(TestCase):
         send.assert_not_called()
         cache.delete(tasks.RUNNING_KEY)
 
+    @override_settings(SMS_DEBT_WARNINGS_ENABLED=True, **CONFIGURED)
+    def test_the_retry_run_asks_for_failed_ones_only(self):
+        with mock.patch("sms.debt_warnings.send", return_value={}) as send:
+            tasks.retry_debt_warnings()
+        self.assertEqual(send.call_args.kwargs, {"retry_only": True})
+
+    @override_settings(SMS_DEBT_WARNINGS_ENABLED=False, **CONFIGURED)
+    def test_the_retry_run_is_off_with_the_switch(self):
+        with mock.patch("sms.debt_warnings.send") as send:
+            self.assertEqual(tasks.retry_debt_warnings(), {"skipped": "disabled"})
+        send.assert_not_called()
+
 
 class CheckStatusesTaskTests(TestCase):
     @override_settings(ESKIZ_EMAIL="", ESKIZ_SECRET_KEY="")
