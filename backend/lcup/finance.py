@@ -144,6 +144,18 @@ def owes(link) -> bool:
     return link.balance is not None and link.balance < 0
 
 
+def freezable(link) -> bool:
+    """Whether the freeze takes this linked learner on a freezing day: they owe, they are not frozen
+    (for any reason), no admin exempted them, and lc-up still lists them. ``sms.debt_warnings`` warns
+    exactly these people on the days before."""
+    return (
+        not link.user.is_frozen
+        and link.debt_freeze_exempt_at is None
+        and not link.deleted_in_lcup
+        and owes(link)
+    )
+
+
 def freeze_plan(now, *, enabled: bool | None = None) -> FreezePlan:
     plan = FreezePlan()
     links = LcupStudentLink.objects.filter(user__isnull=False, user__role__in=C.LEARNER_ROLES).select_related("user")
@@ -158,7 +170,7 @@ def freeze_plan(now, *, enabled: bool | None = None) -> FreezePlan:
         if _debt_frozen(user):
             if exempt or (link.balance is not None and link.balance >= 0):
                 plan.to_unfreeze.append(link)
-        elif freezing_days and not user.is_frozen and not exempt and not link.deleted_in_lcup and owes(link):
+        elif freezing_days and freezable(link):
             plan.to_freeze.append(link)
     return plan
 
