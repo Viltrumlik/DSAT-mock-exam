@@ -10,9 +10,19 @@
 import { useId, useMemo, useState } from "react";
 
 import { Alert, Button, Field, Input, Select, type AlertTone } from "@/components/ui";
-import { defaultRoles, fillPattern, firstLine, isAscii, money, sampleValues, slotLabel, smsParts, statusBadge } from "./format";
+import {
+  defaultRoles,
+  fillPattern,
+  isAscii,
+  money,
+  sampleValues,
+  slotLabel,
+  smsParts,
+  statusBadge,
+  templateOption,
+} from "./format";
 import { CAPTION_TEXT, Section, errorText } from "./panelKit";
-import type { EskizTemplate, SmsMessage } from "./smsApi";
+import type { SmsMessage } from "./smsApi";
 import { useSendTestSms, useSmsTemplates } from "./smsHooks";
 
 /** "+998 88 003-25-08" → "998880032508"; a bare 9-digit number gets the country code. */
@@ -22,10 +32,6 @@ export function normalisePhone(raw: string): string {
 }
 
 export const isUzbekMobile = (phone: string) => /^998\d{9}$/.test(phone);
-
-export function templateOption(t: EskizTemplate): string {
-  return `#${t.eskiz_id} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
-}
 
 function resultTone(message: SmsMessage): AlertTone {
   const variant = statusBadge(message.status).variant;

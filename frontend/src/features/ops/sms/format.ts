@@ -1,5 +1,5 @@
 import type { BadgeVariant } from "@/components/ui";
-import type { CampaignStatus, SlotRole, SmsKind, SmsStatus, TemplateSlot, TemplateStatus } from "./smsApi";
+import type { CampaignStatus, EskizTemplate, SlotRole, SmsKind, SmsStatus, TemplateSlot, TemplateStatus } from "./smsApi";
 
 /**
  * The words and figures the SMS panel prints. The panel speaks English like the rest of /ops;
@@ -92,6 +92,11 @@ export function slotLabel(slot: TemplateSlot): string {
 export function firstLine(text: string, max = 90): string {
   const line = text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
+}
+
+/** "#64942 · MASTER SAT'dan yozyabmiz. (STUDENT), sizda…" — a template as a picker names it. */
+export function templateOption(t: Pick<EskizTemplate, "eskiz_id" | "original" | "pattern" | "status">): string {
+  return `#${t.eskiz_id} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
 }
 
 // ── labels ───────────────────────────────────────────────────────────────
