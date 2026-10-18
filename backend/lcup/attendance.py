@@ -32,6 +32,7 @@ from django.utils import timezone
 from classes.models import ClassroomMembership
 from classes.models_attendance import AttendanceRecord, AttendanceSession
 
+from .attendance_guard import FROZEN
 from .models import LcupAttendancePush, LcupStudentLink
 
 R = AttendanceRecord
@@ -119,7 +120,17 @@ def plan_day(link, day: date, rows: list[dict], *, gap_fill: bool) -> DayPlan:
         user_of[r.get("student_id")] for r in rows if r.get("deleted_at") and r.get("student_id") in user_of
     } - in_lcup
     lcup_id_of = dict(LcupStudentLink.objects.filter(user_id__in=ours_only).values_list("user_id", "lcup_student_id"))
+    # lc-up takes no mark for a member it holds frozen — it answers ``not_in_group`` — so none is
+    # sent. The register offers none for them either (``attendance_guard.frozen_in_lcup``); this
+    # is for a mark made before lc-up froze them.
+    frozen = set(
+        link.memberships.filter(left_at__isnull=True, lcup_status=FROZEN, student__user__isnull=False).values_list(
+            "student__user_id", flat=True
+        )
+    )
     for uid in ours_only:
+        if uid in frozen:
+            continue
         if uid in pushed:
             if uid in deleted_in_lcup:
                 plan.delete.add(uid)  # lc-up removed what we sent: lc-up wins

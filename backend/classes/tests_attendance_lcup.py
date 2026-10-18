@@ -19,7 +19,7 @@ from access import constants as C
 from classes import attendance_window
 from classes.models import Classroom, ClassroomMembership
 from classes.models_attendance import AttendanceRecord, AttendanceSession
-from lcup.models import GroupLinkStatus, LcupAbsenceReason, LcupGroupLink
+from lcup.models import GroupLinkStatus, LcupAbsenceReason, LcupGroupLink, LcupMembership, LcupStudentLink
 
 User = get_user_model()
 OLD_MONDAY = date(2026, 6, 1)
@@ -127,3 +127,55 @@ class ClosedPairedRegisterTests(PairedRegisterFixture):
     def test_a_class_lcup_does_not_run_keeps_the_override(self):
         self.link.delete()
         self.assertEqual(self.mark(self.session, "PRESENT", user=self.admin).status_code, 200)
+
+
+class FrozenInLcupTests(PairedRegisterFixture):
+    """A student lc-up holds frozen stays on the register but is never marked (owner, 2026-10-17:
+    "Belgilab bo'lmaydi") — lc-up refuses their marks, answering ``not_in_group``."""
+
+    def setUp(self):
+        super().setUp()
+        self.session = AttendanceSession.objects.create(classroom=self.room, date=timezone.localdate())
+        self.other = User.objects.create_user("al_o@t.com", "secret123", role=C.ROLE_STUDENT)
+        seat = ClassroomMembership.objects.create(classroom=self.room, user=self.other, role=ClassroomMembership.ROLE_STUDENT)
+        ClassroomMembership.objects.filter(pk=seat.pk).update(joined_at=timezone.make_aware(timezone.datetime(2026, 5, 1)))
+        frozen = LcupStudentLink.objects.create(lcup_student_id=101, name="Frozen Student", user=self.student)
+        self.membership = LcupMembership.objects.create(group=self.link, student=frozen, lcup_status="frozen")
+        active = LcupStudentLink.objects.create(lcup_student_id=102, name="Active Student", user=self.other)
+        LcupMembership.objects.create(group=self.link, student=active, lcup_status="active")
+
+    def roster(self):
+        self.api.force_authenticate(self.teacher)
+        body = self.api.get(self.url(f"sessions/{self.session.id}/")).json()
+        return {r["student_id"]: r for r in body["roster"]}
+
+    def test_the_register_shows_them_frozen_in_lcup(self):
+        roster = self.roster()
+        self.assertTrue(roster[self.student.id]["frozen_in_lcup"])
+        self.assertFalse(roster[self.other.id]["frozen_in_lcup"])
+
+    def test_a_mark_for_them_is_refused_and_named_back(self):
+        self.api.force_authenticate(self.teacher)
+        resp = self.api.post(
+            self.url(f"sessions/{self.session.id}/mark/"),
+            {"records": [{"student_id": self.student.id, "status": "ABSENT"}, {"student_id": self.other.id, "status": "PRESENT"}]},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual((resp.json()["updated"], resp.json()["frozen_in_lcup"]), (1, [self.student.id]))
+        self.assertEqual(list(AttendanceRecord.objects.filter(session=self.session).values_list("student_id", flat=True)), [self.other.id])
+
+    def test_mark_all_present_passes_them_by(self):
+        self.api.force_authenticate(self.teacher)
+        resp = self.api.post(self.url(f"sessions/{self.session.id}/mark-all-present/"), format="json")
+        self.assertEqual(resp.json()["updated"], 1)
+        self.assertFalse(AttendanceRecord.objects.filter(session=self.session, student=self.student).exists())
+
+    def test_unfrozen_or_gone_from_the_group_they_are_marked_again(self):
+        for change in ({"lcup_status": "active"}, {"lcup_status": "frozen", "left_at": timezone.now()}):
+            LcupMembership.objects.filter(pk=self.membership.pk).update(**change)
+            self.assertFalse(self.roster()[self.student.id]["frozen_in_lcup"], change)
+
+    @override_settings(LCUP_ENABLED=False)
+    def test_with_lcup_off_nobody_is_frozen_in_lcup(self):
+        self.assertFalse(self.roster()[self.student.id]["frozen_in_lcup"])
