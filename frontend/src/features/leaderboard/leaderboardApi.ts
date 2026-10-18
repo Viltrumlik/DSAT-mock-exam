@@ -1,6 +1,9 @@
 import api from "@/lib/api";
 
 export type LeaderboardScope = "GLOBAL" | "BRANCH" | "GROUP";
+/** Which board: XP earned, or strikes — lessons attended in a row (the run, not the balance
+ *  the shop spends). The strike board ignores the window and the subject: a run has neither. */
+export type LeaderboardMetric = "XP" | "STRIKES";
 /** Two windows. "WEEK" and "TERM" were withdrawn — a week ranked whoever had a lesson
  *  yesterday, and "term" meant nothing anybody could point at. The chips themselves come
  *  from the server (`LeaderboardFilters.windows`), so this union exists to stop the client
@@ -15,12 +18,15 @@ export interface LeaderboardRow {
   xp: number;
   /** How many earnings are behind the total — the tie-break, and an answer to "from what?". */
   awards: number;
+  /** Lessons attended in a row — the strike board's number. Null on the XP board. */
+  strikes: number | null;
   branch: string | null;
   region: string | null;
   is_me: boolean;
 }
 
 export interface LeaderboardResponse {
+  metric: LeaderboardMetric;
   scope: LeaderboardScope;
   window: LeaderboardWindow;
   branch_id: number | null;
@@ -49,6 +55,7 @@ export interface LeaderboardFilters {
 }
 
 export interface LeaderboardQuery {
+  metric?: LeaderboardMetric;
   scope?: LeaderboardScope;
   window?: LeaderboardWindow;
   branch?: number | null;
@@ -60,6 +67,7 @@ export interface LeaderboardQuery {
 export const leaderboardApi = {
   async board(query: LeaderboardQuery = {}): Promise<LeaderboardResponse> {
     const params: Record<string, string> = {};
+    if (query.metric && query.metric !== "XP") params.metric = query.metric;
     if (query.scope) params.scope = query.scope;
     if (query.window) params.window = query.window;
     if (query.branch) params.branch = String(query.branch);

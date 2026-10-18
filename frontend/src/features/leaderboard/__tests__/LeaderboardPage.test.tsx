@@ -31,6 +31,7 @@ vi.mock("@/features/rewards/rewardsHooks", () => ({
 const { LeaderboardPage } = await import("../LeaderboardPage");
 
 const BOARD: LeaderboardResponse = {
+  metric: "XP",
   scope: "GLOBAL",
   window: "ALL",
   branch_id: null,
@@ -42,11 +43,11 @@ const BOARD: LeaderboardResponse = {
   rows: [
     {
       rank: 1, student_id: 7, name: "Bekzod", profile_image_url: null,
-      xp: 180, awards: 4, branch: "Chilonzor", region: "Tashkent", is_me: false,
+      xp: 180, awards: 4, strikes: null, branch: "Chilonzor", region: "Tashkent", is_me: false,
     },
     {
       rank: 2, student_id: 9, name: "Aziza Karimova", profile_image_url: null,
-      xp: 105, awards: 6, branch: "Chilonzor", region: "Tashkent", is_me: true,
+      xp: 105, awards: 6, strikes: null, branch: "Chilonzor", region: "Tashkent", is_me: true,
     },
   ],
   my: null,
@@ -74,7 +75,7 @@ function query(overrides: Record<string, unknown> = {}) {
 function row(rank: number, id: number, xp: number, extra: Partial<LeaderboardRow> = {}): LeaderboardRow {
   return {
     rank, student_id: id, name: `Student ${id}`, profile_image_url: null,
-    xp, awards: 3, branch: "Chilonzor", region: "Tashkent", is_me: false, ...extra,
+    xp, awards: 3, strikes: null, branch: "Chilonzor", region: "Tashkent", is_me: false, ...extra,
   };
 }
 
@@ -338,5 +339,77 @@ describe("LeaderboardPage", () => {
     await render();
 
     expect(host.textContent).toContain("6 lessons");
+  });
+});
+
+describe("LeaderboardPage — the Strikes tab", () => {
+  const STRIKE_BOARD: LeaderboardResponse = {
+    ...BOARD,
+    metric: "STRIKES",
+    scope_note: "Lessons attended in a row, across the whole learning center.",
+    rows: [
+      row(1, 7, 0, { name: "Bekzod", strikes: 12 }),
+      row(2, 9, 0, { name: "Aziza Karimova", strikes: 9, is_me: true }),
+    ],
+    my: null,
+  };
+
+  function tab(text: string) {
+    const t = [...host.querySelectorAll('[role="tab"]')].find((b) => b.textContent === text);
+    if (!t) throw new Error(`no ${text} tab`);
+    return t as HTMLButtonElement;
+  }
+
+  it("starts on XP and switches to the strike board, without the XP board's window or subject", async () => {
+    useLeaderboard.mockReturnValue(query({ data: BOARD }));
+    await render();
+
+    expect(tab("XP").getAttribute("aria-selected")).toBe("true");
+    expect(useLeaderboard).toHaveBeenLastCalledWith(expect.objectContaining({ metric: "XP" }));
+
+    useLeaderboard.mockReturnValue(query({ data: STRIKE_BOARD }));
+    await act(async () => tab("Strikes").click());
+
+    expect(tab("Strikes").getAttribute("aria-selected")).toBe("true");
+    expect(useLeaderboard).toHaveBeenLastCalledWith(
+      expect.objectContaining({ metric: "STRIKES", window: "ALL", subject: null }),
+    );
+  });
+
+  it("shows each run as lessons in a row, and the run as the viewer's tile", async () => {
+    useLeaderboard.mockReturnValue(query({ data: { ...STRIKE_BOARD, my: STRIKE_BOARD.rows[1] } }));
+    await render();
+    await act(async () => tab("Strikes").click());
+
+    const text = host.textContent ?? "";
+    expect(text).toContain("12in a row");
+    expect(text).toContain("9in a row");
+    expect(text).toContain("9 lessons");
+    expect(text).not.toContain("Your XP");
+    expect(text).toContain("Ranked on lessons attended in a row");
+  });
+
+  it("keeps only the branch filter, and no filter bar at all outside Global", async () => {
+    useLeaderboard.mockReturnValue(query({ data: STRIKE_BOARD }));
+    await render();
+    await act(async () => tab("Strikes").click());
+    await act(async () => filtersToggle().click());
+
+    expect(host.textContent).not.toContain("All subjects");
+    expect(host.textContent).not.toContain("This month");
+    expect(button("All branches")).toBeDefined();
+
+    await act(async () => button("Chilonzor")!.click());   // the My Branch scope chip
+    expect(() => filtersToggle()).toThrow();
+  });
+
+  it("names the next place in lessons", async () => {
+    useLeaderboard.mockReturnValue(query({
+      data: { ...STRIKE_BOARD, my: STRIKE_BOARD.rows[1] },
+    }));
+    await render();
+    await act(async () => tab("Strikes").click());
+
+    expect(host.textContent).toContain("4 lessons more to reach #1");
   });
 });
