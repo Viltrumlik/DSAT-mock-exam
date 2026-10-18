@@ -19,7 +19,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/ops/sms",
 }));
 vi.mock("next/link", () => ({
-  default: ({ href, children, prefetch: _p, ...rest }: { href: string; children: React.ReactNode; prefetch?: boolean }) => (
+  default: ({ href, children, ...rest }: { href: string; children: React.ReactNode }) => (
     <a href={href} {...rest}>{children}</a>
   ),
 }));
@@ -78,7 +78,6 @@ const PAGE: SmsMessagePage = {
 
 let container: HTMLDivElement;
 let root: Root;
-const text = () => document.body.textContent ?? "";
 
 async function render(query = "tab=journal") {
   search = query;

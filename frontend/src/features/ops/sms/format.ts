@@ -45,7 +45,6 @@ export const plural = (n: number, word: string, many = `${word}s`) => `${n} ${n 
 // ── SMS parts ────────────────────────────────────────────────────────────
 
 export function isAscii(text: string): boolean {
-  // eslint-disable-next-line no-control-regex
   return !/[^\x00-\x7f]/.test(text);
 }
 
