@@ -1,5 +1,6 @@
 from django.test import SimpleTestCase
 
+from sms import templates as T
 from sms.templates import SmsTemplate, TemplateError, is_gsm_safe, render
 
 WARN = SmsTemplate(
@@ -53,3 +54,26 @@ class GsmTests(SimpleTestCase):
     def test_an_uzbek_okina_is_not(self):
         # One U+02BB turns the whole SMS into UCS-2: 70 characters a part, about twice the price.
         self.assertFalse(is_gsm_safe("Toʻlov qiling"))
+
+
+class ApprovedTemplatesTests(SimpleTestCase):
+    """eskiz's moderated patterns #64942 and #52393, as ``manage.py eskiz_account`` read them on 2026-10-18;
+    the texts below are the owner's preview, character for character."""
+
+    def test_the_warning(self):
+        self.assertEqual(render(T.DEBT_WARNING, {"student": "Karimova Malika,"}), "MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!")
+
+    def test_the_last_day(self):
+        self.assertEqual(
+            render(T.DEBT_LAST_DAY, {"student": "Karimova Malika,"}),
+            "Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. Guruhdan chetlatilishingiz mumkin. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
+        )
+
+    def test_both_are_plain_ascii_and_go_to_each_student(self):
+        for template in (T.DEBT_WARNING, T.DEBT_LAST_DAY):
+            self.assertTrue(is_gsm_safe(template.text))
+            self.assertTrue(template.names_a_student)
+
+    def test_the_sample_fills_both(self):
+        for template in (T.DEBT_WARNING, T.DEBT_LAST_DAY):
+            self.assertIn("Test Testov, sizda", render(template, T.SAMPLE_VALUES))

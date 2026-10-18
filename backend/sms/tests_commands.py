@@ -31,8 +31,8 @@ class FakeAccount(FakeEskiz):
 
     def templates(self):
         return [
-            {"id": 7, "original_text": "Qarz %d so'm", "status": "service"},
-            {"id": 8, "original_text": "Qarz %d soʻm", "status": "service"},
+            {"id": 7, "original_text": "Qarz (SUM) so'm", "template": "Qarz %w so'm", "status": "service"},
+            {"id": 8, "original_text": "Qarz (SUM) soʻm", "template": "Qarz %w soʻm", "status": "service"},
         ]
 
 
@@ -43,7 +43,7 @@ class EskizAccountTests(TestCase):
             out = run("eskiz_account")
         self.assertIn("balance: 125000", out)
         self.assertIn("MasterSAT", out)
-        self.assertIn('#7 [service]\n"Qarz %d so\'m"', out)
+        self.assertIn('#7 [service]\n  pattern:  "Qarz %w so\'m"\n  original: "Qarz (SUM) so\'m"', out)
         self.assertIn("#8 [service]  ! not plain ASCII", out)
 
     @override_settings(ESKIZ_EMAIL="")
