@@ -87,6 +87,11 @@ def _placeholders(original, pattern):
     return found if len(found) == len(SLOT.findall(str(pattern or ""))) else None
 
 
+def placeholders_match(original, pattern) -> bool:
+    """Whether ``original`` has exactly one placeholder per slot, so roles and suffixes can be read."""
+    return _placeholders(original, pattern) is not None
+
+
 def guess_roles(original, pattern) -> list[str]:
     """A first guess at each slot's role from the submitted text; the admin can change it."""
     found = _placeholders(original, pattern)

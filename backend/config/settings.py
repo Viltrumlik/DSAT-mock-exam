@@ -318,6 +318,8 @@ ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "").strip()
 ESKIZ_SECRET_KEY = os.getenv("ESKIZ_SECRET_KEY", "")
 ESKIZ_FROM = os.getenv("ESKIZ_FROM", "4546").strip()
 SMS_DEBT_WARNINGS_ENABLED = os.getenv("SMS_DEBT_WARNINGS_ENABLED", "False").lower() == "true"
+# What /ops/sms counts an estimate at: so'm per SMS part (measured 2026-10-18). The panel's costs only.
+SMS_PRICE_PER_PART = int(os.getenv("SMS_PRICE_PER_PART", "170") or 170)
 
 # Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"
