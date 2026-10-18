@@ -10,6 +10,9 @@ key: a read timeout or a 5xx can mean "sent", and a second try would put the sam
 phone twice. Those come back UNCERTAIN. Only a refused token (401, or the older backend's 500
 "Token has expired") is retried, once — eskiz did not take that request.
 
+**A refused login is not repeated for LOGIN_BACKOFF.** A wrong or rotated key would otherwise be
+tried once per SMS — 150 refused logins in a minute on an account lc-up shares.
+
 **HTTP 200 is not "accepted".** eskiz answers some refusals (text not an approved template, no
 balance) with a 200; a send is accepted only when the body says ``status == "waiting"`` and has an
 ``id``, the request id its delivery status is read by.
@@ -36,6 +39,9 @@ LOCK_KEY = "eskiz:login-lock"
 TOKEN_TTL = 25 * 24 * 3600
 TIMEOUT = (5, 20)
 LOGIN_WAIT_SECONDS = 30
+LOGIN_REFUSED_KEY = "eskiz:login-refused"
+#: After eskiz refuses our login (or a token it has just issued) nobody asks again for this long.
+LOGIN_BACKOFF = 10 * 60
 SEND_PATH = "/message/sms/send"
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
@@ -105,7 +111,8 @@ def _message(resp) -> str:
 def _expired(resp) -> bool:
     if resp.status_code == 401:
         return True
-    return resp.status_code == 500 and "expired" in _message(resp).lower()
+    # Only eskiz's own words: any other 500 may have come after it took the SMS.
+    return resp.status_code == 500 and "token has expired" in _message(resp).lower()
 
 
 def _send_result(resp) -> SendResult:
@@ -149,6 +156,7 @@ class EskizClient:
                 return SendResult(UNCERTAIN, error=str(exc))
             if not _expired(resp):
                 return _send_result(resp)
+        self._refused_fresh_token()
         return SendResult(FAILED, error="eskiz refused a freshly issued token")
 
     def status(self, request_id: str) -> StatusResult:
@@ -196,6 +204,7 @@ class EskizClient:
                 if resp.status_code >= 400:
                     raise EskizError(_mask(f"HTTP {resp.status_code} on {path}: {_message(resp)}"))
                 return _json(resp)
+        self._refused_fresh_token()
         raise EskizAuthError("eskiz refused a freshly issued token")
 
     # ── token ─────────────────────────────────────────────────────────────
@@ -204,6 +213,8 @@ class EskizClient:
         token = self.cache.get(TOKEN_KEY)
         if token and token != stale:
             return token
+        if self.cache.get(LOGIN_REFUSED_KEY):
+            raise EskizAuthError("eskiz refused our login a few minutes ago; not asking again yet")
         if self.cache.add(LOCK_KEY, "1", timeout=LOGIN_WAIT_SECONDS):
             try:
                 # Another process may have logged in between our read and the lock.
@@ -228,8 +239,14 @@ class EskizClient:
         token = data.get("token") if isinstance(data, dict) else None
         if resp.status_code != 200 or not isinstance(token, str) or not token:
             self.cache.delete(TOKEN_KEY)
+            self.cache.set(LOGIN_REFUSED_KEY, "1", timeout=LOGIN_BACKOFF)
             raise EskizAuthError(_mask(f"eskiz refused the login ({resp.status_code}): {_message(resp)}"))
+        self.cache.delete(LOGIN_REFUSED_KEY)
         return token
+
+    def _refused_fresh_token(self) -> None:
+        self.cache.delete(TOKEN_KEY)
+        self.cache.set(LOGIN_REFUSED_KEY, "1", timeout=LOGIN_BACKOFF)
 
     # ── transport ─────────────────────────────────────────────────────────
 

@@ -4,7 +4,16 @@ import requests
 from django.core.cache.backends.locmem import LocMemCache
 from django.test import SimpleTestCase
 
-from sms.eskiz import ACCEPTED, FAILED, REJECTED, TOKEN_KEY, UNCERTAIN, EskizClient, EskizError
+from sms.eskiz import (
+    ACCEPTED,
+    FAILED,
+    LOGIN_REFUSED_KEY,
+    REJECTED,
+    TOKEN_KEY,
+    UNCERTAIN,
+    EskizClient,
+    EskizError,
+)
 
 _names = itertools.count()
 REQUEST_ID = "59bf10a2-aba8-4694-8fd5-0be20102a580"
@@ -144,6 +153,34 @@ class SendTests(SimpleTestCase):
         eskiz, session = client([], email="", secret="")
         self.assertEqual(eskiz.send("998901234567", "x").outcome, FAILED)
         self.assertEqual(session.requests, [])
+
+    def test_a_refused_login_is_not_asked_again_for_a_while(self):
+        # A wrong key must cost ONE refused login, not one per SMS, on an account lc-up shares.
+        cache = fresh_cache()
+        eskiz, session = client([FakeResponse(401, {"message": "invalid_credentials"})], cache)
+        eskiz.send("998901234567", "x")
+        second = eskiz.send("998907654321", "y")
+        self.assertEqual(second.outcome, FAILED)
+        self.assertEqual(len(session.requests), 1)
+        cache.delete(LOGIN_REFUSED_KEY)  # the back-off ran out
+        session.responses = [login_ok(), waiting()]
+        self.assertEqual(eskiz.send("998907654321", "y").outcome, ACCEPTED)
+        self.assertIsNone(cache.get(LOGIN_REFUSED_KEY))
+
+    def test_a_fresh_token_refused_backs_off_too(self):
+        cache = fresh_cache()
+        cache.set(TOKEN_KEY, "jwt-old")
+        eskiz, session = client([FakeResponse(401, {}), login_ok("jwt-new"), FakeResponse(401, {})], cache)
+        self.assertEqual(eskiz.send("998901234567", "x").outcome, FAILED)
+        self.assertEqual(eskiz.send("998907654321", "y").outcome, FAILED)
+        self.assertEqual(len(session.requests), 3)
+        self.assertIsNone(cache.get(TOKEN_KEY))
+
+    def test_a_500_about_something_else_is_not_a_token_retry(self):
+        # Only eskiz's own "Token has expired" means the request was not taken; anything else may have been.
+        eskiz, session = client([login_ok(), FakeResponse(500, {"message": "Subscription expired"})])
+        self.assertEqual(eskiz.send("998901234567", "x").outcome, UNCERTAIN)
+        self.assertEqual(len(session.requests), 2)
 
 
 class ReadTests(SimpleTestCase):
