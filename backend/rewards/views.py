@@ -247,8 +247,10 @@ class LeaderboardView(APIView):
                 "student_id": r["student_id"],
                 "name": _display_name(student) if student else "Student",
                 "profile_image_url": profile_image_url(student, request) if student else None,
-                "xp": r["xp"],
-                "awards": r["awards"],
+                # One board fills `xp`, the other `strikes` (see `meta["metric"]`).
+                "xp": r.get("xp", 0),
+                "awards": r.get("awards", 0),
+                "strikes": r.get("strikes"),
                 "branch": branch.name if branch else None,
                 "region": branch.region.name if branch else None,
                 "is_me": r["student_id"] == request.user.pk,

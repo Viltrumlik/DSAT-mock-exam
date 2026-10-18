@@ -29,6 +29,7 @@ import {
 import { useMyRewards } from "@/features/rewards/rewardsHooks";
 import { useLeaderboard, useLeaderboardFilters } from "./leaderboardHooks";
 import type {
+  LeaderboardMetric,
   LeaderboardRow,
   LeaderboardScope,
   LeaderboardWindow,
@@ -39,6 +40,110 @@ const SCOPES: { value: LeaderboardScope; label: string; icon: LucideIcon }[] = [
   { value: "BRANCH", label: "My Branch", icon: Building2 },
   { value: "GLOBAL", label: "Global", icon: Globe2 },
 ];
+
+/** "n lesson(s)" — every strike sentence counts lessons. */
+function lessons(n: number): string {
+  return `${n.toLocaleString("en-US")} ${n === 1 ? "lesson" : "lessons"}`;
+}
+
+/**
+ * The two boards, in the words each is shown with. One table, so the podium, the rows, the goal
+ * line, the tiles and the empty states cannot drift apart between them.
+ *
+ * Strikes means the RUN — lessons attended in a row, the student's own "In a row" number — not
+ * the balance the shop spends; the server ranks it that way (`rewards/leaderboard.py`).
+ */
+const METRICS: Record<
+  LeaderboardMetric,
+  {
+    label: string;
+    icon: LucideIcon;
+    value: (row: LeaderboardRow) => number;
+    unit: string;
+    goal: (amount: number, rank: number) => string;
+    description: string;
+    order: React.ReactNode;
+    empty: string;
+    safe: string;
+    firstStep: string;
+  }
+> = {
+  XP: {
+    label: "XP",
+    icon: Zap,
+    value: (row) => row.xp,
+    unit: "XP",
+    goal: (amount, rank) => `${amount.toLocaleString("en-US")} XP to reach #${rank}`,
+    description: "Ranked on XP — what you earn by turning up and doing the work.",
+    order: (
+      <>
+        It ranks on <strong className="font-bold text-foreground">XP</strong>, highest first.
+        When two students are level on XP, the one who earned it across more separate awards is
+        placed above — steady work outranks a single big one. The line under the filters says
+        which XP this particular board is counting.
+      </>
+    ),
+    empty: "Once XP is earned here, the standings will show up.",
+    safe: "Your XP is safe — only this list failed to load.",
+    firstStep: "Earn your first XP and you'll appear here.",
+  },
+  STRIKES: {
+    label: "Strikes",
+    icon: Flame,
+    value: (row) => row.strikes ?? 0,
+    unit: "in a row",
+    goal: (amount, rank) => `${lessons(amount)} more to reach #${rank}`,
+    description: "Ranked on lessons attended in a row — miss one and the count starts again.",
+    order: (
+      <>
+        It ranks on <strong className="font-bold text-foreground">lessons attended in a row</strong>,
+        longest run first — the same number as your &ldquo;In a row&rdquo;. A missed lesson starts
+        it again; spending strikes in the shop doesn&apos;t lower it. Students on the same run
+        share a place.
+      </>
+    ),
+    empty: "Once students keep a run of lessons going, the standings will show up.",
+    safe: "Your strikes are safe — only this list failed to load.",
+    firstStep: "Come to your next lesson to start a run, and you'll appear here.",
+  },
+};
+
+/** XP or Strikes, in the hero's corner: it changes what the whole board counts, so it sits apart
+ *  from the scope chips rather than among them. */
+function MetricTabs({
+  value,
+  onChange,
+}: {
+  value: LeaderboardMetric;
+  onChange: (metric: LeaderboardMetric) => void;
+}) {
+  return (
+    <div role="tablist" aria-label="Rank by" className="flex rounded-2xl bg-black/[0.22] p-1">
+      {(Object.keys(METRICS) as LeaderboardMetric[]).map((metric) => {
+        const { label, icon: Icon } = METRICS[metric];
+        const active = metric === value;
+        return (
+          <button
+            key={metric}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            onClick={() => onChange(metric)}
+            className={cn(
+              "ds-ring cr-press flex items-center gap-1.5 rounded-xl px-3.5 py-2 font-[inherit] text-sm font-bold transition-colors",
+              active
+                ? "bg-white text-primary shadow-[0_8px_20px_-10px_rgba(15,23,42,.6)]"
+                : "text-white hover:bg-black/20",
+            )}
+          >
+            <Icon className="h-4 w-4" aria-hidden />
+            {label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /** Only for the folded summary line, in the moment before the server's own labels arrive —
  *  the chips themselves never render anything but the server's. */
@@ -188,7 +293,7 @@ function placeOf(row: LeaderboardRow): string {
     : "No branch yet";
 }
 
-type Goal = { xp: number; rank: number };
+type Goal = { amount: number; rank: number };
 
 /**
  * What it takes to move up one place: the gap to the row directly above, plus one — to pass
@@ -202,6 +307,7 @@ type Goal = { xp: number; rank: number };
 function nextGoal(
   rows: LeaderboardRow[],
   my: LeaderboardRow | null,
+  value: (row: LeaderboardRow) => number,
 ): Goal | null {
   if (!my) return null;
   const at = rows.findIndex((r) => r.student_id === my.student_id);
@@ -209,11 +315,11 @@ function nextGoal(
     const me = rows[at];
     const above = at > 0 ? rows[at - 1] : undefined;
     if (!above || above.rank >= me.rank) return null;
-    return { xp: Math.max(1, above.xp - me.xp + 1), rank: above.rank };
+    return { amount: Math.max(1, value(above) - value(me) + 1), rank: above.rank };
   }
   const last = rows[rows.length - 1];
   if (!last || last.rank !== my.rank - 1) return null;
-  return { xp: Math.max(1, last.xp - my.xp + 1), rank: last.rank };
+  return { amount: Math.max(1, value(last) - value(my) + 1), rank: last.rank };
 }
 
 function YouTag() {
@@ -229,10 +335,12 @@ function YouTag() {
  *  `--primary` is a 3:1 indigo on the near-black surface, its hover shade clears 4.5:1. */
 function GoalLine({
   goal,
+  metric,
   pill,
   className,
 }: {
   goal: Goal;
+  metric: LeaderboardMetric;
   pill?: boolean;
   className?: string;
 }) {
@@ -245,7 +353,7 @@ function GoalLine({
       )}
     >
       <Rocket className={pill ? "h-3.5 w-3.5" : "h-3 w-3"} aria-hidden />
-      {goal.xp.toLocaleString("en-US")} XP to reach #{goal.rank}
+      {METRICS[metric].goal(goal.amount, goal.rank)}
     </p>
   );
 }
@@ -476,7 +584,15 @@ const STAR =
  * on screen (the leader in the middle), and the order things happen in has to follow the
  * RANK or the winner would not be last.
  */
-function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
+function PodiumColumn({
+  row,
+  slot,
+  metric,
+}: {
+  row: LeaderboardRow;
+  slot: number;
+  metric: LeaderboardMetric;
+}) {
   const place = (row.rank >= 1 && row.rank <= 3 ? row.rank : 3) as 1 | 2 | 3;
   const medal = MEDALS[place];
   const first = place === 1;
@@ -573,8 +689,10 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
           className="ds-num mt-1 text-lg font-extrabold leading-tight sm:text-[22px]"
           style={first ? { color: medal.solid } : undefined}
         >
-          {row.xp.toLocaleString("en-US")}
-          <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">XP</span>
+          {METRICS[metric].value(row).toLocaleString("en-US")}
+          <span className="ml-1 text-[10px] font-bold text-muted-foreground sm:text-[11px]">
+            {METRICS[metric].unit}
+          </span>
         </p>
       </div>
 
@@ -618,7 +736,7 @@ function PodiumColumn({ row, slot }: { row: LeaderboardRow; slot: number }) {
 }
 
 /** The first three, stood on a podium — the classroom board's layout, in fuller colour. */
-function Podium({ rows }: { rows: LeaderboardRow[] }) {
+function Podium({ rows, metric }: { rows: LeaderboardRow[]; metric: LeaderboardMetric }) {
   return (
     <div
       className="relative overflow-hidden rounded-2xl"
@@ -635,7 +753,7 @@ function Podium({ rows }: { rows: LeaderboardRow[] }) {
       {/* Rank order in the DOM, podium order on screen — a screen reader hears 1, 2, 3. */}
       <ol className="relative mx-auto grid max-w-2xl grid-cols-3 items-end gap-1.5 px-1.5 pt-8 sm:gap-4 sm:px-8 sm:pt-10">
         {rows.map((row, i) => (
-          <PodiumColumn key={row.student_id} row={row} slot={i} />
+          <PodiumColumn key={row.student_id} row={row} slot={i} metric={metric} />
         ))}
       </ol>
     </div>
@@ -644,11 +762,13 @@ function Podium({ rows }: { rows: LeaderboardRow[] }) {
 
 function StandingRow({
   row,
+  metric,
   highlight,
   goal,
   index = 0,
 }: {
   row: LeaderboardRow;
+  metric: LeaderboardMetric;
   highlight?: boolean;
   goal?: Goal | null;
   index?: number;
@@ -671,9 +791,10 @@ function StandingRow({
         className="font-extrabold"
         style={tintOf(row.student_id)}
       />
-      {/* Name over branch on the left, the XP on the right. A phone cannot spare a right column
-          without cutting the name short, so there the name takes the whole first line and the XP
-          sits on the branch line. The next place to reach, when there is one, runs underneath. */}
+      {/* Name over branch on the left, the number on the right. A phone cannot spare a right
+          column without cutting the name short, so there the name takes the whole first line and
+          the number sits on the branch line. The next place to reach, when there is one, runs
+          underneath. */}
       <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
         <p className="col-[1/-1] row-[1] flex min-w-0 items-center gap-1.5 text-sm font-bold text-foreground sm:col-[1]">
           <span className="truncate">{row.name}</span>
@@ -683,13 +804,13 @@ function StandingRow({
           {placeOf(row)}
         </p>
         <span className="ds-num col-[2] row-[2] justify-self-end whitespace-nowrap text-sm font-extrabold text-foreground sm:row-[1] sm:text-[15px]">
-          {row.xp.toLocaleString("en-US")}
+          {METRICS[metric].value(row).toLocaleString("en-US")}
           <span className="ml-1 text-[11px] font-bold text-muted-foreground">
-            XP
+            {METRICS[metric].unit}
           </span>
         </span>
         {goal ? (
-          <GoalLine goal={goal} className="col-[1/-1] row-[3] mt-0.5" />
+          <GoalLine goal={goal} metric={metric} className="col-[1/-1] row-[3] mt-0.5" />
         ) : null}
       </div>
     </li>
@@ -697,6 +818,7 @@ function StandingRow({
 }
 
 export function LeaderboardPage() {
+  const [metric, setMetric] = useState<LeaderboardMetric>("XP");
   const [scope, setScope] = useState<LeaderboardScope>("GLOBAL");
   const [window, setWindow] = useState<LeaderboardWindow>("ALL");
   const [subject, setSubject] = useState<string | null>(null);
@@ -706,10 +828,14 @@ export function LeaderboardPage() {
   const filters = useLeaderboardFilters();
   // The top-bar points pill already reads this on every page, so the streak costs no request.
   const rewards = useMyRewards();
+  // A run has no time window and no subject: the strike board ignores both, so they are not
+  // sent (and the XP board's choices are kept for when the student switches back).
+  const strikes = metric === "STRIKES";
   const board = useLeaderboard({
+    metric,
     scope,
-    window,
-    subject,
+    window: strikes ? "ALL" : window,
+    subject: strikes ? null : subject,
     // A branch filter only means anything on the global board; inside "My Branch" the scope
     // has already decided it.
     branch: scope === "GLOBAL" ? branch : null,
@@ -728,12 +854,28 @@ export function LeaderboardPage() {
   const standing = myRow ?? my;
   const podium = rows.length >= 3 ? rows.slice(0, 3) : [];
   const list = rows.length >= 3 ? rows.slice(3) : rows;
-  const goal = nextGoal(rows, my);
+  const goal = nextGoal(rows, my, METRICS[metric].value);
   const podiumGoal = goal && myRow && podium.includes(myRow) ? goal : null;
   const streak = rewards.data?.current_streak ?? 0;
 
   const branchApplies = scope === "GLOBAL" && branch !== null;
-  const summary = [
+  const branchSummary = branchApplies
+    ? [
+        {
+          key: "branch",
+          label:
+            filters.data?.branches.find((b) => b.id === branch)?.name ??
+            "Branch",
+          active: true,
+        },
+      ]
+    : [];
+  // The strike board's only filter is the branch — and only on the Global board.
+  const summary = strikes
+    ? branchSummary.length > 0
+      ? branchSummary
+      : [{ key: "branch", label: "All branches", active: false }]
+    : [
     {
       key: "window",
       label:
@@ -749,17 +891,7 @@ export function LeaderboardPage() {
         : "All subjects",
       active: subject !== null,
     },
-    ...(branchApplies
-      ? [
-          {
-            key: "branch",
-            label:
-              filters.data?.branches.find((b) => b.id === branch)?.name ??
-              "Branch",
-            active: true,
-          },
-        ]
-      : []),
+    ...branchSummary,
   ];
 
   // The viewer's own figures. A dash, never a zero, whenever the board has not said — while it
@@ -771,13 +903,21 @@ export function LeaderboardPage() {
       accent: true,
       icon: standing?.rank === 1 ? Crown : Trophy,
     },
-    {
-      label: "Your XP",
-      value: standing ? standing.xp.toLocaleString("en-US") : "—",
-      icon: Zap,
-    },
-    // A count of lessons attended in a row. Shown only while there is one to celebrate.
-    ...(streak > 0
+    strikes
+      ? {
+          // The strike board's own number: the run it ranks.
+          label: "In a row",
+          value: standing ? lessons(METRICS.STRIKES.value(standing)) : "—",
+          icon: Flame,
+        }
+      : {
+          label: "Your XP",
+          value: standing ? standing.xp.toLocaleString("en-US") : "—",
+          icon: Zap,
+        },
+    // A count of lessons attended in a row. Shown only while there is one to celebrate — and
+    // not beside the strike board, whose own tile is the same number.
+    ...(!strikes && streak > 0
       ? [
           {
             // Named for what it counts. This one really is the RUN, not the spendable
@@ -798,8 +938,9 @@ export function LeaderboardPage() {
           badge="Leaderboard"
           icon={Trophy}
           title="Leaderboard"
-          description="Ranked on XP — what you earn by turning up and doing the work."
+          description={METRICS[metric].description}
           tiles={tiles}
+          actions={<MetricTabs value={metric} onChange={setMetric} />}
         >
           <div className="mt-6 flex flex-wrap gap-2">
             {SCOPES.map(({ value, label, icon: Icon }) => {
@@ -831,58 +972,64 @@ export function LeaderboardPage() {
         </PageHero>
       </Card>
 
-      <FilterBar
-        open={filtersOpen}
-        onToggle={() => setFiltersOpen((o) => !o)}
-        summary={summary}
-        onReset={() => {
-          setWindow("ALL");
-          setSubject(null);
-          setBranch(null);
-        }}
-      >
-        <FilterGroup label="Time">
-          {(filters.data?.windows ?? []).map((w) => (
-            <Chip
-              key={w.value}
-              active={window === w.value}
-              onClick={() => setWindow(w.value)}
-            >
-              {w.label}
-            </Chip>
-          ))}
-        </FilterGroup>
-        <FilterGroup label="Subject">
-          <Chip active={subject === null} onClick={() => setSubject(null)}>
-            All subjects
-          </Chip>
-          {(filters.data?.subjects ?? []).map((s) => (
-            <Chip
-              key={s.value}
-              active={subject === s.value}
-              onClick={() => setSubject(s.value)}
-            >
-              {s.label}
-            </Chip>
-          ))}
-        </FilterGroup>
-        {scope === "GLOBAL" && (filters.data?.branches.length ?? 0) > 0 ? (
-          <FilterGroup label="Branch">
-            <Chip active={branch === null} onClick={() => setBranch(null)}>
-              All branches
-            </Chip>
-            {(filters.data?.branches ?? []).map((b) => (
-              <Chip
-                key={b.id}
-                active={branch === b.id}
-                onClick={() => setBranch(b.id)}
-              >
-                {b.name}
+      {strikes && scope !== "GLOBAL" ? null : (
+        <FilterBar
+          open={filtersOpen}
+          onToggle={() => setFiltersOpen((o) => !o)}
+          summary={summary}
+          onReset={() => {
+            setWindow("ALL");
+            setSubject(null);
+            setBranch(null);
+          }}
+        >
+          {strikes ? null : (
+            <>
+              <FilterGroup label="Time">
+                {(filters.data?.windows ?? []).map((w) => (
+                  <Chip
+                    key={w.value}
+                    active={window === w.value}
+                    onClick={() => setWindow(w.value)}
+                  >
+                    {w.label}
+                  </Chip>
+                ))}
+              </FilterGroup>
+              <FilterGroup label="Subject">
+                <Chip active={subject === null} onClick={() => setSubject(null)}>
+                  All subjects
+                </Chip>
+                {(filters.data?.subjects ?? []).map((s) => (
+                  <Chip
+                    key={s.value}
+                    active={subject === s.value}
+                    onClick={() => setSubject(s.value)}
+                  >
+                    {s.label}
+                  </Chip>
+                ))}
+              </FilterGroup>
+            </>
+          )}
+          {scope === "GLOBAL" && (filters.data?.branches.length ?? 0) > 0 ? (
+            <FilterGroup label="Branch">
+              <Chip active={branch === null} onClick={() => setBranch(null)}>
+                All branches
               </Chip>
-            ))}
-          </FilterGroup>
-        ) : null}
-      </FilterBar>
+              {(filters.data?.branches ?? []).map((b) => (
+                <Chip
+                  key={b.id}
+                  active={branch === b.id}
+                  onClick={() => setBranch(b.id)}
+                >
+                  {b.name}
+                </Chip>
+              ))}
+            </FilterGroup>
+          ) : null}
+        </FilterBar>
+      )}
 
       {/* The top three, in a panel of their own.
           They used to sit INSIDE the standings card, at the head of a list of fifty, and the
@@ -905,10 +1052,10 @@ export function LeaderboardPage() {
             board.isFetching && "opacity-60",
           )}
         >
-          <Podium rows={podium} />
+          <Podium rows={podium} metric={metric} />
           {podiumGoal ? (
             <div className="flex justify-center px-4 pb-4">
-              <GoalLine goal={podiumGoal} pill />
+              <GoalLine goal={podiumGoal} metric={metric} pill />
             </div>
           ) : null}
         </Card>
@@ -930,12 +1077,7 @@ export function LeaderboardPage() {
               </span>
               Standings
               <ExplainButton title="How the board is ordered">
-                It ranks on{" "}
-                <strong className="font-bold text-foreground">XP</strong>,
-                highest first. When two students are level on XP, the one who
-                earned it across more separate awards is placed above — steady
-                work outranks a single big one. The line under the filters says
-                which XP this particular board is counting.
+                {METRICS[metric].order}
               </ExplainButton>
             </span>
           }
@@ -969,14 +1111,14 @@ export function LeaderboardPage() {
         ) : board.isError ? (
           <ErrorState
             title="The leaderboard isn't loading right now."
-            message="Your XP is safe — only this list failed to load."
+            message={METRICS[metric].safe}
             onRetry={() => void board.refetch()}
           />
         ) : rows.length === 0 ? (
           <EmptyState
             icon={Trophy}
             title="Nothing on this board yet"
-            description="Once XP is earned here, the standings will show up."
+            description={METRICS[metric].empty}
           />
         ) : (
           <div className={cn("space-y-4 transition-opacity duration-200", board.isFetching && "opacity-60")}>
@@ -986,6 +1128,7 @@ export function LeaderboardPage() {
                   <StandingRow
                     key={row.student_id}
                     row={row}
+                    metric={metric}
                     highlight={row.is_me}
                     goal={row === myRow ? goal : null}
                     index={i}
@@ -1002,7 +1145,7 @@ export function LeaderboardPage() {
               Your position
             </p>
             <ul>
-              <StandingRow row={my} highlight goal={goal} />
+              <StandingRow row={my} metric={metric} highlight goal={goal} />
             </ul>
           </div>
         ) : null}
@@ -1010,9 +1153,13 @@ export function LeaderboardPage() {
         {my == null && !board.isPending && !board.isError ? (
           <div className="flex items-center gap-3 rounded-2xl bg-primary/[0.06] px-3.5 py-3 text-[13px] font-semibold text-foreground">
             <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-accent text-white shadow-[0_6px_14px_-6px_var(--primary)]">
-              <Zap className="h-4 w-4" aria-hidden />
+              {strikes ? (
+                <Flame className="h-4 w-4" aria-hidden />
+              ) : (
+                <Zap className="h-4 w-4" aria-hidden />
+              )}
             </span>
-            Earn your first XP and you&apos;ll appear here.
+            {METRICS[metric].firstStep}
           </div>
         ) : null}
       </Card>

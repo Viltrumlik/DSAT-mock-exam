@@ -1,4 +1,8 @@
-"""The platform-wide leaderboard: XP, ranked, across any slice of the school.
+"""The platform-wide leaderboard: XP — or strikes — ranked, across any slice of the school.
+
+**Two boards behind one endpoint** (``metric``): XP, earned over time, and strikes, the lessons
+attended in a row (``StudentStrike.current_streak``). They share the scopes and the ranking
+rule; the strike board is described where it is built, under :func:`_strike_rows`.
 
 **Computed live, not snapshotted.** The classroom boards persist `RankingSnapshot` rows so a
 teacher can see rank movement day to day; this one deliberately does not, and the reason is
@@ -20,13 +24,13 @@ rather than leaving a student to wonder why their total shrank when they pressed
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
-from .models import PointAward
+from .models import PointAward, StudentStrike
 
 # ── Scopes ────────────────────────────────────────────────────────────────────
 
@@ -34,6 +38,12 @@ SCOPE_GLOBAL = "GLOBAL"
 SCOPE_BRANCH = "BRANCH"
 SCOPE_GROUP = "GROUP"       # "group" is this school's word for a classroom
 SCOPE_CHOICES = (SCOPE_GLOBAL, SCOPE_BRANCH, SCOPE_GROUP)
+
+# ── Metrics ───────────────────────────────────────────────────────────────────
+
+METRIC_XP = "XP"
+METRIC_STRIKES = "STRIKES"
+METRIC_CHOICES = (METRIC_XP, METRIC_STRIKES)
 
 # ── Time windows ──────────────────────────────────────────────────────────────
 #
@@ -123,6 +133,7 @@ class BoardQuery:
     subject: str | None = None      # Classroom.SUBJECT_ENGLISH / SUBJECT_MATH
     level: str | None = None        # foundation / junior / middle / senior
     limit: int = DEFAULT_LIMIT
+    metric: str = METRIC_XP
 
     @classmethod
     def from_params(cls, params) -> "BoardQuery":
@@ -150,12 +161,14 @@ class BoardQuery:
 
         scope = str(params.get("scope") or SCOPE_GLOBAL).upper()
         window = str(params.get("window") or WINDOW_ALL).upper()
+        metric = str(params.get("metric") or METRIC_XP).upper()
+        metric = metric if metric in METRIC_CHOICES else METRIC_XP
         try:
             limit = min(MAX_LIMIT, max(1, int(params.get("limit") or DEFAULT_LIMIT)))
         except (TypeError, ValueError):
             limit = DEFAULT_LIMIT
 
-        return cls(
+        query = cls(
             scope=scope if scope in SCOPE_CHOICES else SCOPE_GLOBAL,
             window=window if window in WINDOW_CHOICES else WINDOW_ALL,
             branch_id=_int("branch"),
@@ -163,7 +176,14 @@ class BoardQuery:
             subject=(str(params.get("subject")).upper() if params.get("subject") else None),
             level=(str(params.get("level")).lower() if params.get("level") else None),
             limit=limit,
+            metric=metric,
         )
+        if metric == METRIC_STRIKES:
+            # A run is a number now, not an amount earned over a period or in one subject's
+            # classes: the window and the subject/level do not apply, and the meta says so
+            # instead of echoing filters the board never used.
+            query = replace(query, window=WINDOW_ALL, subject=None, level=None)
+        return query
 
 
 def _resolve_scope(query: BoardQuery, viewer) -> BoardQuery:
@@ -296,6 +316,63 @@ def _group_rows(query: BoardQuery) -> list[dict]:
     return ordered
 
 
+def strike_rank_key(row) -> int:
+    return int(row["strikes"] or 0)
+
+
+def _strike_rows(query: BoardQuery) -> list[dict]:
+    """The strike board, ranked: lessons attended in a row, right now.
+
+    **The run, never the balance.** ``current_streak`` is what attendance earned and what the
+    student's own "In a row" tile shows; ``balance`` is what is left after the shop. Ranking
+    the balance would move a student down for buying a notebook — a board about turning up
+    that punishes spending. A run of zero is not a place on the board.
+
+    **Who counts, per scope.** A strike belongs to the student, not to a class, so the scopes
+    are about where the student studies rather than where something was earned:
+
+    * Global — everyone with a run; a branch filter keeps the students whose branch it is
+      (``branch_ids_for_students``, the rule their profile and the row's own label use);
+    * My Branch — the same, for the viewer's branch;
+    * My Group — the class roster as it stands now.
+
+    Materialised whole: only students with a run are rows, a few hundred at most, and
+    :func:`rank_of` reads the same list so the card and the board can never disagree.
+    """
+    from classes.models import ClassroomMembership
+    from classes.models_org import branch_ids_for_students
+
+    runs = StudentStrike.objects.filter(current_streak__gt=0)
+
+    if query.scope == SCOPE_GROUP:
+        if not query.classroom_id:
+            return []
+        roster = ClassroomMembership.objects.filter(
+            classroom_id=query.classroom_id,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status__in=ClassroomMembership.NON_REMOVED_STATUSES,
+        ).values("user_id")
+        runs = runs.filter(student_id__in=roster)
+    elif query.scope == SCOPE_BRANCH or query.branch_id:
+        if not query.branch_id:
+            return []
+        by_branch = branch_ids_for_students(list(runs.values_list("student_id", flat=True)))
+        runs = runs.filter(
+            student_id__in=[sid for sid, bid in by_branch.items() if bid == query.branch_id]
+        )
+
+    ordered = [
+        {"student_id": r["student_id"], "strikes": r["current_streak"], "best_streak": r["best_streak"]}
+        for r in runs.order_by("-current_streak", "-best_streak", "student_id").values(
+            "student_id", "current_streak", "best_streak"
+        )
+    ]
+    # Sorted on three keys, ranked on one — the best run only keeps the order repeatable.
+    for rank, row in competition_ranks(ordered, key=strike_rank_key):
+        row["rank"] = rank
+    return ordered
+
+
 def board(query: BoardQuery, viewer):
     """``(rows, meta)`` — the ranked slice, plus what it took to build it.
 
@@ -310,7 +387,9 @@ def board(query: BoardQuery, viewer):
     """
     query = _resolve_scope(query, viewer)
 
-    if query.scope == SCOPE_GROUP:
+    if query.metric == METRIC_STRIKES:
+        rows = _strike_rows(query)[: query.limit]
+    elif query.scope == SCOPE_GROUP:
         rows = _group_rows(query)[: query.limit]
     else:
         rows = list(
@@ -328,6 +407,7 @@ def board(query: BoardQuery, viewer):
             row["rank"] = rank
 
     return rows, {
+        "metric": query.metric,
         "scope": query.scope,
         "window": query.window,
         "branch_id": query.branch_id,
@@ -351,6 +431,17 @@ def _scope_note(query: BoardQuery) -> str:
     if query.scope == SCOPE_BRANCH and not query.branch_id:
         return "Your branch isn't set yet — it comes from the class you study in."
 
+    if query.metric == METRIC_STRIKES:
+        where = (
+            "in this group" if query.scope == SCOPE_GROUP
+            else "in this branch" if query.branch_id
+            else "across the whole learning center"
+        )
+        return (
+            f"Lessons attended in a row, {where}. A missed lesson starts the count again; "
+            "spending strikes in the shop doesn't lower it."
+        )
+
     narrowed = bool(query.branch_id or query.subject or query.level) or query.scope != SCOPE_GLOBAL
     base = {
         WINDOW_ALL: "All the XP earned",
@@ -370,6 +461,10 @@ def rank_of(student, query: BoardQuery, viewer=None):
     the full ordering and slicing it.
     """
     query = _resolve_scope(query, viewer if viewer is not None else student)
+
+    if query.metric == METRIC_STRIKES:
+        # The same materialised list the board was cut from — see `_strike_rows`.
+        return next((r for r in _strike_rows(query) if r["student_id"] == student.pk), None)
 
     if query.scope == SCOPE_GROUP:
         # The group board is already a materialised list — see `_group_rows`. Scanning a class

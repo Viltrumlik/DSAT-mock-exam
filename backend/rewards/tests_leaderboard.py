@@ -474,3 +474,115 @@ class GroupBoardFollowsTheStudentTests(OrgFixture):
                 newcomer, leaderboard.BoardQuery.from_params({"scope": "GROUP"}), viewer=newcomer
             )
         )
+
+
+class StrikeBoardTests(OrgFixture):
+    """The second board: lessons attended in a row (`StudentStrike.current_streak`).
+
+    It answers "who is turning up", so it ranks the RUN, never the spendable balance — a
+    student who spent strikes in the shop has not attended any less.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from rewards.models import StudentStrike
+
+        self.dan = self._student("lb_dan@t.com", self.eng_north)       # no run at all
+        StudentStrike.objects.create(student=self.ann, current_streak=5, best_streak=7)
+        StudentStrike.objects.create(student=self.bob, current_streak=2, best_streak=2)
+        StudentStrike.objects.create(student=self.cal, current_streak=9, best_streak=9)
+        StudentStrike.objects.create(student=self.dan, current_streak=0, best_streak=4)
+
+    def _strikes(self, viewer, **params):
+        return self._board(viewer, metric="STRIKES", **params)
+
+    def test_the_board_ranks_the_run_and_leaves_out_anyone_without_one(self):
+        rows, meta = self._strikes(self.ann)
+
+        self.assertEqual(
+            [(r["student_id"], r["strikes"], r["rank"]) for r in rows],
+            [(self.cal.pk, 9, 1), (self.ann.pk, 5, 2), (self.bob.pk, 2, 3)],
+        )
+        self.assertEqual(meta["metric"], leaderboard.METRIC_STRIKES)
+        self.assertIn("in a row", meta["scope_note"])
+
+    def test_spending_strikes_in_the_shop_does_not_lower_a_rank(self):
+        from rewards.models import StudentStrike
+
+        StudentStrike.objects.filter(student=self.ann).update(spent_in_streak=4)  # balance 1
+
+        rows, _ = self._strikes(self.ann)
+
+        ann = next(r for r in rows if r["student_id"] == self.ann.pk)
+        self.assertEqual((ann["strikes"], ann["rank"]), (5, 2))
+
+    def test_equal_runs_share_a_rank(self):
+        from rewards.models import StudentStrike
+
+        StudentStrike.objects.filter(student=self.bob).update(current_streak=5)
+
+        rows, _ = self._strikes(self.ann)
+
+        self.assertEqual([r["rank"] for r in rows], [1, 2, 2])
+
+    def test_my_branch_is_the_students_who_study_there(self):
+        rows, _ = self._strikes(self.ann, scope="BRANCH")
+        self.assertEqual({r["student_id"] for r in rows}, {self.ann.pk, self.bob.pk})
+
+    def test_a_branch_filter_on_the_global_board(self):
+        rows, _ = self._strikes(self.ann, scope="GLOBAL", branch=self.south.pk)
+        self.assertEqual([r["student_id"] for r in rows], [self.cal.pk])
+
+    def test_my_group_is_the_class_roster(self):
+        rows, _ = self._strikes(self.bob, scope="GROUP")
+        self.assertEqual([r["student_id"] for r in rows], [self.ann.pk, self.bob.pk])
+
+    def test_a_student_with_no_group_gets_an_empty_group_board_not_the_school(self):
+        loner = _u("lb_loner@t.com")
+        rows, meta = self._strikes(loner, scope="GROUP")
+        self.assertEqual(rows, [])
+        self.assertIn("not in a group", meta["scope_note"])
+
+    def test_time_window_and_subject_do_not_apply_to_a_run(self):
+        """A run is a number now, not an amount earned over time: the board ignores both,
+        and says so in its meta rather than pretending it filtered."""
+        rows, meta = self._strikes(self.ann, window="MONTH", subject=Classroom.SUBJECT_MATH)
+
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(meta["window"], leaderboard.WINDOW_ALL)
+        self.assertIsNone(meta["subject"])
+
+    def test_my_rank_is_found_below_the_limit(self):
+        query = leaderboard.BoardQuery.from_params({"metric": "STRIKES", "limit": 1})
+        mine = leaderboard.rank_of(self.bob, query, viewer=self.bob)
+        self.assertEqual((mine["rank"], mine["strikes"]), (3, 2))
+
+    def test_no_run_means_no_rank(self):
+        query = leaderboard.BoardQuery.from_params({"metric": "STRIKES"})
+        self.assertIsNone(leaderboard.rank_of(self.dan, query, viewer=self.dan))
+
+    def test_an_unknown_metric_is_the_xp_board(self):
+        query = leaderboard.BoardQuery.from_params({"metric": "COINS"})
+        self.assertEqual(query.metric, leaderboard.METRIC_XP)
+
+    def test_the_api_serves_the_strike_board(self):
+        client = APIClient()
+        client.force_authenticate(self.bob)
+
+        body = client.get("/api/rewards/leaderboard/?metric=STRIKES&limit=2").json()
+
+        self.assertEqual(body["metric"], "STRIKES")
+        self.assertEqual([r["strikes"] for r in body["rows"]], [9, 5])
+        self.assertEqual(body["rows"][0]["branch"], "Registon")
+        self.assertEqual((body["my"]["student_id"], body["my"]["rank"], body["my"]["strikes"]), (self.bob.pk, 3, 2))
+        self.assertTrue(body["my"]["is_me"])
+
+    def test_the_xp_board_is_unchanged_and_says_which_it_is(self):
+        client = APIClient()
+        client.force_authenticate(self.ann)
+
+        body = client.get("/api/rewards/leaderboard/").json()
+
+        self.assertEqual(body["metric"], "XP")
+        self.assertEqual([r["xp"] for r in body["rows"]], [100, 75, 50])
+        self.assertIsNone(body["rows"][0]["strikes"])
