@@ -653,6 +653,18 @@ CELERY_BEAT_SCHEDULE = {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
     },
+    # SMS before the debt freeze (backend/sms): fires every day at 10:00 (CELERY_TIMEZONE is Tashkent)
+    # and the code decides — days 1..LCUP_DEBT_FREEZE_DAY-1 it warns, other days it sends nothing.
+    # Returns at once while SMS_DEBT_WARNINGS_ENABLED is off.
+    "sms-debt-warnings": {
+        "task": "sms.tasks.debt_warnings",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
+    "sms-check-statuses": {
+        "task": "sms.tasks.check_statuses",
+        "schedule": crontab(minute=30),
+    },
 }
 
 # Assessments: attempt inactivity timeout (seconds) before auto-abandon.
