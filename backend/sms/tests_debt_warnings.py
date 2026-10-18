@@ -31,6 +31,7 @@ def at(day, month=11, hour=10):
 
 @override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6)
 @mock.patch("sms.templates.DEBT_WARNING", WARN)
+@mock.patch("sms.templates.DEBT_LAST_DAY", None)
 class DebtWarningTests(TestCase):
     def learner(self, lcup_id, username, *, balance, phone="998901234567", seen=None, **link_extra):
         user = User.objects.create_user(
@@ -161,3 +162,38 @@ class DebtWarningTests(TestCase):
         self.learner(101, "aziz", balance="-0.40")
         counts = debt_warnings.send(FakeEskiz(), at(1))
         self.assertEqual(counts["skipped"], {"under_one_sum": 1})
+
+
+
+@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6)
+class ApprovedTextTests(TestCase):
+    """Owner, 2026-10-18: days 1–4 #64942, day 5 #52393 ("Bugun oxirgi kun!"); the name as lc-up holds it."""
+
+    def setUp(self):
+        user = User.objects.create_user(
+            None, password=None, username="malika", role="student", first_name="Malika", last_name="Karimova"
+        )
+        LcupStudentLink.objects.create(
+            lcup_student_id=101, name="Karimova Malika", user=user, status=LinkStatus.CONFIRMED, phone="998901234567",
+            balance=Decimal(-150000), balance_seen_at=at(1, hour=9),
+        )
+
+    def sent_text(self, day):
+        LcupStudentLink.objects.update(balance_seen_at=at(day, hour=9))
+        fake = FakeEskiz()
+        debt_warnings.send(fake, at(day))
+        return fake.sent[0][1]
+
+    def test_days_1_to_4_get_the_warning(self):
+        for day in (1, 4):
+            self.assertEqual(self.sent_text(day), "MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!")
+
+    def test_day_5_gets_the_last_day(self):
+        self.assertEqual(
+            self.sent_text(5),
+            "Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. Guruhdan chetlatilishingiz mumkin. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
+        )
+
+    def test_a_long_name_keeps_four_words_and_the_comma(self):
+        LcupStudentLink.objects.update(name="Abdulloh Ali o\u2019g\u2019li Karimov Bek")
+        self.assertIn("yozyabmiz. Abdulloh Ali o'g'li Karimov, sizda", self.sent_text(1))

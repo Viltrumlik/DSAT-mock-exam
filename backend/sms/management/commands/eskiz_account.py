@@ -25,6 +25,11 @@ class Command(BaseCommand):
         self.stdout.write(f"balance: {balance}")
         self.stdout.write(f"sender names: {json.dumps(nicks, ensure_ascii=False)}")
         for row in templates:
-            text = str(row.get("original_text") or row.get("template") or "")
-            warning = "" if is_gsm_safe(text) else "  ! not plain ASCII: 70 characters a part, about twice the price"
-            self.stdout.write(f"#{row.get('id')} [{row.get('status')}]{warning}\n{text!r}")
+            # ``template`` is eskiz's moderated pattern (%w/%d slots) — what a text is matched against and
+            # what goes into sms.templates; ``original_text`` is what was submitted (lc-up's "(STUDENT)").
+            pattern, original = str(row.get("template") or ""), str(row.get("original_text") or "")
+            plain = is_gsm_safe(pattern + original)
+            warning = "" if plain else "  ! not plain ASCII: 70 characters a part, about twice the price"
+            self.stdout.write(
+                f"#{row.get('id')} [{row.get('status')}]{warning}\n  pattern:  {pattern!r}\n  original: {original!r}"
+            )

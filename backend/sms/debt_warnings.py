@@ -58,9 +58,21 @@ class Plan:
     blocked: str = ""
 
 
+def _template_for(today):
+    """Days 1..freeze day − 2: the warning; the last day before the freeze: "Bugun oxirgi kun!"."""
+    if T.DEBT_WARNING is None:
+        return None
+    if today.day == debt_freeze_day() - 1 and T.DEBT_LAST_DAY is not None:
+        return T.DEBT_LAST_DAY
+    return T.DEBT_WARNING
+
+
 def _values(link, today) -> dict:
     first, last = split_lcup_name(link.name)
+    name = link.name.split() or link.user.get_full_name().split()
     return {
+        # As lc-up's own SMS name the student; eskiz's pattern is "%w{1,4} sizda", the comma inside it.
+        "student": " ".join(name[:4]) + ",",
         "first_name": first or link.user.first_name,
         "last_name": last or link.user.last_name,
         "debt": int(abs(link.balance)),
@@ -73,7 +85,7 @@ def plan(now, *, today=None) -> Plan:
     """Who would be warned at ``now``. ``today`` previews another day's list (the report command);
     the balance's age is always measured from ``now``."""
     today = today or timezone.localdate(now)
-    template = T.DEBT_WARNING
+    template = _template_for(today)
     if template is None:
         return Plan(blocked="no approved template yet")
     if not debt_freeze_enabled():

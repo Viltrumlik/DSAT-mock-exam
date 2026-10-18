@@ -1937,3 +1937,17 @@ A Django review found no duplicate-SMS, data-loss or security defect. It found f
 3. **Expired token.** Only the exact "Token has expired" counts as an expired token on a 500. Any other 500 may have come after eskiz took the SMS.
 4. **Errors.** An exception for one student is logged by its type alone (the message may quote the phone), and the run goes on.
 5. **Small balances.** A balance between −1 and 0 so'm is not warned about (`under_one_sum`).
+
+## Rollout finding: the template is eskiz's `template` field (2026-10-18)
+
+The first login on prod was 17:12. It showed that each eskiz template row carries:
+- **`original_text`**: what was submitted. lc-up wrote `(STUDENT), sizda…`.
+- **`template`**: the moderated pattern, `%w{1,4} sizda…`, which is what a text is matched against.
+
+So `sms.templates` holds the **`template`** field, not `original_text` as Task 7 said. The name slot is filled with lc-up's name (up to 4 words) plus the comma.
+
+The owner chose:
+- **days 1–4:** #64942 (`DEBT_WARNING`);
+- **day 5:** #52393 (`DEBT_LAST_DAY`, "Bugun oxirgi kun!").
+
+`eskiz_account` now prints both fields. `sms_test --last-day` renders the second text.

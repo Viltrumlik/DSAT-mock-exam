@@ -17,14 +17,16 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--phone", required=True)
         parser.add_argument("--send", action="store_true", help="really send it; without this only print it")
+        parser.add_argument("--last-day", action="store_true", help="the last-day text (\"Bugun oxirgi kun!\")")
 
     def handle(self, *args, **options):
         phone = normalize_phone(options["phone"])
         if not phone:
             raise CommandError("not an Uzbek phone number (998XXXXXXXXX)")
-        if T.DEBT_WARNING is None:
+        template = T.DEBT_LAST_DAY if options["last_day"] else T.DEBT_WARNING
+        if template is None:
             raise CommandError("no approved template yet: copy it in from manage.py eskiz_account")
-        text = T.render(T.DEBT_WARNING, T.SAMPLE_VALUES)
+        text = T.render(template, T.SAMPLE_VALUES)
         plain = "plain" if T.is_gsm_safe(text) else "NOT plain"
         self.stdout.write(f"{text}\n({len(text)} characters, {plain} ASCII)")
         if not options["send"]:

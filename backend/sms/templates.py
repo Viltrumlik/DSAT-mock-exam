@@ -2,9 +2,11 @@
 
 eskiz sends only a text that matches a moderated template character for character. Its variable
 parts are ``%d`` (a number), ``%w`` (one word) and ``%w{a,b}`` (a to b words). So a template here is
-the cabinet's ``original_text`` copied VERBATIM — ``manage.py eskiz_account`` prints it with
-``repr`` so a stray space or apostrophe shows — plus the names of the values filling its slots, in
-order. Never retype one: a template that differs by a character is refused.
+the moderated pattern — the ``template`` field, NOT ``original_text`` — copied VERBATIM
+(``manage.py eskiz_account`` prints both with ``repr``, so a stray space or apostrophe shows), plus
+the names of the values filling its slots, in order. Never retype one: a text that differs by a
+character is refused. lc-up registered its texts as "(STUDENT), sizda…"; eskiz moderated them to
+"%w{1,4} sizda…", so the comma after the name is part of the name's words.
 
 Values go in as plain ASCII words (``'`` for o'/g'). The template text itself is left as eskiz
 approved it, but one ``ʻ`` or ``‘`` in it makes every SMS UCS-2 — 70 characters a part instead of
@@ -20,7 +22,7 @@ SLOT = re.compile(r"%(d|w)(?:\{(\d+),(\d+)\})?")
 _DIGITS = re.compile(r"^[0-9]+$")
 _APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "ʻ": "'", "ʼ": "'", "`": "'"})
 #: Values that name one student: a template using one is sent per student, not per phone.
-PERSONAL_VALUES = frozenset({"first_name", "last_name"})
+PERSONAL_VALUES = frozenset({"student", "first_name", "last_name"})
 
 
 class TemplateError(ValueError):
@@ -68,9 +70,25 @@ def render(template: SmsTemplate, values: dict) -> str:
     return SLOT.sub(fill, template.text)
 
 
-#: The warning on days 1..LCUP_DEBT_FREEZE_DAY-1 (``debt_warnings``). None until the approved text is
-#: copied in from ``manage.py eskiz_account`` (plan Task 7); while None nothing is sent.
-DEBT_WARNING: SmsTemplate | None = None
+#: Owner, 2026-10-18: days 1..LCUP_DEBT_FREEZE_DAY-2 #64942, the last day before the freeze #52393
+#: ("Bugun oxirgi kun!"). eskiz's moderated patterns as ``manage.py eskiz_account`` read them that day.
+#: ``student`` is the name as lc-up holds it, up to four words, with the comma (``debt_warnings``).
+#: While DEBT_WARNING is None nothing is sent; without DEBT_LAST_DAY the last day gets DEBT_WARNING.
+DEBT_WARNING: SmsTemplate | None = SmsTemplate(
+    "debt_warning",
+    "MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan "
+    "administratsiyaga uchrang!",
+    ("student",),
+)
+DEBT_LAST_DAY: SmsTemplate | None = SmsTemplate(
+    "debt_last_day",
+    "Bugun oxirgi kun! MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. Guruhdan chetlatilishingiz "
+    "mumkin. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
+    ("student",),
+)
 
 #: What ``manage.py sms_test`` fills a template with.
-SAMPLE_VALUES = {"first_name": "Test", "last_name": "Testov", "debt": 100000, "freeze_day": 6, "days_left": 1}
+SAMPLE_VALUES = {
+    "student": "Test Testov,", "first_name": "Test", "last_name": "Testov", "debt": 100000, "freeze_day": 6,
+    "days_left": 1,
+}
