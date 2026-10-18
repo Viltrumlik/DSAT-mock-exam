@@ -11,6 +11,7 @@ import { bucketMidterms } from "@/lib/midtermBuckets";
 import { downloadBlob } from "@/lib/download";
 import { normalizeApiError } from "@/lib/apiError";
 import { pushGlobalToast } from "@/lib/toastBus";
+import { DOWNLOAD_PAGE } from "@/lib/desktop/routes";
 
 /**
  * Student midterm page — matches the MasterSAT "Midterm" mockup 1:1 (filter tabs +
@@ -231,7 +232,17 @@ export default function MidtermList() {
   return (
     <div className="mx-auto max-w-4xl px-6 py-8" style={{ fontFamily: "var(--font-plus-jakarta), system-ui, sans-serif" }}>
       <span className="text-[12px] font-extrabold tracking-[0.16em] text-slate-400">MIDTERM</span>
-      <h1 className="mt-1 text-[34px] font-extrabold leading-tight" style={{ color: C.navy }}>Midterm</h1>
+      <div className="mt-1 flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <h1 className="text-[34px] font-extrabold leading-tight" style={{ color: C.navy }}>Midterm</h1>
+        {/* Midterms are taken in the app: the way to it, without moving anything else on the page. */}
+        <Link
+          href={DOWNLOAD_PAGE}
+          className="mb-2 inline-flex items-center gap-1.5 text-sm font-bold hover:underline"
+          style={{ color: C.blue }}
+        >
+          <Download className="h-4 w-4" aria-hidden /> Get the MasterSAT app
+        </Link>
+      </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
         {tabs.map((t) => (
