@@ -200,6 +200,7 @@ INSTALLED_APPS = [
     'mobile.apps.MobileConfig',
     'desktop.apps.DesktopConfig',
     'lcup.apps.LcupConfig',
+    'sms.apps.SmsConfig',
 ]
 
 MIDDLEWARE = [
@@ -308,6 +309,15 @@ LCUP_ATTENDANCE_PUSH_FROM = os.getenv("LCUP_ATTENDANCE_PUSH_FROM", "").strip()
 # lc-up balance is below zero is frozen; paying lifts it. Off by default; off lets go every student it froze.
 LCUP_DEBT_FREEZE_ENABLED = os.getenv("LCUP_DEBT_FREEZE_ENABLED", "False").lower() == "true"
 LCUP_DEBT_FREEZE_DAY = int(os.getenv("LCUP_DEBT_FREEZE_DAY", "6") or 6)
+
+# SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
+# 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.
+# The eskiz account is shared with lc-up. Off by default; literal "true" only.
+ESKIZ_BASE_URL = os.getenv("ESKIZ_BASE_URL", "https://notify.eskiz.uz/api").strip()
+ESKIZ_EMAIL = os.getenv("ESKIZ_EMAIL", "").strip()
+ESKIZ_SECRET_KEY = os.getenv("ESKIZ_SECRET_KEY", "")
+ESKIZ_FROM = os.getenv("ESKIZ_FROM", "4546").strip()
+SMS_DEBT_WARNINGS_ENABLED = os.getenv("SMS_DEBT_WARNINGS_ENABLED", "False").lower() == "true"
 
 # Public vs learning-center learners (docs/superpowers/plans/2026-10-13-public-vs-centre-users.md).
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"
@@ -642,6 +652,23 @@ CELERY_BEAT_SCHEDULE = {
     "lcup-sync": {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
+    },
+    # SMS before the debt freeze (backend/sms): fires every day at 10:00 (CELERY_TIMEZONE is Tashkent)
+    # and the code decides — days 1..LCUP_DEBT_FREEZE_DAY-1 it warns, other days it sends nothing.
+    # Returns at once while SMS_DEBT_WARNINGS_ENABLED is off.
+    "sms-debt-warnings": {
+        "task": "sms.tasks.debt_warnings",
+        "schedule": crontab(hour=10, minute=0),
+    },
+    # What 10:00 could not get out (eskiz unreachable, a refused login) goes again — only that.
+    "sms-debt-warnings-retry": {
+        "task": "sms.tasks.retry_debt_warnings",
+        "schedule": crontab(hour="11,12", minute=0),
+    },
+    # eskiz's delivery status for what went out in the last 48 h. Nothing sent, no request.
+    "sms-check-statuses": {
+        "task": "sms.tasks.check_statuses",
+        "schedule": crontab(minute=30),
     },
 }
 
