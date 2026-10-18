@@ -24,7 +24,7 @@ describe("OPS_NAV_GROUPS", () => {
       "Mock sittings",
       "Exam dates",
     ]);
-    expect(OPS_NAV_GROUPS[3].items.map((i) => i.label)).toEqual(["lc-up", "Finance", "Support", "Shop"]);
+    expect(OPS_NAV_GROUPS[3].items.map((i) => i.label)).toEqual(["lc-up", "Finance", "SMS", "Support", "Shop"]);
     expect(OPS_NAV_GROUPS[4].items.map((i) => i.label)).toEqual(["Events", "Telegram posts", "Stories", "Surveys"]);
     expect(OPS_NAV_GROUPS[5].items.map((i) => i.label)).toEqual(["Mobile app", "Broadcast"]);
   });
@@ -71,6 +71,7 @@ describe("visibleNav", () => {
       "/ops/branches",
       "/ops/lcup",
       "/ops/finance",
+      "/ops/sms",
       "/ops/support",
       "/ops/shop",
       "/ops/events",
@@ -102,6 +103,8 @@ describe("sectionLabel", () => {
     expect(sectionLabel("/ops/students")).toBe("Students");
     expect(sectionLabel("/ops/public")).toBe("Public users");
     expect(sectionLabel("/ops/finance")).toBe("Finance");
+    expect(sectionLabel("/ops/sms")).toBe("SMS");
+    expect(sectionLabel("/ops/sms/campaigns/7")).toBe("SMS");
     expect(sectionLabel("/ops/mock-sessions")).toBe("Mock sittings");
   });
 
