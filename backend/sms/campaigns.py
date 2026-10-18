@@ -112,7 +112,8 @@ def _ints(raw) -> list[int] | None:
     return out
 
 
-def _template(raw) -> EskizTemplate:
+def usable_template(raw) -> EskizTemplate:
+    """The cached eskiz template ``raw`` names, if it can be sent (service or reklama)."""
     try:
         eskiz_id = None if isinstance(raw, bool) else int(raw)
     except (TypeError, ValueError):
@@ -123,7 +124,8 @@ def _template(raw) -> EskizTemplate:
     return row
 
 
-def _slots(pattern, roles, texts) -> tuple[list[str], list[str]]:
+def clean_slots(pattern, roles, texts) -> tuple[list[str], list[str]]:
+    """A role per slot and the typed texts, checked against the pattern's slots; non-text slots' texts become ""."""
     slots = T.slots(pattern)
     if not isinstance(roles, (list, tuple)) or len(roles) != len(slots) or any(r not in T.ROLES for r in roles):
         raise CampaignRefused("slots", f"Choose student, debt or text for each of the template's {len(slots)} slots.")
@@ -184,8 +186,8 @@ def _when(raw, now):
 def clean(data, *, now) -> Draft:
     """The body of a preview or a create, checked; refusals carry the API's ``code``."""
     data = data or {}
-    template = _template(data.get("template_id"))
-    roles, texts = _slots(template.pattern, data.get("slot_roles"), data.get("slot_texts"))
+    template = usable_template(data.get("template_id"))
+    roles, texts = clean_slots(template.pattern, data.get("slot_roles"), data.get("slot_texts"))
     audience, ids = _audience(data.get("audience"), data.get("audience_ids"))
     return Draft(
         template_id=template.eskiz_id, pattern=template.pattern, original=template.original,
