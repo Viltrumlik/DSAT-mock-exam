@@ -1,5 +1,5 @@
 /**
- * mastersat.uz/download: both apps are always one click away; the visitor's own computer
+ * /download: both apps are always one click away; the visitor's own computer
  * leads; version and size come from latest.json, and the page works without it.
  */
 import { act } from "react";
@@ -46,7 +46,7 @@ async function render() {
   });
 }
 
-const card = (id: "windows" | "mac") => container.querySelector(`section[aria-labelledby="download-${id}"]`)!;
+const card = (id: "windows" | "mac") => container.querySelector(`[aria-labelledby="download-${id}"]`)!;
 
 beforeEach(() => {
   container = document.createElement("div");

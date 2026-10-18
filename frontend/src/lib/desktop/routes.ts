@@ -15,7 +15,7 @@ export const DESKTOP_MAC_DOWNLOAD_URL = "https://mastersat.uz/downloads/desktop/
  */
 export const DESKTOP_RELEASE_MANIFEST_URL = "/downloads/desktop/latest.json";
 
-/** The download page: public, so it is a link a teacher can post anywhere. */
+/** The download page (student area): linked from the Midterm page and the take-it-in-the-app screen. */
 export const DOWNLOAD_PAGE = "/download";
 
 export type DesktopPaperKind = "midterm" | "pastpaper";
