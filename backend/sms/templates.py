@@ -19,10 +19,25 @@ import re
 from dataclasses import dataclass
 
 SLOT = re.compile(r"%(d|w)(?:\{(\d+),(\d+)\})?")
+#: lc-up's "(STUDENT)" and the "{name}" style, in an ``original_text``.
+_PLACEHOLDER = re.compile(r"\(([A-Z_]+)\)|\{(\w+)\}")
+#: Punctuation right after a placeholder: eskiz moderated "(STUDENT), sizda" into "%w{1,4} sizda",
+#: so the comma has to travel inside the name's words.
+_SUFFIX = re.compile(r"[,.!?:;]*")
+_STUDENT_PLACEHOLDERS = frozenset({"STUDENT", "name", "student"})
 _DIGITS = re.compile(r"^[0-9]+$")
 _APOSTROPHES = str.maketrans({"‘": "'", "’": "'", "ʻ": "'", "ʼ": "'", "`": "'"})
 #: Values that name one student: a template using one is sent per student, not per phone.
 PERSONAL_VALUES = frozenset({"student", "first_name", "last_name"})
+
+
+#: What fills a slot, chosen per slot in /ops/sms: the student's lc-up name, their debt, or one typed text.
+ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT = "student", "debt", "text"
+ROLES = (ROLE_STUDENT, ROLE_DEBT, ROLE_TEXT)
+
+#: GSM-7 is 160 characters in one SMS, 153 a part once split; one non-ASCII character makes it UCS-2.
+GSM_SINGLE, GSM_PART = 160, 153
+UCS2_SINGLE, UCS2_PART = 70, 67
 
 
 class TemplateError(ValueError):
@@ -48,6 +63,45 @@ class SmsTemplate:
 def is_gsm_safe(text) -> bool:
     """Plain ASCII — what keeps an SMS at 160 characters a part."""
     return all(ord(ch) < 128 for ch in str(text))
+
+
+def parts(text) -> int:
+    """How many SMS eskiz bills for ``text`` — what every cost on /ops/sms is counted from."""
+    text = str(text or "")
+    single, part = (GSM_SINGLE, GSM_PART) if is_gsm_safe(text) else (UCS2_SINGLE, UCS2_PART)
+    return 1 if len(text) <= single else -(-len(text) // part)
+
+
+def slots(pattern) -> list[dict]:
+    """Each ``%d`` / ``%w`` / ``%w{a,b}`` of a moderated pattern, in order, with its word counts."""
+    return [
+        {"kind": m.group(1), "min": int(m.group(2) or 1), "max": int(m.group(3) or 1)}
+        for m in SLOT.finditer(str(pattern or ""))
+    ]
+
+
+def _placeholders(original, pattern):
+    """The placeholders of ``original`` when there is one per slot of ``pattern``; else None — eskiz
+    merged or dropped some, and which slot is which cannot be told."""
+    found = list(_PLACEHOLDER.finditer(str(original or "")))
+    return found if len(found) == len(SLOT.findall(str(pattern or ""))) else None
+
+
+def guess_roles(original, pattern) -> list[str]:
+    """A first guess at each slot's role from the submitted text; the admin can change it."""
+    found = _placeholders(original, pattern)
+    if found is None:
+        return [ROLE_TEXT] * len(SLOT.findall(str(pattern or "")))
+    return [ROLE_STUDENT if (m.group(1) or m.group(2)) in _STUDENT_PLACEHOLDERS else ROLE_TEXT for m in found]
+
+
+def role_suffixes(original, pattern) -> list[str]:
+    """Per slot, the punctuation that followed its placeholder in ``original`` ("" when unknown)."""
+    found = _placeholders(original, pattern)
+    if found is None:
+        return [""] * len(SLOT.findall(str(pattern or "")))
+    text = str(original)
+    return [_SUFFIX.match(text, m.end()).group(0) for m in found]
 
 
 def render(template: SmsTemplate, values: dict) -> str:
