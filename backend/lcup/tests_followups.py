@@ -12,6 +12,7 @@ from lcup.followups import (
     STATE_CAME,
     STATE_NOT_YET,
     STATE_USED,
+    lesson_check,
     missing_seats,
     pending,
     trial_seats,
@@ -148,3 +149,63 @@ class MissingSeatTests(FollowupsFixtureMixin, TestCase):
     def test_nothing_while_the_integration_is_off(self):
         self.lcup_member("Brand New")
         self.assertEqual(missing_seats(), [])
+
+
+@override_settings(LCUP_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
+class LessonCheckTests(FollowupsFixtureMixin, TestCase):
+    def test_everything_the_teacher_should_look_at_in_one_message(self):
+        ali, bek = self.student("Ali", "Valiyev"), self.student("Bek", "Rahimov")
+        self.student("Dilnoza", "Karimova")
+        sardor = self.student("Sardor", "Nazarov")
+        self.lcup_member("Sardor Nazarov", user=sardor, status="trial", since=date(2026, 10, 14))
+        self.mark(date(2026, 10, 16), sardor, "PRESENT")   # the free lesson
+        self.mark(self.MONDAY, ali, "PRESENT")
+        self.mark(self.MONDAY, bek, "ABSENT")
+        self.mark(self.MONDAY, sardor, "PRESENT")
+        self.lcup_member("Jasur Toshmatov")
+        check = lesson_check(self.room, self.MONDAY)
+        self.assertEqual(check.title, "Middle G23 — check today's register")
+        self.assertEqual(
+            check.body,
+            "Not marked: Dilnoza Karimova — mark them before 18:00. "
+            "Absent: Bek Rahimov — if excused, set the reason before 18:00. "
+            "Free trial used: Sardor Nazarov — send to the admin. "
+            "Not on your list: Jasur Toshmatov — send to the admin.",
+        )
+        self.assertFalse(check.is_empty)
+
+    def test_a_register_nobody_took(self):
+        self.student("Ali", "Valiyev")
+        self.assertEqual(lesson_check(self.room, self.MONDAY).body, "Register not taken yet — mark it before 18:00.")
+
+    def test_a_clean_register_says_nothing(self):
+        self.mark(self.MONDAY, self.student("Ali", "Valiyev"), "PRESENT")
+        self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)
+
+    def test_an_excused_absence_is_not_asked_about(self):
+        self.mark(self.MONDAY, self.student("Ali", "Valiyev"), "EXCUSED")
+        self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)
+
+    def test_a_trial_student_on_the_free_lesson_is_not_sent_away(self):
+        ali = self.student("Ali", "Valiyev")
+        self.lcup_member("Ali Valiyev", user=ali, status="trial", since=self.MONDAY)
+        self.mark(self.MONDAY, ali, "PRESENT")
+        self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)
+
+    def test_a_student_frozen_in_lc_up_is_not_unmarked(self):
+        ali, frozen = self.student("Ali", "Valiyev"), self.student("Frozen", "One")
+        self.lcup_member("Frozen One", user=frozen, status="frozen")
+        self.mark(self.MONDAY, ali, "PRESENT")
+        self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)
+
+    def test_long_lists_are_cut_after_four_names(self):
+        self.mark(self.MONDAY, self.student("Keep", "Present"), "PRESENT")
+        for first in ("Aa", "Bb", "Cc", "Dd", "Ee", "Ff"):
+            self.mark(self.MONDAY, self.student(first, "Absent"), "ABSENT")
+        self.assertIn(
+            "Absent: Aa Absent, Bb Absent, Cc Absent, Dd Absent +2 more — if excused",
+            lesson_check(self.room, self.MONDAY).body,
+        )
+
+    def test_an_empty_class_says_nothing(self):
+        self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)

@@ -22,7 +22,7 @@ writes except ``send_lesson_checks``, which writes notifications.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 
 from django.utils import timezone
 
@@ -31,6 +31,7 @@ from classes.models_attendance import AttendanceRecord
 
 from .conf import free_trial_lessons, lcup_enabled
 from .models import GroupLinkStatus, LcupMembership, LinkStatus
+from .serializers import user_ref
 
 TRIAL = "trial"
 FROZEN = "frozen"
@@ -184,3 +185,95 @@ def pending(seats: list[TrialSeat], missing: list[MissingSeat]) -> int:
     """What waits on the front desk: trial students who came (the free lesson or more), and every
     member missing from a class list. A trial student who has not come yet waits on nobody."""
     return sum(1 for seat in seats if seat.state != STATE_NOT_YET) + len(missing)
+
+
+#: A message names this many people per line, then "+N more" — the register has the rest.
+NAMES_SHOWN = 4
+
+
+def _names(names) -> str:
+    names = list(names)
+    shown = ", ".join(names[:NAMES_SHOWN])
+    extra = len(names) - NAMES_SHOWN
+    return f"{shown} +{extra} more" if extra > 0 else shown
+
+
+@dataclass(frozen=True)
+class LessonCheck:
+    classroom_id: int
+    classroom_name: str
+    day: date
+    closes_at: datetime
+    #: Whether the register holds any mark at all (or has nobody to mark).
+    taken: bool
+    unmarked: tuple[str, ...]
+    absent: tuple[str, ...]
+    trial_used: tuple[str, ...]
+    not_on_list: tuple[str, ...]
+
+    @property
+    def is_empty(self) -> bool:
+        return self.taken and not (self.unmarked or self.absent or self.trial_used or self.not_on_list)
+
+    @property
+    def title(self) -> str:
+        return f"{self.classroom_name} — check today's register"[:160]
+
+    @property
+    def body(self) -> str:
+        close = timezone.localtime(self.closes_at).strftime("%H:%M")
+        parts = []
+        if not self.taken:
+            parts.append(f"Register not taken yet — mark it before {close}.")
+        elif self.unmarked:
+            parts.append(f"Not marked: {_names(self.unmarked)} — mark them before {close}.")
+        if self.absent:
+            parts.append(f"Absent: {_names(self.absent)} — if excused, set the reason before {close}.")
+        if self.trial_used:
+            parts.append(f"Free trial used: {_names(self.trial_used)} — send to the admin.")
+        if self.not_on_list:
+            parts.append(f"Not on your list: {_names(self.not_on_list)} — send to the admin.")
+        return " ".join(parts)[:400]
+
+
+def _roster(classroom, day: date):
+    """The register's own roster rule (``classes.views_attendance._active_students``): active
+    student seats taken on or before the lesson's local date."""
+    seats = ClassroomMembership.objects.filter(
+        classroom=classroom, role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE
+    ).select_related("user")
+    return [seat.user for seat in seats if timezone.localdate(seat.joined_at) <= day]
+
+
+def lesson_check(classroom, day: date) -> LessonCheck:
+    """What this class's teachers are told when the lesson of ``day`` ends."""
+    from classes.attendance_window import marking_window
+    from classes.models_attendance import AttendanceSession
+
+    from .attendance_guard import frozen_in_lcup
+
+    roster = _roster(classroom, day)
+    names = {user.pk: user_ref(user)["name"] for user in roster}
+    frozen = frozen_in_lcup(classroom)
+    markable = [user.pk for user in roster if user.pk not in frozen]
+    session = AttendanceSession.objects.filter(classroom=classroom, date=day).first()
+    records = dict(session.records.values_list("student_id", "status")) if session else {}
+    free = free_trial_lessons()
+    trial_used = [
+        names[seat.user_id]
+        for seat in trial_seats(classroom=classroom, before=day)
+        if seat.user_id in names and seat.lessons >= free and records.get(seat.user_id) in ATTENDED
+    ]
+    return LessonCheck(
+        classroom_id=classroom.pk,
+        classroom_name=classroom.name,
+        day=day,
+        closes_at=marking_window(classroom, day)[1],
+        taken=bool(records) or not markable,
+        unmarked=tuple(sorted(names[uid] for uid in markable if uid not in records)),
+        absent=tuple(sorted(
+            names[uid] for uid, status in records.items() if status == AttendanceRecord.STATUS_ABSENT and uid in names
+        )),
+        trial_used=tuple(sorted(trial_used)),
+        not_on_list=tuple(seat.name for seat in missing_seats(classroom=classroom)),
+    )
