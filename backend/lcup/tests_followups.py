@@ -1,5 +1,7 @@
 from datetime import date, datetime
+from io import StringIO
 
+from django.core.management import call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -267,3 +269,23 @@ class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
     def test_nothing_while_the_switch_is_off(self):
         self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"skipped": "off"})
         self.assertFalse(self.sent().exists())
+
+
+@override_settings(LCUP_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
+class PreviewCommandTests(FollowupsFixtureMixin, TestCase):
+    def preview(self):
+        out = StringIO()
+        call_command("attendance_check_preview", "--day", "2026-10-19", stdout=out)
+        return out.getvalue()
+
+    def test_it_prints_each_class_as_if_its_lesson_had_ended_and_sends_nothing(self):
+        self.mark(self.MONDAY, self.student("Bek", "Rahimov"), "ABSENT")
+        text = self.preview()
+        self.assertIn("Middle G23 — check today's register", text)
+        self.assertIn("Absent: Bek Rahimov", text)
+        self.assertIn("to: Tess Teacher", text)
+        self.assertFalse(Notification.objects.filter(event="ATTENDANCE_CHECK").exists())
+
+    def test_a_clean_class_is_shown_as_silent(self):
+        self.mark(self.MONDAY, self.student("Ali", "Valiyev"), "PRESENT")
+        self.assertIn("Middle G23: nothing to say — no notification", self.preview())

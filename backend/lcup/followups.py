@@ -367,3 +367,29 @@ def send_lesson_checks(*, now=None) -> dict:
             logger.exception("attendance_check_failed classroom=%s", room.pk)
             counts["failed"] += 1
     return dict(counts)
+
+
+def preview_lesson_checks(day: date) -> list[dict]:
+    """Every paired class that meets on ``day``, with what its teachers would be told had its lesson
+    just ended. Sends nothing and ignores the switch — it is how the owner sees the messages first."""
+    from classes.lesson_schedule import lesson_weekdays
+    from classes.models import Classroom
+
+    rooms = Classroom.objects.filter(
+        is_active=True,
+        lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+        lcup_group_link__deleted_in_lcup_at__isnull=True,
+    ).order_by("name")
+    rows = []
+    for room in rooms:
+        if day.weekday() not in lesson_weekdays(room):
+            continue
+        check = lesson_check(room, day)
+        rows.append({
+            "classroom": room.name,
+            "teachers": [user_ref(t)["name"] for t in teachers_of(room)],
+            "title": check.title,
+            "body": check.body,
+            "sends": not check.is_empty,
+        })
+    return rows
