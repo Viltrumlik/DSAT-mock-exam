@@ -163,6 +163,7 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
         session = self._get_session(classroom)
         records = {r.student_id: r for r in session.records.all()}
         frozen = _frozen_in_lcup(classroom)
+        trial = _trial_in_lcup(classroom, session.date)
         roster = []
         # The roster as it stood on the lesson's own date, so a student added last week is
         # not offered for a lesson held the week before they arrived.
@@ -178,12 +179,17 @@ class AttendanceSessionDetailView(_ClassroomScopedView):
                 "frozen_for_debt": bool(m.user.is_frozen and m.user.frozen_reason == FROZEN_LCUP_DEBT),
                 # Paused in lc-up: shown, never marked — lc-up takes no attendance for them.
                 "frozen_in_lcup": m.user_id in frozen,
+                # On trial in lc-up: lessons come to before this one, and whether the free trial is
+                # behind them (owner, 2026-10-20: the teacher sends them to the admin). None otherwise.
+                "lcup_trial": trial.get(m.user_id),
             })
         return Response({
             **_session_brief(session, classroom=classroom, user=request.user),
             "roster": roster,
             # lc-up's reasons an EXCUSED mark in this class must name; [] for a class lc-up does not run.
             "excuse_reasons": _excuse_reasons(classroom),
+            # lc-up members of this group with no seat here: the teacher sends them to the admin.
+            "not_on_list": _not_on_list(classroom),
         })
 
 
@@ -199,6 +205,18 @@ def _frozen_in_lcup(classroom) -> set[int]:
     from lcup.attendance_guard import frozen_in_lcup
 
     return frozen_in_lcup(classroom)
+
+
+def _trial_in_lcup(classroom, day) -> dict[int, dict]:
+    from lcup.attendance_guard import trial_in_lcup
+
+    return trial_in_lcup(classroom, day)
+
+
+def _not_on_list(classroom) -> list[dict]:
+    from lcup.attendance_guard import not_on_list
+
+    return not_on_list(classroom)
 
 
 def _window_refusal(request, classroom, session):

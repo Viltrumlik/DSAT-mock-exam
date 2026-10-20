@@ -3,7 +3,8 @@
 
 from __future__ import annotations
 
-from .conf import attendance_pull_enabled
+from .conf import attendance_pull_enabled, free_trial_lessons
+from .followups import missing_seats, trial_seats
 from .guards import is_lcup_managed
 from .models import GroupLinkStatus, LcupAbsenceReason, LcupMembership
 
@@ -50,3 +51,24 @@ def excuse_reasons(classroom) -> list[dict]:
     if not is_lcup_managed(classroom):
         return []
     return [{"id": r.lcup_reason_id, "title": r.title} for r in LcupAbsenceReason.objects.order_by("lcup_reason_id")]
+
+
+def trial_in_lcup(classroom, day) -> dict[int, dict]:
+    """Our user ids lc-up holds on trial in this class's group, with the lessons each came to here
+    before ``day``. ``free_used``: they have had the free trial, so the teacher sends them to the
+    admin (owner, 2026-10-20). Empty for a class lc-up does not run."""
+    if not is_lcup_managed(classroom):
+        return {}
+    free = free_trial_lessons()
+    return {
+        seat.user_id: {"lessons_before": seat.lessons, "free_used": seat.lessons >= free}
+        for seat in trial_seats(classroom=classroom, before=day)
+        if seat.user_id
+    }
+
+
+def not_on_list(classroom) -> list[dict]:
+    """lc-up members of this class's group the register cannot show — the teacher sends them to the admin."""
+    if not is_lcup_managed(classroom):
+        return []
+    return [{"name": seat.name} for seat in missing_seats(classroom=classroom)]
