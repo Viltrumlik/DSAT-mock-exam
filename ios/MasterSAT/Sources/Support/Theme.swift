@@ -36,6 +36,16 @@ enum Theme {
     /// The board colours a card by its subject — maths blue, English purple — so a student
     /// can tell two pieces of work apart before reading either title.
     static let subjectEnglish = dynamic(light: 0x6d4ec7, dark: 0x9f86e8)
+    /// Maths is the brand blue — the board already colours it so; named for call sites.
+    static let subjectMath = accent
+    /// Words carry the amber of the vocabulary hub.
+    static let subjectWords = amber
+    /// The streak's flame orange.
+    static let strike = dynamic(light: 0xea580c, dark: 0xfb923c)
+    /// A card's edge: nothing in light mode (the shadow separates it), a faint line in dark,
+    /// where a shadow cannot be seen.
+    static let cardEdge = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor.white.withAlphaComponent(0.08) : UIColor.clear })
 
     static let successSoft = soft(success)
     static let warningSoft = soft(warning)
@@ -66,10 +76,10 @@ enum Theme {
     static let timerUrgent = danger
     static let timerUrgentThreshold: TimeInterval = 5 * 60
 
-    /// The web uses one radius family: 12 for controls, 16 for cards, 24 for hero panels.
+    /// The web uses one radius family: 12 for controls, 18 for cards, 24 for hero panels.
     enum Radius {
         static let control: CGFloat = 12
-        static let card: CGFloat = 16
+        static let card: CGFloat = 18
         static let hero: CGFloat = 24
     }
 
@@ -109,9 +119,9 @@ extension View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
+                    .stroke(Theme.cardEdge, lineWidth: 1)
             )
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 3)
     }
 }
 
@@ -155,7 +165,7 @@ struct Chip: View {
     var body: some View {
         HStack(spacing: 4) {
             if let icon { Image(systemName: icon).font(.system(size: 10, weight: .bold)) }
-            Text(text).font(.system(size: 12, weight: .bold))
+            Text(text).font(.system(size: 12, weight: .bold, design: .rounded))
         }
         .foregroundStyle(colour)
         .padding(.horizontal, 10)
@@ -180,8 +190,8 @@ struct PrimaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(tone.opacity(configuration.isPressed ? 0.82 : 1))
             )
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
@@ -199,6 +209,8 @@ struct SecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(configuration.isPressed ? Theme.accentSoft : Theme.surface2)
             )
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 

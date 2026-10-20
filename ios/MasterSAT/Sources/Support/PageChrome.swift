@@ -24,10 +24,8 @@ struct PageTitle: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 32, weight: .heavy))
-            // The web sets -.03em, which at this size is about a point of tracking. It is
-            // most of why the headline reads as designed rather than as a default.
-            .tracking(-0.9)
+            .font(.system(.largeTitle, design: .rounded, weight: .heavy))
+            .tracking(-0.5)
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -365,6 +363,7 @@ struct PillTabs<Tab: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Tab
+    @Namespace private var pill
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -372,7 +371,7 @@ struct PillTabs<Tab: Hashable>: View {
                 ForEach(items) { item in
                     let active = item.tab == selection
                     Button {
-                        selection = item.tab
+                        withAnimation(Motion.snappy) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: item.icon).font(.system(size: 12, weight: .bold))
@@ -395,9 +394,13 @@ struct PillTabs<Tab: Hashable>: View {
                         .foregroundStyle(active ? .white : Theme.textSecondary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(
-                            Capsule().fill(active ? Theme.accent : Theme.card)
-                        )
+                        .background {
+                            if active {
+                                Capsule().fill(Theme.accent).matchedGeometryEffect(id: "pill", in: pill)
+                            } else {
+                                Capsule().fill(Theme.card)
+                            }
+                        }
                         .overlay(
                             Capsule().stroke(active ? .clear : Theme.separator.opacity(0.5), lineWidth: 0.5)
                         )
@@ -405,7 +408,7 @@ struct PillTabs<Tab: Hashable>: View {
                         // between the glyph and the text would otherwise miss.
                         .contentShape(Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressBounce())
                 }
             }
             // A couple of points of vertical room so the selected pill's shadow is not
@@ -415,6 +418,7 @@ struct PillTabs<Tab: Hashable>: View {
         // No negative padding to "bleed" the row to the screen edge: it made the first pill
         // start off-screen. The row lines up with the cards under it instead.
         .scrollIndicators(.hidden)
+        .sensoryFeedback(.selection, trigger: selection)
     }
 }
 
