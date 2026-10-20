@@ -70,8 +70,9 @@ public struct ClassFilter: Sendable, Equatable {
 
 /// The Tasks segment's three lists under one chip.
 public struct ClassTasks: Sendable, Equatable {
-    /// Still to do, in Today's order. Classwork is listed here — it belongs to its class — but it
-    /// is done in class and never owed, so it is left out of `owedCount`.
+    /// Still to do, in Today's order, then the class's classwork. Classwork is listed here — it
+    /// belongs to its class — but it is done in class and never owed: it is never a catch-up,
+    /// always comes after the owed homework, and is left out of `owedCount`.
     public let toDo: [WorkItem]
     /// Done, the latest deadline first.
     public let done: [AssignmentListing]
@@ -89,10 +90,10 @@ public struct ClassTasks: Sendable, Equatable {
         now: Date = Date()
     ) {
         let mine = assignments.filter { filter.includes(classroomId: $0.classroomId, chipID: chipID) }
-        toDo = WorkItem.ordered(
-            mine.filter { !HomeworkProgress.isDone($0) }
-                .map { WorkItem.homework($0, homeworkXP: homeworkXP, now: now) }
-        )
+        let open = mine.filter { !HomeworkProgress.isDone($0) }
+            .map { WorkItem.homework($0, homeworkXP: homeworkXP, now: now) }
+        // Not by date alone: a dated classwork row would otherwise outrank homework due later.
+        toDo = WorkItem.ordered(open.filter { !$0.isClasswork }) + WorkItem.ordered(open.filter(\.isClasswork))
         done = mine.filter(HomeworkProgress.isDone).sorted { a, b in
             let da = Self.deadline(a.dueAt), db = Self.deadline(b.dueAt)
             return da != db ? da > db : a.id > b.id
@@ -111,7 +112,7 @@ public struct ClassTasks: Sendable, Equatable {
     public var resultsCount: Int { assessmentResults.count + midtermResults.count }
 
     /// How many of `toDo` are owed: homework only. This, not `toDo.count`, is the To do count.
-    public var owedCount: Int { toDo.filter { !($0.assignment?.isClasswork ?? false) }.count }
+    public var owedCount: Int { toDo.filter { !$0.isClasswork }.count }
 
     /// Undated work sorts as the oldest, so it ends a newest-first list.
     static func deadline(_ raw: String?) -> Date { raw.flatMap(JSONCoding.parseServerDate) ?? .distantPast }

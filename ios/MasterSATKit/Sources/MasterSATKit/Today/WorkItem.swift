@@ -51,7 +51,8 @@ public struct WorkItem: Identifiable, Sendable, Equatable {
     public let title: String
     /// "Math ODD · 2 quizzes · 1 word set" — where it is from, and what is inside.
     public let detail: String
-    /// Past its deadline and still owed. Drawn "Catch up · Tue" — never "Overdue".
+    /// Past its deadline and still owed. Drawn "Catch up · Tue" — never "Overdue". Classwork is
+    /// never owed, so it is never a catch-up, whatever date it carries.
     public let catchUp: Bool
     /// The deadline as the server wrote it, for the app's `DueLabel`. Nil for a lesson.
     public let dueAt: String?
@@ -74,9 +75,12 @@ public struct WorkItem: Identifiable, Sendable, Equatable {
         return nil
     }
 
+    /// Classwork is a homework row that is done in class, not owed.
+    public var isClasswork: Bool { assignment?.isClasswork ?? false }
+
     public static func homework(_ homework: AssignmentListing, homeworkXP: Int?, now: Date = Date()) -> WorkItem {
         let due = homework.dueAt.flatMap(JSONCoding.parseServerDate)
-        let catchUp = due.map { $0 < now } ?? false
+        let catchUp = !homework.isClasswork && (due.map { $0 < now } ?? false)
         var cap: Int?
         if let homeworkXP, homeworkXP > 0, !catchUp, !homework.isClasswork { cap = homeworkXP }
         let detail = [homework.classroomName ?? "", contentsLine(homework)]

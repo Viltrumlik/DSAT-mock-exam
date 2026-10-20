@@ -117,4 +117,19 @@ private func room(_ id: Int, _ name: String, _ subject: String) throws -> Classr
         #expect(tasks.owedCount == 2)
         #expect(tasks.done.map(\.id).contains(8), "classwork the teacher marked done is listed as done")
     }
+
+    @Test("Dated classwork is never a catch-up and never outranks owed homework")
+    func datedClasswork() throws {
+        let (filter, assignments, midterms) = try fixture()
+        let withClasswork = assignments + [
+            try W.homework(9, due: F.at(-5), extra: ["category": "CLASSWORK"]),
+            try W.homework(10, due: F.at(0.5), extra: ["category": "CLASSWORK"]),
+        ]
+        let tasks = ClassTasks(assignments: withClasswork, midterms: midterms, filter: filter, chipID: "math", homeworkXP: 15, now: F.now)
+        // Owed first (the catch-up before the one still ahead), then the classwork, by date.
+        #expect(tasks.toDo.compactMap { $0.assignment?.id } == [2, 1, 9, 10])
+        #expect(tasks.toDo.map(\.catchUp) == [true, false, false, false])
+        #expect(tasks.toDo.map(\.isClasswork) == [false, false, true, true])
+        #expect(tasks.owedCount == 2)
+    }
 }
