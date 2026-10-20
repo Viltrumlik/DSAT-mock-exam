@@ -46,7 +46,8 @@ final class CelebrationCenter {
     }
 
     func landed(_ flight: XPFlight) {
-        flights.removeAll { $0.id == flight.id }
+        guard let index = flights.firstIndex(where: { $0.id == flight.id }) else { return }
+        flights.remove(at: index)
         landedCount += 1
     }
 
@@ -127,7 +128,7 @@ struct XPFlightView: View {
             .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
             .task {
                 withAnimation(Motion.pop) { phase = 1 }
-                try? await Task.sleep(for: .milliseconds(380))
+                do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
                 withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
             }
     }
