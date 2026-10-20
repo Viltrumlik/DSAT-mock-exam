@@ -51,3 +51,16 @@ def credentials() -> dict:
         "mobile": re.sub(r"\D", "", getattr(settings, "LCUP_MOBILE", "") or ""),
         "password": getattr(settings, "LCUP_PASSWORD", "") or "",
     }
+
+
+def attendance_checks_enabled() -> bool:
+    return bool(getattr(settings, "LCUP_ATTENDANCE_CHECKS_ENABLED", False))
+
+
+def free_trial_lessons() -> int:
+    """How many lessons a trial student comes to for free (owner, 2026-10-20: one — "birinchi darsda")."""
+    try:
+        lessons = int(getattr(settings, "LCUP_FREE_TRIAL_LESSONS", 1))
+    except (TypeError, ValueError):
+        lessons = 1
+    return max(lessons, 0)
