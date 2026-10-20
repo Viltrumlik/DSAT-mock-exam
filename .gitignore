@@ -49,6 +49,7 @@ email_previews/
 
 # iOS
 ios/**/.build/
+ios/**/build/
 ios/**/*.xcodeproj
 ios/**/xcuserdata/
 ios/**/.swiftpm/
