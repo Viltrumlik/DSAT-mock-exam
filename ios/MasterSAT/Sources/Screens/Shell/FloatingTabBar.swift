@@ -28,6 +28,7 @@ struct FloatingTabBar: View {
     @Binding var selection: AppTab
     let onReselect: (AppTab) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var pill
     @State private var taps: [AppTab: Int] = [:]
 
@@ -35,11 +36,12 @@ struct FloatingTabBar: View {
         HStack(spacing: 0) {
             ForEach(AppTab.allCases, id: \.self) { tab in
                 Button {
-                    taps[tab, default: 0] += 1
+                    // No bounce under Reduce Motion: the icon's trigger simply never changes.
+                    if !reduceMotion { taps[tab, default: 0] += 1 }
                     if selection == tab {
                         onReselect(tab)
                     } else {
-                        withAnimation(Motion.snappy) { selection = tab }
+                        withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = tab }
                     }
                 } label: {
                     VStack(spacing: 3) {

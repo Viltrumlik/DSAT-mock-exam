@@ -12,6 +12,10 @@ struct CertificateCode: Identifiable {
 /// property, so a push on Words does not re-evaluate the Today stack. Pages are pushed as
 /// `AppLink` values and every tab root declares `navigationDestination(for: AppLink.self)` —
 /// value routes declared at the stack root, the only kind that does not drop a push.
+///
+/// One sheet at a time: the Me sheet and the certificate sheet never stand together. Asking
+/// for one while the other is up closes the other and holds the request until the root calls
+/// `sheetDismissed`. Every write is guarded so a no-op never notifies the root.
 @MainActor
 @Observable
 final class AppRouter {
@@ -25,35 +29,70 @@ final class AppRouter {
     var showingMe = false
     var certificate: CertificateCode?
 
+    /// A sheet asked for while the other sheet was up; opened once that one has gone.
+    /// Nothing renders from it, so it stays out of observation.
+    @ObservationIgnored private var queued: AppLink?
+
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
         switch link.placement {
         case .tab(let tab):
-            showingMe = false
+            queued = nil
+            closeSheets()
             select(tab)
             popToRoot(tab)
         case .push(let tab, let page):
-            showingMe = false
+            queued = nil
+            closeSheets()
             select(tab)
             popToRoot(tab)
             push(page, on: tab)
         case .me(let page):
-            me = NavigationPath()
+            if certificate != nil {
+                certificate = nil
+                queued = link
+                return
+            }
+            if !me.isEmpty { me = NavigationPath() }
             if let page { me.append(page) }
-            showingMe = true
+            if !showingMe { showingMe = true }
         case .certificate(let code):
-            certificate = CertificateCode(code: code)
+            if showingMe {
+                showingMe = false
+                queued = link
+                return
+            }
+            if certificate?.code != code { certificate = CertificateCode(code: code) }
         case .web:
             if let url = link.webURL(base: baseURL) { openURL(url) }
         }
     }
 
     func openMe() {
+        if certificate != nil {
+            certificate = nil
+            queued = .profile
+            return
+        }
         if !me.isEmpty { me = NavigationPath() }
-        showingMe = true
+        if !showingMe { showingMe = true }
+    }
+
+    /// The root calls this from BOTH sheets' `onDismiss`, so a sheet asked for while another
+    /// was up opens once the first has gone (SwiftUI cannot present a second sheet from the
+    /// same view while one is dismissing).
+    func sheetDismissed(baseURL: URL, openURL: (URL) -> Void) {
+        guard let next = queued else { return }
+        queued = nil
+        open(next, baseURL: baseURL, openURL: openURL)
     }
 
     /// Tapping the open tab again goes back to its top, as everywhere on iOS.
     func reselect(_ tab: AppTab) { popToRoot(tab) }
+
+    private func closeSheets() {
+        if showingMe { showingMe = false }
+        if certificate != nil { certificate = nil }
+    }
 
     private func select(_ tab: AppTab) {
         if selection != tab { selection = tab }
