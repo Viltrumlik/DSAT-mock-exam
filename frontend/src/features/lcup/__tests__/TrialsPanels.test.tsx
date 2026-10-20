@@ -76,7 +76,7 @@ describe("/ops/trials panels", () => {
     const rows = Array.from(host.querySelectorAll("tbody tr")).map((tr) => tr.textContent ?? "");
     expect(rows).toHaveLength(3);
     expect(rows[0]).toContain("Sardor Nazarov");
-    expect(rows[0]).toContain("Free trial used");
+    expect(rows[0]).toContain("Came after the free lesson");
     expect(rows[1]).toContain("Came to trial (2026-10-16)");
     expect(rows[2]).toContain("Not come yet");
     expect(host.querySelector<HTMLAnchorElement>('a[href="/ops/students/41"]')?.textContent).toBe("Sardor Nazarov");

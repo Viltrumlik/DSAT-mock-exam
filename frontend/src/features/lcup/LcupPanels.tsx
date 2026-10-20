@@ -754,7 +754,7 @@ export function AttendancePushesPanel() {
 // ── trials ───────────────────────────────────────────────────────────────
 
 const TRIAL_STATE: Record<TrialState, { label: string; tone: string }> = {
-  used: { label: "Free trial used", tone: "font-semibold text-amber-700 dark:text-amber-300" },
+  used: { label: "Came after the free lesson", tone: "font-semibold text-amber-700 dark:text-amber-300" },
   came: { label: "Came to trial", tone: "font-semibold text-sky-700 dark:text-sky-300" },
   not_yet: { label: "Not come yet", tone: "text-muted-foreground" },
 };
