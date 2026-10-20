@@ -265,6 +265,21 @@ class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
         send_lesson_checks(now=at(self.MONDAY, 16, 5))
         self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk, second.pk})
 
+    def test_a_class_that_has_not_started_yet_has_no_lesson_to_check(self):
+        type(self.room).objects.filter(pk=self.room.pk).update(start_date=date(2026, 10, 26))
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {})
+        self.assertFalse(self.sent().exists())
+
+    def test_the_first_day_of_a_class_is_a_lesson(self):
+        type(self.room).objects.filter(pk=self.room.pk).update(start_date=self.MONDAY)
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"classes": 1, "notified": 1})
+
+    def test_a_class_whose_lesson_time_cannot_be_read_is_never_due(self):
+        type(self.room).objects.filter(pk=self.room.pk).update(lesson_time="")
+        for hour in (0, 12, 16, 18, 23):
+            self.assertEqual(send_lesson_checks(now=at(self.MONDAY, hour, 5)), {})
+        self.assertFalse(self.sent().exists())
+
     @override_settings(LCUP_ATTENDANCE_CHECKS_ENABLED=False)
     def test_nothing_while_the_switch_is_off(self):
         self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"skipped": "off"})
@@ -289,3 +304,13 @@ class PreviewCommandTests(FollowupsFixtureMixin, TestCase):
     def test_a_clean_class_is_shown_as_silent(self):
         self.mark(self.MONDAY, self.student("Ali", "Valiyev"), "PRESENT")
         self.assertIn("Middle G23: nothing to say — no notification", self.preview())
+
+    def test_a_class_that_has_not_started_yet_is_not_listed(self):
+        self.mark(self.MONDAY, self.student("Bek", "Rahimov"), "ABSENT")
+        type(self.room).objects.filter(pk=self.room.pk).update(start_date=date(2026, 10, 26))
+        self.assertEqual(self.preview().strip(), "No paired class meets on 2026-10-19.")
+
+    def test_a_class_whose_lesson_time_cannot_be_read_is_not_listed_just_as_it_is_never_due(self):
+        self.mark(self.MONDAY, self.student("Bek", "Rahimov"), "ABSENT")
+        type(self.room).objects.filter(pk=self.room.pk).update(lesson_time="")
+        self.assertEqual(self.preview().strip(), "No paired class meets on 2026-10-19.")

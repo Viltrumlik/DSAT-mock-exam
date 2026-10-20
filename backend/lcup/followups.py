@@ -288,27 +288,39 @@ logger = logging.getLogger("lcup.followups")
 CHECK_GRACE_MINUTES = 30
 
 
-def due_lessons(now) -> list[tuple]:
-    """``(classroom, day)`` of each paired class whose lesson ended in the last CHECK_GRACE_MINUTES
-    and whose register is still open."""
-    from classes.attendance_window import marking_window
+def _meeting_classes(day: date, *, order_by: str = "pk"):
+    """``(classroom, (starts_at, ends_at))`` of each active paired class that holds a lesson on ``day``:
+    its weekday is one of the class's, the class has begun (``start_date`` is the school's own answer
+    and wins, as in ``classes.attendance_auto``), and its ``lesson_time`` can be read — without a
+    readable time there is no end to wait for and no close to name. The one place that decides it,
+    so the beat and the preview cannot disagree about which classes there is a message for."""
     from classes.lesson_schedule import lesson_interval, lesson_weekdays
     from classes.models import Classroom
 
-    day = timezone.localdate(now)
     rooms = Classroom.objects.filter(
         is_active=True,
         lcup_group_link__status=GroupLinkStatus.CONFIRMED,
         lcup_group_link__deleted_in_lcup_at__isnull=True,
-    ).order_by("pk")
-    due = []
+    ).order_by(order_by)
     for room in rooms:
         if day.weekday() not in lesson_weekdays(room):
             continue
-        interval = lesson_interval(room, day)
-        if interval is None:  # a lesson_time nobody can read: no end to wait for
+        if room.start_date and day < room.start_date:
             continue
-        ends_at = interval[1]
+        interval = lesson_interval(room, day)
+        if interval is None:
+            continue
+        yield room, interval
+
+
+def due_lessons(now) -> list[tuple]:
+    """``(classroom, day)`` of each paired class whose lesson ended in the last CHECK_GRACE_MINUTES
+    and whose register is still open."""
+    from classes.attendance_window import marking_window
+
+    day = timezone.localdate(now)
+    due = []
+    for room, (_starts_at, ends_at) in _meeting_classes(day):
         if ends_at <= now < ends_at + timedelta(minutes=CHECK_GRACE_MINUTES) and now < marking_window(room, day)[1]:
             due.append((room, day))
     return due
@@ -370,20 +382,10 @@ def send_lesson_checks(*, now=None) -> dict:
 
 
 def preview_lesson_checks(day: date) -> list[dict]:
-    """Every paired class that meets on ``day``, with what its teachers would be told had its lesson
-    just ended. Sends nothing and ignores the switch — it is how the owner sees the messages first."""
-    from classes.lesson_schedule import lesson_weekdays
-    from classes.models import Classroom
-
-    rooms = Classroom.objects.filter(
-        is_active=True,
-        lcup_group_link__status=GroupLinkStatus.CONFIRMED,
-        lcup_group_link__deleted_in_lcup_at__isnull=True,
-    ).order_by("name")
+    """Every paired class that holds a lesson on ``day``, with what its teachers would be told had that
+    lesson just ended. Sends nothing and ignores the switch — it is how the owner sees the messages first."""
     rows = []
-    for room in rooms:
-        if day.weekday() not in lesson_weekdays(room):
-            continue
+    for room, _interval in _meeting_classes(day, order_by="name"):
         check = lesson_check(room, day)
         rows.append({
             "classroom": room.name,
