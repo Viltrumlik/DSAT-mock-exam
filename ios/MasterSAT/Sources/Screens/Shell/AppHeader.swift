@@ -63,6 +63,12 @@ private struct PillPulse { var scale = 1.0 }
 struct XPPill: View {
     @Environment(RewardsStore.self) private var rewards
     @Environment(CelebrationCenter.self) private var celebrations
+    /// Every tab has its own header and so its own pill, and a flight must land on the one on
+    /// screen. Only the pill that is showing reports where it is, and it reports again the
+    /// moment it appears — a pill that is back on screen has not moved, so geometry alone
+    /// would never tell the center that the target is its again.
+    @State private var frame = CGRect.zero
+    @State private var showing = false
 
     var body: some View {
         if let xp = rewards.xp {
@@ -84,7 +90,15 @@ struct XPPill: View {
                 }
             }
             .sensoryFeedback(.increase, trigger: celebrations.landedCount)
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { celebrations.setXPTarget($0) }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                frame = $0
+                if showing { celebrations.setXPTarget($0) }
+            }
+            .onAppear {
+                showing = true
+                if frame != .zero { celebrations.setXPTarget(frame) }
+            }
+            .onDisappear { showing = false }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(xp) XP")
             #if DEBUG

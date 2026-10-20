@@ -5,8 +5,9 @@ import MasterSATKit
 /// student opens it for — where they stand, what they have, what they can spend.
 ///
 /// A tab root, so it owns its `NavigationStack` and may hide the bar; the pages it pushes keep
-/// theirs, because on a pushed screen that bar carries the only Back button there is. The cards
-/// push with `NavigationLink { … } label:`; only a link from outside (the router) pushes a value.
+/// theirs, because on a pushed screen that bar carries the only Back button there is. Every card
+/// pushes an `AppLink` VALUE, resolved at this stack's root: a value lands in the bound path, so
+/// re-tapping the tab (or a link to it) can pop it; a `NavigationLink { destination }` cannot be.
 ///
 /// Two requests feed the cards: `/rewards/me/` (points, coins, XP, strikes) and the default
 /// leaderboard (global, all time) — the same slice and the same `standing` rule the
@@ -45,9 +46,7 @@ struct RewardsHubView: View {
                         .cardStyle(padding: 8)
                     }
 
-                    NavigationLink {
-                        LeaderboardView()
-                    } label: {
+                    NavigationLink(value: AppLink.leaderboard) {
                         RewardsHubCard(
                             title: "Leaderboard",
                             subtitle: "Ranked on XP — what you earn by turning up and doing the work.",
@@ -58,9 +57,7 @@ struct RewardsHubView: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink {
-                        PointsView()
-                    } label: {
+                    NavigationLink(value: AppLink.points) {
                         RewardsHubCard(
                             title: "Points",
                             subtitle: "What you've earned for showing up and doing the work.",
@@ -71,9 +68,7 @@ struct RewardsHubView: View {
                     }
                     .buttonStyle(.plain)
 
-                    NavigationLink {
-                        ShopView()
-                    } label: {
+                    NavigationLink(value: AppLink.shop) {
                         RewardsHubCard(
                             title: "Shop",
                             subtitle: "Spend what you've earned. Coins keep; strikes don't — miss a lesson and they're gone.",

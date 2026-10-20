@@ -24,21 +24,21 @@ struct HomePulse: View {
             } else {
                 LazyVGrid(columns: columns, spacing: 10) {
                     ForEach(levels) { chip in
-                        NavigationLink { RoadmapView() } label: {
+                        NavigationLink(value: AppLink.roadmap) {
                             PulseChip(icon: "graduationcap.fill", tone: Theme.info,
                                       label: chip.subjectLabel, value: chip.levelLabel, detail: chip.detail)
                         }
                         .buttonStyle(.plain)
                     }
                     if let rewards {
-                        NavigationLink { LeaderboardView() } label: {
+                        NavigationLink(value: AppLink.leaderboard) {
                             PulseChip(icon: "trophy.fill", tone: Theme.success,
                                       label: "XP", value: ScoreText.string(rewards.xp))
                         }
                         .buttonStyle(.plain)
                         .overlay(alignment: .topTrailing) { RewardsExplainButton(explainer: .xp) }
 
-                        NavigationLink { ShopView() } label: {
+                        NavigationLink(value: AppLink.shop) {
                             PulseChip(icon: "circle.circle.fill", tone: Theme.subjectEnglish,
                                       label: "Points", value: ScoreText.string(rewards.points),
                                       detail: "\(ScoreText.string(rewards.coins)) \(rewards.coins == 1 ? "coin" : "coins")")
@@ -135,7 +135,7 @@ struct LiveQuizRunningCard: View {
                             ? "\(room.classroomName) · \(room.title). Join with the code on the board."
                             : "In your classes. Join with the code on the board."
                     )
-                    NavigationLink { LiveQuizJoinView() } label: { Text("Join the quiz") }
+                    NavigationLink(value: AppLink.liveQuiz(sessionId: nil)) { Text("Join the quiz") }
                         .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 }
                 .cardStyle(padding: 18)

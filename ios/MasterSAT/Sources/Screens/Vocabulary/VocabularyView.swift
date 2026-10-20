@@ -15,6 +15,14 @@ import MasterSATKit
 struct VocabularyView: View {
     enum Tab: Hashable { case bank, mine, homework }
 
+    /// Pages this root pushes. Each is a VALUE on `path` — a `NavigationLink { destination }`
+    /// never enters the path, so re-tapping the tab (or a link to it) could not pop it. The
+    /// title travels with the id: the page shows it while its own load is in flight.
+    enum Route: Hashable {
+        case section(id: Int, title: String)
+        case set(id: Int, title: String, assignmentId: Int? = nil)
+    }
+
     private enum Phase: Equatable { case loading, loaded, failed }
 
     @Binding var path: NavigationPath
@@ -100,6 +108,13 @@ struct VocabularyView: View {
             .navigationTitle("Words")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .section(let id, let title): VocabSectionView(sectionId: id, title: title)
+                case .set(let id, let title, let assignmentId):
+                    VocabSetView(setId: id, title: title, assignmentId: assignmentId)
+                }
+            }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .refreshable { await load() }
             .onAppear { Task { await load() } }
@@ -151,9 +166,7 @@ struct VocabularyView: View {
             } else {
                 VStack(spacing: 14) {
                     ForEach(sections) { section in
-                        NavigationLink {
-                            VocabSectionView(sectionId: section.id, title: section.title)
-                        } label: {
+                        NavigationLink(value: Route.section(id: section.id, title: section.title)) {
                             VocabSectionCard(section: section)
                         }
                         .buttonStyle(.plain)
@@ -184,9 +197,7 @@ struct VocabularyView: View {
             } else {
                 VStack(spacing: 14) {
                     ForEach(mySets) { set in
-                        NavigationLink {
-                            VocabSetView(setId: set.id, title: set.title)
-                        } label: {
+                        NavigationLink(value: Route.set(id: set.id, title: set.title)) {
                             VocabSetCard(
                                 title: set.title,
                                 wordCount: set.wordCount,
@@ -347,9 +358,7 @@ struct VocabHomeworkGroupCard: View {
                     FlowLayout(spacing: 6) {
                         if let name = group.classroomName, !name.isEmpty {
                             if let classroomId = group.classroomId {
-                                NavigationLink {
-                                    LearnMoreClassroomView(classroomId: classroomId)
-                                } label: {
+                                NavigationLink(value: AppLink.classroom(id: classroomId)) {
                                     classroomChip(name)
                                 }
                                 .buttonStyle(.plain)
@@ -372,9 +381,7 @@ struct VocabHomeworkGroupCard: View {
             }
 
             ForEach(group.sets) { set in
-                NavigationLink {
-                    VocabSetView(setId: set.id, title: set.title, assignmentId: group.assignmentId)
-                } label: {
+                NavigationLink(value: VocabularyView.Route.set(id: set.id, title: set.title, assignmentId: group.assignmentId)) {
                     VocabSetCard(
                         title: set.title,
                         wordCount: set.wordCount,
