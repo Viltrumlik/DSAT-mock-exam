@@ -10,6 +10,9 @@ struct TodayHero: View {
     let loaded: Bool
     /// Bumped by Today when the week has just been finished.
     let bounce: Int
+    /// The homework did not load and nothing is cached: the ring knows nothing about the week,
+    /// so it claims nothing — least of all "nothing due".
+    var failed = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drawn = 0.0
@@ -17,6 +20,7 @@ struct TodayHero: View {
     private var tone: Color { progress.isComplete ? Theme.success : Theme.accent }
 
     private var headline: String {
+        if failed { return "This week" }
         if !loaded { return "This week" }
         if progress.total == 0 { return "Nothing due this week" }
         if progress.isComplete { return "All done this week" }
@@ -24,6 +28,7 @@ struct TodayHero: View {
     }
 
     private var subline: String {
+        if failed { return "Your homework didn't load. Try again below." }
         if !loaded || progress.total == 0 { return "Homework due by Sunday shows up here." }
         return "\(progress.done) of \(progress.total) handed in"
     }
@@ -41,7 +46,7 @@ struct TodayHero: View {
                         .font(.system(size: 26, weight: .heavy))
                         .foregroundStyle(tone)
                 } else {
-                    Text(loaded && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
+                    Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
                         .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
                         .contentTransition(.numericText())
                 }
@@ -74,7 +79,7 @@ struct TodayHero: View {
         .onAppear { draw(progress.fraction) }
         .onChange(of: progress) { _, now in draw(now.fraction) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("This week: \(headline). \(subline)")
+        .accessibilityLabel(failed ? "This week: your homework didn't load." : "This week: \(headline). \(subline)")
     }
 
     private func draw(_ fraction: Double) {
@@ -99,6 +104,28 @@ struct AllDoneCard: View {
         }
         .frame(maxWidth: .infinity)
         .cardStyle(padding: 20)
+    }
+}
+
+/// Today's lessons did not load. Said quietly, beside the work that did: a missing list must not
+/// read as "no lessons tonight".
+struct LessonsUnavailableRow: View {
+    let retry: @MainActor () async -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.warning)
+            Text("Today's lessons didn't load.")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+            Button("Try again") { Task { await retry() } }
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.accent)
+        }
+        .padding(.horizontal, 4)
     }
 }
 

@@ -29,6 +29,8 @@ struct TodayView: View {
     @State private var todayEvents: [ScheduleEvent] = []
     @State private var homeworkXP: Int?
     @State private var loadError: String?
+    /// Today's lessons could not be fetched — so an empty list says nothing about tonight.
+    @State private var lessonsFailed = false
     @State private var hasLoaded = false
     @State private var seenResults: Set<Int> = []
     @State private var lastWeek: TodayPlan.Progress?
@@ -44,6 +46,9 @@ struct TodayView: View {
     private var plan: TodayPlan {
         TodayPlan(assignments: assignments, events: todayEvents, homeworkXP: homeworkXP, calendar: ServicesTime.calendar)
     }
+
+    /// The homework did not load and there is none from an earlier load to show instead.
+    private var homeworkFailed: Bool { loadError != nil && assignments.isEmpty }
 
     private var freshResult: MidtermListing? { TodayPlan.freshResult(midterms, seen: seenResults) }
 
@@ -91,7 +96,7 @@ struct TodayView: View {
                         }
                     }
 
-                    TodayHero(progress: plan.week, loaded: hasLoaded, bounce: heroBounce)
+                    TodayHero(progress: plan.week, loaded: hasLoaded, bounce: heroBounce, failed: homeworkFailed)
                         .stagger(1, shown: shown)
 
                     upNext.stagger(2, shown: shown)
@@ -138,6 +143,11 @@ struct TodayView: View {
             // Not `.task`: a TabView never tears its tabs down, so a task would load once per
             // launch. This runs on every return to the tab and every pop back to the root.
             .onAppear {
+                // A return, not the first look: the stories, the live-quiz banner and the surveys
+                // load themselves per `refreshTick`, so they are told to look again — a quiz
+                // started in class must appear, and a finished one must lose its Join. (The first
+                // look needs no bump: they load as they appear.)
+                if shown { refreshTick += 1 }
                 shown = true
                 loadSeen()
                 Task { await load() }
@@ -174,11 +184,17 @@ struct TodayView: View {
             } else if let loadError, assignments.isEmpty {
                 // A failed load is never "all caught up".
                 RetryNotice(message: loadError) { await load() }
+            } else if plan.isAllClear && lessonsFailed {
+                // Nothing owed, but tonight's lessons are unknown: not "all caught up" either.
+                RetryNotice(message: "Couldn't load today's lessons.") { await load() }
             } else if plan.isAllClear {
                 AllDoneCard()
             } else {
                 ForEach(next.items) { item in
                     row(item).transition(rowTransition)
+                }
+                if lessonsFailed {
+                    LessonsUnavailableRow { await load() }
                 }
             }
         }
@@ -224,25 +240,36 @@ struct TodayView: View {
         async let papers = student.midterms()
         async let rules = rewardsAPI.rules()
         async let events = student.schedule(from: now.addingTimeInterval(-day), to: now.addingTimeInterval(day))
+        var freshHomework: [AssignmentListing]?
         do {
-            let freshHomework = try await homework
-            let freshPapers = try await papers
-            withAnimation(rowAnimation) {
-                assignments = freshHomework
-                midterms = freshPapers
-            }
-            loadError = nil
-            // Today is opened most, so it keeps the device's reminders in step with the work.
-            await session.notifications.reschedule(assignments: freshHomework, midterms: freshPapers)
-            await session.notifications.announceResults(midterms: freshPapers)
+            freshHomework = try await homework
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
             loadError = error.localizedDescription
         }
+        // Midterms only feed the result card and the reminder prompt: whether they load never
+        // decides whether the homework is shown, and the other way round.
+        let freshPapers = try? await papers
+        withAnimation(rowAnimation) {
+            if let freshHomework { assignments = freshHomework }
+            if let freshPapers { midterms = freshPapers }
+        }
+        if let freshHomework {
+            loadError = nil
+            // Today is opened most, so it keeps the device's reminders in step with the work.
+            await session.notifications.reschedule(assignments: freshHomework, midterms: freshPapers ?? midterms)
+        }
+        if let freshPapers { await session.notifications.announceResults(midterms: freshPapers) }
         // The XP labels and today's lessons are extras: losing either never takes the page down.
+        // Losing the lessons is remembered, though: an empty list must not read as a free evening.
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
-        if let fresh = try? await events { todayEvents = fresh }
+        do {
+            todayEvents = try await events
+            lessonsFailed = false
+        } catch {
+            lessonsFailed = true
+        }
         hasLoaded = true
         celebrateIfWeekJustFinished()
     }
