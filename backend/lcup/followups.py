@@ -326,16 +326,25 @@ def due_lessons(now) -> list[tuple]:
     return due
 
 
-def teachers_of(classroom):
-    """Who runs the class — owner and teachers (lc-up's teachers on a paired class), not assistants."""
+def teachers_by_room(room_ids) -> dict[int, list]:
+    """Who runs each class — owner and teachers (lc-up's teachers on a paired class), not assistants —
+    in one query. The one definition: the lesson-end message and /ops/trials both name these people."""
     seats = ClassroomMembership.objects.filter(
-        classroom=classroom,
+        classroom_id__in=room_ids,
         role__in=ClassroomMembership.MANAGER_ROLES,
         status=ClassroomMembership.STATUS_ACTIVE,
         user__is_active=True,
         user__is_frozen=False,
     ).select_related("user").order_by("pk")
-    return [seat.user for seat in seats]
+    teachers: dict[int, list] = {}
+    for seat in seats:
+        teachers.setdefault(seat.classroom_id, []).append(seat.user)
+    return teachers
+
+
+def teachers_of(classroom):
+    """Who runs the class (see ``teachers_by_room``)."""
+    return teachers_by_room([classroom.pk]).get(classroom.pk, [])
 
 
 def check_key(classroom_id: int, day: date) -> str:

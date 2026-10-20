@@ -3,7 +3,9 @@ from datetime import date
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
+from classes.models import ClassroomMembership
 from lcup.testing import FollowupsFixtureMixin
+from users.models import User
 
 
 @override_settings(LCUP_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
@@ -44,3 +46,21 @@ class FollowupsApiTests(FollowupsFixtureMixin, TestCase):
         self.assertEqual((missing["name"], missing["reason"], missing["student"]), ("Jasur Toshmatov", "no_account", None))
         self.assertIn("next lc-up sync", missing["reason_text"])
         self.assertEqual(body["pending"], 3)
+
+    def test_the_teachers_named_are_the_ones_the_lesson_end_message_reaches(self):
+        for username, flags in (("frozenteach", {"is_frozen": True}), ("goneteach", {"is_active": False})):
+            left = User.objects.create_user(
+                None, password=None, username=username, role="teacher", subject="math", first_name=username, last_name="Teacher"
+            )
+            User.objects.filter(pk=left.pk).update(**flags)
+            ClassroomMembership.objects.create(classroom=self.room, user=left, role=ClassroomMembership.ROLE_TEACHER)
+        reached = User.objects.create_user(
+            None, password=None, username="coteach", role="teacher", subject="math", first_name="Cora", last_name="Teacher"
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=reached, role=ClassroomMembership.ROLE_TEACHER)
+        self.lcup_member("Not Yet", user=self.student("Not", "Yet"), status="trial", since=self.MONDAY)
+        self.lcup_member("Jasur Toshmatov", status="trial", since=self.MONDAY)
+
+        body = self.get(self.admin).json()
+        self.assertEqual(body["trials"][0]["teachers"], ["Tess Teacher", "Cora Teacher"])
+        self.assertEqual(body["not_on_list"][0]["teachers"], ["Tess Teacher", "Cora Teacher"])

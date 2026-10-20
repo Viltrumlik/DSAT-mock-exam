@@ -458,21 +458,13 @@ class FollowupsView(_AdminView):
         from datetime import date
 
         from .conf import free_trial_lessons
-        from .followups import REASON_TEXT, STATE_ORDER, missing_seats, pending, trial_seats
+        from .followups import REASON_TEXT, STATE_ORDER, missing_seats, pending, teachers_by_room, trial_seats
 
         seats = trial_seats()
         missing = missing_seats()
         room_ids = {seat.classroom_id for seat in seats} | {seat.classroom_id for seat in missing}
         rooms = Classroom.objects.in_bulk(room_ids)
-        teachers = defaultdict(list)
-        for seat in (
-            ClassroomMembership.objects.filter(
-                classroom_id__in=room_ids,
-                role__in=ClassroomMembership.MANAGER_ROLES,
-                status=ClassroomMembership.STATUS_ACTIVE,
-            ).select_related("user").order_by("pk")
-        ):
-            teachers[seat.classroom_id].append(user_ref(seat.user)["name"])
+        teachers = {room_id: [user_ref(t)["name"] for t in team] for room_id, team in teachers_by_room(room_ids).items()}
         users = User.objects.in_bulk({s.user_id for s in seats if s.user_id} | {s.user_id for s in missing if s.user_id})
         ordered = sorted(seats, key=lambda s: (STATE_ORDER[s.state], s.since or date.max, s.name))
         return Response({
@@ -483,7 +475,7 @@ class FollowupsView(_AdminView):
                     "name": seat.name,
                     "student": user_ref(users.get(seat.user_id)),
                     "classroom": room_ref(rooms.get(seat.classroom_id)),
-                    "teachers": teachers[seat.classroom_id],
+                    "teachers": teachers.get(seat.classroom_id, []),
                     "since": seat.since,
                     "lessons": seat.lessons,
                     "first_lesson": seat.lesson_dates[0] if seat.lesson_dates else None,
@@ -499,7 +491,7 @@ class FollowupsView(_AdminView):
                     "phone": seat.phone,
                     "student": user_ref(users.get(seat.user_id)),
                     "classroom": room_ref(rooms.get(seat.classroom_id)),
-                    "teachers": teachers[seat.classroom_id],
+                    "teachers": teachers.get(seat.classroom_id, []),
                     "lcup_status": seat.lcup_status,
                     "since": seat.since,
                     "reason": seat.reason,
