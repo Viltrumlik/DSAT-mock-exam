@@ -15,7 +15,10 @@ class Command(BaseCommand):
         parser.add_argument("--day", help="YYYY-MM-DD (default: today)")
 
     def handle(self, *args, **options):
-        day = parse_date(options["day"]) if options.get("day") else timezone.localdate()
+        try:
+            day = parse_date(options["day"]) if options.get("day") else timezone.localdate()
+        except ValueError:  # well-formed but impossible, such as 2026-02-30
+            day = None
         if day is None:
             raise CommandError("--day must be YYYY-MM-DD")
         rows = preview_lesson_checks(day)

@@ -380,7 +380,7 @@ def send_lesson_checks(*, now=None) -> dict:
             for teacher in teachers:
                 row = notify(
                     teacher, event=EVENT_ATTENDANCE_CHECK, title=check.title, body=check.body,
-                    link_url=f"/classes/{room.pk}?tab=attendance", dedupe_key=key,
+                    link_url=f"/teacher/classrooms/{room.pk}?tab=attendance", dedupe_key=key,
                 )
                 if row is not None:
                     counts["notified"] += 1

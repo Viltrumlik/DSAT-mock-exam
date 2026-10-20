@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from io import StringIO
 
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
@@ -240,7 +240,7 @@ class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
         [row] = self.sent()
         self.assertEqual(row.recipient, self.teacher)
         self.assertEqual(row.category, "CLASSROOM")
-        self.assertEqual(row.link_url, f"/classes/{self.room.pk}?tab=attendance")
+        self.assertEqual(row.link_url, f"/teacher/classrooms/{self.room.pk}?tab=attendance")
         self.assertEqual(row.dedupe_key, f"attcheck:{self.room.pk}:2026-10-19")
         self.assertIn("Absent: Bek Rahimov", row.body)
         self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 10)), {"already_sent": 1})
@@ -292,6 +292,11 @@ class PreviewCommandTests(FollowupsFixtureMixin, TestCase):
         out = StringIO()
         call_command("attendance_check_preview", "--day", "2026-10-19", stdout=out)
         return out.getvalue()
+
+    def test_a_day_that_is_not_a_date_is_refused_in_one_line_not_a_traceback(self):
+        for bad in ("nonsense", "2026-02-30"):
+            with self.assertRaisesMessage(CommandError, "--day must be YYYY-MM-DD"):
+                call_command("attendance_check_preview", "--day", bad, stdout=StringIO())
 
     def test_it_prints_each_class_as_if_its_lesson_had_ended_and_sends_nothing(self):
         self.mark(self.MONDAY, self.student("Bek", "Rahimov"), "ABSENT")
