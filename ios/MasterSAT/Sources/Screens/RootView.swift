@@ -158,7 +158,7 @@ struct RootTabView: View {
                 .contentMargins(.bottom, barClearance)
                 .tag(AppTab.today)
                 .toolbar(.hidden, for: .tabBar)
-            ClassHubView(path: $router.classes)
+            ClassView(path: $router.classes)
                 .contentMargins(.bottom, barClearance)
                 .tag(AppTab.classes)
                 .toolbar(.hidden, for: .tabBar)
