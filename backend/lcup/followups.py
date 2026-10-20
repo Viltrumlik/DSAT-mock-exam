@@ -26,10 +26,11 @@ from datetime import date
 
 from django.utils import timezone
 
+from classes.models import ClassroomMembership
 from classes.models_attendance import AttendanceRecord
 
 from .conf import free_trial_lessons, lcup_enabled
-from .models import GroupLinkStatus, LcupMembership
+from .models import GroupLinkStatus, LcupMembership, LinkStatus
 
 TRIAL = "trial"
 FROZEN = "frozen"
@@ -113,3 +114,73 @@ def trial_seats(*, classroom=None, before: date | None = None) -> list[TrialSeat
             TrialSeat(membership.pk, membership.student.name.strip(), user_id, membership.group.classroom_id, since, dates)
         )
     return seats
+
+
+REASON_NEEDS_REVIEW = "needs_review"
+REASON_IGNORED = "ignored"
+REASON_NO_ACCOUNT = "no_account"
+REASON_NOT_SEATED = "not_seated"
+
+#: What /ops/trials says about each — the admin fixes it where the sentence points.
+REASON_TEXT = {
+    REASON_NEEDS_REVIEW: "Their account match waits for review in lc-up → Students.",
+    REASON_IGNORED: "Marked “ignored” in lc-up → Students.",
+    REASON_NO_ACCOUNT: "No account here yet — the next lc-up sync creates one.",
+    REASON_NOT_SEATED: "Has an account here, but no seat in this class.",
+}
+
+
+@dataclass(frozen=True)
+class MissingSeat:
+    lcup_student_id: int
+    name: str
+    phone: str
+    user_id: int | None
+    classroom_id: int
+    lcup_status: str
+    since: date | None
+    reason: str
+
+
+def missing_seats(*, classroom=None) -> list[MissingSeat]:
+    """lc-up members of paired groups (not frozen — lc-up takes no attendance for them) with no active
+    student seat in the paired class, each with why."""
+    if not lcup_enabled():
+        return []
+    memberships = live_memberships().exclude(lcup_status=FROZEN).select_related("student", "group")
+    if classroom is not None:
+        memberships = memberships.filter(group__classroom=classroom)
+    memberships = list(memberships.order_by("group__classroom_id", "student__name"))
+    seated = set(
+        ClassroomMembership.objects.filter(
+            classroom_id__in={m.group.classroom_id for m in memberships},
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+        ).values_list("classroom_id", "user_id")
+    )
+    missing = []
+    for membership in memberships:
+        link = membership.student
+        if link.user_id and (membership.group.classroom_id, link.user_id) in seated:
+            continue
+        if link.user_id:
+            reason = REASON_NOT_SEATED
+        elif link.status == LinkStatus.NEEDS_REVIEW:
+            reason = REASON_NEEDS_REVIEW
+        elif link.status == LinkStatus.IGNORED:
+            reason = REASON_IGNORED
+        else:
+            reason = REASON_NO_ACCOUNT
+        missing.append(
+            MissingSeat(
+                link.lcup_student_id, link.name.strip(), link.phone, link.user_id,
+                membership.group.classroom_id, membership.lcup_status, _since(membership), reason,
+            )
+        )
+    return missing
+
+
+def pending(seats: list[TrialSeat], missing: list[MissingSeat]) -> int:
+    """What waits on the front desk: trial students who came (the free lesson or more), and every
+    member missing from a class list. A trial student who has not come yet waits on nobody."""
+    return sum(1 for seat in seats if seat.state != STATE_NOT_YET) + len(missing)

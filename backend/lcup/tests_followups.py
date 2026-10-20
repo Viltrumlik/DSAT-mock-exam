@@ -3,8 +3,20 @@ from datetime import date, datetime
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from lcup.followups import STATE_CAME, STATE_NOT_YET, STATE_USED, trial_seats
-from lcup.models import GroupLinkStatus, LcupGroupLink
+from classes.models import ClassroomMembership
+from lcup.followups import (
+    REASON_IGNORED,
+    REASON_NEEDS_REVIEW,
+    REASON_NO_ACCOUNT,
+    REASON_NOT_SEATED,
+    STATE_CAME,
+    STATE_NOT_YET,
+    STATE_USED,
+    missing_seats,
+    pending,
+    trial_seats,
+)
+from lcup.models import GroupLinkStatus, LcupGroupLink, LinkStatus
 from lcup.testing import FollowupsFixtureMixin
 
 
@@ -88,3 +100,51 @@ class TrialSeatTests(FollowupsFixtureMixin, TestCase):
     def test_nothing_while_the_integration_is_off(self):
         self.lcup_member("Ali Valiyev", user=self.student("Ali", "Valiyev"), status="trial")
         self.assertEqual(trial_seats(), [])
+
+
+@override_settings(LCUP_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
+class MissingSeatTests(FollowupsFixtureMixin, TestCase):
+    def test_a_seated_member_is_not_missing(self):
+        self.lcup_member("Ali Valiyev", user=self.student("Ali", "Valiyev"))
+        self.assertEqual(missing_seats(), [])
+
+    def test_why_each_member_is_missing(self):
+        self.lcup_member("Linked NoSeat", user=self.student("Linked", "NoSeat", seat=False))
+        self.lcup_member("In Review", link_status=LinkStatus.NEEDS_REVIEW)
+        self.lcup_member("Was Ignored", link_status=LinkStatus.IGNORED)
+        self.lcup_member("Brand New")
+        reasons = {seat.name: seat.reason for seat in missing_seats()}
+        self.assertEqual(reasons, {
+            "Linked NoSeat": REASON_NOT_SEATED,
+            "In Review": REASON_NEEDS_REVIEW,
+            "Was Ignored": REASON_IGNORED,
+            "Brand New": REASON_NO_ACCOUNT,
+        })
+
+    def test_a_removed_seat_is_no_seat(self):
+        ali = self.student("Ali", "Valiyev")
+        ClassroomMembership.objects.filter(user=ali).update(status=ClassroomMembership.STATUS_REMOVED)
+        self.lcup_member("Ali Valiyev", user=ali)
+        self.assertEqual([seat.reason for seat in missing_seats()], [REASON_NOT_SEATED])
+
+    def test_a_frozen_member_is_not_expected_on_the_list(self):
+        self.lcup_member("Frozen One", status="frozen")
+        self.assertEqual(missing_seats(), [])
+
+    def test_a_trial_member_missing_is_listed_with_its_status(self):
+        self.lcup_member("Jasur Toshmatov", status="trial", since=date(2026, 10, 19))
+        [seat] = missing_seats()
+        self.assertEqual((seat.lcup_status, seat.since, seat.classroom_id), ("trial", date(2026, 10, 19), self.room.pk))
+
+    def test_pending_counts_what_waits_on_the_desk(self):
+        came = self.student("Came", "Once")
+        self.lcup_member("Came Once", user=came, status="trial", since=date(2026, 10, 12))
+        self.mark(date(2026, 10, 12), came, "PRESENT")
+        self.lcup_member("Not Yet", user=self.student("Not", "Yet"), status="trial")
+        self.lcup_member("Brand New")
+        self.assertEqual(pending(trial_seats(), missing_seats()), 2)
+
+    @override_settings(LCUP_ENABLED=False)
+    def test_nothing_while_the_integration_is_off(self):
+        self.lcup_member("Brand New")
+        self.assertEqual(missing_seats(), [])
