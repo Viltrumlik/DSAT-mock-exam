@@ -194,6 +194,28 @@ enum WorkFixtures {
         #expect(plan.week.isComplete)
     }
 
+    @Test("Classwork is done in class: never owed, never on Up next, never in the week's ring")
+    func classwork() throws {
+        let classwork: [String: Any] = ["category": "CLASSWORK"]
+        let onlyClasswork = TodayPlan(assignments: [
+            try W.homework(1, due: nil, extra: classwork),
+            try W.homework(2, due: F.at(2), extra: classwork),
+        ], events: [], homeworkXP: 15, now: F.now, calendar: F.calendar)
+        #expect(onlyClasswork.upNext(limit: 6).items.isEmpty)
+        #expect(onlyClasswork.upNext(limit: 6).more == 0)
+        #expect(onlyClasswork.isAllClear)
+        #expect(onlyClasswork.week == TodayPlan.Progress(done: 0, total: 0))
+
+        let mixed = TodayPlan(assignments: [
+            try W.homework(3, due: F.at(2), extra: classwork),
+            try W.homework(4, due: F.at(3)),
+            try W.homework(5, due: F.at(4), status: "SUBMITTED"),
+        ], events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(mixed.homework.compactMap { $0.assignment?.id } == [4])
+        #expect(!mixed.isAllClear)
+        #expect(mixed.week == TodayPlan.Progress(done: 1, total: 2))
+    }
+
     @Test("Up to +N comes from the live HOMEWORK rule, and only when it pays XP")
     func homeworkXP() {
         #expect(TodayPlan.homeworkXP([RewardRule(event: "HOMEWORK", label: "Homework", points: 15)]) == 15)

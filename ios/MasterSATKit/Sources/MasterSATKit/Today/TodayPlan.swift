@@ -2,8 +2,11 @@ import Foundation
 
 /// The Today tab, worked out: the homework still owed across every class, today's lessons
 /// still to come, and how much of this week's homework is done.
+///
+/// Classwork is not homework. It is done in class and has no deadline by rule, so it is never
+/// owed: it is left out of everything here — Up next, "all clear", and the week's ring.
 public struct TodayPlan: Sendable, Equatable {
-    /// Homework due this week, done against all of it — the hero ring.
+    /// Homework due this week, done against all of it — the hero ring. Classwork is not counted.
     public struct Progress: Sendable, Equatable {
         public let done: Int
         public let total: Int
@@ -18,7 +21,7 @@ public struct TodayPlan: Sendable, Equatable {
         public var isComplete: Bool { total > 0 && done == total }
     }
 
-    /// Every homework still owed, in `WorkItem.ordered` order.
+    /// Every homework still owed (never classwork), in `WorkItem.ordered` order.
     public let homework: [WorkItem]
     /// Today's lessons (and papers sat in the centre) not yet over, by start time.
     public let lessons: [WorkItem]
@@ -31,13 +34,14 @@ public struct TodayPlan: Sendable, Equatable {
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
+        let assigned = assignments.filter { !$0.isClasswork }
         homework = WorkItem.ordered(
-            assignments
+            assigned
                 .filter { !HomeworkProgress.isDone($0) }
                 .map { WorkItem.homework($0, homeworkXP: homeworkXP, now: now) }
         )
         lessons = Self.todaysLessons(events, now: now, calendar: calendar)
-        week = Self.week(assignments, now: now, calendar: calendar)
+        week = Self.week(assigned, now: now, calendar: calendar)
     }
 
     /// Nothing owed and nothing left today.
@@ -89,7 +93,8 @@ public struct TodayPlan: Sendable, Equatable {
             .map { WorkItem.lesson($0.event, start: $0.start) }
     }
 
-    /// Monday to Sunday — the learning center's week (ODD classes meet Mon, Wed, Fri).
+    /// Monday to Sunday — the learning center's week (ODD classes meet Mon, Wed, Fri). The
+    /// caller passes homework only; classwork has no place in the ring.
     static func week(_ assignments: [AssignmentListing], now: Date, calendar: Calendar) -> Progress {
         var weekCalendar = calendar
         weekCalendar.firstWeekday = 2
