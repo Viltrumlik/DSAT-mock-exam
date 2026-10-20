@@ -26,6 +26,9 @@ struct TodayView: View {
 
     @State private var assignments: [AssignmentListing] = []
     @State private var midterms: [MidtermListing] = []
+    /// The midterms have loaded at least once in this view's life, so an empty `midterms` means
+    /// the student has none rather than that the fetch failed.
+    @State private var midtermsKnown = false
     @State private var todayEvents: [ScheduleEvent] = []
     @State private var homeworkXP: Int?
     @State private var loadError: String?
@@ -251,6 +254,7 @@ struct TodayView: View {
         // Midterms only feed the result card and the reminder prompt: whether they load never
         // decides whether the homework is shown, and the other way round.
         let freshPapers = try? await papers
+        if freshPapers != nil { midtermsKnown = true }
         withAnimation(rowAnimation) {
             if let freshHomework { assignments = freshHomework }
             if let freshPapers { midterms = freshPapers }
@@ -258,7 +262,13 @@ struct TodayView: View {
         if let freshHomework {
             loadError = nil
             // Today is opened most, so it keeps the device's reminders in step with the work.
-            await session.notifications.reschedule(assignments: freshHomework, midterms: freshPapers ?? midterms)
+            // `reschedule` clears every pending reminder and rebuilds from what it is given, so
+            // it is only given midterms that are known: with them unknown (a failed fetch, and
+            // none loaded yet) it is skipped, the exam reminders stay, and the homework ones
+            // follow on the next load that has both.
+            if midtermsKnown {
+                await session.notifications.reschedule(assignments: freshHomework, midterms: midterms)
+            }
         }
         if let freshPapers { await session.notifications.announceResults(midterms: freshPapers) }
         // The XP labels and today's lessons are extras: losing either never takes the page down.
