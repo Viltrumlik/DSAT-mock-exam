@@ -309,6 +309,11 @@ LCUP_ATTENDANCE_PUSH_FROM = os.getenv("LCUP_ATTENDANCE_PUSH_FROM", "").strip()
 # lc-up balance is below zero is frozen; paying lifts it. Off by default; off lets go every student it froze.
 LCUP_DEBT_FREEZE_ENABLED = os.getenv("LCUP_DEBT_FREEZE_ENABLED", "False").lower() == "true"
 LCUP_DEBT_FREEZE_DAY = int(os.getenv("LCUP_DEBT_FREEZE_DAY", "6") or 6)
+# Follow-ups (docs/superpowers/plans/2026-10-20-attendance-followups.md): as a paired class's lesson ends, its
+# teachers get one notification — absent without a reason, the free trial used, lc-up members missing from the
+# list. Off by default; literal "true" only. The free trial is this many lessons (the owner: one).
+LCUP_ATTENDANCE_CHECKS_ENABLED = os.getenv("LCUP_ATTENDANCE_CHECKS_ENABLED", "False").lower() == "true"
+LCUP_FREE_TRIAL_LESSONS = int(os.getenv("LCUP_FREE_TRIAL_LESSONS", "1") or 1)
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.
@@ -654,6 +659,13 @@ CELERY_BEAT_SCHEDULE = {
     "lcup-sync": {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
+    },
+    # The lesson-end check (lcup.followups, owner 2026-10-20): each paired class's teachers are told who is
+    # absent without a reason, who has had the free trial and whom lc-up lists but the register cannot show —
+    # once, as the lesson ends. Returns at once while LCUP_ATTENDANCE_CHECKS_ENABLED is off.
+    "lcup-attendance-checks": {
+        "task": "lcup.tasks.attendance_checks",
+        "schedule": crontab(minute="*/5"),
     },
     # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
     # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,

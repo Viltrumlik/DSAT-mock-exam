@@ -13,6 +13,7 @@ export const lcupKeys = {
   unlinked: [...ROOT, "unlinked"] as const,
   accounts: [...ROOT, "accounts"] as const,
   attendancePushes: [...ROOT, "attendance-pushes"] as const,
+  followups: [...ROOT, "followups"] as const,
 };
 
 /** Polled: a queued sync finishes in the worker, and the run list is where it shows up. */
@@ -38,6 +39,16 @@ export function useLcupUnlinked() {
 
 export function useLcupAttendancePushes() {
   return useQuery({ queryKey: lcupKeys.attendancePushes, queryFn: () => lcupApi.attendancePushes() });
+}
+
+/** /ops/trials and the sidebar's count share this one query; a minute is fresh enough for a desk. */
+export function useLcupFollowups(options: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: lcupKeys.followups,
+    queryFn: () => lcupApi.followups(),
+    refetchInterval: 60_000,
+    enabled: options.enabled ?? true,
+  });
 }
 
 export function useLcupAccounts() {

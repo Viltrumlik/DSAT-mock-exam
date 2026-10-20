@@ -28,4 +28,5 @@ urlpatterns = [
     path("finance/payments/", views.FinancePaymentsView.as_view(), name="lcup-finance-payments"),
     path("finance/exempt/<int:pk>/", views.FinanceExemptView.as_view(), name="lcup-finance-exempt"),
     path("attendance/pushes/", views.AttendancePushListView.as_view(), name="lcup-attendance-pushes"),
+    path("followups/", views.FollowupsView.as_view(), name="lcup-followups"),
 ]

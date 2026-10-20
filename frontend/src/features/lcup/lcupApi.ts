@@ -116,6 +116,43 @@ export interface LcupAttendancePush {
   sent_at: string | null;
 }
 
+export type TrialState = "not_yet" | "came" | "used";
+export type MissingReason = "needs_review" | "ignored" | "no_account" | "not_seated";
+
+export interface LcupTrialRow {
+  membership_id: number;
+  name: string;
+  student: LcupUserRef | null;
+  classroom: LcupRef;
+  teachers: string[];
+  since: string | null;
+  lessons: number;
+  first_lesson: string | null;
+  last_lesson: string | null;
+  state: TrialState;
+}
+
+export interface LcupMissingRow {
+  lcup_student_id: number;
+  name: string;
+  phone: string;
+  student: LcupUserRef | null;
+  classroom: LcupRef;
+  teachers: string[];
+  lcup_status: string;
+  since: string | null;
+  reason: MissingReason;
+  reason_text: string;
+}
+
+/** /ops/trials (backend lcup.followups): read-only; a student is activated in lc-up itself. */
+export interface LcupFollowups {
+  free_trial_lessons: number;
+  trials: LcupTrialRow[];
+  not_on_list: LcupMissingRow[];
+  pending: number;
+}
+
 export const lcupApi = {
   async status(): Promise<LcupStatus> {
     const { data } = await api.get<LcupStatus>("/lcup/status/");
@@ -190,6 +227,10 @@ export const lcupApi = {
   },
   async attendancePushes(): Promise<LcupAttendancePush[]> {
     const { data } = await api.get<LcupAttendancePush[]>("/lcup/attendance/pushes/");
+    return data;
+  },
+  async followups(): Promise<LcupFollowups> {
+    const { data } = await api.get<LcupFollowups>("/lcup/followups/");
     return data;
   },
   async reissue(userId: number): Promise<LcupAccount> {

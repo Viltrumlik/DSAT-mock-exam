@@ -444,3 +444,60 @@ class AttendancePushListView(_AdminView):
             for p in pushes
         ])
 
+
+
+# ── follow-ups (/ops/trials) ──────────────────────────────────────────────
+
+
+class FollowupsView(_AdminView):
+    """lc-up's trial students, by the lessons they came to since the trial began, and the members no
+    class list shows (lcup.followups). Read-only: a student is activated in lc-up, or linked in
+    /ops/lcup, and leaves these lists within one sync."""
+
+    def get(self, request):
+        from datetime import date
+
+        from .conf import free_trial_lessons
+        from .followups import REASON_TEXT, STATE_ORDER, missing_seats, pending, teachers_by_room, trial_seats
+
+        seats = trial_seats()
+        missing = missing_seats()
+        room_ids = {seat.classroom_id for seat in seats} | {seat.classroom_id for seat in missing}
+        rooms = Classroom.objects.in_bulk(room_ids)
+        teachers = {room_id: [user_ref(t)["name"] for t in team] for room_id, team in teachers_by_room(room_ids).items()}
+        users = User.objects.in_bulk({s.user_id for s in seats if s.user_id} | {s.user_id for s in missing if s.user_id})
+        ordered = sorted(seats, key=lambda s: (STATE_ORDER[s.state], s.since or date.max, s.name))
+        return Response({
+            "free_trial_lessons": free_trial_lessons(),
+            "trials": [
+                {
+                    "membership_id": seat.membership_id,
+                    "name": seat.name,
+                    "student": user_ref(users.get(seat.user_id)),
+                    "classroom": room_ref(rooms.get(seat.classroom_id)),
+                    "teachers": teachers.get(seat.classroom_id, []),
+                    "since": seat.since,
+                    "lessons": seat.lessons,
+                    "first_lesson": seat.lesson_dates[0] if seat.lesson_dates else None,
+                    "last_lesson": seat.lesson_dates[-1] if seat.lesson_dates else None,
+                    "state": seat.state,
+                }
+                for seat in ordered
+            ],
+            "not_on_list": [
+                {
+                    "lcup_student_id": seat.lcup_student_id,
+                    "name": seat.name,
+                    "phone": seat.phone,
+                    "student": user_ref(users.get(seat.user_id)),
+                    "classroom": room_ref(rooms.get(seat.classroom_id)),
+                    "teachers": teachers.get(seat.classroom_id, []),
+                    "lcup_status": seat.lcup_status,
+                    "since": seat.since,
+                    "reason": seat.reason,
+                    "reason_text": REASON_TEXT[seat.reason],
+                }
+                for seat in missing
+            ],
+            "pending": pending(seats, missing),
+        })

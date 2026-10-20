@@ -55,3 +55,12 @@ def follow_student(self, link_pk: int) -> dict:
         return follow_link(default_client(), link, until=timezone.localdate() - timedelta(days=1))
     finally:
         cache.delete(RUNNING_KEY)
+
+
+@shared_task(name="lcup.tasks.attendance_checks")
+def attendance_checks() -> dict:
+    """Each paired class's teachers, as its lesson ends (lcup.followups). Returns at once while
+    LCUP_ATTENDANCE_CHECKS_ENABLED is off."""
+    from .followups import send_lesson_checks
+
+    return send_lesson_checks()

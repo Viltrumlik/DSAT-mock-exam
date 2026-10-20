@@ -71,6 +71,10 @@ EVENT_SUPPORT_ATTENDANCE = "SUPPORT_ATTENDANCE"
 EVENT_REWARD_EARNED = "REWARD_EARNED"
 EVENT_SHOP_ORDER_READY = "SHOP_ORDER_READY"
 EVENT_STRIKE_LOST = "STRIKE_LOST"
+#: A paired class's lesson has ended and its register wants a look: absent without a reason, a
+#: trial student who has had the free lesson, an lc-up member missing from the list (owner,
+#: 2026-10-20). Teachers only; one per class per lesson (lcup.followups).
+EVENT_ATTENDANCE_CHECK = "ATTENDANCE_CHECK"
 EVENT_SYSTEM = "SYSTEM"
 
 # Learning-center events. The doubled prefix is this module's own: every notification code
@@ -94,6 +98,7 @@ EVENT_CATEGORY = {
     # System: to a student this is news about their class, not about the platform.
     EVENT_TELEGRAM_GROUP: CATEGORY_CLASSROOM,
     EVENT_COMMENT_REPLY: CATEGORY_CLASSROOM,
+    EVENT_ATTENDANCE_CHECK: CATEGORY_CLASSROOM,
     EVENT_SUPPORT_BOOKED: CATEGORY_SUPPORT,
     EVENT_SUPPORT_CANCELLED: CATEGORY_SUPPORT,
     EVENT_SUPPORT_REMINDER: CATEGORY_SUPPORT,
@@ -138,4 +143,6 @@ PUSH_EVENTS = frozenset({
     EVENT_EVENT_REMINDER,
     EVENT_EVENT_CHANGED,
     EVENT_EVENT_CANCELLED,
+    # The register closes two hours after the lesson; a teacher who has left the room needs it now.
+    EVENT_ATTENDANCE_CHECK,
 })
