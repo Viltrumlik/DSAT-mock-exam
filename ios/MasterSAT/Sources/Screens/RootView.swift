@@ -33,7 +33,10 @@ struct RootView: View {
                 // finishing refreshes the user, which moves `phase` on.
                 CompleteProfileView(user: user, onDone: {})
             } else {
+                // One router, rewards store and celebration queue per signed-in identity: another
+                // account signing in gets fresh ones, never the last account's.
                 RootTabView(user: user)
+                    .id(user.id)
             }
         }
     }
@@ -151,7 +154,7 @@ struct RootTabView: View {
         // the `TabView` and `safeAreaPadding` on its children both left the last row under the
         // bar; `contentMargins` travels by environment and reaches the pushed pages too.
         TabView(selection: $router.selection) {
-            DashboardView(user: user, path: $router.today)
+            TodayView(user: user, path: $router.today)
                 .contentMargins(.bottom, barClearance)
                 .tag(AppTab.today)
                 .toolbar(.hidden, for: .tabBar)
