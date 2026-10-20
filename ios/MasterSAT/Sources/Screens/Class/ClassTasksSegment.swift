@@ -4,12 +4,30 @@ import MasterSATKit
 /// Which list the Tasks segment shows.
 enum ClassTaskFilter: Hashable { case toDo, done, results }
 
+/// Where one source of the Tasks lists stands — homework, or midterms. Only `loaded` may say
+/// "nothing here": a list that has not arrived, or could not, is a spinner or a retry, never an
+/// empty state.
+enum ClassSourceState: Equatable {
+    case pending, loaded, failed
+
+    /// A fetch ended. A failure keeps what was already loaded (the last good data stays on
+    /// screen) and, with nothing to keep, becomes `failed`.
+    mutating func finish(succeeded: Bool) {
+        if succeeded { self = .loaded } else if self != .loaded { self = .failed }
+    }
+}
+
 /// To do · Done · Results for the classes under the chip. Every row pushes a value resolved at
 /// the Class root.
 struct ClassTasksSegment: View {
     let tasks: ClassTasks
+    /// Homework feeds To do, Done and the assessment results; midterms feed the midterm results.
+    let homework: ClassSourceState
+    let midterms: ClassSourceState
     @Binding var filter: ClassTaskFilter
     let zoom: Namespace.ID
+    /// Reloads both sources — what a failed list's "Try again" runs.
+    let retry: @MainActor () async -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -21,14 +39,17 @@ struct ClassTasksSegment: View {
 
     private var items: [PillTabs<ClassTaskFilter>.Item] {
         // Classwork is listed under To do but never owed, so the badge counts homework only.
-        let owed = tasks.owedCount
+        // A badge needs its source loaded: an unloaded list is not a count of zero.
+        let owed = homework == .loaded ? tasks.owedCount : 0
+        let doneCount = homework == .loaded ? tasks.done.count : 0
+        let resultsCount = homework == .loaded && midterms == .loaded ? tasks.resultsCount : 0
         return [
             .init(tab: .toDo, title: "To do", icon: "tray",
                   count: owed == 0 ? nil : owed, highlighted: owed > 0),
             .init(tab: .done, title: "Done", icon: "checkmark.circle",
-                  count: tasks.done.isEmpty ? nil : tasks.done.count),
+                  count: doneCount == 0 ? nil : doneCount),
             .init(tab: .results, title: "Results", icon: "chart.bar.fill",
-                  count: tasks.resultsCount == 0 ? nil : tasks.resultsCount),
+                  count: resultsCount == 0 ? nil : resultsCount),
         ]
     }
 
@@ -52,9 +73,25 @@ struct ClassTasksSegment: View {
         }
     }
 
+    /// What stands in for a list that has not arrived: a spinner while it is on its way, a retry
+    /// when it failed.
+    @ViewBuilder
+    private func unavailable(_ state: ClassSourceState, message: String) -> some View {
+        if state == .failed {
+            RetryNotice(message: message, retry: retry)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .accessibilityLabel("Loading")
+        }
+    }
+
     @ViewBuilder
     private var toDo: some View {
-        if tasks.toDo.isEmpty {
+        if homework != .loaded {
+            unavailable(homework, message: "Your homework didn't load. Check your connection and try again.")
+        } else if tasks.toDo.isEmpty {
             DashedEmpty(title: "Nothing to do here", hint: "New work from your teachers shows up here.")
         } else {
             VStack(spacing: 10) {
@@ -73,7 +110,9 @@ struct ClassTasksSegment: View {
 
     @ViewBuilder
     private var done: some View {
-        if tasks.done.isEmpty {
+        if homework != .loaded {
+            unavailable(homework, message: "Your homework didn't load. Check your connection and try again.")
+        } else if tasks.done.isEmpty {
             DashedEmpty(title: "Nothing handed in yet", hint: "Work you hand in lands here.")
         } else {
             VStack(spacing: 10) {
@@ -88,13 +127,18 @@ struct ClassTasksSegment: View {
         }
     }
 
+    /// Quizzes follow the homework fetch, midterms their own. Each part shows once its source is
+    /// in; what is still on its way is a spinner and what failed is a retry, so "No results yet"
+    /// is said only when both sources have answered.
     @ViewBuilder
     private var results: some View {
-        if tasks.resultsCount == 0 {
+        let assessmentsIn = homework == .loaded
+        let midtermsIn = midterms == .loaded
+        if assessmentsIn && midtermsIn && tasks.resultsCount == 0 {
             DashedEmpty(title: "No results yet", hint: "Marked quizzes and midterm scores land here.")
         } else {
             VStack(alignment: .leading, spacing: 10) {
-                if !tasks.assessmentResults.isEmpty {
+                if assessmentsIn && !tasks.assessmentResults.isEmpty {
                     DotHeading(title: "Assessments", count: tasks.assessmentResults.count, tone: Theme.success)
                     ForEach(tasks.assessmentResults) { entry in
                         if let attemptId = entry.progress?.attemptId {
@@ -107,9 +151,9 @@ struct ClassTasksSegment: View {
                         }
                     }
                 }
-                if !tasks.midtermResults.isEmpty {
+                if midtermsIn && !tasks.midtermResults.isEmpty {
                     DotHeading(title: "Midterms", count: tasks.midtermResults.count, tone: Theme.amber)
-                        .padding(.top, tasks.assessmentResults.isEmpty ? 0 : 8)
+                        .padding(.top, assessmentsIn && !tasks.assessmentResults.isEmpty ? 8 : 0)
                     ForEach(tasks.midtermResults) { midterm in
                         if let attemptId = midterm.attemptId {
                             // The report carries the score, the certificate and the skills to work on.
@@ -121,6 +165,14 @@ struct ClassTasksSegment: View {
                             MidtermResultRow(midterm: midterm, opens: false)
                         }
                     }
+                }
+                if !(assessmentsIn && midtermsIn) {
+                    let shownAny = (assessmentsIn && !tasks.assessmentResults.isEmpty)
+                        || (midtermsIn && !tasks.midtermResults.isEmpty)
+                    let failed = homework == .failed || midterms == .failed
+                    unavailable(failed ? .failed : .pending, message: shownAny
+                        ? "Some of your results didn't load. Check your connection and try again."
+                        : "Your results didn't load. Check your connection and try again.")
                 }
             }
         }

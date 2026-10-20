@@ -27,6 +27,10 @@ struct ClassView: View {
     @State private var hasLoaded = false
     @State private var assignments: [AssignmentListing] = []
     @State private var midterms: [MidtermListing] = []
+    /// Whether each of those has arrived. Empty is not "loaded": until `.loaded`, the Tasks lists
+    /// show a spinner or a retry, never "Nothing to do here", and no badge counts them.
+    @State private var homeworkState = ClassSourceState.pending
+    @State private var midtermState = ClassSourceState.pending
     /// The next two weeks of lessons, for the class cards. The calendar loads its own month.
     @State private var upcoming: [ScheduleEvent] = []
     @State private var liveRooms: [LiveQuizSummary] = []
@@ -60,10 +64,10 @@ struct ClassView: View {
     private var chipItems: [PillTabs<String>.Item] {
         filter.chips.map { chip in
             // Owed homework only, as the To do badge counts it: classwork is done in class.
-            let open = assignments.filter {
+            let open = homeworkState == .loaded ? assignments.filter {
                 filter.includes(classroomId: $0.classroomId, chipID: chip.id)
                     && !HomeworkProgress.isDone($0) && !$0.isClasswork
-            }.count
+            }.count : 0
             let icon = chip.subject == .math ? "function" : chip.subject == .english ? "book.closed" : "square.grid.2x2"
             return PillTabs<String>.Item(tab: chip.id, title: chip.label, icon: icon, count: open > 0 ? open : nil)
         }
@@ -163,7 +167,14 @@ struct ClassView: View {
             Group {
                 switch segment {
                 case .tasks:
-                    ClassTasksSegment(tasks: tasks, filter: $taskFilter, zoom: zoom)
+                    ClassTasksSegment(
+                        tasks: tasks,
+                        homework: homeworkState,
+                        midterms: midtermState,
+                        filter: $taskFilter,
+                        zoom: zoom,
+                        retry: { await load() }
+                    )
                 case .schedule:
                     ClassScheduleSegment(
                         classIds: activeChip == ClassFilter.allID ? nil : Set(visibleClasses.map(\.id)),
@@ -204,6 +215,9 @@ struct ClassView: View {
         let live = LiveQuizAPI(client: session.client)
         let start = Date.now
         let end = Calendar.current.date(byAdding: .day, value: 14, to: start) ?? start
+        // A list that failed shows a spinner again while this retries.
+        if homeworkState == .failed { homeworkState = .pending }
+        if midtermState == .failed { midtermState = .pending }
         async let rooms = classroomsAPI.classrooms()
         async let homework = student.assignments()
         async let papers = student.midterms()
@@ -226,15 +240,22 @@ struct ClassView: View {
         } catch {
             classesError = error.localizedDescription
         }
-        // Each of the rest fails on its own and keeps what was on screen.
-        if let fresh = try? await homework { withAnimation(motion) { assignments = fresh } }
-        if let fresh = try? await papers { midterms = fresh }
+        // The classes have answered, so their cards and any error can show now; the lists below
+        // wait on their own sources.
+        hasLoaded = true
+        // Each of the rest fails on its own and keeps what was on screen. Homework and midterms
+        // also say whether they arrived: a failure with nothing loaded is a retry, not "nothing".
+        let freshHomework = try? await homework
+        if let freshHomework { withAnimation(motion) { assignments = freshHomework } }
+        homeworkState.finish(succeeded: freshHomework != nil)
+        let freshMidterms = try? await papers
+        if let freshMidterms { midterms = freshMidterms }
+        midtermState.finish(succeeded: freshMidterms != nil)
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
         if let fresh = try? await lessons { upcoming = fresh }
         if let fresh = try? await quizzes {
             liveRooms = fresh.filter { $0.status != .finished && $0.status != .terminated }
         }
-        hasLoaded = true
         await loadTelegram()
     }
 
