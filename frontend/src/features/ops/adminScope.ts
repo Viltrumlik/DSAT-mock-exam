@@ -37,6 +37,8 @@ export const ADMIN_OPS_SECTIONS: readonly string[] = [
   // lc-up (the centre's CRM): the owner decided on 2026-10-12 that admins and super admins run
   // the pairing and review in /ops/lcup.
   "/ops/lcup",
+  // Trials (plan 2026-10-20): the desk's follow-ups — trial students and members missing from a class list.
+  "/ops/trials",
   // lc-up money (debtors, the debt freeze, payments): admins and super admins, on its own page.
   "/ops/finance",
   // The SMS panel (plan 2026-10-18): the owner chose admins and super admins — they see and send.

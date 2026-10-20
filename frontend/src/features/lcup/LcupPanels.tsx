@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import Link from "next/link";
 import { useOrgClassrooms } from "@/features/org/orgHooks";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
@@ -14,11 +15,13 @@ import {
   type LcupRun,
   type LinkStatus,
   type StudentFilter,
+  type TrialState,
 } from "./lcupApi";
 import {
   useLcupAccounts,
   useLcupAttendancePushes,
   useLcupAction,
+  useLcupFollowups,
   useLcupGroups,
   useLcupStatus,
   useLcupStudents,
@@ -744,6 +747,100 @@ export function AttendancePushesPanel() {
           </tr>
         );
       })}
+    </DenseTable>
+  );
+}
+
+// ── trials ───────────────────────────────────────────────────────────────
+
+const TRIAL_STATE: Record<TrialState, { label: string; tone: string }> = {
+  used: { label: "Free trial used", tone: "font-semibold text-amber-700 dark:text-amber-300" },
+  came: { label: "Came to trial", tone: "font-semibold text-sky-700 dark:text-sky-300" },
+  not_yet: { label: "Not come yet", tone: "text-muted-foreground" },
+};
+
+const PERSON_LINK = "text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
+
+/** lc-up's trial students, neediest first — activate them in lc-up and they leave within one sync. */
+export function TrialStudentsPanel() {
+  const q = useLcupFollowups();
+  if (q.isLoading) return <Loading />;
+  if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  if (!q.data.trials.length) return <p className="text-[13px] text-muted-foreground">No one is on trial in lc-up right now.</p>;
+  return (
+    <DenseTable
+      caption="Trial students"
+      head={
+        <>
+          <th scope="col" className={TH}>Student</th>
+          <th scope="col" className={TH}>Class</th>
+          <th scope="col" className={TH}>Teacher</th>
+          <th scope="col" className={TH}>Trial since</th>
+          <th scope="col" className={TH_R}>Lessons came</th>
+          <th scope="col" className={TH}>Status</th>
+        </>
+      }
+    >
+      {q.data.trials.map((row) => (
+        <tr key={row.membership_id} className={TR}>
+          <td className={cn(TD, "font-medium")}>
+            {row.student ? <Link href={`/ops/students/${row.student.id}`} className={PERSON_LINK}>{row.name}</Link> : row.name}
+          </td>
+          <td className={TD}>{row.classroom.name}</td>
+          <td className={TD}>{row.teachers.join(", ") || "—"}</td>
+          <td className={TD}>{row.since ?? "—"}</td>
+          <td className={TD_R}>{row.lessons}</td>
+          <td className={cn(TD, TRIAL_STATE[row.state].tone)}>
+            {TRIAL_STATE[row.state].label}
+            {row.state === "came" && row.first_lesson ? ` (${row.first_lesson})` : ""}
+          </td>
+        </tr>
+      ))}
+    </DenseTable>
+  );
+}
+
+/** lc-up members of a paired group that no class list shows — their teacher cannot mark them. */
+export function NotOnListPanel() {
+  const q = useLcupFollowups();
+  if (q.isLoading) return <Loading />;
+  if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  if (!q.data.not_on_list.length) {
+    return <p className="text-[13px] text-muted-foreground">Every lc-up member of a paired group is on their class list.</p>;
+  }
+  return (
+    <DenseTable
+      caption="lc-up members not on their class list"
+      head={
+        <>
+          <th scope="col" className={TH}>Student</th>
+          <th scope="col" className={TH}>Class</th>
+          <th scope="col" className={TH}>lc-up status</th>
+          <th scope="col" className={TH}>Member since</th>
+          <th scope="col" className={TH}>Why</th>
+        </>
+      }
+    >
+      {q.data.not_on_list.map((row) => (
+        <tr key={`${row.lcup_student_id}-${row.classroom.id}`} className={TR}>
+          <td className={cn(TD, "font-medium")}>
+            {row.student ? <Link href={`/ops/students/${row.student.id}`} className={PERSON_LINK}>{row.name}</Link> : row.name}
+            {row.phone ? <span className="ml-2 text-[12px] font-normal text-muted-foreground">{row.phone}</span> : null}
+          </td>
+          <td className={TD}>{row.classroom.name}</td>
+          <td className={TD}>{row.lcup_status}</td>
+          <td className={TD}>{row.since ?? "—"}</td>
+          <td className={TD_WRAP}>
+            {row.reason_text}
+            {row.reason === "needs_review" || row.reason === "ignored" ? (
+              <>
+                {" "}
+                <Link href="/ops/lcup" className={PERSON_LINK}>Open lc-up</Link>
+              </>
+            ) : null}
+          </td>
+        </tr>
+      ))}
     </DenseTable>
   );
 }

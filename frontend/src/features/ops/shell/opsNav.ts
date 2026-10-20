@@ -20,6 +20,7 @@ import {
   ShoppingBag,
   Smartphone,
   Timer,
+  UserCheck,
   Wallet,
   type LucideIcon,
 } from "lucide-react";
@@ -38,6 +39,8 @@ import { ADMIN_OPS_SECTIONS, isScopedOpsAdmin } from "@/features/ops/adminScope"
  * - teachers and test auditors who can open the console see the rest.
  * A group whose items are all filtered out is dropped, caption included.
  */
+export type OpsNavCountKey = "trials";
+
 export type OpsNavItem = {
   href: string;
   label: string;
@@ -45,6 +48,8 @@ export type OpsNavItem = {
   /** Match the path exactly rather than as a prefix — only the dashboard, since every ops page sits under `/ops`. */
   exact?: boolean;
   superAdminOnly?: boolean;
+  /** Work waiting behind this section — the shell fetches it and the sidebar draws it beside the label. */
+  countKey?: OpsNavCountKey;
 };
 
 export type OpsNavGroup = {
@@ -95,6 +100,9 @@ export const OPS_NAV_GROUPS: readonly OpsNavGroup[] = [
     items: [
       // The centre's CRM: pair lc-up groups with our classes, settle unmatched students.
       { href: "/ops/lcup", label: "lc-up", icon: RefreshCw },
+      // Trial students and lc-up members missing from a class list (owner, 2026-10-20); the count is what
+      // waits on the desk.
+      { href: "/ops/trials", label: "Trials", icon: UserCheck, countKey: "trials" },
       // Money as lc-up keeps it. Its own page, not a tab of lc-up — the owner wanted them apart.
       { href: "/ops/finance", label: "Finance", icon: Wallet },
       // The eskiz SMS account: balance, the journal of every SMS, campaigns, the debt warning, templates.

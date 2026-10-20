@@ -11,6 +11,7 @@ const logout = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   authApi: { logout: (...args: unknown[]) => logout(...args) },
+  default: { get: vi.fn(async () => ({ data: { free_trial_lessons: 1, trials: [], not_on_list: [], pending: 0 } })) },
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/ops/students",

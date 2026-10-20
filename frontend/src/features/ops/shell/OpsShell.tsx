@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { isScopedOpsAdmin } from "@/features/ops/adminScope";
+import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 import { cn } from "@/lib/cn";
 import { OpsSidebar } from "./OpsSidebar";
 import { OpsTopBar } from "./OpsTopBar";
-import { OPS_CONSOLE, type ConsoleConfig, type MeLike } from "./opsNav";
+import { OPS_CONSOLE, isOpsSuperAdmin, type ConsoleConfig, type MeLike } from "./opsNav";
 
 /**
  * The ops console's frame, after Django admin: a sidebar stuck to the left edge, a thin top bar,
@@ -45,6 +47,11 @@ export function OpsShell({
   const wasOpen = useRef(false);
 
   const groups = useMemo(() => config.visible(config.groups, me), [config, me]);
+
+  // The Trials count — for an administrator only, the one role its API answers.
+  const wantsTrials = useMemo(() => groups.some((g) => g.items.some((i) => i.countKey === "trials")), [groups]);
+  const followups = useLcupFollowups({ enabled: wantsTrials && (isOpsSuperAdmin(me) || isScopedOpsAdmin(me)) });
+  const counts = useMemo(() => ({ trials: followups.data?.pending ?? 0 }), [followups.data]);
 
   // Navigating closes the drawer (the links also close it on click; this covers back/forward).
   useEffect(() => {
@@ -110,6 +117,7 @@ export function OpsShell({
         onToggleCollapsed={toggleCollapsed}
         closeButtonRef={closeButtonRef}
         config={config}
+        counts={counts}
       />
 
       {/* No z-index here on purpose: a stacking context on this column would trap the pages'

@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import Link from "next/link";
 import { ChevronsLeft, ChevronsRight, X } from "lucide-react";
 import { cn } from "@/lib/cn";
-import { activeNavItem, OPS_CONSOLE, type ConsoleConfig, type OpsNavGroup } from "./opsNav";
+import { activeNavItem, OPS_CONSOLE, type ConsoleConfig, type OpsNavCountKey, type OpsNavGroup } from "./opsNav";
 
 export const OPS_SIDEBAR_ID = "ops-sidebar";
 
@@ -27,6 +27,7 @@ export function OpsSidebar({
   onToggleCollapsed,
   closeButtonRef,
   config = OPS_CONSOLE,
+  counts,
 }: {
   groups: OpsNavGroup[];
   pathname: string;
@@ -37,6 +38,8 @@ export function OpsSidebar({
   closeButtonRef?: RefObject<HTMLButtonElement | null>;
   /** Which console this rail belongs to — its home, its name. */
   config?: Pick<ConsoleConfig, "root" | "brand" | "crumb" | "soft">;
+  /** Work waiting behind a section, by its countKey — drawn beside the label when above zero. */
+  counts?: Partial<Record<OpsNavCountKey, number>>;
 }) {
   // One item is current: the longest match, so a nested item does not light up its parent too.
   const activeHref = activeNavItem(pathname, groups)?.href ?? null;
@@ -100,6 +103,7 @@ export function OpsSidebar({
               {group.items.map((item) => {
                 const active = item.href === activeHref;
                 const Icon = item.icon;
+                const count = item.countKey ? counts?.[item.countKey] ?? 0 : 0;
                 return (
                   <li key={item.href}>
                     <Link
@@ -125,6 +129,17 @@ export function OpsSidebar({
                         className={cn("h-4 w-4 shrink-0", active ? "text-primary dark:text-primary-hover" : "text-muted-foreground")}
                       />
                       <span className={cn("truncate", collapsed && "lg:sr-only")}>{item.label}</span>
+                      {count > 0 ? (
+                        <span
+                          aria-label={`${count} waiting`}
+                          className={cn(
+                            "ml-auto shrink-0 rounded-full bg-amber-500/15 px-1.5 text-[11px] font-semibold tabular-nums text-amber-700 dark:text-amber-300",
+                            collapsed && "lg:absolute lg:right-1 lg:top-0.5 lg:px-1",
+                          )}
+                        >
+                          {count}
+                        </span>
+                      ) : null}
                     </Link>
                   </li>
                 );
