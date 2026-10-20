@@ -5,8 +5,8 @@ import MasterSATKit
 /// student opens it for — where they stand, what they have, what they can spend.
 ///
 /// A tab root, so it owns its `NavigationStack` and may hide the bar; the pages it pushes keep
-/// theirs, because on a pushed screen that bar carries the only Back button there is. Pushes
-/// are `NavigationLink { … } label:` — nothing here pushes by value.
+/// theirs, because on a pushed screen that bar carries the only Back button there is. The cards
+/// push with `NavigationLink { … } label:`; only a link from outside (the router) pushes a value.
 ///
 /// Two requests feed the cards: `/rewards/me/` (points, coins, XP, strikes) and the default
 /// leaderboard (global, all time) — the same slice and the same `standing` rule the
@@ -14,6 +14,8 @@ import MasterSATKit
 /// Reloaded every time the tab appears, so a conversion or a purchase made one level down is
 /// on the card when the student comes back.
 struct RewardsHubView: View {
+    @Binding var path: NavigationPath
+
     @Environment(Session.self) private var session
 
     @State private var mine: MyRewards?
@@ -22,10 +24,10 @@ struct RewardsHubView: View {
     @State private var boardFailed = false
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    PageTitle("Rewards")
+                    AppHeader(title: "Rewards")
 
                     // The cards stay and keep working when a total fails — each page loads and
                     // explains itself — but the failure is said, not left as a row of dashes.
@@ -88,6 +90,7 @@ struct RewardsHubView: View {
             .navigationTitle("Rewards")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .refreshable { await load() }
             .onAppear { Task { await load() } }
         }

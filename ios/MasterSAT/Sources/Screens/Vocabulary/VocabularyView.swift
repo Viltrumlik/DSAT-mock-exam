@@ -17,6 +17,8 @@ struct VocabularyView: View {
 
     private enum Phase: Equatable { case loading, loaded, failed }
 
+    @Binding var path: NavigationPath
+
     @Environment(Session.self) private var session
     @State private var sections: [VocabSection] = []
     @State private var mySets: [VocabMySet] = []
@@ -49,9 +51,10 @@ struct VocabularyView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
+                    AppHeader(title: "Words")
                     HeroHeader(
                         eyebrow: "Vocabulary",
                         eyebrowIcon: "sparkles",
@@ -97,6 +100,7 @@ struct VocabularyView: View {
             .navigationTitle("Words")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .refreshable { await load() }
             .onAppear { Task { await load() } }
             .sheet(isPresented: $isBuilding) {

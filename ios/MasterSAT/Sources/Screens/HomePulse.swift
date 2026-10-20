@@ -114,62 +114,6 @@ private struct PulseChip: View {
     }
 }
 
-/// The web's permanent Events button — always in the top bar, never gated on a count: the
-/// owner asked for it after a button that came and went vanished at exactly the wrong moment.
-/// The count shows from one open event.
-struct HomeEventsButton: View {
-    @Environment(Session.self) private var session
-    @State private var open: Int?
-    @State private var failed = false
-
-    private var accessibilityText: String {
-        if failed { return "Events — couldn't check for new ones" }
-        switch open ?? 0 {
-        case 0: return "Events"
-        case 1: return "Events — 1 open for sign-up"
-        case let n: return "Events — \(n) open for sign-up"
-        }
-    }
-
-    var body: some View {
-        NavigationLink { EventsView() } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.accent)
-                Text("Events")
-                    .font(.system(size: 14, weight: .bold))
-                if let open, open > 0 {
-                    Text(ScoreText.string(open))
-                        .font(.system(size: 11, weight: .heavy).monospacedDigit())
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .frame(minWidth: 18, minHeight: 18)
-                        .background(Capsule().fill(Theme.accent))
-                }
-            }
-            .foregroundStyle(.primary)
-            .padding(.horizontal, 10)
-            .frame(height: 36)
-            .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.card))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
-        }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText)
-        .accessibilityAddTraits(.isButton)
-        .task {
-            let count = await CommunityCounts.eventsOpenForSignUp(session)
-            failed = count == nil
-            if let count { open = count }
-        }
-    }
-}
-
 /// A live quiz running in one of the student's classes. The web has no dashboard card for it —
 /// a student reaches `/live` from the code the teacher projects — but a phone has no address
 /// bar to type that into, so while a room is open in their class Home offers the way in.

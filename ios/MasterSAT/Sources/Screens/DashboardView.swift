@@ -11,6 +11,7 @@ import MasterSATKit
 /// a student checks before a lesson.
 struct DashboardView: View {
     let user: CurrentUser
+    @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
 
@@ -75,7 +76,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
@@ -164,6 +165,7 @@ struct DashboardView: View {
                     HomeworkDetailView(assignment: assignment)
                 }
             }
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .sheet(isPresented: $showingGoal) {
                 GoalSheet(
                     english: sectionTargets.english ?? 700,
@@ -175,22 +177,13 @@ struct DashboardView: View {
         }
     }
 
-    /// The web's top bar, on the phone: what sits beside the page rather than in it.
-    private var topBar: some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            HomeEventsButton()
-            NavigationLink { PointsView() } label: { RewardsPointsPill() }
-                .buttonStyle(.plain)
-            // RootTabView routes what the inbox opens, the same way it routes a tapped push.
-            NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
-        }
-    }
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
-            topBar
-            PageTitle("Welcome back, \(current.firstName?.isEmpty == false ? current.firstName! : current.displayName)")
+            AppHeader(
+                title: "Today",
+                subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                showsBell: true
+            )
             Button {
                 showingGoal = true
             } label: {

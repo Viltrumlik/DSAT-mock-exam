@@ -85,7 +85,7 @@ struct HomeworkListView: View {
         }
         .background(Theme.background)
         // No `navigationDestination` here: the row's value is resolved at the root of the
-        // Learn stack (see `LearnHubView.Route`). Declared on this pushed screen, it made
+        // Class stack (see `ClassHubView`). Declared on this pushed screen, it made
         // SwiftUI rebuild the list on every tap and drop the push.
         .refreshable { await load() }
         // Title left blank on purpose: the page draws its own headline, and the bar is

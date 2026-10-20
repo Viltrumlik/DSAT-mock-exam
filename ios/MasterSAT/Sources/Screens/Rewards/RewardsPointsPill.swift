@@ -1,71 +1,7 @@
 import SwiftUI
 import MasterSATKit
 
-// Small reward pieces for other screens to carry — Home's header, Profile's tiles.
-
-// MARK: - The points pill
-
-/// The site's header pill: the silver point and the points, a divider, the blue coin and the
-/// coins. A dash while it loads and if it fails — it stays a way in to the Points page either
-/// way, which vanishing would not be.
-///
-/// Display only. `RewardsPointsPill` is the one that fetches.
-struct RewardsPointsPillLabel: View {
-    let points: Int?
-    let coins: Int?
-
-    var body: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 5) {
-                RewardsCoinArt(kind: .point, size: 20)
-                Text(ScoreText.string(points))
-            }
-            Rectangle()
-                .fill(Theme.separator)
-                .frame(width: 1, height: 16)
-            HStack(spacing: 5) {
-                RewardsCoinArt(kind: .coin, size: 20)
-                Text(ScoreText.string(coins))
-            }
-        }
-        .font(.system(size: 14, weight: .bold).monospacedDigit())
-        .foregroundStyle(.primary)
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.card))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 3, x: 0, y: 1)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(points == nil ? "Points and coins" : "\(points ?? 0) points, \(coins ?? 0) coins")
-    }
-}
-
-/// The pill, reading `/rewards/me/` itself. Wrap it in a link to `PointsView()` where it
-/// should open the Points page, as the web's does:
-///
-///     NavigationLink { PointsView() } label: { RewardsPointsPill() }
-///
-/// Refetched every time it appears, so a conversion on the Points page is on the pill when the
-/// student comes back. A failed refresh keeps the last numbers it had.
-struct RewardsPointsPill: View {
-    @Environment(Session.self) private var session
-    @State private var mine: MyRewards?
-
-    var body: some View {
-        RewardsPointsPillLabel(points: mine?.points, coins: mine?.coins)
-            .onAppear { Task { await load() } }
-    }
-
-    @MainActor
-    private func load() async {
-        if let fresh = try? await session.rewards.me() {
-            mine = fresh
-        }
-    }
-}
+// Small reward pieces for other screens to carry.
 
 // MARK: - What the numbers are
 
