@@ -192,6 +192,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
   }, [data]);
 
   const excuseReasons = data?.excuse_reasons ?? [];
+  const notOnList = data?.not_on_list ?? [];
   const needsReason = excuseReasons.length > 0;
   // A student lc-up holds frozen is never marked, so their row neither counts as a change nor is sent.
   const markable = useMemo(() => new Set((data?.roster ?? []).filter((r) => !r.frozen_in_lcup).map((r) => r.student_id)), [data]);
@@ -265,6 +266,14 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
         </div>
       )}
 
+      {/* lc-up lists them in this group but they have no seat here, so they cannot be marked: the
+          teacher sends them to the admin, who links them (owner, 2026-10-20). */}
+      {notOnList.length > 0 && (
+        <div role="note" className="mt-3 rounded-xl border border-amber-400/60 bg-amber-500/[0.07] px-3.5 py-2.5 text-xs text-foreground">
+          In lc-up but not on your list: {notOnList.map((person) => person.name).join(", ")} — send them to the admin.
+        </div>
+      )}
+
       <div className="mt-3 flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" disabled={!writable} loading={markAll.isPending} onClick={() => markAll.mutate()}>Mark all present</Button>
         <Button size="sm" loading={mark.isPending} disabled={!dirty || !writable || missingReason} onClick={save} icon={CheckCircle2}>Save</Button>
@@ -292,6 +301,20 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                     >
                       Frozen in lc-up
                     </span>
+                  ) : null}
+                  {r.lcup_trial ? (
+                    r.lcup_trial.free_used ? (
+                      <span
+                        title="They have had the free trial lesson. Send them to the admin to be activated in lc-up."
+                        className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
+                      >
+                        Free trial used — send to the admin
+                      </span>
+                    ) : (
+                      <span className="shrink-0 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">
+                        {r.lcup_trial.lessons_before === 0 ? "Trial · 1st lesson" : `Trial · lesson ${r.lcup_trial.lessons_before + 1}`}
+                      </span>
+                    )
                   ) : null}
                 </span>
                 <div className="flex shrink-0 gap-1">
@@ -325,6 +348,11 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                     ))}
                   </Select>
                 </div>
+              )}
+              {r.lcup_trial?.free_used && (local[r.student_id] === "PRESENT" || local[r.student_id] === "LATE") && (
+                <p role="status" className="mt-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                  {r.name} has already had the free trial lesson — send them to the admin to be activated in lc-up.
+                </p>
               )}
             </div>
           );

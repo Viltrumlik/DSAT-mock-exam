@@ -43,6 +43,19 @@ export interface RosterRow {
   frozen_for_debt?: boolean;
   /** Paused in lc-up's group: shown, never marked — lc-up takes no attendance for them (owner, 2026-10-17). */
   frozen_in_lcup?: boolean;
+  /** On trial in lc-up (owner, 2026-10-20): lessons come to here before this one, and whether the
+   *  free trial is behind them — then the teacher sends them to the admin. Null when not on trial. */
+  lcup_trial?: LcupTrialMark | null;
+}
+
+export interface LcupTrialMark {
+  lessons_before: number;
+  free_used: boolean;
+}
+
+/** An lc-up member of this class's group the register cannot show (no seat here yet). */
+export interface NotOnListPerson {
+  name: string;
 }
 
 /** One of lc-up's reasons for an excused absence. A class paired with lc-up lists them, and an
@@ -86,7 +99,7 @@ export const attendanceApi = {
   getSession: async (
     classId: number,
     sessionId: number,
-  ): Promise<AttendanceSessionBrief & { roster: RosterRow[]; excuse_reasons?: ExcuseReason[] }> =>
+  ): Promise<AttendanceSessionBrief & { roster: RosterRow[]; excuse_reasons?: ExcuseReason[]; not_on_list?: NotOnListPerson[] }> =>
     (await api.get(`${base(classId)}/sessions/${sessionId}/`)).data,
   mark: async (classId: number, sessionId: number, records: AttendanceMarkEntry[]) =>
     (await api.post(`${base(classId)}/sessions/${sessionId}/mark/`, { records })).data,
