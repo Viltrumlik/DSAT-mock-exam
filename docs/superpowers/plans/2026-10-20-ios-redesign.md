@@ -1891,3 +1891,24 @@ Send the screenshots and `phase1.mp4` (SendUserFile) with one line per tab sayin
 - Lottie empty/error states: all-done, no-tasks, no-words, offline, error; `LoadingSkeleton` replaces spinners; `ErrorState` stays distinct from empty.
 - Audit: Dynamic Type (largest sizes), VoiceOver labels and announcements, Reduce Motion everywhere, dark mode, iPhone SE (3rd gen) layout, ≤2 looping Lottie per screen.
 - Verify, PR, demo. Open item for the owner: a paid Apple Developer account (TestFlight) to put the app on students' phones.
+
+---
+
+## Phase 1 outcome (2026-10-20) and what it hands to later phases
+
+Done on `feat/ios-redesign` (13 task commits + 1 final-review fix wave), kit 649 tests, every task reviewed, final whole-branch review "with fixes" → fixed and re-reviewed. Device-checked on the iOS 26.3 simulator against a local backend.
+
+Decisions taken during phase 1 that later phases build on:
+- **Value pushes only at tab roots.** Every push from Today / Class / Words / Rewards / Me root views is a value (`AppLink`, a per-root `Route`, or the model value) declared at that stack's root, so re-tapping a tab and tab-placement links pop them. A `NavigationLink { destination }` from a root view is a regression.
+- **Bottom clearance** is `contentMargins(.bottom, barClearance)` on each tab child (not `safeAreaInset`, which never reached the tab pages); the bar is a full-size bottom-aligned overlay that ignores the keyboard safe area.
+- **One sheet at a time:** `AppRouter` queues a link that needs the other sheet; both sheets call `sheetDismissed(baseURL:openURL:)` on dismiss.
+- **Reduce Motion** is centralised: `pressFeedback`, `Stagger`, `PillTabs`, the tab bar, `LottieClip`, `MotionBudget` → `CelebrationCenter.reduceMotion`.
+- **Header numbers** (`RewardsStore`) refresh at launch, on scene `.active`, on reconnect, and whenever the Rewards hub loads `/rewards/me/` (`apply(_:)`).
+- `isFinished` compares Dates (float round-trip); `landed` is idempotent; a flight never lands after its view is gone; the XP target is the pill on the visible tab.
+
+Carried into later phases (found in phase 1 reviews, deliberately deferred):
+- **Phase 2:** decide where "+XP" flies from a PUSHED page (the pill lives only in tab-root headers that scroll — pin it or add a nav-bar pill); apply XP independently of a landing (`flyXP` drops silently under Reduce Motion / no target); `RewardsStore` writes outside an animation transaction (numbers don't roll) and is last-write-wins (guard stale responses before `XPDelta`); only the visible pill should pulse/haptic on a landing; re-tap at a tab root should scroll to top; delete the DEBUG long-press on `XPPill`; Today `path.append(assignment)` double-tap guard; give one-shot `LottieClip`s an explicit frame (Reduce Motion collapses them).
+- **Phase 4:** `contentMargins` reaches full-screen covers (assessment runner, vocab games, story viewer, live quiz, ticket) — zero it there.
+- **Phase 5:** audit inherited `contentMargins` in nested horizontal scrollers and sheets (StoriesRail, SupportBookingView, goal sheet, ClassesListView sheet); tab-bar VoiceOver semantics + Dynamic Type; Me close button is 32 pt (make 44); Me panels still push with `NavigationLink { }`; Explore cards lost the Events/Surveys open-count badges; `ProfileModel` still fetches those counts; hand-rolled cards keep the old hairline / radius 16 (HomePulse, LessonCalendar, AssessmentBoardViews, LeaderboardView, AssessmentRunnerView…); `PillTabs` selection haptic also fires on programmatic changes; `RewardsPointsPill.swift` holds only the explainers now; dead `EventsOpenCard`.
+- **Kit polish (any phase):** test `AppTab.allCases` order; confetti tests for seed sensitivity, combined budgets and edge counts; a test that every `LottieAsset` loads; enforce the 15 000-byte Lottie budget in the generator; rename `gravity` (it is the t² coefficient).
+- **Owner, before merge or in phase 2:** check the shell once on an iOS 18 (and ideally 17) simulator runtime — only iOS 26.3 is installed on this Mac (~8 GB download).
