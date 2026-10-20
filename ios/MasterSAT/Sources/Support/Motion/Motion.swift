@@ -19,12 +19,33 @@ enum Motion {
     static let staggerStep = 0.07
 }
 
+/// The one place a press is shown. Squashes and springs back; with Reduce Motion on, nothing
+/// moves and the control only dips in opacity, quickly.
+struct PressFeedback: ViewModifier {
+    let isPressed: Bool
+    let scale: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(!reduceMotion && isPressed ? scale : 1)
+            .opacity(reduceMotion && isPressed ? 0.7 : 1)
+            .animation(reduceMotion ? .easeOut(duration: 0.12) : Motion.press, value: isPressed)
+    }
+}
+
+extension View {
+    /// Press feedback that respects Reduce Motion — see `PressFeedback`.
+    func pressFeedback(isPressed: Bool, scale: CGFloat) -> some View {
+        modifier(PressFeedback(isPressed: isPressed, scale: scale))
+    }
+}
+
 /// Every tappable squashes when pressed.
 struct PressBounce: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.92 : 1)
-            .animation(Motion.press, value: configuration.isPressed)
+            .pressFeedback(isPressed: configuration.isPressed, scale: 0.92)
     }
 }
 

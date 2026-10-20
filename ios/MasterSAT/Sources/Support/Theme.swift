@@ -190,8 +190,7 @@ struct PrimaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(tone.opacity(configuration.isPressed ? 0.82 : 1))
             )
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(Motion.press, value: configuration.isPressed)
+            .pressFeedback(isPressed: configuration.isPressed, scale: 0.94)
     }
 }
 
@@ -209,8 +208,7 @@ struct SecondaryButtonStyle: ButtonStyle {
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(configuration.isPressed ? Theme.accentSoft : Theme.surface2)
             )
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(Motion.press, value: configuration.isPressed)
+            .pressFeedback(isPressed: configuration.isPressed, scale: 0.94)
     }
 }
 
