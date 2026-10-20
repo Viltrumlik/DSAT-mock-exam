@@ -80,32 +80,55 @@ struct RootTabView: View {
     @State private var router = AppRouter()
     @State private var rewards = RewardsStore()
     @State private var celebrations = CelebrationCenter()
+    /// The floating bar's measured height, so the room left for it is never a guess.
+    @State private var barHeight: CGFloat = 0
+
+    /// Space between the bar and the home indicator, and between the bar and the last thing
+    /// a page shows. One place, so the bar and the room made for it cannot drift apart.
+    private enum Bar {
+        static let bottomPadding: CGFloat = 4
+        static let contentGap: CGFloat = 8
+    }
+
+    /// How far above the bottom safe area a scroll view's content must stop to end above the bar.
+    private var barClearance: CGFloat { barHeight + Bar.bottomPadding + Bar.contentGap }
 
     private var notifications: NotificationRouter { .shared }
 
     var body: some View {
         @Bindable var router = router
+        // The bar is an overlay, so content scrolls UNDER it, and each tab's scroll views get a
+        // bottom content margin as tall as the bar. Set outside the tab's NavigationStack, the
+        // margin reaches every page pushed inside it. Checked on a device: a `safeAreaInset` on
+        // the `TabView` and `safeAreaPadding` on its children both left the last row under the
+        // bar; `contentMargins` travels by environment and reaches the pushed pages too.
         TabView(selection: $router.selection) {
             DashboardView(user: user, path: $router.today)
+                .contentMargins(.bottom, barClearance)
                 .tag(AppTab.today)
                 .toolbar(.hidden, for: .tabBar)
             ClassHubView(path: $router.classes)
+                .contentMargins(.bottom, barClearance)
                 .tag(AppTab.classes)
                 .toolbar(.hidden, for: .tabBar)
             VocabularyView(path: $router.words)
+                .contentMargins(.bottom, barClearance)
                 .tag(AppTab.words)
                 .toolbar(.hidden, for: .tabBar)
             RewardsHubView(path: $router.rewards)
+                .contentMargins(.bottom, barClearance)
                 .tag(AppTab.rewards)
                 .toolbar(.hidden, for: .tabBar)
             ExploreView(path: $router.explore)
+                .contentMargins(.bottom, barClearance)
                 .tag(AppTab.explore)
                 .toolbar(.hidden, for: .tabBar)
         }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
+        .overlay(alignment: .bottom) {
             FloatingTabBar(selection: $router.selection) { router.reselect($0) }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 .padding(.horizontal, 18)
-                .padding(.bottom, 4)
+                .padding(.bottom, Bar.bottomPadding)
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .environment(router)
