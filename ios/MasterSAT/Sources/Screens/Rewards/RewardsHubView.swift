@@ -18,6 +18,7 @@ struct RewardsHubView: View {
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
 
     @State private var mine: MyRewards?
     @State private var meFailed = false
@@ -146,8 +147,11 @@ struct RewardsHubView: View {
     private func loadMe() async {
         let api = session.rewards
         do {
-            mine = try await api.me()
+            let me = try await api.me()
+            mine = me
             meFailed = false
+            // The header's XP and streak read the same answer, so the two cannot disagree.
+            rewards.apply(me)
         } catch {
             meFailed = true
         }

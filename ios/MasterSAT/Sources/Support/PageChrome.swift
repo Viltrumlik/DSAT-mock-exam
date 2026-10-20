@@ -16,7 +16,8 @@ import MasterSATKit
 
 // MARK: - The board idiom
 
-/// The dzboard headline. 42px on the web; 32 here, which is the same *weight* on a phone.
+/// The dzboard headline: the large-title text style (so it follows Dynamic Type), rounded heavy —
+/// the same *weight* as the web's 42px headline, sized for a phone.
 struct PageTitle: View {
     let text: String
 

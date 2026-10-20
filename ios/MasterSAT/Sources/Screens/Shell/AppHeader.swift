@@ -53,7 +53,7 @@ struct StrikeChip: View {
             .padding(.vertical, 3)
             .background(Theme.card, in: Capsule())
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(streak) lessons in a row")
+            .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
         }
     }
 }
@@ -130,6 +130,12 @@ struct AvatarButton: View {
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Theme.accent, in: Circle())
+                // The only way into Me, so it gets the 44-pt minimum target — drawn 34, tappable
+                // 44. The negative padding hands the extra 5 pt back to layout, so the header
+                // does not shift; hit testing is not clipped to the layout frame.
+                .padding(5)
+                .contentShape(Rectangle())
+                .padding(-5)
         }
         .buttonStyle(PressBounce())
         .accessibilityLabel("Your profile")

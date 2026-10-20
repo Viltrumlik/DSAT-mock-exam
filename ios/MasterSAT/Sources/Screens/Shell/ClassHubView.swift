@@ -56,7 +56,6 @@ struct ClassHubView: View {
                 shown = true
                 Task { await load() }
             }
-            .onDisappear { shown = false }
             .refreshable { await load() }
             .navigationDestination(for: Route.self) { route in
                 switch route {

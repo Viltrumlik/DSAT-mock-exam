@@ -30,7 +30,6 @@ struct ExploreView: View {
             .background(Theme.background)
             .toolbar(.hidden, for: .navigationBar)
             .onAppear { shown = true }
-            .onDisappear { shown = false }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
         }
     }

@@ -66,6 +66,34 @@ private struct UpdateGateOverlay: View {
     }
 }
 
+/// Keeps the header's XP and streak current after launch: a refresh each time the app comes back
+/// to the front, and one when the phone comes back online.
+///
+/// Its own view, so reading `scenePhase` and connectivity rebuilds this empty view and not
+/// `RootTabView` — whose body would rebuild the tab view and its navigation stacks with it.
+private struct RewardsRefresher: View {
+    @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: scenePhase) { old, new in
+                if new == .active, old != .active { refresh() }
+            }
+            .onChange(of: session.connectivity.isOnline) { old, new in
+                if new, !old { refresh() }
+            }
+    }
+
+    private func refresh() {
+        Task { await rewards.refresh(using: session.rewards) }
+    }
+}
+
 /// Five tabs — Today, Class, Words, Rewards, Explore — under a floating bar; Me is a sheet
 /// behind the avatar in every header.
 ///
@@ -129,7 +157,14 @@ struct RootTabView: View {
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
                 .padding(.horizontal, 18)
                 .padding(.bottom, Bar.bottomPadding)
+                // Like a system tab bar, it stays at the bottom of the screen and the keyboard
+                // covers it; riding up on the keyboard would sit it over the field being typed in.
+                // The frame comes first: `ignoresSafeArea` only moves a view that fills the
+                // space it is offered, and a bar sized to its content would ignore nothing.
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .ignoresSafeArea(.keyboard, edges: .bottom)
         }
+        .background { RewardsRefresher() }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .environment(router)
         .environment(rewards)

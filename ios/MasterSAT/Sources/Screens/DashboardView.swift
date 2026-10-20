@@ -153,7 +153,7 @@ struct DashboardView: View {
                 .padding(16)
             }
             .background(Theme.background)
-            .navigationTitle("Home")
+            .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
