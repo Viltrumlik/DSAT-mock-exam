@@ -10,35 +10,43 @@ enum LottieAsset: String, CaseIterable {
 
 /// A Lottie, played the way the student's settings allow.
 ///
-/// With Reduce Motion on, a looping clip shows its last frame, still; a one-shot shows
-/// nothing at all — the static screen around it already says what happened.
+/// `loop` plays forever (Reduce Motion: its last frame, still); `once` plays through once
+/// (Reduce Motion: nothing — but it keeps the frame its caller gave it, so nothing around it
+/// moves); `still` always shows the last frame.
 struct LottieClip: View {
+    enum Playback { case loop, once, still }
+
     let asset: LottieAsset
-    var loops: Bool
+    let playback: Playback
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     init(_ asset: LottieAsset, loops: Bool = true) {
+        self.init(asset, playback: loops ? .loop : .once)
+    }
+
+    init(_ asset: LottieAsset, playback: Playback) {
         self.asset = asset
-        self.loops = loops
+        self.playback = playback
     }
 
     var body: some View {
         Group {
-            if reduceMotion {
-                if loops {
-                    LottieView(animation: .named(asset.rawValue))
-                        .playbackMode(.paused(at: .progress(1)))
-                        .resizable()
-                }
-            } else if loops {
+            switch (playback, reduceMotion) {
+            case (.still, _), (.loop, true):
+                LottieView(animation: .named(asset.rawValue))
+                    .playbackMode(.paused(at: .progress(1)))
+                    .resizable()
+            case (.loop, false):
                 LottieView(animation: .named(asset.rawValue))
                     .looping()
                     .resizable()
-            } else {
+            case (.once, false):
                 LottieView(animation: .named(asset.rawValue))
                     .playing(loopMode: .playOnce)
                     .resizable()
+            case (.once, true):
+                Color.clear
             }
         }
         .allowsHitTesting(false)

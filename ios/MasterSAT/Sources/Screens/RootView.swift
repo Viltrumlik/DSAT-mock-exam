@@ -94,6 +94,26 @@ private struct RewardsRefresher: View {
     }
 }
 
+/// Tells the celebrations when a sheet covers the tabs, so a task finished under the Me sheet
+/// waits to be celebrated. Its own view for `RewardsRefresher`'s reason: reading the router
+/// here rebuilds this empty view, not the tab view.
+private struct CelebrationSheetWatcher: View {
+    @Environment(AppRouter.self) private var router
+    @Environment(CelebrationCenter.self) private var celebrations
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: router.showingMe || router.certificate != nil) { _, up in
+                // Up at once. Down only from the sheets' onDismiss (`RootTabView.sheetDismissed`),
+                // once the sheet has actually left the screen.
+                if up { celebrations.setSheetUp(true) }
+            }
+    }
+}
+
 /// Five tabs — Today, Class, Words, Rewards, Explore — under a floating bar; Me is a sheet
 /// behind the avatar in every header.
 ///
@@ -164,7 +184,10 @@ struct RootTabView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .ignoresSafeArea(.keyboard, edges: .bottom)
         }
-        .background { RewardsRefresher() }
+        .background {
+            RewardsRefresher()
+            CelebrationSheetWatcher()
+        }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .environment(router)
         .environment(rewards)
@@ -196,6 +219,7 @@ struct RootTabView: View {
         // that launched the app from closed, which set the link before this view existed.
         .onAppear {
             celebrations.reduceMotion = reduceMotion
+            celebrations.connect(rewards: rewards, api: session.rewards)
             if let link = notifications.consume() { open(link) }
             Task { await rewards.refresh(using: session.rewards) }
         }
@@ -209,8 +233,10 @@ struct RootTabView: View {
         router.open(link, baseURL: session.client.config.baseURL) { openURL($0) }
     }
 
-    /// Both sheets call this when they close: a link that needed the other sheet opens now.
+    /// Both sheets call this when they close: a link that needed the other sheet opens now, and
+    /// a celebration that waited under the sheet plays.
     private func sheetDismissed() {
         router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
+        celebrations.setSheetUp(router.showingMe || router.certificate != nil)
     }
 }
