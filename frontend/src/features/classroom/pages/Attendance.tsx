@@ -306,7 +306,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
                     r.lcup_trial.free_used ? (
                       <span
                         title="They have had the free trial lesson. Send them to the admin to be activated in lc-up."
-                        className="shrink-0 rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
+                        className="max-w-full rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
                       >
                         Free trial used — send to the admin
                       </span>

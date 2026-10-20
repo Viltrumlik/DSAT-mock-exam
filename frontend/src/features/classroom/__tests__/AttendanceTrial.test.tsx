@@ -93,6 +93,14 @@ describe("Attendance register — lc-up trial students", () => {
     if (!name) throw new Error("no name span");
     expect(name.className).toContain("truncate");
     expect(name.parentElement?.className).toContain("flex-wrap");
+    // Wrapping alone is not enough: a shrink-0 badge keeps its one-line width and still spills
+    // into the P/A/L/E buttons. It may be as wide as the group and no wider, its text breaking.
+    const badge = Array.from(host.querySelectorAll("span")).find(
+      (span) => span.textContent === "Free trial used — send to the admin",
+    );
+    if (!badge) throw new Error("no free-trial badge");
+    expect(badge.className).toContain("max-w-full");
+    expect(badge.className).not.toContain("shrink-0");
   });
 
   it("says nothing for a student who is not on trial", async () => {
