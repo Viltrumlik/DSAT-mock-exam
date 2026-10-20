@@ -8,10 +8,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const logout = vi.fn();
+const get = vi.fn();
 
 vi.mock("@/lib/api", () => ({
   authApi: { logout: (...args: unknown[]) => logout(...args) },
-  default: { get: vi.fn(async () => ({ data: { free_trial_lessons: 1, trials: [], not_on_list: [], pending: 0 } })) },
+  default: { get: (...args: unknown[]) => get(...args) },
 }));
 vi.mock("next/navigation", () => ({
   usePathname: () => "/ops/students",
@@ -23,6 +24,12 @@ const { BUILDER_CONSOLE } = await import("@/features/builderShell/builderNav");
 
 const SUPER_ADMIN = { role: "super_admin", permissions: ["*"], first_name: "Aziza", last_name: "Karimova" };
 const ADMIN = { role: "admin", permissions: [], username: "desk1" };
+const TEACHER = { role: "teacher", permissions: [], username: "t1" };
+
+const FOLLOWUPS_URL = "/lcup/followups/";
+const followups = (pending: number) => ({
+  data: { free_trial_lessons: 1, trials: [], not_on_list: [], pending },
+});
 
 let container: HTMLDivElement;
 let root: Root;
@@ -40,6 +47,18 @@ function render(pathname: string, me: Record<string, unknown>, config?: typeof B
   });
 }
 
+/** The query starts on mount and resolves a tick later; let both happen before asserting. */
+async function renderSettled(pathname: string, me: Record<string, unknown>, config?: typeof BUILDER_CONSOLE) {
+  render(pathname, me, config);
+  for (let tick = 0; tick < 3; tick++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
+}
+
+const followupCalls = () => get.mock.calls.filter(([url]) => url === FOLLOWUPS_URL);
+
 const sidebar = () => container.querySelector("#ops-sidebar") as HTMLElement;
 const button = (label: string) =>
   [...container.querySelectorAll("button")].find((b) => b.getAttribute("aria-label") === label || b.textContent?.trim() === label);
@@ -48,6 +67,8 @@ beforeEach(() => {
   (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   window.localStorage.clear();
   logout.mockReset();
+  get.mockReset();
+  get.mockImplementation(async () => followups(0));
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
@@ -180,5 +201,40 @@ describe("OpsShell for the builder", () => {
     expect(button("Collapse sidebar")).toBeTruthy();
     act(() => button("Collapse sidebar")!.click());
     expect(window.localStorage.getItem("mastersat.builder.sidebar.collapsed")).toBe("1");
+  });
+});
+
+describe("OpsShell's Trials count", () => {
+  // The followups API answers administrators only. The gate in the shell is all that keeps the
+  // builder console, teachers and test auditors from calling it.
+  it.each([
+    ["an admin", ADMIN],
+    ["a super admin", SUPER_ADMIN],
+  ])("fetches the count for %s", async (_who, me) => {
+    await renderSettled("/ops", me);
+    expect(get).toHaveBeenCalledWith(FOLLOWUPS_URL);
+  });
+
+  it("does not fetch it for a teacher, who sees the nav item but not the API", async () => {
+    await renderSettled("/ops", TEACHER);
+    expect(sidebar().querySelector('a[href="/ops/trials"]')).not.toBeNull();
+    expect(followupCalls()).toHaveLength(0);
+  });
+
+  it("does not fetch it in the builder console, even for a super admin", async () => {
+    await renderSettled("/builder", SUPER_ADMIN, BUILDER_CONSOLE);
+    expect(followupCalls()).toHaveLength(0);
+  });
+
+  it("draws the waiting count beside Trials for an admin", async () => {
+    get.mockImplementation(async () => followups(3));
+    await renderSettled("/ops", ADMIN);
+    const trials = sidebar().querySelector('a[href="/ops/trials"]');
+    expect(trials?.querySelector('[aria-label="3 waiting"]')?.textContent).toBe("3");
+  });
+
+  it("draws nothing beside Trials when nothing waits", async () => {
+    await renderSettled("/ops", ADMIN);
+    expect(sidebar().querySelector('a[href="/ops/trials"]')?.textContent).toBe("Trials");
   });
 });
