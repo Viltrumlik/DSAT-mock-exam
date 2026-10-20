@@ -75,3 +75,48 @@ extension View {
         modifier(Stagger(index: index, shown: shown))
     }
 }
+
+// MARK: - Card → page zoom (iOS 18+)
+
+private struct ZoomSource<ID: Hashable>: ViewModifier {
+    let id: ID
+    let namespace: Namespace.ID
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.matchedTransitionSource(id: id, in: namespace)
+        } else {
+            content
+        }
+    }
+}
+
+private struct ZoomDestination<ID: Hashable>: ViewModifier {
+    let id: ID
+    let namespace: Namespace.ID
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            if reduceMotion {
+                content
+            } else {
+                content.navigationTransition(.zoom(sourceID: id, in: namespace))
+            }
+        } else {
+            content
+        }
+    }
+}
+
+extension View {
+    /// The card a page zooms out of. A plain push before iOS 18.
+    func zoomSource(id: some Hashable, in namespace: Namespace.ID) -> some View {
+        modifier(ZoomSource(id: id, namespace: namespace))
+    }
+
+    /// The page that zooms out of its card. A plain push before iOS 18 and under Reduce Motion.
+    func zoomDestination(id: some Hashable, in namespace: Namespace.ID) -> some View {
+        modifier(ZoomDestination(id: id, namespace: namespace))
+    }
+}

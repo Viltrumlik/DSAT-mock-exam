@@ -27,7 +27,7 @@ struct RewardsHubView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            TabRootScroll(tab: .rewards) {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Rewards")
 

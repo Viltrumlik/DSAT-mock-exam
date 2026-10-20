@@ -60,7 +60,7 @@ struct VocabularyView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            TabRootScroll(tab: .words) {
                 VStack(alignment: .leading, spacing: 18) {
                     AppHeader(title: "Words")
                     HeroHeader(
