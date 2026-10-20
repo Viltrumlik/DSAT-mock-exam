@@ -26,6 +26,9 @@ import {
 } from "lucide-react";
 import { ADMIN_OPS_SECTIONS, isScopedOpsAdmin } from "@/features/ops/adminScope";
 
+/** The sections that can carry a waiting-work count beside their sidebar label. */
+export type OpsNavCountKey = "trials";
+
 /**
  * The ops console's sidebar, grouped the way Django admin groups its apps.
  *
@@ -39,8 +42,6 @@ import { ADMIN_OPS_SECTIONS, isScopedOpsAdmin } from "@/features/ops/adminScope"
  * - teachers and test auditors who can open the console see the rest.
  * A group whose items are all filtered out is dropped, caption included.
  */
-export type OpsNavCountKey = "trials";
-
 export type OpsNavItem = {
   href: string;
   label: string;
