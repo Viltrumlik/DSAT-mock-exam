@@ -660,6 +660,13 @@ CELERY_BEAT_SCHEDULE = {
         "task": "lcup.tasks.sync",
         "schedule": crontab(minute="*/15"),
     },
+    # The lesson-end check (lcup.followups, owner 2026-10-20): each paired class's teachers are told who is
+    # absent without a reason, who has had the free trial and whom lc-up lists but the register cannot show —
+    # once, as the lesson ends. Returns at once while LCUP_ATTENDANCE_CHECKS_ENABLED is off.
+    "lcup-attendance-checks": {
+        "task": "lcup.tasks.attendance_checks",
+        "schedule": crontab(minute="*/5"),
+    },
     # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
     # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,
     # the next two hours it sends again only what could not get out, every other hour nothing. Returns at

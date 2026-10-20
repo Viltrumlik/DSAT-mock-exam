@@ -21,15 +21,17 @@ writes except ``send_lesson_checks``, which writes notifications.
 
 from __future__ import annotations
 
+import logging
+from collections import Counter
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from django.utils import timezone
 
 from classes.models import ClassroomMembership
 from classes.models_attendance import AttendanceRecord
 
-from .conf import free_trial_lessons, lcup_enabled
+from .conf import attendance_checks_enabled, free_trial_lessons, lcup_enabled
 from .models import GroupLinkStatus, LcupMembership, LinkStatus
 from .serializers import user_ref
 
@@ -277,3 +279,91 @@ def lesson_check(classroom, day: date) -> LessonCheck:
         trial_used=tuple(sorted(trial_used)),
         not_on_list=tuple(seat.name for seat in missing_seats(classroom=classroom)),
     )
+
+
+logger = logging.getLogger("lcup.followups")
+
+#: How long after a lesson ends its check may still go out: a beat that missed a run (a restart, a
+#: slow worker) catches up, but a lesson is never announced long after the teacher has left.
+CHECK_GRACE_MINUTES = 30
+
+
+def due_lessons(now) -> list[tuple]:
+    """``(classroom, day)`` of each paired class whose lesson ended in the last CHECK_GRACE_MINUTES
+    and whose register is still open."""
+    from classes.attendance_window import marking_window
+    from classes.lesson_schedule import lesson_interval, lesson_weekdays
+    from classes.models import Classroom
+
+    day = timezone.localdate(now)
+    rooms = Classroom.objects.filter(
+        is_active=True,
+        lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+        lcup_group_link__deleted_in_lcup_at__isnull=True,
+    ).order_by("pk")
+    due = []
+    for room in rooms:
+        if day.weekday() not in lesson_weekdays(room):
+            continue
+        interval = lesson_interval(room, day)
+        if interval is None:  # a lesson_time nobody can read: no end to wait for
+            continue
+        ends_at = interval[1]
+        if ends_at <= now < ends_at + timedelta(minutes=CHECK_GRACE_MINUTES) and now < marking_window(room, day)[1]:
+            due.append((room, day))
+    return due
+
+
+def teachers_of(classroom):
+    """Who runs the class — owner and teachers (lc-up's teachers on a paired class), not assistants."""
+    seats = ClassroomMembership.objects.filter(
+        classroom=classroom,
+        role__in=ClassroomMembership.MANAGER_ROLES,
+        status=ClassroomMembership.STATUS_ACTIVE,
+        user__is_active=True,
+        user__is_frozen=False,
+    ).select_related("user").order_by("pk")
+    return [seat.user for seat in seats]
+
+
+def check_key(classroom_id: int, day: date) -> str:
+    return f"attcheck:{classroom_id}:{day.isoformat()}"
+
+
+def send_lesson_checks(*, now=None) -> dict:
+    """Tell each due class's teachers what its register needs, once per lesson. A class with
+    nothing to say is looked at again on the next run, so a mark turned ABSENT later in the window
+    still reaches the teacher."""
+    from notifications.constants import EVENT_ATTENDANCE_CHECK
+    from notifications.models import Notification
+    from notifications.services import notify
+
+    if not (lcup_enabled() and attendance_checks_enabled()):
+        return {"skipped": "off"}
+    now = now or timezone.now()
+    counts = Counter()
+    for room, day in due_lessons(now):
+        try:
+            key = check_key(room.pk, day)
+            # Checked without notify's 60-minute dedupe window: a lesson is told once, ever, and a
+            # read notification is never brought back as unread.
+            teachers = [t for t in teachers_of(room) if not Notification.objects.filter(recipient=t, dedupe_key=key).exists()]
+            if not teachers:
+                counts["already_sent"] += 1
+                continue
+            check = lesson_check(room, day)
+            if check.is_empty:
+                counts["clean"] += 1
+                continue
+            counts["classes"] += 1
+            for teacher in teachers:
+                row = notify(
+                    teacher, event=EVENT_ATTENDANCE_CHECK, title=check.title, body=check.body,
+                    link_url=f"/classes/{room.pk}?tab=attendance", dedupe_key=key,
+                )
+                if row is not None:
+                    counts["notified"] += 1
+        except Exception:
+            logger.exception("attendance_check_failed classroom=%s", room.pk)
+            counts["failed"] += 1
+    return dict(counts)

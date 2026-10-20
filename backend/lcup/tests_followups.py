@@ -15,10 +15,13 @@ from lcup.followups import (
     lesson_check,
     missing_seats,
     pending,
+    send_lesson_checks,
     trial_seats,
 )
 from lcup.models import GroupLinkStatus, LcupGroupLink, LinkStatus
 from lcup.testing import FollowupsFixtureMixin
+from notifications.models import Notification
+from users.models import User
 
 
 @override_settings(LCUP_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
@@ -209,3 +212,58 @@ class LessonCheckTests(FollowupsFixtureMixin, TestCase):
 
     def test_an_empty_class_says_nothing(self):
         self.assertTrue(lesson_check(self.room, self.MONDAY).is_empty)
+
+
+def at(day, hour, minute):
+    return timezone.make_aware(datetime(day.year, day.month, day.day, hour, minute))
+
+
+@override_settings(LCUP_ENABLED=True, LCUP_ATTENDANCE_CHECKS_ENABLED=True, LCUP_FREE_TRIAL_LESSONS=1)
+class SendLessonChecksTests(FollowupsFixtureMixin, TestCase):
+    def setUp(self):
+        super().setUp()
+        self.bek = self.student("Bek", "Rahimov")
+        self.mark(self.MONDAY, self.bek, "ABSENT")
+
+    def sent(self):
+        return Notification.objects.filter(event="ATTENDANCE_CHECK")
+
+    def staff(self, username, role):
+        user = User.objects.create_user(None, password=None, username=username, role="teacher", subject="math")
+        ClassroomMembership.objects.create(classroom=self.room, user=user, role=role)
+        return user
+
+    def test_the_teacher_is_told_once_as_the_lesson_ends(self):
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"classes": 1, "notified": 1})
+        [row] = self.sent()
+        self.assertEqual(row.recipient, self.teacher)
+        self.assertEqual(row.category, "CLASSROOM")
+        self.assertEqual(row.link_url, f"/classes/{self.room.pk}?tab=attendance")
+        self.assertEqual(row.dedupe_key, f"attcheck:{self.room.pk}:2026-10-19")
+        self.assertIn("Absent: Bek Rahimov", row.body)
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 10)), {"already_sent": 1})
+        self.assertEqual(self.sent().count(), 1)
+
+    def test_only_inside_the_half_hour_after_the_lesson(self):
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 15, 55)), {})
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 31)), {})
+        self.assertFalse(self.sent().exists())
+
+    def test_not_on_a_day_the_class_does_not_meet(self):
+        self.assertEqual(send_lesson_checks(now=at(date(2026, 10, 20), 16, 5)), {})
+
+    def test_a_clean_register_sends_nothing(self):
+        self.mark(self.MONDAY, self.bek, "PRESENT")
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"clean": 1})
+        self.assertFalse(self.sent().exists())
+
+    def test_every_teacher_of_the_class_and_no_assistant(self):
+        second = self.staff("second", ClassroomMembership.ROLE_TEACHER)
+        self.staff("helper", ClassroomMembership.ROLE_TA)
+        send_lesson_checks(now=at(self.MONDAY, 16, 5))
+        self.assertEqual(set(self.sent().values_list("recipient_id", flat=True)), {self.teacher.pk, second.pk})
+
+    @override_settings(LCUP_ATTENDANCE_CHECKS_ENABLED=False)
+    def test_nothing_while_the_switch_is_off(self):
+        self.assertEqual(send_lesson_checks(now=at(self.MONDAY, 16, 5)), {"skipped": "off"})
+        self.assertFalse(self.sent().exists())
