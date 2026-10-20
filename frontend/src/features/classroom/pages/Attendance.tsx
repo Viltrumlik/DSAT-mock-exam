@@ -287,7 +287,7 @@ export function RosterMarker({ classId, sessionId }: { classId: number; sessionI
           return (
             <div key={r.student_id} className="py-2.5">
               <div className="flex items-center justify-between gap-3">
-                <span className="flex min-w-0 items-center gap-2">
+                <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
                   <span className="min-w-0 truncate text-sm text-foreground">{r.name}</span>
                   {r.frozen_for_debt ? (
                     <span className="shrink-0 rounded-full bg-rose-500/10 px-2 py-0.5 text-[11px] font-semibold text-rose-600 dark:text-rose-400">

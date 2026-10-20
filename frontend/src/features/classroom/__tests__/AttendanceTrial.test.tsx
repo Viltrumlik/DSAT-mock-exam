@@ -87,6 +87,14 @@ describe("Attendance register — lc-up trial students", () => {
     expect(host.textContent).toContain("Ali Valiyev has already had the free trial lesson — send them to the admin");
   });
 
+  it("lets the name-and-badges group wrap, so a long badge drops under the name on a phone", async () => {
+    await mount({ roster: [row({ lessons_before: 1, free_used: true })] });
+    const name = Array.from(host.querySelectorAll("span")).find((span) => span.textContent === "Ali Valiyev");
+    if (!name) throw new Error("no name span");
+    expect(name.className).toContain("truncate");
+    expect(name.parentElement?.className).toContain("flex-wrap");
+  });
+
   it("says nothing for a student who is not on trial", async () => {
     await mount({ roster: [row(null)] });
     expect(host.textContent).not.toContain("Trial");
