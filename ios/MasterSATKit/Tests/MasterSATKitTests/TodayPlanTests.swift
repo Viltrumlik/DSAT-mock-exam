@@ -157,6 +157,20 @@ enum WorkFixtures {
         #expect(plan.lessons.last?.start == F.local(14, 18))
     }
 
+    @Test("A lesson the schedule gave no clock time has none to show: the day only, never 00:00")
+    func untimedLesson() throws {
+        let plan = TodayPlan(assignments: [], events: [
+            try F.lesson("2026-09-14", "", classroom: nil, type: "midterm"),
+            try F.lesson("2026-09-14", "Evening", classroom: nil, type: "mock"),
+            try F.lesson("2026-09-14", "16:00-17:30", classroom: 2),
+            try F.lesson("2026-09-14", " 18:00 ", classroom: 1),
+        ], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(plan.lessons.count == 4)
+        #expect(plan.lessons.filter { $0.clockText == nil }.count == 2)
+        #expect(plan.lessons.compactMap(\.clockText) == ["16:00-17:30", "18:00"])
+        #expect(WorkItem.homework(try W.homework(1, due: nil), homeworkXP: nil, now: F.now).clockText == nil)
+    }
+
     @Test("Lessons follow the homework, and only the homework is cut to the limit")
     func upNextLimit() throws {
         let homework = try (1...8).map { try W.homework($0, due: F.at(Double($0))) }

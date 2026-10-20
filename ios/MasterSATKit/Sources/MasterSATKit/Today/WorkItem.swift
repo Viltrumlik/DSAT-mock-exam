@@ -78,6 +78,15 @@ public struct WorkItem: Identifiable, Sendable, Equatable {
     /// Classwork is a homework row that is done in class, not owed.
     public var isClasswork: Bool { assignment?.isClasswork ?? false }
 
+    /// The time the schedule gave a lesson, as it wrote it ("18:00", "13:00-15:00") — nil for
+    /// homework and for a lesson with no clock time. `start` of such a lesson is its day's
+    /// midnight, and a row must say the day only, never "00:00".
+    public var clockText: String? {
+        guard case .lesson(let event) = source,
+              !ProfileLessons.clockTimes(in: event.time).isEmpty else { return nil }
+        return event.time.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     public static func homework(_ homework: AssignmentListing, homeworkXP: Int?, now: Date = Date()) -> WorkItem {
         let due = homework.dueAt.flatMap(JSONCoding.parseServerDate)
         let catchUp = !homework.isClasswork && (due.map { $0 < now } ?? false)
