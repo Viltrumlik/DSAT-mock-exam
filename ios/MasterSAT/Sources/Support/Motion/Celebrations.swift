@@ -95,6 +95,11 @@ final class CelebrationCenter {
 
     /// A piece of work is in. `xpBefore` is `xpNow` read when the work started; `point` is where
     /// the confetti leaves from when it plays at once (the button), else the screen's centre.
+    ///
+    /// Contract: call once per piece of work; never on a failed submit. Every call plays its own
+    /// check and queues its own XP gain, so the caller calls it only after the server confirmed
+    /// the work, from a one-shot point (a flag, or the not-done to done transition) that a
+    /// re-render, a double tap or a retried callback cannot fire twice.
     func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
         let entry = queue.record(work, xpBefore: xpBefore, stageVisible: !covered)
         if entry.playNow { playEffort(work, at: point) }

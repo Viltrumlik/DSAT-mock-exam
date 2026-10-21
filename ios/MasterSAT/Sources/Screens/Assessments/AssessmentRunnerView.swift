@@ -12,6 +12,8 @@ import MasterSATKit
 /// laptop does not — zoom, a flag, and a map of the whole set.
 struct AssessmentRunnerView: View {
     let attemptId: Int
+    /// Called once the hand-in is accepted; the presenter celebrates it (`CelebrationCenter`).
+    var onSubmitted: (@MainActor () -> Void)? = nil
     let onClose: @MainActor () -> Void
 
     @Environment(Session.self) private var session
@@ -455,9 +457,13 @@ struct AssessmentRunnerView: View {
 
     @MainActor
     private func submit() {
-        guard let runner else { return }
+        // `didSubmit` is the one-shot: the hand-in is announced to the presenter exactly once.
+        guard let runner, !didSubmit else { return }
         Task {
-            if await runner.submit() { didSubmit = true }
+            if await runner.submit(), !didSubmit {
+                didSubmit = true
+                onSubmitted?()
+            }
         }
     }
 }

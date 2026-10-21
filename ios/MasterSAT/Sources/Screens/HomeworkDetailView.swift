@@ -53,6 +53,11 @@ struct HomeworkDetailView: View {
     @State private var startingKey: String?
     @State private var assessmentAttemptId: Int?
     @State private var reviewAttemptId: Int?
+    @Environment(CelebrationCenter.self) private var celebrations
+    /// Where the Hand in button is, so the confetti leaves from it.
+    @State private var handInFrame: CGRect = .zero
+    /// The header's XP when a quiz was opened — what its hand-in's gain is measured from.
+    @State private var xpAtQuizStart: Int?
 
     /// The row, enriched — never replaced — by the detail (see `AssignmentListing.merging`).
     private var current: AssignmentListing? {
@@ -102,10 +107,14 @@ struct HomeworkDetailView: View {
             AssessmentReviewView(attemptId: id)
         }
         .fullScreenCover(item: $assessmentAttemptId) { id in
-            AssessmentRunnerView(attemptId: id) {
+            // Celebrated the moment it is handed in; the cover keeps it waiting until it has gone.
+            AssessmentRunnerView(attemptId: id, onSubmitted: {
+                celebrations.celebrate(.assessment, xpBefore: xpAtQuizStart)
+            }) {
                 assessmentAttemptId = nil
                 Task { await load() }
             }
+            .coversCelebrations(celebrations)
         }
     }
 
@@ -545,6 +554,7 @@ struct HomeworkDetailView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInFrame = $0 }
 
             if let actionError {
                 Text(actionError)
@@ -570,6 +580,7 @@ struct HomeworkDetailView: View {
                 // Resumes the live attempt rather than opening a second one, so tapping
                 // Continue twice cannot restart a half-finished quiz from scratch.
                 let attempt = try await session.assessments.start(homeworkId: link.homeworkId)
+                xpAtQuizStart = celebrations.xpNow
                 assessmentAttemptId = attempt.id
             } catch let error as APIError {
                 actionError = error.errorDescription
@@ -663,6 +674,7 @@ struct HomeworkDetailView: View {
             actionError = limits.message(for: problem)
             return
         }
+        let xpBefore = celebrations.xpNow
         isUploading = true
         actionError = nil
         Task {
@@ -677,6 +689,8 @@ struct HomeworkDetailView: View {
                 // Only clear the staged files once the server has them.
                 staged = []
                 submission = updated
+                // Effort, every time — "Send again" included.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
             } catch APIError.validation(_, _, let fields) where fields["file_tokens"] != nil {
                 // "Token already used": an earlier attempt DID land — its response was lost on
                 // the way back. The files are already on the server, so re-read what it holds
@@ -686,6 +700,8 @@ struct HomeworkDetailView: View {
                     classroomId: classroomId,
                     assignmentId: a.id
                 )) ?? submission
+                // The earlier attempt did land: the work is in.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
             } catch APIError.conflict(let detail) {
                 // Changed somewhere else (another device, a teacher's return). Show what the
                 // server holds now; the staged files stay, ready to send against it.
