@@ -3,7 +3,7 @@ import SwiftUI
 /// The app's motion vocabulary — level 3, "playful everywhere" (owner, 2026-10-20).
 ///
 /// Every animated thing picks one of these rather than inventing a curve; the focus zones
-/// (runner, vocab test, upload, review) use `focus` and nothing else.
+/// (runner, vocab test, upload, review) use `focus`, `focusTap` and `focusStep` and nothing else.
 enum Motion {
     /// A tap: quick squash, lively return.
     static let press = Animation.spring(response: 0.22, dampingFraction: 0.45)
@@ -137,15 +137,16 @@ enum FocusTurn: Equatable {
 }
 
 extension AnyTransition {
-    /// A question arriving: it comes 24 pt in from the side it is coming from as it fades in;
-    /// the one leaving only fades, in half the time, so two texts never sit over each other for
-    /// long. Animate the change with `Motion.focus` — nothing overshoots. Set the turn in the
-    /// same update as the change, before it: the arriving view reads it as it is inserted.
-    /// Under Reduce Motion, a crossfade.
+    /// A question arriving: it comes 24 pt in from the side it is coming from as it fades in,
+    /// in one `Motion.focus` beat; the one leaving only fades, in half the time, so two texts
+    /// never sit over each other for long. Both carry their own animation, so the 250 ms rule
+    /// holds whatever the caller animates the change with — nothing overshoots. Set the turn in
+    /// the same update as the change, before it: the arriving view reads it as it is inserted.
+    /// Under Reduce Motion, a crossfade in the same beat.
     static func focusTurn(_ turn: FocusTurn, reduceMotion: Bool) -> AnyTransition {
-        guard !reduceMotion else { return .opacity }
+        guard !reduceMotion else { return .opacity.animation(Motion.focus) }
         return .asymmetric(
-            insertion: .offset(x: turn == .forward ? 24 : -24).combined(with: .opacity),
+            insertion: .offset(x: turn == .forward ? 24 : -24).combined(with: .opacity).animation(Motion.focus),
             removal: .opacity.animation(.easeOut(duration: 0.1))
         )
     }
@@ -177,17 +178,17 @@ private struct FocusReveal: ViewModifier {
     let shown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// One structure whatever the setting — a live Reduce Motion toggle must not rebuild the
+    /// subtree (descendant state, scroll position, the first responder). Under Reduce Motion the
+    /// block has no offset and no beats: it only fades.
     func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-                .opacity(shown ? 1 : 0)
-                .animation(.easeOut(duration: 0.15), value: shown)
-        } else {
-            content
-                .opacity(shown ? 1 : 0)
-                .offset(y: shown ? 0 : 8)
-                .animation(.easeOut(duration: 0.15).delay(Double(min(max(index, 0), 3)) * Motion.focusStep), value: shown)
-        }
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: reduceMotion || shown ? 0 : 8)
+            .animation(
+                .easeOut(duration: 0.15).delay(reduceMotion ? 0 : Double(min(max(index, 0), 3)) * Motion.focusStep),
+                value: shown
+            )
     }
 }
 
@@ -196,15 +197,32 @@ private struct FocusShake: ViewModifier {
     let cornerRadius: CGFloat
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// One structure whatever the setting — a live Reduce Motion toggle must not rebuild the
+    /// subtree (descendant state, scroll position, the first responder). Both tracks always
+    /// exist; the setting only decides which one is seen: the shake moves nothing under Reduce
+    /// Motion, and the pulse is invisible without it.
     func body(content: Content) -> some View {
-        if reduceMotion {
-            // Nothing moves: a red pulse over the refused box instead, in and out — 240 ms, the
-            // length of the shake it stands in for.
-            content.overlay {
+        // Read here: the animators' content closures are Sendable and may not touch the environment.
+        let calm = reduceMotion
+        return content
+            .keyframeAnimator(initialValue: CGFloat(0), trigger: trigger) { view, x in
+                view.offset(x: calm ? 0 : x)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    LinearKeyframe(-8, duration: 0.04)
+                    LinearKeyframe(8, duration: 0.06)
+                    LinearKeyframe(-6, duration: 0.05)
+                    LinearKeyframe(4, duration: 0.05)
+                    LinearKeyframe(0, duration: 0.04)
+                }
+            }
+            .overlay {
+                // Under Reduce Motion nothing moves: a red pulse over the refused box instead,
+                // in and out — 240 ms, the length of the shake it stands in for.
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Theme.danger.opacity(0.18))
                     .keyframeAnimator(initialValue: 0.0, trigger: trigger) { pulse, value in
-                        pulse.opacity(value)
+                        pulse.opacity(calm ? value : 0)
                     } keyframes: { _ in
                         KeyframeTrack {
                             LinearKeyframe(1.0, duration: 0.08)
@@ -215,19 +233,6 @@ private struct FocusShake: ViewModifier {
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
-        } else {
-            content.keyframeAnimator(initialValue: CGFloat(0), trigger: trigger) { view, x in
-                view.offset(x: x)
-            } keyframes: { _ in
-                KeyframeTrack {
-                    LinearKeyframe(-8, duration: 0.04)
-                    LinearKeyframe(8, duration: 0.06)
-                    LinearKeyframe(-6, duration: 0.05)
-                    LinearKeyframe(4, duration: 0.05)
-                    LinearKeyframe(0, duration: 0.04)
-                }
-            }
-        }
     }
 }
 
@@ -275,9 +280,10 @@ struct RollingNumber: View {
     @State private var shown: Double = 0
 
     var body: some View {
-        Text("\(ScoreText.string(reduceMotion ? value : shown))\(suffix)")
-            .contentTransition(.numericText(value: shown))
-            .accessibilityLabel("\(ScoreText.string(value))\(suffix)")
+        Text(verbatim: "\(ScoreText.string(reduceMotion ? value : shown))\(suffix)")
+            .monospacedDigit()
+            .contentTransition(reduceMotion ? .identity : .numericText(value: shown))
+            .accessibilityLabel(Text(verbatim: "\(ScoreText.string(value))\(suffix)"))
             .onAppear { withAnimation(Motion.focus) { shown = value } }
             .onChange(of: value) { _, new in withAnimation(Motion.focus) { shown = new } }
     }
