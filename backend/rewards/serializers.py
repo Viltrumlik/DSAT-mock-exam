@@ -11,7 +11,7 @@ class RewardRuleSerializer(serializers.ModelSerializer):
     group_points = serializers.SerializerMethodField()
 
     def get_group_points(self, rule) -> list[int] | None:
-        """``[alone, two, three]`` for an earning whose price depends on how many students
+        """``[alone, two]`` for an earning whose price depends on how many students
         share it, and ``None`` for every other rule — which is all of them but one.
 
         A support hour pays per head and the rate climbs with the group, so "+10" beside it

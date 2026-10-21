@@ -595,6 +595,68 @@ class SessionHoldsTwoTests(SupportFixture):
             SupportAvailability.objects.filter(support_teacher=self.support, starts_at=start).exists()
         )
 
+    def test_a_student_settled_early_still_holds_their_place(self):
+        """A teacher may record HELD before the hour starts. That must not free the seat for a
+        third student — the cap counts everyone the hour is holding a place for."""
+        booking = support_service.book(self.student, self.slot)
+        support_service.invite_member(booking, self.mate, actor=self.student)
+        support_service.settle(booking, SupportBooking.STATUS_HELD, actor=self.support)
+
+        with self.assertRaises(ValidationError):
+            support_service.book(self.third, self.slot)
+        guest = SupportBooking.objects.get(availability=self.slot, student=self.mate)
+        with self.assertRaises(ValidationError):
+            support_service.invite_member(guest, self.third, actor=self.mate)
+        self.assertEqual(
+            SupportBooking.objects.filter(availability=self.slot)
+            .exclude(status=SupportBooking.STATUS_CANCELLED).count(),
+            2,
+        )
+
+    def test_an_older_hour_of_three_already_paid_twenty_keeps_it(self):
+        """Production has eight hours that held three and were paid 20 each before the cap.
+        Any save in the hour re-prices it — a student rating it included — and a rule that
+        came later must not take 5 points back. A correction that SHRINKS the group still
+        walks it down, like any other."""
+        from rewards import constants as reward_constants
+        from rewards.services import award
+
+        self.slot.capacity = 3
+        self.slot.save(update_fields=["capacity"])
+        # All three seated first, then marked attended with a queryset update — no post_save,
+        # so no hook re-prices the hour while the old state is being laid down.
+        rows = [
+            SupportBooking.objects.create(
+                availability=self.slot, student=user, classroom=self.classroom,
+                status=SupportBooking.STATUS_BOOKED,
+            )
+            for user in (self.student, self.mate, self.third)
+        ]
+        SupportBooking.objects.filter(pk__in=[r.pk for r in rows]).update(
+            status=SupportBooking.STATUS_HELD
+        )
+        for row in rows:
+            row.refresh_from_db()
+            # What the old ladder paid: 20 each, written the way the hook wrote it then.
+            award(
+                row.student, reward_constants.EVENT_SUPPORT_SESSION,
+                idempotency_key=reward_constants.support_session_key(row.id),
+                classroom=self.classroom, source_type="support_booking", source_id=row.id,
+                points=20, reason="support session held, group of 3",
+            )
+        self.assertEqual(balance(self.student), 20)
+
+        support_service.rate(rows[0], 5)  # re-fires the hook over the whole hour
+
+        for user in (self.student, self.mate, self.third):
+            self.assertEqual(balance(user), 20)
+
+        support_service.settle(
+            rows[2], SupportBooking.STATUS_NO_SHOW, actor=self.support,
+            now=self.slot.ends_at,
+        )
+        self.assertEqual((balance(self.student), balance(self.mate), balance(self.third)), (15, 15, 0))
+
     def test_the_student_is_told_whether_there_is_room_for_one_more(self):
         booking = support_service.book(self.student, self.slot)
         self.client.force_authenticate(self.student)

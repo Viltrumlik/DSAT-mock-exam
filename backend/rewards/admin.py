@@ -20,7 +20,7 @@ class RewardRuleAdmin(admin.ModelAdmin):
     list_filter = ("is_active", "grants_xp")
     list_editable = ("points", "grants_xp", "is_active")
 
-    @admin.display(description="Per head, 1 / 2 / 3 students")
+    @admin.display(description="Per head, 1 / 2 students")
     def group_rate(self, rule):
         """What SUPPORT_SESSION's price actually produces once the group ladder is applied.
 

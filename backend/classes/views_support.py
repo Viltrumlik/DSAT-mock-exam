@@ -98,8 +98,8 @@ def _slot_json(slot: SupportAvailability, *, include_seats=True) -> dict:
     return data
 
 
-def _booking_json(booking: SupportBooking) -> dict:
-    return {
+def _booking_json(booking: SupportBooking, *, with_room: bool = False) -> dict:
+    data = {
         "id": booking.id,
         "status": booking.status,
         "topic": booking.topic,
@@ -123,15 +123,19 @@ def _booking_json(booking: SupportBooking) -> dict:
         "rated_at": booking.rated_at,
         "teacher_note": booking.teacher_note,
         "slot": _slot_json(booking.availability, include_seats=False),
+    }
+    if with_room:
         # Whether this hour has room for one more student (MAX_STUDENTS_PER_SESSION, two since
         # 2026-10-21), so the page can leave "Add a member" off a full session rather than
-        # open a picker that can only say "nobody". Asked only of live bookings — one query
-        # each, and a student holds at most MAX_UPCOMING_BOOKINGS of them.
-        "can_add_member": (
+        # open a picker that can only say "nobody". Only on the STUDENT's own list, and asked
+        # only of live bookings — one query each, and a student holds at most
+        # MAX_UPCOMING_BOOKINGS of them. The teacher's diary is unbounded and never needs it.
+        data["can_add_member"] = (
             booking.status == SupportBooking.STATUS_BOOKED
-            and booking.availability.booked_count < support_service.MAX_STUDENTS_PER_SESSION
-        ),
-    }
+            and support_service.students_in(booking.availability)
+            < support_service.MAX_STUDENTS_PER_SESSION
+        )
+    return data
 
 
 def _parse_dt(value):
@@ -375,7 +379,7 @@ class SupportBookingsView(APIView):
             .select_related("availability", "availability__support_teacher", "classroom", "student")
             .order_by("-booked_at", "-id")
         )
-        return Response({"bookings": [_booking_json(b) for b in bookings]})
+        return Response({"bookings": [_booking_json(b, with_room=True) for b in bookings]})
 
     def post(self, request):
         classroom = None
