@@ -190,7 +190,12 @@ struct VocabStudyView: View {
         // Whatever the last run still holds — a grading call that failed, answers not yet
         // sent — goes out before the run is let go, rather than vanishing with it.
         if let previous, previous.isStarted, !previous.isFinished {
-            Task { await previous.flush(isPartial: true) }
+            Task {
+                await previous.flush(isPartial: true)
+                // A finished round whose first grading call failed is graded by this flush, and
+                // nothing watches the old runner any more: its finish is reported here.
+                if previous.isFinished { reportFinish() }
+            }
         }
         await begin()
     }
@@ -199,6 +204,9 @@ struct VocabStudyView: View {
     private func exit() {
         Task {
             await runner?.flush(isPartial: true)
+            // Leaving can be what grades a finished round; say so before the cover goes — the
+            // change may never reach `onChange` once it is closing. A no-op if it was said.
+            if runner?.isFinished == true { reportFinish() }
             onClose()
         }
     }
@@ -227,6 +235,8 @@ struct FlashcardView: View {
 
     /// The hold after a verdict — long enough that the definition is actually read.
     static let holdSeconds = 5
+    /// The card turning over: 250 ms, eased in and out, no overshoot — the card is the content.
+    static let flipAnimation = Animation.easeInOut(duration: 0.25)
 
     /// Non-nil only while a graded card is being held.
     private struct Hold: Equatable {
@@ -247,6 +257,14 @@ struct FlashcardView: View {
     /// The throttle itself. Separate from `hold` because two taps can land before the view
     /// re-renders with the buttons disabled.
     @State private var locked = false
+    /// One tick per flip the student asked for — the selection haptic.
+    @State private var flips = 0
+
+    /// The swipe gives a verdict exactly as the buttons do, and is off when they are.
+    private var swipeVerdict: (@MainActor (Bool) -> Void)? {
+        guard hold == nil, !locked else { return nil }
+        return { answer($0) }
+    }
 
     private var current: VocabWord? { index < deck.count ? deck[index] : nil }
 
@@ -270,6 +288,9 @@ struct FlashcardView: View {
         // The mode is left by a button, not a navigation, so nothing else would stop the
         // hold: without this it keeps counting and deals a card in a screen that is gone.
         .onDisappear { holdTask?.cancel() }
+        .sensoryFeedback(.selection, trigger: flips)
+        // A light tap when a verdict is given — by the buttons or by the swipe alike.
+        .sensoryFeedback(.impact(weight: .light), trigger: reviewed)
     }
 
     @ViewBuilder
@@ -283,8 +304,9 @@ struct FlashcardView: View {
 
                 if let word = current {
                     // Flipping stays live during the hold — the pause is a pause, not a freeze.
-                    FlipCard(word: word, flipped: flipped) {
-                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped.toggle() }
+                    FlipCard(word: word, flipped: flipped, onSwipe: swipeVerdict) {
+                        withAnimation(Self.flipAnimation) { flipped.toggle() }
+                        flips += 1
                     }
                     .padding(.horizontal, 16)
                 }
@@ -293,9 +315,11 @@ struct FlashcardView: View {
                     FlashcardHoldStrip(correct: hold.correct, secondsLeft: hold.secondsLeft, total: Self.holdSeconds)
                         .padding(.horizontal, 16)
                 } else {
-                    Text("Tap the card to flip it.")
+                    Text("Tap to flip — swipe right if you knew it, left to see it again.")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
                         .frame(minHeight: 20)
                 }
 
@@ -432,7 +456,7 @@ struct FlashcardView: View {
         }
 
         // The hold is meant to teach, so the answer has to be on screen for it.
-        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped = true }
+        withAnimation(Self.flipAnimation) { flipped = true }
         hold = Hold(correct: isCorrect, secondsLeft: Self.holdSeconds)
         holdTask?.cancel()
         holdTask = Task { @MainActor in
@@ -539,20 +563,86 @@ private struct FlashcardHoldStrip: View {
 struct FlipCard: View {
     let word: VocabWord
     let flipped: Bool
+    /// Swiping gives the verdict — right "Correct", left "Still learning" — a shortcut for the
+    /// buttons under the card. Nil while a verdict is held: the card only flips then.
+    var onSwipe: (@MainActor (Bool) -> Void)? = nil
     let onFlip: @MainActor () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How far the card is being dragged sideways.
+    @State private var drag: CGFloat = 0
+
+    /// Past this far, letting go gives the verdict.
+    private static let threshold: CGFloat = 110
+
+    /// The verdict letting go would give now — nil until the card has gone far enough.
+    private var leaning: Bool? {
+        abs(drag) >= Self.threshold ? drag > 0 : nil
+    }
 
     var body: some View {
         ZStack {
             face(back: false).opacity(flipped ? 0 : 1)
             face(back: true)
                 .opacity(flipped ? 1 : 0)
-                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+                // Under Reduce Motion the card does not turn, so its back is not mirrored either.
+                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
         }
-        .rotation3DEffect(.degrees(flipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        // Under Reduce Motion the faces crossfade instead.
+        .rotation3DEffect(.degrees(flipped && !reduceMotion ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        .overlay(alignment: .top) { stamp }
+        .offset(x: drag)
+        // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
+        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) / 18), anchor: .bottom)
         .frame(maxWidth: .infinity)
         .frame(height: 360)
         .contentShape(Rectangle())
         .onTapGesture { onFlip() }
+        // Simultaneous, so the faces' own up-and-down scrolling still works.
+        .simultaneousGesture(swipe)
+        .animation(Motion.focusTap, value: leaning)
+        .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
+        // A swipe has a way in for VoiceOver too: the same two verdicts, offered on the card
+        // while the buttons under it are live (`onSwipe` is nil during the hold).
+        .accessibilityElement(children: .contain)
+        .accessibilityActions {
+            if let onSwipe {
+                Button("Correct") { onSwipe(true) }
+                Button("Still learning") { onSwipe(false) }
+            }
+        }
+    }
+
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in
+                // Sideways only: an up-and-down drag is a long definition scrolling.
+                guard onSwipe != nil, abs(value.translation.width) > abs(value.translation.height) else { return }
+                drag = value.translation.width
+            }
+            .onEnded { _ in
+                let verdict = leaning
+                withAnimation(Motion.focus) { drag = 0 }
+                if let verdict { onSwipe?(verdict) }
+            }
+    }
+
+    /// What letting go would do, once the card has gone far enough — the student's own verdict
+    /// on themselves (flashcards are self-graded), never the app's.
+    @ViewBuilder
+    private var stamp: some View {
+        if let leaning {
+            Label(leaning ? "Correct" : "Still learning", systemImage: leaning ? "checkmark" : "arrow.counterclockwise")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(leaning ? Theme.success : Theme.warning))
+                .padding(.top, 16)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
     }
 
     @ViewBuilder
