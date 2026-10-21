@@ -305,4 +305,27 @@ private func bundleJSON(
         #expect(runner.unsaved.contains(30))
         #expect(!server.requests.contains { $0.url?.absoluteString.contains("/attempts/submit/") == true })
     }
+
+    @Test("Every write the server confirms counts towards \"Saved\"; a refused one does not")
+    func savedCountsConfirmations() async throws {
+        server.handler = { _ in .json(bundleJSON(answers: [["id": 1, "question_id": 30, "answer": "x", "client_seq": 2]])) }
+        let runner = runner()
+        await runner.load()
+        #expect(runner.savedCount == 0, "answers the server already held are not news")
+        server.handler = { _ in .json(["ok": true]) }
+
+        runner.setAnswer(.string("A"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 1)
+
+        server.handler = { request in
+            request.url?.absoluteString.contains("/attempts/answer/") == true
+                ? .json(["detail": "boom"], status: 500)
+                : .json(["ok": true])
+        }
+        runner.setAnswer(.string("B"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 1)
+        #expect(runner.unsaved.contains(10))
+    }
 }

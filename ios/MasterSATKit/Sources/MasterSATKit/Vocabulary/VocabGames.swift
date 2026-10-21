@@ -165,6 +165,48 @@ public enum VocabGames {
         return letters[min(letters.count - 1, Int(rng() * Double(letters.count)))]
     }
 
+    /// One tile of the spelling question's well.
+    public struct SpellingTile: Sendable, Equatable {
+        public enum Kind: Sendable, Equatable {
+            /// The letter given away (`TestQuestion.revealIndex`) — never written over.
+            case given
+            /// A letter the student has typed, in its place.
+            case typed
+            /// A letter still to type.
+            case blank
+            /// A space, hyphen or apostrophe: shape, not answer — never typed into.
+            case structure
+        }
+
+        public let kind: Kind
+        /// What the tile shows, as typed (the view sets the case); empty for a blank.
+        public let character: String
+
+        public init(kind: Kind, character: String) {
+            self.kind = kind
+            self.character = character
+        }
+    }
+
+    /// The masked word with what the student has typed so far dropped into it.
+    ///
+    /// The typed letters fill the word's LETTER positions in order — the n-th typed letter sits
+    /// on the n-th letter of the word — so a student who types the whole word sees it line up
+    /// with its shape, structure skipped ("wellbeing" fills "well-being"). The given letter keeps
+    /// its tile: the typed letter on its position is consumed, not shown. Letters typed past the
+    /// end are not shown. Nothing here compares a letter with the answer — a wrong letter is a
+    /// typed letter like any other; the test says nothing until its end.
+    public static func spellingTiles(word: String, revealing index: Int?, typed: String) -> [SpellingTile] {
+        var letters = typed.filter(\.isLetter).makeIterator()
+        return Array(word).enumerated().map { offset, character in
+            guard character.isLetter else { return SpellingTile(kind: .structure, character: String(character)) }
+            let next = letters.next()
+            if offset == index { return SpellingTile(kind: .given, character: String(character)) }
+            if let next { return SpellingTile(kind: .typed, character: String(next)) }
+            return SpellingTile(kind: .blank, character: "")
+        }
+    }
+
     /// The word as blanks with one position filled in.
     ///
     /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not

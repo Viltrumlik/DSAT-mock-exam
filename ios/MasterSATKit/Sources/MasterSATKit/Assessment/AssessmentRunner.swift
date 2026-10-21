@@ -25,6 +25,10 @@ public final class AssessmentRunner {
     /// Questions whose last write failed. They are retried on the next flush, and the UI
     /// can say so rather than pretending everything is saved.
     public private(set) var unsaved: Set<Int> = []
+    /// Answer writes the server has confirmed since the attempt opened — what the runner's quiet
+    /// "Saved" listens to. Confirmations, not answers: a refused write (it is in `unsaved`) and a
+    /// write the server overruled with a newer answer (`conflict`) do not count.
+    public private(set) var savedCount = 0
 
     public var questions: [AssessmentQuestion] { bundle?.orderedQuestions ?? [] }
 
@@ -142,6 +146,7 @@ public final class AssessmentRunner {
                 currentIndex: currentIndex
             )
             unsaved.remove(questionId)
+            savedCount += 1
             // Only clean if nothing newer was typed while this write was in flight; if it
             // was, its own scheduled write is still coming.
             if answers[questionId] == value { dirty.remove(questionId) }
