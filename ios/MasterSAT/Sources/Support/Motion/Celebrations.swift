@@ -12,6 +12,14 @@ struct XPFlight: Identifiable, Equatable {
     let owner: UUID
     /// A caption under the number — what a "while you were away" gain was for.
     let label: String?
+
+    /// How long "+N XP" hangs in the air before it flies. A caption has to be read — a few words
+    /// — so a captioned flight hangs about three times as long; an uncaptioned one is unchanged.
+    var hang: Duration { label == nil ? .milliseconds(380) : .milliseconds(1150) }
+
+    /// The backstop (`CelebrationCenter.settle`): after the hang and the flight, with room to spare,
+    /// so it never removes a flight as it lands.
+    var backstop: Duration { label == nil ? .seconds(2.5) : .seconds(4) }
 }
 
 /// The check that pops where a piece of work was finished.
@@ -46,7 +54,10 @@ private struct PillTarget: Equatable {
 /// full-screen cover (`coversCelebrations`). Its XP is the server's word: the header refreshes,
 /// the gain is the new total minus the old, and only a positive gain flies — once a header pill
 /// is on screen to catch it. Until it lands the gain is HELD, so the pill rolls when it lands
-/// rather than before the flight leaves. The rules are `CelebrationQueue`, in the kit.
+/// rather than before the flight leaves. While a task's own read is still out, a rise that a
+/// refresh which beat it has already brought is held too (`heldXP`, `CelebrationQueue.held(xpNow:)`),
+/// so the pill never shows a gain a flight is about to bring and then dips. The rules are
+/// `CelebrationQueue`, in the kit.
 ///
 /// Points are GLOBAL coordinates (`.frame(in: .global)`): the overlay ignores the safe area and
 /// covers the screen, so the two agree.
@@ -356,17 +367,18 @@ final class CelebrationCenter {
         guard queue.hasConfirmedGain, let pill = target,
               let flight = queue.takeFlight(stageVisible: !covered, pillVisible: true, allowsFlights: budget.allowsFlights)
         else { return }
-        flights.append(XPFlight(
+        let airborne = XPFlight(
             id: flight.id,
             amount: flight.amount,
             from: flightOrigin,
             to: CGPoint(x: pill.rect.midX, y: pill.rect.midY),
             owner: pill.owner,
             label: flight.label
-        ))
+        )
+        flights.append(airborne)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(2.5))
-            self?.settle(flight.id)
+            try? await Task.sleep(for: airborne.backstop)
+            self?.settle(airborne.id)
         }
     }
 
@@ -395,7 +407,8 @@ extension View {
     }
 }
 
-/// The overlay that draws the confetti, the check and the flights. Never takes a touch.
+/// The overlay that draws the confetti, the check, the coin burst and the flights. Never takes a
+/// touch — which is why the rank-up card, whose buttons do, is its own overlay (`RankUpOverlay`).
 struct CelebrationLayer: View {
     @Environment(CelebrationCenter.self) private var center
 
@@ -501,30 +514,38 @@ struct XPFlightView: View {
     @State private var phase = 0
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text("+\(flight.amount) XP")
-                .font(.system(size: 22, weight: .black, design: .rounded))
-                .foregroundStyle(Theme.amber)
-                .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
-            // What it was for, while it hangs in the air; gone before it reaches the pill.
-            if let label = flight.label {
-                Text(label)
-                    .font(.system(size: 11, weight: .heavy, design: .rounded))
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(1)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Theme.card, in: Capsule())
-                    .opacity(phase == 1 ? 1 : 0)
+        Text("+\(flight.amount) XP")
+            .font(.system(size: 22, weight: .black, design: .rounded))
+            .foregroundStyle(Theme.amber)
+            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+            // What it was for, while it hangs in the air; gone before it reaches the pill. An
+            // overlay, so the layout is the number alone and it lands exactly on the pill.
+            .overlay(alignment: .bottom) {
+                if let label = flight.label {
+                    Text(label)
+                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Theme.card, in: Capsule())
+                        // The room it may take: the capsule hugs its text inside it, and a long
+                        // label shrinks and then truncates instead of running off a small phone
+                        // (220 x 1.35 still fits 375 pt).
+                        .frame(width: 220)
+                        // Its top edge 4 pt under the number's bottom edge.
+                        .alignmentGuide(.bottom) { $0[.top] - 4 }
+                        .opacity(phase == 1 ? 1 : 0)
+                }
             }
-        }
-        .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
-        .opacity(phase == 2 ? 0.3 : 1)
-        .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
-        .task {
-            withAnimation(Motion.pop) { phase = 1 }
-            do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
-        }
+            .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
+            .opacity(phase == 2 ? 0.3 : 1)
+            .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
+            .task {
+                withAnimation(Motion.pop) { phase = 1 }
+                do { try await Task.sleep(for: flight.hang) } catch { return }
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
+            }
     }
 }
