@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from access import constants as acc_const
 from access.services import normalized_role
+from users.permissions import is_frozen_for_access
 
 from .models import Event, EventRegistration
 
@@ -58,7 +59,9 @@ def is_signupable_student(user) -> bool:
         user is not None
         and getattr(user, "pk", None)
         and getattr(user, "is_active", False)
-        and not getattr(user, "is_frozen", False)
+        # The access reading of the freeze: an exempt test account may sign up (see
+        # ``users.permissions.is_frozen_for_access``).
+        and not is_frozen_for_access(user)
         and normalized_role(user) in acc_const.LEARNER_ROLES
     )
 

@@ -14,6 +14,7 @@ from access.services import (
     user_can_assign_as_class_teacher,
     user_domain_subject,
 )
+from users.permissions import is_frozen_for_access
 from users.utils_staff import sync_django_staff_flag
 from users.phone_utils import normalize_phone
 from users.activity import activity_count
@@ -115,6 +116,15 @@ class UserMeSerializer(serializers.ModelSerializer):
     # the rule, so the two definitions cannot drift apart.
     profile_complete = serializers.SerializerMethodField(read_only=True)
     missing_fields = serializers.SerializerMethodField(read_only=True)
+    # Whether the freeze locks THIS account out — what the frozen screen on the web and iOS
+    # reads. The stored flag, except for the owner's test accounts
+    # (``settings.FREEZE_ACCESS_EXEMPT_EMAILS``), which stay frozen for debt on every staff
+    # screen (``UserSerializer`` reports the raw flag) but can use the site.
+    is_frozen = serializers.SerializerMethodField(read_only=True)
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_frozen(self, obj) -> bool:
+        return is_frozen_for_access(obj)
 
     @extend_schema_field(serializers.BooleanField())
     def get_profile_complete(self, obj) -> bool:
@@ -166,7 +176,6 @@ class UserMeSerializer(serializers.ModelSerializer):
             # unclaimed mailbox. Email now changes only through the verification-code
             # flow; staff can still edit it via UserSerializer (admin endpoints).
             "email": {"read_only": True},
-            "is_frozen": {"read_only": True},
             "subject": {"read_only": True},
             "last_password_change": {"read_only": True},
             # Only the confirm-code flow may set these.
@@ -346,7 +355,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         token["is_admin"] = user.is_admin
         token["role"] = user.role
         token["subject"] = getattr(user, "subject", None) or ""
-        token["is_frozen"] = user.is_frozen
+        token["is_frozen"] = is_frozen_for_access(user)
         token["permissions"] = perms
         return token
 
@@ -363,7 +372,7 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
         data["is_admin"] = u.is_admin
         data["role"] = u.role
         data["subject"] = getattr(u, "subject", None) or ""
-        data["is_frozen"] = u.is_frozen
+        data["is_frozen"] = is_frozen_for_access(u)
         data["permissions"] = sorted(get_effective_permission_codenames(u))
         return data
 

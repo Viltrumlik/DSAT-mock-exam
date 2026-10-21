@@ -17,7 +17,9 @@ import re
 
 import hashlib
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from rest_framework import status as http
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -224,8 +226,12 @@ class NotificationBroadcastView(APIView):
             recipients = recipients.filter(role__in=roles)
         # Frozen accounts cannot use the API at all (see IsAuthenticatedAndNotFrozen), so a
         # notification for one is a row nobody will ever be able to open. Excluded here rather
-        # than filtered in the client so the reported count is the truth.
-        recipients = recipients.exclude(is_frozen=True).order_by("pk")
+        # than filtered in the client so the reported count is the truth. The owner's test
+        # accounts (settings.FREEZE_ACCESS_EXEMPT_EMAILS) CAN use the site, so they stay in.
+        exempt = Q()
+        for email in getattr(settings, "FREEZE_ACCESS_EXEMPT_EMAILS", ()) or ():
+            exempt |= Q(email__iexact=email)
+        recipients = recipients.exclude(Q(is_frozen=True) & ~exempt).order_by("pk")
 
         digest = hashlib.sha256(
             "\x1f".join([title, body, link_url]).encode("utf-8")
