@@ -285,6 +285,9 @@ struct VocabularyView: View {
         }
         // The very text already answered (typed away and back): the answer on screen stands.
         if pause, resultsFor == text, searchFailedFor == nil { return }
+        // A new request is starting, so a failure from the last one no longer stands: "Try again"
+        // shows progress, and typing back to a term that failed does not flash its error first.
+        if searchFailedFor != nil { searchFailedFor = nil }
         searchTask = Task {
             if pause {
                 do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
@@ -573,17 +576,23 @@ struct VocabHomeworkGroupCard: View {
             }
 
             ForEach(group.sets) { set in
-                NavigationLink(value: VocabularyView.Route.set(id: set.id, title: set.title, assignmentId: group.assignmentId)) {
-                    VocabSetCard(
-                        title: set.title,
-                        wordCount: set.wordCount,
-                        completed: set.completed,
-                        mastery: set.mastery,
-                        subtitle: set.sectionTitle,
-                        actionLabel: "Start"
-                    )
+                if set.wordCount > 0 {
+                    NavigationLink(value: VocabularyView.Route.set(id: set.id, title: set.title, assignmentId: group.assignmentId)) {
+                        VocabSetCard(
+                            title: set.title,
+                            wordCount: set.wordCount,
+                            completed: set.completed,
+                            mastery: set.mastery,
+                            subtitle: set.sectionTitle,
+                            actionLabel: "Start"
+                        )
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    // Nothing to play: a Start card would open an empty page. It stays listed, so
+                    // the homework is honest about what it carries, but it is not a link.
+                    VocabEmptySetRow(title: set.title, subtitle: set.sectionTitle)
                 }
-                .buttonStyle(.plain)
             }
         }
         .cardStyle(padding: 16)

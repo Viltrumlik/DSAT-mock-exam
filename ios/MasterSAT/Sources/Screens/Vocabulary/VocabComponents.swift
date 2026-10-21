@@ -305,6 +305,34 @@ struct VocabSetCard: View {
     }
 }
 
+/// A set a homework carries that has no words yet: listed, so the homework says what it holds,
+/// but not a link — there is nothing to play, and a Start card would open an empty page.
+struct VocabEmptySetRow: View {
+    let title: String
+    var subtitle: String?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            IconTile(systemName: "character.book.closed.fill", tone: Theme.textSecondary, size: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                Text(subtitle.flatMap { $0.isEmpty ? nil : "No words yet · \($0)" } ?? "No words yet")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .cardStyle(padding: 16)
+        .opacity(0.75)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 /// One published bank section on the hub.
 ///
 /// The card is the shared white card; the section's colour lives in its small marks only — the
