@@ -73,6 +73,37 @@ MAX_UPCOMING_BOOKINGS = 2
 #: them pick a second and refusing it.
 MAX_BOOKINGS_PER_DAY = 1
 
+#: **The most students one support session holds — the school's rule, 2026-10-21: two.**
+#: The one who booked and one classmate they bring. Enforced on every way into an hour:
+#: booking it, being invited into it, and a teacher opening it as a group. A row published
+#: with a larger ``capacity`` before this rule is read as this many seats (see
+#: :func:`effective_capacity`); bookings already on it are left standing.
+#:
+#: The reward ladder stops at the same number (``rewards.constants.SUPPORT_GROUP_MAX``: 10
+#: alone, 15 each for two). A test pins the two equal, so the desk cannot seat a group the
+#: ladder has no price for, nor price one it cannot seat.
+MAX_STUDENTS_PER_SESSION = 2
+
+
+def effective_capacity(availability) -> int:
+    """How many students this hour may actually hold: its capacity, never above the cap."""
+    return max(1, min(int(availability.capacity or 1), MAX_STUDENTS_PER_SESSION))
+
+
+def students_in(availability) -> int:
+    """Everyone this hour is holding a place for — booked OR already settled, not cancelled.
+
+    The cap counts these, not just the BOOKED seats: a teacher may settle a student HELD
+    before the hour begins, and counting only BOOKED would hand that student's place to a
+    third person, putting three in an hour the school allows two.
+    """
+    return (
+        SupportBooking.objects.filter(availability=availability)
+        .exclude(status=SupportBooking.STATUS_CANCELLED)
+        .count()
+    )
+
+
 #: **The no-show rule — the school's, 2026-10-11.** A student who books a support hour and
 #: does not come is warned the first time. Two missed sessions within any seven days pause
 #: their support booking for a week, with every support teacher: from the day of the second
@@ -757,7 +788,7 @@ def open_calendar_for(student, *, now=None, days: int = CALENDAR_DAYS) -> list[d
                 starts_at = _hour_start(day, hour)
                 ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
                 row = _row_covering(candidates, starts_at, ends_at)
-                capacity = int(row.capacity) if row else 1
+                capacity = effective_capacity(row) if row else 1
                 seats_left = max(0, capacity - taken.get(row.id, 0)) if row else capacity
                 booking_id = mine.get(row.id) if row else None
                 working = _within_working_hours(schedule, day, hour)
@@ -860,7 +891,7 @@ def teacher_calendar_for(support_teacher, *, now=None, days: int = CALENDAR_DAYS
             starts_at = _hour_start(day, hour)
             ends_at = starts_at + timedelta(minutes=SLOT_MINUTES)
             row = _row_covering(rows, starts_at, ends_at)
-            capacity = int(row.capacity) if row else 1
+            capacity = effective_capacity(row) if row else 1
             booked = [
                 b for b in bookings_by_row.get(row.id, [])
                 if b.status == SupportBooking.STATUS_BOOKED
@@ -1009,7 +1040,9 @@ def book(student, availability, *, classroom=None, topic: str = "", now=None) ->
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
     ).count()
-    if taken >= int(availability.capacity):
+    # Never more than MAX_STUDENTS_PER_SESSION, whatever capacity the row was given — and
+    # counting a student already settled before the hour, not only the BOOKED seats.
+    if taken >= effective_capacity(availability) or students_in(availability) >= MAX_STUDENTS_PER_SESSION:
         raise ValidationError("That slot is full.")
 
     if existing is not None:
@@ -1071,6 +1104,10 @@ def invitable_classmates(booking, *, limit: int = 200):
         ).values_list("student_id", flat=True)
     )
     already.add(booking.student_id)
+    # A full session (MAX_STUDENTS_PER_SESSION) has room for nobody — offering names would be
+    # offering clicks the invite then refuses.
+    if max(len(already), students_in(availability)) >= MAX_STUDENTS_PER_SESSION:
+        return []
 
     User = get_user_model()
     candidates = list(
@@ -1145,12 +1182,14 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     HELD (``rewards.constants.support_session_points``), so bringing somebody pays the whole
     group, the inviter included.
 
-    **An invitation widens the hour by one seat.** A support hour is capacity 1 by default and
-    only staff may change that, so an invite to a one-to-one has to either fail or make room.
-    The school chose make-room: a student who wants to bring the classmate they are stuck on
-    the same topic with should not have to ask an administrator first. The cost is real and is
-    the reason ``invited_by`` is shown to the teacher — an hour they published as a
-    one-to-one can grow, so it has to be obvious who did it and who they brought.
+    **An invitation widens the hour by one seat — up to two students in all.** A support hour
+    is capacity 1 by default and only staff may change that, so an invite to a one-to-one has
+    to either fail or make room. The school chose make-room: a student who wants to bring the
+    classmate they are stuck on the same topic with should not have to ask an administrator
+    first. The cost is real and is the reason ``invited_by`` is shown to the teacher — an hour
+    they published as a one-to-one can grow, so it has to be obvious who did it and who they
+    brought. It grows to ``MAX_STUDENTS_PER_SESSION`` (2, the school's rule since 2026-10-21)
+    and no further: a third invitation is refused.
 
     **Every limit applies to the invitee, exactly as if they had booked it themselves**
     (2026-10-11) — the per-day cap, the upcoming cap and the no-show pause, all through
@@ -1208,9 +1247,17 @@ def invite_member(booking, invitee, *, actor=None, now=None) -> SupportBooking:
     taken = SupportBooking.objects.filter(
         availability=availability, status__in=SupportBooking.OCCUPYING_STATUSES
     ).count()
+    # Two students at most (MAX_STUDENTS_PER_SESSION, the school's rule since 2026-10-21):
+    # the one who booked and the one they bring. Checked under the slot lock taken above, so
+    # two invites racing into a one-to-one cannot both get the second seat.
+    if max(taken, students_in(availability)) >= MAX_STUDENTS_PER_SESSION:
+        raise ValidationError(
+            f"This session already has {MAX_STUDENTS_PER_SESSION} students — the most a "
+            f"support session can hold."
+        )
     if taken >= int(availability.capacity):
-        # Make room rather than refuse. Locked above, so two simultaneous invites widen by
-        # two seats rather than racing to widen by one.
+        # Make room rather than refuse — up to the cap above. Locked, so two simultaneous
+        # invites cannot both widen it.
         availability.capacity = taken + 1
         availability.save(update_fields=["capacity", "updated_at"])
 

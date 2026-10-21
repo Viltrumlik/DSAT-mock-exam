@@ -246,11 +246,11 @@ def support_session_key(session_id: int) -> str:
 # ── Support session: the group ladder ─────────────────────────────────────────
 #
 # A support hour pays MORE PER HEAD the more students sit in it, rather than the flat rate it
-# paid before. The school's numbers, 2026-09-02:
+# paid before. The school's numbers, 2026-10-21 (they were 10 / 15 / 20 up to three from
+# 2026-09-02; the school then capped a session at two):
 #
 #     alone      10   (the SUPPORT_SESSION rule's own price)
 #     two        15   each
-#     three      20   each
 #
 # It is a deliberate lever, not a discount for the teacher's time. Inviting a classmate into
 # your hour is the single cheapest way to get another student in front of a support teacher,
@@ -258,14 +258,15 @@ def support_session_key(session_id: int) -> str:
 # problem came alone and the one who was too unsure to book at all stayed home. Paying the
 # whole group more makes bringing somebody worth the invite to *both* of them.
 #
-# The ladder is per-head and additive over the RULE's price, so the school retunes all three
-# rungs from one admin field. ``SUPPORT_GROUP_STEP`` is what each extra head adds and
-# ``SUPPORT_GROUP_MAX`` is where it stops climbing: an hour is capacity 1 by default and every
-# invitation widens it by a seat (``classes.support.invite_member``), with no ceiling of its
-# own, so without a cap here a student could bring nine friends and mint 55 points apiece for
-# an hour that helps nobody. Three is where the school says a session is still a session.
+# The ladder is per-head and additive over the RULE's price, so the school retunes both rungs
+# from one admin field. ``SUPPORT_GROUP_STEP`` is what each extra head adds and
+# ``SUPPORT_GROUP_MAX`` is where it stops climbing. **Two, since 2026-10-21: the school's
+# rule is that a support session holds at most two students**, and the booking side enforces
+# the same number (``classes.support.MAX_STUDENTS_PER_SESSION``, pinned equal by a test).
+# The cap here is still load-bearing on its own: hours booked before the seat limit existed
+# can hold three, and they must not pay a rung the school no longer has.
 SUPPORT_GROUP_STEP = 5
-SUPPORT_GROUP_MAX = 3
+SUPPORT_GROUP_MAX = 2
 
 
 def support_session_points(base: int, attendees: int) -> int:
@@ -284,10 +285,11 @@ def support_session_points(base: int, attendees: int) -> int:
 
 
 def support_session_ladder(base: int) -> list[int]:
-    """The whole ladder, ``[alone, two, three]`` — what the rewards page shows a student.
+    """The whole ladder, ``[alone, two]`` — what the rewards page shows a student.
 
-    Served from here rather than written into React so the three numbers cannot drift from
-    what the hook actually pays when the school retunes the rule.
+    Served from here rather than written into React so the numbers cannot drift from what
+    the hook actually pays when the school retunes the rule. Its length is the group size the
+    school allows, so a client must read it as a list, never as a fixed number of rungs.
     """
     return [support_session_points(base, n) for n in range(1, SUPPORT_GROUP_MAX + 1)]
 

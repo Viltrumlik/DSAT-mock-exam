@@ -442,7 +442,8 @@ export function SupportBookingPage() {
                   </Pill>
                   {/* Not while booking is paused: the server refuses a paused student's
                       invitation, and the dialog would only fill with names to be turned down. */}
-                  {b.status === "BOOKED" && !allowance?.paused_until && (
+                  {/* …nor on a full session: two students is the most one holds. */}
+                  {b.status === "BOOKED" && !allowance?.paused_until && b.can_add_member !== false && (
                     <button type="button" className={rowAction("primary")} onClick={() => setInviting(b)}>
                       <UserPlus className="h-3.5 w-3.5" aria-hidden />
                       Add a member

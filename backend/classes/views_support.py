@@ -76,6 +76,11 @@ def _teacher_subject(user) -> str | None:
     return raw if raw in acc_const.ALL_STAFF_SUBJECTS else None
 
 
+def _group_cap_message() -> str:
+    n = support_service.MAX_STUDENTS_PER_SESSION
+    return f"A support session holds at most {n} students."
+
+
 def _slot_json(slot: SupportAvailability, *, include_seats=True) -> dict:
     data = {
         "id": slot.id,
@@ -93,8 +98,8 @@ def _slot_json(slot: SupportAvailability, *, include_seats=True) -> dict:
     return data
 
 
-def _booking_json(booking: SupportBooking) -> dict:
-    return {
+def _booking_json(booking: SupportBooking, *, with_room: bool = False) -> dict:
+    data = {
         "id": booking.id,
         "status": booking.status,
         "topic": booking.topic,
@@ -119,6 +124,18 @@ def _booking_json(booking: SupportBooking) -> dict:
         "teacher_note": booking.teacher_note,
         "slot": _slot_json(booking.availability, include_seats=False),
     }
+    if with_room:
+        # Whether this hour has room for one more student (MAX_STUDENTS_PER_SESSION, two since
+        # 2026-10-21), so the page can leave "Add a member" off a full session rather than
+        # open a picker that can only say "nobody". Only on the STUDENT's own list, and asked
+        # only of live bookings — one query each, and a student holds at most
+        # MAX_UPCOMING_BOOKINGS of them. The teacher's diary is unbounded and never needs it.
+        data["can_add_member"] = (
+            booking.status == SupportBooking.STATUS_BOOKED
+            and support_service.students_in(booking.availability)
+            < support_service.MAX_STUDENTS_PER_SESSION
+        )
+    return data
 
 
 def _parse_dt(value):
@@ -274,6 +291,12 @@ class SupportAvailabilityView(APIView):
             capacity = max(1, int(request.data.get("capacity") or 1))
         except (TypeError, ValueError):
             capacity = 1
+        if capacity > support_service.MAX_STUDENTS_PER_SESSION:
+            # The school's rule since 2026-10-21. Refused rather than clamped: a teacher who
+            # asked for a group of five must be told they will not get one.
+            return Response(
+                {"detail": _group_cap_message()}, status=400,
+            )
 
         note = (request.data.get("note") or "").strip()
         with transaction.atomic():
@@ -356,7 +379,7 @@ class SupportBookingsView(APIView):
             .select_related("availability", "availability__support_teacher", "classroom", "student")
             .order_by("-booked_at", "-id")
         )
-        return Response({"bookings": [_booking_json(b) for b in bookings]})
+        return Response({"bookings": [_booking_json(b, with_room=True) for b in bookings]})
 
     def post(self, request):
         classroom = None
@@ -701,6 +724,14 @@ class SupportHourView(APIView):
             return Response({"detail": "Support hours start on the hour."}, status=400)
 
         ends_at = starts_at + timedelta(minutes=support_service.SLOT_MINUTES)
+        requested = request.data.get("capacity")
+        if action == "open" and requested not in (None, ""):
+            try:
+                too_many = int(requested) > support_service.MAX_STUDENTS_PER_SESSION
+            except (TypeError, ValueError):
+                too_many = False
+            if too_many:
+                return Response({"detail": _group_cap_message()}, status=400)
         with transaction.atomic():
             slot, _created = SupportAvailability.objects.get_or_create(
                 support_teacher=owner,

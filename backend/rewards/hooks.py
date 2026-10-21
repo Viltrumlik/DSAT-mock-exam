@@ -705,8 +705,26 @@ def sync_support_booking(booking, *, actor=None) -> None:
         points_for(constants.EVENT_SUPPORT_SESSION), len(present)
     )
 
+    # More in the room than a session may now hold (two since 2026-10-21) can only be an hour
+    # from before the cap — production has eight that held three and were paid 20 each. Every
+    # save in the hour re-prices it, a student's RATING included, so without this a student
+    # rating last month's session would quietly lose 5 points to a rule that came later. A
+    # retune must not rewrite what was already paid: over the cap, nobody is lowered. (A
+    # correction that SHRINKS the group still walks it down — that hour is then within the
+    # cap and priced like any other.)
+    already_paid: dict[str, int] = {}
+    if len(present) > constants.SUPPORT_GROUP_MAX:
+        from .models import PointAward
+
+        already_paid = dict(
+            PointAward.objects.filter(
+                idempotency_key__in=[constants.support_session_key(b.id) for b in present]
+            ).values_list("idempotency_key", "points")
+        )
+
     for row in siblings:
         key = constants.support_session_key(row.id)
+        row_points = max(points, int(already_paid.get(key, 0)))
         if row.status != SupportBooking.STATUS_HELD:
             # LATE lands here on purpose: `revoke` zeroes points AND XP, so a HELD corrected
             # to late takes its XP back too. `award(points=0)` would not — XP is a
@@ -720,7 +738,7 @@ def sync_support_booking(booking, *, actor=None) -> None:
             classroom=row.classroom,
             source_type="support_booking",
             source_id=row.id,
-            points=points,
+            points=row_points,
             actor=actor,
             reason=(
                 "support session held"

@@ -53,7 +53,7 @@ const TEACHER_PRICED_EVENTS: readonly RewardEvent[] = ["CLASSWORK_MANUAL"];
 
 /** What a student can actually do about a rule, where the amount alone does not say it.
  *  Homework is the one that matters: it stopped being a band and became a share. */
-function ruleHint(rule: RewardRule): string | null {
+export function ruleHint(rule: RewardRule): string | null {
   const lines: string[] = [];
   switch (rule.event) {
     case "HOMEWORK":
@@ -68,10 +68,19 @@ function ruleHint(rule: RewardRule): string | null {
       // The amount beside this rule is what you earn ALONE, which is the smallest thing it
       // can be — and a student who reads only that has no reason to invite anybody. The rungs
       // come off the rule so they cannot drift from what the hour actually pays.
-      const [alone, pair, trio] = rule.group_points ?? [];
-      if (alone != null && pair != null && trio != null) {
+      //
+      // Read as a list of any length: its length IS the group size the school allows (two
+      // since 2026-10-21 — 10 alone, 15 each for two). This used to destructure exactly three
+      // rungs, so the day the school capped a session at two the sentence silently vanished.
+      const ladder = rule.group_points ?? [];
+      const [alone, pair] = ladder;
+      if (alone != null && pair != null) {
+        const larger = ladder
+          .slice(2)
+          .map((points, i) => `, ${points} each if ${i + 3} of you go`)
+          .join("");
         lines.push(
-          `Bring a classmate and you both earn more: ${alone} on your own, ${pair} each if two of you go, ${trio} each if three do. You're paid once the teacher marks the session as held.`,
+          `Bring a classmate and you both earn more: ${alone} on your own, ${pair} each if two of you go${larger}. A session holds up to ${ladder.length} students. You're paid once the teacher marks the session as held.`,
         );
       }
       break;
@@ -88,7 +97,7 @@ function ruleHint(rule: RewardRule): string | null {
 
 /** The headline amount: a single figure, or `10–20` for a rule whose price climbs with the
  *  group. Reads the rungs off the rule so a retune moves both ends. */
-function ruleRange(rule: RewardRule): string {
+export function ruleRange(rule: RewardRule): string {
   const ladder = rule.group_points;
   if (!ladder || ladder.length === 0) return String(rule.points);
   const low = ladder[0];

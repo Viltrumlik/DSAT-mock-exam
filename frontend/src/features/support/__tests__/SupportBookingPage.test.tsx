@@ -257,6 +257,18 @@ describe("SupportBookingPage — attended late, the no-show pause, started sessi
     expect(buttonNamed("Add a member")).toBeUndefined();
   });
 
+  it("offers no Add a member on a full session — two students is the most one holds", async () => {
+    const full = { ...booking(7, "BOOKED"), can_add_member: false };
+    const roomy = { ...booking(8, "BOOKED"), can_add_member: true };
+    hooks.useMySupportBookings.mockReturnValue(loaded([full]));
+    await render();
+    expect(buttonNamed("Add a member")).toBeUndefined();
+
+    hooks.useMySupportBookings.mockReturnValue(loaded([roomy]));
+    await render();
+    expect(buttonNamed("Add a member")).toBeTruthy();
+  });
+
   it("offers no Cancel once a session has started — the server refuses it", async () => {
     const started = booking(5, "BOOKED");
     started.slot = { ...started.slot, starts_at: new Date(Date.now() - 20 * 60_000).toISOString() };

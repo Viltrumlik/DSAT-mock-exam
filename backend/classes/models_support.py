@@ -155,7 +155,11 @@ class SupportAvailability(models.Model):
 
     @property
     def seats_left(self) -> int:
-        return max(0, int(self.capacity) - self.booked_count)
+        # Against the seats the hour may actually hold — never above the school's cap of two
+        # (``support.MAX_STUDENTS_PER_SESSION``), whatever an older row's capacity says.
+        from .support import effective_capacity
+
+        return max(0, effective_capacity(self) - self.booked_count)
 
 
 class SupportBooking(models.Model):
