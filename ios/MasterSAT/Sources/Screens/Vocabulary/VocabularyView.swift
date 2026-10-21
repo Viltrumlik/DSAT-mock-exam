@@ -23,7 +23,6 @@ struct VocabularyView: View {
     }
 
     private enum Phase: Equatable { case loading, loaded, failed }
-    private enum SearchPhase: Equatable { case idle, searching, done, failed }
 
     /// Start opened a section and found no set in it to play: said under the button for as long
     /// as that section is still the card's next step.
@@ -58,10 +57,14 @@ struct VocabularyView: View {
     @State private var startingReview = false
     @State private var startNote: StartNote?
     @State private var query = ""
+    /// The latest answer from the server and the text it answers. "Searching" is never stored:
+    /// it is "the field holds text that `resultsFor` does not answer yet", so nothing can be left
+    /// stuck on it.
     @State private var results: [VocabWord] = []
-    /// The text `results` answers, so coming back to the tab does not blank a good answer.
     @State private var resultsFor: String?
-    @State private var searchPhase: SearchPhase = .idle
+    /// The text whose search failed — not "no matches".
+    @State private var searchFailedFor: String?
+    @State private var searchTask: Task<Void, Never>?
     @State private var shown = false
 
     /// Sets owed on homework: not yet MASTERED, not merely not started. Zero is not shown.
@@ -138,9 +141,11 @@ struct VocabularyView: View {
             .onAppear {
                 if !shown { shown = true }
                 Task { await load() }
+                // Back from a page: read the search again, quietly, with the answer still shown.
+                if isSearching { runSearch(searchText, pause: false) }
             }
             // A newer keystroke cancels the older search; a cancelled search stores nothing.
-            .task(id: searchText) { await search(searchText) }
+            .onChange(of: searchText) { _, text in runSearch(text, pause: true) }
             .onChange(of: segment) { _, _ in
                 if !segmentPicked { segmentPicked = true }
             }
@@ -241,54 +246,65 @@ struct VocabularyView: View {
     // MARK: - Search
 
     @ViewBuilder private var searchResults: some View {
-        switch searchPhase {
-        case .idle, .searching:
+        let text = searchText
+        let fresh = resultsFor == text
+        if searchFailedFor == text {
+            VocabErrorNotice(
+                title: "Search didn't go through",
+                message: "Check your connection and try again."
+            ) { runSearch(searchText, pause: false) }
+        } else if fresh && results.isEmpty {
+            DashedEmpty(title: "No matches for “\(text)”", hint: "Try a shorter word, or part of a definition.")
+        } else if fresh || (resultsFor != nil && !results.isEmpty) {
+            // Not yet answered for this text: the last answer stays, dimmed, rather than
+            // collapsing into a spinner on every keystroke.
+            VStack(spacing: 12) {
+                ForEach(results) { VocabSearchRow(word: $0) }
+            }
+            .opacity(fresh ? 1 : 0.45)
+            .animation(.easeOut(duration: 0.15), value: fresh)
+            .accessibilityHidden(!fresh)
+        } else {
             ProgressView()
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 40)
                 .accessibilityLabel("Searching")
-        case .failed:
-            VocabErrorNotice(
-                title: "Search didn't go through",
-                message: "Check your connection and try again."
-            ) { await search(searchText) }
-        case .done:
-            if results.isEmpty {
-                DashedEmpty(title: "No matches for “\(searchText)”", hint: "Try a shorter word, or part of a definition.")
-            } else {
-                VStack(spacing: 12) {
-                    ForEach(results) { VocabSearchRow(word: $0) }
-                }
+        }
+    }
+
+    /// One search at a time, owned here: a newer keystroke cancels the older one, and a task
+    /// that was cancelled stores nothing. `pause` waits for a break in the typing.
+    private func runSearch(_ text: String, pause: Bool) {
+        searchTask?.cancel()
+        searchTask = nil
+        guard text.count >= 2 else {
+            if !results.isEmpty { results = [] }
+            if resultsFor != nil { resultsFor = nil }
+            if searchFailedFor != nil { searchFailedFor = nil }
+            return
+        }
+        // The very text already answered (typed away and back): the answer on screen stands.
+        if pause, resultsFor == text, searchFailedFor == nil { return }
+        searchTask = Task {
+            if pause {
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
             }
+            await fetchSearch(text)
         }
     }
 
     @MainActor
-    private func search(_ text: String) async {
-        guard text.count >= 2 else {
-            if !results.isEmpty { results = [] }
-            if resultsFor != nil { resultsFor = nil }
-            if searchPhase != .idle { searchPhase = .idle }
-            return
-        }
-        // Back on the tab (a page was pushed and popped) with the answer for this very text
-        // on screen: read again without the spinner or the pause, and keep the answer if that
-        // read fails.
-        let quiet = searchPhase == .done && resultsFor == text
-        if !quiet {
-            if searchPhase != .searching { searchPhase = .searching }
-            // Wait for a pause in the typing; a newer keystroke cancels this one here.
-            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
-        }
+    private func fetchSearch(_ text: String) async {
         do {
             let found = try await session.student.searchVocabularyWords(text)
             guard !Task.isCancelled, text == searchText else { return }
             if results != found { results = found }
             if resultsFor != text { resultsFor = text }
-            if searchPhase != .done { searchPhase = .done }
+            if searchFailedFor != nil { searchFailedFor = nil }
         } catch {
-            guard !Task.isCancelled, text == searchText, !quiet else { return }
-            searchPhase = .failed
+            guard !Task.isCancelled, text == searchText else { return }
+            // A quiet re-read that fails keeps the answer already on screen.
+            if resultsFor != text, searchFailedFor != text { searchFailedFor = text }
         }
     }
 
@@ -439,7 +455,11 @@ struct VocabularyView: View {
         if !sectionsKnown, sectionsPhase != .loading { sectionsPhase = .loading }
         do {
             let fresh = try await session.student.vocabularySections()
-            if sections != fresh { sections = fresh }
+            if sections != fresh {
+                sections = fresh
+                // A reload may leave a set to open where Start found none.
+                if startNote != nil { startNote = nil }
+            }
             if !sectionsKnown { sectionsKnown = true }
             if sectionsPhase != .loaded { sectionsPhase = .loaded }
         } catch {
@@ -539,12 +559,15 @@ struct VocabHomeworkGroupCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                // "Done" is any game finished on the set; the segment's count is mastery.
-                if allDone {
-                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.sets.count)) complete",
+                // "Done" is any game finished on a set with words; the segment's count is mastery.
+                // A homework with nothing to play yet has nothing to be done: it is not "complete".
+                if group.playableCount == 0 {
+                    Chip(text: "No words yet", tone: .neutral)
+                } else if allDone {
+                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) complete",
                          icon: "checkmark.circle.fill", tone: .success)
                 } else {
-                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.sets.count)) done",
+                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) done",
                          tone: late ? .warning : .neutral)
                 }
             }

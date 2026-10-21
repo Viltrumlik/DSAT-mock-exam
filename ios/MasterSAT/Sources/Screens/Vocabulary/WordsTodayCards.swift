@@ -70,15 +70,16 @@ struct ReviewTodayCard: View {
         case .homework(let set):
             if review.wordsToMaster > 0 {
                 count(review)
-            } else {
+            } else if review.wordsMastered > 0 {
                 // Every word is mastered, yet this set is not: its games are what is left.
+                // With nothing mastered at all that would be untrue, so only Next up speaks.
                 headline(
                     "Every word is mastered",
                     detail: "Your homework just has games to go."
                 )
             }
             nextUp(title: set.title, detail: homeworkDetail(set))
-            startButton
+            startButton(for: set.title)
             noteLine
         case .section(_, let title, let left):
             count(review)
@@ -86,7 +87,7 @@ struct ReviewTodayCard: View {
                 title: title,
                 detail: "\(ScoreText.string(left)) \(left == 1 ? "word" : "words") still to master here — Start opens the set with the most."
             )
-            startButton
+            startButton(for: title)
             noteLine
         case .caughtUp:
             HStack(alignment: .top, spacing: 10) {
@@ -171,7 +172,7 @@ struct ReviewTodayCard: View {
             .joined(separator: " · ")
     }
 
-    private var startButton: some View {
+    private func startButton(for title: String) -> some View {
         Button(action: onStart) {
             HStack(spacing: 8) {
                 if starting {
@@ -184,6 +185,8 @@ struct ReviewTodayCard: View {
         }
         .buttonStyle(PrimaryButtonStyle(fullWidth: true))
         .disabled(starting)
+        // "Start" alone says nothing about what it starts.
+        .accessibilityLabel(starting ? "Opening \(title)" : "Start \(title)")
     }
 
     @ViewBuilder private var noteLine: some View {
@@ -211,15 +214,20 @@ struct WordSearchField: View {
                 .submitLabel(.search)
             if !query.isEmpty {
                 Button { query = "" } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textLabel)
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textLabel)
+                        // A 44-pt target, flush with the field's trailing edge.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
             }
         }
         .font(.system(size: 15, weight: .medium))
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.leading, 14)
+        .padding(.trailing, query.isEmpty ? 14 : 0)
+        .frame(minHeight: 44)
         .background(Theme.card, in: Capsule())
     }
 }

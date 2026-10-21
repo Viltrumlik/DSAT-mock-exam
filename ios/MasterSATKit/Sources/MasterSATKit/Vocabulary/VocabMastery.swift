@@ -170,14 +170,19 @@ public struct VocabHubTotals: Equatable, Sendable {
 }
 
 extension VocabHomeworkGroup {
-    /// Sets in this homework with at least one game finished — the "{done} / {n}" pill.
+    /// Sets in this homework with words to play. A set with no words has nothing to learn and the
+    /// server never calls one mastered, so it is never owed — here, in `outstandingCount`, in
+    /// `isComplete`, and in the Words tab's "Review today" (`VocabReview`) alike.
+    public var playableCount: Int { sets.filter { $0.wordCount > 0 }.count }
+
+    /// Playable sets with at least one game finished — the "{done} / {playable}" pill.
     /// Weaker than mastery on purpose: it tells a student they have started.
-    public var doneCount: Int { sets.filter(\.completed).count }
+    public var doneCount: Int { sets.filter { $0.wordCount > 0 && $0.completed }.count }
 
     /// Sets still owed: a homework set is owed until all four games are clean, so counting
     /// the ones merely started would tell a student they were finished when the homework
-    /// still scores three quarters.
-    public var outstandingCount: Int { sets.filter { !$0.mastery.isMastered }.count }
+    /// still scores three quarters. A set with no words is never owed.
+    public var outstandingCount: Int { sets.filter { $0.wordCount > 0 && !$0.mastery.isMastered }.count }
 
     /// What the Homework tab badges. Zero is not shown.
     public static func outstanding(in groups: [VocabHomeworkGroup]) -> Int {

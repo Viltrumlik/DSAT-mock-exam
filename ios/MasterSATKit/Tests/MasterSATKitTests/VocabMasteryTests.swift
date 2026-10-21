@@ -209,19 +209,55 @@ import Testing
     @Test("The Homework tab counts sets not yet MASTERED, not sets not yet started")
     func outstandingCountsMastery() throws {
         // A set with one game finished is "done" on the pill but still owed on the tab: the
-        // homework scores three quarters until all four games are clean.
+        // homework scores three quarters until all four games are clean. A set with no words
+        // has nothing to play, so it is never owed.
         let g = try groups(#"""
         [{"assignment_id":4,"assignment_title":"Unit 3","sets":[
-           {"id":1,"title":"A","completed":true,"mastery":\#(mastered)},
-           {"id":2,"title":"B","completed":true},
-           {"id":3,"title":"C","completed":false}]},
-         {"assignment_id":5,"assignment_title":"Unit 4","sets":[{"id":1,"title":"A","completed":true,"mastery":\#(mastered)}]}]
+           {"id":1,"title":"A","word_count":10,"completed":true,"mastery":\#(mastered)},
+           {"id":2,"title":"B","word_count":10,"completed":true},
+           {"id":3,"title":"C","word_count":10,"completed":false},
+           {"id":4,"title":"D","word_count":0,"completed":false}]},
+         {"assignment_id":5,"assignment_title":"Unit 4","sets":[{"id":1,"title":"A","word_count":10,"completed":true,"mastery":\#(mastered)}]}]
         """#)
 
+        #expect(g[0].playableCount == 3)
         #expect(g[0].doneCount == 2)
-        #expect(g[0].outstandingCount == 2)
+        #expect(g[0].outstandingCount == 2, "B and C; the empty set D is never owed")
         #expect(g[0].isComplete == false)
         #expect(VocabHomeworkGroup.outstanding(in: g) == 2)
+    }
+
+    @Test("A set with no words is never owed, and never holds a homework back")
+    func emptySetsAreNeverOwed() throws {
+        let g = try groups(#"""
+        [{"assignment_id":1,"assignment_title":"Played, plus an empty set","sets":[
+           {"id":1,"title":"A","word_count":10,"completed":true},
+           {"id":2,"title":"Empty","word_count":0,"completed":false}]},
+         {"assignment_id":2,"assignment_title":"Only an empty set","sets":[
+           {"id":3,"title":"Empty","word_count":0,"completed":false}]},
+         {"assignment_id":3,"assignment_title":"Mastered, plus an empty set","sets":[
+           {"id":4,"title":"A","word_count":10,"completed":true,"mastery":\#(mastered)},
+           {"id":5,"title":"Empty","word_count":0,"completed":false}]},
+         {"assignment_id":4,"assignment_title":"Nothing in it","sets":[]}]
+        """#)
+
+        // Every set that can be played has been started: complete, though A is not yet mastered.
+        #expect(g[0].isComplete)
+        #expect(g[0].outstandingCount == 1)
+        // Nothing to play: nothing owed, and nothing to call complete either.
+        #expect(g[1].playableCount == 0)
+        #expect(g[1].outstandingCount == 0)
+        #expect(g[1].isComplete == false)
+        // Fully mastered: nothing owed, complete.
+        #expect(g[2].outstandingCount == 0)
+        #expect(g[2].isComplete)
+        // The same answer as a group with no sets at all.
+        #expect(g[3].outstandingCount == 0)
+        #expect(g[3].isComplete == false)
+        // The badge sums what is owed, and an empty set adds nothing.
+        #expect(VocabHomeworkGroup.outstanding(in: g) == 1)
+        // The hero agrees with the badge: only the one owed set is a target.
+        #expect(VocabReview(sections: [], homework: [g[1]]).next == .nothingYet)
     }
 
     @Test("The hub's four tiles sum every section")

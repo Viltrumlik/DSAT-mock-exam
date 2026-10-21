@@ -235,10 +235,17 @@ struct VocabSetCard: View {
 
     private var mastered: Bool { mastery.isMastered }
 
+    private var words: String { "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")" }
+
     /// The two numbers a student acts on, in one quiet line.
     private var meta: String {
-        let words = "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")"
-        return "\(words) · \(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games"
+        "\(words) · \(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games"
+    }
+
+    /// The same two numbers, said once: the line is the card's only statement of them, so the
+    /// bar beside the capsule stays silent rather than read "2 of 4" a second time.
+    private var spokenMeta: String {
+        "\(words), \(ScoreText.string(mastery.masteredModes)) of \(ScoreText.string(mastery.totalModes)) games mastered"
     }
 
     var body: some View {
@@ -260,6 +267,7 @@ struct VocabSetCard: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
+                        .accessibilityLabel(spokenMeta)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
                             .font(.system(size: 12, weight: .medium))
@@ -278,6 +286,7 @@ struct VocabSetCard: View {
 
             HStack(spacing: 12) {
                 VocabMasteryBar(mastery: mastery, height: 8)
+                    .accessibilityHidden(true)
                 // What the link does, drawn as a capsule — the card is the one target.
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
