@@ -6,6 +6,10 @@ enum LottieAsset: String, CaseIterable {
     case strikeFlame = "strike-flame"
     case taskComplete = "task-complete"
     case trophy
+    /// Plays once and fades: a purchase or a conversion went through.
+    case coinBurst = "coin-burst"
+    /// Plays once and fades, behind the trophy: the student moved up a place.
+    case starBurst = "star-burst"
 }
 
 /// A Lottie, played the way the student's settings allow.
