@@ -35,6 +35,10 @@ final class AppRouter {
     var showingMe = false
     var certificate: CertificateCode?
     private(set) var scrollToTop: ScrollRequest?
+    /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
+    /// Class root has applied it (`classToDoShown`), so it lands whether Class was already built
+    /// or is built by this very tap, and applies exactly once.
+    private(set) var wantsClassToDo = false
 
     /// A sheet asked for while the other sheet was up; opened once that one has gone.
     /// Nothing renders from it, so it stays out of observation.
@@ -96,6 +100,17 @@ final class AppRouter {
         closeSheets()
         select(tab)
         popToRoot(tab)
+    }
+
+    /// Today's "See all": Class, on Tasks → To do for every class — not wherever it was last left.
+    func showClassToDo() {
+        if !wantsClassToDo { wantsClassToDo = true }
+        show(.classes)
+    }
+
+    /// The Class root has put itself on Tasks → To do.
+    func classToDoShown() {
+        if wantsClassToDo { wantsClassToDo = false }
     }
 
     /// Tapping the open tab again goes back to its top, as everywhere on iOS: a pushed page pops

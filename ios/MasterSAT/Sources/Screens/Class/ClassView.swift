@@ -19,6 +19,7 @@ struct ClassView: View {
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
+    @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -101,8 +102,10 @@ struct ClassView: View {
             // Not `.task`: a TabView never tears its tabs down.
             .onAppear {
                 shown = true
+                showToDoIfAsked()
                 Task { await load() }
             }
+            .onChange(of: router.wantsClassToDo) { showToDoIfAsked() }
             .navigationDestination(for: AssignmentListing.self) { assignment in
                 HomeworkDetailView(assignment: assignment).zoomDestination(id: assignment.id, in: zoom)
             }
@@ -202,6 +205,15 @@ struct ClassView: View {
             .buttonStyle(PressBounce())
             .padding(.top, 4)
         }
+    }
+
+    /// Today's "See all": every class, Tasks, To do. Applied once, then the request is cleared.
+    private func showToDoIfAsked() {
+        guard router.wantsClassToDo else { return }
+        if chip != ClassFilter.allID { chip = ClassFilter.allID }
+        if segment != .tasks { segment = .tasks }
+        if taskFilter != .toDo { taskFilter = .toDo }
+        router.classToDoShown()
     }
 
     private func openTelegram(_ room: Classroom) {

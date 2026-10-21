@@ -184,7 +184,7 @@ struct TodayView: View {
             HStack(spacing: 9) {
                 DotHeading(title: "Up next", count: hasLoaded ? plan.homework.count + plan.lessons.count : nil)
                 if next.more > 0 {
-                    Button("See all") { router.show(.classes) }
+                    Button("See all") { router.showClassToDo() }
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.accent)
                 }
