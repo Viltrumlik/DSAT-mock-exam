@@ -93,8 +93,7 @@ struct MatchingView: View {
                     label: "Clean first try",
                     value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
                 ),
-            ],
-            celebrate: mistakes == 0
+            ]
         ))
     }
 }

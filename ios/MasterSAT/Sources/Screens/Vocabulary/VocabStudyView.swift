@@ -10,8 +10,6 @@ struct StudyOutcome {
     var description: String?
     let stats: [ModeStat]
     var restartLabel = "Study again"
-    /// A clean sweep by the mode's own measure — confetti, as the web fires it.
-    var celebrate = false
     /// Extra content between the stats and the actions. Only the test uses it.
     var extra: AnyView?
 }
@@ -61,7 +59,6 @@ struct VocabStudyView: View {
                         errorText: runner.saveError?.errorDescription,
                         isSaving: runner.isCompleting || (runner.completionRequested && !runner.isFinished && runner.saveError == nil),
                         restartLabel: outcome.restartLabel,
-                        celebrate: outcome.celebrate,
                         onRestart: { Task { await restart() } },
                         onExit: exit,
                         onRetrySave: { Task { await runner.complete() } },
@@ -495,13 +492,8 @@ struct FlashcardView: View {
                 stats: [
                     ModeStat(label: "Words", value: ScoreText.string(set.words.count)),
                     ModeStat(label: "Cards reviewed", value: ScoreText.string(reviewed)),
-                    ModeStat(
-                        label: "Accuracy",
-                        value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: reviewed)))%",
-                        tone: .success
-                    ),
-                ],
-                celebrate: correct == reviewed
+                    .accuracy(VocabGames.accuracyPercent(correct: correct, of: reviewed), tone: .success),
+                ]
             ))
         } else {
             phase = .checkpoint

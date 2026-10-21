@@ -224,7 +224,7 @@ struct SpeedView: View {
                 : "All \(ScoreText.string(prompts.count)) words answered with \(formatClock(secondsLeft)) to spare.",
             stats: [
                 ModeStat(label: "Correct", value: ScoreText.string(correct), tone: .success),
-                ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: answered)))%"),
+                .accuracy(VocabGames.accuracyPercent(correct: correct, of: answered)),
                 ModeStat(label: "Answered", value: "\(ScoreText.string(answered))/\(ScoreText.string(prompts.count))"),
             ],
             restartLabel: "Race again"
