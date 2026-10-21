@@ -15,6 +15,12 @@ struct SegmentBar<Segment: Hashable>: View {
 
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The chosen segment's capsule. In light mode a white card on the grey track; in dark mode
+    /// the card colour is almost the track's own, so it takes a lighter fill and a hairline edge.
+    private var activeFill: Color { colorScheme == .dark ? Color(.systemGray4) : Theme.card }
+    private var activeEdge: Color { colorScheme == .dark ? Color.white.opacity(0.14) : .clear }
 
     var body: some View {
         HStack(spacing: 0) {
@@ -32,7 +38,8 @@ struct SegmentBar<Segment: Hashable>: View {
                         .background {
                             if active {
                                 Capsule()
-                                    .fill(Theme.card)
+                                    .fill(activeFill)
+                                    .overlay(Capsule().strokeBorder(activeEdge, lineWidth: 1))
                                     .shadow(color: .black.opacity(0.08), radius: 4, y: 1)
                                     .matchedGeometryEffect(id: "segment", in: pill)
                             }

@@ -573,7 +573,20 @@ struct XPFlightView: View {
     var body: some View {
         Text("+\(flight.amount) XP")
             .font(.system(size: 22, weight: .black, design: .rounded))
-            .foregroundStyle(Theme.amber)
+            // The deeper amber: the bright one is under 3:1 on a white card.
+            .foregroundStyle(Theme.warning)
+            // A card behind the number while it hangs — it crosses headings and cards on the way
+            // up, and bare amber was hard to read over them. Outset by negative padding, so the
+            // layout is still the number alone and it still lands exactly on the pill; gone as
+            // it takes off.
+            .background {
+                Capsule()
+                    .fill(Theme.card)
+                    .overlay(Capsule().strokeBorder(Theme.amber.opacity(0.45), lineWidth: 1))
+                    .padding(.horizontal, -12)
+                    .padding(.vertical, -4)
+                    .opacity(phase == 2 ? 0 : 1)
+            }
             .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
             // What it was for, while it hangs in the air; gone before it reaches the pill. An
             // overlay, so the layout is the number alone and it lands exactly on the pill.
@@ -591,8 +604,9 @@ struct XPFlightView: View {
                         // label shrinks and then truncates instead of running off a small phone
                         // (220 x 1.35 still fits 375 pt).
                         .frame(width: 220)
-                        // Its top edge 4 pt under the number's bottom edge.
-                        .alignmentGuide(.bottom) { $0[.top] - 4 }
+                        // Its top edge 10 pt under the number's bottom edge: 4 for the number's
+                        // own backdrop, 6 of air.
+                        .alignmentGuide(.bottom) { $0[.top] - 10 }
                         .opacity(phase == 1 ? 1 : 0)
                 }
             }

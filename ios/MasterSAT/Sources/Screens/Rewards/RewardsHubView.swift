@@ -115,7 +115,7 @@ struct RewardsHubView: View {
 
                     HubCard(
                         title: "Shop",
-                        subtitle: "Spend coins and strikes, then collect it from the desk",
+                        subtitle: "Spend coins and strikes, collect your order from the desk",
                         icon: "bag.fill",
                         tone: Theme.success,
                         route: AppLink.shop
