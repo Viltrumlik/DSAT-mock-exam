@@ -86,7 +86,10 @@ struct ClassView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            TabRootScroll(tab: .classes) {
+            TabRootScroll(tab: .classes, onRefresh: {
+                refreshTick += 1
+                await load()
+            }) {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Class").stagger(0, shown: shown)
                     content
@@ -95,10 +98,6 @@ struct ClassView: View {
             }
             .background(Theme.background)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable {
-                refreshTick += 1
-                await load()
-            }
             // Not `.task`: a TabView never tears its tabs down.
             .onAppear {
                 shown = true

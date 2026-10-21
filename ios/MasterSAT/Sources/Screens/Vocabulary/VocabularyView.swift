@@ -60,7 +60,7 @@ struct VocabularyView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            TabRootScroll(tab: .words) {
+            TabRootScroll(tab: .words, onRefresh: { await load() }) {
                 VStack(alignment: .leading, spacing: 18) {
                     AppHeader(title: "Words")
                     HeroHeader(
@@ -116,7 +116,6 @@ struct VocabularyView: View {
                 }
             }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .refreshable { await load() }
             .onAppear { Task { await load() } }
             .sheet(isPresented: $isBuilding) {
                 CustomSetBuilderView { saved in

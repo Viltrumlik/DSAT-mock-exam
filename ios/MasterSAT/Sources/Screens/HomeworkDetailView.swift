@@ -144,7 +144,9 @@ struct HomeworkDetailView: View {
             }
             .padding(16)
         }
-        .refreshable { await load() }
+        // Detached: `load` writes the submission first, and that re-render must not cancel the
+        // assignment request still in flight.
+        .detachedRefresh { await load() }
         .onChange(of: photoSelections) { _, items in
             Task { await stagePhotos(items, limits: a.submissionLimits ?? .standard) }
         }

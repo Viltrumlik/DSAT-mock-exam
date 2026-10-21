@@ -27,7 +27,7 @@ struct RewardsHubView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            TabRootScroll(tab: .rewards) {
+            TabRootScroll(tab: .rewards, onRefresh: { await load() }) {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Rewards")
 
@@ -87,7 +87,6 @@ struct RewardsHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .refreshable { await load() }
             .onAppear { Task { await load() } }
         }
     }

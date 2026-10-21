@@ -80,7 +80,10 @@ struct TodayView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            TabRootScroll(tab: .today) {
+            TabRootScroll(tab: .today, onRefresh: {
+                refreshTick += 1
+                await load()
+            }) {
                 VStack(alignment: .leading, spacing: 18) {
                     AppHeader(
                         title: "Today",
@@ -139,10 +142,6 @@ struct TodayView: View {
             }
             .background(Theme.background)
             .toolbar(.hidden, for: .navigationBar)
-            .refreshable {
-                refreshTick += 1
-                await load()
-            }
             // Not `.task`: a TabView never tears its tabs down, so a task would load once per
             // launch. This runs on every return to the tab and every pop back to the root.
             .onAppear {
