@@ -57,6 +57,7 @@ private struct EventsScreen: View {
         }
         .fullScreenCover(item: $model.presentedTicket) { ticket in
             EventTicketView(ticket: ticket)
+                .noBarClearance()
         }
         .confirmationDialog(
             "Cancel your seat?",

@@ -56,8 +56,8 @@ private struct SurveyFillScreen: View {
     @FocusState private var focus: SurveyFocus?
     @AccessibilityFocusState private var spokenGap: Int?
     @Environment(CelebrationCenter.self) private var celebrations
-    /// Where Submit is, so the confetti leaves from it.
-    @State private var submitFrame: CGRect = .zero
+    /// Where Submit is, so the confetti leaves from it. Boxed: it is written on every scroll frame.
+    @State private var submitSpot = FrameBox()
 
     var body: some View {
         content
@@ -282,7 +282,7 @@ private struct SurveyFillScreen: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(model.isSubmitting)
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { submitFrame = $0 }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { submitSpot.rect = $0 }
         }
         .cardStyle()
     }
@@ -294,7 +294,7 @@ private struct SurveyFillScreen: View {
         guard let gap = await model.submit() else {
             // Sent: celebrated. A survey pays points, not XP, so nothing flies unless XP moved.
             if model.done, !wasDone {
-                celebrations.celebrate(.survey, xpBefore: xpBefore, at: submitFrame.celebrationPoint)
+                celebrations.celebrate(.survey, xpBefore: xpBefore, at: submitSpot.rect.celebrationPoint)
             }
             return
         }

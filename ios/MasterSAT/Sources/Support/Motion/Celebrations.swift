@@ -147,13 +147,22 @@ final class CelebrationCenter {
 
     /// A piece of work is in. `xpBefore` is `xpNow` read when the work started; `point` is where
     /// the confetti leaves from when it plays at once (the button), else the screen's centre.
+    /// `xpAtHandIn` is `xpNow` read the instant the server confirmed the work — pass it when the
+    /// caller awaits anything between that and this call (a re-read of what it handed in): a
+    /// refresh that lands meanwhile already holds the payout, and reading the total only now would
+    /// count it as not this work's. Omitted, the total is read now.
     ///
     /// Contract: call once per piece of work; never on a failed submit. Every call plays its own
     /// check and queues its own XP gain, so the caller calls it only after the server confirmed
     /// the work, from a one-shot point (a flag, or the not-done to done transition) that a
     /// re-render, a double tap or a retried callback cannot fire twice.
-    func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
-        let entry = queue.record(work, xpBefore: xpBefore, stageVisible: !covered)
+    func celebrate(_ work: FinishedWork, xpBefore: Int?, xpAtHandIn: Int? = nil, at point: CGPoint? = nil) {
+        // Measured from hand-in at the latest: a rise the header took since the work started (a
+        // return to the app, a reconnect) is not this work's, and holding it back now would drop
+        // the pill to the old total, un-animated (`XPDelta.baseline`). Read here, before the
+        // refresh below is awaited, so the payout that refresh brings is still this work's gain.
+        let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpAtHandIn ?? xpNow)
+        let entry = queue.record(work, xpBefore: baseline, stageVisible: !covered)
         if entry.playNow { playEffort(work, at: point) }
         Task { [weak self] in
             guard let self else { return }
@@ -453,6 +462,45 @@ final class CelebrationCenter {
 extension CGRect {
     /// The middle of a measured control; nil before it has been measured.
     var celebrationPoint: CGPoint? { self == .zero ? nil : CGPoint(x: midX, y: midY) }
+}
+
+/// A measured frame kept out of SwiftUI state: written on every scroll frame, read only when
+/// something celebrates from it — so measuring never re-renders the page.
+@MainActor
+final class FrameBox {
+    var rect: CGRect = .zero
+}
+
+/// The confetti of a good OUTCOME — a midterm passed, an assessment that beat the last one —
+/// drawn by the page that shows it, so it is seen wherever that page is: the Me sheet too, which
+/// the root overlay sits under. One burst from the top of the page each time `trigger` changes
+/// (the page changes it once, from `OutcomeMemory`); none under Reduce Motion, half under Low
+/// Power (`MotionBudget`). Never takes a touch, never read by VoiceOver — the page says the news
+/// in words.
+struct OutcomeConfetti: View {
+    let trigger: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bursts: [ConfettiBurst] = []
+
+    var body: some View {
+        GeometryReader { box in
+            ConfettiCanvas(bursts: bursts)
+                .onChange(of: trigger) { _, _ in fire(in: box.size) }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func fire(in size: CGSize) {
+        let budget = MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        let count = budget.confetti(44)
+        guard count > 0, size.width > 0 else { return }
+        bursts.append(.make(x: size.width / 2, y: size.height * 0.2, count: count))
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(ConfettiBurst.lifetime + 0.2))
+            bursts.removeAll { $0.isFinished(at: .now) }
+        }
+    }
 }
 
 extension View {

@@ -115,6 +115,7 @@ struct HomeworkDetailView: View {
                 Task { await load() }
             }
             .coversCelebrations(celebrations)
+            .noBarClearance()
         }
     }
 
@@ -697,13 +698,16 @@ struct HomeworkDetailView: View {
                 // "Token already used": an earlier attempt DID land — its response was lost on
                 // the way back. The files are already on the server, so re-read what it holds
                 // instead of telling the student the upload failed and inviting a duplicate.
+                // The hand-in is known now: read the XP total before the re-read below is awaited
+                // (a refresh that lands meanwhile would already hold the payout).
+                let xpAtHandIn = celebrations.xpNow
                 staged = []
                 submission = (try? await session.student.mySubmission(
                     classroomId: classroomId,
                     assignmentId: a.id
                 )) ?? submission
                 // The earlier attempt did land: the work is in.
-                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
+                celebrations.celebrate(.homework, xpBefore: xpBefore, xpAtHandIn: xpAtHandIn, at: handInFrame.celebrationPoint)
             } catch APIError.conflict(let detail) {
                 // Changed somewhere else (another device, a teacher's return). Show what the
                 // server holds now; the staged files stay, ready to send against it.

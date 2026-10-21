@@ -120,6 +120,7 @@ struct AssessmentReviewView: View {
                 dismiss()
             }
             .coversCelebrations(celebrations)
+            .noBarClearance()
         }
         .alert(
             "Couldn't start this assessment",

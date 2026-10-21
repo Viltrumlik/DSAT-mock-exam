@@ -291,3 +291,13 @@ struct RootTabView: View {
         celebrations.setSheetUp(router.showingMe || router.certificate != nil)
     }
 }
+
+extension View {
+    /// Put on a full-screen cover's content. The tab bar's room (`contentMargins(.bottom, …)` on
+    /// each tab, above) travels by environment into anything presented from inside a tab, and a
+    /// cover has no bar under it — its scroll views would end a bar's height short of the bottom.
+    /// An inner margin replaces the inherited one (checked on the simulator, 2026-10-21).
+    func noBarClearance() -> some View {
+        contentMargins(.bottom, 0)
+    }
+}
