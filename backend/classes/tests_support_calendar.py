@@ -127,11 +127,21 @@ class CalendarStateTests(SupportFixture):
     def test_a_group_slot_shows_the_seats_the_teacher_opened(self):
         SupportAvailability.objects.create(
             support_teacher=self.support, starts_at=self.hour,
-            ends_at=self.hour + timedelta(hours=1), capacity=4, note="Algebra clinic",
+            ends_at=self.hour + timedelta(hours=1), capacity=2, note="Algebra clinic",
         )
         cell = self._cell()
-        self.assertEqual((cell["capacity"], cell["seats_left"]), (4, 4))
+        self.assertEqual((cell["capacity"], cell["seats_left"]), (2, 2))
         self.assertEqual(cell["note"], "Algebra clinic")
+
+    def test_an_older_bigger_group_shows_only_the_two_seats_it_may_hold(self):
+        """A session holds at most two students (2026-10-21). An hour opened for four before
+        that shows two seats, because two is all the desk will now take."""
+        SupportAvailability.objects.create(
+            support_teacher=self.support, starts_at=self.hour,
+            ends_at=self.hour + timedelta(hours=1), capacity=4,
+        )
+        cell = self._cell()
+        self.assertEqual((cell["capacity"], cell["seats_left"]), (2, 2))
 
     def test_cancelling_puts_the_hour_back_on_the_calendar(self):
         slot = support_service.slot_for(self.support, self.hour)
@@ -221,14 +231,14 @@ class PublishedBlockTests(SupportFixture):
         )
 
     def test_a_group_block_carries_its_seats_across_every_hour(self):
-        self._block(10, 12, capacity=4, note="Algebra clinic")
+        self._block(10, 12, capacity=2, note="Algebra clinic")
         states = self._states_tomorrow()
         self.assertEqual([states[10], states[11]], ["open", "open"])
         entry = support_service.open_calendar_for(self.student)[0]
         eleven = next(
             h for h in _hours(entry, 1) if timezone.localtime(h["starts_at"]).hour == 11
         )
-        self.assertEqual((eleven["capacity"], eleven["note"]), (4, "Algebra clinic"))
+        self.assertEqual((eleven["capacity"], eleven["note"]), (2, "Algebra clinic"))
 
     def test_an_off_the_hour_block_is_not_invisible(self):
         start = support_service._hour_start(self.tomorrow, 9) + timedelta(minutes=30)
@@ -305,15 +315,15 @@ class RepublishOverAStudentRowTests(SupportFixture):
         r = self.client.post("/api/classes/support/availability/", {
             "starts_at": self.hour.isoformat(),
             "ends_at": (self.hour + timedelta(hours=1)).isoformat(),
-            "capacity": 4,
+            "capacity": 2,
             "note": "Algebra clinic",
         }, format="json")
         self.assertEqual(r.status_code, 200, r.content)
-        self.assertEqual(r.json()["capacity"], 4)
+        self.assertEqual(r.json()["capacity"], 2)
         slot = SupportAvailability.objects.get(support_teacher=self.support, starts_at=self.hour)
-        self.assertEqual((slot.capacity, slot.note), (4, "Algebra clinic"))
-        # The student who already booked keeps their seat; three more are now free.
-        self.assertEqual(slot.seats_left, 3)
+        self.assertEqual((slot.capacity, slot.note), (2, "Algebra clinic"))
+        # The student who already booked keeps their seat; one more is now free.
+        self.assertEqual(slot.seats_left, 1)
 
 
 class TheLastThingPublishedGovernsTheHourTests(SupportFixture):
@@ -345,24 +355,24 @@ class TheLastThingPublishedGovernsTheHourTests(SupportFixture):
         )
 
     def test_narrowing_one_hour_of_a_block_beats_the_block(self):
-        self._publish(14, 17, capacity=5, note="Open clinic")
-        self._publish(15, 16, capacity=2, note="Small group")
+        self._publish(14, 17, capacity=2, note="Open clinic")
+        self._publish(15, 16, capacity=1, note="One to one")
 
-        self.assertEqual(self._cell(15)["capacity"], 2)
-        self.assertEqual(self._cell(15)["note"], "Small group")
+        self.assertEqual(self._cell(15)["capacity"], 1)
+        self.assertEqual(self._cell(15)["note"], "One to one")
         # The hours the narrower row does not cover still answer to the block.
-        self.assertEqual(self._cell(14)["capacity"], 5)
-        self.assertEqual(self._cell(16)["capacity"], 5)
+        self.assertEqual(self._cell(14)["capacity"], 2)
+        self.assertEqual(self._cell(16)["capacity"], 2)
 
     def test_a_withdrawal_anywhere_in_the_hour_still_closes_it(self):
-        self._publish(14, 17, capacity=5)
+        self._publish(14, 17, capacity=2)
         slot = SupportAvailability.objects.get(
             support_teacher=self.support,
             starts_at=support_service._hour_start(self.tomorrow, 14),
         )
         slot.is_cancelled = True
         slot.save(update_fields=["is_cancelled"])
-        self._publish(15, 16, capacity=2)
+        self._publish(15, 16, capacity=1)
 
         # Newest-wins applies among publications only — a blocked hour stays blocked, which is
         # the safe direction when the two rows disagree.
@@ -436,12 +446,13 @@ class RepublishCannotOverbookTests(SupportFixture):
         self.hour = support_service._hour_start(self.tomorrow, 10)
         self.slot = SupportAvailability.objects.create(
             support_teacher=self.support, starts_at=self.hour,
-            ends_at=self.hour + timedelta(hours=3), capacity=4, note="Algebra clinic",
+            ends_at=self.hour + timedelta(hours=3), capacity=2, note="Algebra clinic",
         )
         from classes.models import ClassroomMembership
 
+        # Two: a session holds at most two students (2026-10-21).
         self.peers = []
-        for i in range(3):
+        for i in range(2):
             peer = type(self.student).objects.create_user(f"sb_rp{i}@t.com", "secret123")
             ClassroomMembership.objects.create(
                 classroom=self.classroom, user=peer, role=ClassroomMembership.ROLE_STUDENT
@@ -458,32 +469,34 @@ class RepublishCannotOverbookTests(SupportFixture):
         }, format="json")
 
     def test_omitting_capacity_does_not_shrink_the_group(self):
-        # `capacity` is optional; defaulting it to 1 here left three students overbooked on a
+        # `capacity` is optional; defaulting it to 1 here left two students overbooked on a
         # one-seat slot, with seats_left clamping to 0 so nothing ever showed it.
         r = self._publish(note="one to one")
         self.assertEqual(r.status_code, 200, r.content)
         self.slot.refresh_from_db()
-        self.assertGreaterEqual(self.slot.capacity, 3)
+        self.assertGreaterEqual(self.slot.capacity, 2)
         self.assertEqual(self.slot.note, "one to one")
 
     def test_shrinking_below_the_bookings_is_refused(self):
         r = self._publish(capacity=1)
         self.assertEqual(r.status_code, 400)
-        self.assertIn("3 students already booked", r.json()["detail"])
+        self.assertIn("2 students already booked", r.json()["detail"])
         self.slot.refresh_from_db()
-        self.assertEqual(self.slot.capacity, 4)   # untouched
+        self.assertEqual(self.slot.capacity, 2)   # untouched
 
-    def test_growing_the_group_still_works(self):
-        r = self._publish(capacity=6)
-        self.assertEqual(r.status_code, 200, r.content)
+    def test_growing_the_group_past_two_is_refused(self):
+        """Two is the most a session holds (2026-10-21) — told, not silently clamped."""
+        r = self._publish(capacity=3)
+        self.assertEqual(r.status_code, 400, r.content)
+        self.assertIn("at most 2", r.json()["detail"])
         self.slot.refresh_from_db()
-        self.assertEqual((self.slot.capacity, self.slot.seats_left), (6, 3))
+        self.assertEqual(self.slot.capacity, 2)   # untouched
 
     def test_shrinking_to_exactly_the_bookings_is_allowed(self):
-        r = self._publish(capacity=3)
+        r = self._publish(capacity=2)
         self.assertEqual(r.status_code, 200, r.content)
         self.slot.refresh_from_db()
-        self.assertEqual((self.slot.capacity, self.slot.seats_left), (3, 0))
+        self.assertEqual((self.slot.capacity, self.slot.seats_left), (2, 0))
 
 
 class CalendarApiTests(SupportFixture):

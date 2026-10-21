@@ -1012,6 +1012,9 @@ export interface SupportBooking {
     rated_at: string | null;
     /** What the teacher says the hour covered, written when they settle it. */
     teacher_note: string;
+    /** Room for one more student in this hour (a session holds at most two since
+     *  2026-10-21). Absent on an older server — treat absent as "yes". */
+    can_add_member?: boolean;
     slot: SupportSlot;
 }
 

@@ -133,12 +133,13 @@ class RewardRulesViewTests(TestCase):
     def test_a_support_hour_serves_its_whole_group_ladder(self):
         """`points` is only the bottom rung: an hour pays per head and the rate climbs with the
         group. A rewards page that printed "+10" and nothing else would give a student no
-        reason to bring the classmate the invite button exists for — and the three numbers are
+        reason to bring the classmate the invite button exists for — and the numbers are
         computed from the rule rather than typed into React, so retuning the rung moves them."""
         self.client.force_authenticate(self.student)
         rules = {r["event"]: r for r in self.client.get("/api/rewards/rules/").json()["rules"]}
 
-        self.assertEqual(rules["SUPPORT_SESSION"]["group_points"], [10, 15, 20])
+        # Two rungs since 2026-10-21: a support session holds at most two students.
+        self.assertEqual(rules["SUPPORT_SESSION"]["group_points"], [10, 15])
         # Every other earning is flat, and must say so rather than carry a misleading ladder.
         self.assertIsNone(rules["ATTENDANCE_PRESENT"]["group_points"])
 

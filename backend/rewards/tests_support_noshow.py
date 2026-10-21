@@ -48,10 +48,12 @@ from rewards.models import PointAward, PointAwardAudit
 
 User = get_user_model()
 
-#: The school's live rule, verified on production 2026-09-09: base 10, +5 a head, capped at
-#: three heads — 10 / 15 / 20 / 20. Named here so a failure reads as an amount, not a magic
-#: number, and so the assertions below say *which rung* they mean.
-ALONE, PAIR, TRIO = 10, 15, 20
+#: The school's rule since 2026-10-21: base 10, +5 a head, capped at TWO heads — 10 / 15 /
+#: 15 (it was three heads, 10 / 15 / 20, from 2026-09-02). Named here so a failure reads as
+#: an amount, not a magic number, and so the assertions below say *which rung* they mean.
+#: The three-student hour this suite is built on is now one booked before the cap — which
+#: production does hold (8 of them) — and it is paid the top rung, PAIR, never more.
+ALONE, PAIR = 10, 15
 
 
 class SupportGroupNoShowTests(TestCase):
@@ -170,12 +172,13 @@ class SupportGroupNoShowTests(TestCase):
 
     # ── 2. the ladder climbs when the last row is settled ─────────────────────
 
-    def test_settling_the_third_later_raises_all_three_to_twenty(self):
+    def test_settling_the_second_later_raises_the_first_and_a_third_adds_nothing(self):
         """A teacher settles one row at a time.
 
         The first HELD is momentarily a party of one and is priced at 10; the second has to
-        go back and raise it to 15; the third raises both to 20. A hook that only priced the
-        row in front of it would leave the first student on 10 for ever.
+        go back and raise it to 15. A third (an hour from before the cap) is paid the top
+        rung too, and raises nobody past it. A hook that only priced the row in front of it
+        would leave the first student on 10 for ever.
         """
         self.settle(self.bookings[0], SupportBooking.STATUS_HELD)
         self.assert_holds(self.bookings[0], ALONE, who="the only student settled so far")
@@ -186,24 +189,23 @@ class SupportGroupNoShowTests(TestCase):
 
         self.settle(self.bookings[2], SupportBooking.STATUS_HELD)
         for i, booking in enumerate(self.bookings):
-            self.assert_holds(booking, TRIO, who=f"student {i} in a group of three")
+            self.assert_holds(booking, PAIR, who=f"student {i} in a group of three")
 
     # ── 3. and walks back down when one is corrected ──────────────────────────
 
-    def test_correcting_one_to_no_show_walks_the_others_back_down_to_fifteen(self):
-        """The mis-click, undone. Three HELD at 20 each; the teacher realises one of them
-        never came, and the other two drop to the pair rung — not left holding a group rate
-        for a group that was never there."""
-        for booking in self.bookings:
+    def test_correcting_one_to_no_show_walks_the_other_back_down_to_ten(self):
+        """The mis-click, undone. Two HELD at 15 each; the teacher realises one of them never
+        came, and the other drops to the solo rung — not left holding a group rate for a
+        group that was never there."""
+        for booking in self.bookings[:2]:
             self.settle(booking, SupportBooking.STATUS_HELD)
-        for i, booking in enumerate(self.bookings):
-            self.assert_holds(booking, TRIO, who=f"student {i} before the correction")
+        for i, booking in enumerate(self.bookings[:2]):
+            self.assert_holds(booking, PAIR, who=f"student {i} before the correction")
 
-        self.settle(self.bookings[2], SupportBooking.STATUS_NO_SHOW)
+        self.settle(self.bookings[1], SupportBooking.STATUS_NO_SHOW)
 
-        self.assert_holds(self.bookings[0], PAIR, who="the first student after the correction")
-        self.assert_holds(self.bookings[1], PAIR, who="the second student after the correction")
-        self.assertEqual(self.points_for(self.bookings[2]), 0)
+        self.assert_holds(self.bookings[0], ALONE, who="the student who did come, after it")
+        self.assertEqual(self.points_for(self.bookings[1]), 0)
 
     def test_the_last_no_show_leaves_nobody_paid(self):
         """All three settled HELD, then all three corrected away. Nothing is stranded."""
@@ -218,10 +220,9 @@ class SupportGroupNoShowTests(TestCase):
             self.assertEqual(int(award.points), 0)
             self.assertEqual(int(award.xp), 0)
 
-    def test_the_ladder_stops_at_three_heads(self):
-        """A fourth attendee does not make it 25. Every invitation widens the hour by a seat
-        with no ceiling of its own, so without the cap a student could bring nine friends and
-        mint 55 points apiece for an hour that helps nobody."""
+    def test_the_ladder_stops_at_two_heads(self):
+        """However many sat in an hour from before the cap, nobody is paid past the pair
+        rung: the school's ladder stops at two (2026-10-21)."""
         fourth = User.objects.create_user("ns_s3@t.com", "secret123")
         ClassroomMembership.objects.create(
             classroom=self.classroom, user=fourth, role=ClassroomMembership.ROLE_STUDENT
@@ -233,7 +234,7 @@ class SupportGroupNoShowTests(TestCase):
             self.settle(booking, SupportBooking.STATUS_HELD)
 
         for booking in [*self.bookings, extra]:
-            self.assert_holds(booking, TRIO, who="a student in a group of four")
+            self.assert_holds(booking, PAIR, who="a student in a group of four")
 
     def test_one_hour_does_not_re_price_another(self):
         """The fan-out is over siblings in the SAME slot. A busy Tuesday with two group
@@ -252,7 +253,7 @@ class SupportGroupNoShowTests(TestCase):
         self.settle(alone, SupportBooking.STATUS_HELD)
 
         self.assert_holds(alone, ALONE, who="the student in the one-to-one hour")
-        self.assert_holds(self.bookings[0], TRIO, who="the same student in the group hour")
+        self.assert_holds(self.bookings[0], PAIR, who="the same student in the group hour")
 
 
 class SupportLadderRuleTests(TestCase):
@@ -261,11 +262,11 @@ class SupportLadderRuleTests(TestCase):
     def test_the_schools_numbers(self):
         self.assertEqual(constants.support_session_points(10, 1), ALONE)
         self.assertEqual(constants.support_session_points(10, 2), PAIR)
-        self.assertEqual(constants.support_session_points(10, 3), TRIO)
-        self.assertEqual(constants.support_session_points(10, 4), TRIO)
+        self.assertEqual(constants.support_session_points(10, 3), PAIR)
+        self.assertEqual(constants.support_session_points(10, 4), PAIR)
 
     def test_nobody_attended_earns_nothing(self):
         self.assertEqual(constants.support_session_points(10, 0), 0)
 
     def test_the_published_ladder_matches_what_the_hook_pays(self):
-        self.assertEqual(constants.support_session_ladder(10), [ALONE, PAIR, TRIO])
+        self.assertEqual(constants.support_session_ladder(10), [ALONE, PAIR])

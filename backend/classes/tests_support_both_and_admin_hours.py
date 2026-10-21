@@ -313,13 +313,13 @@ class AdminSetsHoursTests(TestCase):
         response = self.client.post("/api/classes/support/availability/", {
             "starts_at": self.hour.isoformat(),
             "ends_at": (self.hour + timedelta(hours=1)).isoformat(),
-            "capacity": 4,
+            "capacity": 2,
             "support_teacher": self.support.pk,
         }, format="json")
 
         self.assertIn(response.status_code, (200, 201), response.content)
         slot = SupportAvailability.objects.get(support_teacher=self.support)
-        self.assertEqual(slot.capacity, 4)
+        self.assertEqual(slot.capacity, 2)
 
     def test_an_admin_reads_a_teachers_grid_before_editing_it(self):
         SupportAvailability.objects.create(

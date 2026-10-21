@@ -30,7 +30,8 @@ export interface RewardRule {
   /** Whether this earning also adds XP. False for SURVEY since 2026-09-01 — a checkbox the
    *  school can tick back on, so branch on it rather than naming the event in the UI. */
   grants_xp: boolean;
-  /** `[alone, two, three]` for an earning priced per head, and `null` for everything else.
+  /** `[alone, two]` for an earning priced per head (two rungs since 2026-10-21 — its length is
+   *  the group size the school allows), and `null` for everything else.
    *  Only SUPPORT_SESSION has one: an hour pays more each the more students share it, so
    *  `points` alone is just the bottom rung. Served rather than written here, because the
    *  school retunes that rung from the admin and these would go on quoting the old numbers. */
