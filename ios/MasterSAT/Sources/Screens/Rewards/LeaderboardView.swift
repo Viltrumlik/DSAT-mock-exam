@@ -5,9 +5,9 @@ import MasterSATKit
 ///
 /// Three rules this screen keeps that are easy to break:
 ///
-/// - **Ranks are the server's.** On main today the table's ranks are unique (ties broken by
-///   earning count) while `my` shares a tied rank. The app shows what it is sent and never
-///   renumbers; where the two could disagree on one screen, the visible row wins (`standing`).
+/// - **Ranks are the server's.** On main today the table and `my` number ties the same way
+///   (competition ranks: tied students share a place). The app shows what it is sent and never
+///   renumbers; where the two could still disagree on one screen, the visible row wins (`standing`).
 /// - **The goal is only ever the next place.** "N XP to reach #k", measured against the row
 ///   directly above — never the distance from the top.
 /// - **No email is ever a name.** A student with no name set comes back as their full address;

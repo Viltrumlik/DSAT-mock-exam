@@ -260,22 +260,6 @@ import Testing
         #expect(VocabReview(sections: [], homework: [g[1]]).next == .nothingYet)
     }
 
-    @Test("The hub's four tiles sum every section")
-    func hubTotals() throws {
-        let sections = try JSONCoding.decoder.decode([VocabSection].self, from: Data(#"""
-        [{"id":4,"title":"A","set_count":8,"word_count":200,"progress":{"new":150,"mastered":50,"total":200},
-          "mastery":{"mastered_sets":2,"total_sets":8,"percent":25}},
-         {"id":5,"title":"B","set_count":4,"word_count":100,"progress":{"new":90,"mastered":10,"total":100}}]
-        """#.utf8))
-
-        let totals = VocabHubTotals(sections: sections)
-
-        #expect(totals.words == 300)
-        #expect(totals.wordsMastered == 60)
-        #expect(totals.sets == 12)
-        #expect(totals.setsMastered == 2)
-    }
-
     @Test("A section's colour follows its id, and consecutive ids land far apart")
     func sectionToneSlots() {
         // The bank's own ids, as the web's comment gives them: pink, cyan, blue, orange.

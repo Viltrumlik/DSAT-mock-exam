@@ -39,8 +39,9 @@ public struct LastSeen: Codable, Sendable, Equatable {
 
 /// The baseline on the phone, one small JSON value per student in `UserDefaults`.
 ///
-/// Four numbers: a file would add a directory, atomic writes and a migration story for nothing,
-/// and `UserDefaults` already survives relaunches and updates. Keyed by user id, so a second
+/// Five small fields (XP, streak, place, newest award, and whether a place is still unread): a
+/// file would add a directory, atomic writes and a migration story for nothing, and
+/// `UserDefaults` already survives relaunches and updates. Keyed by user id, so a second
 /// account on the same phone starts with no baseline and celebrates nothing on its first launch.
 /// A value that will not decode reads as no baseline — never a crash, never a celebration.
 // @unchecked: the SDK does not mark UserDefaults Sendable, but Apple documents it as thread-safe.

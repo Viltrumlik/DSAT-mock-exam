@@ -115,9 +115,9 @@ public struct LeaderboardSummaryPart: Sendable, Equatable, Hashable {
 
 /// One student on a board.
 public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hashable {
-    /// The SERVER's rank, shown as-is. The app never ranks anybody: on main today the table's
-    /// ranks are unique (ties broken by earning count) while `my` shares a tied rank, and a
-    /// client that "fixed" either would disagree with the site.
+    /// The SERVER's rank, shown as-is. The app never ranks anybody: on main today the table and
+    /// `my` number ties the same way (competition ranks — tied students share a place, and the
+    /// next is skipped), and a client that renumbered either would disagree with the site.
     public let rank: Int
     public let studentId: Int
     /// As the server wrote it — which, for a student with no name set, can be a full email
@@ -179,11 +179,6 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
         region = c.rewardsString(.region).flatMap { $0.isEmpty ? nil : $0 }
         isMe = c.rewardsBool(.isMe) ?? false
         strikes = c.rewardsInt(.strikes)
-    }
-
-    /// The number this row is ranked on, on the given board.
-    public func score(_ metric: LeaderboardMetric) -> Int {
-        metric == .strikes ? (strikes ?? 0) : xp
     }
 
     /// The name to put on screen. See `LeaderboardName.display`.
@@ -359,8 +354,9 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         return rows.first { $0.studentId == my.studentId }
     }
 
-    /// The standing the hero shows. The visible row beats `my`: on main `my` shares a tied rank
-    /// while the table breaks the tie, and the two must not disagree on one screen.
+    /// The standing the hero shows. The visible row beats `my`: it is the row the table shows, so
+    /// the hero and the table can never name two places on one screen (on main both number ties
+    /// the same way, but `my` is a separate read).
     public var standing: LeaderboardRow? { myVisibleRow ?? my }
 
     /// "Your position" is shown on its own only when the viewer is not already in the table —

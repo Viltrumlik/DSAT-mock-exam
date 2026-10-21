@@ -34,8 +34,6 @@ import Testing
         """#)
         #expect(board.metric == .strikes)
         #expect(board.rows.map(\.strikes) == [12, 9])
-        #expect(board.rows[0].score(.strikes) == 12)
-        #expect(board.rows[0].score(.xp) == 0)
         #expect(board.goal == nil)
         #expect(board.passTarget == nil)
     }
@@ -47,7 +45,6 @@ import Testing
         """#)
         #expect(board.metric == .xp)
         #expect(board.rows[0].strikes == nil)
-        #expect(board.rows[0].score(.strikes) == 0)
     }
 }
 

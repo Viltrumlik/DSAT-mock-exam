@@ -208,8 +208,8 @@ import Testing
 
     @Test("The visible row beats `my` for the hero, so one screen never shows two ranks")
     func standingPrefersVisibleRow() {
-        // On main `my` counts only students strictly ahead, so a tie reads #1 there while the
-        // table — which breaks the tie — says #2.
+        // On main both number ties the same way, so this should not happen; but `my` is a separate
+        // read, and if it ever lagged the table the visible row is the one on screen.
         let visible = row(2, 2, 300, me: true)
         let my = row(1, 2, 300, me: true)
         let board = LeaderboardBoard(rows: [row(1, 1, 300), visible], my: my)
