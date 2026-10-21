@@ -36,9 +36,6 @@ struct AssessmentRunnerView: View {
     @State private var picks = 0
     /// Bumped only when a question is flagged (not when the flag comes off): the flag's bounce.
     @State private var flagBounces = 0
-    /// "Saved" is showing, for a moment after the server confirmed an answer.
-    @State private var showSaved = false
-    @State private var savedFade: Task<Void, Never>?
     /// The typed answer's field. Dropped as the question turns: the field belongs to the
     /// question that left, and must not carry its keyboard into the next one.
     @FocusState private var answerFocused: Bool
@@ -122,26 +119,34 @@ struct AssessmentRunnerView: View {
 
             ScrollViewReader { scroller in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 12) {
-                        setHeader(runner)
+                    VStack(alignment: .leading, spacing: 0) {
+                        // The page's true top, above the padding below: scrolling here leaves
+                        // the 14 pt margin in view, and a page already at the top does not move.
+                        Color.clear
+                            .frame(height: 0)
                             .id(Self.top)
-                        // A ZStack, so the question leaving and the one arriving overlap for
-                        // their 200 ms instead of stacking and pushing the page down.
-                        ZStack {
-                            questionCard(runner, question)
-                                .id(question.id)
-                                .transition(.focusTurn(turn, reduceMotion: reduceMotion))
-                        }
+                            .accessibilityHidden(true)
 
-                        if !runner.unsaved.isEmpty {
-                            // Say it rather than showing a silent tick. A student who loses
-                            // signal mid-quiz deserves to know what has not landed.
-                            Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.warning)
+                        VStack(alignment: .leading, spacing: 12) {
+                            setHeader(runner)
+                            // A ZStack, so the question leaving and the one arriving overlap for
+                            // their 200 ms instead of stacking and pushing the page down.
+                            ZStack {
+                                questionCard(runner, question)
+                                    .id(question.id)
+                                    .transition(.focusTurn(turn, reduceMotion: reduceMotion))
+                            }
+
+                            if !runner.unsaved.isEmpty {
+                                // Say it rather than showing a silent tick. A student who loses
+                                // signal mid-quiz deserves to know what has not landed.
+                                Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundStyle(Theme.warning)
+                            }
                         }
+                        .padding(14)
                     }
-                    .padding(14)
                 }
                 .onChange(of: runner.currentIndex) { _, _ in
                     // A new question opens at its top, not where the last one was left.
@@ -151,7 +156,6 @@ struct AssessmentRunnerView: View {
 
             footer(runner)
         }
-        .onChange(of: runner.savedCount) { _, _ in flashSaved() }
         .sheet(isPresented: $showMap) {
             QuestionMapSheet(runner: runner) { index in
                 move(to: index, runner)
@@ -253,14 +257,7 @@ struct AssessmentRunnerView: View {
                     .contentTransition(reduceMotion ? .identity : .numericText(value: Double(runner.answeredCount)))
                     .animation(Motion.focus, value: runner.answeredCount)
                     .accessibilityLabel("\(runner.answeredCount) of \(runner.questions.count) answered")
-                // A quiet word once the server has an answer — never while a write is failing,
-                // when the warning under the question says what has not landed.
-                Label("Saved", systemImage: "checkmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textLabel)
-                    .opacity(showSaved && runner.unsaved.isEmpty ? 1 : 0)
-                    .animation(Motion.focus, value: showSaved)
-                    .accessibilityHidden(true)
+                SavedMark(runner: runner)
             }
         }
         .padding(.horizontal, 18)
@@ -336,7 +333,8 @@ struct AssessmentRunnerView: View {
         return Button {
             runner.toggleFlag(question.id)
             picks += 1
-            if !isFlagged { flagBounces += 1 }
+            // The bounce is for the flag going on — read after the toggle, not from the render.
+            if runner.flagged.contains(question.id) { flagBounces += 1 }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isFlagged ? "flag.fill" : "flag")
@@ -344,6 +342,8 @@ struct AssessmentRunnerView: View {
                     // Chrome beside the question, never over it — the one spring the runner
                     // allows. Not under Reduce Motion.
                     .symbolEffect(.bounce, value: reduceMotion ? 0 : flagBounces)
+                    // The word beside it says it; the glyph would read "flag, Flag".
+                    .accessibilityHidden(true)
                 Text(isFlagged ? "Flagged" : "Flag")
                     .font(.system(size: 12, weight: .bold))
             }
@@ -351,11 +351,23 @@ struct AssessmentRunnerView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.background))
-            .contentShape(Capsule())
             .animation(Motion.focus, value: isFlagged)
+            // The capsule is drawn at its own size, inside a 44 pt target.
+            .frame(minHeight: Self.minTarget)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(isFlagged ? .isSelected : [])
+        // The target is 44 pt tall but takes the capsule's room in the row: the extra falls
+        // above and below it, in the card's padding, so "QUESTION n OF m" does not grow.
+        .frame(height: Self.flagRowHeight)
     }
+
+    /// The smallest tappable height the app allows a control.
+    private static let minTarget: CGFloat = 44
+    /// What the flag takes in the question's header row: its capsule (a 12 pt line and 5 pt
+    /// above and below), whatever its tap target adds around it.
+    private static let flagRowHeight: CGFloat = 24
 
     @ViewBuilder
     private func answerControl(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
@@ -408,6 +420,8 @@ struct AssessmentRunnerView: View {
                             .animation(Motion.focus, value: chosen)
                     }
                     .buttonStyle(FocusPress())
+                    // Which one is picked is heard, not only seen. It says nothing of right.
+                    .accessibilityAddTraits(chosen ? .isSelected : [])
                 }
             }
         case .numeric, .shortText, .unknown:
@@ -526,18 +540,6 @@ struct AssessmentRunnerView: View {
         withAnimation(Motion.focus) { runner.go(to: index) }
     }
 
-    /// "Saved" for a moment after the server confirmed a write; another confirmation keeps it up.
-    @MainActor
-    private func flashSaved() {
-        showSaved = true
-        savedFade?.cancel()
-        savedFade = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(1.2))
-            guard !Task.isCancelled else { return }
-            showSaved = false
-        }
-    }
-
     @MainActor
     private func submit() {
         // `didSubmit` is the one-shot: the hand-in is announced to the presenter exactly once.
@@ -548,6 +550,43 @@ struct AssessmentRunnerView: View {
                 onSubmitted?()
             }
         }
+    }
+}
+
+/// A quiet "Saved" under the answered count, for a moment after the server confirmed a write.
+///
+/// It says a write landed — not that everything has, and not that the answer on screen has — so
+/// it appears only when `savedCount` rises (never for the value the runner opened with, never on
+/// a tap), and not while a write is failing: the warning under the question says what has not
+/// landed. Its own view, reading the runner itself, so a landing redraws only this word. Another
+/// confirmation keeps it up; the task is cancelled with the view. VoiceOver is not told: a
+/// student who needs to know is told what has not saved, in words.
+private struct SavedMark: View {
+    let runner: AssessmentRunner
+    /// The confirmations the runner had when this appeared — those are not news.
+    @State private var opened: Int
+    @State private var shown = false
+
+    init(runner: AssessmentRunner) {
+        self.runner = runner
+        _opened = State(initialValue: runner.savedCount)
+    }
+
+    var body: some View {
+        Label("Saved", systemImage: "checkmark")
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.textLabel)
+            .opacity(shown && runner.unsaved.isEmpty ? 1 : 0)
+            .animation(Motion.focus, value: shown)
+            .accessibilityHidden(true)
+            .task(id: runner.savedCount) {
+                guard runner.savedCount > opened else { return }
+                shown = true
+                try? await Task.sleep(for: .seconds(1.2))
+                guard !Task.isCancelled else { return }
+                shown = false
+            }
+            .onDisappear { shown = false }
     }
 }
 
@@ -694,8 +733,10 @@ struct AssessmentChoiceRow: View {
             }
             .buttonStyle(FocusPress())
             .disabled(isEliminated)
-            // The line is drawn, not read: VoiceOver hears the state instead.
+            // The line is drawn, not read: VoiceOver hears the state instead. And which option
+            // is picked is heard, not only seen — it says nothing of right.
             .accessibilityValue(isEliminated ? "Crossed out" : "")
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             if let onEliminate {
                 Button(action: onEliminate) {
