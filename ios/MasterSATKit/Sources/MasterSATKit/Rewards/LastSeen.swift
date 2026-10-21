@@ -28,7 +28,8 @@ public struct LastSeen: Codable, Sendable, Equatable {
 /// and `UserDefaults` already survives relaunches and updates. Keyed by user id, so a second
 /// account on the same phone starts with no baseline and celebrates nothing on its first launch.
 /// A value that will not decode reads as no baseline — never a crash, never a celebration.
-public struct LastSeenBook {
+// @unchecked: the SDK does not mark UserDefaults Sendable, but Apple documents it as thread-safe.
+public struct LastSeenBook: @unchecked Sendable {
     private let defaults: UserDefaults
 
     public init(defaults: UserDefaults = .standard) {
@@ -83,12 +84,19 @@ public enum WelcomeBack {
         return xpNow > seen.xp || (seen.rank == nil && xpNow > 0)
     }
 
-    /// The flight's caption: the newest earning since the baseline ("Attendance"), and how many
-    /// more came with it. Nil when no new row explains the rise — a homework re-graded upward
-    /// changes its own row rather than adding one — and the flight then flies without a caption.
-    public static func label(history: [PointAward], since: Int?) -> String? {
-        let fresh = history.filter { $0.points > 0 && $0.id > (since ?? Int.min) }
-        guard let newest = fresh.first else { return nil }
+    /// The flight's caption: the newest XP earning since the baseline ("Attendance"), and how
+    /// many more came with it. Only rows that carry XP are named — the history is the points
+    /// ledger, and a survey pays points but no XP, so a caption naming one would explain an XP
+    /// rise it did not cause. The decision is `XPLedger`'s, per event: a rule in `rules` follows
+    /// its `grantsXP` flag, and an event without a rule (or `rules == nil`) carries XP except
+    /// where the server's fallback says otherwise.
+    ///
+    /// The newest row is the highest id, whatever order `history` arrives in. Nil when no new XP
+    /// row explains the rise — a homework re-graded upward changes its own row rather than adding
+    /// one — and the flight then flies without a caption, rather than with a wrong one.
+    public static func label(history: [PointAward], since: Int?, rules: [RewardRule]? = nil) -> String? {
+        let fresh = XPLedger.rows(history, rules: rules, limit: .max).filter { $0.id > (since ?? Int.min) }
+        guard let newest = fresh.max(by: { $0.id < $1.id }) else { return nil }
         let name = newest.label.isEmpty ? "Earned while you were away" : newest.label
         return fresh.count == 1 ? name : "\(name) + \(fresh.count - 1) more"
     }

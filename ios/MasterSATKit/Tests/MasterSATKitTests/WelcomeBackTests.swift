@@ -34,8 +34,8 @@ import Testing
 
 @Suite struct WelcomeBackTests {
 
-    private func award(_ id: Int, _ label: String, _ points: Int) -> PointAward {
-        PointAward(id: id, event: "E\(id)", label: label, points: points, awardedAt: "2026-10-20T10:00:00Z")
+    private func award(_ id: Int, _ label: String, _ points: Int, event: String? = nil) -> PointAward {
+        PointAward(id: id, event: event ?? "E\(id)", label: label, points: points, awardedAt: "2026-10-20T10:00:00Z")
     }
 
     @Test("The streak grew: from what was seen to now. Nothing without a baseline, or for a run that stayed or restarted")
@@ -78,6 +78,39 @@ import Testing
         #expect(WelcomeBack.label(history: history, since: 9) == nil, "a rise on a row already seen has no new row to name")
         #expect(WelcomeBack.label(history: [award(4, "", 5)], since: nil) == "Earned while you were away")
     }
+
+    @Test("A row that pays points but no XP is never named: the flight is for XP")
+    func labelSkipsPointsOnlyRows() {
+        let survey = award(9, "Survey", 5, event: "SURVEY")
+        let attendance = award(8, "Attendance", 5, event: "ATTENDANCE")
+        #expect(WelcomeBack.label(history: [survey, attendance], since: 7) == "Attendance",
+                "the survey is newer, but only the attendance carried XP — and it is the only one counted")
+        #expect(WelcomeBack.label(history: [survey], since: 7) == nil,
+                "only a survey since the baseline: no caption rather than a wrong one")
+        #expect(WelcomeBack.label(history: [survey, attendance], since: 7, rules: nil) == "Attendance")
+    }
+
+    @Test("When the rules are known, a rule's grants-XP flag decides, whatever the event")
+    func labelFollowsTheRules() {
+        let survey = award(9, "Survey", 5, event: "SURVEY")
+        let attendance = award(8, "Attendance", 5, event: "ATTENDANCE")
+        let homework = award(7, "Homework", 10, event: "HOMEWORK")
+        let history = [survey, attendance, homework]
+
+        let surveyPaysXP = [RewardRule(event: "SURVEY", label: "Survey", points: 5, grantsXP: true)]
+        #expect(WelcomeBack.label(history: history, since: 6, rules: surveyPaysXP) == "Survey + 2 more",
+                "the school ticked XP back on for surveys")
+
+        let attendanceNoXP = [RewardRule(event: "ATTENDANCE", label: "Attendance", points: 5, grantsXP: false)]
+        #expect(WelcomeBack.label(history: history, since: 6, rules: attendanceNoXP) == "Homework",
+                "an event with a rule that grants no XP is skipped; SURVEY has no rule here, so the fallback skips it too")
+    }
+
+    @Test("The newest row is the highest id, not the first in the array")
+    func labelPicksNewestById() {
+        let history = [award(5, "Attendance", 5), award(9, "Homework", 15), award(7, "Event", 5)]
+        #expect(WelcomeBack.label(history: history, since: 6) == "Homework + 1 more")
+    }
 }
 
 /// Every mutating call on its own line, never inside `#expect` (as `CelebrationQueueTests`).
@@ -115,6 +148,17 @@ import Testing
         #expect(queue.held(xpNow: 145) == 15, "a scene-active refresh beat the task's own")
         queue.resolve(task, xpAfter: 145, allowsFlights: true)
         #expect(queue.held(xpNow: 145) == 15)
+    }
+
+    @Test("First launch, entry still pending: no baseline, so nothing is held before the read resolves it")
+    func firstLaunchPending() {
+        var queue = CelebrationQueue()
+        let away = queue.recordAway(xpSeen: nil)
+        #expect(queue.held(xpNow: 130) == 0, "no baseline: the whole total is the student's own, not a gain")
+        #expect(queue.held == 0)
+        queue.resolve(away, xpAfter: 130, allowsFlights: true)
+        #expect(queue.held(xpNow: 130) == 0)
+        #expect(queue.isEmpty)
     }
 
     @Test("An away entry and a task measured against the same total count the gain once")

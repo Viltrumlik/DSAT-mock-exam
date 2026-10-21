@@ -55,10 +55,17 @@ public struct CelebrationQueue: Sendable, Equatable {
         entries.reduce(0) { $0 + ($1.gain ?? 0) } + flying.reduce(0) { $0 + $1.amount }
     }
 
-    /// XP the header holds back, given the total it shows the server's word for now: `held`,
-    /// plus any rise above the lowest floor a still-pending entry will measure from. A refresh
-    /// that lands before an entry resolves is then held at once, instead of showing and dipping
-    /// back when the entry resolves (phase 2 hand-off).
+    /// XP the header holds back, given the total `/rewards/me/` last said (`xpNow`).
+    ///
+    /// `held` is the confirmed gains whose flight has not landed. This adds the gains that are
+    /// not confirmed yet: while an entry still waits for its refresh, every XP above the lowest
+    /// total a pending entry will measure from is a gain a flight is about to bring, so it is
+    /// held too. A refresh that lands before its entry resolves then shows the old total
+    /// instead of the new one, and nothing dips back when the entry resolves (phase 2 hand-off).
+    ///
+    /// So every entry that is recorded MUST be resolved: an entry left pending holds the header
+    /// back for good. `resolve(id, xpAfter: nil, ...)` abandons one (a failed read) — it
+    /// measures nothing and stops holding.
     public func held(xpNow: Int?) -> Int {
         guard let xpNow, let floor = pendingFloor else { return held }
         return held + max(0, xpNow - floor)
@@ -83,8 +90,8 @@ public struct CelebrationQueue: Sendable, Equatable {
     public func isFlying(_ id: Int) -> Bool { flying.contains { $0.id == id } }
 
     /// A task was finished. Its check plays now only when the stage can be seen; otherwise
-    /// `takeEfforts` hands it out later.
-    @discardableResult
+    /// `takeEfforts` hands it out later. The id MUST be resolved (see `held(xpNow:)`), so the
+    /// result is not discardable.
     public mutating func record(_ work: FinishedWork, xpBefore: Int?, stageVisible: Bool) -> (id: Int, playNow: Bool) {
         let id = nextID
         nextID += 1
@@ -96,7 +103,13 @@ public struct CelebrationQueue: Sendable, Equatable {
     /// showed them (`xpSeen`, nil on the first launch) by the read that is about to go out.
     /// Recorded BEFORE that read, so a rise landing meanwhile is held at once. No check, no
     /// confetti — only a flight, once `resolve` says what was gained.
-    @discardableResult
+    ///
+    /// The id MUST be resolved (see `held(xpNow:)`), so the result is not discardable.
+    ///
+    /// A task that resolves before this entry absorbs the away gain: its read raises
+    /// `measuredUpTo` past this entry's floor, so the gain is counted once, never twice. The part
+    /// of the rise the task did not measure (below its own start) is then not flown — it lands
+    /// silently when the pill catches up.
     public mutating func recordAway(xpSeen: Int?) -> Int {
         let id = nextID
         nextID += 1
