@@ -99,6 +99,34 @@ class ExemptTestAccountTests(FreezeExemptFixture):
         self.assertFalse(is_signupable_student(self.other))
 
 
+@override_settings(FREEZE_ACCESS_EXEMPT_EMAILS=EXEMPT)
+class BroadcastAudienceTests(FreezeExemptFixture):
+    """A staff broadcast skips accounts the freeze locks out — but not an exempt test account,
+    which can open the notification. An unfrozen account with no email stays in too: the
+    exemption is a NOT-frozen-or-exempt filter, and a NULL email must not drop anybody."""
+
+    def test_the_exempt_account_is_told_and_other_frozen_ones_are_not(self):
+        from notifications.models import Notification
+
+        no_email = User.objects.create_user(
+            None, username="phone_only", password="secret12345", role="student",
+        )
+        admin = User.objects.create_user(
+            email="root@test.com", username="root", password="secret12345", role="super_admin",
+        )
+        self.client.force_authenticate(admin)
+        r = self.client.post(
+            "/api/notifications/broadcast/",
+            {"audience": "students", "title": "Centre closed tomorrow"}, format="json",
+        )
+        self.assertIn(r.status_code, (200, 201), r.content)
+
+        told = set(Notification.objects.values_list("recipient_id", flat=True))
+        self.assertIn(self.tester.pk, told)
+        self.assertIn(no_email.pk, told)
+        self.assertNotIn(self.other.pk, told)
+
+
 class NoExemptionConfiguredTests(FreezeExemptFixture):
     """With the setting empty — every environment but production — nothing changes."""
 

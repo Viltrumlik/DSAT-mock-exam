@@ -65,7 +65,7 @@ from .serializers import (
     UserMeSerializer,
     UserSerializer,
 )
-from .permissions import IsAuthenticatedAndNotFrozen
+from .permissions import IsAuthenticatedAndNotFrozen, is_frozen_for_access
 from django.conf import settings
 from django.http import HttpResponseRedirect
 from django.utils import timezone
@@ -1545,7 +1545,8 @@ class GoogleAuthView(APIView):
             "is_admin": user.is_admin,
             "role": user.role,
             "subject": _subject_for_auth_response(user),
-            "is_frozen": user.is_frozen,
+            # The access reading — the owner's test accounts sign in unfrozen (#309).
+            "is_frozen": is_frozen_for_access(user),
             "permissions": sorted(get_effective_permission_codenames(user)),
         }
         resp = Response(body, status=status.HTTP_200_OK)
@@ -1699,7 +1700,8 @@ class TelegramAuthView(APIView):
             "is_admin": user.is_admin,
             "role": user.role,
             "subject": _subject_for_auth_response(user),
-            "is_frozen": user.is_frozen,
+            # The access reading — the owner's test accounts sign in unfrozen (#309).
+            "is_frozen": is_frozen_for_access(user),
             "permissions": sorted(get_effective_permission_codenames(user)),
         }
         resp = Response(body, status=status.HTTP_200_OK)
