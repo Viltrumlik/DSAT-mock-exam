@@ -30,15 +30,23 @@ public enum CelebrationRule {
     }
 }
 
-/// What this phone has shown a student of their own scores — so an outcome is celebrated once,
-/// and an assessment can be compared with the attempt before it.
+/// What this phone knows of a student's own scores — so an outcome is celebrated once, and an
+/// assessment can be compared with the attempt before it.
 ///
-/// The server keeps only a homework's newest attempt (`my-result`), so "the attempt before" is
-/// the newest earlier one this phone showed for the same set (`AssessmentReview.setKey`).
-/// Attempt ids grow in the order attempts are started, so an older attempt opened after a newer
-/// one is not "before" it and changes nothing.
+/// The server keeps every attempt, but gives the app no list of them: `my-result` returns the
+/// latest, any attempt's review is served by id, and the my-assignments lists carry each
+/// homework's latest completed attempt (`attempt_id`, `percent`). So "the attempt before" is the
+/// newest earlier attempt of the same set (`AssessmentReview.setKey`) that this phone has come
+/// to know — shown on a review (`showAssessment`) or read off a list (`noteSeen`), so an attempt
+/// taken on the web counts once a list has carried it. Attempt ids grow in the order attempts
+/// are started, so an older attempt opened after a newer one is not "before" it and changes
+/// nothing.
+///
+/// A phone that never saw an attempt cannot compare with it; the rule errs the quiet way —
+/// nothing to compare with, nothing celebrated.
 public struct OutcomeMemory: Codable, Sendable, Equatable {
-    public struct Shown: Codable, Sendable, Equatable {
+    /// An attempt as this phone knows it: which one, and what it scored.
+    public struct Attempt: Codable, Sendable, Equatable {
         public let attemptId: Int
         public let percent: Double
 
@@ -48,30 +56,75 @@ public struct OutcomeMemory: Codable, Sendable, Equatable {
         }
     }
 
-    /// The newest attempt shown, per set.
-    public private(set) var lastShown: [String: Shown] = [:]
-    /// Per attempt that beat the one before it: the score it beat.
+    /// The newest attempt known, per set — shown or noted, whichever path brought it. (Stored
+    /// under its first build's name, `lastShown`, so what is on a phone still reads.)
+    public private(set) var newestSeen: [String: Attempt] = [:]
+    /// Per attempt that beat the newest one known before it: the score it beat.
     public private(set) var improvedFrom: [Int: Double] = [:]
     /// Outcomes already celebrated (`assessmentKey`, `midtermKey`).
     public private(set) var celebrated: Set<String> = []
 
+    private enum CodingKeys: String, CodingKey {
+        case newestSeen = "lastShown"
+        case improvedFrom, celebrated
+    }
+
     public init() {}
 
-    /// A marked attempt is on screen. Returns the score it improved on — when it beat the newest
-    /// earlier attempt on the same set this phone showed — on every showing, so the page can say
-    /// so each time it opens; nil otherwise. Remembers it as the set's newest attempt.
-    public mutating func showAssessment(setKey: String, attemptId: Int, percent: Double) -> Double? {
-        if let previous = lastShown[setKey] {
-            if attemptId > previous.attemptId {
-                if CelebrationRule.assessment(percent: percent, previous: previous.percent) {
-                    improvedFrom[attemptId] = previous.percent
-                }
-                lastShown[setKey] = Shown(attemptId: attemptId, percent: percent)
-            }
-        } else {
-            lastShown[setKey] = Shown(attemptId: attemptId, percent: percent)
+    /// Every field is optional on the way in, like `LastSeen`'s newer fields: a field added
+    /// after a value was stored reads as its default and never wipes what that value did hold.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        newestSeen = try c.decodeIfPresent([String: Attempt].self, forKey: .newestSeen) ?? [:]
+        improvedFrom = try c.decodeIfPresent([Int: Double].self, forKey: .improvedFrom) ?? [:]
+        celebrated = try c.decodeIfPresent(Set<String>.self, forKey: .celebrated) ?? []
+    }
+
+    /// The key of a set, from the homework (assignment) it is in and its title — one homework
+    /// carries a set once. The review (`AssessmentReview.setKey`) and a my-assignments list
+    /// build it here, so an attempt noted from a list is the same set a review opens.
+    public static func setKey(assignmentId: Int, setTitle: String?) -> String {
+        "\(assignmentId)/\(setTitle ?? "")"
+    }
+
+    /// An attempt is known — read off a list rather than opened, say one taken on the web, or
+    /// one the list brought in before its review was opened. It becomes the set's newest attempt
+    /// when it is newer than the one known; an older one changes nothing. This never celebrates
+    /// and returns nothing: it only decides what the next attempt is compared with.
+    ///
+    /// The attempt itself is compared with the one it replaced, as when it is shown, and the
+    /// answer is kept, so its review says "up from" whether the list or the review reached the
+    /// phone first.
+    public mutating func noteSeen(setKey: String, attemptId: Int, percent: Double) {
+        guard let newest = newestSeen[setKey] else {
+            newestSeen[setKey] = Attempt(attemptId: attemptId, percent: percent)
+            return
         }
-        return improvedFrom[attemptId]
+        guard attemptId > newest.attemptId else { return }
+        if CelebrationRule.assessment(percent: percent, previous: newest.percent) {
+            improvedFrom[attemptId] = newest.percent
+        }
+        newestSeen[setKey] = Attempt(attemptId: attemptId, percent: percent)
+    }
+
+    /// A marked attempt is on screen. Returns the score it improved on — when it beat the newest
+    /// earlier attempt of the same set this phone knew — on every showing, so the page can say
+    /// so each time it opens; nil otherwise. It is returned only while the score on screen still
+    /// beats it: a mark since corrected down to that score, or below, is no improvement.
+    /// Remembers the attempt as the set's newest, as `noteSeen` does.
+    public mutating func showAssessment(setKey: String, attemptId: Int, percent: Double) -> Double? {
+        noteSeen(setKey: setKey, attemptId: attemptId, percent: percent)
+        guard let from = improvedFrom[attemptId],
+              CelebrationRule.assessment(percent: percent, previous: from)
+        else { return nil }
+        return from
+    }
+
+    /// For a review that may not name its set (`AssessmentReview.setKey`): without a key there is
+    /// nothing to compare with and nothing to remember, so nothing is returned and nothing kept.
+    public mutating func showAssessment(setKey: String?, attemptId: Int, percent: Double) -> Double? {
+        guard let setKey else { return nil }
+        return showAssessment(setKey: setKey, attemptId: attemptId, percent: percent)
     }
 
     /// Whether an outcome's celebration plays now: it qualifies and has never played. Marks it,

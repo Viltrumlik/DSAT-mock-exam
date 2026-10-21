@@ -397,7 +397,7 @@ public struct AssessmentReview: Decodable, Sendable, Equatable {
     /// which homework — then nothing is compared and nothing is celebrated as improved.
     public var setKey: String? {
         guard let assignmentId = meta?.assignmentId else { return nil }
-        return "\(assignmentId)/\(meta?.setTitle ?? "")"
+        return OutcomeMemory.setKey(assignmentId: assignmentId, setTitle: meta?.setTitle)
     }
 
     private enum CodingKeys: String, CodingKey {
