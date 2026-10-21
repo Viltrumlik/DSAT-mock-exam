@@ -19,6 +19,9 @@ struct LeaderboardView: View {
     /// Global and all-time by default — the web's defaults.
     @State private var query = LeaderboardQuery()
     @State private var board: LeaderboardBoard?
+    /// The query `board` answers. A board is only kept through a failed read of the same
+    /// query: it is the last good answer to what is being asked, not to a chip since changed.
+    @State private var boardQuery: LeaderboardQuery?
     @State private var boardFailed = false
     @State private var isLoading = true
     @State private var filters: LeaderboardFilters?
@@ -385,13 +388,17 @@ struct LeaderboardView: View {
             let fresh = try await api.board(asked)
             guard !Task.isCancelled, asked == query else { return }
             board = fresh
+            boardQuery = asked
             boardFailed = false
             // The default slice is the one the "while you were away" baseline follows; what the
             // student has seen here is not news the next time they come back.
             if asked == LeaderboardQuery() { rewards.noteRank(fresh.standing?.rank) }
         } catch {
             guard !Task.isCancelled, asked == query else { return }
-            boardFailed = true
+            // A pull that fails on a flaky connection leaves the working board where it is;
+            // only a board that answers something else (or none yet) gives way to the error.
+            let unanswered = board == nil || boardQuery != asked
+            if boardFailed != unanswered { boardFailed = unanswered }
         }
         isLoading = false
     }

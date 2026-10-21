@@ -25,9 +25,12 @@ struct ShopView: View {
     @State private var confirmingPoint: CGPoint?
     @State private var purchasingId: Int?
     @State private var toast: RewardsToastMessage?
-    /// Bumped when a confirmed purchase could not burst (a sheet or a cover is up): the success
-    /// haptic the burst would have given.
+    /// Bumped when a confirmed purchase has no burst of its own — a strike purchase (spending
+    /// strikes is not a coin moment), or a coin one under a sheet or a cover: the success haptic.
     @State private var buyBuzz = 0
+    /// Set when a CONFIRMED purchase's read-back failed: the page still shows what it showed
+    /// before the purchase, and says so rather than letting that pass for the new truth.
+    @State private var refreshNote: String?
 
     private var shelf: ShopShelf { picked ?? shop?.openingShelf ?? .coin }
 
@@ -35,6 +38,8 @@ struct ShopView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 ShopHero(shop: shop, failed: shopFailed && shop == nil, wide: sizeClass == .regular)
+
+                if let refreshNote { ShopNotice(text: refreshNote) }
 
                 if shopFailed && shop == nil {
                     RewardsErrorState(
@@ -154,9 +159,10 @@ struct ShopView: View {
                 }
                 .cardStyle(padding: 0)
             }
-        } else if ordersFailed && orders == nil {
+        } else if ordersFailed && (orders?.isEmpty ?? true) {
             // The web hides the list when it fails. Said here instead: a student who just
             // bought something and sees no orders would read that as the purchase vanishing.
+            // An empty list that failed to refresh is not "no orders" either — it is unknown.
             VStack(alignment: .leading, spacing: 12) {
                 ordersHeader
                 RewardsErrorState(
@@ -175,6 +181,8 @@ struct ShopView: View {
         async let storefront: Void = loadShop()
         async let mine: Void = loadOrders()
         _ = await (storefront, mine)
+        // A cancelled read leaves both flags as they were, so only a full success clears it.
+        if refreshNote != nil, !shopFailed, !ordersFailed { refreshNote = nil }
     }
 
     @MainActor
@@ -210,13 +218,16 @@ struct ShopView: View {
         guard purchasingId == nil else { return }
         purchasingId = item.id
         let api = ShopAPI(client: session.client)
+        var confirmed = false
         do {
             let result = try await api.purchase(itemId: item.id)
-            // The server took the order: a coin bursts from the button that bought it. Under a
-            // sheet or a cover (the Me sheet pushes the shop) the burst is skipped, so the
-            // toast below is the only word, and the haptic comes from here instead.
+            confirmed = true
+            // The server took the order. A coin-shop purchase bursts a coin from the button that
+            // bought it; a strike purchase is not a coin moment. Where there is no burst — a
+            // strike purchase, or a sheet or a cover (the Me sheet pushes the shop) skipped it —
+            // the toast below is the only word, and the success haptic comes from here.
             let bursts = celebrations.coinCount
-            celebrations.coinBurst(at: point)
+            if item.isCoin { celebrations.coinBurst(at: point) }
             if celebrations.coinCount == bursts { buyBuzz += 1 }
             toast = RewardsToastMessage(
                 tone: .success,
@@ -226,11 +237,18 @@ struct ShopView: View {
             toast = RewardsToastMessage(tone: .notice, text: Self.refusal(error))
         }
         await load()
+        // The order stands whatever the read-back says; a failed one must not look like news.
+        if confirmed, shopFailed || ordersFailed {
+            refreshNote = shopFailed
+                ? "Your balance didn't refresh — pull to update."
+                : "Your orders didn't refresh — pull to update."
+        }
         purchasingId = nil
     }
 
     /// The server's own sentence where it sent one — "Not enough coins: 3 available, 5
-    /// needed." says what is missing — and the web's fallback otherwise.
+    /// needed." says what is missing. Otherwise the answer never came, and a dropped answer to
+    /// a purchase may still have landed, so the fallback sends the student to check.
     private static func refusal(_ error: Error) -> String {
         if let error = error as? APIError {
             switch error {
@@ -241,7 +259,30 @@ struct ShopView: View {
             default: break
             }
         }
-        return "That didn't go through. Nothing was taken."
+        return "That didn't go through. Check your coins and orders, then try again."
+    }
+}
+
+/// A one-line notice under the hero — the page is showing what it last read, not the truth.
+private struct ShopNotice: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.amberSoft))
+        .accessibilityElement(children: .combine)
     }
 }
 

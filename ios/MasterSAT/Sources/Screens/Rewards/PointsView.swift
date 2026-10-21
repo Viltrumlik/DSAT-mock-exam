@@ -31,6 +31,9 @@ struct PointsView: View {
     /// Bumped when a confirmed conversion could not burst (a sheet or a cover is up): the
     /// success haptic the burst would have given.
     @State private var convertBuzz = 0
+    /// Where the Convert button is — the coin bursts from there. A reference type, so
+    /// measuring on every scroll frame never re-renders the page.
+    @State private var convertSpot = FrameBox()
     @FocusState private var amountFocused: Bool
 
     var body: some View {
@@ -210,6 +213,7 @@ struct PointsView: View {
                 }
                 .buttonStyle(RewardsHeroButtonStyle(prominent: true))
                 .disabled(!preview.canConvert || isConverting)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { convertSpot.rect = $0 }
             }
 
             // What the press will do, BEFORE it happens — including the change that stays
@@ -228,6 +232,7 @@ struct PointsView: View {
     private func outcomeLine(_ outcome: ConvertOutcome) -> some View {
         let icon = switch outcome {
         case .done: "checkmark.circle.fill"
+        case .nothing: "info.circle.fill"
         case .failed: "exclamationmark.circle.fill"
         }
         return HStack(alignment: .top, spacing: 8) {
@@ -397,27 +402,37 @@ struct PointsView: View {
     @MainActor
     private func convert(_ conversion: PendingConversion) async {
         guard !isConverting else { return }
+        // Read before the button turns into a spinner and the strip re-lays out.
+        let spot = convertSpot.rect.celebrationPoint
         isConverting = true
         outcome = nil
         let api = session.rewards
         do {
             let result = try await api.convert(points: conversion.asked)
             rewards = rewards?.applying(result.balances)
-            if result.minted > 0 {
-                let bursts = celebrations.coinCount
-                celebrations.coinBurst(at: nil)
-                if celebrations.coinCount == bursts { convertBuzz += 1 }
-            }
             // Cleared on success only: a spent amount left in the box invites a second press
             // that would spend it again, and clearing it on failure throws away what was typed.
             amountText = ""
-            outcome = .done(
-                result.detail.isEmpty
-                    ? (result.minted > 0
+            if result.minted > 0 {
+                let bursts = celebrations.coinCount
+                celebrations.coinBurst(at: spot)
+                if celebrations.coinCount == bursts { convertBuzz += 1 }
+                outcome = .done(
+                    result.detail.isEmpty
                         ? "Converted \(conversion.spent) points into \(RewardsFormat.count(conversion.coins, "coin"))."
-                        : "No coin was minted — your points are untouched.")
-                    : result.detail
-            )
+                        : result.detail
+                )
+            } else {
+                // The server answered and minted nothing — not a success, and not a failure:
+                // no burst, no checkmark, and how far the next coin is, as the Rewards tab says.
+                let toNext = rewards?.pointsToNextCoin
+                outcome = .nothing(
+                    result.detail.isEmpty
+                        ? (toNext.map { "Not enough points yet — \(RewardsFormat.count($0, "point")) to your next coin." }
+                            ?? "Not enough points yet.")
+                        : result.detail
+                )
+            }
         } catch {
             outcome = .failed
         }
@@ -435,14 +450,18 @@ struct PointsView: View {
 
 private enum ConvertOutcome: Equatable {
     case done(String)
+    /// The server answered and minted no coin: nothing spent, nothing to celebrate.
+    case nothing(String)
     case failed
 
     /// What the line under the strip says — and what VoiceOver is told, since the line appears
     /// without a sound of its own.
     var text: String {
         switch self {
-        case .done(let detail): detail
-        case .failed: "That didn't go through — your points are untouched. Try again."
+        case .done(let detail), .nothing(let detail): detail
+        // Not "untouched": a dropped answer to a conversion may still have landed (the read-back
+        // after it shows which), so the line sends the student to look.
+        case .failed: "That didn't go through. Check your points, then try again."
         }
     }
 }
