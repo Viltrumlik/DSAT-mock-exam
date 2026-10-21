@@ -19,6 +19,7 @@ struct VocabTestView: View {
     @State private var answers: [TestAnswer] = []
     @State private var typed = ""
     @FocusState private var spellingFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var current: VocabGames.TestQuestion? { index < questions.count ? questions[index] : nil }
 
@@ -34,18 +35,25 @@ struct VocabTestView: View {
             onExit: onExit
         ) {
             ScrollView {
-                if let question = current {
-                    VStack(spacing: 16) {
-                        switch question.kind {
-                        case .mcq: multipleChoice(question)
-                        case .trueFalse: trueFalse(question)
-                        case .spelling: spelling(question)
+                // A ZStack, so the question leaving and the next one overlap for their 200 ms
+                // instead of stacking.
+                ZStack {
+                    if let question = current {
+                        VStack(spacing: 16) {
+                            switch question.kind {
+                            case .mcq: multipleChoice(question)
+                            case .trueFalse: trueFalse(question)
+                            case .spelling: spelling(question)
+                            }
                         }
+                        .padding(16)
+                        .id(question.id)
+                        .transition(.focusTurn(.forward, reduceMotion: reduceMotion))
                     }
-                    .padding(16)
-                    .id(question.id)
                 }
             }
+            // One tick per answer, the same for every answer: nothing is graded until the end.
+            .sensoryFeedback(.selection, trigger: answers.count)
         }
         .task {
             if questions.isEmpty {
@@ -98,7 +106,7 @@ struct VocabTestView: View {
                         )
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FocusPress())
                 }
             }
         }
@@ -152,7 +160,7 @@ struct VocabTestView: View {
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FocusPress())
     }
 
     private func spelling(_ question: VocabGames.TestQuestion) -> some View {
@@ -164,22 +172,43 @@ struct VocabTestView: View {
             total: questions.count
         ) {
             VStack(spacing: 16) {
-                // Letter tiles: the given letter is filled, the blanks are dashed wells,
-                // punctuation is bare structure rather than something to guess.
+                // Letter tiles: the given letter is filled, the blanks are dashed wells that
+                // take the typed letters as they come, punctuation is bare structure rather
+                // than something to guess. A typed letter looks the same right or wrong: the
+                // well is built from what was typed and the shape of the word, never from a
+                // comparison of the two.
+                let tiles = VocabGames.spellingTiles(
+                    word: question.word,
+                    revealing: question.revealIndex,
+                    typed: Self.entry(typed, for: question.word)
+                )
+                let slots = Array(question.word)
                 FlowLayout(spacing: 6) {
-                    ForEach(Array(VocabGames.maskWord(question.word, revealing: question.revealIndex).enumerated()), id: \.offset) { _, character in
-                        letterTile(character)
+                    ForEach(Array(tiles.enumerated()), id: \.offset) { position, tile in
+                        letterTile(tile, isStructure: slots.indices.contains(position) && !slots[position].isLetter)
                     }
                 }
+                .animation(Motion.focusTap, value: typed)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.spoken(tiles))
 
                 TextField("Type the word", text: $typed)
                     .font(.system(size: 20, weight: .bold))
                     .multilineTextAlignment(.center)
+                    // The grader compares the text exactly, so the keyboard may change nothing
+                    // of it: no capitals, no autocorrect, and (below) no smart quotes or dashes.
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .focused($spellingFocused)
                     .submitLabel(.done)
                     .onSubmit { submitSpelling(question) }
+                    // Never longer than the word, and no leading spaces: what the field holds is
+                    // what the well shows.
+                    .onChange(of: typed) { _, new in
+                        let entry = Self.entry(new, for: question.word)
+                        if entry != new { typed = entry }
+                    }
+                    .background { PlainTyping() }
                     .padding(14)
                     .background(
                         RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.background)
@@ -191,34 +220,97 @@ struct VocabTestView: View {
 
                 Button("Submit") { submitSpelling(question) }
                     .buttonStyle(PrimaryButtonStyle(tone: Theme.success, fullWidth: true))
-                    .disabled(typed.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(Self.answer(typed, for: question.word).isEmpty)
             }
             .onAppear { spellingFocused = true }
         }
     }
 
-    private func letterTile(_ character: String) -> some View {
-        let isBlank = character == "_"
-        let isStructural = !isBlank && !(character.first?.isLetter ?? false)
-        return Text(isStructural ? character : character.uppercased())
-            .font(.system(size: 17, weight: .heavy))
-            .foregroundStyle(isBlank ? Theme.textLabel : (isStructural ? Theme.textLabel : Theme.success))
-            .frame(width: isStructural ? 12 : 34, height: 42)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(isStructural ? .clear : (isBlank ? Theme.background : Theme.successSoft))
-            )
-            .overlay(
-                Group {
-                    if isBlank {
+    /// One slot of the well. `isStructure` is a fact about the word's shape (a space, hyphen or
+    /// apostrophe sits there), known before anything is typed — so a slot keeps its size and its
+    /// kind of view whatever is typed over it, and typing never reflows the row. Nothing here
+    /// looks at whether a typed character is the right one.
+    @ViewBuilder
+    private func letterTile(_ tile: VocabGames.SpellingTile, isStructure: Bool) -> some View {
+        if isStructure {
+            // Bare: a faint placeholder until typed over, then what was typed — in the same slot,
+            // shrunk to fit if it is a wide letter.
+            glyph(tile, tone: tile.kind == .typed ? Color.primary : Theme.textLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .frame(width: 16, height: 42)
+        } else {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(tile.kind == .given ? Theme.successSoft : (tile.kind == .typed ? Theme.card : Theme.background))
+                .overlay {
+                    switch tile.kind {
+                    case .blank:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(Theme.separator, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                    } else if !isStructural {
+                    case .given:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    case .typed, .structure:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.separator, lineWidth: 1)
                     }
                 }
-            )
+                .overlay {
+                    if !tile.character.isEmpty {
+                        glyph(tile, tone: tile.kind == .given ? Theme.success : Color.primary)
+                    }
+                }
+                .frame(width: 34, height: 42)
+        }
+    }
+
+    /// The character in a slot. A new character is a new view, so it drops into its slot — a
+    /// small scale-up that settles without overshoot, a plain fade under Reduce Motion.
+    private func glyph(_ tile: VocabGames.SpellingTile, tone: Color) -> some View {
+        Text(verbatim: tile.kind == .typed || tile.kind == .given ? tile.character.uppercased() : tile.character)
+            .font(.system(size: 17, weight: .heavy))
+            .foregroundStyle(tone)
+            .id("\(tile.kind)-\(tile.character)")
+            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+    }
+
+    /// The well as VoiceOver reads it, as one line: what is there so far, "blank" for what is
+    /// not. A space, a hyphen and an apostrophe are named whether they are the placeholder or
+    /// were typed, and a typed letter is read as it is, right or wrong alike.
+    private static func spoken(_ tiles: [VocabGames.SpellingTile]) -> String {
+        tiles.map { tile in
+            switch tile.kind {
+            case .blank: return "blank"
+            case .structure, .typed, .given:
+                switch tile.character {
+                case " ": return "space"
+                case "-": return "hyphen"
+                case "'": return "apostrophe"
+                default: return tile.character.lowercased()
+                }
+            }
+        }.joined(separator: ", ")
+    }
+
+    /// What the student has entered, as the well shows it and the field holds it: straight quotes
+    /// and hyphens only, no leading spaces (the grader trims them), and never longer than the
+    /// word. A letter past the end of the word would not be shown, and an overflow such as
+    /// "briskly" for "brisk" would leave a full-looking well that the grader refuses.
+    private static func entry(_ raw: String, for word: String) -> String {
+        let plain = raw.map { character -> Character in
+            switch character {
+            case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
+            case "\u{201C}", "\u{201D}": return "\""
+            case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
+            default: return character
+            }
+        }
+        return String(plain.drop(while: \.isWhitespace).prefix(word.count))
+    }
+
+    /// The entry as it is handed in: the grader trims both ends, so trailing spaces go too.
+    private static func answer(_ raw: String, for word: String) -> String {
+        entry(raw, for: word).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Answering
@@ -227,7 +319,7 @@ struct VocabTestView: View {
 
     @MainActor
     private func submitSpelling(_ question: VocabGames.TestQuestion) {
-        let given = typed.trimmingCharacters(in: .whitespaces)
+        let given = Self.answer(typed, for: question.word)
         guard !given.isEmpty else { return }
         submit(
             question: question,
@@ -247,7 +339,7 @@ struct VocabTestView: View {
         runner.record(wordId: question.wordId, correct: correct)
 
         if index + 1 < questions.count {
-            index += 1
+            withAnimation(Motion.focus) { index += 1 }
             return
         }
 
@@ -267,6 +359,80 @@ struct VocabTestView: View {
             restartLabel: "Take it again",
             extra: AnyView(TestReview(wrong: wrong))
         ))
+    }
+}
+
+/// Switches the keyboard's text substitutions off on the field it sits behind.
+///
+/// The spelling question is graded on the exact text, and SwiftUI has no modifier for smart
+/// punctuation: left on, the keyboard turns a typed ' into ’ and -- into —, and the grader
+/// would refuse them. This looks for the `UITextField` beside it and sets its traits (smart
+/// quotes, dashes and inserts, autocorrect, spell check, capitals) directly. If the field is
+/// not found, nothing changes — `VocabTestView.entry` still straightens what comes through.
+private struct PlainTyping: UIViewRepresentable {
+    func makeUIView(context: Context) -> PlainTypingProbe { PlainTypingProbe() }
+    func updateUIView(_ probe: PlainTypingProbe, context: Context) {}
+}
+
+private final class PlainTypingProbe: UIView {
+    private var applied = false
+    /// Passes spent looking, so a field that never turns up is not searched for on every layout.
+    private var attempts = 0
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        accessibilityElementsHidden = true
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    // The text field is laid out beside this view in the same pass (and may be built a beat
+    // later), so try whenever this view moves or lays out until it is found.
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        apply()
+        Task { @MainActor [weak self] in self?.apply() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        apply()
+    }
+
+    private func apply() {
+        guard !applied, attempts < 30, window != nil else { return }
+        attempts += 1
+        guard let field = nearbyTextField() else { return }
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        field.autocapitalizationType = .none
+        field.smartQuotesType = .no
+        field.smartDashesType = .no
+        field.smartInsertDeleteType = .no
+        // A keyboard that is already up keeps the traits it was shown with until reloaded.
+        if field.isFirstResponder { field.reloadInputViews() }
+        applied = true
+    }
+
+    /// The text field this view is the background of: the one sharing its frame, found by
+    /// climbing a few levels of the hosting hierarchy.
+    private func nearbyTextField() -> UITextField? {
+        var ancestor = superview
+        for _ in 0..<6 {
+            guard let current = ancestor else { return nil }
+            if let field = Self.textFields(in: current).first(where: { convert($0.bounds, from: $0).intersects(bounds) }) {
+                return field
+            }
+            ancestor = current.superview
+        }
+        return nil
+    }
+
+    private static func textFields(in view: UIView) -> [UITextField] {
+        (view as? UITextField).map { [$0] } ?? view.subviews.flatMap { textFields(in: $0) }
     }
 }
 
