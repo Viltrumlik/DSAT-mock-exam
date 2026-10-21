@@ -258,6 +258,9 @@ struct TodayView: View {
         } catch {
             loadError = error.localizedDescription
         }
+        // Every marked attempt the list carries becomes known to this phone the moment the list
+        // arrives, before any review decides whether a score is better than the one before it.
+        if let freshHomework { OutcomeBook().noteSeen(in: freshHomework, userID: user.id) }
         // Midterms only feed the result card and the reminder prompt: whether they load never
         // decides whether the homework is shown, and the other way round.
         let freshPapers = try? await papers

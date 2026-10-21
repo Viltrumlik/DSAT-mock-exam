@@ -364,6 +364,9 @@ struct PillTabs<Tab: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Tab
+    /// How the selected pill slides: the playful spring by default, `Motion.focus` in a focus
+    /// zone. A fade under Reduce Motion either way.
+    var motion: Animation = Motion.snappy
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -373,7 +376,7 @@ struct PillTabs<Tab: Hashable>: View {
                 ForEach(items) { item in
                     let active = item.tab == selection
                     Button {
-                        withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = item.tab }
+                        withAnimation(reduceMotion ? Motion.focus : motion) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: item.icon).font(.system(size: 12, weight: .bold))

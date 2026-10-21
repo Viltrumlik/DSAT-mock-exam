@@ -20,6 +20,8 @@ struct MidtermReportView: View {
     @State private var loadError: String?
     @State private var isLoading = true
     @State private var pdf: PDFRequest?
+    /// Bumped once, the first time a passed midterm's report is shown: confetti and the haptic.
+    @State private var outcomeTicks = 0
 
     /// Which PDF the sheet is showing.
     private enum PDFRequest: String, Identifiable {
@@ -62,9 +64,14 @@ struct MidtermReportView: View {
             .padding(16)
         }
         .background(Theme.background)
+        // The page's own confetti: this report is also opened inside the Me sheet, which the
+        // root overlay sits under.
+        .overlay { OutcomeConfetti(trigger: outcomeTicks) }
+        .sensoryFeedback(.success, trigger: outcomeTicks)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        // Detached: `load` writes state this page reads, and that must not cancel its requests.
+        .detachedRefresh { await load() }
         .task { await load() }
         .sheet(item: $pdf) { request in
             switch request {
@@ -94,12 +101,15 @@ struct MidtermReportView: View {
                 .foregroundStyle(.white.opacity(0.8))
 
             HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(ScoreText.string(score))
-                    .font(.system(size: 60, weight: .heavy).monospacedDigit())
-                    .tracking(-1.5)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                // Counts up in one roll; a score the server has not given stays a dash.
+                Group {
+                    if let score { RollingNumber(value: score) } else { Text(ScoreText.string(score)) }
+                }
+                .font(.system(size: 60, weight: .heavy).monospacedDigit())
+                .tracking(-1.5)
+                .foregroundStyle(.white)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
                 if let ceiling {
                     Text("/ \(ScoreText.string(ceiling))")
                         .font(.system(size: 18, weight: .bold))
@@ -242,18 +252,22 @@ struct MidtermReportView: View {
                         sub: report.passMark.map { "Pass mark \(ScoreText.string($0))" }
                             ?? report.midterm.scoreCeiling.map { "of \(ScoreText.string($0))" }
                     )
+                    .focusEntrance(0)
                 }
                 MidtermStatTile(
                     label: "Correct",
                     value: "\(ScoreText.string(report.correctCount))/\(ScoreText.string(report.totalCount))",
                     sub: "\(report.accuracyPercent)% accuracy"
                 )
+                .focusEntrance(1)
                 MidtermStatTile(label: "To improve", value: ScoreText.string(report.wrongCount), sub: nil)
+                    .focusEntrance(2)
                 MidtermStatTile(
                     label: "Focus \(noun)s",
                     value: ScoreText.string(report.skills.count),
                     sub: report.skills.count == 1 ? "\(noun) to work on" : "\(noun)s to work on"
                 )
+                .focusEntrance(3)
             }
         }
         .cardStyle()
@@ -279,7 +293,9 @@ struct MidtermReportView: View {
                     )
                 }
             } else {
-                ForEach(report.skills) { SkillRow(skill: $0) }
+                ForEach(Array(report.skills.enumerated()), id: \.element.id) { position, skill in
+                    SkillRow(skill: skill).focusEntrance(position)
+                }
             }
 
             // Disclosed rather than folded into a skill: quietly under-reporting a skill's
@@ -307,7 +323,7 @@ struct MidtermReportView: View {
                 VStack(spacing: 0) {
                     ForEach(Array(report.covered.enumerated()), id: \.element.id) { index, skill in
                         if index > 0 { Divider() }
-                        CoveredRow(skill: skill)
+                        CoveredRow(skill: skill).focusEntrance(index)
                     }
                 }
                 .cardStyle(padding: 12)
@@ -347,6 +363,8 @@ struct MidtermReportView: View {
             report = try await breakdown
             reportProblem = nil
         } catch {
+            // A cancelled load is not a failure (`APIClient` reports a cancellation as transport).
+            guard !Task.isCancelled else { return }
             report = nil
             reportProblem = MidtermReportUnavailable(error)
         }
@@ -354,11 +372,33 @@ struct MidtermReportView: View {
         do {
             result = try await review
         } catch let error as APIError {
+            guard !Task.isCancelled else { return }
             // Only a failure of BOTH is a failure of the screen.
             if report == nil { loadError = error.errorDescription ?? "Result not available yet." }
         } catch {
+            guard !Task.isCancelled else { return }
             if report == nil { loadError = error.localizedDescription }
         }
+        if let report { remember(report) }
+    }
+
+    /// The outcome rule (`CelebrationRule.midterm`, once by way of `OutcomeMemory`): a midterm the
+    /// centre marked passed is celebrated the first time its report is shown — confetti, a
+    /// success haptic, one sentence for VoiceOver. A pre-midterm, or one still to pass, never is;
+    /// nor is a report the page is not showing (`released`).
+    ///
+    /// Remembered under the attempt this page was opened for (the list's, or the link's), never
+    /// under the report's own `attemptId`, which reads 0 when the server leaves it out.
+    @MainActor
+    private func remember(_ report: MidtermErrorReport) {
+        guard released, case .signedIn(let user) = session.phase else { return }
+        let book = OutcomeBook()
+        var memory = book.read(userID: user.id)
+        let passed = CelebrationRule.midterm(isGraded: report.isGraded, passed: report.passed)
+        guard memory.celebrate(OutcomeMemory.midtermKey(attemptId), if: passed) else { return }
+        book.write(memory, userID: user.id)
+        outcomeTicks += 1
+        AccessibilityNotification.Announcement("Passed. Well done.").post()
     }
 }
 

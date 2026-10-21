@@ -265,7 +265,12 @@ struct ClassView: View {
         // Each of the rest fails on its own and keeps what was on screen. Homework and midterms
         // also say whether they arrived: a failure with nothing loaded is a retry, not "nothing".
         let freshHomework = try? await homework
-        if let freshHomework { withAnimation(motion) { assignments = freshHomework } }
+        if let freshHomework {
+            withAnimation(motion) { assignments = freshHomework }
+            // Every marked attempt the list carries becomes known to this phone, before any review
+            // decides whether a score is better than the one before it (`OutcomeMemory`).
+            if case .signedIn(let user) = session.phase { OutcomeBook().noteSeen(in: freshHomework, userID: user.id) }
+        }
         homeworkState.finish(succeeded: freshHomework != nil)
         let freshMidterms = try? await papers
         if let freshMidterms { midterms = freshMidterms }
