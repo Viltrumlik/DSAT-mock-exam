@@ -395,10 +395,18 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
     /// does not show gets no line rather than a guess. A tie-mate printed above is not "above" —
     /// passing them changes no number — so the line names the nearest better rank. Nil at #1,
     /// without a standing, and on the strike board.
+    ///
+    /// Only meaningful on the global, all-time XP board — the one the Rewards hero asks for. On a
+    /// filtered board (one subject, this month, one branch) the row above is the next student
+    /// within that slice, not the student to pass overall.
     public var passTarget: LeaderboardPass? {
         guard metric == .xp, let me = standing, me.rank > 1 else { return nil }
         let ahead = rows.filter { $0.rank < me.rank && $0.studentId != me.studentId }
-        guard ahead.count == me.rank - 1, let above = ahead.last else { return nil }
+        // By rank, not by position: the nearest better rank is the largest one still ahead. Of a
+        // tie at that rank the one printed last is named — the row directly above the viewer.
+        guard ahead.count == me.rank - 1,
+              let above = ahead.enumerated().max(by: { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) })?.element
+        else { return nil }
         return LeaderboardPass(
             name: LeaderboardName.firstName(above.displayName),
             xp: max(1, above.xp - me.xp + 1),

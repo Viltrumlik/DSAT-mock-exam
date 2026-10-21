@@ -149,6 +149,14 @@ import Testing
         #expect(cut.passTarget == LeaderboardPass(name: "S3", xp: 301, rank: 2))
     }
 
+    @Test("The student above is found by rank, not by the order the rows arrive in")
+    func shuffledRows() {
+        let me = row(4, 4, 150, me: true)
+        let shuffled = [row(3, 3, 270, name: "Malika Karimova"), me, row(1, 1, 400), row(2, 2, 300)]
+        let board = LeaderboardBoard(rows: shuffled, my: me)
+        #expect(board.passTarget == LeaderboardPass(name: "Malika", xp: 121, rank: 3))
+    }
+
     @Test("Level on XP but ranked below: one XP passes them")
     func levelXP() {
         let me = row(2, 2, 300, me: true)
@@ -185,10 +193,36 @@ import Testing
         #expect(XPLedger.rows(history, rules: rules, limit: 2).map(\.id) == [8, 6])
     }
 
-    @Test("Without the rules every earning is kept — a missing rule adds XP on the server too")
+    @Test("Without the rules an earning is kept — a missing rule adds XP on the server too — except SURVEY")
     func withoutRules() {
-        let history = [award(2, "SURVEY", 10), award(1, "HOMEWORK", 15)]
-        #expect(XPLedger.rows(history, rules: nil).map(\.id) == [2, 1])
+        let history = [award(3, "ATTENDANCE_PRESENT", 5), award(2, "SURVEY", 10), award(1, "HOMEWORK", 15)]
+        #expect(XPLedger.rows(history, rules: nil).map(\.id) == [3, 1], "SURVEY has no XP fallback on the server")
         #expect(XPLedger.rows([], rules: nil).isEmpty)
+    }
+
+    @Test("SURVEY is out of XP even when the rules list has no SURVEY rule (an inactive rule is not served)")
+    func surveyWithoutItsRule() {
+        let history = [award(3, "SURVEY", 10), award(2, "HOMEWORK", 15), award(1, "ATTENDANCE_PRESENT", 5)]
+        let rules = [RewardRule(event: "HOMEWORK", label: "Homework", points: 15)]
+        #expect(XPLedger.rows(history, rules: rules).map(\.id) == [2, 1])
+        #expect(XPLedger.rows(history, rules: []).map(\.id) == [2, 1])
+    }
+
+    @Test("A rule that exists decides — SURVEY paying XP again is kept, and a rule beats the fallback for any event")
+    func theRuleDecides() {
+        let history = [award(3, "SURVEY", 10), award(2, "HOMEWORK", 15), award(1, "QUIZ", 4)]
+        let rules = [
+            RewardRule(event: "SURVEY", label: "Survey", points: 10, grantsXP: true),
+            RewardRule(event: "HOMEWORK", label: "Homework", points: 15, grantsXP: true),
+            RewardRule(event: "QUIZ", label: "Quiz", points: 4, grantsXP: false),
+        ]
+        #expect(XPLedger.rows(history, rules: rules).map(\.id) == [3, 2])
+    }
+
+    @Test("A negative limit is an empty list, never a trap")
+    func negativeLimit() {
+        let history = [award(2, "HOMEWORK", 15), award(1, "HOMEWORK", 12)]
+        #expect(XPLedger.rows(history, rules: nil, limit: -1).isEmpty)
+        #expect(XPLedger.rows(history, rules: nil, limit: 0).isEmpty)
     }
 }
