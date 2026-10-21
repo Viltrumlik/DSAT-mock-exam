@@ -12,6 +12,7 @@ import MasterSATKit
 struct ShopView: View {
     @Environment(Session.self) private var session
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(CelebrationCenter.self) private var celebrations
 
     @State private var shop: Storefront?
     @State private var shopFailed = false
@@ -20,8 +21,13 @@ struct ShopView: View {
     /// Nil until the student picks a tab; until then the page opens on a stocked shelf.
     @State private var picked: ShopShelf?
     @State private var confirming: ShopItem?
+    /// Where the confirmed item's Buy button is — the coin bursts from there.
+    @State private var confirmingPoint: CGPoint?
     @State private var purchasingId: Int?
     @State private var toast: RewardsToastMessage?
+    /// Bumped when a confirmed purchase could not burst (a sheet or a cover is up): the success
+    /// haptic the burst would have given.
+    @State private var buyBuzz = 0
 
     private var shelf: ShopShelf { picked ?? shop?.openingShelf ?? .coin }
 
@@ -48,18 +54,19 @@ struct ShopView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .alert(
             confirming.map { Text(verbatim: "Buy \($0.name)?") } ?? Text(verbatim: ""),
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
             presenting: confirming
         ) { item in
-            Button("Buy") { Task { await buy(item) } }
+            Button("Buy") { Task { await buy(item, at: confirmingPoint) } }
             Button("Cancel", role: .cancel) {}
         } message: { item in
             Text(verbatim: "This spends \(item.priceText). You'll collect it from the desk.")
         }
         .rewardsToast($toast)
+        .sensoryFeedback(.success, trigger: buyBuzz)
     }
 
     // MARK: - Shelves
@@ -104,7 +111,8 @@ struct ShopView: View {
                                 item: item,
                                 busy: purchasingId != nil,
                                 buying: purchasingId == item.id
-                            ) {
+                            ) { point in
+                                confirmingPoint = point
                                 confirming = item
                             }
                         }
@@ -176,6 +184,7 @@ struct ShopView: View {
             shop = try await api.storefront()
             shopFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             shopFailed = true
         }
     }
@@ -187,6 +196,7 @@ struct ShopView: View {
             orders = try await api.orders()
             ordersFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             ordersFailed = true
         }
     }
@@ -196,12 +206,18 @@ struct ShopView: View {
     /// One purchase per confirmation. Every Buy stays off until the storefront has been read
     /// back, so a second press can only ever be a second, deliberate, confirmed order.
     @MainActor
-    private func buy(_ item: ShopItem) async {
+    private func buy(_ item: ShopItem, at point: CGPoint?) async {
         guard purchasingId == nil else { return }
         purchasingId = item.id
         let api = ShopAPI(client: session.client)
         do {
             let result = try await api.purchase(itemId: item.id)
+            // The server took the order: a coin bursts from the button that bought it. Under a
+            // sheet or a cover (the Me sheet pushes the shop) the burst is skipped, so the
+            // toast below is the only word, and the haptic comes from here instead.
+            let bursts = celebrations.coinCount
+            celebrations.coinBurst(at: point)
+            if celebrations.coinCount == bursts { buyBuzz += 1 }
             toast = RewardsToastMessage(
                 tone: .success,
                 text: result.detail.isEmpty ? "Ordered. Collect your \(item.name) from the desk." : result.detail
@@ -377,7 +393,10 @@ private struct ShopItemCard: View {
     let busy: Bool
     /// This one is the purchase in flight.
     let buying: Bool
-    let onBuy: () -> Void
+    /// Asked to buy; hands over where the Buy button is, so a confirmed purchase bursts there.
+    let onBuy: (CGPoint?) -> Void
+
+    @State private var buySpot = FrameBox()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -413,7 +432,7 @@ private struct ShopItemCard: View {
 
                     Spacer(minLength: 8)
 
-                    Button(action: onBuy) {
+                    Button { onBuy(buySpot.rect.celebrationPoint) } label: {
                         ZStack {
                             // Keeps the pill the width of its title while the spinner shows.
                             Text(item.buttonTitle).opacity(buying ? 0 : 1)
@@ -422,6 +441,7 @@ private struct ShopItemCard: View {
                     }
                     .buttonStyle(ShopBuyButtonStyle())
                     .disabled(!item.canBuy || busy)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { buySpot.rect = $0 }
                     .accessibilityLabel(item.inStock ? "Buy \(item.name) for \(item.priceText)" : "\(item.name), sold out")
                 }
                 .padding(.top, 16)

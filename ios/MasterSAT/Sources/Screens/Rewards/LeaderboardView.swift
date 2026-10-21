@@ -45,7 +45,7 @@ struct LeaderboardView: View {
         // can never overwrite a newer board.
         .task(id: query) { await loadBoard() }
         .task { await loadExtras() }
-        .refreshable {
+        .detachedRefresh {
             async let board: Void = loadBoard()
             async let extras: Void = loadExtras()
             _ = await (board, extras)
@@ -415,6 +415,7 @@ struct LeaderboardView: View {
                 query.scope = .global
             }
         } catch {
+            guard !Task.isCancelled else { return }
             filtersFailed = true
         }
     }

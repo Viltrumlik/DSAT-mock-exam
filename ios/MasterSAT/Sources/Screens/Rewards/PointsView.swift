@@ -13,6 +13,7 @@ import MasterSATKit
 /// balance alone — they are not the answer to "how many points do I have".
 struct PointsView: View {
     @Environment(Session.self) private var session
+    @Environment(CelebrationCenter.self) private var celebrations
 
     @State private var rewards: MyRewards?
     @State private var meFailed = false
@@ -27,6 +28,9 @@ struct PointsView: View {
     @State private var isConverting = false
     @State private var outcome: ConvertOutcome?
     @State private var pending: PendingConversion?
+    /// Bumped when a confirmed conversion could not burst (a sheet or a cover is up): the
+    /// success haptic the burst would have given.
+    @State private var convertBuzz = 0
     @FocusState private var amountFocused: Bool
 
     var body: some View {
@@ -61,7 +65,8 @@ struct PointsView: View {
             }
         }
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
+        .sensoryFeedback(.success, trigger: convertBuzz)
         .alert(
             pending.map { Text(verbatim: "Convert \($0.spent) points into \(RewardsFormat.count($0.coins, "coin"))?") } ?? Text(verbatim: ""),
             isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
@@ -221,13 +226,13 @@ struct PointsView: View {
     }
 
     private func outcomeLine(_ outcome: ConvertOutcome) -> some View {
-        let (icon, text): (String, String) = switch outcome {
-        case .done(let detail): ("checkmark.circle.fill", detail)
-        case .failed: ("exclamationmark.circle.fill", "That didn't go through — your points are untouched. Try again.")
+        let icon = switch outcome {
+        case .done: "checkmark.circle.fill"
+        case .failed: "exclamationmark.circle.fill"
         }
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon).font(.system(size: 14, weight: .bold))
-            Text(text)
+            Text(outcome.text)
                 .font(.system(size: 14, weight: .bold))
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -345,6 +350,7 @@ struct PointsView: View {
             rewards = try await api.me()
             meFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             meFailed = true
         }
     }
@@ -356,6 +362,7 @@ struct PointsView: View {
             rules = try await api.rules()
             rulesFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             rulesFailed = true
         }
     }
@@ -367,6 +374,7 @@ struct PointsView: View {
             wallet = try await api.wallet()
             walletFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             walletFailed = true
         }
     }
@@ -381,6 +389,11 @@ struct PointsView: View {
 
     /// Spends the points. Not idempotent — a second press is a second purchase — so it runs
     /// once per confirmation, with the button off while it is in flight, and is never retried.
+    ///
+    /// A coin bursts only when the server says one was minted, and only where the stage is
+    /// clear: under a sheet or a cover (the Me sheet pushes this page) `coinBurst` does nothing,
+    /// so the page says what happened itself — the line under the strip, a VoiceOver
+    /// announcement, and the success haptic the burst would have given.
     @MainActor
     private func convert(_ conversion: PendingConversion) async {
         guard !isConverting else { return }
@@ -390,18 +403,26 @@ struct PointsView: View {
         do {
             let result = try await api.convert(points: conversion.asked)
             rewards = rewards?.applying(result.balances)
+            if result.minted > 0 {
+                let bursts = celebrations.coinCount
+                celebrations.coinBurst(at: nil)
+                if celebrations.coinCount == bursts { convertBuzz += 1 }
+            }
             // Cleared on success only: a spent amount left in the box invites a second press
             // that would spend it again, and clearing it on failure throws away what was typed.
             amountText = ""
             outcome = .done(
                 result.detail.isEmpty
-                    ? "Converted \(conversion.spent) points into \(RewardsFormat.count(conversion.coins, "coin"))."
+                    ? (result.minted > 0
+                        ? "Converted \(conversion.spent) points into \(RewardsFormat.count(conversion.coins, "coin"))."
+                        : "No coin was minted — your points are untouched.")
                     : result.detail
             )
         } catch {
             outcome = .failed
         }
         isConverting = false
+        if let outcome { AccessibilityNotification.Announcement(outcome.text).post() }
         // Either way, read the truth back: the history gains its conversion row and the coin
         // history its mint — and a press that did land despite an error shows up as it is.
         async let me: Void = loadMe()
@@ -415,6 +436,15 @@ struct PointsView: View {
 private enum ConvertOutcome: Equatable {
     case done(String)
     case failed
+
+    /// What the line under the strip says — and what VoiceOver is told, since the line appears
+    /// without a sound of its own.
+    var text: String {
+        switch self {
+        case .done(let detail): detail
+        case .failed: "That didn't go through — your points are untouched. Try again."
+        }
+    }
 }
 
 private struct PendingConversion: Identifiable {
