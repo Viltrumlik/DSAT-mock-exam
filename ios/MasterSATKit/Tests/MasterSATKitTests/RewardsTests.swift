@@ -214,7 +214,7 @@ import Testing
             .json(["rules": [
                 ["event": "HOMEWORK", "label": "Homework completed", "points": 15, "grants_xp": true, "group_points": NSNull()],
                 ["event": "SUPPORT_SESSION", "label": "Support-teacher session held", "points": 10,
-                 "grants_xp": true, "group_points": [10, 15, 20]],
+                 "grants_xp": true, "group_points": [10, 15]],
                 ["event": "SURVEY", "label": "Survey completed", "points": 40, "grants_xp": false, "group_points": NSNull()],
                 ["event": "CLASSWORK_MANUAL", "label": "Classwork awarded by a teacher", "points": 0, "grants_xp": true],
                 ["event": "HOMEWORK_FULL", "label": "Homework 100%", "points": 15, "grants_xp": true],
@@ -232,10 +232,11 @@ import Testing
         #expect(homework.amountText == "+15")
         #expect(homework.hint == "Finish it all before the deadline and the full 15 lands right away. Otherwise you're paid at the deadline for the share you've finished — only what's done by then counts, so starting early is what pays.")
 
+        // The ladder the server serves since 2026-10-21: a session holds two students.
         let support = earnable[1]
-        #expect(support.groupPoints == [10, 15, 20])
-        #expect(support.amountText == "+10\u{2013}20")
-        #expect(support.hint == "Bring a classmate and you both earn more: 10 on your own, 15 each if two of you go, 20 each if three do. You're paid once the teacher marks the session as held.")
+        #expect(support.groupPoints == [10, 15])
+        #expect(support.amountText == "+10\u{2013}15")
+        #expect(support.hint == "Bring a classmate and you both earn more: 10 on your own, 15 each if two of you go. A session holds up to 2 students. You're paid once the teacher marks the session as held.")
 
         let survey = earnable[2]
         #expect(!survey.grantsXP)
@@ -257,6 +258,28 @@ import Testing
         #expect(noXPHomework.hint?.hasSuffix("starting early is what pays. Points only — this one doesn't add to your XP.") == true)
         let plain = RewardRule(event: "ATTENDANCE_PRESENT", label: "Attended a lesson", points: 5)
         #expect(plain.hint == nil)
+    }
+
+    @Test("The support hint reads the ladder at any length — the rung count is the group size")
+    func supportLadderLengths() {
+        // Two rungs, as served since the 2026-10-21 cap: the hint must not vanish.
+        let pair = RewardRule(event: "SUPPORT_SESSION", label: "Support", points: 10, groupPoints: [10, 15])
+        #expect(pair.amountText == "+10\u{2013}15")
+        #expect(pair.hint == "Bring a classmate and you both earn more: 10 on your own, 15 each if two of you go. A session holds up to 2 students. You're paid once the teacher marks the session as held.")
+
+        // Should the school allow three again, the extra rung is spelled out, never dropped.
+        let three = RewardRule(event: "SUPPORT_SESSION", label: "Support", points: 10, groupPoints: [10, 15, 20])
+        #expect(three.amountText == "+10\u{2013}20")
+        #expect(three.hint == "Bring a classmate and you both earn more: 10 on your own, 15 each if two of you go, 20 each if 3 of you go. A session holds up to 3 students. You're paid once the teacher marks the session as held.")
+
+        // One rung, or none: there is no classmate to bring, so no invitation to make.
+        let alone = RewardRule(event: "SUPPORT_SESSION", label: "Support", points: 10, groupPoints: [10])
+        #expect(alone.hint == nil)
+        #expect(RewardRule(event: "SUPPORT_SESSION", label: "Support", points: 10).hint == nil)
+
+        // A support rule without XP keeps the ladder sentence and adds the points-only line.
+        let noXP = RewardRule(event: "SUPPORT_SESSION", label: "Support", points: 10, grantsXP: false, groupPoints: [10, 15])
+        #expect(noXP.hint?.hasSuffix("marks the session as held. Points only — this one doesn't add to your XP.") == true)
     }
 
     @Test("The wallet decodes its balances and signed coin history")
