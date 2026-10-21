@@ -17,9 +17,15 @@ public enum CelebrationRule {
 
     /// An attempt that scored more than the attempt before it on the same set. With no attempt
     /// before it — or none this phone saw — there is nothing to beat, so nothing is celebrated.
+    ///
+    /// Compared in whole percents, rounded half to even: that is the scale the server's lists
+    /// carry a score on (`round(percent)` in Python, which rounds half to even — Swift's plain
+    /// `rounded()` would round 12.5 up), while a review carries two decimals. The same attempt
+    /// reads as 60 on a list and 60.4 on its review, and a retake that scored 60.2 is no better
+    /// than either, so two scores that are the same whole percent are never an improvement.
     public static func assessment(percent: Double, previous: Double?) -> Bool {
         guard let previous else { return false }
-        return percent > previous
+        return percent.rounded(.toNearestOrEven) > previous.rounded(.toNearestOrEven)
     }
 
     /// A word-game round the server says mastered its game. The server recomputes
@@ -34,16 +40,21 @@ public enum CelebrationRule {
 /// assessment can be compared with the attempt before it.
 ///
 /// The server keeps every attempt, but gives the app no list of them: `my-result` returns the
-/// latest, any attempt's review is served by id, and the my-assignments lists carry each
-/// homework's latest completed attempt (`attempt_id`, `percent`). So "the attempt before" is the
-/// newest earlier attempt of the same set (`AssessmentReview.setKey`) that this phone has come
-/// to know — shown on a review (`showAssessment`) or read off a list (`noteSeen`), so an attempt
-/// taken on the web counts once a list has carried it. Attempt ids grow in the order attempts
-/// are started, so an older attempt opened after a newer one is not "before" it and changes
-/// nothing.
+/// latest, and any attempt's review is served by id. The my-assignments lists carry, per
+/// homework, the latest STARTED attempt (`_hw_progress`), and report it as completed — with
+/// `attempt_id` and a whole-number `percent` — only if that one is finished: a retake in
+/// progress hides the completed attempt before it. So "the attempt before" is the newest earlier
+/// attempt of the same set (`AssessmentReview.setKey`) that this phone has come to know — shown
+/// on a review (`showAssessment`) or read off a list (`noteSeen`), so an attempt taken on the web
+/// counts once a list has carried it. Attempt ids grow in the order attempts are started, so an
+/// older attempt opened after a newer one is not "before" it and changes nothing.
 ///
-/// A phone that never saw an attempt cannot compare with it; the rule errs the quiet way —
-/// nothing to compare with, nothing celebrated.
+/// What this cannot know is an attempt the phone never saw, neither opened nor carried by a
+/// list. A phone that knows nothing of a set compares nothing and celebrates nothing. But a phone
+/// that knows two attempts of a set, with a third taken between them on the web that no list
+/// ever carried, will say "Up from X%" against the older of the two, an attempt that is not the
+/// one before. Frequent list loads narrow that gap; only a field from the server — the previous
+/// attempt's score on the review — would close it.
 public struct OutcomeMemory: Codable, Sendable, Equatable {
     /// An attempt as this phone knows it: which one, and what it scored.
     public struct Attempt: Codable, Sendable, Equatable {
@@ -88,9 +99,11 @@ public struct OutcomeMemory: Codable, Sendable, Equatable {
     }
 
     /// An attempt is known — read off a list rather than opened, say one taken on the web, or
-    /// one the list brought in before its review was opened. It becomes the set's newest attempt
-    /// when it is newer than the one known; an older one changes nothing. This never celebrates
-    /// and returns nothing: it only decides what the next attempt is compared with.
+    /// one the list brought in before its review was opened. Only a completed, graded attempt
+    /// has a score to note. It becomes the set's newest attempt when it is newer than the one
+    /// known; an older or the same one changes nothing (the same one is refined by its review,
+    /// `showAssessment`, whose number is exact where a list's is a whole percent). This never
+    /// celebrates and returns nothing: it only decides what the next attempt is compared with.
     ///
     /// The attempt itself is compared with the one it replaced, as when it is shown, and the
     /// answer is kept, so its review says "up from" whether the list or the review reached the
@@ -110,10 +123,18 @@ public struct OutcomeMemory: Codable, Sendable, Equatable {
     /// A marked attempt is on screen. Returns the score it improved on — when it beat the newest
     /// earlier attempt of the same set this phone knew — on every showing, so the page can say
     /// so each time it opens; nil otherwise. It is returned only while the score on screen still
-    /// beats it: a mark since corrected down to that score, or below, is no improvement.
-    /// Remembers the attempt as the set's newest, as `noteSeen` does.
+    /// beats it: a mark since corrected down to that score, or below, is no improvement (scores
+    /// are compared in whole percents, `CelebrationRule.assessment`).
+    /// Remembers the attempt as the set's newest, as `noteSeen` does; when that is the attempt
+    /// already known — a list brought it, or it was shown before — the review's exact number
+    /// replaces the stored one, which a list had rounded and a re-grade may have moved. That
+    /// changes only what the next attempt is measured against: an attempt is never compared with
+    /// itself, so this never decides whether this one improved.
     public mutating func showAssessment(setKey: String, attemptId: Int, percent: Double) -> Double? {
         noteSeen(setKey: setKey, attemptId: attemptId, percent: percent)
+        if newestSeen[setKey]?.attemptId == attemptId {
+            newestSeen[setKey] = Attempt(attemptId: attemptId, percent: percent)
+        }
         guard let from = improvedFrom[attemptId],
               CelebrationRule.assessment(percent: percent, previous: from)
         else { return nil }

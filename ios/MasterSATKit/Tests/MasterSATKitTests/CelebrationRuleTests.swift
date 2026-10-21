@@ -24,6 +24,17 @@ import Testing
         #expect(!CelebrationRule.assessment(percent: 100, previous: nil), "nothing to beat proves nothing")
     }
 
+    @Test("An assessment is compared at the lists' resolution — whole percents, rounded half to even")
+    func assessmentResolution() {
+        #expect(!CelebrationRule.assessment(percent: 60.2, previous: 60), "60.2 and 60 are both 60%")
+        #expect(!CelebrationRule.assessment(percent: 60, previous: 60.4))
+        #expect(!CelebrationRule.assessment(percent: 60.4, previous: 59.6), "both are 60%")
+        #expect(CelebrationRule.assessment(percent: 60.6, previous: 60), "60.6 is 61%")
+        #expect(!CelebrationRule.assessment(percent: 12.5, previous: 12), "12.5 rounds to 12, as Python's round does — not up to 13")
+        #expect(!CelebrationRule.assessment(percent: 12.5, previous: 11.5), "11.5 and 12.5 both round to 12")
+        #expect(CelebrationRule.assessment(percent: 13.5, previous: 13), "13.5 rounds to 14")
+    }
+
     @Test("A word-game round is celebrated when the server says it mastered its game")
     func vocabRound() throws {
         let mastered = try summary(#"{"id":1,"correct_count":5,"total_count":5,"set_completed":true,"mode_mastered":true}"#)
@@ -168,6 +179,54 @@ import Testing
         #expect(first == nil)
         let second = memory.showAssessment(setKey: named, attemptId: 42, percent: 60)
         #expect(second == 50, "a key that is there behaves exactly as the plain call does")
+    }
+
+    @Test("A list's rounded score is refined by the review's exact one, so an equal score is never an improvement")
+    func listRoundedThenReview() {
+        var memory = OutcomeMemory()
+        memory.noteSeen(setKey: "s", attemptId: 40, percent: 60)
+        let shown = memory.showAssessment(setKey: "s", attemptId: 40, percent: 60.4)
+        #expect(shown == nil, "an attempt is never compared with itself")
+        #expect(memory.newestSeen["s"] == OutcomeMemory.Attempt(attemptId: 40, percent: 60.4), "the review's number replaces the list's")
+
+        let retake = memory.showAssessment(setKey: "s", attemptId: 41, percent: 60.2)
+        #expect(retake == nil, "60.2% against 60.4% is the same 60% — not \"Up from 60%\"")
+        let better = memory.showAssessment(setKey: "s", attemptId: 42, percent: 61)
+        #expect(better == 60.2, "a whole percent better is an improvement, on the exact score it beat")
+    }
+
+    @Test("Half-way scores round to even, as the lists do")
+    func halfEven() {
+        var memory = OutcomeMemory()
+        memory.noteSeen(setKey: "s", attemptId: 40, percent: 12)
+        let level = memory.showAssessment(setKey: "s", attemptId: 41, percent: 12.5)
+        #expect(level == nil, "12.5 is 12% on the list's scale")
+        let up = memory.showAssessment(setKey: "s", attemptId: 42, percent: 13.5)
+        #expect(up == 12.5, "13.5 is 14%, past 12")
+    }
+
+    @Test("Showing the attempt the list brought refines it without celebrating it, and the next attempt is measured from the refined score")
+    func refineEqualId() {
+        // A teacher re-grade up, picked up when the review opens.
+        var regraded = OutcomeMemory()
+        regraded.noteSeen(setKey: "s", attemptId: 40, percent: 50)
+        let shown = regraded.showAssessment(setKey: "s", attemptId: 40, percent: 72.5)
+        #expect(shown == nil, "a better mark on the same attempt is not that attempt beating itself")
+        #expect(regraded.improvedFrom.isEmpty)
+        #expect(regraded.celebrated.isEmpty)
+        let next = regraded.showAssessment(setKey: "s", attemptId: 41, percent: 75)
+        #expect(next == 72.5, "measured from the re-graded 72.5%, not the 50% the list once carried")
+
+        // An improved attempt stays improved, on the same score it beat, as its number is refined.
+        var memory = OutcomeMemory()
+        _ = memory.showAssessment(setKey: "s", attemptId: 40, percent: 60.4)
+        let improved = memory.showAssessment(setKey: "s", attemptId: 41, percent: 75)
+        #expect(improved == 60.4)
+        let refined = memory.showAssessment(setKey: "s", attemptId: 41, percent: 75.3)
+        #expect(refined == 60.4)
+        #expect(memory.newestSeen["s"] == OutcomeMemory.Attempt(attemptId: 41, percent: 75.3))
+        let level = memory.showAssessment(setKey: "s", attemptId: 42, percent: 75.4)
+        #expect(level == nil, "75.4% is the same 75% as 75.3%")
     }
 
     @Test("An outcome is celebrated once, and only when it qualifies")
