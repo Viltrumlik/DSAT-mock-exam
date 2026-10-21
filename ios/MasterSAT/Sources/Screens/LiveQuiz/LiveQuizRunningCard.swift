@@ -31,8 +31,11 @@ struct LiveQuizRunningCard: View {
             }
         }
         .task(id: refreshID) {
-            let rooms = (try? await LiveQuizAPI(client: session.client).mine()) ?? []
-            running = rooms.filter { $0.status != .finished && $0.status != .terminated }
+            // A load that was cancelled (the id moved on, the card left) is no answer, and a
+            // failed one is not "nothing running": either way the banner keeps what it had.
+            guard let rooms = try? await LiveQuizAPI(client: session.client).mine(), !Task.isCancelled else { return }
+            let open = rooms.filter { $0.status != .finished && $0.status != .terminated }
+            if open != running { running = open }
         }
     }
 }

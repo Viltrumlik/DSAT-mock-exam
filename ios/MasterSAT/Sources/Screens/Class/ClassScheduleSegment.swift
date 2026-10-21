@@ -54,15 +54,22 @@ struct ClassScheduleSegment: View {
     @MainActor
     private func load() async {
         isLoading = true
-        defer { isLoading = false }
         let (start, end) = ScheduleMonth.gridRange(year: viewYear, month: viewMonth)
         do {
-            events = try await session.student.schedule(from: start, to: end)
+            let fresh = try await session.student.schedule(from: start, to: end)
+            // A month change, a refresh or leaving the segment cancels this load while the next
+            // one (if any) is starting. That is not a result and not a failure — and the next
+            // load owns the spinner, so a stale one must not clear it.
+            if Task.isCancelled { return }
+            events = fresh
             failed = false
             // Land on the next lesson the first time, so the day card is never empty on arrival.
             if selectedDay == nil { selectedDay = month.nextLessonDate ?? DayKey.string(Date()) }
         } catch {
+            // `APIClient` wraps a cancellation as a transport error, so ask the task, not the error.
+            if Task.isCancelled { return }
             failed = true
         }
+        isLoading = false
     }
 }
