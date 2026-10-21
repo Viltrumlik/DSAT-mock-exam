@@ -85,19 +85,22 @@ private struct RewardsRefresher: View {
     @Environment(Session.self) private var session
     @Environment(RewardsStore.self) private var rewards
     @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(AppRouter.self) private var router
     @Environment(\.scenePhase) private var scenePhase
 
-    /// The numbers the header shows right now: XP still in the air and a streak waiting to roll
-    /// are not on it yet.
+    /// What the header and the trophy card show right now: XP still in the air, a streak waiting
+    /// to roll and a place not yet shown are not on it yet.
     private struct Shown: Equatable {
         var xp: Int?
         var streak: Int?
+        var rankUp: Rise?
     }
 
     var body: some View {
         let shown = Shown(
             xp: rewards.xp.map { max(0, $0 - celebrations.heldXP) },
-            streak: celebrations.streakShown(rewards.streak)
+            streak: celebrations.streakShown(rewards.streak),
+            rankUp: celebrations.rankUp
         )
         Color.clear
             .frame(width: 0, height: 0)
@@ -117,7 +120,13 @@ private struct RewardsRefresher: View {
     }
 
     private func check() {
-        Task { await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations) }
+        Task {
+            await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations)
+            // Coming back brings nothing into view, so a Rewards root left open (its hero, its
+            // ledger) reads again — after the check, so a streak or a place that rose is held
+            // first. Any other tab reloads as it is opened.
+            router.reloadIfShowing(.rewards)
+        }
     }
 
     private func remember() {

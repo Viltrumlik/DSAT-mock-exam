@@ -119,6 +119,9 @@ final class CelebrationCenter {
 
     private var covered: Bool { sheetUp || coversUp > 0 }
 
+    /// How the pill rolls when an entry resolves: a quick fade under Reduce Motion.
+    private var settleAnimation: Animation { reduceMotion ? Motion.focus : Motion.snappy }
+
     private var budget: MotionBudget {
         MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
     }
@@ -152,7 +155,7 @@ final class CelebrationCenter {
             }
             // Animated: a failed read (nil) or a gain that is not one gives back the rise this
             // entry was holding (`heldXP`), and the pill rolls to it rather than jumping.
-            withAnimation(Motion.snappy) {
+            withAnimation(self.settleAnimation) {
                 _ = self.queue.resolve(entry.id, xpAfter: after, allowsFlights: self.budget.allowsFlights)
             }
             self.flyIfReady()
@@ -222,7 +225,7 @@ final class CelebrationCenter {
     func resolveAway(_ id: Int, xpAfter: Int?, label: String?) {
         // Animated, as in `celebrate`: a failed read or a gain that cannot fly gives back the
         // rise this entry was holding, and the pill rolls to it rather than jumping.
-        let gained = withAnimation(Motion.snappy) {
+        let gained = withAnimation(settleAnimation) {
             queue.resolve(id, xpAfter: xpAfter, allowsFlights: budget.allowsFlights, label: label)
         }
         if gained > 0 { announce("\(gained) XP earned while you were away.") }
@@ -262,8 +265,11 @@ final class CelebrationCenter {
     /// A rank-up not shown yet: the baseline keeps its old place until the card has been seen.
     var rankNotShown: Rise? { rankWaiting }
 
+    /// Puts the card away; a flight that waited behind it takes off now.
     func dismissRankUp() {
-        if rankUp != nil { rankUp = nil }
+        guard rankUp != nil else { return }
+        rankUp = nil
+        flyIfReady()
     }
 
     private func playStreakIfReady() {
@@ -364,7 +370,8 @@ final class CelebrationCenter {
     }
 
     private func flyIfReady() {
-        guard queue.hasConfirmedGain, let pill = target,
+        // Not behind the card's dim: the flight waits for `dismissRankUp`.
+        guard rankUp == nil, queue.hasConfirmedGain, let pill = target,
               let flight = queue.takeFlight(stageVisible: !covered, pillVisible: true, allowsFlights: budget.allowsFlights)
         else { return }
         let airborne = XPFlight(

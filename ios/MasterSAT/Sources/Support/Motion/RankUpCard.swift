@@ -25,7 +25,9 @@ struct RankUpOverlay: View {
                     reduceMotion: celebrations.reduceMotion,
                     onBoard: {
                         celebrations.dismissRankUp()
-                        router.show(.rewards)
+                        // Fresh: a Rewards root already open would not reload, and the hero must
+                        // show the place this card named.
+                        router.showFresh(.rewards)
                     },
                     onClose: { celebrations.dismissRankUp() }
                 )
@@ -42,9 +44,7 @@ struct RankUpOverlay: View {
 }
 
 /// The card itself — look B, the trophy over a star burst. Under Reduce Motion a still trophy
-/// and no burst: the trophy is an SF Symbol there, not the Lottie, because a one-shot clip
-/// either plays or is blank when nothing may move (`LottieClip.Playback`), and the star burst
-/// ends faded out.
+/// (its rest frame, the full cup) and no burst.
 struct RankUpCard: View {
     let rise: Rise
     let reduceMotion: Bool
@@ -54,15 +54,10 @@ struct RankUpCard: View {
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
-                if reduceMotion {
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 84, weight: .bold))
-                        .foregroundStyle(Theme.amber)
-                        .frame(width: 130, height: 130)
-                } else {
+                if !reduceMotion {
                     LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
-                    LottieClip(.trophy, playback: .once).frame(width: 130, height: 130)
                 }
+                LottieClip(.trophy, playback: reduceMotion ? .still : .once).frame(width: 130, height: 130)
             }
             .frame(height: 150)
             .accessibilityHidden(true)

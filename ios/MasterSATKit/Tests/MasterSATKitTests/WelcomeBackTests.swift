@@ -23,6 +23,22 @@ import Testing
         #expect(LastSeenBook.key(userID: 7) == "rewards.lastSeen.v1.7")
     }
 
+    @Test("A baseline stored before rankUnread existed still reads, as read; the bit round-trips")
+    func rankUnreadDefaultsAndRoundTrips() throws {
+        let old = Data(#"{"xp":100,"streak":4,"rank":12,"newestAwardID":7}"#.utf8)
+        let decoded = try JSONDecoder().decode(LastSeen.self, from: old)
+        #expect(decoded == LastSeen(xp: 100, streak: 4, rank: 12, newestAwardID: 7, rankUnread: false))
+
+        let oldest = Data(#"{"xp":0,"streak":0}"#.utf8)
+        #expect(try JSONDecoder().decode(LastSeen.self, from: oldest) == LastSeen(xp: 0, streak: 0, rank: nil, newestAwardID: nil))
+
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let book = LastSeenBook(defaults: defaults)
+        book.write(LastSeen(xp: 5, streak: 1, rank: 9, newestAwardID: nil, rankUnread: true), userID: 3)
+        #expect(book.read(userID: 3)?.rankUnread == true)
+    }
+
     @Test("A value that will not decode is no baseline, not a crash")
     func corrupt() {
         let (defaults, name) = scratch()
@@ -67,6 +83,19 @@ import Testing
         #expect(WelcomeBack.readsRank(seen: neverRanked, xpNow: 100))
         let noXP = LastSeen(xp: 0, streak: 0, rank: nil, newestAwardID: nil)
         #expect(!WelcomeBack.readsRank(seen: noXP, xpNow: 0), "no XP, no place on the board")
+    }
+
+    @Test("A read that failed, or a card never shown, is read again even though the XP did not rise")
+    func readsRankWhenUnread() {
+        let settled = LastSeen(xp: 100, streak: 4, rank: 12, newestAwardID: 7)
+        #expect(!WelcomeBack.readsRank(seen: settled, xpNow: 100))
+
+        // The failed read: the XP baseline moved on when the flight landed, the place did not.
+        let failed = LastSeen(xp: 120, streak: 4, rank: 12, newestAwardID: 9, rankUnread: true)
+        #expect(WelcomeBack.readsRank(seen: failed, xpNow: 120), "XP is where it was seen, and the board is still read")
+        #expect(WelcomeBack.readsRank(seen: failed, xpNow: 90), "even if XP is lower (an adjustment)")
+        #expect(WelcomeBack.rank(seen: failed.rank, now: 9) == Rise(from: 12, to: 9),
+                "the held place is what the next read is measured against")
     }
 
     @Test("The flight names the newest earning since it was last seen, and counts the rest")

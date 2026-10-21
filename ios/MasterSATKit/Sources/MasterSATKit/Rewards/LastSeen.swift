@@ -13,12 +13,27 @@ public struct LastSeen: Codable, Sendable, Equatable {
     /// The newest `/rewards/me/` history row when this was written — what the flight's label
     /// counts new earnings from.
     public var newestAwardID: Int?
+    /// A better place may be waiting: the board read that should have found it failed, or the
+    /// trophy card for it has not been shown yet. While set, `rank` is held at the place the
+    /// student last saw, and the next check reads the board whatever the XP did
+    /// (`WelcomeBack.readsRank`). A baseline stored before this field existed reads as false.
+    public var rankUnread: Bool
 
-    public init(xp: Int, streak: Int, rank: Int?, newestAwardID: Int?) {
+    public init(xp: Int, streak: Int, rank: Int?, newestAwardID: Int?, rankUnread: Bool = false) {
         self.xp = xp
         self.streak = streak
         self.rank = rank
         self.newestAwardID = newestAwardID
+        self.rankUnread = rankUnread
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        xp = try c.decode(Int.self, forKey: .xp)
+        streak = try c.decode(Int.self, forKey: .streak)
+        rank = try c.decodeIfPresent(Int.self, forKey: .rank)
+        newestAwardID = try c.decodeIfPresent(Int.self, forKey: .newestAwardID)
+        rankUnread = try c.decodeIfPresent(Bool.self, forKey: .rankUnread) ?? false
     }
 }
 
@@ -77,11 +92,13 @@ public enum WelcomeBack {
     }
 
     /// Whether the welcome-back check reads the board: a place can only improve through the
-    /// student's own XP, so only when XP rose — or to take a first baseline. A student with no
-    /// XP has no place on the board (`rank_of` is null), so there is nothing to read.
+    /// student's own XP, so only when XP rose — or to take a first baseline, or because an
+    /// earlier read failed or its card was never shown (`rankUnread`), whatever the XP did since.
+    /// A student with no XP has no place on the board (`rank_of` is null), so there is nothing to
+    /// read.
     public static func readsRank(seen: LastSeen?, xpNow: Int) -> Bool {
         guard let seen else { return true }
-        return xpNow > seen.xp || (seen.rank == nil && xpNow > 0)
+        return seen.rankUnread || xpNow > seen.xp || (seen.rank == nil && xpNow > 0)
     }
 
     /// The flight's caption: the newest XP earning since the baseline ("Attendance"), and how
