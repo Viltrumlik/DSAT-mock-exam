@@ -222,6 +222,26 @@ enum ProfileFixtures {
         #expect(allDay?.live == true)
     }
 
+    @Test("A lesson with no time today is today, not on now")
+    func untimedToday() throws {
+        let lesson = next([try F.lesson("2026-09-14", "", classroom: 2)], 2, hours: 2)
+        // Still found (its window is the day), but nothing says it has begun.
+        #expect(lesson?.live == true)
+        #expect(lesson?.hasTime == false)
+        #expect(lesson?.isOnNow == false)
+        #expect(label(lesson) == "Today")
+    }
+
+    @Test("A timed lesson in progress is on now")
+    func timedOnNow() throws {
+        let lesson = next([try F.lesson("2026-09-14", "14:00", classroom: 1)], 1, hours: 2)
+        #expect(lesson?.isOnNow == true)
+        #expect(label(lesson) == "On now")
+        // Ahead of it, it is not on.
+        let later = next([try F.lesson("2026-09-14", "18:00", classroom: 3)], 3, hours: 2)
+        #expect(later?.isOnNow == false)
+    }
+
     @Test("Clock times are read out of free text")
     func clockTimes() {
         #expect(ProfileLessons.clockTimes(in: "8:00-10:00").map { $0.hour } == [8, 10])

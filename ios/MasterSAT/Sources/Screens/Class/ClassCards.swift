@@ -15,7 +15,15 @@ struct ClassLessonCard: View {
     private var lessonLine: String {
         guard let next else { return ProfileClasses.scheduleLine(room) }
         let place = ClassroomSchedule.roomLabel(room.roomNumber)
-        let when = next.live ? "Lesson on now" : "Next lesson · \(ProfileLessons.label(next))"
+        let when: String
+        if next.isOnNow {
+            when = "Lesson on now"
+        } else if next.live {
+            // A lesson the schedule gave no time: it is today, and nothing says it has begun.
+            when = "Lesson today"
+        } else {
+            when = "Next lesson · \(ProfileLessons.label(next))"
+        }
         return place.isEmpty ? when : "\(when) · \(place)"
     }
 
@@ -31,7 +39,7 @@ struct ClassLessonCard: View {
                             .multilineTextAlignment(.leading)
                         Text(lessonLine)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(next?.live == true ? Theme.success : Theme.textSecondary)
+                            .foregroundStyle(next?.isOnNow == true ? Theme.success : Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)

@@ -128,6 +128,11 @@ public enum ProfileLessons {
             self.live = live
             self.hasTime = hasTime
         }
+
+        /// The lesson is going on right now, and the schedule can say so. `live` is also true all
+        /// day for a lesson with no time (its window is the whole day, which is what stops
+        /// `next` skipping today's lesson) — but a lesson with no time is not "on now" at 06:41.
+        public var isOnNow: Bool { live && hasTime }
     }
 
     /// The lesson on now, or the first still to start.
@@ -157,7 +162,7 @@ public enum ProfileLessons {
 
     /// "On now", "Today at 14:00", "Tomorrow at 16:00", "Wed, Sep 16 at 14:00".
     public static func label(_ lesson: Next, now: Date = Date(), calendar: Calendar = .current) -> String {
-        if lesson.live { return "On now" }
+        if lesson.isOnNow { return "On now" }
         let day: String
         switch ProfileCalendar.days(from: now, to: lesson.start, calendar: calendar) {
         case 0: day = "Today"

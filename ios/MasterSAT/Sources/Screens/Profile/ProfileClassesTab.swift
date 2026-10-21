@@ -154,7 +154,7 @@ private struct ProfileClassCard: View {
     }
 
     private var nextLesson: some View {
-        let tone = lesson?.live == true ? ProfileTone.emerald : ProfileTone.primary
+        let tone = lesson?.isOnNow == true ? ProfileTone.emerald : ProfileTone.primary
         return HStack(spacing: 12) {
             Image(systemName: "calendar.badge.clock")
                 .font(.system(size: 17, weight: .semibold))
