@@ -63,12 +63,18 @@ struct TodayView: View {
         reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity)
     }
 
-    /// "Tuesday, 20 October" — the day the plan below is about, so on Tashkent's clock too.
-    private var dateLine: String {
-        var style = Date.FormatStyle.dateTime.weekday(.wide).day().month(.wide)
+    /// The day the plan below is about, so on Tashkent's clock too.
+    private func dateText(_ style: Date.FormatStyle) -> String {
+        var style = style
         style.timeZone = ServicesTime.tashkent
         return Date.now.formatted(style)
     }
+
+    /// "Tuesday, 20 October" — and, where that does not fit beside the pills, "Tue, 20 Oct".
+    private var dateLine: String { dateText(.dateTime.weekday(.wide).day().month(.wide)) }
+    private var shortDateLine: String { dateText(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
+    /// What VoiceOver reads, whichever form is drawn.
+    private var spokenDate: String { dateText(.dateTime.weekday(.wide).day().month(.wide).year()) }
 
     /// Only asked once iOS has confirmed it has not asked yet, and only when there is something
     /// real to be reminded about.
@@ -88,6 +94,8 @@ struct TodayView: View {
                     AppHeader(
                         title: "Today",
                         subtitle: dateLine,
+                        shortSubtitle: shortDateLine,
+                        subtitleLabel: spokenDate,
                         showsBell: true
                     )
                     .stagger(0, shown: shown)

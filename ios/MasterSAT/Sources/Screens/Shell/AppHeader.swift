@@ -5,11 +5,24 @@ import MasterSATKit
 struct AppHeader: View {
     let title: String
     var subtitle: String?
+    /// The same line, shorter, for a phone that cannot fit `subtitle` beside the pills. The
+    /// pills never give way, so the line is what changes shape: wide if it fits, else this.
+    var shortSubtitle: String?
+    /// What VoiceOver reads for the line, when it is more than the line shows.
+    var subtitleLabel: String?
     var showsBell: Bool
 
-    init(title: String, subtitle: String? = nil, showsBell: Bool = false) {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        shortSubtitle: String? = nil,
+        subtitleLabel: String? = nil,
+        showsBell: Bool = false
+    ) {
         self.title = title
         self.subtitle = subtitle
+        self.shortSubtitle = shortSubtitle
+        self.subtitleLabel = subtitleLabel
         self.showsBell = showsBell
     }
 
@@ -17,14 +30,19 @@ struct AppHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                    if let shortSubtitle {
+                        ViewThatFits(in: .horizontal) {
+                            line(subtitle)
+                            line(shortSubtitle)
+                        }
+                    } else {
+                        line(subtitle)
+                    }
                 }
                 Spacer(minLength: 0)
-                StrikeChip()
-                XPPill()
+                // Fixed: when the row is tight it is the line of context that gives way.
+                StrikeChip().fixedSize()
+                XPPill().fixedSize()
                 if showsBell {
                     // RootTabView routes what the inbox opens, the same way it routes a push.
                     NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
@@ -33,6 +51,14 @@ struct AppHeader: View {
             }
             PageTitle(title)
         }
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.textSecondary)
+            .lineLimit(1)
+            .accessibilityLabel(subtitleLabel ?? text)
     }
 }
 
