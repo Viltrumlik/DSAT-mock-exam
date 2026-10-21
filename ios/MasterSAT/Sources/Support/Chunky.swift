@@ -6,7 +6,12 @@ import SwiftUI
 /// (`cardStyle`), so B keeps meaning "this is yours, and it's worth something".
 ///
 /// The edge is drawn below the face and the bottom padding makes room for it, so a chunky card
-/// never overlaps what follows it.
+/// never overlaps what follows it. The hit region is the whole padded shape, so it does not move
+/// while the face sinks.
+///
+/// It only draws the surface: it does not clip the content to the shape (keep the content's own
+/// padding inside the corners) and it does not claim the full width — apply
+/// `.frame(maxWidth: .infinity)` to the content BEFORE `.chunky` when the card should span.
 struct ChunkySurface: ViewModifier {
     static let edge: CGFloat = 4
 
@@ -23,6 +28,7 @@ struct ChunkySurface: ViewModifier {
             .offset(y: pressed ? Self.edge : 0)
             .background(shape.fill(tint.opacity(0.42)).offset(y: Self.edge))
             .padding(.bottom, Self.edge)
+            .contentShape(shape)
     }
 }
 

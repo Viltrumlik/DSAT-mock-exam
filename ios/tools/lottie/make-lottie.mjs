@@ -150,10 +150,15 @@ const STARS = anim('star-burst', 100, [
 
 // Every file is decoded on the main thread when its view appears: keep each one small.
 const BUDGET = 15000;
-mkdirSync(OUT, { recursive: true });
-for (const data of [FLAME, CHECK, TROPHY, COIN, STARS]) {
+// Measure first, write second: an over-budget file must not leave the folder half-updated.
+const FILES = [FLAME, CHECK, TROPHY, COIN, STARS].map(data => {
   const json = JSON.stringify(data);
-  if (json.length > BUDGET) throw new Error(`${data.nm} is ${json.length} bytes — over the ${BUDGET}-byte budget`);
-  writeFileSync(join(OUT, data.nm + '.json'), json);
-  console.log(data.nm, json.length, 'bytes');
+  return { nm: data.nm, json, bytes: Buffer.byteLength(json) };
+});
+const over = FILES.filter(f => f.bytes > BUDGET);
+if (over.length) throw new Error(over.map(f => `${f.nm} is ${f.bytes} bytes — over the ${BUDGET}-byte budget`).join('; '));
+mkdirSync(OUT, { recursive: true });
+for (const { nm, json, bytes } of FILES) {
+  writeFileSync(join(OUT, nm + '.json'), json);
+  console.log(nm, bytes, 'bytes');
 }
