@@ -10,12 +10,20 @@ struct XPFlight: Identifiable, Equatable {
     let to: CGPoint
     /// The pill it was aimed at — the only one that pulses when it lands.
     let owner: UUID
+    /// A caption under the number — what a "while you were away" gain was for.
+    let label: String?
 }
 
 /// The check that pops where a piece of work was finished.
 struct EffortCue: Identifiable, Equatable {
     let id = UUID()
     let work: FinishedWork
+    let at: CGPoint
+}
+
+/// The coin that bursts where a purchase or a conversion was confirmed.
+struct CoinCue: Identifiable, Equatable {
+    let id = UUID()
     let at: CGPoint
 }
 
@@ -60,18 +68,28 @@ final class CelebrationCenter {
     /// Bumps once per celebration — the success haptic's trigger.
     private(set) var effortCount = 0
     private(set) var landing: XPLanding?
+    /// The coin burst on screen now, if any.
+    private(set) var coin: CoinCue?
+    /// Bumps once per coin burst — its success haptic's trigger.
+    private(set) var coinCount = 0
     private var queue = CelebrationQueue()
 
     // Bookkeeping nothing renders from.
     @ObservationIgnored private var target: PillTarget?
+    /// Everything due this week went in while a sheet or a cover was up: the double confetti
+    /// waits for the stage instead of being lost.
+    @ObservationIgnored private var allDoneWaiting = false
     @ObservationIgnored private var sheetUp = false
     @ObservationIgnored private var coversUp = 0
     @ObservationIgnored private var stage: CGSize = .zero
     @ObservationIgnored private weak var rewards: RewardsStore?
     @ObservationIgnored private var rewardsAPI: RewardsAPI?
 
-    /// XP earned but not landed yet. Every pill shows `xp − heldXP`.
-    var heldXP: Int { queue.held }
+    /// XP earned but not landed yet — and, while an entry's own read is still out, any rise a
+    /// refresh that beat it has already brought (`CelebrationQueue.held(xpNow:)`), so the pill
+    /// never shows a gain a flight is about to bring and then dips. Every pill shows
+    /// `xp − heldXP`. Under Reduce Motion nothing flies, so nothing is held.
+    var heldXP: Int { reduceMotion ? queue.held : queue.held(xpNow: rewards?.xp) }
 
     /// The XP the header shows now — what a task's gain is measured from.
     var xpNow: Int? { rewards?.xp }
@@ -109,18 +127,46 @@ final class CelebrationCenter {
             if let rewards = self.rewards, let api = self.rewardsAPI {
                 after = await rewards.refresh(using: api)
             }
-            self.queue.resolve(entry.id, xpAfter: after, allowsFlights: self.budget.allowsFlights)
+            // Animated: a failed read (nil) or a gain that is not one gives back the rise this
+            // entry was holding (`heldXP`), and the pill rolls to it rather than jumping.
+            withAnimation(Motion.snappy) {
+                _ = self.queue.resolve(entry.id, xpAfter: after, allowsFlights: self.budget.allowsFlights)
+            }
             self.flyIfReady()
         }
     }
 
-    /// Everything due this week is in: double confetti. The hero bounces on its own.
+    /// Everything due this week is in: double confetti. The hero bounces on its own. Under a
+    /// sheet or a cover it waits, and plays the moment the stage is clear.
     func allDone() {
-        guard !covered else { return }
+        guard !covered else {
+            allDoneWaiting = true
+            return
+        }
+        playAllDone()
+    }
+
+    private func playAllDone() {
         confetti(at: CGPoint(x: stage.width * 0.3, y: stage.height * 0.4), size: .everything)
         confetti(at: CGPoint(x: stage.width * 0.7, y: stage.height * 0.4), size: .everything)
         effortCount += 1
         announce("Everything due this week is done.")
+    }
+
+    /// A purchase or a conversion went through — the server said so. A coin bursts where it was
+    /// confirmed (else mid-screen), with a success haptic. Called once per confirmed purchase or
+    /// conversion by the page that made it; the page's own message says what happened, so this
+    /// says nothing to VoiceOver. Under a sheet or a cover it is skipped — the overlay sits under
+    /// them (the Me sheet pushes Shop and Points too) — and the page's message still lands.
+    func coinBurst(at point: CGPoint?) {
+        guard !covered else { return }
+        let cue = CoinCue(at: point ?? stageCentre)
+        coin = cue
+        coinCount += 1
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.coin?.id == cue.id { self?.coin = nil }
+        }
     }
 
     func confetti(at point: CGPoint, size: Size = .task) {
@@ -193,6 +239,10 @@ final class CelebrationCenter {
         if queue.hasHiddenEffort {
             for work in queue.takeEfforts(stageVisible: true) { playEffort(work, at: nil) }
         }
+        if allDoneWaiting {
+            allDoneWaiting = false
+            playAllDone()
+        }
         flyIfReady()
     }
 
@@ -217,7 +267,8 @@ final class CelebrationCenter {
             amount: flight.amount,
             from: flightOrigin,
             to: CGPoint(x: pill.rect.midX, y: pill.rect.midY),
-            owner: pill.owner
+            owner: pill.owner,
+            label: flight.label
         ))
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(2.5))
@@ -230,7 +281,8 @@ final class CelebrationCenter {
     /// (`releaseHeld`), and a flight left in `flights` would hang on screen with no one to land it.
     private func settle(_ id: Int) {
         if let index = flights.firstIndex(where: { $0.id == id }) { flights.remove(at: index) }
-        if queue.isFlying(id) { queue.land(id) }
+        // Animated, as `landed` is: the pill rolls up rather than jumping.
+        if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
     }
 }
 
@@ -262,13 +314,22 @@ struct CelebrationLayer: View {
                     .id(effort.id)
                     .transition(.opacity)
             }
+            if let coin = center.coin {
+                CoinBurstBadge(reduceMotion: center.reduceMotion)
+                    .frame(width: 150, height: 150)
+                    .position(coin.at)
+                    .id(coin.id)
+                    .transition(.opacity)
+            }
             ForEach(center.flights) { flight in
                 XPFlightView(flight: flight) { center.landed(flight) }
             }
         }
         .animation(.easeOut(duration: 0.25), value: center.effort?.id)
+        .animation(.easeOut(duration: 0.25), value: center.coin?.id)
         .onGeometryChange(for: CGSize.self) { $0.size } action: { center.setStage($0) }
         .sensoryFeedback(.success, trigger: center.effortCount)
+        .sensoryFeedback(.success, trigger: center.coinCount)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
@@ -286,6 +347,19 @@ struct TaskCompleteBadge: View {
                 .background(Circle().fill(Theme.card).padding(6))
         } else {
             LottieClip(.taskComplete, playback: .once)
+        }
+    }
+}
+
+/// The coin burst. Under Reduce Motion a still coin, faded in and out by the layer.
+struct CoinBurstBadge: View {
+    let reduceMotion: Bool
+
+    var body: some View {
+        if reduceMotion {
+            RewardsCoinArt(kind: .coin, size: 72)
+        } else {
+            LottieClip(.coinBurst, playback: .once)
         }
     }
 }
@@ -332,17 +406,30 @@ struct XPFlightView: View {
     @State private var phase = 0
 
     var body: some View {
-        Text("+\(flight.amount) XP")
-            .font(.system(size: 22, weight: .black, design: .rounded))
-            .foregroundStyle(Theme.amber)
-            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
-            .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
-            .opacity(phase == 2 ? 0.3 : 1)
-            .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
-            .task {
-                withAnimation(Motion.pop) { phase = 1 }
-                do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
-                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
+        VStack(spacing: 4) {
+            Text("+\(flight.amount) XP")
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(Theme.amber)
+                .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+            // What it was for, while it hangs in the air; gone before it reaches the pill.
+            if let label = flight.label {
+                Text(label)
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Theme.card, in: Capsule())
+                    .opacity(phase == 1 ? 1 : 0)
             }
+        }
+        .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
+        .opacity(phase == 2 ? 0.3 : 1)
+        .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
+        .task {
+            withAnimation(Motion.pop) { phase = 1 }
+            do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
+        }
     }
 }
