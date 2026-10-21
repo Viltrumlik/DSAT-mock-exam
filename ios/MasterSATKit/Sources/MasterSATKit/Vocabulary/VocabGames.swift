@@ -168,13 +168,17 @@ public enum VocabGames {
     /// One tile of the spelling question's well.
     public struct SpellingTile: Sendable, Equatable {
         public enum Kind: Sendable, Equatable {
-            /// The letter given away (`TestQuestion.revealIndex`) — never written over.
+            /// The letter given away (`TestQuestion.revealIndex`), shown as the hint until the
+            /// student types on its position.
             case given
-            /// A letter the student has typed, in its place.
+            /// A character the student typed, at the position it landed on: a letter, or any
+            /// other character (a digit, a hyphen) — a wrong one looks exactly like a right one.
             case typed
-            /// A letter still to type.
+            /// A letter position still to type.
             case blank
-            /// A space, hyphen or apostrophe: shape, not answer — never typed into.
+            /// A space, hyphen or apostrophe the student has not typed over yet, shown as a
+            /// faint placeholder. It is a placeholder, not a free pass: the grader compares the
+            /// whole string, so these characters have to be typed too.
             case structure
         }
 
@@ -188,29 +192,35 @@ public enum VocabGames {
         }
     }
 
-    /// The masked word with what the student has typed so far dropped into it.
+    /// The well as the student has filled it so far: what was typed, position by position.
     ///
-    /// The typed letters fill the word's LETTER positions in order — the n-th typed letter sits
-    /// on the n-th letter of the word — so a student who types the whole word sees it line up
-    /// with its shape, structure skipped ("wellbeing" fills "well-being"). The given letter keeps
-    /// its tile: the typed letter on its position is consumed, not shown. Letters typed past the
-    /// end are not shown. Nothing here compares a letter with the answer — a wrong letter is a
-    /// typed letter like any other; the test says nothing until its end.
+    /// The n-th typed character sits on the n-th position of the word — EVERY character, spaces,
+    /// hyphens, apostrophes and anything else included — because the grader (`spellingIsCorrect`)
+    /// compares the whole string, shape and all. A word with a hyphen is therefore not finished
+    /// when its letters are in: "wellbeing" leaves "well-being" one position short, and the well
+    /// shows it. A position the student has not reached shows what it holds for them: the given
+    /// letter (the hint), a faint placeholder for a space/hyphen/apostrophe, or an empty well.
+    /// Typing on the given letter's position replaces the hint with what was typed. Characters
+    /// typed past the end of the word are not shown. Leading or trailing spaces are not trimmed
+    /// here, though the grader trims them.
+    ///
+    /// Nothing here compares a typed character with the word's: a tile's kind never depends on
+    /// whether it is right. The test says nothing until its end.
     public static func spellingTiles(word: String, revealing index: Int?, typed: String) -> [SpellingTile] {
-        var letters = typed.filter(\.isLetter).makeIterator()
+        let entered = Array(typed)
         return Array(word).enumerated().map { offset, character in
-            guard character.isLetter else { return SpellingTile(kind: .structure, character: String(character)) }
-            let next = letters.next()
+            if offset < entered.count { return SpellingTile(kind: .typed, character: String(entered[offset])) }
+            if !character.isLetter { return SpellingTile(kind: .structure, character: String(character)) }
             if offset == index { return SpellingTile(kind: .given, character: String(character)) }
-            if let next { return SpellingTile(kind: .typed, character: String(next)) }
             return SpellingTile(kind: .blank, character: "")
         }
     }
 
     /// The word as blanks with one position filled in.
     ///
-    /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not
-    /// the answer, and hiding them would turn spelling into guessing at the shape too.
+    /// Non-letters — spaces, hyphens, apostrophes — stay visible, so the shape of the word is not
+    /// part of what the student has to guess. They are still part of the answer: the grader
+    /// compares the whole string, so the student types them too.
     public static func maskWord(_ word: String, revealing index: Int?) -> [String] {
         Array(word).enumerated().map { offset, character in
             offset == index || !character.isLetter ? String(character) : "_"

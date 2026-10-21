@@ -165,7 +165,8 @@ struct VocabTestQuestionTests {
 
     @Test("Spelling reveals one letter and blanks the rest")
     func maskingKeepsStructure() {
-        // Spaces and hyphens stay: they are structure, not the answer.
+        // Spaces and hyphens stay visible, so the shape is not a guess. They are still part of the
+        // answer: the grader compares the whole string, so the student types them too.
         #expect(VocabGames.maskWord("well-known", revealing: 0) == ["w", "_", "_", "_", "-", "_", "_", "_", "_", "_"])
         #expect(VocabGames.maskWord("ad hoc", revealing: nil).joined() == "__ ___")
     }
