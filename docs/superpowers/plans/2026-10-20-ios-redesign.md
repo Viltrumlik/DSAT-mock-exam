@@ -6188,3 +6188,31 @@ Carried into later phases (found in phase 1 reviews, deliberately deferred):
 - **Phase 5:** audit inherited `contentMargins` in nested horizontal scrollers and sheets (StoriesRail, SupportBookingView, goal sheet, ClassesListView sheet); tab-bar VoiceOver semantics + Dynamic Type; Me close button is 32 pt (make 44); Me panels still push with `NavigationLink { }`; Explore cards lost the Events/Surveys open-count badges; `ProfileModel` still fetches those counts; hand-rolled cards keep the old hairline / radius 16 (HomePulse, LessonCalendar, AssessmentBoardViews, LeaderboardView, AssessmentRunnerView…); `PillTabs` selection haptic also fires on programmatic changes; `RewardsPointsPill.swift` holds only the explainers now; dead `EventsOpenCard`.
 - **Kit polish (any phase):** test `AppTab.allCases` order; confetti tests for seed sensitivity, combined budgets and edge counts; a test that every `LottieAsset` loads; enforce the 15 000-byte Lottie budget in the generator; rename `gravity` (it is the t² coefficient).
 - **Owner, before merge or in phase 2:** check the shell once on an iOS 18 (and ideally 17) simulator runtime — only iOS 26.3 is installed on this Mac (~8 GB download).
+
+## Phase 2 outcome (2026-10-21) and what it hands to later phases
+
+Done on `feat/ios-redesign-phase2` (PR #305, merge after #304): 9 task commits plus their fix rounds, one final-review fix wave (7 commits) and one device fix (See all scrolls Class to the top). Kit 694 tests. Every task was reviewed, then the whole branch (opus) said "with fixes" → fixed and re-reviewed clean. Device-checked on the iOS 26.3 simulator against a local backend with synthetic data.
+
+Decisions taken during phase 2 that later phases build on:
+- **Classwork is never owed** (P2-R5): it never counts in Today's ring or Up next, never reads "Catch up" (`WorkRow` shows "In class"), never gets reminders, and the To do badge uses `ClassTasks.owedCount`. The server's `my-assignments` is homework-only anyway (`tests_classwork_separation`), so these rules are defensive.
+- **"up to +N XP"** sits on every homework not yet due, never on catch-up rows (P2-R3).
+- **Error ≠ empty, and a cancellation is never a failure.** Today's hero, the lessons row, and Class's `ClassSourceState` (pending / loaded / failed; a failed reload keeps the last good data) only say "nothing" after a load that worked.
+- **Refreshes run detached.** The plan's `.refreshable { refreshTick += 1; await load() }` cancelled its own requests on device (state written during the refresh re-installs the action). Tab roots pass `onRefresh:` to `TabRootScroll`; other pages use `.detachedRefresh` (`await Task { @MainActor in … }.value`). Use it for every new `.refreshable`.
+- **Celebrate once, after the server confirmed, from a one-shot guard**; full-screen covers carry `.coversCelebrations` and never read `CelebrationCenter`. The vocab game celebrates on the runner's server-confirmed `isFinished`, not in `finish(_:)` (P2-R7). "+XP" flies only for a measured server delta and lands on the visible pill — from a pushed page it waits and flies when the tab root's pill appears.
+- **People/Files requests run as unstructured per-request Tasks** (`ClassSectionsModel.fetched`, P2-R8) so a `.task(id:)` cancel never stores a failure nothing retries.
+- **`ProfileLessons.Next.isOnNow`** (`live && hasTime`) is what says "on now"; `live` alone still keeps today's lesson in `next()`.
+- **"See all"** goes through `AppRouter.showClassToDo()` (Tasks → To do, at the top), applied once.
+
+Carried into later phases (found in phase 2 reviews, deliberately deferred):
+- **Phase 3:** the "while you were away" rework of interleaved refresh dips and the unanimated backstop landing; `allDone()` is dropped (not held) while a cover is up.
+- **Phase 4:** `handInFrame` / `submitFrame` are `@State` written every scroll frame (box them if the upload rework shows jank); leaving a word game with an unsaved round may save without a celebration (never doubles, never celebrates a failure).
+- **Phase 5:**
+  - Move the ~15 pushed pages that still use a plain `.refreshable` (ClassroomDetailView, Points, Shop, Leaderboard, Midterms, Events, NotificationsInbox…) to `.detachedRefresh`.
+  - `HomeworkDetailView:105` and `ClassView.load()` still read a cancelled FIRST load as a failure.
+  - The Me sheet's homework card (`ProfileHomework.summarise`, `ProfileOverviewTab:353`, `ProfileRules:92`) ignores `isClasswork` and `HomeworkProgress.isDone`.
+  - Today uses a fixed 2-h lesson window on Tashkent time while Class cards use `room.lessonHours` on the phone calendar; `DueLabel` uses the phone calendar.
+  - Accessibility pass: `PillTabs` `.isSelected` trait, `LessonsUnavailableRow` icon, 12-pt "Try again", ring label while loading, result rows combined for VoiceOver, large Dynamic Type for the four Class segment titles and the header.
+  - Polish: "on our end" error copy; `dismissNudge` ignores Reduce Motion; stale rows after a failed refresh carry no notice; first-run "fresh" result has no baseline; the rankings subtitle repeats per class under All; `WorkRow` "In class" drops the assigned date `ClassroomSections` shows.
+  - `RoadmapView:136` pushes `ClassesListView` ("Go to Classes") — switch it to `router.show(.classes)`.
+- **Later / perf:** `TodayPlan` rebuilt several times per render and ~7 requests per return to Today; 2N sequential People requests under All; the three identical `load*` methods in `ClassSectionsModel`; its refresh stamp is set at load start; the Schedule segment's state resets per switch and a cancel without a restart would leave its spinner; same-name class tie-break, `isMath` trim, `LatestOnly` never-issued tickets, `ClassSourceState` has no test (move it to the kit).
+- **Owner:** check phases 1–2 once on an iOS 18 (zoom transition) and ideally iOS 17 simulator runtime — only iOS 26.3 is installed (~8 GB download). TestFlight needs a paid Apple Developer account.
