@@ -234,6 +234,8 @@ struct AccountPasswordForm: View {
     @State private var errors: [String: String] = [:]
     @State private var saving = false
     @FocusState private var focus: Field?
+    /// Bumped when the server said the current password is wrong: its box shakes and buzzes.
+    @State private var currentRefusals = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -245,6 +247,7 @@ struct AccountPasswordForm: View {
                 contentType: .password,
                 focus: $focus,
                 field: Field.current,
+                shakes: currentRefusals,
                 onSubmit: { focus = .new }
             )
             AccountSecureField(
@@ -301,6 +304,7 @@ struct AccountPasswordForm: View {
         }
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.accentSoft))
+        .sensoryFeedback(.warning, trigger: currentRefusals)
     }
 
     private func bind(_ value: Binding<String>, clearing key: String) -> Binding<String> {
@@ -332,6 +336,12 @@ struct AccountPasswordForm: View {
             onChanged(result)
         } catch {
             errors = AccountCopy.passwordFailure(error)
+            // The server's refusal of the current password is keyed to its field. The shake and
+            // the haptic are for that alone; VoiceOver hears the same sentence the box shows.
+            if let refused = errors[PasswordChangeCheck.Field.current.rawValue] {
+                currentRefusals += 1
+                AccessibilityNotification.Announcement(refused).post()
+            }
         }
     }
 }
