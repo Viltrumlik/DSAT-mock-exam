@@ -20,6 +20,8 @@ struct VocabTestView: View {
     @State private var typed = ""
     @FocusState private var spellingFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The spelling field's UIKit side, filled in by `PlainTyping` once it finds the field.
+    @State private var field = SpellingField()
 
     private var current: VocabGames.TestQuestion? { index < questions.count ? questions[index] : nil }
 
@@ -203,12 +205,15 @@ struct VocabTestView: View {
                     .submitLabel(.done)
                     .onSubmit { submitSpelling(question) }
                     // Never longer than the word, and no leading spaces: what the field holds is
-                    // what the well shows.
+                    // what the well shows. Not written back while the keyboard is composing (an
+                    // IME's marked text): replacing it would cut the composition off. The well and
+                    // the answer apply the same cap themselves, so nothing waits on this.
                     .onChange(of: typed) { _, new in
+                        guard !field.isComposing else { return }
                         let entry = Self.entry(new, for: question.word)
                         if entry != new { typed = entry }
                     }
-                    .background { PlainTyping() }
+                    .background { PlainTyping(field: field) }
                     .padding(14)
                     .background(
                         RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.background)
@@ -284,33 +289,42 @@ struct VocabTestView: View {
             case .structure, .typed, .given:
                 switch tile.character {
                 case " ": return "space"
-                case "-": return "hyphen"
-                case "'": return "apostrophe"
+                case "-", "\u{2010}", "\u{2011}": return "hyphen"
+                case "'", "\u{2019}", "\u{2018}": return "apostrophe"
+                case "\u{2013}", "\u{2014}": return "dash"
                 default: return tile.character.lowercased()
                 }
             }
         }.joined(separator: ", ")
     }
 
-    /// What the student has entered, as the well shows it and the field holds it: straight quotes
-    /// and hyphens only, no leading spaces (the grader trims them), and never longer than the
-    /// word. A letter past the end of the word would not be shown, and an overflow such as
-    /// "briskly" for "brisk" would leave a full-looking well that the grader refuses.
+    /// What the student has entered, as the well shows it and the field holds it: exactly what
+    /// was typed, minus leading spaces (the grader trims them), and never longer than the word.
+    /// A letter past the end of the word would not be shown, and an overflow such as "briskly"
+    /// for "brisk" would leave a full-looking well that the grader refuses.
     private static func entry(_ raw: String, for word: String) -> String {
-        let plain = raw.map { character -> Character in
+        String(raw.drop(while: \.isWhitespace).prefix(word.count))
+    }
+
+    /// The entry as it is handed in — and shown in the review as "You said": the grader trims
+    /// both ends, so trailing spaces go too. Still what the student typed, character for character.
+    private static func answer(_ raw: String, for word: String) -> String {
+        entry(raw, for: word).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Typographic quotes and dashes as their plain forms. The keyboard can produce ’ for ' and
+    /// — for --, and a word imported from a spreadsheet can carry a ’ or a non-breaking hyphen,
+    /// so grading folds BOTH sides: a student is never refused for which of the two looks they
+    /// typed. Used only when an answer is graded, never in the well.
+    private static func fold(_ text: String) -> String {
+        String(text.map { character -> Character in
             switch character {
             case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
             case "\u{201C}", "\u{201D}": return "\""
             case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
             default: return character
             }
-        }
-        return String(plain.drop(while: \.isWhitespace).prefix(word.count))
-    }
-
-    /// The entry as it is handed in: the grader trims both ends, so trailing spaces go too.
-    private static func answer(_ raw: String, for word: String) -> String {
-        entry(raw, for: word).trimmingCharacters(in: .whitespacesAndNewlines)
+        })
     }
 
     // MARK: - Answering
@@ -325,12 +339,16 @@ struct VocabTestView: View {
             question: question,
             given: given,
             expected: question.word,
-            correct: VocabGames.spellingIsCorrect(given, question.word)
+            correct: VocabGames.spellingIsCorrect(Self.fold(given), Self.fold(question.word))
         )
     }
 
     @MainActor
     private func submit(question: VocabGames.TestQuestion, given: String, expected: String, correct: Bool) {
+        // A question is answered once. The one leaving lingers for its 100 ms fade, and a second
+        // tap on it (or on Submit and Return together) must not append a duplicate, tell the server
+        // twice, or skip the next question.
+        guard !answers.contains(where: { $0.id == question.id }) else { return }
         answers.append(TestAnswer(id: question.id, word: question.word, definition: question.definition,
                                   given: given, expected: expected, correct: correct))
         typed = ""
@@ -368,19 +386,34 @@ struct VocabTestView: View {
 /// punctuation: left on, the keyboard turns a typed ' into ’ and -- into —, and the grader
 /// would refuse them. This looks for the `UITextField` beside it and sets its traits (smart
 /// quotes, dashes and inserts, autocorrect, spell check, capitals) directly. If the field is
-/// not found, nothing changes — `VocabTestView.entry` still straightens what comes through.
+/// not found, nothing changes — grading folds typographic quotes and dashes on both sides
+/// (`VocabTestView.fold`), so a curly one is never refused either way.
 private struct PlainTyping: UIViewRepresentable {
-    func makeUIView(context: Context) -> PlainTypingProbe { PlainTypingProbe() }
+    let field: SpellingField
+
+    func makeUIView(context: Context) -> PlainTypingProbe { PlainTypingProbe(field: field) }
     func updateUIView(_ probe: PlainTypingProbe, context: Context) {}
 }
 
+/// The spelling field's UIKit side, shared between the view and the probe that finds it.
+@MainActor
+private final class SpellingField {
+    weak var textField: UITextField?
+
+    /// True while the keyboard holds marked text (a Japanese or Chinese IME composing, say).
+    /// False when the field was never found — then there is nothing to wait for.
+    var isComposing: Bool { textField?.markedTextRange != nil }
+}
+
 private final class PlainTypingProbe: UIView {
+    private let field: SpellingField
     private var applied = false
     /// Passes spent looking, so a field that never turns up is not searched for on every layout.
     private var attempts = 0
 
-    override init(frame: CGRect) {
-        super.init(frame: frame)
+    init(field: SpellingField) {
+        self.field = field
+        super.init(frame: .zero)
         isUserInteractionEnabled = false
         isAccessibilityElement = false
         accessibilityElementsHidden = true
@@ -405,15 +438,16 @@ private final class PlainTypingProbe: UIView {
     private func apply() {
         guard !applied, attempts < 30, window != nil else { return }
         attempts += 1
-        guard let field = nearbyTextField() else { return }
-        field.autocorrectionType = .no
-        field.spellCheckingType = .no
-        field.autocapitalizationType = .none
-        field.smartQuotesType = .no
-        field.smartDashesType = .no
-        field.smartInsertDeleteType = .no
+        guard let textField = nearbyTextField() else { return }
+        textField.autocorrectionType = .no
+        textField.spellCheckingType = .no
+        textField.autocapitalizationType = .none
+        textField.smartQuotesType = .no
+        textField.smartDashesType = .no
+        textField.smartInsertDeleteType = .no
         // A keyboard that is already up keeps the traits it was shown with until reloaded.
-        if field.isFirstResponder { field.reloadInputViews() }
+        if textField.isFirstResponder { textField.reloadInputViews() }
+        field.textField = textField
         applied = true
     }
 

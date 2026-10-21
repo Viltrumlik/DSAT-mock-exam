@@ -196,6 +196,8 @@ private struct MatchingRound: View {
         misses[first.id, default: 0] += 1
         misses[card.id, default: 0] += 1
         missCount += 1
+        // The shake and the red edge are for the eyes; say it in words too, kindly.
+        AccessibilityNotification.Announcement("Not a pair — try another").post()
         wrongPair = [first.id, card.id]
         isLocked = true
         Task {
