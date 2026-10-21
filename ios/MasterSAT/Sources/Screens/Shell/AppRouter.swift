@@ -106,6 +106,8 @@ final class AppRouter {
     func showClassToDo() {
         if !wantsClassToDo { wantsClassToDo = true }
         show(.classes)
+        // At the top of the list, not wherever Class was last scrolled to.
+        requestScrollToTop(.classes)
     }
 
     /// The Class root has put itself on Tasks → To do.
@@ -117,10 +119,14 @@ final class AppRouter {
     /// to the root; a root already showing scrolls back up.
     func reselect(_ tab: AppTab) {
         if isAtRoot(tab) {
-            scrollToTop = ScrollRequest(tab: tab, nonce: (scrollToTop?.nonce ?? 0) + 1)
+            requestScrollToTop(tab)
         } else {
             popToRoot(tab)
         }
+    }
+
+    private func requestScrollToTop(_ tab: AppTab) {
+        scrollToTop = ScrollRequest(tab: tab, nonce: (scrollToTop?.nonce ?? 0) + 1)
     }
 
     private func closeSheets() {
