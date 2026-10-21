@@ -10,6 +10,11 @@ import Foundation
 /// to master (Start reads it and opens its set with the most — `bestSet`); else all caught up.
 /// The student's own sets are never the target: they carry no word progress, and their words
 /// are bank words.
+///
+/// Both inputs must come from SUCCESSFUL loads. This type cannot tell an empty array from a
+/// failed load: homework passed as `[]` after a failure would skip the homework that is owed,
+/// and sections passed as `[]` after a failure would read as "nothing yet" or "all caught up".
+/// The caller gates on both loads and shows its error state itself.
 public struct VocabReview: Equatable, Sendable {
     public struct HomeworkSet: Equatable, Sendable {
         public let setId: Int
@@ -65,7 +70,9 @@ public struct VocabReview: Equatable, Sendable {
         var owed: [(due: Date, order: Int, set: HomeworkSet)] = []
         for group in homework {
             let due = group.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
-            for set in group.sets where !set.mastery.isMastered {
+            // A set with no words has nothing to play and nothing to master (the server never
+            // calls one mastered), so it is never owed.
+            for set in group.sets where set.wordCount > 0 && !set.mastery.isMastered {
                 owed.append((due, owed.count, HomeworkSet(
                     setId: set.id,
                     title: set.title,
@@ -81,7 +88,7 @@ public struct VocabReview: Equatable, Sendable {
             next = .homework(first.set)
         } else if let richest {
             next = .section(id: richest.id, title: richest.title, wordsToMaster: richest.left)
-        } else if mastered > 0 || homework.contains(where: { !$0.sets.isEmpty }) {
+        } else if mastered > 0 || homework.contains(where: { $0.sets.contains { $0.wordCount > 0 } }) {
             next = .caughtUp
         } else {
             next = .nothingYet

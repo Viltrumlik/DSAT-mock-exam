@@ -59,6 +59,66 @@ import Testing
         #expect(next.gamesLeft == 3)
     }
 
+    @Test("A set with no words is never owed — it would open a page with nothing to play")
+    func skipsEmptySets() throws {
+        // An empty set due first, ahead of a real one: Start targets the real one.
+        let homework = try decode([VocabHomeworkGroup].self, """
+        [\(group(10, due: "2026-10-19T18:00:00Z", [set(1, mastered: 0, words: 0)])),
+         \(group(11, due: "2026-10-25T18:00:00Z", [set(2, mastered: 1)]))]
+        """)
+        guard case .homework(let next) = VocabReview(sections: [], homework: homework).next else {
+            Issue.record("expected a homework target")
+            return
+        }
+        #expect(next.setId == 2)
+
+        // The only homework is an empty set: the section fallback, then caught up, never homework.
+        let onlyEmpty = try decode([VocabHomeworkGroup].self, "[\(group(10, due: nil, [set(1, mastered: 0, words: 0)]))]")
+        let open = try decode([VocabSection].self, "[\(section(2, words: 40, mastered: 10))]")
+        #expect(VocabReview(sections: open, homework: onlyEmpty).next == .section(id: 2, title: "Section 2", wordsToMaster: 30))
+        let done = try decode([VocabSection].self, "[\(section(2, words: 40, mastered: 40))]")
+        #expect(VocabReview(sections: done, homework: onlyEmpty).next == .caughtUp)
+        // No words anywhere — an empty set is not words — is nothing yet, not a finish line.
+        #expect(VocabReview(sections: [], homework: onlyEmpty).next == .nothingYet)
+    }
+
+    @Test("An undated set comes after a dated one even when the server lists it first")
+    func undatedLast() throws {
+        let homework = try decode([VocabHomeworkGroup].self, """
+        [\(group(12, due: nil, [set(4, mastered: 0)])),
+         \(group(10, due: "2026-10-25T18:00:00Z", [set(1, mastered: 0)]))]
+        """)
+        guard case .homework(let next) = VocabReview(sections: [], homework: homework).next else {
+            Issue.record("expected a homework target")
+            return
+        }
+        #expect(next.setId == 1)
+    }
+
+    @Test("The same deadline keeps the server's order — across groups and inside one")
+    func sameDeadlineKeepsServerOrder() throws {
+        let due = "2026-10-25T18:00:00Z"
+        let sameDay = try decode([VocabHomeworkGroup].self, """
+        [\(group(10, due: due, [set(7, mastered: 0), set(8, mastered: 0)])),
+         \(group(11, due: due, [set(9, mastered: 0)]))]
+        """)
+        guard case .homework(let first) = VocabReview(sections: [], homework: sameDay).next else {
+            Issue.record("expected a homework target")
+            return
+        }
+        #expect(first.setId == 7)
+
+        let swapped = try decode([VocabHomeworkGroup].self, """
+        [\(group(11, due: due, [set(9, mastered: 0)])),
+         \(group(10, due: due, [set(7, mastered: 0), set(8, mastered: 0)]))]
+        """)
+        guard case .homework(let second) = VocabReview(sections: [], homework: swapped).next else {
+            Issue.record("expected a homework target")
+            return
+        }
+        #expect(second.setId == 9)
+    }
+
     @Test("No homework owed: the section with the most words still to master")
     func sectionNext() throws {
         let sections = try decode([VocabSection].self, "[\(section(1, words: 100, mastered: 90)),\(section(2, words: 80, mastered: 20)),\(section(3, words: 60, mastered: 0))]")
