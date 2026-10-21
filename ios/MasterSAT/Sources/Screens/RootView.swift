@@ -69,31 +69,59 @@ private struct UpdateGateOverlay: View {
     }
 }
 
-/// Keeps the header's XP and streak current after launch: a refresh each time the app comes back
-/// to the front, and one when the phone comes back online.
+/// Keeps the header's XP and streak current after launch, and runs "while you were away": the
+/// check each time the app comes back to the front (launch runs it from `RootTabView`) and when
+/// the phone comes back online — a launch check that could not reach the server finds its answer
+/// then, from the same baseline. It also keeps the baseline equal to what the header shows: written
+/// whenever the pill or the flame settles on a new number, and when the app leaves the front.
 ///
-/// Its own view, so reading `scenePhase` and connectivity rebuilds this empty view and not
-/// `RootTabView` — whose body would rebuild the tab view and its navigation stacks with it.
+/// Its own view, so reading `scenePhase`, connectivity and the header's numbers rebuilds this
+/// empty view and not `RootTabView` — whose body would rebuild the tab view and its navigation
+/// stacks with it.
 private struct RewardsRefresher: View {
+    let userID: Int
+    let away: AwayCheck
+
     @Environment(Session.self) private var session
     @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The numbers the header shows right now: XP still in the air and a streak waiting to roll
+    /// are not on it yet.
+    private struct Shown: Equatable {
+        var xp: Int?
+        var streak: Int?
+    }
+
     var body: some View {
+        let shown = Shown(
+            xp: rewards.xp.map { max(0, $0 - celebrations.heldXP) },
+            streak: celebrations.streakShown(rewards.streak)
+        )
         Color.clear
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .onChange(of: scenePhase) { old, new in
-                if new == .active, old != .active { refresh() }
+                if new == .active, old != .active { check() }
+                if new == .background { remember() }
             }
             .onChange(of: session.connectivity.isOnline) { old, new in
-                if new, !old { refresh() }
+                if new, !old { check() }
             }
+            // The baseline never lags the header: a gain celebrated as a task's, or a flight that
+            // has just landed, is written the moment the pill shows it, not at the next
+            // background — a relaunch in between would celebrate it again.
+            .onChange(of: shown) { _, _ in remember() }
     }
 
-    private func refresh() {
-        Task { await rewards.refresh(using: session.rewards) }
+    private func check() {
+        Task { await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations) }
+    }
+
+    private func remember() {
+        away.remember(userID: userID, rewards: rewards, celebrations: celebrations)
     }
 }
 
@@ -131,6 +159,7 @@ struct RootTabView: View {
     @State private var router = AppRouter()
     @State private var rewards = RewardsStore()
     @State private var celebrations = CelebrationCenter()
+    @State private var away = AwayCheck()
     /// The floating bar's measured height, so the room left for it is never a guess.
     @State private var barHeight: CGFloat = 0
 
@@ -188,10 +217,11 @@ struct RootTabView: View {
                 .ignoresSafeArea(.keyboard, edges: .bottom)
         }
         .background {
-            RewardsRefresher()
+            RewardsRefresher(userID: user.id, away: away)
             CelebrationSheetWatcher()
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
+        .overlay { RankUpOverlay() }
         .environment(router)
         .environment(rewards)
         .environment(celebrations)
@@ -224,7 +254,8 @@ struct RootTabView: View {
             celebrations.reduceMotion = reduceMotion
             celebrations.connect(rewards: rewards, api: session.rewards)
             if let link = notifications.consume() { open(link) }
-            Task { await rewards.refresh(using: session.rewards) }
+            // The launch's header refresh IS the welcome-back check.
+            Task { await away.run(userID: user.id, session: session, rewards: rewards, celebrations: celebrations) }
         }
         .onChange(of: reduceMotion) { _, value in celebrations.reduceMotion = value }
         .onChange(of: notifications.pendingLink) { _, link in

@@ -94,10 +94,28 @@ public enum WelcomeBack {
     /// The newest row is the highest id, whatever order `history` arrives in. Nil when no new XP
     /// row explains the rise — a homework re-graded upward changes its own row rather than adding
     /// one — and the flight then flies without a caption, rather than with a wrong one.
+    ///
+    /// The history is a capped window (`historyWindow`), newest first. When it is full and has not
+    /// reached back to the baseline row, the rows in it are only the newest of what came in, so a
+    /// count would be a guess: the newest is named and the rest left unsaid.
     public static func label(history: [PointAward], since: Int?, rules: [RewardRule]? = nil) -> String? {
         let fresh = XPLedger.rows(history, rules: rules, limit: .max).filter { $0.id > (since ?? Int.min) }
         guard let newest = fresh.max(by: { $0.id < $1.id }) else { return nil }
         let name = newest.label.isEmpty ? "Earned while you were away" : newest.label
-        return fresh.count == 1 ? name : "\(name) + \(fresh.count - 1) more"
+        guard fresh.count > 1, windowReaches(history, since: since) else { return name }
+        return "\(name) + \(fresh.count - 1) more"
+    }
+
+    /// The most rows `/rewards/me/` sends in its history: `HISTORY_LIMIT` in
+    /// `backend/rewards/views.py` — change them together.
+    public static let historyWindow = 50
+
+    /// Whether the history window goes back at least to the baseline row. A window that is not
+    /// full is the whole season's ledger, so it does; a full one does only if it still holds a
+    /// row at or before the baseline.
+    static func windowReaches(_ history: [PointAward], since: Int?) -> Bool {
+        guard history.count >= historyWindow else { return true }
+        guard let since else { return false }
+        return history.contains { $0.id <= since }
     }
 }

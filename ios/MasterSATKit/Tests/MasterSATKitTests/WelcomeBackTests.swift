@@ -111,6 +111,29 @@ import Testing
         let history = [award(5, "Attendance", 5), award(9, "Homework", 15), award(7, "Event", 5)]
         #expect(WelcomeBack.label(history: history, since: 6) == "Homework + 1 more")
     }
+
+    @Test("A full history window that no longer reaches the baseline names the newest and counts nothing")
+    func labelDropsTheCountWhenTheBaselineScrolledOut() {
+        // Ids 200 down to 151: fifty rows, all newer than the baseline row (100) that scrolled out.
+        let full = (0..<WelcomeBack.historyWindow).map { award(200 - $0, "Attendance", 5) }
+        #expect(full.count == WelcomeBack.historyWindow)
+        #expect(WelcomeBack.label(history: full, since: 100) == "Attendance",
+                "fifty rows are only the newest of what came in: no \"+ 49 more\"")
+        #expect(WelcomeBack.label(history: full, since: nil) == "Attendance",
+                "no baseline row to reach back to, and a full window: the same")
+
+        // The same window, but the baseline row is still in it: the count is exact.
+        #expect(WelcomeBack.label(history: full, since: 190) == "Attendance + 9 more")
+        #expect(WelcomeBack.label(history: full, since: 151) == "Attendance + 48 more",
+                "the oldest row in the window is the baseline's neighbour, still reached")
+    }
+
+    @Test("A window that is not full is the whole ledger, so its count stands")
+    func labelKeepsTheCountForAShortWindow() {
+        let short = (0..<(WelcomeBack.historyWindow - 1)).map { award(200 - $0, "Attendance", 5) }
+        #expect(WelcomeBack.label(history: short, since: 100) == "Attendance + 48 more")
+        #expect(WelcomeBack.label(history: short, since: nil) == "Attendance + 48 more")
+    }
 }
 
 /// Every mutating call on its own line, never inside `#expect` (as `CelebrationQueueTests`).

@@ -14,6 +14,7 @@ import MasterSATKit
 ///   `LeaderboardRow.displayName` shows the part before the @.
 struct LeaderboardView: View {
     @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
 
     /// Global and all-time by default — the web's defaults.
     @State private var query = LeaderboardQuery()
@@ -385,6 +386,9 @@ struct LeaderboardView: View {
             guard !Task.isCancelled, asked == query else { return }
             board = fresh
             boardFailed = false
+            // The default slice is the one the "while you were away" baseline follows; what the
+            // student has seen here is not news the next time they come back.
+            if asked == LeaderboardQuery() { rewards.noteRank(fresh.standing?.rank) }
         } catch {
             guard !Task.isCancelled, asked == query else { return }
             boardFailed = true

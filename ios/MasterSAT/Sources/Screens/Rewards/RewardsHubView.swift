@@ -162,8 +162,12 @@ struct RewardsHubView: View {
     private func loadBoard() async {
         let api = LeaderboardAPI(client: session.client)
         do {
-            board = try await api.board(LeaderboardQuery())
+            let fresh = try await api.board(LeaderboardQuery())
+            board = fresh
             boardFailed = false
+            // What the card shows is seen: the "while you were away" baseline follows it, so a
+            // place the student has already looked at is never announced as news.
+            rewards.noteRank(fresh.standing?.rank)
         } catch {
             boardFailed = true
         }

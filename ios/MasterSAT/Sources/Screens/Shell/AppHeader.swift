@@ -62,13 +62,35 @@ struct AppHeader: View {
     }
 }
 
+private struct FlameGrow { var scale = 1.0 }
+
 struct StrikeChip: View {
     @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
+    @State private var showing = false
+    /// Not scrolled off the top: the header scrolls with its page, and a flame that grows out of
+    /// sight is a celebration nobody saw.
+    @State private var onScreen = false
+    /// Whether the celebrations have been told this flame is on screen — told once each way.
+    @State private var counted = false
+    /// This chip's own growth count: only a chip on screen grows and buzzes.
+    @State private var grows = 0
 
     var body: some View {
-        if let streak = rewards.streak {
+        // While a longer streak waits to be shown, the number last seen; it rolls up when the
+        // rise plays (`CelebrationCenter.streakRose`).
+        if let streak = celebrations.streakShown(rewards.streak) {
             HStack(spacing: 2) {
-                LottieClip(.strikeFlame).frame(width: 22, height: 22)
+                LottieClip(.strikeFlame)
+                    .frame(width: 22, height: 22)
+                    .keyframeAnimator(initialValue: FlameGrow(), trigger: grows) { flame, grow in
+                        flame.scaleEffect(grow.scale, anchor: .bottom)
+                    } keyframes: { _ in
+                        KeyframeTrack(\.scale) {
+                            SpringKeyframe(1.7, duration: 0.22, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.6, spring: .bouncy(duration: 0.6, extraBounce: 0.3))
+                        }
+                    }
                 Text(String(streak))
                     .font(.system(size: 13, weight: .heavy, design: .rounded))
                     .foregroundStyle(Theme.strike)
@@ -78,9 +100,37 @@ struct StrikeChip: View {
             .padding(.trailing, 10)
             .padding(.vertical, 3)
             .background(Theme.card, in: Capsule())
+            .sensoryFeedback(.impact(weight: .medium), trigger: grows)
+            .onGeometryChange(for: Bool.self) { proxy in
+                let frame = proxy.frame(in: .global)
+                return frame != .zero && frame.maxY > 0
+            } action: {
+                onScreen = $0
+                report()
+            }
+            .onAppear {
+                showing = true
+                report()
+            }
+            .onDisappear {
+                showing = false
+                report()
+            }
+            .onChange(of: celebrations.streakGrowth) { _, _ in
+                if counted { grows += 1 }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
         }
+    }
+
+    /// Only a flame that is showing and on screen can play the rise; it tells the celebrations
+    /// when that changes, in pairs.
+    private func report() {
+        let visible = showing && onScreen
+        guard visible != counted else { return }
+        counted = visible
+        if visible { celebrations.flameAppeared() } else { celebrations.flameDisappeared() }
     }
 }
 

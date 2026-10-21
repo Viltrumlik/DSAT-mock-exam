@@ -59,6 +59,8 @@ final class CelebrationCenter {
         didSet {
             // Nothing may fly any more: give the header back what it was holding.
             if reduceMotion, !oldValue, queue.held > 0 { queue.releaseHeld() }
+            // Nor may the flame grow: show the real streak now.
+            if reduceMotion, !oldValue, streakHold != nil { streakHold = nil }
         }
     }
     private(set) var bursts: [ConfettiBurst] = []
@@ -72,6 +74,13 @@ final class CelebrationCenter {
     private(set) var coin: CoinCue?
     /// Bumps once per coin burst — its success haptic's trigger.
     private(set) var coinCount = 0
+    /// While a longer streak waits to be shown: the number last seen, which every flame shows
+    /// until the rise plays. Released inside an animation, so the number rolls.
+    private(set) var streakHold: Int?
+    /// Bumps when the flame grows.
+    private(set) var streakGrowth = 0
+    /// The trophy card on screen: the student moved up the board while away.
+    private(set) var rankUp: Rise?
     private var queue = CelebrationQueue()
 
     // Bookkeeping nothing renders from.
@@ -79,6 +88,9 @@ final class CelebrationCenter {
     /// Everything due this week went in while a sheet or a cover was up: the double confetti
     /// waits for the stage instead of being lost.
     @ObservationIgnored private var allDoneWaiting = false
+    @ObservationIgnored private var rankWaiting: Rise?
+    /// Header flames on screen now — the streak rise plays only where one can be seen.
+    @ObservationIgnored private var flamesShowing = 0
     @ObservationIgnored private var sheetUp = false
     @ObservationIgnored private var coversUp = 0
     @ObservationIgnored private var stage: CGSize = .zero
@@ -184,6 +196,85 @@ final class CelebrationCenter {
         AccessibilityNotification.Announcement(text).post()
     }
 
+    // MARK: - While you were away
+
+    /// Before the welcome-back read goes out: the XP the header last showed (nil on the first
+    /// launch). A rise that lands meanwhile is held at once (`heldXP`). Returns the entry that
+    /// `resolveAway` settles — every call to this MUST be followed by one, on every path (a
+    /// failed read resolves with a nil `xpAfter`), or the pill stays held for good.
+    func expectAway(xpSeen: Int?) -> Int {
+        queue.recordAway(xpSeen: xpSeen)
+    }
+
+    /// The read came back — `xpAfter` is nil when it failed, and nothing flies. A gain flies
+    /// with `label` as its caption once a pill can catch it, and VoiceOver hears it either way.
+    func resolveAway(_ id: Int, xpAfter: Int?, label: String?) {
+        // Animated, as in `celebrate`: a failed read or a gain that cannot fly gives back the
+        // rise this entry was holding, and the pill rolls to it rather than jumping.
+        let gained = withAnimation(Motion.snappy) {
+            queue.resolve(id, xpAfter: xpAfter, allowsFlights: budget.allowsFlights, label: label)
+        }
+        if gained > 0 { announce("\(gained) XP earned while you were away.") }
+        flyIfReady()
+    }
+
+    /// The streak grew while the student was away. Call BEFORE the store takes the new number:
+    /// every flame keeps showing what was last seen, then rolls up and grows once one is on
+    /// screen and nothing covers it. Under Reduce Motion the number simply changes.
+    func streakRose(_ rise: Rise) {
+        announce(rise.to == 1 ? "1 lesson in a row — your streak grew." : "\(rise.to) lessons in a row — your streak grew.")
+        guard !reduceMotion else { return }
+        if streakHold != rise.from { streakHold = rise.from }
+        playStreakIfReady()
+    }
+
+    /// What a flame shows: the held number while a rise waits, else the store's.
+    func streakShown(_ streak: Int?) -> Int? { streakHold ?? streak }
+
+    /// A header flame came on screen (shown, and not scrolled off the top).
+    func flameAppeared() {
+        flamesShowing += 1
+        playStreakIfReady()
+    }
+
+    func flameDisappeared() {
+        flamesShowing = max(0, flamesShowing - 1)
+    }
+
+    /// The student moved up the board while away: the trophy card, once the stage is clear and
+    /// any XP flight has landed.
+    func rankRose(_ rise: Rise) {
+        rankWaiting = rise
+        playRankUpIfReady()
+    }
+
+    /// A rank-up not shown yet: the baseline keeps its old place until the card has been seen.
+    var rankNotShown: Rise? { rankWaiting }
+
+    func dismissRankUp() {
+        if rankUp != nil { rankUp = nil }
+    }
+
+    private func playStreakIfReady() {
+        guard streakHold != nil, flamesShowing > 0, !covered else { return }
+        Task { [weak self] in
+            // A beat, so the eye has reached the header before the number moves.
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self, self.streakHold != nil, self.flamesShowing > 0, !self.covered else { return }
+            withAnimation(Motion.pop) { self.streakHold = nil }
+            self.streakGrowth += 1
+        }
+    }
+
+    private func playRankUpIfReady() {
+        // A gain that can fly now goes first; the card follows once it has landed.
+        let gainCanFly = queue.hasConfirmedGain && target != nil
+        guard let rise = rankWaiting, rankUp == nil, !covered, flights.isEmpty, !gainCanFly else { return }
+        rankWaiting = nil
+        rankUp = rise
+        announce("You moved up to number \(rise.to) overall.")
+    }
+
     // MARK: - What can be seen
 
     func setStage(_ size: CGSize) {
@@ -233,6 +324,7 @@ final class CelebrationCenter {
         flights.remove(at: index)
         withAnimation(Motion.snappy) { queue.land(flight.id) }
         landing = XPLanding(count: (landing?.count ?? 0) + 1, owner: flight.owner)
+        playRankUpIfReady()
     }
 
     private func stageCleared() {
@@ -244,6 +336,8 @@ final class CelebrationCenter {
             playAllDone()
         }
         flyIfReady()
+        playStreakIfReady()
+        playRankUpIfReady()
     }
 
     private func playEffort(_ work: FinishedWork, at point: CGPoint?) {
@@ -283,6 +377,7 @@ final class CelebrationCenter {
         if let index = flights.firstIndex(where: { $0.id == id }) { flights.remove(at: index) }
         // Animated, as `landed` is: the pill rolls up rather than jumping.
         if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
+        playRankUpIfReady()
     }
 }
 
