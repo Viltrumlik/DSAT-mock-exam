@@ -202,11 +202,13 @@ struct VocabStudyView: View {
 
     @MainActor
     private func exit() {
+        // The run being left, taken once: the flush and the check after it are about the same one.
+        let leaving = runner
         Task {
-            await runner?.flush(isPartial: true)
+            await leaving?.flush(isPartial: true)
             // Leaving can be what grades a finished round; say so before the cover goes — the
             // change may never reach `onChange` once it is closing. A no-op if it was said.
-            if runner?.isFinished == true { reportFinish() }
+            if leaving?.isFinished == true { reportFinish() }
             onClose()
         }
     }
@@ -308,6 +310,9 @@ struct FlashcardView: View {
                         withAnimation(Self.flipAnimation) { flipped.toggle() }
                         flips += 1
                     }
+                    // A new card is a new view: a finger still down from the last one, or a
+                    // definition scrolled halfway, never carries over to the next word.
+                    .id(word.id)
                     .padding(.horizontal, 16)
                 }
 
@@ -321,6 +326,8 @@ struct FlashcardView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 20)
+                        // VoiceOver cannot swipe the card sideways: it hears the way it can.
+                        .accessibilityLabel("Double-tap the card to turn it over. Choose Correct or Still learning from the card's actions, or with the buttons below.")
                 }
 
                 HStack(spacing: 12) {
@@ -569,16 +576,33 @@ struct FlipCard: View {
     let onFlip: @MainActor () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    /// How far the card is being dragged sideways.
-    @State private var drag: CGFloat = 0
+    /// How far the card is being dragged sideways. A gesture state, so a drag the system cancels
+    /// (a call, a notification, the app going inactive) puts the card back by itself instead of
+    /// leaving a tilt — and a stamp — on it.
+    @GestureState(resetTransaction: Transaction(animation: Motion.focus)) private var drag: CGFloat = 0
 
     /// Past this far, letting go gives the verdict.
     private static let threshold: CGFloat = 110
 
-    /// The verdict letting go would give now — nil until the card has gone far enough.
-    private var leaning: Bool? {
-        abs(drag) >= Self.threshold ? drag > 0 : nil
+    /// How far a drag moves the card: only a mostly sideways one does, so a long definition
+    /// being scrolled up and down never nudges it. The same rule draws the card and decides the
+    /// verdict, so what the stamp says is what letting go gives.
+    private static func sideways(_ translation: CGSize) -> CGFloat {
+        abs(translation.width) > abs(translation.height) ? translation.width : 0
     }
+
+    /// The verdict a card dragged this far would give — nil until it has gone far enough.
+    private static func verdict(at offset: CGFloat) -> Bool? {
+        abs(offset) >= threshold ? offset > 0 : nil
+    }
+
+    /// The verdict letting go would give now.
+    private var leaning: Bool? { Self.verdict(at: drag) }
+
+    /// Stamp ink: white on the deep light-mode fills, dark on the pale dark-mode ones (white on
+    /// #34d399 or #fbbf24 is under 2:1; this is above 9:1).
+    private static let stampInk = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 15 / 255, green: 23 / 255, blue: 42 / 255, alpha: 1) : .white })
 
     var body: some View {
         ZStack {
@@ -590,7 +614,9 @@ struct FlipCard: View {
         }
         // Under Reduce Motion the faces crossfade instead.
         .rotation3DEffect(.degrees(flipped && !reduceMotion ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-        .overlay(alignment: .top) { stamp }
+        // The stamp's own beat (120 ms) is scoped to the stamp: the card's return and its
+        // 250 ms turn keep theirs.
+        .overlay(alignment: .top) { stamp.animation(Motion.focusTap, value: leaning) }
         .offset(x: drag)
         // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
         .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) / 18), anchor: .bottom)
@@ -600,11 +626,15 @@ struct FlipCard: View {
         .onTapGesture { onFlip() }
         // Simultaneous, so the faces' own up-and-down scrolling still works.
         .simultaneousGesture(swipe)
-        .animation(Motion.focusTap, value: leaning)
         .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
-        // A swipe has a way in for VoiceOver too: the same two verdicts, offered on the card
-        // while the buttons under it are live (`onSwipe` is nil during the hold).
-        .accessibilityElement(children: .contain)
+        // One element for VoiceOver: it reads the side that is up, a double-tap turns the card
+        // over (the other side is one turn away), and the two verdicts are actions on it — only
+        // while a verdict is allowed (`onSwipe` is nil during the hold), like the buttons below.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spokenSide)
+        .accessibilityHint(flipped ? "Double-tap to turn it back to the word." : "Double-tap to turn it over to the definition.")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onFlip() }
         .accessibilityActions {
             if let onSwipe {
                 Button("Correct") { onSwipe(true) }
@@ -613,17 +643,32 @@ struct FlipCard: View {
         }
     }
 
+    /// The side that is up, in full — what the eye reads.
+    private var spokenSide: String {
+        var parts: [String] = []
+        if flipped {
+            parts.append("Definition: \(word.definition)")
+            if let part = word.partOfSpeech, !part.isEmpty { parts.append(part) }
+            if let example = word.example, !example.isEmpty { parts.append("Example: \(example)") }
+            if !word.synonyms.isEmpty { parts.append("Synonyms: \(word.synonyms.joined(separator: ", "))") }
+        } else {
+            parts.append("Word: \(word.word)")
+            if let part = word.partOfSpeech, !part.isEmpty { parts.append(part) }
+        }
+        return parts.joined(separator: ". ")
+    }
+
     private var swipe: some Gesture {
         DragGesture(minimumDistance: 16)
-            .onChanged { value in
-                // Sideways only: an up-and-down drag is a long definition scrolling.
-                guard onSwipe != nil, abs(value.translation.width) > abs(value.translation.height) else { return }
-                drag = value.translation.width
+            .updating($drag) { value, state, _ in
+                state = onSwipe == nil ? 0 : Self.sideways(value.translation)
             }
-            .onEnded { _ in
-                let verdict = leaning
-                withAnimation(Motion.focus) { drag = 0 }
-                if let verdict { onSwipe?(verdict) }
+            .onEnded { value in
+                // Decided where the finger lifted, by the rule that draws the card. A drag the
+                // system cancels never gets here, and the gesture state has already put the
+                // card back.
+                guard let onSwipe, let verdict = Self.verdict(at: Self.sideways(value.translation)) else { return }
+                onSwipe(verdict)
             }
     }
 
@@ -634,7 +679,7 @@ struct FlipCard: View {
         if let leaning {
             Label(leaning ? "Correct" : "Still learning", systemImage: leaning ? "checkmark" : "arrow.counterclockwise")
                 .font(.system(size: 14, weight: .heavy))
-                .foregroundStyle(.white)
+                .foregroundStyle(Self.stampInk)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(Capsule().fill(leaning ? Theme.success : Theme.warning))
