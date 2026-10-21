@@ -32,6 +32,20 @@ def _env_bool(name: str, *, default_when_unset: bool) -> bool:
     return v.lower() == 'true'
 
 
+#: Accounts the freeze does NOT lock out of the site — the owner's own test accounts (the
+#: owner, 2026-10-21: "u mening test akkauntlarim, testlarni shu akkauntda qilaman").
+#: Comma-separated emails, matched case-insensitively. The freeze itself is left exactly as
+#: lc-up and the ops screens set it: ``is_frozen`` and ``frozen_reason`` stay, the debt stays,
+#: every staff screen and report still shows the account frozen for debt. Only the
+#: "may this account use the site" checks read this (``users.permissions.is_frozen_for_access``).
+#: Kept in the environment, not the database, so no screen can grant it by mistake.
+FREEZE_ACCESS_EXEMPT_EMAILS = frozenset(
+    e.strip().lower()
+    for e in os.getenv('FREEZE_ACCESS_EXEMPT_EMAILS', '').split(',')
+    if e.strip()
+)
+
+
 # access.services — fail loud in dev (override with env in CI/prod)
 LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT = _env_bool(
     'LMS_AUTHZ_RAISE_ON_MISSING_SUBJECT', default_when_unset=DEBUG

@@ -392,7 +392,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         user = (
             get_user_model()
             .objects.filter(pk=self.scope["user"].pk)
-            .only("role", "is_frozen")
+            .only("role", "is_frozen", "email")
             .first()
         )
         return user is not None and is_frozen_learner(user)
