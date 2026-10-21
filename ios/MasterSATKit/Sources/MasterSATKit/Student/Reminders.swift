@@ -187,12 +187,12 @@ extension String {
 }
 
 private extension ReminderPlan {
-    /// Work that is finished needs no reminder. `workflow_status` is the server's call, and
-    /// the client must not recompute it — the rule lives with the grading pipeline.
+    /// Work that is finished needs no reminder, and classwork is never owed, so it needs none
+    /// whatever date it carries. "Finished" is `HomeworkProgress.isDone` — the same answer the
+    /// Today and Class lists give — not the row's `workflow_status` alone: a word-set homework
+    /// is finished by playing it (the status never moves), and a quiz homework with a second
+    /// quiz still open is not finished however the first one stands.
     static func needsDoing(_ assignment: AssignmentListing) -> Bool {
-        switch (assignment.workflowStatus ?? "").lowercased() {
-        case "graded", "reviewed", "submitted": return false
-        default: return true
-        }
+        !assignment.isClasswork && !HomeworkProgress.isDone(assignment)
     }
 }

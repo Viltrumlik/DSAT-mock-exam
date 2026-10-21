@@ -13,10 +13,13 @@ import Testing
         return f.string(from: now.addingTimeInterval(offset))
     }
 
-    private func assignment(id: Int, dueIn: TimeInterval?, status: String? = nil, title: String = "Reading set") throws -> AssignmentListing {
+    private func assignment(
+        id: Int, dueIn: TimeInterval?, status: String? = nil, title: String = "Reading set", extra: [String: Any] = [:]
+    ) throws -> AssignmentListing {
         var object: [String: Any] = ["id": id, "title": title, "classroom_name": "Senior A"]
         if let dueIn { object["due_at"] = iso(dueIn) }
         if let status { object["workflow_status"] = status }
+        object.merge(extra) { _, new in new }
         let data = try JSONSerialization.data(withJSONObject: object)
         return try JSONCoding.decoder.decode(AssignmentListing.self, from: data)
     }
@@ -66,6 +69,38 @@ import Testing
             )
             #expect(plan.isEmpty, "\(status) should not be reminded about")
         }
+    }
+
+    @Test("A word-set homework that has been played through is not chased, whatever its status says")
+    func finishedWordSetIsSilent() throws {
+        let finished = try assignment(id: 5, dueIn: 3 * 24 * 3600, extra: [
+            "vocab_homeworks": [WorkFixtures.words(1, "completed"), WorkFixtures.words(2, "completed")],
+        ])
+        #expect(ReminderPlan.build(assignments: [finished], midterms: [], now: now).isEmpty)
+
+        // One set still open: it is owed, so it is reminded about.
+        let owed = try assignment(id: 6, dueIn: 3 * 24 * 3600, extra: [
+            "vocab_homeworks": [WorkFixtures.words(1, "completed"), WorkFixtures.words(2, "in_progress")],
+        ])
+        #expect(ReminderPlan.build(assignments: [owed], midterms: [], now: now).count == 2)
+    }
+
+    @Test("A quiz homework with a second quiz still open is chased, even once the first is graded")
+    func openSecondQuizIsChased() throws {
+        let homework = try assignment(id: 8, dueIn: 3 * 24 * 3600, status: "graded", extra: [
+            "assessment_homeworks": [WorkFixtures.quiz(21, "graded"), WorkFixtures.quiz(22, "not_started")],
+        ])
+        let plan = ReminderPlan.build(assignments: [homework], midterms: [], now: now)
+        #expect(plan.map(\.id) == ["homework-8-86400", "homework-8-10800"])
+    }
+
+    @Test("Classwork is never owed, so a dated classwork gets no reminders")
+    func classworkIsSilent() throws {
+        let classwork = try assignment(id: 9, dueIn: 3 * 24 * 3600, extra: ["category": "CLASSWORK"])
+        #expect(ReminderPlan.build(assignments: [classwork], midterms: [], now: now).isEmpty)
+        // The same row as homework is chased, so it is the category that silences it.
+        let homework = try assignment(id: 10, dueIn: 3 * 24 * 3600, extra: ["category": "HOMEWORK"])
+        #expect(ReminderPlan.build(assignments: [homework], midterms: [], now: now).count == 2)
     }
 
     @Test("Lead times already in the past are dropped, not fired on sight")
