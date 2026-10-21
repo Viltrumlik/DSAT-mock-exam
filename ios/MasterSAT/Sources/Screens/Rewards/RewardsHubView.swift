@@ -1,84 +1,131 @@
 import SwiftUI
 import MasterSATKit
 
-/// The Rewards tab: the three reward pages, each behind a card that already says the number a
-/// student opens it for — where they stand, what they have, what they can spend.
+/// The Rewards tab: where the student stands, what they have, where it came from, and what to
+/// spend it on — the trophy hero, streak and coins, the board, the XP ledger and the shop.
 ///
-/// A tab root, so it owns its `NavigationStack` and may hide the bar; the pages it pushes keep
-/// theirs, because on a pushed screen that bar carries the only Back button there is. Every card
-/// pushes an `AppLink` VALUE, resolved at this stack's root: a value lands in the bound path, so
-/// re-tapping the tab (or a link to it) can pop it; a `NavigationLink { destination }` cannot be.
+/// A tab root, so it owns its `NavigationStack` and hides the bar; every push is an `AppLink`
+/// VALUE resolved at this root (the leaderboard, points and shop pages keep their own bars and
+/// Back buttons). It reloads every time the tab appears, so a conversion or a purchase made one
+/// level down is on the cards when the student comes back, and refreshes detached
+/// (`TabRootScroll(onRefresh:)`).
 ///
-/// Two requests feed the cards: `/rewards/me/` (points, coins, XP, strikes) and the default
-/// leaderboard (global, all time) — the same slice and the same `standing` rule the
-/// Leaderboard page opens on, so the card and the page can never show two different ranks.
-/// Reloaded every time the tab appears, so a conversion or a purchase made one level down is
-/// on the card when the student comes back.
+/// Four requests, four outcomes, each said where it lands: `/rewards/me/` (streak, coins, the
+/// ledger, the header), the default board (the hero — global, all time, XP), the rules (which
+/// earnings add XP) and, when the board section asks something else, its own board. A failed
+/// reload keeps what was last read; only a card with nothing to show says it failed.
 struct RewardsHubView: View {
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
     @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var mine: MyRewards?
     @State private var meFailed = false
-    @State private var board: LeaderboardBoard?
-    @State private var boardFailed = false
+    /// The default board — global, all time, XP: the hero's, and the section's when it asks the same.
+    @State private var hero: LeaderboardBoard?
+    @State private var heroFailed = false
+    /// Which earnings add XP. Without them the ledger keeps every earning (`XPLedger`).
+    @State private var rules: [RewardRule]?
+    @State private var metric: LeaderboardMetric = .xp
+    @State private var window = LeaderboardQuery.allTime
+    /// The section's own board, when it asks something the hero's does not answer.
+    @State private var other: LeaderboardBoard?
+    @State private var otherFailed = false
+    @State private var converting = false
+    @State private var confirmingConvert = false
+    @State private var convertNote: String?
+    /// Counts conversions whose coin burst was skipped (a sheet or a cover is up), so the haptic
+    /// the burst would have given is still given — once, by the card.
+    @State private var convertBuzz = 0
+    @State private var coinsSpot = FrameBox()
+    @State private var shown = false
+    /// Each return to the tab: a new trophy (`RankHeroContent.plays`).
+    @State private var trophyPlays = 0
+
+    /// What the hero asks: the default board — global, all time, XP — at the server's largest
+    /// page, so "N XP to pass <name>" reaches the row above a student who is deep in the board
+    /// (Ruling P3-R3). The full leaderboard page keeps the default page.
+    private static let heroQuery = LeaderboardQuery(limit: 200)
+
+    /// What the board section asks. The strike board is a run and always all time, so a window
+    /// chosen for XP is not part of that question (and switching it asks nothing new).
+    private var sectionQuery: LeaderboardQuery {
+        LeaderboardQuery(scope: .global, window: metric == .strikes ? LeaderboardQuery.allTime : window, metric: metric)
+    }
+
+    /// Whether the hero's board already answers the section — the same slice, without its
+    /// page size (the section shows five rows and the student's own).
+    private var sectionIsHero: Bool { sectionQuery == LeaderboardQuery() }
+
+    /// The board the section shows — only one that answers what is chosen, so a strike board
+    /// never shows under "XP" while the next one loads.
+    private var sectionBoard: LeaderboardBoard? {
+        guard let board = sectionIsHero ? hero : other, board.metric == metric else { return nil }
+        guard metric == .strikes || board.window == window else { return nil }
+        return board
+    }
+
+    private var sectionFailed: Bool { sectionIsHero ? heroFailed : otherFailed }
+
+    private var heroState: RankHeroContent.State {
+        guard let hero else { return .loading }
+        guard let standing = hero.standing else { return .unranked }
+        return .ranked(rank: standing.rank, pass: hero.passTarget)
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .rewards, onRefresh: { await load() }) {
                 VStack(alignment: .leading, spacing: 16) {
-                    AppHeader(title: "Rewards")
+                    AppHeader(title: "Rewards").stagger(0, shown: shown)
 
-                    // The cards stay and keep working when a total fails — each page loads and
-                    // explains itself — but the failure is said, not left as a row of dashes.
-                    if meFailed {
+                    heroCard.stagger(1, shown: shown)
+
+                    if meFailed && mine == nil {
                         RewardsErrorState(
                             title: "Points aren't loading right now.",
                             message: "Nothing has been lost — the page just couldn't fetch your total."
-                        ) { await load() }
-                        .cardStyle(padding: 8)
-                    } else if boardFailed {
-                        RewardsErrorState(
-                            title: "The leaderboard isn't loading right now.",
-                            message: "Your XP is safe — only this list failed to load."
-                        ) { await load() }
+                        ) { await loadMe() }
                         .cardStyle(padding: 8)
                     }
 
-                    NavigationLink(value: AppLink.leaderboard) {
-                        RewardsHubCard(
-                            title: "Leaderboard",
-                            subtitle: "Ranked on XP — what you earn by turning up and doing the work.",
-                            icon: "trophy.fill",
-                            tone: Theme.amber,
-                            stats: leaderboardStats
+                    HStack(alignment: .top, spacing: 12) {
+                        StreakCard(
+                            streak: celebrations.streakShown(rewards.streak) ?? mine?.currentStreak,
+                            best: mine?.bestStreak
                         )
+                        CoinsCard(rewards: mine, converting: converting, note: convertNote) {
+                            confirmingConvert = true
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { coinsSpot.rect = $0 }
                     }
-                    .buttonStyle(.plain)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .stagger(2, shown: shown)
 
-                    NavigationLink(value: AppLink.points) {
-                        RewardsHubCard(
-                            title: "Points",
-                            subtitle: "What you've earned for showing up and doing the work.",
-                            icon: "sparkles",
-                            tone: Theme.accent,
-                            stats: pointsStats
-                        )
-                    }
-                    .buttonStyle(.plain)
+                    RewardsBoardSection(
+                        metric: $metric,
+                        window: $window,
+                        board: sectionBoard,
+                        failed: sectionFailed && sectionBoard == nil
+                    ) { await retrySection() }
+                    .stagger(3, shown: shown)
 
-                    NavigationLink(value: AppLink.shop) {
-                        RewardsHubCard(
-                            title: "Shop",
-                            subtitle: "Spend what you've earned. Coins keep; strikes don't — miss a lesson and they're gone.",
-                            icon: "bag.fill",
-                            tone: Theme.success,
-                            stats: shopStats
-                        )
+                    if let mine {
+                        XPLedgerCard(rows: XPLedger.rows(mine.history, rules: rules))
+                            .stagger(4, shown: shown)
                     }
-                    .buttonStyle(.plain)
+
+                    HubCard(
+                        title: "Shop",
+                        subtitle: "Spend coins and strikes, then collect it from the desk",
+                        icon: "bag.fill",
+                        tone: Theme.success,
+                        route: AppLink.shop
+                    )
+                    .stagger(5, shown: shown)
                 }
                 .padding(16)
             }
@@ -87,50 +134,52 @@ struct RewardsHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .onAppear { Task { await load() } }
+            // Not `.task`: a TabView never tears its tabs down.
+            .onAppear {
+                if !shown {
+                    shown = true
+                } else {
+                    trophyPlays += 1
+                }
+                // Yesterday's "Converted 30 points…" is not news on a later visit.
+                if convertNote != nil, !converting { convertNote = nil }
+                Task { await load() }
+            }
+            // A chip or a segment asked a new board. Cancelled when it changes again, and a
+            // cancelled load stores nothing (`loadSection`).
+            .task(id: sectionQuery) {
+                if otherFailed { otherFailed = false }
+                await loadSection()
+            }
+            .sensoryFeedback(.success, trigger: convertBuzz)
+            .alert(
+                Text(verbatim: "Convert \(mine?.maxConvertiblePoints ?? 0) points into \(RewardsFormat.count(mine?.convertibleCoins ?? 0, "coin"))?"),
+                isPresented: $confirmingConvert
+            ) {
+                Button("Convert") { Task { await convert() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Converted points don't come back, and your XP stays where it is. To choose an amount, open Points.")
+            }
         }
     }
 
-    // MARK: - The numbers on the cards
+    // MARK: - The hero
 
-    /// A dash, never a zero, whenever the answer is not in — while loading and after a failure.
-    private func number(_ value: Int?) -> String { ScoreText.string(value) }
-
-    private var standing: LeaderboardRow? { boardFailed ? nil : board?.standing }
-
-    private var leaderboardStats: [RewardsHubStat] {
-        [
-            RewardsHubStat(
-                label: "Your rank",
-                value: standing.map { "#\($0.rank)" } ?? "—",
-                media: .symbol(standing?.rank == 1 ? "crown.fill" : "trophy.fill", RewardsPalette.gold.solid)
-            ),
-            // The board's figure where the student is on it, so the card agrees with the page;
-            // the wallet's otherwise — a student with no XP yet has no row, but does have a 0.
-            RewardsHubStat(
-                label: "XP",
-                value: number(standing?.xp ?? (meFailed ? nil : mine?.xp)),
-                media: .symbol("bolt.fill", Theme.accent)
-            ),
-        ]
-    }
-
-    private var pointsStats: [RewardsHubStat] {
-        let r = meFailed ? nil : mine
-        return [
-            RewardsHubStat(label: "Points", value: number(r?.points), media: .art(.point)),
-            RewardsHubStat(label: "Coins", value: number(r?.coins), media: .art(.coin)),
-            RewardsHubStat(label: "XP", value: number(r?.xp), media: .symbol("bolt.fill", Theme.accent)),
-        ]
-    }
-
-    private var shopStats: [RewardsHubStat] {
-        let r = meFailed ? nil : mine
-        return [
-            RewardsHubStat(label: "Coins to spend", value: number(r?.coins), media: .art(.coin)),
-            // The same `strikes.state` the storefront reads, so the two cannot disagree.
-            RewardsHubStat(label: "Strikes", value: number(r?.strikes), media: .symbol("flame.fill", Theme.amber)),
-        ]
+    @ViewBuilder private var heroCard: some View {
+        if hero == nil && heroFailed {
+            // Said as a failure, never as "not on the board".
+            RewardsErrorState(
+                title: "Your place isn't loading right now.",
+                message: "Your XP is safe — only the board failed to load."
+            ) { await loadHero() }
+            .chunky(Theme.amber)
+        } else {
+            NavigationLink(value: AppLink.leaderboard) {
+                RankHeroContent(state: heroState, plays: trophyPlays)
+            }
+            .buttonStyle(ChunkyButtonStyle(tint: Theme.amber))
+        }
     }
 
     // MARK: - Loading
@@ -138,133 +187,117 @@ struct RewardsHubView: View {
     @MainActor
     private func load() async {
         async let me: Void = loadMe()
-        async let theBoard: Void = loadBoard()
-        _ = await (me, theBoard)
+        async let board: Void = loadHero()
+        async let earning: Void = loadRules()
+        async let section: Void = loadSection()
+        _ = await (me, board, earning, section)
+    }
+
+    /// A number that changes rolls (Reduce Motion: a quick fade); nothing is written when it
+    /// did not change — every write to `@State` the root reads re-renders the tab.
+    @MainActor
+    private func setMine(_ fresh: MyRewards) {
+        guard mine != fresh else { return }
+        withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = fresh }
     }
 
     @MainActor
     private func loadMe() async {
-        let api = session.rewards
         // Taken before asking, so an answer older than the header's own refresh cannot wind it back.
         let ticket = rewards.ticket()
         do {
-            let me = try await api.me()
-            mine = me
-            meFailed = false
-            // The header's XP and streak read the same answer, so the two cannot disagree.
+            let me = try await session.rewards.me()
+            setMine(me)
+            if meFailed { meFailed = false }
+            // The header reads the same answer, so the two never disagree.
             rewards.apply(me, ticket: ticket)
         } catch {
+            // A cancelled read is not a failed one; and a failed one keeps the last good numbers.
+            guard !Task.isCancelled else { return }
             meFailed = true
         }
     }
 
     @MainActor
-    private func loadBoard() async {
-        let api = LeaderboardAPI(client: session.client)
+    private func loadHero() async {
         do {
-            let fresh = try await api.board(LeaderboardQuery())
-            board = fresh
-            boardFailed = false
-            // What the card shows is seen: the "while you were away" baseline follows it, so a
-            // place the student has already looked at is never announced as news.
-            rewards.noteRank(fresh.standing?.rank)
+            let board = try await LeaderboardAPI(client: session.client).board(Self.heroQuery)
+            if hero != board {
+                withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { hero = board }
+            }
+            if heroFailed { heroFailed = false }
+            // What the student has now seen — "while you were away" measures from it.
+            rewards.noteRank(board.standing?.rank)
         } catch {
-            boardFailed = true
+            guard !Task.isCancelled else { return }
+            heroFailed = true
         }
     }
-}
 
-// MARK: - Card
-
-/// One number on a hub card, with the coin or glyph that says what it counts.
-struct RewardsHubStat: Identifiable {
-    enum Media {
-        case art(RewardsCoinArt.Kind)
-        case symbol(String, Color)
+    @MainActor
+    private func loadRules() async {
+        guard let fresh = try? await session.rewards.rules() else { return }
+        if rules != fresh { rules = fresh }
     }
 
-    let label: String
-    let value: String
-    let media: Media
-
-    var id: String { label }
-}
-
-/// The Learn hub's card, with the numbers under the title: a student sees where they stand
-/// and what they have before deciding whether to open the page at all.
-struct RewardsHubCard: View {
-    let title: String
-    let subtitle: String
-    let icon: String
-    let tone: Color
-    let stats: [RewardsHubStat]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 14) {
-                IconTile(systemName: icon, tone: tone, size: 46)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .heavy))
-                        .foregroundStyle(.primary)
-                    Text(subtitle)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundStyle(Theme.textLabel)
-            }
-
-            HStack(spacing: 8) {
-                ForEach(stats) { stat in
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack(spacing: 6) {
-                            switch stat.media {
-                            case .art(let kind):
-                                RewardsCoinArt(kind: kind, size: 20)
-                            case .symbol(let name, let colour):
-                                Image(systemName: name)
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundStyle(colour)
-                                    .frame(width: 20, height: 20)
-                            }
-                            Text(stat.value)
-                                .font(.system(size: 18, weight: .heavy))
-                                .monospacedDigit()
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                        }
-                        Text(stat.label.uppercased())
-                            .font(.system(size: 10, weight: .heavy))
-                            .tracking(0.7)
-                            .foregroundStyle(Theme.textLabel)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.75)
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 9)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background))
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(stat.label): \(stat.value == "—" ? "not loaded" : stat.value)")
-                }
-            }
+    /// The section's own board — nothing to do when it asks what the hero's already answers.
+    @MainActor
+    private func loadSection() async {
+        let asked = sectionQuery
+        guard asked != LeaderboardQuery() else { return }
+        do {
+            let fresh = try await LeaderboardAPI(client: session.client).board(asked)
+            guard !Task.isCancelled, asked == sectionQuery else { return }
+            if other != fresh { other = fresh }
+            if otherFailed { otherFailed = false }
+        } catch {
+            guard !Task.isCancelled, asked == sectionQuery else { return }
+            otherFailed = true
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .overlay(alignment: .leading) { Rectangle().fill(tone).frame(width: 3) }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
+    }
+
+    /// "Try again" under the board: the hero's own read when the section shows the hero's board
+    /// (`loadSection` has nothing to ask then), the section's otherwise.
+    @MainActor
+    private func retrySection() async {
+        if sectionIsHero { await loadHero() } else { await loadSection() }
+    }
+
+    // MARK: - Converting
+
+    /// Spends Max — every point that buys a whole coin. Not idempotent (a second call is a second
+    /// conversion), so it runs once per confirmation, with the button off while it is in flight,
+    /// and is never retried. Either way the truth is read back.
+    ///
+    /// A coin bursts only when a coin was minted, and only where the stage is clear: under a
+    /// sheet or a cover `coinBurst` does nothing, so the card says what happened itself — in
+    /// words, to VoiceOver, and with the success haptic the burst would have given.
+    @MainActor
+    private func convert() async {
+        guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
+        converting = true
+        convertNote = nil
+        do {
+            let result = try await session.rewards.convert(points: nil)
+            let after = before.applying(result.balances)
+            setMine(after)
+            if result.minted > 0 {
+                let bursts = celebrations.coinCount
+                celebrations.coinBurst(at: coinsSpot.rect.celebrationPoint)
+                if celebrations.coinCount == bursts { convertBuzz += 1 }
+            }
+            convertNote = result.detail.isEmpty
+                ? (result.minted > 0
+                    ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
+                    : "Not enough points yet — \(RewardsFormat.count(after.pointsToNextCoin, "point")) to your next coin.")
+                : result.detail
+        } catch {
+            // The press may still have landed (a dropped answer); the read-back below shows
+            // which, and the button is gone if it did.
+            convertNote = "That didn't go through. Check your coins, then try again."
+        }
+        converting = false
+        if let convertNote { AccessibilityNotification.Announcement(convertNote).post() }
+        await loadMe()
     }
 }

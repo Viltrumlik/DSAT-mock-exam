@@ -502,8 +502,8 @@ struct RewardsHeroButtonStyle: ButtonStyle {
     }
 }
 
-/// One line of the points history.
-private struct RewardsAwardRow: View {
+/// One line of the points history — here and in the Rewards tab's "Where your XP came from".
+struct RewardsAwardRow: View {
     let award: PointAward
 
     private var subtitle: String {
