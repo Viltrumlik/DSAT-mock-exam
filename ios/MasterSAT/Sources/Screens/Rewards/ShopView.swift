@@ -168,7 +168,7 @@ struct ShopView: View {
                 RewardsErrorState(
                     title: "Your orders aren't loading right now.",
                     message: "Anything you've bought is safe — only this list failed to load."
-                ) { await loadOrders() }
+                ) { await retryOrders() }
                 .cardStyle(padding: 8)
             }
         }
@@ -181,7 +181,19 @@ struct ShopView: View {
         async let storefront: Void = loadShop()
         async let mine: Void = loadOrders()
         _ = await (storefront, mine)
-        // A cancelled read leaves both flags as they were, so only a full success clears it.
+        clearRefreshNoteIfFresh()
+    }
+
+    /// "Try again" under the orders: the orders read alone. When it brings the page level with the
+    /// server (the storefront was fine too), the notice that the page was stale goes.
+    @MainActor
+    private func retryOrders() async {
+        await loadOrders()
+        clearRefreshNoteIfFresh()
+    }
+
+    /// A cancelled read leaves both flags as they were, so only a full success clears the notice.
+    private func clearRefreshNoteIfFresh() {
         if refreshNote != nil, !shopFailed, !ordersFailed { refreshNote = nil }
     }
 
@@ -219,6 +231,8 @@ struct ShopView: View {
         purchasingId = item.id
         let api = ShopAPI(client: session.client)
         var confirmed = false
+        // No word from the server at all (a dropped answer): the order may or may not stand.
+        var unconfirmed = false
         do {
             let result = try await api.purchase(itemId: item.id)
             confirmed = true
@@ -234,11 +248,14 @@ struct ShopView: View {
                 text: result.detail.isEmpty ? "Ordered. Collect your \(item.name) from the desk." : result.detail
             )
         } catch {
+            unconfirmed = Self.serverSentence(error) == nil
             toast = RewardsToastMessage(tone: .notice, text: Self.refusal(error))
         }
         await load()
-        // The order stands whatever the read-back says; a failed one must not look like news.
-        if confirmed, shopFailed || ordersFailed {
+        // A confirmed order stands whatever the read-back says, and an unconfirmed one may: either
+        // way a read-back that failed leaves the page showing what it showed before, and must not
+        // look like news. (A refusal in the server's own words changed nothing — nothing to flag.)
+        if confirmed || unconfirmed, shopFailed || ordersFailed {
             refreshNote = shopFailed
                 ? "Your balance didn't refresh — pull to update."
                 : "Your orders didn't refresh — pull to update."
@@ -250,16 +267,19 @@ struct ShopView: View {
     /// needed." says what is missing. Otherwise the answer never came, and a dropped answer to
     /// a purchase may still have landed, so the fallback sends the student to check.
     private static func refusal(_ error: Error) -> String {
-        if let error = error as? APIError {
-            switch error {
-            case .http(_, let detail) where !detail.isEmpty: return detail
-            case .forbidden(let detail, _) where !detail.isEmpty: return detail
-            case .validation(let detail, _, _) where !detail.isEmpty: return detail
-            case .conflict(let detail) where !detail.isEmpty: return detail
-            default: break
-            }
+        serverSentence(error) ?? "That didn't go through. Check your coins and orders, then try again."
+    }
+
+    /// The server's own words for a refusal; nil when none came (the answer never arrived).
+    private static func serverSentence(_ error: Error) -> String? {
+        guard let error = error as? APIError else { return nil }
+        switch error {
+        case .http(_, let detail) where !detail.isEmpty: return detail
+        case .forbidden(let detail, _) where !detail.isEmpty: return detail
+        case .validation(let detail, _, _) where !detail.isEmpty: return detail
+        case .conflict(let detail) where !detail.isEmpty: return detail
+        default: return nil
         }
-        return "That didn't go through. Check your coins and orders, then try again."
     }
 }
 

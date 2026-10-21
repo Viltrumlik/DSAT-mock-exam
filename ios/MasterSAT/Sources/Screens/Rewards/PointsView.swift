@@ -233,7 +233,7 @@ struct PointsView: View {
         let icon = switch outcome {
         case .done: "checkmark.circle.fill"
         case .nothing: "info.circle.fill"
-        case .failed: "exclamationmark.circle.fill"
+        case .failed, .unconfirmed: "exclamationmark.circle.fill"
         }
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon).font(.system(size: 14, weight: .bold))
@@ -342,21 +342,27 @@ struct PointsView: View {
 
     @MainActor
     private func load() async {
-        async let me: Void = loadMe()
+        async let me: MyRewards? = loadMe()
         async let theRules: Void = loadRules()
         async let theWallet: Void = loadWallet()
         _ = await (me, theRules, theWallet)
     }
 
+    /// Reads the balance and returns the answer the page now shows — nil when the read failed or
+    /// was cancelled (the page keeps what it had).
     @MainActor
-    private func loadMe() async {
+    @discardableResult
+    private func loadMe() async -> MyRewards? {
         let api = session.rewards
         do {
-            rewards = try await api.me()
+            let fresh = try await api.me()
+            rewards = fresh
             meFailed = false
+            return fresh
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return nil }
             meFailed = true
+            return nil
         }
     }
 
@@ -393,7 +399,13 @@ struct PointsView: View {
     }
 
     /// Spends the points. Not idempotent — a second press is a second purchase — so it runs
-    /// once per confirmation, with the button off while it is in flight, and is never retried.
+    /// once per confirmation, with the button off from the press until the read-back has settled,
+    /// and is never retried.
+    ///
+    /// The read-back is the truth either way — and the button stays off through it, because an
+    /// answer that was dropped on the way back may still have been a conversion that landed.
+    /// When it shows the coins rose after an error, the line says it worked (and the coin bursts,
+    /// once), rather than leaving "That didn't go through" over a balance that went up.
     ///
     /// A coin bursts only when the server says one was minted, and only where the stage is
     /// clear: under a sheet or a cover (the Me sheet pushes this page) `coinBurst` does nothing,
@@ -404,19 +416,20 @@ struct PointsView: View {
         guard !isConverting else { return }
         // Read before the button turns into a spinner and the strip re-lays out.
         let spot = convertSpot.rect.celebrationPoint
+        let coinsBefore = rewards?.coins
         isConverting = true
         outcome = nil
         let api = session.rewards
+        var answered = false
         do {
             let result = try await api.convert(points: conversion.asked)
+            answered = true
             rewards = rewards?.applying(result.balances)
             // Cleared on success only: a spent amount left in the box invites a second press
             // that would spend it again, and clearing it on failure throws away what was typed.
             amountText = ""
             if result.minted > 0 {
-                let bursts = celebrations.coinCount
-                celebrations.coinBurst(at: spot)
-                if celebrations.coinCount == bursts { convertBuzz += 1 }
+                celebrateMint(at: spot)
                 outcome = .done(
                     result.detail.isEmpty
                         ? "Converted \(conversion.spent) points into \(RewardsFormat.count(conversion.coins, "coin"))."
@@ -434,15 +447,46 @@ struct PointsView: View {
                 )
             }
         } catch {
-            outcome = .failed
+            // Said only after the read-back below: it decides which line is true.
         }
-        isConverting = false
-        if let outcome { AccessibilityNotification.Announcement(outcome.text).post() }
+        // What the server said is already the truth: say it now, not after the read-back.
+        if answered, let outcome { AccessibilityNotification.Announcement(outcome.text).post() }
+
         // Either way, read the truth back: the history gains its conversion row and the coin
         // history its mint — and a press that did land despite an error shows up as it is.
-        async let me: Void = loadMe()
+        async let me = loadMe()
         async let theWallet: Void = loadWallet()
-        _ = await (me, theWallet)
+        let (fresh, _) = await (me, theWallet)
+
+        if !answered {
+            // A read-back that was cancelled says nothing: not "couldn't confirm", and not a
+            // line on a page the student has left.
+            guard !Task.isCancelled else {
+                isConverting = false
+                return
+            }
+            if let fresh, let coinsBefore, fresh.coins > coinsBefore {
+                // The answer was lost but the conversion was not.
+                amountText = ""
+                celebrateMint(at: spot)
+                outcome = .done("Converted points into \(RewardsFormat.count(fresh.coins - coinsBefore, "coin")).")
+            } else if fresh != nil {
+                outcome = .failed
+            } else {
+                outcome = .unconfirmed
+            }
+            if let outcome { AccessibilityNotification.Announcement(outcome.text).post() }
+        }
+        isConverting = false
+    }
+
+    /// A coin bursts where the Convert button is; when the burst is skipped (a sheet or a cover is
+    /// up) the success haptic it would have given is given here instead — never both.
+    @MainActor
+    private func celebrateMint(at spot: CGPoint?) {
+        let bursts = celebrations.coinCount
+        celebrations.coinBurst(at: spot)
+        if celebrations.coinCount == bursts { convertBuzz += 1 }
     }
 }
 
@@ -453,6 +497,9 @@ private enum ConvertOutcome: Equatable {
     /// The server answered and minted no coin: nothing spent, nothing to celebrate.
     case nothing(String)
     case failed
+    /// The answer was lost and the read-back could not say either: nothing is known, so nothing
+    /// is claimed — the line sends the student to look.
+    case unconfirmed
 
     /// What the line under the strip says — and what VoiceOver is told, since the line appears
     /// without a sound of its own.
@@ -462,6 +509,7 @@ private enum ConvertOutcome: Equatable {
         // Not "untouched": a dropped answer to a conversion may still have landed (the read-back
         // after it shows which), so the line sends the student to look.
         case .failed: "That didn't go through. Check your points, then try again."
+        case .unconfirmed: "We couldn't confirm that went through. Pull down to check your points."
         }
     }
 }
