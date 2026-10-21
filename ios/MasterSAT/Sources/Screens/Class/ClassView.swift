@@ -8,7 +8,7 @@ import MasterSATKit
 /// join, then the segments. A tab root: every row pushes a VALUE resolved here, so re-tapping
 /// the tab pops it.
 struct ClassView: View {
-    enum Segment: Hashable { case tasks, schedule }
+    enum Segment: Hashable { case tasks, schedule, people, files }
 
     /// Pages this root pushes that no `AppLink` names.
     enum Route: Hashable {
@@ -44,6 +44,8 @@ struct ClassView: View {
     @State private var telegramClass: Classroom?
     @State private var joining = false
     @State private var refreshTick = 0
+    /// People and Files, per class, kept while the tab lives.
+    @State private var sections = ClassSectionsModel()
     @State private var shown = false
     @Namespace private var zoom
 
@@ -77,6 +79,8 @@ struct ClassView: View {
         [
             .init(segment: .tasks, title: "Tasks"),
             .init(segment: .schedule, title: "Schedule"),
+            .init(segment: .people, title: "People"),
+            .init(segment: .files, title: "Files"),
         ]
     }
 
@@ -182,6 +186,10 @@ struct ClassView: View {
                         refreshID: refreshTick,
                         path: $path
                     )
+                case .people:
+                    ClassPeopleSegment(classes: visibleClasses, model: sections, refreshID: refreshTick)
+                case .files:
+                    ClassFilesSegment(classes: visibleClasses, model: sections, refreshID: refreshTick)
                 }
             }
             .stagger(4, shown: shown)
