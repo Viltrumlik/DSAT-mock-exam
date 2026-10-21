@@ -1,19 +1,18 @@
 import SwiftUI
 import MasterSATKit
 
-/// The words tab — the site's `/vocabulary` hub.
+/// The Words tab: "Review today" — the words still to master and the one set Start opens — a
+/// search of the whole bank, then the three places a set lives: word homework, the bank, and
+/// the student's own sets. The four games sit under the lists, because they are how a set from
+/// any of the three is studied.
 ///
-/// Gradient hero with real totals, then three tabs: the published bank, the student's own
-/// sets, and what a teacher assigned. The counts live on the tab bar for the reason the site
-/// puts them there — a student must be able to see there is homework waiting without opening
-/// the tab — and the four games sit under every tab, because they are how a set from any of
-/// the three is studied and they are the key to the coloured bar on every card.
-///
-/// Each tab loads, fails and retries on its own, as the web's do: a student whose own sets
-/// would not load still has the bank they came for, and is told the sets failed rather than
-/// shown "no sets".
+/// Each list loads, fails and retries on its own, as the web's do. The hero needs the bank AND
+/// the homework — it chooses between them — so it is built only once BOTH have loaded, and says
+/// so when either has never loaded, rather than calling a student "all caught up" on half the
+/// facts (or skipping owed homework because its read failed). A reload that fails keeps the last
+/// good answer, on the hero and in every list.
 struct VocabularyView: View {
-    enum Tab: Hashable { case bank, mine, homework }
+    enum Segment: Hashable { case homework, bank, mine }
 
     /// Pages this root pushes. Each is a VALUE on `path` — a `NavigationLink { destination }`
     /// never enters the path, so re-tapping the tab (or a link to it) could not pop it. The
@@ -24,86 +23,105 @@ struct VocabularyView: View {
     }
 
     private enum Phase: Equatable { case loading, loaded, failed }
+    private enum SearchPhase: Equatable { case idle, searching, done, failed }
+
+    /// Start opened a section and found no set in it to play: said under the button for as long
+    /// as that section is still the card's next step.
+    private struct StartNote: Equatable {
+        let sectionId: Int
+        let text: String
+    }
 
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
+    @Environment(AppRouter.self) private var router
     @State private var sections: [VocabSection] = []
     @State private var mySets: [VocabMySet] = []
     @State private var groups: [VocabHomeworkGroup] = []
     @State private var sectionsPhase: Phase = .loading
     @State private var mySetsPhase: Phase = .loading
     @State private var homeworkPhase: Phase = .loading
-    @State private var tab: Tab = .bank
+    /// Loaded at least once in this view's life. A failed reload keeps the last good answer, so
+    /// "known" — not the phase, not "non-empty" — is what a list and the hero stand on.
+    @State private var sectionsKnown = false
+    @State private var mySetsKnown = false
+    @State private var homeworkKnown = false
+    @State private var segment: Segment = .homework
+    /// The opening segment is chosen once, from the first homework answer — never after the
+    /// student has picked one.
+    @State private var segmentPicked = false
     @State private var isBuilding = false
     @State private var pendingDelete: VocabMySet?
     @State private var isDeleting = false
     @State private var deleteError: String?
-
-    private var totals: VocabHubTotals { VocabHubTotals(sections: sections) }
-    private var heroReady: Bool { sectionsPhase == .loaded }
+    @State private var startingReview = false
+    @State private var startNote: StartNote?
+    @State private var query = ""
+    @State private var results: [VocabWord] = []
+    /// The text `results` answers, so coming back to the tab does not blank a good answer.
+    @State private var resultsFor: String?
+    @State private var searchPhase: SearchPhase = .idle
+    @State private var shown = false
 
     /// Sets owed on homework: not yet MASTERED, not merely not started. Zero is not shown.
     private var outstanding: Int { VocabHomeworkGroup.outstanding(in: groups) }
 
-    private var tabs: [PillTabs<Tab>.Item] {
+    private var searchText: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isSearching: Bool { searchText.count >= 2 }
+
+    /// `VocabReview` cannot tell `[]` from a failed read, so it is built only from two answers
+    /// that both arrived: never from a placeholder standing in for a load that failed.
+    private var reviewState: ReviewTodayCard.State {
+        if sectionsKnown && homeworkKnown {
+            return .ready(VocabReview(sections: sections, homework: groups))
+        }
+        if (!sectionsKnown && sectionsPhase == .failed) || (!homeworkKnown && homeworkPhase == .failed) {
+            return .failed
+        }
+        return .loading
+    }
+
+    private var segmentItems: [SegmentBar<Segment>.Item] {
         [
-            .init(tab: .bank, title: "Question Bank", icon: "books.vertical",
-                  count: sectionsPhase == .loaded ? sections.count : nil),
-            .init(tab: .mine, title: "My Sets", icon: "bookmark",
-                  count: mySetsPhase == .loaded ? mySets.count : nil),
-            .init(tab: .homework, title: "Homework", icon: "graduationcap",
-                  count: outstanding > 0 ? outstanding : nil,
-                  highlighted: outstanding > 0),
+            .init(segment: .homework, title: outstanding > 0 ? "Homework · \(ScoreText.string(outstanding))" : "Homework"),
+            .init(segment: .bank, title: "Word bank"),
+            .init(segment: .mine, title: "My sets"),
         ]
     }
 
     var body: some View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .words, onRefresh: { await load() }) {
-                VStack(alignment: .leading, spacing: 18) {
-                    AppHeader(title: "Words")
-                    HeroHeader(
-                        eyebrow: "Vocabulary",
-                        eyebrowIcon: "sparkles",
-                        title: "Build your word bank",
-                        blurb: "The word lists your teachers publish, the homework they set, and any set you build yourself — all studied the same four ways.",
-                        tiles: [
-                            HeroTile("Words", icon: "textformat", value: heroReady ? totals.words : nil),
-                            HeroTile("Words mastered", icon: "checkmark.circle", value: heroReady ? totals.wordsMastered : nil),
-                            HeroTile("Sets", icon: "square.stack.3d.up", value: heroReady ? totals.sets : nil),
-                            HeroTile("Sets mastered", icon: "trophy", value: heroReady ? totals.setsMastered : nil),
-                        ]
-                    ) {
-                        Button { isBuilding = true } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "plus").font(.system(size: 12, weight: .bold))
-                                Text("New set").font(.system(size: 13, weight: .heavy))
+                VStack(alignment: .leading, spacing: 16) {
+                    AppHeader(title: "Words").stagger(0, shown: shown)
+
+                    reviewCard.stagger(1, shown: shown)
+
+                    WordSearchField(query: $query).stagger(2, shown: shown)
+
+                    if isSearching {
+                        searchResults
+                    } else {
+                        SegmentBar(items: segmentItems, selection: $segment)
+                            .stagger(3, shown: shown)
+
+                        Group {
+                            switch segment {
+                            case .homework: homeworkList
+                            case .bank: bankList
+                            case .mine: mineList
                             }
-                            .foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 8)
-                            .background(Capsule().fill(.white))
-                            .contentShape(Capsule())
                         }
-                        .buttonStyle(.plain)
+                        .stagger(4, shown: shown)
+
+                        VocabGameGuide()
+                            .padding(.top, 4)
                     }
-
-                    PillTabs(items: tabs, selection: $tab)
-
-                    Group {
-                        switch tab {
-                        case .bank: bankTab
-                        case .mine: mineTab
-                        case .homework: homeworkTab
-                        }
-                    }
-
-                    VocabGameGuide()
-                        .padding(.top, 4)
                 }
                 .padding(16)
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(Theme.background)
             .navigationTitle("Words")
             .navigationBarTitleDisplayMode(.inline)
@@ -116,7 +134,16 @@ struct VocabularyView: View {
                 }
             }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .onAppear { Task { await load() } }
+            // Not `.task`: a TabView never tears its tabs down.
+            .onAppear {
+                if !shown { shown = true }
+                Task { await load() }
+            }
+            // A newer keystroke cancels the older search; a cancelled search stores nothing.
+            .task(id: searchText) { await search(searchText) }
+            .onChange(of: segment) { _, _ in
+                if !segmentPicked { segmentPicked = true }
+            }
             .sheet(isPresented: $isBuilding) {
                 CustomSetBuilderView { saved in
                     isBuilding = false
@@ -144,110 +171,242 @@ struct VocabularyView: View {
         }
     }
 
-    // MARK: - Question Bank
+    // MARK: - Review today
 
-    @ViewBuilder
-    private var bankTab: some View {
-        switch sectionsPhase {
-        case .loading where sections.isEmpty:
-            loadingSlot
+    @ViewBuilder private var reviewCard: some View {
+        let state = reviewState
+        ReviewTodayCard(
+            state: state,
+            starting: startingReview,
+            note: noteText(for: state),
+            onStart: startReview,
+            retry: { await load() }
+        )
+    }
+
+    /// The note belongs to the section it was found for: once the card's next step is something
+    /// else, it says nothing.
+    private func noteText(for state: ReviewTodayCard.State) -> String? {
+        guard let startNote, case .ready(let review) = state,
+              case .section(let id, _, _) = review.next, id == startNote.sectionId else { return nil }
+        return startNote.text
+    }
+
+    /// Start: the homework set bound to its homework, or — for a section — one read of it, then
+    /// its set with the most words still to master (the section page if the read fails). A root
+    /// push: a second tap while the first is in flight stacks nothing.
+    private func startReview() {
+        guard case .ready(let review) = reviewState, !startingReview, path.isEmpty else { return }
+        switch review.next {
+        case .homework(let set):
+            if startNote != nil { startNote = nil }
+            path.append(Route.set(id: set.setId, title: set.title, assignmentId: set.assignmentId))
+        case .section(let id, let title, _):
+            if startNote != nil { startNote = nil }
+            startingReview = true
+            Task { await openBestSet(inSection: id, title: title) }
+        case .caughtUp, .nothingYet:
+            break
+        }
+    }
+
+    @MainActor
+    private func openBestSet(inSection id: Int, title: String) async {
+        defer { startingReview = false }
+        var detail: VocabSectionDetail?
+        do {
+            detail = try await session.student.vocabularySection(id: id)
+        } catch {
+            // A cancelled read is not a failed one: do nothing rather than open a page.
+            guard !Task.isCancelled else { return }
+        }
+        // The student went somewhere else meanwhile — another page, or another tab: leave them there.
+        guard path.isEmpty, router.selection == .words else { return }
+        guard let detail else {
+            // The read failed: the section page loads for itself, and says so if it cannot.
+            path.append(Route.section(id: id, title: title))
+            return
+        }
+        if let best = VocabReview.bestSet(in: detail) {
+            path.append(Route.set(id: best.id, title: best.title))
+        } else {
+            // Words remain by the bank's count, yet no set in the section has any to play. That
+            // is not "all caught up" — say what happened and leave the lists to the student.
+            let text = "There's no set to open in \(title) right now — pick one from the word bank below."
+            startNote = StartNote(sectionId: id, text: text)
+            AccessibilityNotification.Announcement(text).post()
+        }
+    }
+
+    // MARK: - Search
+
+    @ViewBuilder private var searchResults: some View {
+        switch searchPhase {
+        case .idle, .searching:
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .accessibilityLabel("Searching")
         case .failed:
-            VocabErrorNotice(title: "Couldn't load your vocabulary") { await loadSections() }
-        default:
-            if sections.isEmpty {
-                VocabEmptyState(
-                    icon: "books.vertical",
-                    title: "No word lists published yet",
-                    message: "Your teachers publish vocabulary sections here. In the meantime you can build a set of your own.",
-                    actionTitle: "Build my own set",
-                    action: { isBuilding = true }
-                )
+            VocabErrorNotice(
+                title: "Search didn't go through",
+                message: "Check your connection and try again."
+            ) { await search(searchText) }
+        case .done:
+            if results.isEmpty {
+                DashedEmpty(title: "No matches for “\(searchText)”", hint: "Try a shorter word, or part of a definition.")
             } else {
-                VStack(spacing: 14) {
-                    ForEach(sections) { section in
-                        NavigationLink(value: Route.section(id: section.id, title: section.title)) {
-                            VocabSectionCard(section: section)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                VStack(spacing: 12) {
+                    ForEach(results) { VocabSearchRow(word: $0) }
                 }
             }
         }
     }
 
-    // MARK: - My Sets
-
-    @ViewBuilder
-    private var mineTab: some View {
-        switch mySetsPhase {
-        case .loading where mySets.isEmpty:
-            loadingSlot
-        case .failed:
-            VocabErrorNotice(title: "Couldn't load your sets") { await loadMySets() }
-        default:
-            if mySets.isEmpty {
-                VocabEmptyState(
-                    icon: "sparkles",
-                    title: "Make a set of the words you keep missing",
-                    message: "Pull any words from the question bank into a set of your own, then study it with all four modes.",
-                    actionTitle: "New set",
-                    action: { isBuilding = true }
-                )
-            } else {
-                VStack(spacing: 14) {
-                    ForEach(mySets) { set in
-                        NavigationLink(value: Route.set(id: set.id, title: set.title)) {
-                            VocabSetCard(
-                                title: set.title,
-                                wordCount: set.wordCount,
-                                completed: set.completed,
-                                mastery: set.mastery,
-                                subtitle: createdLabel(set.createdAt),
-                                reservesTrailingControl: true
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        // Laid over the link, not inside it: a button inside a link's label
-                        // competes with the link for the same tap.
-                        .overlay(alignment: .topTrailing) {
-                            Button { pendingDelete = set } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundStyle(Theme.textSecondary)
-                                    .frame(width: 36, height: 36)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(isDeleting)
-                            .accessibilityLabel("Delete \(set.title)")
-                            .padding(.top, 10)
-                            .padding(.trailing, 8)
-                        }
-                    }
-                }
-            }
+    @MainActor
+    private func search(_ text: String) async {
+        guard text.count >= 2 else {
+            if !results.isEmpty { results = [] }
+            if resultsFor != nil { resultsFor = nil }
+            if searchPhase != .idle { searchPhase = .idle }
+            return
+        }
+        // Back on the tab (a page was pushed and popped) with the answer for this very text
+        // on screen: read again without the spinner or the pause, and keep the answer if that
+        // read fails.
+        let quiet = searchPhase == .done && resultsFor == text
+        if !quiet {
+            if searchPhase != .searching { searchPhase = .searching }
+            // Wait for a pause in the typing; a newer keystroke cancels this one here.
+            do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+        }
+        do {
+            let found = try await session.student.searchVocabularyWords(text)
+            guard !Task.isCancelled, text == searchText else { return }
+            if results != found { results = found }
+            if resultsFor != text { resultsFor = text }
+            if searchPhase != .done { searchPhase = .done }
+        } catch {
+            guard !Task.isCancelled, text == searchText, !quiet else { return }
+            searchPhase = .failed
         }
     }
 
     // MARK: - Homework
 
     @ViewBuilder
-    private var homeworkTab: some View {
-        switch homeworkPhase {
-        case .loading where groups.isEmpty:
-            loadingSlot
-        case .failed:
-            VocabErrorNotice(title: "Couldn't load your homework") { await loadHomework() }
-        default:
-            if groups.isEmpty {
-                VocabEmptyState(
-                    icon: "graduationcap",
-                    title: "No vocabulary homework right now",
-                    message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the question bank."
-                )
+    private var homeworkList: some View {
+        if !homeworkKnown {
+            if homeworkPhase == .failed {
+                VocabErrorNotice(title: "Couldn't load your homework") { await loadHomework() }
             } else {
-                VStack(spacing: 18) {
-                    ForEach(groups) { VocabHomeworkGroupCard(group: $0) }
+                loadingSlot
+            }
+        } else if groups.isEmpty {
+            VocabEmptyState(
+                icon: "graduationcap",
+                title: "No vocabulary homework right now",
+                message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the word bank."
+            )
+        } else {
+            VStack(spacing: 18) {
+                ForEach(groups) { VocabHomeworkGroupCard(group: $0) }
+            }
+        }
+    }
+
+    // MARK: - Word bank
+
+    @ViewBuilder
+    private var bankList: some View {
+        if !sectionsKnown {
+            if sectionsPhase == .failed {
+                VocabErrorNotice(title: "Couldn't load the word bank") { await loadSections() }
+            } else {
+                loadingSlot
+            }
+        } else if sections.isEmpty {
+            VocabEmptyState(
+                icon: "books.vertical",
+                title: "No word lists published yet",
+                message: "Your teachers publish vocabulary sections here. In the meantime you can build a set of your own.",
+                actionTitle: "Build my own set",
+                action: { isBuilding = true }
+            )
+        } else {
+            VStack(spacing: 14) {
+                ForEach(sections) { section in
+                    NavigationLink(value: Route.section(id: section.id, title: section.title)) {
+                        VocabSectionCard(section: section)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: - My sets
+
+    @ViewBuilder
+    private var mineList: some View {
+        if !mySetsKnown {
+            if mySetsPhase == .failed {
+                VocabErrorNotice(title: "Couldn't load your sets") { await loadMySets() }
+            } else {
+                loadingSlot
+            }
+        } else if mySets.isEmpty {
+            VocabEmptyState(
+                icon: "sparkles",
+                title: "Make a set of the words you keep missing",
+                message: "Pull any words from the word bank into a set of your own, then study it with all four games.",
+                actionTitle: "New set",
+                action: { isBuilding = true }
+            )
+        } else {
+            VStack(spacing: 14) {
+                HStack {
+                    Text("Sets you built")
+                        .font(.system(size: 15, weight: .heavy))
+                    Spacer()
+                    Button { isBuilding = true } label: {
+                        Label("New set", systemImage: "plus")
+                            .font(.system(size: 13, weight: .heavy))
+                            .padding(.vertical, 8)
+                            .padding(.leading, 12)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressBounce())
+                    .foregroundStyle(Theme.accent)
+                }
+                ForEach(mySets) { set in
+                    NavigationLink(value: Route.set(id: set.id, title: set.title)) {
+                        VocabSetCard(
+                            title: set.title,
+                            wordCount: set.wordCount,
+                            completed: set.completed,
+                            mastery: set.mastery,
+                            subtitle: createdLabel(set.createdAt),
+                            reservesTrailingControl: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    // Laid over the link, not inside it: a button inside a link's label
+                    // competes with the link for the same tap.
+                    .overlay(alignment: .topTrailing) {
+                        Button { pendingDelete = set } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                                .frame(width: 36, height: 36)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isDeleting)
+                        .accessibilityLabel("Delete \(set.title)")
+                        .padding(.top, 10)
+                        .padding(.trailing, 8)
+                    }
                 }
             }
         }
@@ -269,48 +428,57 @@ struct VocabularyView: View {
 
     @MainActor
     private func load() async {
-        let student = session.student
-        if sections.isEmpty { sectionsPhase = .loading }
-        if mySets.isEmpty { mySetsPhase = .loading }
-        if groups.isEmpty { homeworkPhase = .loading }
-        async let bank = student.vocabularySections()
-        async let mine = student.myVocabularySets()
-        async let assigned = student.vocabularyHomework()
-        do { sections = try await bank; sectionsPhase = .loaded } catch { sectionsPhase = .failed }
-        do { mySets = try await mine; mySetsPhase = .loaded } catch { mySetsPhase = .failed }
-        do { groups = try await assigned; homeworkPhase = .loaded } catch { homeworkPhase = .failed }
+        async let bank: Void = loadSections()
+        async let mine: Void = loadMySets()
+        async let assigned: Void = loadHomework()
+        _ = await (bank, mine, assigned)
     }
 
     @MainActor
     private func loadSections() async {
-        sectionsPhase = .loading
+        if !sectionsKnown, sectionsPhase != .loading { sectionsPhase = .loading }
         do {
-            sections = try await session.student.vocabularySections()
-            sectionsPhase = .loaded
+            let fresh = try await session.student.vocabularySections()
+            if sections != fresh { sections = fresh }
+            if !sectionsKnown { sectionsKnown = true }
+            if sectionsPhase != .loaded { sectionsPhase = .loaded }
         } catch {
-            sectionsPhase = .failed
+            // A cancelled read is not a failed one; a failed reload keeps the last good bank.
+            guard !Task.isCancelled else { return }
+            if sectionsPhase != .failed { sectionsPhase = .failed }
         }
     }
 
     @MainActor
     private func loadMySets() async {
-        mySetsPhase = .loading
+        if !mySetsKnown, mySetsPhase != .loading { mySetsPhase = .loading }
         do {
-            mySets = try await session.student.myVocabularySets()
-            mySetsPhase = .loaded
+            let fresh = try await session.student.myVocabularySets()
+            if mySets != fresh { mySets = fresh }
+            if !mySetsKnown { mySetsKnown = true }
+            if mySetsPhase != .loaded { mySetsPhase = .loaded }
         } catch {
-            mySetsPhase = .failed
+            guard !Task.isCancelled else { return }
+            if mySetsPhase != .failed { mySetsPhase = .failed }
         }
     }
 
     @MainActor
     private func loadHomework() async {
-        homeworkPhase = .loading
+        if !homeworkKnown, homeworkPhase != .loading { homeworkPhase = .loading }
         do {
-            groups = try await session.student.vocabularyHomework()
-            homeworkPhase = .loaded
+            let fresh = try await session.student.vocabularyHomework()
+            if groups != fresh { groups = fresh }
+            if !homeworkKnown { homeworkKnown = true }
+            if homeworkPhase != .loaded { homeworkPhase = .loaded }
+            if !segmentPicked {
+                segmentPicked = true
+                let opening: Segment = fresh.isEmpty ? .bank : .homework
+                if segment != opening { segment = opening }
+            }
         } catch {
-            homeworkPhase = .failed
+            guard !Task.isCancelled else { return }
+            if homeworkPhase != .failed { homeworkPhase = .failed }
         }
     }
 
@@ -323,8 +491,10 @@ struct VocabularyView: View {
             try await session.student.deleteVocabularySet(id: set.id)
             mySets.removeAll { $0.id == set.id }
         } catch let error as APIError {
+            guard !Task.isCancelled else { return }
             deleteError = error.errorDescription
         } catch {
+            guard !Task.isCancelled else { return }
             deleteError = error.localizedDescription
         }
     }
@@ -347,7 +517,7 @@ struct VocabHomeworkGroupCard: View {
             HStack(alignment: .top, spacing: 12) {
                 IconTile(
                     systemName: "graduationcap.fill",
-                    tone: allDone ? Theme.success : Theme.accent,
+                    tone: allDone ? Theme.success : Theme.amber,
                     size: 40
                 )
                 VStack(alignment: .leading, spacing: 8) {
@@ -369,7 +539,7 @@ struct VocabHomeworkGroupCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                // "Done" is any game finished on the set; the tab badge counts mastery.
+                // "Done" is any game finished on the set; the segment's count is mastery.
                 if allDone {
                     Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.sets.count)) complete",
                          icon: "checkmark.circle.fill", tone: .success)
@@ -393,15 +563,14 @@ struct VocabHomeworkGroupCard: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .stroke(allDone ? Theme.success.opacity(0.4) : Theme.separator.opacity(0.5), lineWidth: allDone ? 1 : 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .cardStyle(padding: 16)
+        .overlay {
+            if allDone {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     private func classroomChip(_ name: String) -> some View {
