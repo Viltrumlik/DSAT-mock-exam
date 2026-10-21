@@ -69,7 +69,10 @@ final class CelebrationCenter {
     var reduceMotion = false {
         didSet {
             // Nothing may fly any more: give the header back what it was holding.
-            if reduceMotion, !oldValue, queue.held > 0 { queue.releaseHeld() }
+            if reduceMotion, !oldValue, queue.held > 0 {
+                queue.releaseHeld()
+                runWhenQuiet()
+            }
             // Nor may the flame grow: show the real streak now.
             if reduceMotion, !oldValue, streakHold != nil { streakHold = nil }
         }
@@ -100,6 +103,11 @@ final class CelebrationCenter {
     /// waits for the stage instead of being lost.
     @ObservationIgnored private var allDoneWaiting = false
     @ObservationIgnored private var rankWaiting: Rise?
+    /// The streak half of the "while you were away" line VoiceOver hears, kept until the XP half
+    /// is known (`resolveAway`): two announcements in a row cut each other off.
+    @ObservationIgnored private var streakSentence: String?
+    /// What waits for the stage to be quiet (`whenQuiet`) — one, the newest.
+    @ObservationIgnored private var quietAction: (@MainActor () -> Void)?
     /// Header flames on screen now — the streak rise plays only where one can be seen.
     @ObservationIgnored private var flamesShowing = 0
     @ObservationIgnored private var sheetUp = false
@@ -205,9 +213,38 @@ final class CelebrationCenter {
         }
     }
 
-    /// What a celebration says to VoiceOver, since it cannot be seen.
-    func announce(_ text: String) {
-        AccessibilityNotification.Announcement(text).post()
+    /// What a celebration says to VoiceOver, since it cannot be seen. `queued` waits its turn
+    /// behind speech already under way (low priority) instead of cutting it off — for a line that
+    /// follows another one.
+    func announce(_ text: String, queued: Bool = false) {
+        guard queued else {
+            AccessibilityNotification.Announcement(text).post()
+            return
+        }
+        var spoken = AttributedString(text)
+        spoken.accessibilitySpeechAnnouncementPriority = .low
+        AccessibilityNotification.Announcement(spoken).post()
+    }
+
+    // MARK: - A quiet stage
+
+    /// Runs `action` once the stage is quiet — no flight in the air, no gain still held for the
+    /// header, no trophy card waiting or up — straight away if it already is. The newest ask
+    /// replaces an older one that has not run. For work that would otherwise show the student a
+    /// number the header has not rolled to yet (the Rewards hub reading again after a return).
+    func whenQuiet(_ action: @escaping @MainActor () -> Void) {
+        quietAction = action
+        runWhenQuiet()
+    }
+
+    private var isQuiet: Bool {
+        flights.isEmpty && heldXP == 0 && rankWaiting == nil && rankUp == nil
+    }
+
+    private func runWhenQuiet() {
+        guard isQuiet, let action = quietAction else { return }
+        quietAction = nil
+        action()
     }
 
     // MARK: - While you were away
@@ -217,18 +254,24 @@ final class CelebrationCenter {
     /// `resolveAway` settles — every call to this MUST be followed by one, on every path (a
     /// failed read resolves with a nil `xpAfter`), or the pill stays held for good.
     func expectAway(xpSeen: Int?) -> Int {
-        queue.recordAway(xpSeen: xpSeen)
+        streakSentence = nil
+        return queue.recordAway(xpSeen: xpSeen)
     }
 
     /// The read came back — `xpAfter` is nil when it failed, and nothing flies. A gain flies
-    /// with `label` as its caption once a pill can catch it, and VoiceOver hears it either way.
+    /// with `label` as its caption once a pill can catch it, and VoiceOver hears it either way —
+    /// in one line with a longer streak (`streakRose`), which this check always resolves after.
     func resolveAway(_ id: Int, xpAfter: Int?, label: String?) {
         // Animated, as in `celebrate`: a failed read or a gain that cannot fly gives back the
         // rise this entry was holding, and the pill rolls to it rather than jumping.
         let gained = withAnimation(settleAnimation) {
             queue.resolve(id, xpAfter: xpAfter, allowsFlights: budget.allowsFlights, label: label)
         }
-        if gained > 0 { announce("\(gained) XP earned while you were away.") }
+        let streak = streakSentence
+        streakSentence = nil
+        let xp = gained > 0 ? "\(gained) XP earned while you were away." : nil
+        let line = [xp, streak].compactMap { $0 }.joined(separator: " ")
+        if !line.isEmpty { announce(line) }
         flyIfReady()
     }
 
@@ -236,7 +279,8 @@ final class CelebrationCenter {
     /// every flame keeps showing what was last seen, then rolls up and grows once one is on
     /// screen and nothing covers it. Under Reduce Motion the number simply changes.
     func streakRose(_ rise: Rise) {
-        announce(rise.to == 1 ? "1 lesson in a row — your streak grew." : "\(rise.to) lessons in a row — your streak grew.")
+        // Said by `resolveAway`, together with the XP the same return brought.
+        streakSentence = rise.to == 1 ? "Your streak grew to 1 lesson in a row." : "Your streak grew to \(rise.to) lessons in a row."
         guard !reduceMotion else { return }
         if streakHold != rise.from { streakHold = rise.from }
         playStreakIfReady()
@@ -265,11 +309,14 @@ final class CelebrationCenter {
     /// A rank-up not shown yet: the baseline keeps its old place until the card has been seen.
     var rankNotShown: Rise? { rankWaiting }
 
-    /// Puts the card away; a flight that waited behind it takes off now.
+    /// Puts the card away; a flight that waited behind it takes off now, and then a second
+    /// rank-up that waited behind the card (flights stay before cards).
     func dismissRankUp() {
         guard rankUp != nil else { return }
         rankUp = nil
         flyIfReady()
+        playRankUpIfReady()
+        runWhenQuiet()
     }
 
     private func playStreakIfReady() {
@@ -289,7 +336,8 @@ final class CelebrationCenter {
         guard let rise = rankWaiting, rankUp == nil, !covered, flights.isEmpty, !gainCanFly else { return }
         rankWaiting = nil
         rankUp = rise
-        announce("You moved up to number \(rise.to) overall.")
+        // After the XP line it follows, not over it.
+        announce("You moved up to number \(rise.to) overall.", queued: true)
     }
 
     // MARK: - What can be seen
@@ -342,6 +390,7 @@ final class CelebrationCenter {
         withAnimation(Motion.snappy) { queue.land(flight.id) }
         landing = XPLanding(count: (landing?.count ?? 0) + 1, owner: flight.owner)
         playRankUpIfReady()
+        runWhenQuiet()
     }
 
     private func stageCleared() {
@@ -397,6 +446,7 @@ final class CelebrationCenter {
         // Animated, as `landed` is: the pill rolls up rather than jumping.
         if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
         playRankUpIfReady()
+        runWhenQuiet()
     }
 }
 

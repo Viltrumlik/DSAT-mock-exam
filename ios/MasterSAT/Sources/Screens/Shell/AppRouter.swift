@@ -109,13 +109,15 @@ final class AppRouter {
         popToRoot(tab)
     }
 
-    /// `show`, and the tab's root reads again. A root that comes into view reloads itself as it
-    /// appears; one already on screen at its root has nothing appear, so it is asked (the trophy
-    /// card's "See the board" lands on a hero that must show the place the card just named).
+    /// `show`, and the tab's root reads again, from its top. A root that comes into view reloads
+    /// itself as it appears; one already on screen at its root has nothing appear, so it is asked
+    /// (the trophy card's "See the board" lands on a hero that must show the place the card just
+    /// named). Either way the hero is what the student is sent to, so the root scrolls back up.
     func showFresh(_ tab: AppTab) {
         let onScreen = selection == tab && isAtRoot(tab)
         show(tab)
         if onScreen { requestReload(tab) }
+        requestScrollToTop(tab)
     }
 
     /// The app came back to the front: a tab root on screen reads again, since nothing about the

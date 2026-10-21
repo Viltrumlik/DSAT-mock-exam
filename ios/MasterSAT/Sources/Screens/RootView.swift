@@ -111,7 +111,9 @@ private struct RewardsRefresher: View {
                 if new == .background { remember() }
             }
             .onChange(of: session.connectivity.isOnline) { old, new in
-                if new, !old { check() }
+                // Only at the front: coming back from the background runs the check itself, and
+                // a check made while the app is away would celebrate to no one.
+                if new, !old, scenePhase == .active { check() }
             }
             // The baseline never lags the header: a gain celebrated as a task's, or a flight that
             // has just landed, is written the moment the pill shows it, not at the next
@@ -120,12 +122,18 @@ private struct RewardsRefresher: View {
     }
 
     private func check() {
+        // Taken now: the task runs on after this view value has been rebuilt.
+        let router = router
+        let celebrations = celebrations
         Task {
-            await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations)
+            let outcome = await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations)
             // Coming back brings nothing into view, so a Rewards root left open (its hero, its
-            // ledger) reads again — after the check, so a streak or a place that rose is held
-            // first. Any other tab reloads as it is opened.
-            router.reloadIfShowing(.rewards)
+            // ledger) reads again — but only after the check actually read, and only once the
+            // stage is quiet: flight, flame and trophy card first, so the hub never shows a total
+            // or a place the header has not rolled to. A check that was skipped or failed read
+            // nothing new. Any other tab reloads as it is opened.
+            guard outcome == .read else { return }
+            celebrations.whenQuiet { router.reloadIfShowing(.rewards) }
         }
     }
 

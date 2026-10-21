@@ -9,8 +9,9 @@ import MasterSATKit
 ///
 /// Runs on launch and each time the app comes back to the front: iOS keeps a backgrounded app
 /// alive for hours, so a student coming back after a lesson rarely LAUNCHES it — the return is
-/// the moment. A quick app switch costs the one `/rewards/me/` read the header refresh already
-/// made there, and celebrates nothing unless something changed.
+/// the moment. A quick app switch costs one `/rewards/me/` read — the rules a caption needs are
+/// kept ten minutes, and the board is read only when XP rose or a place is still unread — and
+/// celebrates nothing unless something changed.
 ///
 /// The baseline is what the header SHOWS (XP still held for a flight is not seen yet). It is
 /// written after every check, whenever what the header shows changes (`RewardsRefresher`) and
@@ -20,6 +21,16 @@ import MasterSATKit
 /// every answer is checked against the session still being that student's before it is used.
 @MainActor
 final class AwayCheck {
+    /// What a check did, for the caller that shows the student the result.
+    enum Outcome: Equatable {
+        /// `/rewards/me/` was read and the header store took it.
+        case read
+        /// Another check was already running; this one did nothing.
+        case skipped
+        /// Nothing was read — a failed or cancelled read, or the session is no longer this student's.
+        case failed
+    }
+
     private let book: LastSeenBook
     private var running = false
     /// Whether the board read this process made for the place failed. Nil until it has made one
@@ -33,9 +44,10 @@ final class AwayCheck {
         self.book = book
     }
 
-    func run(userID: Int, session: Session, rewards: RewardsStore, celebrations: CelebrationCenter) async {
+    @discardableResult
+    func run(userID: Int, session: Session, rewards: RewardsStore, celebrations: CelebrationCenter) async -> Outcome {
         // Launch, the first scene-active and a reconnect can all ask: one check at a time.
-        guard !running else { return }
+        guard !running else { return .skipped }
         running = true
         defer { running = false }
 
@@ -53,7 +65,7 @@ final class AwayCheck {
             // nothing; neither is an answer that came back for another account), nothing flies,
             // and the baseline stays as it was.
             celebrations.resolveAway(away, xpAfter: nil, label: nil)
-            return
+            return .failed
         }
         // Before the store takes the new streak, so no flame shows it early.
         if let rise = WelcomeBack.streak(seen: seen, now: me.currentStreak) {
@@ -63,7 +75,7 @@ final class AwayCheck {
         let loadedRules = await rules
         guard isSignedIn(as: userID, in: session) else {
             celebrations.resolveAway(away, xpAfter: nil, label: nil)
-            return
+            return .failed
         }
         celebrations.resolveAway(
             away,
@@ -73,11 +85,15 @@ final class AwayCheck {
 
         // The owner's board for the hero: global, all time, XP — asked exactly as the hero asks
         // it (`LeaderboardQuery.heroBoard`), so a place read here and one read there are the same
-        // number: ranks 51–200 would otherwise be the table's rank in one and `my.rank` in the other.
+        // number. (On main the table and `my` number ties the same way — competition ranks.)
         var failed = false
         if WelcomeBack.readsRank(seen: seen, xpNow: me.xp) {
+            // Unread until the board answers: while it is in flight `remember` can run (the pill
+            // rolled, the app left the front), and a kill then must find the place still unread,
+            // not a baseline that has already moved on to the new one.
+            rankReadFailed = true
             let board = try? await LeaderboardAPI(client: session.client).board(.heroBoard)
-            guard isSignedIn(as: userID, in: session) else { return }
+            guard isSignedIn(as: userID, in: session) else { return .failed }
             if let board {
                 let now = board.standing?.rank
                 if let rise = WelcomeBack.rank(seen: seen?.rank, now: now) {
@@ -93,6 +109,7 @@ final class AwayCheck {
         }
         rankReadFailed = failed
         remember(userID: userID, rewards: rewards, celebrations: celebrations)
+        return .read
     }
 
     /// Writes the baseline as the header shows it now. Before anything has loaded the old one
