@@ -1,5 +1,35 @@
 import Foundation
 
+/// Hands a request's sent-body count to a closure, as URLSession reports it (on its own queue).
+///
+/// One instance serves a send and its single retry, so it remembers the most it has reported
+/// and says nothing until the count passes that — a retry restarting from byte zero must not
+/// make a ring run backwards, nor count the same bytes twice.
+// @unchecked: the closure is immutable and @Sendable; the high-water mark is only touched under `lock`.
+final class BodyProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let report: @Sendable (Int64) -> Void
+    private let lock = NSLock()
+    private var highest: Int64 = 0
+
+    init(_ report: @escaping @Sendable (Int64) -> Void) {
+        self.report = report
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        lock.lock()
+        let advanced = totalBytesSent > highest
+        if advanced { highest = totalBytesSent }
+        lock.unlock()
+        if advanced { report(totalBytesSent) }
+    }
+}
+
 /// The single door to the backend.
 ///
 /// An actor because the token pair is shared mutable state that many screens touch at once
@@ -70,6 +100,27 @@ public actor APIClient {
         try await sendForData(endpoint)
     }
 
+    /// Send and decode, telling `onBodySent` how many bytes of the request body have gone out —
+    /// for an upload a student watches. Called on URLSession's own queue, never the main actor.
+    /// Everything else is `send`'s: one refresh and one retry. The retry sends the body again
+    /// from its first byte, but the count reported never runs backwards: it holds at the most
+    /// it has reached until the second send passes that.
+    public func send<T: Decodable & Sendable>(
+        _ endpoint: Endpoint,
+        as type: T.Type = T.self,
+        onBodySent: @escaping @Sendable (Int64) -> Void
+    ) async throws -> T {
+        let data = try await sendForData(endpoint, progress: BodyProgress(onBodySent))
+        if T.self == Empty.self, let empty = Empty() as? T { return empty }
+        do {
+            return try JSONCoding.decoder.decode(T.self, from: data)
+        } catch {
+            let detail = String(describing: error)
+            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
+            throw APIError.decoding(context: endpoint.path, underlying: detail)
+        }
+    }
+
     /// Send and decode, throwing a coded refusal (`{"code": "full", "detail": "…"}`) as
     /// `APIRefusal` instead of folding it into an `APIError` that has nowhere to keep the code.
     ///
@@ -88,13 +139,18 @@ public actor APIClient {
         }
     }
 
-    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false, codedRefusals: Bool = false) async throws -> Data {
+    private func sendForData(
+        _ endpoint: Endpoint,
+        isRetry: Bool = false,
+        codedRefusals: Bool = false,
+        progress: BodyProgress? = nil
+    ) async throws -> Data {
         let request = try buildRequest(endpoint)
 
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: request, delegate: progress)
         } catch {
             throw APIError.transport(underlying: error.localizedDescription)
         }
@@ -110,7 +166,7 @@ public actor APIClient {
             // One refresh, one retry. `isRetry` is what makes that a hard ceiling: a token
             // the server rejects twice is not a token a third attempt will fix.
             _ = try await refreshTokens()
-            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals)
+            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals, progress: progress)
         }
 
         if codedRefusals, let refusal = APIRefusal(status: http.statusCode, body: data) {

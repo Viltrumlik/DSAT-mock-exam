@@ -206,7 +206,8 @@ public struct StudentAPI: Sendable {
         files: [MultipartForm.File] = [],
         removeFileIds: [Int] = [],
         expectedRevision: Int?,
-        markAsSubmitted: Bool = true
+        markAsSubmitted: Bool = true,
+        onFileProgress: (@Sendable ([Double]) -> Void)? = nil
     ) async throws -> Submission {
         var form = MultipartForm()
         for file in files { form.add(file: file) }
@@ -223,10 +224,13 @@ public struct StudentAPI: Sendable {
         if let expectedRevision { form.add("expected_revision", expectedRevision) }
         form.add("submit", markAsSubmitted ? "true" : "false")
 
-        return try await client.send(
-            .upload("/classes/\(classroomId)/assignments/\(assignmentId)/submit/", form: form),
-            as: Submission.self
-        )
+        let endpoint = Endpoint.upload("/classes/\(classroomId)/assignments/\(assignmentId)/submit/", form: form)
+        guard let onFileProgress else { return try await client.send(endpoint, as: Submission.self) }
+        // One request carries every file: how far each one has gone is where the body is.
+        let ranges = form.fileRanges()
+        return try await client.send(endpoint, as: Submission.self) { sent in
+            onFileProgress(UploadProgress.perFile(sent: sent, ranges: ranges))
+        }
     }
 
     nonisolated(unsafe) private static let day: DateFormatter = {
