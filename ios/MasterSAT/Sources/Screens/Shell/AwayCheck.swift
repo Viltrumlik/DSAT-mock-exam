@@ -71,10 +71,12 @@ final class AwayCheck {
             label: caption(me.history, seen: seen, xpNow: rewards.xp, rules: loadedRules)
         )
 
-        // The owner's board for the hero: global, all time, XP — the server's default.
+        // The owner's board for the hero: global, all time, XP — asked exactly as the hero asks
+        // it (`LeaderboardQuery.heroBoard`), so a place read here and one read there are the same
+        // number: ranks 51–200 would otherwise be the table's rank in one and `my.rank` in the other.
         var failed = false
         if WelcomeBack.readsRank(seen: seen, xpNow: me.xp) {
-            let board = try? await LeaderboardAPI(client: session.client).board(LeaderboardQuery())
+            let board = try? await LeaderboardAPI(client: session.client).board(.heroBoard)
             guard isSignedIn(as: userID, in: session) else { return }
             if let board {
                 let now = board.standing?.rank

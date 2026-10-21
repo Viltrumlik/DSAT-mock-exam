@@ -39,15 +39,21 @@ final class RewardsStore {
     /// Takes the numbers from a `/rewards/me/` answer, so the Rewards hub and the header never
     /// show two totals. Animated, so the numbers roll; guarded, because every write to an
     /// `@Observable` property notifies, equal or not.
-    func apply(_ me: MyRewards, ticket: UInt64) {
-        guard order.accept(ticket) else { return }
+    ///
+    /// Returns whether the answer was TAKEN: false means a newer request already landed, and this
+    /// one is stale. A screen that keeps its own copy of the answer (the Rewards cards) must keep
+    /// it only when this says yes, or it shows what the header has already moved past.
+    @discardableResult
+    func apply(_ me: MyRewards, ticket: UInt64) -> Bool {
+        guard order.accept(ticket) else { return false }
         if let newest = me.history.map(\.id).max(), newest != newestAwardID { newestAwardID = newest }
-        guard xp != me.xp || streak != me.currentStreak || coins != me.coins else { return }
+        guard xp != me.xp || streak != me.currentStreak || coins != me.coins else { return true }
         withAnimation(Motion.snappy) {
             if xp != me.xp { xp = me.xp }
             if streak != me.currentStreak { streak = me.currentStreak }
             if coins != me.coins { coins = me.coins }
         }
+        return true
     }
 
     /// The default board's standing was read. A student with no XP has none; the last known

@@ -45,11 +45,6 @@ struct RewardsHubView: View {
     /// Each return to the tab: a new trophy (`RankHeroContent.plays`).
     @State private var trophyPlays = 0
 
-    /// What the hero asks: the default board — global, all time, XP — at the server's largest
-    /// page, so "N XP to pass <name>" reaches the row above a student who is deep in the board
-    /// (Ruling P3-R3). The full leaderboard page keeps the default page.
-    private static let heroQuery = LeaderboardQuery(limit: 200)
-
     /// What the board section asks. The strike board is a run and always all time, so a window
     /// chosen for XP is not part of that question (and switching it asks nothing new).
     private var sectionQuery: LeaderboardQuery {
@@ -186,7 +181,7 @@ struct RewardsHubView: View {
 
     @MainActor
     private func load() async {
-        async let me: Void = loadMe()
+        async let me: MyRewards? = loadMe()
         async let board: Void = loadHero()
         async let earning: Void = loadRules()
         async let section: Void = loadSection()
@@ -201,27 +196,42 @@ struct RewardsHubView: View {
         withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = fresh }
     }
 
+    /// Reads `/rewards/me/` and returns the answer the cards now show — nil when the read failed
+    /// or was cancelled (the cards keep what they had).
+    ///
+    /// The cards take an answer only when the header's store does (`apply` says so): requests are
+    /// ordered by ticket, and an older answer landing after a newer one — a slow read from the tab
+    /// appearing against the conversion's read-back — would put back coins the header has moved
+    /// past, and revive a Convert button for points already spent. A refused answer means a newer
+    /// one went elsewhere (the header's own check), which this tab never saw: it asks once more,
+    /// so the cards neither trail the header nor stay empty.
     @MainActor
-    private func loadMe() async {
+    @discardableResult
+    private func loadMe(again: Bool = true) async -> MyRewards? {
         // Taken before asking, so an answer older than the header's own refresh cannot wind it back.
         let ticket = rewards.ticket()
         do {
             let me = try await session.rewards.me()
-            setMine(me)
             if meFailed { meFailed = false }
             // The header reads the same answer, so the two never disagree.
-            rewards.apply(me, ticket: ticket)
+            if rewards.apply(me, ticket: ticket) {
+                setMine(me)
+                return me
+            }
+            if again, !Task.isCancelled { return await loadMe(again: false) }
+            return nil
         } catch {
             // A cancelled read is not a failed one; and a failed one keeps the last good numbers.
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else { return nil }
             meFailed = true
+            return nil
         }
     }
 
     @MainActor
     private func loadHero() async {
         do {
-            let board = try await LeaderboardAPI(client: session.client).board(Self.heroQuery)
+            let board = try await LeaderboardAPI(client: session.client).board(.heroBoard)
             if hero != board {
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { hero = board }
             }
@@ -266,38 +276,59 @@ struct RewardsHubView: View {
     // MARK: - Converting
 
     /// Spends Max — every point that buys a whole coin. Not idempotent (a second call is a second
-    /// conversion), so it runs once per confirmation, with the button off while it is in flight,
-    /// and is never retried. Either way the truth is read back.
+    /// conversion), so it runs once per confirmation, with the button off from the press until
+    /// the read-back has settled, and is never retried.
+    ///
+    /// The read-back is the truth either way — and the button stays off through it, because an
+    /// answer that was dropped on the way back may still have been a conversion that landed.
+    /// When it shows the coins rose after an error, the note says it worked (and the coin
+    /// bursts, once), rather than leaving "That didn't go through" over a card that went up.
     ///
     /// A coin bursts only when a coin was minted, and only where the stage is clear: under a
-    /// sheet or a cover `coinBurst` does nothing, so the card says what happened itself — in
-    /// words, to VoiceOver, and with the success haptic the burst would have given.
+    /// sheet or a cover `coinBurst` does nothing, so the card gives the success haptic itself —
+    /// and always the words and the VoiceOver announcement, which the burst never carries.
     @MainActor
     private func convert() async {
         guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
         converting = true
         convertNote = nil
+        var answered = false
         do {
             let result = try await session.rewards.convert(points: nil)
+            answered = true
             let after = before.applying(result.balances)
             setMine(after)
-            if result.minted > 0 {
-                let bursts = celebrations.coinCount
-                celebrations.coinBurst(at: coinsSpot.rect.celebrationPoint)
-                if celebrations.coinCount == bursts { convertBuzz += 1 }
-            }
+            if result.minted > 0 { celebrateMint() }
             convertNote = result.detail.isEmpty
                 ? (result.minted > 0
                     ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
                     : "Not enough points yet — \(RewardsFormat.count(after.pointsToNextCoin, "point")) to your next coin.")
                 : result.detail
         } catch {
-            // The press may still have landed (a dropped answer); the read-back below shows
-            // which, and the button is gone if it did.
-            convertNote = "That didn't go through. Check your coins, then try again."
+            // Said only after the read-back below: it decides which note is true.
+        }
+        let fresh = await loadMe()
+        if !answered {
+            if let fresh, fresh.coins > before.coins {
+                // The answer was lost but the conversion was not.
+                celebrateMint()
+                convertNote = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
+            } else if fresh != nil {
+                convertNote = "That didn't go through — your coins are as they were. Try again."
+            } else {
+                convertNote = "We couldn't confirm that went through. Pull down to check your coins."
+            }
         }
         converting = false
         if let convertNote { AccessibilityNotification.Announcement(convertNote).post() }
-        await loadMe()
+    }
+
+    /// A coin bursts where the card is; when the burst is skipped (a sheet or a cover is up) the
+    /// success haptic it would have given is given here instead — never both.
+    @MainActor
+    private func celebrateMint() {
+        let bursts = celebrations.coinCount
+        celebrations.coinBurst(at: coinsSpot.rect.celebrationPoint)
+        if celebrations.coinCount == bursts { convertBuzz += 1 }
     }
 }

@@ -3,6 +3,15 @@ import MasterSATKit
 
 // MARK: - The trophy hero
 
+extension LeaderboardQuery {
+    /// The one question the app asks to learn the student's place: the default board — global, all
+    /// time, XP — at the server's largest page, so "N XP to pass <name>" reaches the row above a
+    /// student who is deep in the board (Ruling P3-R3). The Rewards hero and the welcome-back check
+    /// both ask exactly this, so a place noted by either is the same number. The full leaderboard
+    /// page keeps the default page.
+    static let heroBoard = LeaderboardQuery(limit: 200)
+}
+
 /// The student's place on the whole learning center's board, all time — the owner's choice for
 /// this card (2026-10-21) — and the one student to pass next. Drawn inside a link to the full
 /// board, on look B: the one card on the tab that is all about the student.
@@ -30,12 +39,14 @@ struct RankHeroContent: View {
             VStack(alignment: .leading, spacing: 4) {
                 switch state {
                 case .loading:
-                    Text(verbatim: "#00")
-                        .font(.system(size: 40, weight: .black, design: .rounded))
-                        .redacted(reason: .placeholder)
-                    Text("overall · all time")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(Theme.textSecondary)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(verbatim: "#00")
+                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .redacted(reason: .placeholder)
+                        Text("overall · all time")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
                 case .unranked:
                     Text("Not on the board yet")
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
@@ -44,11 +55,15 @@ struct RankHeroContent: View {
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 case .ranked(let rank, let pass):
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    // The caption sits UNDER the place: beside a 40-pt "#1204" it would not fit the
+                    // ~190-pt column a 375-pt phone leaves next to the trophy, and wrap.
+                    VStack(alignment: .leading, spacing: 0) {
                         // A place is an identifier: never "#1,204".
                         Text(verbatim: "#\(rank)")
                             .font(.system(size: 40, weight: .black, design: .rounded))
                             .contentTransition(.numericText(value: Double(rank)))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
                         Text("overall · all time")
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Theme.textSecondary)
@@ -143,15 +158,20 @@ struct CoinsCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                RewardsCoinArt(kind: .coin, size: 30)
-                Text(ScoreText.string(rewards?.coins))
-                    .font(.system(size: 28, weight: .black, design: .rounded))
-                    .contentTransition(.numericText(value: Double(rewards?.coins ?? 0)))
+            // The number and what it counts are one thing to VoiceOver: "3 coins to spend".
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    RewardsCoinArt(kind: .coin, size: 30)
+                    Text(ScoreText.string(rewards?.coins))
+                        .font(.system(size: 28, weight: .black, design: .rounded))
+                        .contentTransition(.numericText(value: Double(rewards?.coins ?? 0)))
+                }
+                Text(rewards?.coins == 1 ? "coin to spend" : "coins to spend")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textSecondary)
             }
-            Text(rewards?.coins == 1 ? "coin to spend" : "coins to spend")
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Theme.textSecondary)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(spokenCoins)
             Spacer(minLength: 0)
             if let rewards {
                 if rewards.convertibleCoins > 0 {
@@ -169,6 +189,11 @@ struct CoinsCard: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(Theme.accent))
+                        // Drawn ~27 pt, tappable 44: the extra reach is handed back to layout, so
+                        // the card does not grow (hit testing is not clipped to the layout frame).
+                        .padding(.vertical, 9)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -9)
                     }
                     .buttonStyle(PressBounce())
                     .disabled(converting)
@@ -191,6 +216,11 @@ struct CoinsCard: View {
         .chunky(Theme.accent)
         // Contain, not combine: the Convert button must stay its own VoiceOver target.
         .accessibilityElement(children: .contain)
+    }
+
+    private var spokenCoins: String {
+        guard let rewards else { return "Coins to spend: not loaded" }
+        return "\(RewardsFormat.count(rewards.coins, "coin")) to spend"
     }
 }
 
@@ -326,10 +356,15 @@ struct RewardsBoardRow: View {
     let metric: LeaderboardMetric
     let mine: Bool
 
+    /// A strike row the server sent without its run is not a run of zero: it shows a dash.
     private var value: String {
         guard metric == .strikes else { return "\(ScoreText.string(row.xp)) XP" }
-        let run = row.strikes ?? 0
+        guard let run = row.strikes else { return "—" }
         return "\(run) in a row"
+    }
+
+    private var spokenValue: String {
+        metric == .strikes && row.strikes == nil ? "run not available" : value
     }
 
     var body: some View {
@@ -350,7 +385,7 @@ struct RewardsBoardRow: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Rank \(row.rank), \(row.displayName)\(mine ? ", you" : ""), \(value)")
+        .accessibilityLabel("Rank \(row.rank), \(row.displayName)\(mine ? ", you" : ""), \(spokenValue)")
 
         if mine {
             line.frame(maxWidth: .infinity).chunky(Theme.accent, radius: 16)
