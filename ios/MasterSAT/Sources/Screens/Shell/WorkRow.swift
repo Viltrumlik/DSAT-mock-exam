@@ -22,7 +22,12 @@ struct WorkRow: View {
     private var when: (text: String, late: Bool)? {
         switch item.source {
         case .homework:
-            return DueLabel.text(item.dueAt)
+            // Classwork is done in class and never owed: whatever date it carries is not a
+            // deadline, so it is never "Due" or "Catch up" (the detail page says "In class" too).
+            if item.isClasswork { return ("In class", false) }
+            // `catchUp` is the kit's call, not the label's: a homework that is not behind has a
+            // date and nothing else to say, so `DueLabel` is told not to decide "late" itself.
+            return DueLabel.text(item.dueAt, handedIn: !item.catchUp)
         case .lesson:
             let time = item.clockText.map { "Today · \($0)" } ?? "Today"
             return (item.look == .exam ? "\(time) · sat on a computer" : time, false)
