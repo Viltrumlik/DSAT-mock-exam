@@ -28,6 +28,23 @@ struct AssessmentRunnerView: View {
     @State private var eliminated: [Int: Set<String>] = [:]
     /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
     @AppStorage("assessmentZoom") private var zoom: Double = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Which way the last question change went — the arriving question comes in from that side.
+    @State private var turn: FocusTurn = .forward
+    /// One tick per choice picked, option crossed out or question flagged: the selection haptic.
+    /// Every pick ticks alike — the runner never says whether an answer is right.
+    @State private var picks = 0
+    /// Bumped only when a question is flagged (not when the flag comes off): the flag's bounce.
+    @State private var flagBounces = 0
+    /// "Saved" is showing, for a moment after the server confirmed an answer.
+    @State private var showSaved = false
+    @State private var savedFade: Task<Void, Never>?
+    /// The typed answer's field. Dropped as the question turns: the field belongs to the
+    /// question that left, and must not carry its keyboard into the next one.
+    @FocusState private var answerFocused: Bool
+
+    /// The top of the scrolled page — a new question opens here.
+    private static let top = "runner.top"
 
     /// Desmos is offered on Middle and Senior maths sets only — the web runner's rule, read
     /// from the set's raw subject and level. A Junior or Foundation set is meant to be worked
@@ -61,6 +78,9 @@ struct AssessmentRunnerView: View {
             }
         }
         .background(Theme.background)
+        // The hand-in screen fades in rather than cutting.
+        .animation(Motion.focus, value: didSubmit)
+        .sensoryFeedback(.selection, trigger: picks)
         .task {
             if runner == nil {
                 let created = AssessmentRunner(attemptId: attemptId, api: session.assessments)
@@ -100,27 +120,41 @@ struct AssessmentRunnerView: View {
             toolbar(runner)
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    setHeader(runner)
-                    questionCard(runner, question)
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        setHeader(runner)
+                            .id(Self.top)
+                        // A ZStack, so the question leaving and the one arriving overlap for
+                        // their 200 ms instead of stacking and pushing the page down.
+                        ZStack {
+                            questionCard(runner, question)
+                                .id(question.id)
+                                .transition(.focusTurn(turn, reduceMotion: reduceMotion))
+                        }
 
-                    if !runner.unsaved.isEmpty {
-                        // Say it rather than showing a silent tick. A student who loses
-                        // signal mid-quiz deserves to know what has not landed.
-                        Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.warning)
+                        if !runner.unsaved.isEmpty {
+                            // Say it rather than showing a silent tick. A student who loses
+                            // signal mid-quiz deserves to know what has not landed.
+                            Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.warning)
+                        }
                     }
+                    .padding(14)
                 }
-                .padding(14)
+                .onChange(of: runner.currentIndex) { _, _ in
+                    // A new question opens at its top, not where the last one was left.
+                    scroller.scrollTo(Self.top, anchor: .top)
+                }
             }
 
             footer(runner)
         }
+        .onChange(of: runner.savedCount) { _, _ in flashSaved() }
         .sheet(isPresented: $showMap) {
             QuestionMapSheet(runner: runner) { index in
-                runner.go(to: index)
+                move(to: index, runner)
                 showMap = false
             }
             .presentationDetents([.medium, .large])
@@ -211,9 +245,23 @@ struct AssessmentRunnerView: View {
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
-            Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
-                .font(.system(size: 14, weight: .bold).monospacedDigit())
-                .foregroundStyle(Theme.textSecondary)
+            VStack(alignment: .trailing, spacing: 3) {
+                // The count is the progress: it rolls when it moves, and no bar restates it.
+                Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentTransition(reduceMotion ? .identity : .numericText(value: Double(runner.answeredCount)))
+                    .animation(Motion.focus, value: runner.answeredCount)
+                    .accessibilityLabel("\(runner.answeredCount) of \(runner.questions.count) answered")
+                // A quiet word once the server has an answer — never while a write is failing,
+                // when the warning under the question says what has not landed.
+                Label("Saved", systemImage: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textLabel)
+                    .opacity(showSaved && runner.unsaved.isEmpty ? 1 : 0)
+                    .animation(Motion.focus, value: showSaved)
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
@@ -284,13 +332,18 @@ struct AssessmentRunnerView: View {
     }
 
     private func flagButton(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
-        Button {
+        let isFlagged = runner.flagged.contains(question.id)
+        return Button {
             runner.toggleFlag(question.id)
+            picks += 1
+            if !isFlagged { flagBounces += 1 }
         } label: {
-            let isFlagged = runner.flagged.contains(question.id)
             HStack(spacing: 5) {
                 Image(systemName: isFlagged ? "flag.fill" : "flag")
                     .font(.system(size: 12, weight: .bold))
+                    // Chrome beside the question, never over it — the one spring the runner
+                    // allows. Not under Reduce Motion.
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : flagBounces)
                 Text(isFlagged ? "Flagged" : "Flag")
                     .font(.system(size: 12, weight: .bold))
             }
@@ -299,6 +352,7 @@ struct AssessmentRunnerView: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.background))
             .contentShape(Capsule())
+            .animation(Motion.focus, value: isFlagged)
         }
         .buttonStyle(.plain)
     }
@@ -320,8 +374,12 @@ struct AssessmentRunnerView: View {
                             // changes their mind to "no answer" must be able to say so.
                             let current = runner.answers[question.id]
                             runner.setAnswer(current == .string(choice.id) ? .null : .string(choice.id), for: question.id)
+                            picks += 1
                         },
-                        onEliminate: { toggleElimination(choice.id, on: question, runner: runner) }
+                        onEliminate: {
+                            toggleElimination(choice.id, on: question, runner: runner)
+                            picks += 1
+                        }
                     )
                 }
             }
@@ -331,6 +389,7 @@ struct AssessmentRunnerView: View {
                     let chosen = runner.answers[question.id] == .bool(value)
                     Button {
                         runner.setAnswer(.bool(value), for: question.id)
+                        picks += 1
                     } label: {
                         Text(value ? "True" : "False")
                             .font(.system(size: 16 * zoom, weight: .bold))
@@ -346,8 +405,9 @@ struct AssessmentRunnerView: View {
                             )
                             .foregroundStyle(chosen ? Theme.accent : Color.primary)
                             .contentShape(Rectangle())
+                            .animation(Motion.focus, value: chosen)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(FocusPress())
                 }
             }
         case .numeric, .shortText, .unknown:
@@ -372,6 +432,7 @@ struct AssessmentRunnerView: View {
             )
             .keyboardType(question.questionType == .numeric ? .numbersAndPunctuation : .default)
             .autocorrectionDisabled(question.questionType == .numeric)
+            .focused($answerFocused)
         }
     }
 
@@ -396,7 +457,7 @@ struct AssessmentRunnerView: View {
     private func footer(_ runner: AssessmentRunner) -> some View {
         HStack(spacing: 10) {
             Button {
-                runner.previous()
+                move(to: runner.currentIndex - 1, runner)
             } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .bold))
@@ -439,7 +500,7 @@ struct AssessmentRunnerView: View {
                 .disabled(runner.isSubmitting)
             } else {
                 Button {
-                    runner.next()
+                    move(to: runner.currentIndex + 1, runner)
                 } label: {
                     HStack(spacing: 6) {
                         Text("Next")
@@ -453,6 +514,28 @@ struct AssessmentRunnerView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Theme.card)
+    }
+
+    /// Another question: the arriving one comes in from the side it is on. The turn is set
+    /// before the change, in the same update, so the arriving view reads it.
+    @MainActor
+    private func move(to index: Int, _ runner: AssessmentRunner) {
+        guard index != runner.currentIndex, runner.questions.indices.contains(index) else { return }
+        turn = FocusTurn.from(runner.currentIndex, to: index)
+        answerFocused = false
+        withAnimation(Motion.focus) { runner.go(to: index) }
+    }
+
+    /// "Saved" for a moment after the server confirmed a write; another confirmation keeps it up.
+    @MainActor
+    private func flashSaved() {
+        showSaved = true
+        savedFade?.cancel()
+        savedFade = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            showSaved = false
+        }
     }
 
     @MainActor
@@ -474,6 +557,8 @@ struct QuestionMapSheet: View {
     let onJump: @MainActor (Int) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
+    /// The cells have arrived — they settle in row by row, within 250 ms.
+    @State private var shown = false
 
     var body: some View {
         NavigationStack {
@@ -487,13 +572,15 @@ struct QuestionMapSheet: View {
 
                             Button { onJump(index) } label: {
                                 ZStack(alignment: .topTrailing) {
+                                    // Answered is the runner's selection blue: green means
+                                    // "correct" on the review, and the runner never says so.
                                     Text(ScoreText.string(index + 1))
                                         .font(.system(size: 15, weight: .bold).monospacedDigit())
-                                        .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.success : Color.primary))
+                                        .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.accent : Color.primary))
                                         .frame(maxWidth: .infinity, minHeight: 48)
                                         .background(
                                             RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                                                .fill(isCurrent ? Theme.accent : (isAnswered ? Theme.successSoft : Theme.surface2))
+                                                .fill(isCurrent ? Theme.accent : (isAnswered ? Theme.accentSoft : Theme.surface2))
                                         )
                                         .overlay(
                                             RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
@@ -509,12 +596,15 @@ struct QuestionMapSheet: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .focusReveal(index / columns.count, shown: shown)
+                            .accessibilityLabel("Question \(index + 1), \(isAnswered ? "answered" : "blank")\(isFlagged ? ", flagged" : "")")
+                            .accessibilityAddTraits(isCurrent ? .isSelected : [])
                         }
                     }
 
                     HStack(spacing: 14) {
                         legend("Current", Theme.accent)
-                        legend("Answered", Theme.successSoft)
+                        legend("Answered", Theme.accentSoft)
                         legend("Blank", Theme.surface2)
                         HStack(spacing: 5) {
                             Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(Theme.flagged)
@@ -529,6 +619,7 @@ struct QuestionMapSheet: View {
             .navigationTitle("Question navigation")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .onAppear { shown = true }
     }
 
     private func legend(_ label: String, _ colour: Color) -> some View {
@@ -553,6 +644,8 @@ struct AssessmentChoiceRow: View {
     let onTap: @MainActor () -> Void
     var onEliminate: (@MainActor () -> Void)?
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     private var borderColour: Color {
         isSelected ? Theme.accent : Theme.separator.opacity(0.9)
     }
@@ -571,7 +664,9 @@ struct AssessmentChoiceRow: View {
                         .foregroundStyle(isSelected ? .white : Color.primary)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        RichText(text: choice.text, scale: scale, struckThrough: isEliminated)
+                        // Not struck through in the text: toggling that re-rendered a rich
+                        // option's web view. The line is drawn over the option instead (below).
+                        RichText(text: choice.text, scale: scale)
                         if let imageURL, !imageURL.isEmpty, let url = URL(string: imageURL) {
                             AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { EmptyView() }
                                 .frame(maxHeight: 220)
@@ -594,9 +689,13 @@ struct AssessmentChoiceRow: View {
                 // A button's label is only hit-testable where it DRAWS, so without this only
                 // the glyphs themselves respond to a tap.
                 .contentShape(Rectangle())
+                .overlay { crossOut }
+                .animation(Motion.focus, value: isSelected)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(FocusPress())
             .disabled(isEliminated)
+            // The line is drawn, not read: VoiceOver hears the state instead.
+            .accessibilityValue(isEliminated ? "Crossed out" : "")
 
             if let onEliminate {
                 Button(action: onEliminate) {
@@ -615,6 +714,23 @@ struct AssessmentChoiceRow: View {
             }
         }
         .opacity(isEliminated ? 0.55 : 1)
+        .animation(Motion.focus, value: isEliminated)
+    }
+
+    /// The line through a ruled-out option, drawn left to right — Bluebook's cross-out. Under
+    /// Reduce Motion it is not drawn, it simply appears.
+    private var crossOut: some View {
+        GeometryReader { box in
+            Path { line in
+                line.move(to: CGPoint(x: 12, y: box.size.height / 2))
+                line.addLine(to: CGPoint(x: max(12, box.size.width - 12), y: box.size.height / 2))
+            }
+            .trim(from: 0, to: isEliminated || reduceMotion ? 1 : 0)
+            .stroke(Theme.textSecondary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .opacity(isEliminated ? 1 : 0)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 }
 
