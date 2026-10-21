@@ -2,6 +2,7 @@ import SwiftUI
 import PhotosUI
 import AVKit
 import UniformTypeIdentifiers
+import os
 import MasterSATKit
 
 /// One homework — or one lesson's classwork: what was asked, what to do, and how to hand it in.
@@ -54,8 +55,19 @@ struct HomeworkDetailView: View {
     @State private var assessmentAttemptId: Int?
     @State private var reviewAttemptId: Int?
     @Environment(CelebrationCenter.self) private var celebrations
-    /// Where the Hand in button is, so the confetti leaves from it.
-    @State private var handInFrame: CGRect = .zero
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Where the Hand in button is, so the confetti leaves from it. Boxed: it is written on every
+    /// scroll frame and read only when the hand-in is celebrated.
+    @State private var handInSpot = FrameBox()
+    /// A small picture of each staged photo, by file token — made once, off the main thread.
+    @State private var thumbnails: [String: UIImage] = [:]
+    /// How far each staged file has gone up while the hand-in is sending.
+    @State private var meter = UploadMeter()
+    /// The files the hand-in on its way is carrying: only these rows show a ring (a file added
+    /// while it goes is not in that request, so it has no progress to show).
+    @State private var sendingTokens: Set<String> = []
+    /// The last hand-in failed and its files are still here: the button offers to try again.
+    @State private var sendFailed = false
     /// The header's XP when a quiz was opened — what its hand-in's gain is measured from.
     @State private var xpAtQuizStart: Int?
 
@@ -507,25 +519,19 @@ struct HomeworkDetailView: View {
                 }
             }
 
-            ForEach(Array(staged.enumerated()), id: \.element.token) { index, file in
-                HStack(spacing: 10) {
-                    Image(systemName: "doc.badge.plus").foregroundStyle(Theme.accent)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(file.filename).font(.system(size: 14, weight: .medium))
-                        Text(SubmissionLimits.megabytes(file.data.count))
-                            .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
-                    }
-                    Spacer()
-                    Button {
-                        staged.remove(at: index)
-                        actionError = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textLabel)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Remove \(file.filename)")
+            ForEach(staged, id: \.token) { file in
+                StagedFileRow(
+                    file: file,
+                    thumbnail: thumbnails[file.token],
+                    meter: meter,
+                    sending: sendingTokens.contains(file.token)
+                ) {
+                    withAnimation(Motion.focus) { staged.removeAll { $0.token == file.token } }
+                    thumbnails[file.token] = nil
+                    actionError = nil
+                    sendFailed = false
                 }
-                .cardStyle(padding: 13)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
             }
 
             HStack(spacing: 10) {
@@ -547,6 +553,9 @@ struct HomeworkDetailView: View {
                         Text("Sending…")
                     }
                     .frame(maxWidth: .infinity)
+                } else if sendFailed && !staged.isEmpty {
+                    // Error, not empty: the files are still here, and one tap sends them again.
+                    Label("Try again", systemImage: "arrow.clockwise").frame(maxWidth: .infinity)
                 } else {
                     Label(
                         submission?.hasBeenSubmitted == true ? "Send again" : "Hand in",
@@ -557,7 +566,7 @@ struct HomeworkDetailView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInFrame = $0 }
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInSpot.rect = $0 }
 
             if let actionError {
                 Text(actionError)
@@ -570,6 +579,8 @@ struct HomeworkDetailView: View {
                     .foregroundStyle(Theme.textSecondary)
             }
         }
+        // A light tap when a file is added — not when one is taken off or the hand-in clears them.
+        .sensoryFeedback(.impact(weight: .light), trigger: staged.count) { old, new in new > old }
     }
 
     // MARK: - Opening content
@@ -604,7 +615,20 @@ struct HomeworkDetailView: View {
             return
         }
         actionError = nil
-        staged.append(file)
+        sendFailed = false
+        withAnimation(Motion.focus) { staged.append(file) }
+        guard file.mimeType.hasPrefix("image/") else { return }
+        // Decoded and shrunk off the main thread: a camera photo is twelve megapixels. Until it is
+        // ready the row shows a photo glyph; the picture fades in over it.
+        let token = file.token
+        let data = file.data
+        Task {
+            let small = await Task.detached(priority: .userInitiated) {
+                await UIImage(data: data)?.byPreparingThumbnail(ofSize: CGSize(width: 176, height: 176))
+            }.value
+            guard let small, staged.contains(where: { $0.token == token }) else { return }
+            withAnimation(Motion.focus) { thumbnails[token] = small }
+        }
     }
 
     @MainActor
@@ -680,38 +704,65 @@ struct HomeworkDetailView: View {
         let xpBefore = celebrations.xpNow
         isUploading = true
         actionError = nil
+        sendFailed = false
+        meter.reset()
+        // One request carries every file; each row's ring shows its own file's share of it. The
+        // files are fixed here: one added while this goes is not in the request.
+        let files = staged
+        let tokens = files.map(\.token)
+        let carried = Set(tokens)
+        sendingTokens = carried
+        let progress = meter
+        // URLSession reports from its own thread, as often as it likes; the relay keeps the newest
+        // numbers and hands them to the main actor in one hop. A hand-in with nothing new to send
+        // (a remove-only or an unchanged one) has no ring, so nothing is listening for it.
+        let relay = UploadRelay { fractions in progress.report(fractions, tokens: tokens) }
+        let onFileProgress: (@Sendable ([Double]) -> Void)? = files.isEmpty ? nil : { @Sendable fractions in relay.report(fractions) }
         Task {
-            defer { isUploading = false }
+            defer {
+                relay.stop()
+                sendingTokens = []
+                isUploading = false
+            }
             do {
                 let updated = try await session.student.submitHomework(
                     classroomId: classroomId,
                     assignmentId: a.id,
-                    files: staged,
-                    expectedRevision: submission?.revision
+                    files: files,
+                    expectedRevision: submission?.revision,
+                    onFileProgress: onFileProgress
                 )
-                // Only clear the staged files once the server has them.
-                staged = []
-                submission = updated
-                // Effort, every time — "Send again" included.
-                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
+                // Confirmed: celebrated at once, before anything else is awaited, so the XP it is
+                // measured from is the one at hand-in. Only what the server has leaves the staged
+                // files, and the rows fade out as the submitted files come in.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+                withAnimation(Motion.focus) {
+                    staged.removeAll { carried.contains($0.token) }
+                    for token in tokens { thumbnails[token] = nil }
+                    submission = updated
+                }
+            } catch where error is CancellationError || Task.isCancelled {
+                // Stopped, not failed: nothing to say, and the files stay where they are.
             } catch APIError.validation(_, _, let fields) where fields["file_tokens"] != nil {
                 // "Token already used": an earlier attempt DID land — its response was lost on
                 // the way back. The files are already on the server, so re-read what it holds
                 // instead of telling the student the upload failed and inviting a duplicate.
-                // The hand-in is known now: read the XP total before the re-read below is awaited
-                // (a refresh that lands meanwhile would already hold the payout).
-                let xpAtHandIn = celebrations.xpNow
-                staged = []
+                // The work is in: celebrated now, before the re-read below is awaited (a refresh
+                // that lands meanwhile would already hold the payout), and only once.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+                withAnimation(Motion.focus) {
+                    staged.removeAll { carried.contains($0.token) }
+                    for token in tokens { thumbnails[token] = nil }
+                }
                 submission = (try? await session.student.mySubmission(
                     classroomId: classroomId,
                     assignmentId: a.id
                 )) ?? submission
-                // The earlier attempt did land: the work is in.
-                celebrations.celebrate(.homework, xpBefore: xpBefore, xpAtHandIn: xpAtHandIn, at: handInFrame.celebrationPoint)
             } catch APIError.conflict(let detail) {
                 // Changed somewhere else (another device, a teacher's return). Show what the
                 // server holds now; the staged files stay, ready to send against it.
                 actionError = detail.isEmpty ? "Submission was modified. Refresh and try again." : detail
+                sendFailed = true
                 submission = (try? await session.student.mySubmission(
                     classroomId: classroomId,
                     assignmentId: a.id
@@ -719,10 +770,13 @@ struct HomeworkDetailView: View {
             } catch APIError.http(413, _) {
                 // Refused by the proxy before the server saw it; the body is an HTML page.
                 actionError = "That upload is too big to send at once. Send fewer files at a time."
+                sendFailed = true
             } catch let error as APIError {
                 actionError = error.errorDescription
+                sendFailed = true
             } catch {
                 actionError = error.localizedDescription
+                sendFailed = true
             }
         }
     }
@@ -933,6 +987,195 @@ private struct AttachmentRow: View {
                 .foregroundStyle(Theme.accent)
         }
         .cardStyle(padding: 12)
+    }
+}
+
+/// How far each staged file has gone up, by file token — written as URLSession reports the
+/// request's body going out, read only by the rows, so the page around them does not re-render
+/// with every chunk.
+@MainActor
+@Observable
+final class UploadMeter {
+    private(set) var sent: [String: Double] = [:]
+
+    /// The upload's latest numbers, in the order of `tokens`. Only ever forward: a token refresh
+    /// sends the body again from zero, and a ring never runs backwards.
+    func report(_ fractions: [Double], tokens: [String]) {
+        var next = sent
+        var moved = false
+        for (token, fraction) in zip(tokens, fractions) where fraction > (next[token] ?? 0) {
+            next[token] = fraction
+            moved = true
+        }
+        // One write per report, so the rows are told once.
+        if moved { sent = next }
+    }
+
+    func reset() {
+        if !sent.isEmpty { sent = [:] }
+    }
+}
+
+/// Carries an upload's numbers from the thread URLSession reports on to the main actor.
+///
+/// URLSession reports in whatever steps it likes — once for a small, fast body, in ~1 MB steps
+/// when the network is slow — and never on the main thread. The relay keeps only the newest
+/// numbers and asks the main actor for one hop at a time, so a burst of reports is one update;
+/// `stop` drops whatever has not been delivered, so a late hop cannot paint a hand-in that has
+/// already finished (or failed and been started again).
+private final class UploadRelay: Sendable {
+    private struct Pending {
+        var latest: [Double]?
+        var stopped = false
+    }
+
+    private let pending = OSAllocatedUnfairLock(initialState: Pending())
+    private let deliver: @MainActor @Sendable ([Double]) -> Void
+
+    init(deliver: @escaping @MainActor @Sendable ([Double]) -> Void) {
+        self.deliver = deliver
+    }
+
+    /// From any thread.
+    func report(_ fractions: [Double]) {
+        let needsHop = pending.withLock { state -> Bool in
+            guard !state.stopped else { return false }
+            // A hop is already on its way when numbers are waiting: it will carry these instead.
+            let idle = state.latest == nil
+            state.latest = fractions
+            return idle
+        }
+        guard needsHop else { return }
+        Task { @MainActor [self] in
+            let next = pending.withLock { state -> [Double]? in
+                let latest = state.latest
+                state.latest = nil
+                return state.stopped ? nil : latest
+            }
+            if let next { deliver(next) }
+        }
+    }
+
+    func stop() {
+        pending.withLock { state in
+            state.stopped = true
+            state.latest = nil
+        }
+    }
+}
+
+/// One file waiting to be handed in: its thumbnail (a photo) or a glyph, its name and size, and a
+/// way to take it off — or, while the hand-in is going up, its own progress ring.
+struct StagedFileRow: View {
+    let file: MultipartForm.File
+    let thumbnail: UIImage?
+    let meter: UploadMeter
+    /// This file is in the request on its way: it shows a ring instead of the remove button.
+    let sending: Bool
+    let onRemove: @MainActor () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                preview
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(file.filename)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(SubmissionLimits.megabytes(file.data.count))
+                        .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                }
+                Spacer(minLength: 0)
+            }
+            // One thing to VoiceOver: the name, then the size — or, while it goes up, how far it has
+            // gone, in tens of percent, so a row in focus does not talk through every chunk.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(file.filename)
+            .accessibilityValue(
+                sending ? UploadRing.spoken(meter.sent[file.token] ?? 0) : SubmissionLimits.megabytes(file.data.count)
+            )
+
+            // The same 44 pt slot for both, so the row does not change size when the ring arrives.
+            ZStack {
+                if sending {
+                    UploadRing(fraction: meter.sent[file.token] ?? 0)
+                        .transition(.opacity)
+                } else {
+                    Button(action: onRemove) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(Theme.textLabel)
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(file.filename)")
+                    .transition(.opacity)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .animation(Motion.focus, value: sending)
+        }
+        .cardStyle(padding: 13)
+    }
+
+    /// The photo once its thumbnail is made (it fades in over the glyph), else a glyph.
+    private var preview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.accentSoft)
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+            } else {
+                Image(systemName: file.mimeType.hasPrefix("image/") ? "photo" : "doc.fill")
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+/// One file's real upload progress — its bytes sent over its size — then a tick once all of it
+/// has gone. The hand-in itself is confirmed by the server, not by the ticks.
+struct UploadRing: View {
+    let fraction: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var shown: Double { min(max(fraction, 0), 1) }
+    private var done: Bool { shown >= 1 }
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.surface2, lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: shown)
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if done {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.accent)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .frame(width: 26, height: 26)
+        // Each ring moves to the newest number it has been given — reports come in steps, and the
+        // ring crosses each one in a beat instead of jumping. The tick rides the same beat.
+        .animation(Motion.focus, value: shown)
+        // The row says it (`spoken`), once per ten percent.
+        .accessibilityHidden(true)
+    }
+
+    /// What VoiceOver says of a file going up: stepped in tens, so a row in focus does not
+    /// announce every chunk URLSession reports.
+    static func spoken(_ fraction: Double) -> String {
+        if fraction >= 1 { return "Sent" }
+        let tens = Int((max(fraction, 0) * 10).rounded(.down)) * 10
+        return "\(tens) percent sent"
     }
 }
 
