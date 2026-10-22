@@ -155,16 +155,34 @@ struct ModeStat: Identifiable {
     enum Tone { case neutral, success, danger }
 
     let label: String
-    let value: String
-    var tone: Tone = .neutral
-    /// A percentage that rolls up from 0 when the end screen appears; `value` is its text.
-    var percent: Int? = nil
+    var tone: Tone
+    /// A percentage that rolls up from 0 when the end screen appears. When there is one, `value`
+    /// is derived from it, so the figure that rolls and the text that is spoken cannot disagree.
+    let percent: Int?
+    private let text: String
+
+    /// What the stat reads: the percentage's own text when there is one, otherwise the text given.
+    var value: String { percent.map { "\(ScoreText.string($0))%" } ?? text }
 
     var id: String { label }
 
+    init(label: String, value: String, tone: Tone = .neutral) {
+        self.label = label
+        self.text = value
+        self.tone = tone
+        self.percent = nil
+    }
+
+    private init(label: String, percent: Int, tone: Tone) {
+        self.label = label
+        self.text = ""
+        self.tone = tone
+        self.percent = percent
+    }
+
     /// The round's accuracy — the number that rolls up.
     static func accuracy(_ percent: Int, tone: Tone = .neutral) -> ModeStat {
-        ModeStat(label: "Accuracy", value: "\(ScoreText.string(percent))%", tone: tone, percent: percent)
+        ModeStat(label: "Accuracy", percent: percent, tone: tone)
     }
 }
 

@@ -13,7 +13,7 @@ struct MatchingView: View {
 
     @State private var rounds: [[VocabWord]] = []
     @State private var roundIndex = 0
-    @State private var mistakes = 0
+    @State private var misses = 0
     /// Words touched by a wrong attempt anywhere in the run — they score as missed.
     @State private var missed: Set<Int> = []
     @State private var elapsed = 0
@@ -38,10 +38,10 @@ struct MatchingView: View {
             if roundIndex < rounds.count {
                 MatchingRound(
                     words: rounds[roundIndex],
-                    onMistake: { a, b in
+                    onMiss: { a, b in
                         missed.insert(a)
                         missed.insert(b)
-                        mistakes += 1
+                        misses += 1
                     },
                     onPairFound: { wordId in
                         // Graded the moment the pair is found — wrong-then-right still
@@ -88,7 +88,9 @@ struct MatchingView: View {
             description: "\(ScoreText.string(set.words.count)) word\(set.words.count == 1 ? "" : "s") across \(ScoreText.string(rounds.count)) round\(rounds.count == 1 ? "" : "s").",
             stats: [
                 ModeStat(label: "Total time", value: formatClock(elapsed)),
-                ModeStat(label: "Mistakes", value: ScoreText.string(mistakes), tone: mistakes == 0 ? .success : .danger),
+                // "Misses", and the same neutral tile whatever the count: a miss is how the pairs
+                // got found, not a danger. There is no accuracy beside it by the owner's call.
+                ModeStat(label: "Misses", value: ScoreText.string(misses)),
                 ModeStat(
                     label: "Clean first try",
                     value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
@@ -100,7 +102,7 @@ struct MatchingView: View {
 
 private struct MatchingRound: View {
     let words: [VocabWord]
-    let onMistake: @MainActor (Int, Int) -> Void
+    let onMiss: @MainActor (Int, Int) -> Void
     let onPairFound: @MainActor (Int) -> Void
     let onRoundDone: @MainActor () -> Void
 
@@ -192,7 +194,7 @@ private struct MatchingRound: View {
             return
         }
 
-        onMistake(first.wordId, card.wordId)
+        onMiss(first.wordId, card.wordId)
         misses[first.id, default: 0] += 1
         misses[card.id, default: 0] += 1
         missCount += 1

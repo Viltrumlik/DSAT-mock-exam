@@ -364,9 +364,10 @@ struct PillTabs<Tab: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Tab
-    /// How the selected pill slides: the playful spring by default, `Motion.focus` in a focus
-    /// zone. A fade under Reduce Motion either way.
-    var motion: Animation = Motion.snappy
+    /// A tab bar inside a focus zone (the review's filters): the selected pill slides in one
+    /// `Motion.focus` beat and a press dips like any answer there (`FocusPress`), where elsewhere
+    /// both are the playful springs. A fade under Reduce Motion either way.
+    var focusZone = false
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -376,7 +377,7 @@ struct PillTabs<Tab: Hashable>: View {
                 ForEach(items) { item in
                     let active = item.tab == selection
                     Button {
-                        withAnimation(reduceMotion ? Motion.focus : motion) { selection = item.tab }
+                        withAnimation(reduceMotion || focusZone ? Motion.focus : Motion.snappy) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: item.icon).font(.system(size: 12, weight: .bold))
@@ -413,7 +414,7 @@ struct PillTabs<Tab: Hashable>: View {
                         // between the glyph and the text would otherwise miss.
                         .contentShape(Capsule())
                     }
-                    .buttonStyle(PressBounce())
+                    .buttonStyle(PillPress(focusZone: focusZone))
                 }
             }
             // A couple of points of vertical room so the selected pill's shadow is not
@@ -424,6 +425,20 @@ struct PillTabs<Tab: Hashable>: View {
         // start off-screen. The row lines up with the cards under it instead.
         .scrollIndicators(.hidden)
         .sensoryFeedback(.selection, trigger: selection)
+    }
+}
+
+/// How a pill answers a press: the playful squash, or `FocusPress` inside a focus zone. Chosen
+/// by a flag that is fixed for the life of the bar, never by a setting that can change under it.
+private struct PillPress: ButtonStyle {
+    let focusZone: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if focusZone {
+            FocusPress().makeBody(configuration: configuration)
+        } else {
+            PressBounce().makeBody(configuration: configuration)
+        }
     }
 }
 

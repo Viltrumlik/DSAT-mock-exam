@@ -26,6 +26,11 @@ struct AssessmentReviewView: View {
         case skipped = "Skipped"
 
         var id: String { rawValue }
+
+        /// The chips, left to right — the one order the bar is drawn in and the card turns by. Spelt
+        /// out rather than read from the declaration order above, which is free to change for any
+        /// other reason without moving the chips.
+        static let chipOrder: [Filter] = [.all, .toImprove, .correct, .skipped]
     }
 
     @Environment(Session.self) private var session
@@ -64,13 +69,18 @@ struct AssessmentReviewView: View {
         return shown[min(index, shown.count - 1)]
     }
 
+    /// In `Filter.chipOrder`: the chips are built from it, so the order the student sees and the
+    /// order the card turns by cannot differ.
     private var tabs: [PillTabs<Filter>.Item] {
-        [
-            .init(tab: .all, title: "All", icon: "square.stack", count: questions.count),
-            .init(tab: .toImprove, title: "To improve", icon: "arrow.up.forward", count: matching(.toImprove).count),
-            .init(tab: .correct, title: "Correct", icon: "checkmark.circle", count: matching(.correct).count),
-            .init(tab: .skipped, title: "Skipped", icon: "circle.dashed", count: matching(.skipped).count),
-        ]
+        Filter.chipOrder.map { filter in
+            let count = matching(filter).count
+            switch filter {
+            case .all: return .init(tab: filter, title: "All", icon: "square.stack", count: count)
+            case .toImprove: return .init(tab: filter, title: "To improve", icon: "arrow.up.forward", count: count)
+            case .correct: return .init(tab: filter, title: "Correct", icon: "checkmark.circle", count: count)
+            case .skipped: return .init(tab: filter, title: "Skipped", icon: "circle.dashed", count: count)
+            }
+        }
     }
 
     var body: some View {
@@ -92,7 +102,7 @@ struct AssessmentReviewView: View {
                             teacherNote(feedback)
                         }
 
-                        PillTabs(items: tabs, selection: filterSelection, motion: Motion.focus)
+                        PillTabs(items: tabs, selection: filterSelection, focusZone: true)
 
                         if let current {
                             // A ZStack, so the card leaving and the one arriving overlap for their
@@ -220,7 +230,7 @@ struct AssessmentReviewView: View {
             get: { filter },
             set: { next in
                 guard next != filter else { return }
-                let order = Filter.allCases
+                let order = Filter.chipOrder
                 turn = FocusTurn.from(order.firstIndex(of: filter) ?? 0, to: order.firstIndex(of: next) ?? 0)
                 index = 0
                 filter = next
