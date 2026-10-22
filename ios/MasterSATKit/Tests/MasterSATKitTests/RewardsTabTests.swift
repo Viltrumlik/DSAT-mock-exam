@@ -111,6 +111,18 @@ import Testing
         #expect(pass?.text == "121 XP to pass Malika")
     }
 
+    @Test("A student above with no name to show is passed as the next student, never as \"Student\"")
+    func namelessAbove() {
+        let me = row(3, 3, 150, me: true)
+        for raw in ["", "   ", "@gmail.com"] {
+            let board = LeaderboardBoard(rows: [row(1, 1, 400), row(2, 2, 270, name: raw), me], my: me)
+            let pass = board.passTarget
+            #expect(pass == LeaderboardPass(name: nil, xp: 121, rank: 2))
+            #expect(pass?.text == "121 XP to pass the next student")
+        }
+        #expect(LeaderboardPass(name: "Malika", xp: 5, rank: 2).text == "5 XP to pass Malika")
+    }
+
     @Test("Nobody to pass at #1, without a standing, or on a board that is not XP")
     func nothingToPass() {
         let top = row(1, 1, 400, me: true)

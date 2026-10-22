@@ -41,4 +41,9 @@ public struct LatestOnly: Sendable, Equatable {
         accepted = ticket
         return true
     }
+
+    /// The stricter question, for an answer that is not shown the moment it lands (it may wait
+    /// for the celebrations to finish): only the newest request asked may be shown at all. An
+    /// older answer waiting in its place could otherwise be shown after the newer one.
+    public func isNewestAsked(_ ticket: UInt64) -> Bool { ticket == issued }
 }

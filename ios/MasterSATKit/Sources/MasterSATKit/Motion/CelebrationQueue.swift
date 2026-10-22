@@ -44,8 +44,14 @@ public struct CelebrationQueue: Sendable, Equatable {
     private(set) var entries: [Entry] = []
     private(set) var flying: [Flight] = []
     private var nextID = 1
-    /// The highest total a task has been measured against, so two tasks whose refreshes read
-    /// the same total do not both claim the same gain.
+    /// The total gains have been claimed up to, so two tasks whose refreshes read the same total
+    /// do not both claim the same gain. It follows the total DOWN as well as up: after a take-back
+    /// the XP above the total now is not there to be claimed, and a later rise through that band
+    /// is new XP — held at the old high-water mark it was under-counted (a real +15 read as +5).
+    ///
+    /// Only the header's own totals move it: a task's read (`resolve`) and the total a task is
+    /// handed in at (`record`) — never an away baseline (`recordAway`), which is what the pill
+    /// SHOWED, held XP taken off, and lowering to it would fly a held gain twice.
     private var measuredUpTo: Int?
 
     public init() {}
@@ -81,6 +87,10 @@ public struct CelebrationQueue: Sendable, Equatable {
 
     public var isEmpty: Bool { entries.isEmpty && flying.isEmpty }
 
+    /// An entry's read is still out: what it will bring is not known yet, so a place or a total
+    /// read now could be ahead of the header.
+    public var awaitsRead: Bool { entries.contains { $0.gain == nil } }
+
     /// A check and confetti still waiting for the stage.
     public var hasHiddenEffort: Bool { entries.contains { !$0.effortShown } }
 
@@ -92,7 +102,11 @@ public struct CelebrationQueue: Sendable, Equatable {
     /// A task was finished. Its check plays now only when the stage can be seen; otherwise
     /// `takeEfforts` hands it out later. The id MUST be resolved (see `held(xpNow:)`), so the
     /// result is not discardable.
+    ///
+    /// `xpBefore` is never below the header's total now (`XPDelta.baseline`), so one under the
+    /// claimed mark means the total fell since that mark was read: the mark comes down to it.
     public mutating func record(_ work: FinishedWork, xpBefore: Int?, stageVisible: Bool) -> (id: Int, playNow: Bool) {
+        if let xpBefore, let mark = measuredUpTo, xpBefore < mark { measuredUpTo = xpBefore }
         let id = nextID
         nextID += 1
         entries.append(Entry(id: id, work: work, xpBefore: xpBefore, effortShown: stageVisible, gain: nil, label: nil))
@@ -133,12 +147,16 @@ public struct CelebrationQueue: Sendable, Equatable {
     /// `label` captions the flight (a "while you were away" gain names what was earned). Returns
     /// the gain it measured — also under Reduce Motion, where nothing is held, so the app can
     /// still say it to VoiceOver.
+    ///
+    /// `xpAfter` is the header's total once the read is in — the newest the app holds (the store
+    /// takes answers in request order), so it becomes the claimed mark whichever way it moved: up
+    /// past what this entry claims, or down after a take-back.
     @discardableResult
     public mutating func resolve(_ id: Int, xpAfter: Int?, allowsFlights: Bool, label: String? = nil) -> Int {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { return 0 }
         let floor = entries[index].xpBefore.map { max($0, measuredUpTo ?? $0) }
         let gain = XPDelta.gain(before: floor, after: xpAfter)
-        if let xpAfter { measuredUpTo = max(measuredUpTo ?? xpAfter, xpAfter) }
+        if let xpAfter { measuredUpTo = xpAfter }
         entries[index].gain = allowsFlights ? gain : 0
         if let label { entries[index].label = label }
         dropSettled()

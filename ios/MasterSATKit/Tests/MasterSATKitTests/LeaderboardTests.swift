@@ -256,6 +256,12 @@ import Testing
         #expect(LeaderboardName.display("madina_2009") == "madina_2009")
         #expect(LeaderboardName.display("Ali @ Home") == "Ali @ Home")
         #expect(LeaderboardName.display("") == "Student")
+        // `shown` says when there is nothing to show, so a sentence can name nobody instead.
+        #expect(LeaderboardName.shown("") == nil)
+        #expect(LeaderboardName.shown("  ") == nil)
+        #expect(LeaderboardName.shown("@gmail.com") == nil)
+        #expect(LeaderboardName.shown("aziz.karimov@gmail.com") == "aziz.karimov")
+        #expect(LeaderboardName.shown(" Aziz Karimov ") == "Aziz Karimov")
 
         let row = LeaderboardRow(rank: 1, studentId: 1, name: "karim.aliyev@mail.ru", xp: 10)
         #expect(row.displayName == "karim.aliyev")
