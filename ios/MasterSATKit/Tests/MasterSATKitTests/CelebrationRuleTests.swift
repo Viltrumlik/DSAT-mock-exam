@@ -473,12 +473,12 @@ enum ListFixtures {
 
 @Suite struct HandInBaselineTests {
 
-    @Test("A task's gain is measured from the start, raised to what the header held at hand-in")
+    @Test("A task's gain is measured from what the header holds at hand-in, up or down — the store takes answers in request order, so a lower total is a take-back, not a stale read")
     func baseline() {
         #expect(XPDelta.baseline(atStart: 100, atHandIn: 130) == 130, "a rise in between is not the task's")
         #expect(XPDelta.baseline(atStart: 100, atHandIn: 100) == 100)
         #expect(XPDelta.baseline(atStart: 100, atHandIn: nil) == 100)
-        #expect(XPDelta.baseline(atStart: 100, atHandIn: 90) == 100, "a stale read never lowers it")
+        #expect(XPDelta.baseline(atStart: 100, atHandIn: 90) == 90, "a take-back read in between lowers it: from 100 the task's +15 would read as +5")
         #expect(XPDelta.baseline(atStart: nil, atHandIn: 130) == nil, "unknown at the start measures nothing")
     }
 }

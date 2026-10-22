@@ -213,6 +213,26 @@ import Testing
         #expect(flight?.amount == 15)
     }
 
+    @Test("A take-back read while the next task is open: it measures from the hand-in total, and the whole gain flies")
+    func takeBackWhileTaskOpen() {
+        var queue = CelebrationQueue()
+        let first = queue.record(.homework, xpBefore: 100, stageVisible: true)
+        queue.resolve(first.id, xpAfter: 130, allowsFlights: true)
+        let landed = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        if let landed { queue.land(landed.id) }
+        // The task is opened while the header reads 130; a take-back is read while it is open
+        // (the header now reads 120), and then it is handed in.
+        let xpBefore = XPDelta.baseline(atStart: 130, atHandIn: 120)
+        let task = queue.record(.homework, xpBefore: xpBefore, stageVisible: true)
+        #expect(queue.held(xpNow: 120) == 0)
+        #expect(queue.held(xpNow: 135) == 15, "the pill stays at 120 until the flight lands — no rise to 130 without one")
+        let gained = queue.resolve(task.id, xpAfter: 135, allowsFlights: true)
+        #expect(gained == 15)
+        #expect(queue.held == 15)
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 15)
+    }
+
     @Test("A take-back one task's read finds lowers the floor of a task still waiting on its own")
     func takeBackSeenByAnotherRead() {
         var queue = CelebrationQueue()

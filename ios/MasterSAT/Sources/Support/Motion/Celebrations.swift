@@ -166,10 +166,11 @@ final class CelebrationCenter {
     /// total read here is the hand-in's, and a refresh landing in between would already hold the
     /// payout and count it as not this work's.
     func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
-        // Measured from hand-in at the latest: a rise the header took since the work started (a
-        // return to the app, a reconnect) is not this work's, and holding it back now would drop
-        // the pill to the old total, un-animated (`XPDelta.baseline`). Read here, before the
-        // refresh below is awaited, so the payout that refresh brings is still this work's gain.
+        // Measured from hand-in: a rise the header took since the work started (a return to the
+        // app, a reconnect) is not this work's, and holding it back now would drop the pill to the
+        // old total, un-animated; a take-back read meanwhile is a real fall, and measuring past it
+        // would shrink this work's gain (`XPDelta.baseline`). Read here, before the refresh below
+        // is awaited, so the payout that refresh brings is still this work's gain.
         let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpNow)
         let entry = queue.record(work, xpBefore: baseline, stageVisible: !covered)
         if entry.playNow { playEffort(work, at: point) }
@@ -257,8 +258,9 @@ final class CelebrationCenter {
     /// header has not rolled to yet.
     ///
     /// Asked again whenever the stage can turn quiet: a flight lands or is settled, a task's or a
-    /// return's read resolves, a welcome-back check ends, the budget gives back what it held (no
-    /// flights allowed), Reduce Motion changes, the trophy card is put away.
+    /// return's read resolves, a welcome-back check ends, Reduce Motion changes (the only thing
+    /// that stops flights — Low Power halves confetti but never holds XP back), the trophy card
+    /// is put away.
     func whenQuiet(_ key: String, _ action: @escaping @MainActor () -> Void) {
         quietWaits.put(key, action)
         runWhenQuiet()
@@ -463,14 +465,9 @@ final class CelebrationCenter {
 
     private func flyIfReady() {
         // Not behind the card's dim: the flight waits for `dismissRankUp`.
-        guard rankUp == nil, queue.hasConfirmedGain, let pill = target else { return }
-        let allowsFlights = budget.allowsFlights
-        guard let flight = queue.takeFlight(stageVisible: !covered, pillVisible: true, allowsFlights: allowsFlights) else {
-            // With no flights allowed `takeFlight` has just given the header back everything it
-            // held — the budget's release — and nothing will land to say the stage is quiet.
-            if !allowsFlights { runWhenQuiet() }
-            return
-        }
+        guard rankUp == nil, queue.hasConfirmedGain, let pill = target,
+              let flight = queue.takeFlight(stageVisible: !covered, pillVisible: true, allowsFlights: budget.allowsFlights)
+        else { return }
         let airborne = XPFlight(
             id: flight.id,
             amount: flight.amount,

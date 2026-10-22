@@ -103,8 +103,8 @@ public struct CelebrationQueue: Sendable, Equatable {
     /// `takeEfforts` hands it out later. The id MUST be resolved (see `held(xpNow:)`), so the
     /// result is not discardable.
     ///
-    /// `xpBefore` is never below the header's total now (`XPDelta.baseline`), so one under the
-    /// claimed mark means the total fell since that mark was read: the mark comes down to it.
+    /// `xpBefore` is the header's total at hand-in (`XPDelta.baseline`), so one under the claimed
+    /// mark means the total fell since that mark was read: the mark comes down to it.
     public mutating func record(_ work: FinishedWork, xpBefore: Int?, stageVisible: Bool) -> (id: Int, playNow: Bool) {
         if let xpBefore, let mark = measuredUpTo, xpBefore < mark { measuredUpTo = xpBefore }
         let id = nextID
