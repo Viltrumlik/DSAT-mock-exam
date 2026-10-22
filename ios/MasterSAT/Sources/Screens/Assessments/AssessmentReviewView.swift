@@ -589,18 +589,20 @@ struct ReviewQuestionCard: View {
                     .stroke(outcome == .correct ? Theme.success : (question.wasAnswered ? Theme.danger : Theme.separator), lineWidth: 2)
             )
 
+            // An ink panel with its own text colour: dark with white text in light mode, light
+            // with dark text in dark mode — never white on white.
             VStack(alignment: .leading, spacing: 6) {
                 Text("CORRECT ANSWER")
                     .font(.system(size: 10, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Theme.onInk.opacity(0.7))
                 Text(question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onInk)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary)
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.ink)
             )
         }
     }
