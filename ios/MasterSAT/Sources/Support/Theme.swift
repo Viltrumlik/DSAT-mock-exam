@@ -64,6 +64,12 @@ enum Theme {
     /// `--text-label` — the small-caps overline colour.
     static let textLabel = Color(.tertiaryLabel)
 
+    /// The page's ink as a fill — black in light mode, white in dark — and the text
+    /// that sits on it. Always together: white text on `Color.primary` is white on white in dark
+    /// mode, where this pair turns the fill light and the text dark.
+    static let ink = Color(.label)
+    static let onInk = Color(.systemBackground)
+
     /// The exam/runner chrome is deliberately plain: nothing on a question screen should
     /// compete with the question.
     static let examBackground = Color(.systemBackground)
@@ -177,12 +183,15 @@ struct Chip: View {
 /// The web's primary button, at the size a thumb wants.
 struct PrimaryButtonStyle: ButtonStyle {
     var tone: Color = Theme.accent
+    /// The label's colour. White on every coloured tone; a tone that turns light in dark mode
+    /// brings its own (`Theme.ink` takes `Theme.onInk`).
+    var text: Color = .white
     var fullWidth = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(text)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .frame(maxWidth: fullWidth ? .infinity : nil)

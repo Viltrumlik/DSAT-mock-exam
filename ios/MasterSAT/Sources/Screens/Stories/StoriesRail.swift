@@ -49,6 +49,7 @@ struct StoriesRail: View {
         .task(id: refreshID) { await loadIfNeeded() }
         .fullScreenCover(item: $opened) { item in
             StoryViewer(stories: item.stories, startIndex: item.index)
+                .noBarClearance()
         }
     }
 

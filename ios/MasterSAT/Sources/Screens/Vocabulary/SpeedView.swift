@@ -21,6 +21,7 @@ struct SpeedView: View {
     @State private var clock: Task<Void, Never>?
     @State private var answered = 0
     @State private var correct = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isUrgent: Bool { secondsLeft <= 10 }
 
@@ -51,6 +52,8 @@ struct SpeedView: View {
         }
         .task { await begin() }
         .onDisappear { clock?.cancel() }
+        // One tick per answer, the same for every answer.
+        .sensoryFeedback(.selection, trigger: answered)
     }
 
     private var leadIn: some View {
@@ -63,11 +66,12 @@ struct SpeedView: View {
                     .font(.system(size: 108, weight: .bold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(Theme.amber)
-                    // Re-mounted per tick so the pop replays 3 → 2 → 1.
+                    // Re-mounted per tick, so each number comes in — 3 → 2 → 1 — without
+                    // overshoot. Under Reduce Motion they crossfade.
                     .id(tick)
-                    .transition(.scale.combined(with: .opacity))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: tick)
+            .animation(Motion.focus, value: tick)
 
             VStack(spacing: 6) {
                 Text("\(VocabGames.speedRoundSeconds) seconds. Pick the right meaning.")
@@ -100,8 +104,23 @@ struct SpeedView: View {
                         icon: "timer",
                         tone: isUrgent ? Theme.danger : Theme.amber
                     )
-                    .scaleEffect(isUrgent ? 1.06 : 1)
-                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isUrgent)
+                    // Under ten seconds the clock pulses once a second, with the second — not a
+                    // loop breathing beside the word. It still pulses under Reduce Motion, as a
+                    // colour only: it lights up instead of growing.
+                    .keyframeAnimator(initialValue: 0.0, trigger: isUrgent ? secondsLeft : 0) { [calm = reduceMotion] pill, pulse in
+                        pill
+                            .scaleEffect(calm ? 1 : 1 + 0.08 * pulse)
+                            .overlay {
+                                Capsule()
+                                    .fill(Theme.danger.opacity(calm ? 0.25 * pulse : 0))
+                                    .allowsHitTesting(false)
+                            }
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            CubicKeyframe(1.0, duration: 0.1)
+                            CubicKeyframe(0.0, duration: 0.15)
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 30)
@@ -144,7 +163,7 @@ struct SpeedView: View {
                             )
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(FocusPress())
                     }
                 }
 
@@ -205,7 +224,7 @@ struct SpeedView: View {
                 : "All \(ScoreText.string(prompts.count)) words answered with \(formatClock(secondsLeft)) to spare.",
             stats: [
                 ModeStat(label: "Correct", value: ScoreText.string(correct), tone: .success),
-                ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: answered)))%"),
+                .accuracy(VocabGames.accuracyPercent(correct: correct, of: answered)),
                 ModeStat(label: "Answered", value: "\(ScoreText.string(answered))/\(ScoreText.string(prompts.count))"),
             ],
             restartLabel: "Race again"

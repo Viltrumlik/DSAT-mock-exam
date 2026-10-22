@@ -84,24 +84,53 @@ public struct MultipartForm: Sendable {
 
     public func encoded() -> Data {
         var body = Data()
-        func append(_ string: String) { body.append(Data(string.utf8)) }
-
-        for field in fields {
-            append("--\(boundary)\r\n")
-            append("Content-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n")
-            append("\(field.value)\r\n")
-        }
+        for field in fields { body.append(Data(fieldPart(field).utf8)) }
         for file in files {
-            append("--\(boundary)\r\n")
-            // Quotes in a filename would end the header value early; strip rather than
-            // escape, since a filename is cosmetic here and the token is the identity.
-            let safeName = file.filename.replacingOccurrences(of: "\"", with: "")
-            append("Content-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(safeName)\"\r\n")
-            append("Content-Type: \(file.mimeType)\r\n\r\n")
+            body.append(Data(fileHead(file).utf8))
             body.append(file.data)
-            append("\r\n")
+            body.append(Data(Self.lineEnd.utf8))
         }
-        append("--\(boundary)--\r\n")
+        body.append(Data("--\(boundary)--\(Self.lineEnd)".utf8))
         return body
+    }
+
+    /// Where each file's bytes sit inside `encoded()`, in `files` order — so the bytes an
+    /// upload has sent can be told per file (`UploadProgress`). Counted from the very pieces
+    /// `encoded()` writes, without building the body again.
+    public func fileRanges() -> [Range<Int>] {
+        var offset = fields.reduce(0) { $0 + fieldPart($1).utf8.count }
+        return files.map { file in
+            offset += fileHead(file).utf8.count
+            let range = offset..<(offset + file.data.count)
+            offset = range.upperBound + Self.lineEnd.utf8.count
+            return range
+        }
+    }
+
+    private static let lineEnd = "\r\n"
+
+    private func fieldPart(_ field: (name: String, value: String)) -> String {
+        "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n\(field.value)\r\n"
+    }
+
+    private func fileHead(_ file: File) -> String {
+        // Quotes in a filename would end the header value early; strip rather than
+        // escape, since a filename is cosmetic here and the token is the identity.
+        let safeName = file.filename.replacingOccurrences(of: "\"", with: "")
+        return "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(safeName)\"\r\nContent-Type: \(file.mimeType)\r\n\r\n"
+    }
+}
+
+/// How far each file of a multipart upload has gone, from the bytes the request has sent.
+public enum UploadProgress {
+    /// 0…1 per file, in `ranges` order (`MultipartForm.fileRanges()`): none of it sent yet, part
+    /// of it, all of it. Real numbers only — a per-photo ring that moved on its own would be a
+    /// decoration pretending to be progress.
+    public static func perFile(sent: Int64, ranges: [Range<Int>]) -> [Double] {
+        ranges.map { range in
+            guard !range.isEmpty else { return sent >= Int64(range.upperBound) ? 1 : 0 }
+            let done = min(max(sent - Int64(range.lowerBound), 0), Int64(range.count))
+            return Double(done) / Double(range.count)
+        }
     }
 }

@@ -157,8 +157,28 @@ struct ModeStat: Identifiable {
     let label: String
     let value: String
     var tone: Tone = .neutral
+    /// A percentage that rolls up from 0 when the end screen appears; `value` is its text.
+    var percent: Int? = nil
 
     var id: String { label }
+
+    /// The round's accuracy — the number that rolls up.
+    static func accuracy(_ percent: Int, tone: Tone = .neutral) -> ModeStat {
+        ModeStat(label: "Accuracy", value: "\(ScoreText.string(percent))%", tone: tone, percent: percent)
+    }
+}
+
+/// A stat's number: an accuracy rolls up from 0 when the end screen appears (`RollingNumber`).
+private struct ModeStatValue: View {
+    let stat: ModeStat
+
+    var body: some View {
+        if let percent = stat.percent {
+            RollingNumber(value: Double(percent), suffix: "%")
+        } else {
+            Text(stat.value)
+        }
+    }
 }
 
 /// The end-of-round screen every mode lands on — the web's `ModeOutcome`.
@@ -176,9 +196,6 @@ struct ModeOutcomeView: View {
     var errorText: String?
     let isSaving: Bool
     var restartLabel = "Study again"
-    /// A clean sweep from the mode's own point of view. Mastering the game or the set
-    /// celebrates too, even when this round was not the clean one that did it.
-    var celebrate = false
     let onRestart: @MainActor () -> Void
     let onExit: @MainActor () -> Void
     /// Sends the grading call again after it failed; the answers were kept.
@@ -187,10 +204,14 @@ struct ModeOutcomeView: View {
     var extra: AnyView?
 
     @State private var trophyPopped = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var partying: Bool {
-        celebrate || summary?.modeMastered == true || summary?.mastery.isMastered == true
-    }
+    /// A good outcome by the one rule (`CelebrationRule.vocabRound`): the server says this round
+    /// mastered its game. Not the mode's own belief that it was clean (it fired before the round
+    /// was graded), and not a set mastered by earlier rounds while this one was not clean. The
+    /// hand-in itself is celebrated every time once the cover has gone — this is the outcome on
+    /// top of it, never a second effort party.
+    private var partying: Bool { CelebrationRule.vocabRound(summary) }
 
     var body: some View {
         ScrollView {
@@ -219,11 +240,13 @@ struct ModeOutcomeView: View {
             if partying { VocabCelebration() }
         }
         .onAppear {
-            guard partying else { return }
+            // The trophy is chrome on the hero and never covers the stats, so it may spring.
+            // Under Reduce Motion it stays at rest.
+            guard partying, !reduceMotion else { return }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.5).delay(0.15)) { trophyPopped = true }
         }
         .onChange(of: partying) { _, now in
-            if now { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { trophyPopped = true } }
+            if now, !reduceMotion { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { trophyPopped = true } }
         }
     }
 
@@ -276,7 +299,7 @@ struct ModeOutcomeView: View {
         HStack(spacing: 10) {
             ForEach(stats) { stat in
                 VStack(spacing: 6) {
-                    Text(stat.value)
+                    ModeStatValue(stat: stat)
                         .font(.system(size: 25, weight: .heavy).monospacedDigit())
                         .tracking(-0.6)
                         .foregroundStyle(colour(stat.tone))

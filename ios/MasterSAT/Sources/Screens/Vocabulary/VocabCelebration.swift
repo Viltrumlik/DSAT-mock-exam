@@ -1,26 +1,33 @@
 import SwiftUI
 import MasterSATKit
 
-/// The confetti the end-of-round screen fires when a game or a whole set is mastered — the
-/// web's `CelebrationLayer`: three popper cannons from the bottom, then a short rain.
+/// The confetti the end-of-round screen fires when this round mastered its game, as the server
+/// says (`CelebrationRule.vocabRound`) — the web's `CelebrationLayer`: three popper cannons from
+/// the bottom, then a short rain.
 ///
 /// Generated from a fixed seed so a re-render never reshuffles it mid-flight, drawn in one
-/// `Canvas` so forty-odd flecks cost one view, and gone entirely under Reduce Motion rather
-/// than frozen on screen. It never takes a touch.
+/// `Canvas` so sixty-odd flecks cost one view, and gone entirely under Reduce Motion rather
+/// than frozen on screen. Under Low Power Mode it throws half as many (`MotionBudget`, like every
+/// other celebration). It never takes a touch.
 struct VocabCelebration: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start = Date()
     @State private var finished = false
 
     private static let pieces = build()
+    /// Every other fleck, so Low Power keeps the cannons and the rain both, thinner.
+    private static let halfPieces = pieces.enumerated().filter { $0.offset.isMultiple(of: 2) }.map(\.element)
     private static let lifetime: TimeInterval = 4.6
 
     var body: some View {
-        if !reduceMotion && !finished {
+        let budget = MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        let count = budget.confetti(Self.pieces.count)
+        let flecks = count < Self.pieces.count ? Self.halfPieces : Self.pieces
+        if count > 0 && !finished {
             TimelineView(.animation) { timeline in
                 let elapsed = timeline.date.timeIntervalSince(start)
                 Canvas { context, size in
-                    for piece in Self.pieces {
+                    for piece in flecks {
                         piece.draw(in: &context, size: size, elapsed: elapsed)
                     }
                 }

@@ -224,13 +224,6 @@ struct CoinsCard: View {
     }
 }
 
-/// A measured frame kept out of SwiftUI state: written on every scroll frame, read only when a
-/// coin bursts — so measuring never re-renders the tab.
-@MainActor
-final class FrameBox {
-    var rect: CGRect = .zero
-}
-
 // MARK: - The board
 
 /// The global board on the tab: XP (all time or this month) or Strikes, the top five and the

@@ -60,11 +60,29 @@ struct BrandLockup: View {
     var body: some View {
         HStack(spacing: 11) {
             BrandMark(height: height)
+                .modifier(LogoArrival())
             Text("MasterSAT")
                 .font(.system(size: fontSize, weight: .heavy))
                 .tracking(-0.4)
                 .foregroundStyle(.white)
         }
+    }
+}
+
+/// The mark arriving as the panel appears: it springs up from 70% — chrome above the form, never
+/// over it, so a spring is allowed. Under Reduce Motion it only fades in.
+private struct LogoArrival: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrived = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(arrived || reduceMotion ? 1 : 0.7)
+            .opacity(arrived ? 1 : 0)
+            .onAppear {
+                guard !arrived else { return }
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Motion.pop.delay(0.1)) { arrived = true }
+            }
     }
 }
 
@@ -159,6 +177,16 @@ private struct PromiseRow: View {
 private struct FloatingShapes: View {
     let compact: Bool
     @State private var drifting = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The panel breathes — unless Reduce Motion is on: then every shape holds still at rest.
+    private var breathing: Bool { drifting && !reduceMotion }
+
+    /// One slow drift, `seconds` each way. Under Reduce Motion a short settle to rest instead,
+    /// which also replaces a drift already running when it is switched on.
+    private func drift(_ seconds: Double) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.3) : .easeInOut(duration: seconds).repeatForever(autoreverses: true)
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -169,29 +197,29 @@ private struct FloatingShapes: View {
                     .fill(.white.opacity(0.10))
                     .frame(width: 280, height: 280)
                     .position(x: w + 30, y: -20)
-                    .offset(y: drifting ? 14 : -14)
-                    .animation(.easeInOut(duration: 14).repeatForever(autoreverses: true), value: drifting)
+                    .offset(y: breathing ? 14 : -14)
+                    .animation(drift(14), value: breathing)
 
                 RoundedRectangle(cornerRadius: 44, style: .continuous)
                     .fill(.white.opacity(0.08))
                     .frame(width: 200, height: 200)
                     .position(x: w - 60, y: h + 40)
-                    .offset(x: drifting ? -12 : 12)
-                    .animation(.easeInOut(duration: 16).repeatForever(autoreverses: true), value: drifting)
+                    .offset(x: breathing ? -12 : 12)
+                    .animation(drift(16), value: breathing)
 
                 Circle()
                     .stroke(.white.opacity(0.11), lineWidth: 18)
                     .frame(width: 150, height: 150)
                     .position(x: -20, y: h - 60)
-                    .offset(y: drifting ? -16 : 16)
-                    .animation(.easeInOut(duration: 13).repeatForever(autoreverses: true), value: drifting)
+                    .offset(y: breathing ? -16 : 16)
+                    .animation(drift(13), value: breathing)
 
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .fill(.white.opacity(0.07))
                     .frame(width: 60, height: 60)
                     .position(x: w - (compact ? 70 : 120), y: compact ? 130 : 90)
-                    .offset(x: drifting ? 10 : -10, y: drifting ? -8 : 8)
-                    .animation(.easeInOut(duration: 15).repeatForever(autoreverses: true), value: drifting)
+                    .offset(x: breathing ? 10 : -10, y: breathing ? -8 : 8)
+                    .animation(drift(15), value: breathing)
 
                 // The brightest of the shapes, and the only one that reads as an object
                 // rather than a wash — so it stays out of the band, where at this size it
@@ -203,13 +231,15 @@ private struct FloatingShapes: View {
                         // Below the promises, above the copyright — the one stretch of the
                         // panel that is always empty, whichever page is showing.
                         .position(x: 40, y: h * 0.62)
-                        .offset(y: drifting ? 12 : -12)
-                        .animation(.easeInOut(duration: 11).repeatForever(autoreverses: true), value: drifting)
+                        .offset(y: breathing ? 12 : -12)
+                        .animation(drift(11), value: breathing)
                 }
             }
         }
+        // Decoration only: it takes no taps and says nothing to VoiceOver.
         .allowsHitTesting(false)
-        .onAppear { drifting = true }
+        .accessibilityHidden(true)
+        .onAppear { if !drifting { drifting = true } }
     }
 }
 
@@ -219,6 +249,8 @@ private struct FloatingShapes: View {
 struct AuthField<Accessory: View>: View {
     let label: String
     var icon: String?
+    /// Bumped when what was typed here was refused — the box shakes (`focusShake`).
+    var shakes: Int = 0
     @ViewBuilder let content: () -> Accessory
 
     var body: some View {
@@ -243,6 +275,7 @@ struct AuthField<Accessory: View>: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
             )
+            .focusShake(shakes, cornerRadius: Theme.Radius.control)
         }
     }
 }
@@ -306,12 +339,14 @@ struct PasswordField: View {
     var submitLabel: SubmitLabel = .go
     @FocusState.Binding var focus: AuthFocus?
     let field: AuthFocus
+    /// Bumped when the server refused this password — the box shakes.
+    var shakes: Int = 0
     let onSubmit: () -> Void
 
     @State private var revealed = false
 
     var body: some View {
-        AuthField(label: label, icon: "lock") {
+        AuthField(label: label, icon: "lock", shakes: shakes) {
             Group {
                 if revealed {
                     TextField(text: $text, prompt: Text(verbatim: "••••••••")) { Text(label) }

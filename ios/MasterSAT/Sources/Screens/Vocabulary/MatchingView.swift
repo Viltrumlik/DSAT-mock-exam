@@ -93,8 +93,7 @@ struct MatchingView: View {
                     label: "Clean first try",
                     value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
                 ),
-            ],
-            celebrate: mistakes == 0
+            ]
         ))
     }
 }
@@ -110,6 +109,13 @@ private struct MatchingRound: View {
     @State private var selected: String?
     @State private var wrongPair: Set<String> = []
     @State private var isLocked = false
+    /// One tick per pick that is not a miss — the selection haptic. A miss buzzes a warning
+    /// instead, never both at once.
+    @State private var taps = 0
+    /// Per card, how many wrong pairs it was part of — its shake's trigger.
+    @State private var misses: [String: Int] = [:]
+    /// Every wrong pair in the round — the warning haptic's trigger.
+    @State private var missCount = 0
 
     private var remaining: Int { (cards.count - matched.count) / 2 }
     private var total: Int { cards.count / 2 }
@@ -135,7 +141,8 @@ private struct MatchingRound: View {
                             card: card,
                             isMatched: matched.contains(card.id),
                             isSelected: selected == card.id,
-                            isWrong: wrongPair.contains(card.id)
+                            isWrong: wrongPair.contains(card.id),
+                            misses: misses[card.id] ?? 0
                         ) {
                             pick(card)
                         }
@@ -146,6 +153,8 @@ private struct MatchingRound: View {
             }
         }
         .task { if cards.isEmpty { cards = VocabGames.matchCards(for: words) } }
+        .sensoryFeedback(.selection, trigger: taps)
+        .sensoryFeedback(.warning, trigger: missCount)
     }
 
     @MainActor
@@ -153,18 +162,22 @@ private struct MatchingRound: View {
         guard !isLocked, !matched.contains(card.id) else { return }
         guard let firstId = selected else {
             selected = card.id
+            taps += 1
             return
         }
         if firstId == card.id {
             selected = nil
+            taps += 1
             return
         }
         guard let first = cards.first(where: { $0.id == firstId }) else {
             selected = card.id
+            taps += 1
             return
         }
 
         if VocabGames.isPair(first, card) {
+            taps += 1
             onPairFound(card.wordId)
             matched.insert(first.id)
             matched.insert(card.id)
@@ -180,6 +193,11 @@ private struct MatchingRound: View {
         }
 
         onMistake(first.wordId, card.wordId)
+        misses[first.id, default: 0] += 1
+        misses[card.id, default: 0] += 1
+        missCount += 1
+        // The shake and the red edge are for the eyes; say it in words too, kindly.
+        AccessibilityNotification.Announcement("Not a pair — try another").post()
         wrongPair = [first.id, card.id]
         isLocked = true
         Task {
@@ -196,7 +214,11 @@ private struct MatchCardTile: View {
     let isMatched: Bool
     let isSelected: Bool
     let isWrong: Bool
+    /// How many wrong pairs this card was part of — each one shakes it.
+    let misses: Int
     let onTap: @MainActor () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var border: Color {
         if isWrong { return Theme.danger }
@@ -211,7 +233,9 @@ private struct MatchCardTile: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
+        // Read here: the animator's content closure is Sendable and may not touch the environment.
+        let calm = reduceMotion
+        return Button(action: onTap) {
             Text(card.text)
                 // A word is the thing being learned, so it gets the big type; a
                 // definition is a sentence and has to fit.
@@ -231,13 +255,27 @@ private struct MatchCardTile: View {
                 // A button's label is only hit-testable where it draws.
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(FocusPress())
         .disabled(isMatched)
+        // A found pair pops — up 4% and back in 220 ms, never as far as a neighbour 10 pt away —
+        // then fades to make room. The pop is off under Reduce Motion (the track exists either
+        // way, so toggling the setting mid-round rebuilds nothing).
+        .keyframeAnimator(initialValue: 1.0, trigger: isMatched) { tile, pop in
+            tile.scaleEffect(calm ? 1 : pop)
+        } keyframes: { _ in
+            KeyframeTrack {
+                CubicKeyframe(1.04, duration: 0.1)
+                CubicKeyframe(1.0, duration: 0.12)
+            }
+        }
         .opacity(isMatched ? 0.25 : 1)
         .scaleEffect(isMatched ? 0.94 : (isSelected ? 1.02 : 1))
-        .offset(x: isWrong ? -4 : 0)
-        .animation(.spring(response: 0.28, dampingFraction: 0.6), value: isSelected)
-        .animation(.easeOut(duration: 0.2), value: isMatched)
-        .animation(.default.repeatCount(3, autoreverses: true).speed(6), value: isWrong)
+        // A pair that is not one shakes with its red edge (a red pulse under Reduce Motion).
+        .focusShake(misses, cornerRadius: Theme.Radius.card)
+        // Innermost, so it wins when a pair is found: the card that was selected stops being
+        // selected in the same update, and both cards of the pair fade together, after the pop.
+        .animation(.easeOut(duration: 0.2).delay(calm ? 0 : 0.22), value: isMatched)
+        .animation(Motion.focusTap, value: isSelected)
+        .animation(Motion.focusTap, value: isWrong)
     }
 }

@@ -305,4 +305,53 @@ private func bundleJSON(
         #expect(runner.unsaved.contains(30))
         #expect(!server.requests.contains { $0.url?.absoluteString.contains("/attempts/submit/") == true })
     }
+
+    @Test("Every write the server confirms counts towards \"Saved\"; a refused or overruled one does not")
+    func savedCountsConfirmations() async throws {
+        server.handler = { _ in .json(bundleJSON(answers: [["id": 1, "question_id": 30, "answer": "x", "client_seq": 2]])) }
+        let runner = runner()
+        await runner.load()
+        #expect(runner.savedCount == 0, "answers the server already held are not news")
+
+        // The answer endpoint answers `status`; everything else is fine.
+        func answerEndpoint(replies status: Int) {
+            server.handler = { request in
+                guard request.url?.absoluteString.contains("/attempts/answer/") == true else { return .json(["ok": true]) }
+                return status == 200 ? .json(["ok": true]) : .json(["detail": "no"], status: status)
+            }
+        }
+
+        // Two writes the server took: two confirmations.
+        answerEndpoint(replies: 200)
+        runner.setAnswer(.string("A"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 1)
+        runner.setAnswer(.string("B"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 2)
+
+        // A 409: the server holds a newer answer. The question is settled, but nothing was saved.
+        answerEndpoint(replies: 409)
+        runner.setAnswer(.string("C"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 2)
+        #expect(!runner.unsaved.contains(10))
+        let writes = server.requests.filter { $0.url?.absoluteString.contains("/attempts/answer/") == true }
+        #expect(writes.count == 3, "the overruled write did reach the server; it is just not a save")
+
+        // A refused write: still unsaved, still not counted.
+        answerEndpoint(replies: 500)
+        runner.setAnswer(.string("D"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 2)
+        #expect(runner.unsaved.contains(10))
+
+        // The retry that lands is one confirmation, and a flush with nothing left adds none.
+        answerEndpoint(replies: 200)
+        await runner.flush()
+        #expect(runner.unsaved.isEmpty)
+        #expect(runner.savedCount == 3)
+        await runner.flush()
+        #expect(runner.savedCount == 3)
+    }
 }

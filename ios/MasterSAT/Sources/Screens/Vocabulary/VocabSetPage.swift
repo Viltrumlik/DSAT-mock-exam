@@ -55,6 +55,7 @@ struct VocabSetView: View {
                     Task { await load() }
                 }
                 .coversCelebrations(celebrations)
+                .noBarClearance()
             }
         }
         .onChange(of: studying) { _, mode in

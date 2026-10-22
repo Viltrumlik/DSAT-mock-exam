@@ -10786,15 +10786,4843 @@ Run `xcrun simctl list runtimes | grep -E "iOS 1[78]"`. If a runtime is there, c
 
 Send the screenshots and `/tmp/phase3.mp4` (SendUserFile), one line per item to look at. Merge only after the owner's "ha", and after #304 and #305.
 
-## Phase 4 — Focus zones (outline)
+## Phase 4 — Focus zones
 
-- Kit `CelebrationRule` (moved from phase 2): an outcome is celebrated only when passed or improved (midterm passed; assessment percent against the previous attempt) — its readers are the reviews and the midterm report below. Effort is already celebrated every time (phase 2).
-- Assessment runner: direction-aware question slide (`Motion.focus`), choice fill + selection haptic, drawn cross-out, flag bounce, answered-count progress bar, "Saved" fade, question-map grid animation; full celebration only after hand-in.
-- Vocabulary: flashcards 3D flip + swipe (tilt, haptic); test — press + spelling tiles, no right/wrong until the end; matching — pop on match, shake on miss; speed — <10 s pulse; the ending accuracy counts up, celebration only if good.
-- Homework upload: thumbnails pop in, per-photo progress ring, tick; celebration on submit.
-- Reviews and midterm report: score counts up, rows stagger, "To improve" filter slides, explanation springs open; confetti only for passed/improved.
-- Sign in / register: logo spring, breathing brand panel, field shake + warning haptic on a wrong password.
-- Verify, PR, demo.
+Branch `feat/ios-redesign-phase4` in `/Users/macbook/Projects/dsat-wt-ios-redesign`, built on phase 3 (PR #308, HEAD `72a426c0`). One PR into `main`, merged after #308.
+
+**What the student gets:** the places where a student concentrates move calmly — quickly, without bounce, and never saying right or wrong while they are answering. In the assessment runner the next question comes in from the side it is on, a picked choice fills with a tick, a crossed-out option gets a line drawn through it, the flag bounces, "Saved" appears for a moment after the server took an answer, the answered count rolls, and the question map settles in. Flashcards turn over in a quarter second and can be swiped for the verdict; the test fills its spelling well as the student types; matching pops a found pair and shakes a wrong one; speed's clock pulses with its last ten seconds; every game's end screen rolls its accuracy up. A homework hand-in shows each photo as it is picked and a ring per file with its real upload progress. The review and the midterm report count their score up and settle their rows in; the review's filter turns the card. Sign-in springs its logo in and shakes a wrong password. A score is celebrated — confetti, a success haptic, one sentence for VoiceOver — only when it passed or beat the attempt before it, and only the first time it is shown; handing work in stays celebrated every time, as in phase 2.
+
+**Checked while this plan was written (2026-10-21).** In a throwaway worktree of `72a426c0`, every task below was applied exactly as written — by a script that executes each task's **Create** / **Rewrite** / **Edit** blocks verbatim, in order — and at every task end the kit tests passed (740 → 751 → 756 → 759 after Tasks 30–32) and, for Tasks 33–40, the app built (`** BUILD SUCCEEDED **`, no new warnings in the touched files). The one runtime claim the plan leans on — that `contentMargins(.bottom, 0)` on a cover's content cancels the tab's inherited bar margin — was checked on the iOS 26.3 simulator with a probe app (an inherited 200 pt margin reached a `fullScreenCover`'s `ScrollView`; the inner zero removed it). A failure at execution therefore means the tree has moved since — read the named file before improvising.
+
+**How the code steps are written.** **Create** `path` — a new file, the whole of it. **Rewrite** `path` — the whole file replaced. **Edit** `path` — replace: OLD … with: NEW — OLD occurs exactly once in that file; replace it verbatim. Paths are from the repository root. Every app task ends with the build check of phase 2 ("The build check (used by every app task)").
+
+### Decisions taken where the design left room
+
+- **The focus-zone motion rules, as built** (approved design §3 and the controller's ruling): everything that moves in a focus zone takes at most 250 ms on an ease-out curve (`Motion.focus` 0.2 s, `Motion.focusTap` 0.12 s, entrances staggered by at most three 30 ms beats) and nothing overshoots over content. A spring is allowed only on chrome that never covers content — the runner's flag glyph, the sign-in logo, the games' trophy. Under Reduce Motion every movement becomes a fade or nothing: a turn is a crossfade, the flip a crossfade, a swipe moves without tilting, a shake becomes a red pulse over the refused box, the brand panel holds still, numbers are simply there. The helpers live in one place (`Support/Motion/Motion.swift`, Task 33) and the focus-zone tasks use only them.
+- **No answered-count bar in the runner** (controller ruling, the owner's standing "what does it tell the reader that the number does not?"): "N/M" is already on screen. It rolls when it moves instead.
+- **Never a hint at right or wrong while answering** — in the runner and the vocabulary test no colour, haptic or motion differs between a right and a wrong answer: every pick, cross-out and flag ticks the same selection haptic, presses look alike (`FocusPress`), the spelling well shows a typed letter the same whether it is right or not. The runner's question map shows answered cells in the selection blue instead of green — green means "correct" on the review. Matching is the one game that speaks while playing, as the approved design lists ("pop on match, shake on miss").
+- **"Counts up" means the digits roll once** (`numericText`, one 200 ms beat, `RollingNumber`): ticking through every number would take longer than the focus zones allow.
+- **The cross-out is drawn, not typed:** a line is drawn through the whole option, as Bluebook rules one out. The option's own strike-through goes — toggling it re-rendered a rich option's KaTeX web view, a flash and a height jump on every cross-out.
+- **A new question opens at its top** (the runner kept the last one's scroll offset), and a typed answer's keyboard closes as the question turns.
+- **Flashcards' swipe is a shortcut for the two buttons**, not a new rule: right is "Correct", left "Still learning", past 110 pt a stamp says which (the student's own verdict — flashcards are self-graded), letting go there gives exactly what the button gives, and it is off while a verdict is held. The buttons stay, for VoiceOver and for anyone who does not swipe.
+- **Speed's urgency is a pulse per second, not a loop:** the clock beside the word breathed continuously; now it pulses once with each of the last ten seconds.
+- **An outcome is celebrated once — the first time it is shown, on this phone** (`OutcomeMemory` per student in `UserDefaults`, Task 30): opening a result again is not an event. A midterm qualifies when the centre marked it passed (a pre-midterm is never judged); an assessment when it beat "the attempt before" — the newest earlier attempt this phone showed on the same set (the homework and the set's title), because the student's lists and the review carry only a homework's newest attempt (the server keeps every attempt, but never hands the phone the one before); a word-game round when the server says it mastered its game. A first review on a new phone therefore proves nothing and celebrates nothing; "Up from 60%" then shows on every opening of the attempt that beat it.
+- **The games' end screen parties only on the server's word** (`CelebrationRule.vocabRound`): it used to fire on the phone's own clean sweep — before the round was graded, and once on a save that then failed — and on a set mastered by earlier rounds while this one was not clean.
+- **An outcome's confetti is drawn by the page** (`OutcomeConfetti`), not by the root overlay: the midterm report is also opened inside the Me sheet, which the root overlay sits under.
+- **"Why this answer works" stays open**, as on the web; it settles in last on each card. Hiding it behind a tap would cost every student a tap on the screen that exists to explain.
+- **The upload's rings are real or not there** (the owner's "no decorative progress bars"): one multipart request carries every file, so the kit maps the request's sent bytes onto each file's place in the body (Task 32). A tick means all of that file's bytes have gone; the hand-in is confirmed by the server, which is what the celebration waits for. A ring never runs backwards (a token refresh re-sends the body), and the progress lives in a small `@Observable` read only by the rows, so the page does not re-render with every chunk.
+- **Sign-in is `Screens/Auth/`** (`AuthView`'s `SignInForm` and `RegisterForm`, the brand panel in `AuthChrome`). `Screens/Account/AccountSignInView.swift`, named in the brief, is the Me sheet's "Sign-in & password" settings page; its one wrong password — the current one, when changing it — shakes the same way. The "breathing brand panel" is the panel's existing drifting shapes (the web's `dz-float`); they now hold still under Reduce Motion, which they did not.
+- **Haptics** follow the approved list: selection for picks, cross-outs, flags, flips, the swipe threshold and the test's and speed's answers; warning for a wrong password and a matching miss; success for an outcome celebrated (the effort haptic is phase 2's). No new sounds, no haptic per keystroke.
+- **The review and the midterm report take the phase-2 load rules now** (a refresh runs detached; a cancelled load is not a failure) because this phase rebuilds both pages — as phase 3 did for the Rewards pages. The other pushed pages stay on phase 5's list.
+
+### Earlier phases' hand-off → tasks
+
+| Deferred to phase 4 (Phase 1 / 2 / 3 outcome) | Where |
+|---|---|
+| Phase 1: `contentMargins` reaches full-screen covers (runner, word games, story viewer, live quiz, ticket) — zero it there | Task 33 (`noBarClearance()` on all eight covers presented from inside a tab; checked with a probe on the simulator) |
+| Phase 2: `handInFrame` / `submitFrame` are `@State` written every scroll frame | Task 33 (`submitFrame` → `FrameBox`; `FrameBox` moves to `Celebrations.swift`), Task 38 (`handInFrame` → `handInSpot`) |
+| Phase 2: leaving a word game with an unsaved round may save without a celebration | Task 35 (`restart` and `exit` report a finish their flush confirmed, through the cover's one-shot) |
+| Phase 2: kit `CelebrationRule` for outcomes (ruled out of phase 2); "outcome celebrations stay in phase 4 with the reviews that own them" | Task 30 (kit: `CelebrationRule`, `OutcomeMemory`, `OutcomeBook`), Task 37 (the games' end screen), Task 39 (the review and the midterm report) |
+| Phase 3: a refresh mid-session (xpBefore captured at session start) can drop the pill un-animated at hand-in | Task 30 (`XPDelta.baseline`), Task 33 (`CelebrationCenter.celebrate` measures from it) |
+| Owner: check on an iOS 17 / 18 runtime | Task 41 Step 6 |
+| Phase 1 "kit polish (any phase)": `AppTab.allCases` order test, confetti seed/budget tests, a test that every `LottieAsset` loads, rename `gravity` | Not here — none touches a focus zone; phase 5's polish and audit take them (the Lottie load test still has no app test target to live in) |
+| Phase 5 items touched in passing | Task 39 takes `MidtermReportView`'s plain `.refreshable` and the review's / report's cancelled-load-as-failure; `HomeworkDetailView:105`'s cancelled first load stays on phase 5's list (Task 38 changes only the hand-in card) |
+
+### File structure (phase 4)
+
+Kit (`ios/MasterSATKit/Sources/MasterSATKit/`):
+- `Motion/CelebrationRule.swift` — **new.** `CelebrationRule`, `OutcomeMemory`, `OutcomeBook`.
+- `Models/Assessment.swift` — `AssessmentReviewMeta.assignmentId`, `AssessmentReview.setKey`.
+- `Rewards/XPDelta.swift` — `XPDelta.baseline`.
+- `Assessment/AssessmentRunner.swift` — `savedCount`.
+- `Vocabulary/VocabGames.swift` — `SpellingTile`, `spellingTiles`.
+- `Core/MultipartForm.swift` — `fileRanges()`, `UploadProgress`; `Core/APIClient.swift` — `send(_:as:onBodySent:)`, `BodyProgress`; `Student/StudentAPI.swift` — `submitHomework(…, onFileProgress:)`.
+
+Kit tests (`ios/MasterSATKit/Tests/MasterSATKitTests/`): `CelebrationRuleTests.swift`, `FocusZoneTests.swift`, `UploadProgressTests.swift` — **new**; `AssessmentRunnerTests.swift` (one test).
+
+App (`ios/MasterSAT/Sources/`):
+- `Support/Motion/Motion.swift` — the focus-zone kit (`FocusTurn`, `.focusTurn`, `FocusPress`, `focusReveal`, `focusEntrance`, `focusShake`, `RollingNumber`).
+- `Support/Motion/Celebrations.swift` — `celebrate` measures from hand-in; `OutcomeConfetti`; `FrameBox` (moved from `Screens/Rewards/RewardsTabCards.swift`).
+- `Support/PageChrome.swift` — `PillTabs.motion`.
+- `Screens/RootView.swift` — `noBarClearance()`; the eight covers in `HomeworkDetailView`, `AssessmentReviewView`, `AssessmentBoardViews`, `VocabSetPage`, `StoriesRail`, `StoryViewer`, `LiveQuizJoinView`, `EventsView` use it.
+- `Screens/Assessments/AssessmentRunnerView.swift` — the runner, the map, the choice row.
+- `Screens/Vocabulary/VocabStudyView.swift` (flashcards, the finish hand-off), `VocabTestView.swift`, `MatchingView.swift`, `SpeedView.swift`, `StudyShell.swift` (the end screen).
+- `Screens/HomeworkDetailView.swift` — the hand-in card; `UploadMeter`, `StagedFileRow`, `UploadRing`.
+- `Screens/Assessments/AssessmentReviewView.swift`, `Screens/Midterms/MidtermReportView.swift`.
+- `Screens/Auth/AuthChrome.swift`, `Screens/Auth/AuthView.swift`, `Screens/Account/AccountComponents.swift`, `Screens/Account/AccountSignInView.swift`.
+- `Screens/Surveys/SurveyFillView.swift` — `submitFrame` boxed.
+
+---
+
+### Task 30: When a score is celebrated, in the kit (`CelebrationRule`, `OutcomeMemory`, `OutcomeBook`, `XPDelta.baseline`)
+
+**Files:**
+- Create: `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationRule.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift` (`AssessmentReviewMeta.assignmentId`, `AssessmentReview.setKey`)
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPDelta.swift` (`XPDelta.baseline`)
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/CelebrationRuleTests.swift`
+
+**Interfaces:**
+- Consumes: `VocabSessionSummary.modeMastered`, `AssessmentReview`, `AssessmentReviewMeta`, `JSONCoding` (all existing).
+- Produces: `public enum CelebrationRule { static func midterm(isGraded: Bool, passed: Bool?) -> Bool; static func assessment(percent: Double, previous: Double?) -> Bool; static func vocabRound(_: VocabSessionSummary?) -> Bool }`; `public struct OutcomeMemory: Codable, Sendable, Equatable` with `mutating func showAssessment(setKey: String, attemptId: Int, percent: Double) -> Double?`, `mutating func celebrate(_ key: String, if qualifies: Bool) -> Bool`, `static func assessmentKey(_: Int) -> String`, `static func midtermKey(_: Int) -> String`; `public struct OutcomeBook` (`read(userID:) -> OutcomeMemory`, `write(_:userID:)`, `static func key(userID:) -> String` = `"outcomes.v1.<id>"`); `AssessmentReviewMeta.assignmentId: Int?` (decoded from the meta's `assignment_id`, which the server already sends); `AssessmentReview.setKey: String?`; `XPDelta.baseline(atStart: Int?, atHandIn: Int?) -> Int?`.
+
+Rules for this task (kit): no backend change — `assignment_id` is already in every review's `meta` (`backend/assessments/helpers.py::_build_hw_meta`); the kit simply stops dropping it. An OUTCOME (a score) is celebrated only when it passed or improved, once, the first time it is shown; effort is celebrated every time already (`FinishedWork`, phase 2) and is not touched here. Every mutating call in a test sits on its own line, never inside `#expect`.
+
+Why `XPDelta.baseline` is here: it is the phase 3 hand-off "a refresh mid-session can drop the pill un-animated at hand-in". A task's gain is measured from the header's XP when the work STARTED; when a return to the app or a reconnect raised the header in between, the task's pending entry held that rise back the moment it was recorded — the pill dropped to the old total, un-animated — and the rise was then claimed as the task's own gain. The server pays a task's XP when it is handed in, so the header's XP AT hand-in is a floor for the baseline. Task 33 makes `CelebrationCenter.celebrate` use it.
+
+- [ ] **Step 1: Write the failing test**
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/CelebrationRuleTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct CelebrationRuleTests {
+
+    private func summary(_ json: String) throws -> VocabSessionSummary {
+        try JSONCoding.decoder.decode(VocabSessionSummary.self, from: Data(json.utf8))
+    }
+
+    @Test("A midterm is celebrated when the centre marked it passed — never a pre-midterm, never a miss")
+    func midterm() {
+        #expect(CelebrationRule.midterm(isGraded: true, passed: true))
+        #expect(!CelebrationRule.midterm(isGraded: true, passed: false))
+        #expect(!CelebrationRule.midterm(isGraded: true, passed: nil), "no pass mark, no verdict")
+        #expect(!CelebrationRule.midterm(isGraded: false, passed: true), "a pre-midterm is scored, never judged")
+    }
+
+    @Test("An assessment is celebrated only when it beat the attempt before it")
+    func assessment() {
+        #expect(CelebrationRule.assessment(percent: 75, previous: 60))
+        #expect(!CelebrationRule.assessment(percent: 60, previous: 60), "level is not better")
+        #expect(!CelebrationRule.assessment(percent: 40, previous: 60))
+        #expect(!CelebrationRule.assessment(percent: 100, previous: nil), "nothing to beat proves nothing")
+    }
+
+    @Test("A word-game round is celebrated when the server says it mastered its game")
+    func vocabRound() throws {
+        let mastered = try summary(#"{"id":1,"correct_count":5,"total_count":5,"set_completed":true,"mode_mastered":true}"#)
+        let notMastered = try summary(#"{"id":2,"correct_count":4,"total_count":5,"set_completed":true,"mode_mastered":false}"#)
+        let older = try summary(#"{"id":3,"correct_count":5,"total_count":5,"set_completed":true}"#)
+        #expect(CelebrationRule.vocabRound(mastered))
+        #expect(!CelebrationRule.vocabRound(notMastered))
+        #expect(!CelebrationRule.vocabRound(older), "a server that does not say so has not said so")
+        #expect(!CelebrationRule.vocabRound(nil), "a round whose save failed has no summary")
+    }
+}
+
+@Suite struct OutcomeMemoryTests {
+
+    @Test("The first attempt on a set is only remembered; a later, better one improved on it, on every showing")
+    func improvement() {
+        var memory = OutcomeMemory()
+        let first = memory.showAssessment(setKey: "12/Linear equations", attemptId: 40, percent: 60)
+        #expect(first == nil)
+
+        let second = memory.showAssessment(setKey: "12/Linear equations", attemptId: 52, percent: 75)
+        #expect(second == 60)
+
+        let again = memory.showAssessment(setKey: "12/Linear equations", attemptId: 52, percent: 75)
+        #expect(again == 60, "the page can say \"Up from 60%\" every time it opens")
+    }
+
+    @Test("Level or lower is no improvement; an older attempt opened later changes nothing")
+    func noImprovement() {
+        var memory = OutcomeMemory()
+        _ = memory.showAssessment(setKey: "s", attemptId: 40, percent: 60)
+        let level = memory.showAssessment(setKey: "s", attemptId: 41, percent: 60)
+        #expect(level == nil)
+        let lower = memory.showAssessment(setKey: "s", attemptId: 42, percent: 30)
+        #expect(lower == nil)
+        let better = memory.showAssessment(setKey: "s", attemptId: 43, percent: 50)
+        #expect(better == 30, "measured against the newest attempt before it, not the best")
+
+        let older = memory.showAssessment(setKey: "s", attemptId: 39, percent: 90)
+        #expect(older == nil, "attempt 39 came before 43 — it is not an improvement on it")
+        let newest = memory.showAssessment(setKey: "s", attemptId: 44, percent: 55)
+        #expect(newest == 50, "the older attempt did not become the one to beat")
+    }
+
+    @Test("Each set is compared only with itself")
+    func setsApart() {
+        var memory = OutcomeMemory()
+        _ = memory.showAssessment(setKey: "12/Algebra", attemptId: 40, percent: 90)
+        let other = memory.showAssessment(setKey: "12/Geometry", attemptId: 41, percent: 50)
+        #expect(other == nil)
+        let next = memory.showAssessment(setKey: "12/Geometry", attemptId: 42, percent: 60)
+        #expect(next == 50)
+    }
+
+    @Test("An outcome is celebrated once, and only when it qualifies")
+    func once() {
+        var memory = OutcomeMemory()
+        let notYet = memory.celebrate(OutcomeMemory.midtermKey(7), if: false)
+        #expect(!notYet)
+        let first = memory.celebrate(OutcomeMemory.midtermKey(7), if: true)
+        #expect(first)
+        let second = memory.celebrate(OutcomeMemory.midtermKey(7), if: true)
+        #expect(!second, "opening the report again is not a new event")
+        let other = memory.celebrate(OutcomeMemory.assessmentKey(7), if: true)
+        #expect(other, "an assessment and a midterm never share a key")
+        #expect(OutcomeMemory.midtermKey(7) == "midterm.7")
+        #expect(OutcomeMemory.assessmentKey(7) == "assessment.7")
+    }
+}
+
+@Suite struct OutcomeBookTests {
+
+    private func scratch() -> (UserDefaults, String) {
+        let name = "outcomes-tests-\(UUID().uuidString)"
+        return (UserDefaults(suiteName: name)!, name)
+    }
+
+    @Test("Nothing stored reads as an empty memory; what was written reads back, per student")
+    func roundTrip() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let book = OutcomeBook(defaults: defaults)
+        #expect(book.read(userID: 7) == OutcomeMemory())
+
+        var memory = OutcomeMemory()
+        _ = memory.showAssessment(setKey: "12/Algebra", attemptId: 40, percent: 60)
+        _ = memory.showAssessment(setKey: "12/Algebra", attemptId: 41, percent: 80)
+        _ = memory.celebrate(OutcomeMemory.assessmentKey(41), if: true)
+        book.write(memory, userID: 7)
+
+        #expect(book.read(userID: 7) == memory)
+        #expect(book.read(userID: 8) == OutcomeMemory(), "another account on the phone starts empty")
+        #expect(OutcomeBook.key(userID: 7) == "outcomes.v1.7")
+    }
+
+    @Test("A value that will not decode is an empty memory, not a crash")
+    func corrupt() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(Data("not json".utf8), forKey: OutcomeBook.key(userID: 3))
+        #expect(OutcomeBook(defaults: defaults).read(userID: 3) == OutcomeMemory())
+    }
+}
+
+@Suite struct HandInBaselineTests {
+
+    @Test("A task's gain is measured from the start, raised to what the header held at hand-in")
+    func baseline() {
+        #expect(XPDelta.baseline(atStart: 100, atHandIn: 130) == 130, "a rise in between is not the task's")
+        #expect(XPDelta.baseline(atStart: 100, atHandIn: 100) == 100)
+        #expect(XPDelta.baseline(atStart: 100, atHandIn: nil) == 100)
+        #expect(XPDelta.baseline(atStart: 100, atHandIn: 90) == 100, "a stale read never lowers it")
+        #expect(XPDelta.baseline(atStart: nil, atHandIn: 130) == nil, "unknown at the start measures nothing")
+    }
+}
+
+@Suite struct AssessmentSetKeyTests {
+
+    private func review(_ meta: String) throws -> AssessmentReview {
+        try JSONCoding.decoder.decode(AssessmentReview.self, from: Data(#"{"meta":\#(meta),"questions":[]}"#.utf8))
+    }
+
+    @Test("A review names its set by homework and title; without the homework it names nothing")
+    func setKey() throws {
+        let full = try review(#"{"assignment_id":12,"assignment_title":"Week 3","set_title":"Linear equations","question_count":10}"#)
+        #expect(full.meta?.assignmentId == 12)
+        #expect(full.setKey == "12/Linear equations")
+
+        let untitled = try review(#"{"assignment_id":12,"question_count":10}"#)
+        #expect(untitled.setKey == "12/")
+
+        let older = try review(#"{"set_title":"Linear equations","question_count":10}"#)
+        #expect(older.meta?.assignmentId == nil)
+        #expect(older.setKey == nil)
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "CelebrationRuleTests|OutcomeMemoryTests|OutcomeBookTests|HandInBaselineTests|AssessmentSetKeyTests" 2>&1 | tail -5`
+Expected: build errors — `cannot find 'CelebrationRule' in scope`, `cannot find 'OutcomeMemory' in scope`, `type 'XPDelta' has no member 'baseline'`, `value of type 'AssessmentReview' has no member 'setKey'`.
+
+- [ ] **Step 3: Create `Motion/CelebrationRule.swift`**
+
+**Create** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationRule.swift`:
+
+```swift
+import Foundation
+
+/// When a SCORE is celebrated.
+///
+/// Effort — handing something in — is celebrated every time (`FinishedWork`). An outcome is
+/// celebrated only when it is good news the app can prove: a midterm the centre marked passed,
+/// an assessment that beat the attempt before it on the same set, a word game the server says
+/// this round mastered. Never a score that went down, never one the app only believes, and never
+/// twice (`OutcomeMemory`). Its readers are the assessment review, the midterm report and the
+/// word games' end screen.
+public enum CelebrationRule {
+    /// A midterm the centre marked passed. A pre-midterm is scored but never judged
+    /// (`is_graded` false), so it is never celebrated, whatever it scored.
+    public static func midterm(isGraded: Bool, passed: Bool?) -> Bool {
+        isGraded && passed == true
+    }
+
+    /// An attempt that scored more than the attempt before it on the same set. With no attempt
+    /// before it — or none this phone saw — there is nothing to beat, so nothing is celebrated.
+    public static func assessment(percent: Double, previous: Double?) -> Bool {
+        guard let previous else { return false }
+        return percent > previous
+    }
+
+    /// A word-game round the server says mastered its game. The server recomputes
+    /// `mode_mastered` from the stored round, so a round whose save failed — no summary — is
+    /// never celebrated, and neither is a clean sweep the phone only thinks it saw.
+    public static func vocabRound(_ summary: VocabSessionSummary?) -> Bool {
+        summary?.modeMastered == true
+    }
+}
+
+/// What this phone has shown a student of their own scores — so an outcome is celebrated once,
+/// and an assessment can be compared with the attempt before it.
+///
+/// The phone is only ever handed a homework's newest attempt (`my-result`, the lists), so "the
+/// attempt before" is the newest earlier one this phone showed for the same set (`AssessmentReview.setKey`).
+/// Attempt ids grow in the order attempts are started, so an older attempt opened after a newer
+/// one is not "before" it and changes nothing.
+public struct OutcomeMemory: Codable, Sendable, Equatable {
+    public struct Shown: Codable, Sendable, Equatable {
+        public let attemptId: Int
+        public let percent: Double
+
+        public init(attemptId: Int, percent: Double) {
+            self.attemptId = attemptId
+            self.percent = percent
+        }
+    }
+
+    /// The newest attempt shown, per set.
+    public private(set) var lastShown: [String: Shown] = [:]
+    /// Per attempt that beat the one before it: the score it beat.
+    public private(set) var improvedFrom: [Int: Double] = [:]
+    /// Outcomes already celebrated (`assessmentKey`, `midtermKey`).
+    public private(set) var celebrated: Set<String> = []
+
+    public init() {}
+
+    /// A marked attempt is on screen. Returns the score it improved on — when it beat the newest
+    /// earlier attempt on the same set this phone showed — on every showing, so the page can say
+    /// so each time it opens; nil otherwise. Remembers it as the set's newest attempt.
+    public mutating func showAssessment(setKey: String, attemptId: Int, percent: Double) -> Double? {
+        if let previous = lastShown[setKey] {
+            if attemptId > previous.attemptId {
+                if CelebrationRule.assessment(percent: percent, previous: previous.percent) {
+                    improvedFrom[attemptId] = previous.percent
+                }
+                lastShown[setKey] = Shown(attemptId: attemptId, percent: percent)
+            }
+        } else {
+            lastShown[setKey] = Shown(attemptId: attemptId, percent: percent)
+        }
+        return improvedFrom[attemptId]
+    }
+
+    /// Whether an outcome's celebration plays now: it qualifies and has never played. Marks it,
+    /// so a page opened again does not celebrate again.
+    public mutating func celebrate(_ key: String, if qualifies: Bool) -> Bool {
+        guard qualifies, !celebrated.contains(key) else { return false }
+        celebrated.insert(key)
+        return true
+    }
+
+    public static func assessmentKey(_ attemptId: Int) -> String { "assessment.\(attemptId)" }
+    public static func midtermKey(_ attemptId: Int) -> String { "midterm.\(attemptId)" }
+}
+
+/// The memory on the phone, one small JSON value per student in `UserDefaults` — the same home
+/// as `LastSeenBook` and Today's seen results. Keyed by user id, so a second account on the
+/// phone starts empty; a value that will not decode reads as empty rather than failing.
+// @unchecked: the SDK does not mark UserDefaults Sendable, but Apple documents it as thread-safe.
+public struct OutcomeBook: @unchecked Sendable {
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public static func key(userID: Int) -> String { "outcomes.v1.\(userID)" }
+
+    public func read(userID: Int) -> OutcomeMemory {
+        guard let data = defaults.data(forKey: Self.key(userID: userID)),
+              let memory = try? JSONDecoder().decode(OutcomeMemory.self, from: data)
+        else { return OutcomeMemory() }
+        return memory
+    }
+
+    public func write(_ memory: OutcomeMemory, userID: Int) {
+        guard let data = try? JSONEncoder().encode(memory) else { return }
+        defaults.set(data, forKey: Self.key(userID: userID))
+    }
+}
+```
+
+- [ ] **Step 4: The review names its set**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift` — replace:
+
+```swift
+public struct AssessmentReviewMeta: Decodable, Sendable, Equatable {
+    public let assignmentTitle: String?
+```
+with:
+
+```swift
+public struct AssessmentReviewMeta: Decodable, Sendable, Equatable {
+    /// The homework the attempt belongs to — with the set's title, what tells one set's attempts
+    /// from another's (`AssessmentReview.setKey`).
+    public let assignmentId: Int?
+    public let assignmentTitle: String?
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift` — replace:
+
+```swift
+        case assignmentTitle = "assignment_title"
+```
+with:
+
+```swift
+        case assignmentId = "assignment_id"
+        case assignmentTitle = "assignment_title"
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift` — replace:
+
+```swift
+        assignmentTitle = try? c.decodeIfPresent(String.self, forKey: .assignmentTitle)
+```
+with:
+
+```swift
+        assignmentId = try? c.decodeIfPresent(Int.self, forKey: .assignmentId)
+        assignmentTitle = try? c.decodeIfPresent(String.self, forKey: .assignmentTitle)
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift` — replace:
+
+```swift
+    public var missed: [AssessmentReviewQuestion] { questions.filter { $0.isCorrect == false } }
+```
+with:
+
+```swift
+    public var missed: [AssessmentReviewQuestion] { questions.filter { $0.isCorrect == false } }
+
+    /// Which set this is an attempt at, for comparing it with the attempt before: the homework
+    /// and the set's title (one homework carries a set once). Nil when the server did not say
+    /// which homework — then nothing is compared and nothing is celebrated as improved.
+    public var setKey: String? {
+        guard let assignmentId = meta?.assignmentId else { return nil }
+        return "\(assignmentId)/\(meta?.setTitle ?? "")"
+    }
+```
+
+- [ ] **Step 5: The baseline a task's gain is measured from**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPDelta.swift` — replace:
+
+```swift
+    public static func gain(before: Int?, after: Int?) -> Int {
+        guard let before, let after, after > before else { return 0 }
+        return after - before
+    }
+}
+```
+with:
+
+```swift
+    public static func gain(before: Int?, after: Int?) -> Int {
+        guard let before, let after, after > before else { return 0 }
+        return after - before
+    }
+
+    /// What a finished task's gain is measured from: the header's total when the work started,
+    /// raised to the total it holds when the work is handed in.
+    ///
+    /// The server pays a task's XP when it is handed in, so a rise the header took in between —
+    /// a return to the app, a reconnect — came from somewhere else. Measured from the start, that
+    /// rise would be claimed as this task's gain, and the header would hold it back the moment
+    /// the task was recorded: the pill would drop to the old total at hand-in. A stale read never
+    /// lowers the baseline, and unknown at the start stays unknown — nothing is measured.
+    public static func baseline(atStart: Int?, atHandIn: Int?) -> Int? {
+        guard let atStart else { return nil }
+        return max(atStart, atHandIn ?? atStart)
+    }
+}
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "CelebrationRuleTests|OutcomeMemoryTests|OutcomeBookTests|HandInBaselineTests|AssessmentSetKeyTests|AssessmentBundleTests" 2>&1 | tail -4`
+Expected: every suite passes — the five new ones (3 + 4 + 2 + 1 + 1 tests) and `AssessmentBundleTests` unchanged. Whole kit: `swift test 2>&1 | tail -2` → `✔ Test run with 751 tests … passed` (740 + 11).
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationRule.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Models/Assessment.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPDelta.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/CelebrationRuleTests.swift
+git commit -m "feat(ios-kit): a score is celebrated once, when it passed or improved; a task's gain is measured from hand-in
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 31: What the runner and the spelling well show, in the kit (`AssessmentRunner.savedCount`, `VocabGames.spellingTiles`)
+
+**Files:**
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Assessment/AssessmentRunner.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabGames.swift`
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/AssessmentRunnerTests.swift` (one test added), `ios/MasterSATKit/Tests/MasterSATKitTests/FocusZoneTests.swift` (new)
+
+**Interfaces:**
+- Consumes: `AssessmentRunner` (its private `push`), `VocabGames.maskWord`'s rule (non-letters are structure).
+- Produces: `AssessmentRunner.savedCount: Int` (read-only; +1 per answer write the server confirmed); `VocabGames.SpellingTile { kind: Kind (.given | .typed | .blank | .structure); character: String }` and `VocabGames.spellingTiles(word: String, revealing: Int?, typed: String) -> [SpellingTile]`.
+
+Why: the runner's quiet "Saved" (Task 34) must appear only when the server really took an answer — a counter of confirmations is the one thing the view cannot work out for itself. The spelling question's tiles (Task 36) fill with what the student types; where each typed letter lands is pure logic, and it must never tell a right letter from a wrong one.
+
+Rules (kit): no backend change. "Saved" counts confirmations only — a refused write (it lands in `unsaved`) and a write the server overruled with a newer answer (`conflict`) do not count. The tiles never judge: a typed letter looks the same whether it is right or wrong.
+
+- [ ] **Step 1: Write the failing tests**
+
+**Edit** `ios/MasterSATKit/Tests/MasterSATKitTests/AssessmentRunnerTests.swift` — replace:
+
+```swift
+        #expect(!ok)
+        #expect(runner.unsaved.contains(30))
+        #expect(!server.requests.contains { $0.url?.absoluteString.contains("/attempts/submit/") == true })
+    }
+}
+```
+with:
+
+```swift
+        #expect(!ok)
+        #expect(runner.unsaved.contains(30))
+        #expect(!server.requests.contains { $0.url?.absoluteString.contains("/attempts/submit/") == true })
+    }
+
+    @Test("Every write the server confirms counts towards \"Saved\"; a refused one does not")
+    func savedCountsConfirmations() async throws {
+        server.handler = { _ in .json(bundleJSON(answers: [["id": 1, "question_id": 30, "answer": "x", "client_seq": 2]])) }
+        let runner = runner()
+        await runner.load()
+        #expect(runner.savedCount == 0, "answers the server already held are not news")
+        server.handler = { _ in .json(["ok": true]) }
+
+        runner.setAnswer(.string("A"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 1)
+
+        server.handler = { request in
+            request.url?.absoluteString.contains("/attempts/answer/") == true
+                ? .json(["detail": "boom"], status: 500)
+                : .json(["ok": true])
+        }
+        runner.setAnswer(.string("B"), for: 10)
+        try await Task.sleep(for: .milliseconds(120))
+        #expect(runner.savedCount == 1)
+        #expect(runner.unsaved.contains(10))
+    }
+}
+```
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/FocusZoneTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct SpellingTilesTests {
+
+    /// `[x]` a given letter, a bare letter a typed one, `_` a blank, anything else structure.
+    private func show(_ tiles: [VocabGames.SpellingTile]) -> String {
+        tiles.map { tile in
+            switch tile.kind {
+            case .given: return "[\(tile.character)]"
+            case .typed, .structure: return tile.character
+            case .blank: return "_"
+            }
+        }.joined()
+    }
+
+    @Test("Nothing typed: the given letter among the wells")
+    func nothingTyped() {
+        #expect(show(VocabGames.spellingTiles(word: "brisk", revealing: 2, typed: "")) == "__[i]__")
+        #expect(show(VocabGames.spellingTiles(word: "brisk", revealing: nil, typed: "")) == "_____")
+    }
+
+    @Test("Typed letters fill the word's letters in order; the given letter keeps its place")
+    func filling() {
+        #expect(show(VocabGames.spellingTiles(word: "brisk", revealing: 2, typed: "br")) == "br[i]__")
+        #expect(show(VocabGames.spellingTiles(word: "brisk", revealing: 2, typed: "brisk")) == "br[i]sk")
+        #expect(
+            show(VocabGames.spellingTiles(word: "brisk", revealing: 2, typed: "brasks")) == "br[i]sk",
+            "the given letter is never written over, and letters past the end are not shown"
+        )
+    }
+
+    @Test("Shape is never typed into: a hyphen or a space stays, the letters line up around it")
+    func structure() {
+        #expect(show(VocabGames.spellingTiles(word: "well-being", revealing: 0, typed: "wellbeing")) == "[w]ell-being")
+        #expect(show(VocabGames.spellingTiles(word: "well-being", revealing: 0, typed: "well-b")) == "[w]ell-b____")
+        #expect(show(VocabGames.spellingTiles(word: "well-being", revealing: 0, typed: "w e")) == "[w]e__-_____")
+    }
+
+    @Test("Never a verdict: a wrong letter is a typed letter like any other, as typed")
+    func noVerdict() {
+        let tiles = VocabGames.spellingTiles(word: "brisk", revealing: nil, typed: "Xq")
+        #expect(tiles[0] == VocabGames.SpellingTile(kind: .typed, character: "X"))
+        #expect(tiles[1] == VocabGames.SpellingTile(kind: .typed, character: "q"))
+        #expect(tiles[2] == VocabGames.SpellingTile(kind: .blank, character: ""))
+    }
+}
+```
+
+- [ ] **Step 2: Run them to verify they fail**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "AssessmentRunnerTests|SpellingTilesTests" 2>&1 | tail -5`
+Expected: build errors — `value of type 'AssessmentRunner' has no member 'savedCount'`, `type 'VocabGames' has no member 'spellingTiles'`.
+
+- [ ] **Step 3: The runner counts confirmed writes**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Assessment/AssessmentRunner.swift` — replace:
+
+```swift
+    public private(set) var unsaved: Set<Int> = []
+```
+with:
+
+```swift
+    public private(set) var unsaved: Set<Int> = []
+    /// Answer writes the server has confirmed since the attempt opened — what the runner's quiet
+    /// "Saved" listens to. Confirmations, not answers: a refused write (it is in `unsaved`) and a
+    /// write the server overruled with a newer answer (`conflict`) do not count.
+    public private(set) var savedCount = 0
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Assessment/AssessmentRunner.swift` — replace:
+
+```swift
+            unsaved.remove(questionId)
+            // Only clean if nothing newer was typed while this write was in flight; if it
+            // was, its own scheduled write is still coming.
+            if answers[questionId] == value { dirty.remove(questionId) }
+```
+with:
+
+```swift
+            unsaved.remove(questionId)
+            savedCount += 1
+            // Only clean if nothing newer was typed while this write was in flight; if it
+            // was, its own scheduled write is still coming.
+            if answers[questionId] == value { dirty.remove(questionId) }
+```
+
+- [ ] **Step 4: The spelling well**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabGames.swift` — replace:
+
+```swift
+    /// The word as blanks with one position filled in.
+    ///
+    /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not
+    /// the answer, and hiding them would turn spelling into guessing at the shape too.
+    public static func maskWord(_ word: String, revealing index: Int?) -> [String] {
+```
+with:
+
+```swift
+    /// One tile of the spelling question's well.
+    public struct SpellingTile: Sendable, Equatable {
+        public enum Kind: Sendable, Equatable {
+            /// The letter given away (`TestQuestion.revealIndex`) — never written over.
+            case given
+            /// A letter the student has typed, in its place.
+            case typed
+            /// A letter still to type.
+            case blank
+            /// A space, hyphen or apostrophe: shape, not answer — never typed into.
+            case structure
+        }
+
+        public let kind: Kind
+        /// What the tile shows, as typed (the view sets the case); empty for a blank.
+        public let character: String
+
+        public init(kind: Kind, character: String) {
+            self.kind = kind
+            self.character = character
+        }
+    }
+
+    /// The masked word with what the student has typed so far dropped into it.
+    ///
+    /// The typed letters fill the word's LETTER positions in order — the n-th typed letter sits
+    /// on the n-th letter of the word — so a student who types the whole word sees it line up
+    /// with its shape, structure skipped ("wellbeing" fills "well-being"). The given letter keeps
+    /// its tile: the typed letter on its position is consumed, not shown. Letters typed past the
+    /// end are not shown. Nothing here compares a letter with the answer — a wrong letter is a
+    /// typed letter like any other; the test says nothing until its end.
+    public static func spellingTiles(word: String, revealing index: Int?, typed: String) -> [SpellingTile] {
+        var letters = typed.filter(\.isLetter).makeIterator()
+        return Array(word).enumerated().map { offset, character in
+            guard character.isLetter else { return SpellingTile(kind: .structure, character: String(character)) }
+            let next = letters.next()
+            if offset == index { return SpellingTile(kind: .given, character: String(character)) }
+            if let next { return SpellingTile(kind: .typed, character: String(next)) }
+            return SpellingTile(kind: .blank, character: "")
+        }
+    }
+
+    /// The word as blanks with one position filled in.
+    ///
+    /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not
+    /// the answer, and hiding them would turn spelling into guessing at the shape too.
+    public static func maskWord(_ word: String, revealing index: Int?) -> [String] {
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "AssessmentRunnerTests|SpellingTilesTests|VocabGamesTests" 2>&1 | tail -4`
+Expected: every suite passes — `AssessmentRunnerTests` with its new test, `SpellingTilesTests` (4 tests), `VocabGamesTests` unchanged. Whole kit: `swift test 2>&1 | tail -2` → `✔ Test run with 756 tests … passed` (751 + 5).
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Assessment/AssessmentRunner.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabGames.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/AssessmentRunnerTests.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/FocusZoneTests.swift
+git commit -m "feat(ios-kit): the runner counts confirmed saves; the spelling well fills as the student types
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 32: Real upload progress per file, in the kit (`MultipartForm.fileRanges`, `UploadProgress`, `APIClient.send(_:as:onBodySent:)`)
+
+**Files:**
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Core/MultipartForm.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift` (`submitHomework`)
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/UploadProgressTests.swift`
+
+**Interfaces:**
+- Consumes: `MultipartForm`, `Endpoint.upload`, `APIClient.sendForData` (private), `StubServer` (tests).
+- Produces: `MultipartForm.fileRanges() -> [Range<Int>]` (where each file's bytes sit in `encoded()`, in `files` order; `encoded()` writes byte-for-byte what it wrote before); `public enum UploadProgress { static func perFile(sent: Int64, ranges: [Range<Int>]) -> [Double] }`; `APIClient.send<T>(_ endpoint: Endpoint, as: T.Type = T.self, onBodySent: @escaping @Sendable (Int64) -> Void) async throws -> T`; `StudentAPI.submitHomework(…, onFileProgress: (@Sendable ([Double]) -> Void)? = nil)` — the new parameter is LAST and defaults to nil, so every existing call compiles unchanged.
+
+Why: the approved design gives the homework upload "a per-photo progress ring". The owner's standing rule is no decorative progress bars, so the ring must be the upload's real progress — and a hand-in is ONE multipart request carrying every file. URLSession reports the bytes of the body it has sent (`urlSession(_:task:didSendBodyData:…)`); knowing where each file sits in the body turns that one number into one fraction per file. The pure parts (where the files sit, the fractions) are tested; the delegate plumbing is checked on the simulator in Task 40 (a `URLProtocol` stub does not report body progress).
+
+Rules (kit): no backend change — the request is byte-for-byte the one sent today. A retry after a token refresh sends the body again, so the count starts again from zero (the rings fall back and refill; the app keeps the highest value it has shown, Task 37). No `@MainActor` work in the kit: the closure is called on URLSession's own queue.
+
+- [ ] **Step 1: Write the failing test**
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/UploadProgressTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct UploadProgressTests {
+
+    let config = APIConfig(baseURL: URL(string: "https://mastersat.uz")!, clientIdentifier: "ios/test")
+    let server = StubServer()
+
+    private func form() -> MultipartForm {
+        var form = MultipartForm(boundary: "b0undary")
+        form.add(file: MultipartForm.File(filename: "page \"1\".jpg", mimeType: "image/jpeg", data: Data(repeating: 0xAB, count: 300), token: "t1"))
+        form.add(file: MultipartForm.File(filename: "notes.pdf", mimeType: "application/pdf", data: Data([1, 2, 3]), token: "t2"))
+        form.add("file_tokens", "[\"t1\",\"t2\"]")
+        form.add("expected_revision", 3)
+        return form
+    }
+
+    @Test("Each file's range slices exactly its own bytes back out of the body")
+    func rangesMatchTheBody() {
+        let form = form()
+        let body = form.encoded()
+        let ranges = form.fileRanges()
+        #expect(ranges.count == 2)
+        #expect(body.subdata(in: ranges[0]) == form.files[0].data)
+        #expect(body.subdata(in: ranges[1]) == form.files[1].data)
+        #expect(ranges[0].upperBound < ranges[1].lowerBound, "files go out in order, fields first")
+        #expect(ranges[1].upperBound < body.count, "the closing boundary comes after the last file")
+    }
+
+    @Test("Per file: nothing of it sent, part of it, all of it — in order")
+    func perFile() {
+        let ranges = [100..<200, 250..<450]
+        #expect(UploadProgress.perFile(sent: 50, ranges: ranges) == [0, 0])
+        #expect(UploadProgress.perFile(sent: 150, ranges: ranges) == [0.5, 0])
+        #expect(UploadProgress.perFile(sent: 260, ranges: ranges) == [1, 0.05])
+        #expect(UploadProgress.perFile(sent: 10_000, ranges: ranges) == [1, 1])
+        #expect(UploadProgress.perFile(sent: 5, ranges: [10..<10]) == [0], "an empty file is done once the body passes it")
+        #expect(UploadProgress.perFile(sent: 10, ranges: [10..<10]) == [1])
+    }
+
+    @Test("A hand-in that reports progress is the same multipart hand-in")
+    func handInWithProgress() async throws {
+        server.handler = { _ in .json(["id": 5, "revision": 4, "files": []]) }
+        let api = StudentAPI(client: APIClient(
+            config: config,
+            storage: InMemoryTokenStorage(TokenPair(access: "a", refresh: "r")),
+            session: server.session()
+        ))
+        let file = MultipartForm.File(filename: "page1.jpg", mimeType: "image/jpeg", data: Data([0xFF, 0xD8]), token: "tok-1")
+
+        let submission = try await api.submitHomework(
+            classroomId: 2, assignmentId: 7, files: [file], expectedRevision: 3,
+            onFileProgress: { _ in }
+        )
+
+        #expect(submission.revision == 4)
+        let body = String(decoding: try #require(server.requests.first?.httpBody), as: UTF8.self)
+        #expect(body.contains("filename=\"page1.jpg\""))
+        #expect(body.contains("tok-1"))
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter UploadProgressTests 2>&1 | tail -5`
+Expected: build errors — `value of type 'MultipartForm' has no member 'fileRanges'`, `cannot find 'UploadProgress' in scope`, `extra argument 'onFileProgress' in call`.
+
+- [ ] **Step 3: The form says where its files are**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Core/MultipartForm.swift` — replace:
+
+```swift
+    public func encoded() -> Data {
+        var body = Data()
+        func append(_ string: String) { body.append(Data(string.utf8)) }
+
+        for field in fields {
+            append("--\(boundary)\r\n")
+            append("Content-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n")
+            append("\(field.value)\r\n")
+        }
+        for file in files {
+            append("--\(boundary)\r\n")
+            // Quotes in a filename would end the header value early; strip rather than
+            // escape, since a filename is cosmetic here and the token is the identity.
+            let safeName = file.filename.replacingOccurrences(of: "\"", with: "")
+            append("Content-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(safeName)\"\r\n")
+            append("Content-Type: \(file.mimeType)\r\n\r\n")
+            body.append(file.data)
+            append("\r\n")
+        }
+        append("--\(boundary)--\r\n")
+        return body
+    }
+}
+```
+with:
+
+```swift
+    public func encoded() -> Data {
+        var body = Data()
+        for field in fields { body.append(Data(fieldPart(field).utf8)) }
+        for file in files {
+            body.append(Data(fileHead(file).utf8))
+            body.append(file.data)
+            body.append(Data(Self.lineEnd.utf8))
+        }
+        body.append(Data("--\(boundary)--\(Self.lineEnd)".utf8))
+        return body
+    }
+
+    /// Where each file's bytes sit inside `encoded()`, in `files` order — so the bytes an
+    /// upload has sent can be told per file (`UploadProgress`). Counted from the very pieces
+    /// `encoded()` writes, without building the body again.
+    public func fileRanges() -> [Range<Int>] {
+        var offset = fields.reduce(0) { $0 + fieldPart($1).utf8.count }
+        return files.map { file in
+            offset += fileHead(file).utf8.count
+            let range = offset..<(offset + file.data.count)
+            offset = range.upperBound + Self.lineEnd.utf8.count
+            return range
+        }
+    }
+
+    private static let lineEnd = "\r\n"
+
+    private func fieldPart(_ field: (name: String, value: String)) -> String {
+        "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(field.name)\"\r\n\r\n\(field.value)\r\n"
+    }
+
+    private func fileHead(_ file: File) -> String {
+        // Quotes in a filename would end the header value early; strip rather than
+        // escape, since a filename is cosmetic here and the token is the identity.
+        let safeName = file.filename.replacingOccurrences(of: "\"", with: "")
+        return "--\(boundary)\r\nContent-Disposition: form-data; name=\"\(file.field)\"; filename=\"\(safeName)\"\r\nContent-Type: \(file.mimeType)\r\n\r\n"
+    }
+}
+
+/// How far each file of a multipart upload has gone, from the bytes the request has sent.
+public enum UploadProgress {
+    /// 0…1 per file, in `ranges` order (`MultipartForm.fileRanges()`): none of it sent yet, part
+    /// of it, all of it. Real numbers only — a per-photo ring that moved on its own would be a
+    /// decoration pretending to be progress.
+    public static func perFile(sent: Int64, ranges: [Range<Int>]) -> [Double] {
+        ranges.map { range in
+            guard !range.isEmpty else { return sent >= Int64(range.upperBound) ? 1 : 0 }
+            let done = min(max(sent - Int64(range.lowerBound), 0), Int64(range.count))
+            return Double(done) / Double(range.count)
+        }
+    }
+}
+```
+
+- [ ] **Step 4: The client can report a body going out**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift` — replace:
+
+```swift
+    /// Send and ignore the body.
+    @discardableResult
+    public func send(_ endpoint: Endpoint) async throws -> Data {
+        try await sendForData(endpoint)
+    }
+```
+with:
+
+```swift
+    /// Send and ignore the body.
+    @discardableResult
+    public func send(_ endpoint: Endpoint) async throws -> Data {
+        try await sendForData(endpoint)
+    }
+
+    /// Send and decode, telling `onBodySent` how many bytes of the request body have gone out —
+    /// for an upload a student watches. Called on URLSession's own queue, never the main actor.
+    /// Everything else is `send`'s: one refresh and one retry — which sends the body again, so
+    /// the count starts again from zero.
+    public func send<T: Decodable & Sendable>(
+        _ endpoint: Endpoint,
+        as type: T.Type = T.self,
+        onBodySent: @escaping @Sendable (Int64) -> Void
+    ) async throws -> T {
+        let data = try await sendForData(endpoint, progress: BodyProgress(onBodySent))
+        if T.self == Empty.self, let empty = Empty() as? T { return empty }
+        do {
+            return try JSONCoding.decoder.decode(T.self, from: data)
+        } catch {
+            let detail = String(describing: error)
+            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
+            throw APIError.decoding(context: endpoint.path, underlying: detail)
+        }
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift` — replace:
+
+```swift
+    private func sendForData(_ endpoint: Endpoint, isRetry: Bool = false, codedRefusals: Bool = false) async throws -> Data {
+        let request = try buildRequest(endpoint)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+```
+with:
+
+```swift
+    private func sendForData(
+        _ endpoint: Endpoint,
+        isRetry: Bool = false,
+        codedRefusals: Bool = false,
+        progress: BodyProgress? = nil
+    ) async throws -> Data {
+        let request = try buildRequest(endpoint)
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request, delegate: progress)
+        } catch {
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift` — replace:
+
+```swift
+            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals)
+```
+with:
+
+```swift
+            return try await sendForData(endpoint, isRetry: true, codedRefusals: codedRefusals, progress: progress)
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift` — replace:
+
+```swift
+/// The single door to the backend.
+```
+with:
+
+```swift
+/// Hands a request's sent-body count to a closure, as URLSession reports it (on its own queue).
+// @unchecked: the one stored property is an immutable @Sendable closure.
+final class BodyProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    private let report: @Sendable (Int64) -> Void
+
+    init(_ report: @escaping @Sendable (Int64) -> Void) {
+        self.report = report
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        task: URLSessionTask,
+        didSendBodyData bytesSent: Int64,
+        totalBytesSent: Int64,
+        totalBytesExpectedToSend: Int64
+    ) {
+        report(totalBytesSent)
+    }
+}
+
+/// The single door to the backend.
+```
+
+- [ ] **Step 5: A hand-in can say how far each file has gone**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift` — replace:
+
+```swift
+        expectedRevision: Int?,
+        markAsSubmitted: Bool = true
+    ) async throws -> Submission {
+```
+with:
+
+```swift
+        expectedRevision: Int?,
+        markAsSubmitted: Bool = true,
+        onFileProgress: (@Sendable ([Double]) -> Void)? = nil
+    ) async throws -> Submission {
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift` — replace:
+
+```swift
+        form.add("submit", markAsSubmitted ? "true" : "false")
+
+        return try await client.send(
+            .upload("/classes/\(classroomId)/assignments/\(assignmentId)/submit/", form: form),
+            as: Submission.self
+        )
+    }
+```
+with:
+
+```swift
+        form.add("submit", markAsSubmitted ? "true" : "false")
+
+        let endpoint = Endpoint.upload("/classes/\(classroomId)/assignments/\(assignmentId)/submit/", form: form)
+        guard let onFileProgress else { return try await client.send(endpoint, as: Submission.self) }
+        // One request carries every file: how far each one has gone is where the body is.
+        let ranges = form.fileRanges()
+        return try await client.send(endpoint, as: Submission.self) { sent in
+            onFileProgress(UploadProgress.perFile(sent: sent, ranges: ranges))
+        }
+    }
+```
+
+- [ ] **Step 6: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "UploadProgressTests|MultipartFormTests|HomeworkSubmissionTests|APIClientTests" 2>&1 | tail -4`
+Expected: every suite passes — `UploadProgressTests` (3 tests) and `MultipartFormTests`, `HomeworkSubmissionTests`, `APIClientTests` unchanged (the body is byte-for-byte the same). Whole kit: `swift test 2>&1 | tail -2` → `✔ Test run with 759 tests … passed` (756 + 3).
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Core/MultipartForm.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Core/APIClient.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Student/StudentAPI.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/UploadProgressTests.swift
+git commit -m "feat(ios-kit): a hand-in reports how far each file has gone
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 33: The focus-zone motion kit, covers without the bar's room, and the hand-in baseline
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Support/Motion/Motion.swift` (`Motion.focusTap`, `Motion.focusStep`, `FocusTurn`, `.focusTurn`, `FocusPress`, `focusReveal`, `focusEntrance`, `focusShake`, `RollingNumber`)
+- Modify: `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` (`celebrate` measures from hand-in; `OutcomeConfetti`; `FrameBox` moves in)
+- Modify: `ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift` (`FrameBox` moves out)
+- Modify: `ios/MasterSAT/Sources/Screens/RootView.swift` (`noBarClearance()`)
+- Modify (one line each, the cover's content gets `.noBarClearance()`): `Screens/HomeworkDetailView.swift`, `Screens/Assessments/AssessmentReviewView.swift`, `Screens/Assessments/AssessmentBoardViews.swift`, `Screens/Vocabulary/VocabSetPage.swift`, `Screens/Stories/StoriesRail.swift`, `Screens/Stories/StoryViewer.swift`, `Screens/LiveQuiz/LiveQuizJoinView.swift`, `Screens/Events/EventsView.swift` (all under `ios/MasterSAT/Sources/`)
+- Modify: `ios/MasterSAT/Sources/Screens/Surveys/SurveyFillView.swift` (`submitFrame` → `FrameBox`)
+
+**Interfaces:**
+- Consumes: `XPDelta.baseline` (Task 30), `ConfettiBurst`, `MotionBudget`, `ConfettiCanvas` (phase 1), `FrameBox` (phase 3).
+- Produces (app): `Motion.focusTap: Animation` (easeOut 0.12 s); `Motion.focusStep: Double` (0.03); `enum FocusTurn { case forward, back; static func from(_ old: Int, to new: Int) -> FocusTurn }`; `AnyTransition.focusTurn(_ turn: FocusTurn, reduceMotion: Bool) -> AnyTransition`; `struct FocusPress: ButtonStyle`; `View.focusReveal(_ index: Int, shown: Bool)`; `View.focusEntrance(_ index: Int)` (a `focusReveal` that runs on appear); `View.focusShake(_ trigger: Int, cornerRadius: CGFloat)`; `struct RollingNumber: View { let value: Double; var suffix = "" }` (a score that counts up); `View.noBarClearance()`; `struct OutcomeConfetti: View { let trigger: Int }`; `FrameBox` now lives in `Celebrations.swift` (same type, same API).
+
+The focus-zone rules (approved design §3 and the controller's ruling) — every helper here obeys them, and Tasks 34–39 use only these helpers for motion inside focus zones:
+- ≤250 ms, ease-out, nothing overshoots over content. A spring is allowed only on chrome that never covers content (a flag glyph, the logo).
+- Reduce Motion: every movement becomes a fade or nothing — a turn is a crossfade, a reveal only fades, a shake becomes a red pulse over the refused box, a press only dims.
+- Never a hint at right or wrong while answering: nothing here knows about answers.
+
+Hand-off fixes in this task:
+- **Phase 1:** `contentMargins` reaches full-screen covers. The tab bar's room is `contentMargins(.bottom, barClearance)` on each tab child; it travels by environment into every cover presented from a tab, where there is no bar — so the runner's and the games' scroll views ended ~80 pt short of the bottom for nothing. Checked while this plan was written, on the iOS 26.3 simulator with a probe app: an inherited `contentMargins(.bottom, 200)` reaches a `fullScreenCover`'s `ScrollView`, and `.contentMargins(.bottom, 0)` on the cover's content cancels it. Every cover presented from inside a tab gets `.noBarClearance()`. (The Me sheet is presented from the root, outside the tab children, so its covers never inherit it.)
+- **Phase 3:** a refresh mid-session dropped the pill un-animated at hand-in — `celebrate` now measures from `XPDelta.baseline(atStart:atHandIn:)`.
+- **Phase 2:** `submitFrame` was `@State` written every scroll frame — boxed in `FrameBox` (the homework page's `handInFrame` follows in Task 37).
+
+- [ ] **Step 1: The focus-zone motion kit**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Motion.swift` — replace:
+
+```swift
+    /// Focus zones: short and without overshoot, so nothing moves over the content.
+    static let focus = Animation.easeOut(duration: 0.2)
+```
+with:
+
+```swift
+    /// Focus zones: short and without overshoot, so nothing moves over the content.
+    static let focus = Animation.easeOut(duration: 0.2)
+    /// Focus zones, the shortest beat: a press, a tick, a pulse.
+    static let focusTap = Animation.easeOut(duration: 0.12)
+    /// The beat between blocks of a focus-zone entrance (`focusReveal`) — at most three of them,
+    /// so the whole entrance is over within 250 ms.
+    static let focusStep = 0.03
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Motion.swift` — replace:
+
+```swift
+    /// The page that zooms out of its card. A plain push before iOS 18 and under Reduce Motion.
+    func zoomDestination(id: some Hashable, in namespace: Namespace.ID) -> some View {
+        modifier(ZoomDestination(id: id, namespace: namespace))
+    }
+}
+```
+with:
+
+```swift
+    /// The page that zooms out of its card. A plain push before iOS 18 and under Reduce Motion.
+    func zoomDestination(id: some Hashable, in namespace: Namespace.ID) -> some View {
+        modifier(ZoomDestination(id: id, namespace: namespace))
+    }
+}
+
+// MARK: - Focus zones
+
+/// Which way a focus zone turned its page: on to the next question, or back.
+enum FocusTurn: Equatable {
+    case forward, back
+
+    /// The way from one position to another — a jump from the question map included.
+    static func from(_ old: Int, to new: Int) -> FocusTurn { new >= old ? .forward : .back }
+}
+
+extension AnyTransition {
+    /// A question arriving: it comes 24 pt in from the side it is coming from as it fades in;
+    /// the one leaving only fades, in half the time, so two texts never sit over each other for
+    /// long. Animate the change with `Motion.focus` — nothing overshoots. Set the turn in the
+    /// same update as the change, before it: the arriving view reads it as it is inserted.
+    /// Under Reduce Motion, a crossfade.
+    static func focusTurn(_ turn: FocusTurn, reduceMotion: Bool) -> AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .offset(x: turn == .forward ? 24 : -24).combined(with: .opacity),
+            removal: .opacity.animation(.easeOut(duration: 0.1))
+        )
+    }
+}
+
+/// A press on an answer inside a focus zone: it dips a little and comes straight back — no
+/// spring, nothing grows past its size, and every answer presses alike (a press never hints at
+/// right or wrong). Under Reduce Motion it only dims.
+struct FocusPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.modifier(FocusPressEffect(isPressed: configuration.isPressed))
+    }
+}
+
+private struct FocusPressEffect: ViewModifier {
+    let isPressed: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(!reduceMotion && isPressed ? 0.98 : 1)
+            .opacity(isPressed ? 0.85 : 1)
+            .animation(Motion.focusTap, value: isPressed)
+    }
+}
+
+private struct FocusReveal: ViewModifier {
+    let index: Int
+    let shown: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+                .opacity(shown ? 1 : 0)
+                .animation(.easeOut(duration: 0.15), value: shown)
+        } else {
+            content
+                .opacity(shown ? 1 : 0)
+                .offset(y: shown ? 0 : 8)
+                .animation(.easeOut(duration: 0.15).delay(Double(min(max(index, 0), 3)) * Motion.focusStep), value: shown)
+        }
+    }
+}
+
+private struct FocusShake: ViewModifier {
+    let trigger: Int
+    let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            // Nothing moves: a red pulse over the refused box instead, in and out.
+            content.overlay {
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .fill(Theme.danger.opacity(0.18))
+                    .keyframeAnimator(initialValue: 0.0, trigger: trigger) { pulse, value in
+                        pulse.opacity(value)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            LinearKeyframe(1.0, duration: 0.08)
+                            LinearKeyframe(1.0, duration: 0.12)
+                            LinearKeyframe(0.0, duration: 0.2)
+                        }
+                    }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        } else {
+            content.keyframeAnimator(initialValue: CGFloat(0), trigger: trigger) { view, x in
+                view.offset(x: x)
+            } keyframes: { _ in
+                KeyframeTrack {
+                    LinearKeyframe(-8, duration: 0.04)
+                    LinearKeyframe(8, duration: 0.06)
+                    LinearKeyframe(-6, duration: 0.05)
+                    LinearKeyframe(4, duration: 0.05)
+                    LinearKeyframe(0, duration: 0.04)
+                }
+            }
+        }
+    }
+}
+
+extension View {
+    /// One block of a focus zone settling in: up 8 pt and in, `index` beats after the first (at
+    /// most three beats of `Motion.focusStep`), so the whole entrance is over within 250 ms and
+    /// nothing overshoots. Under Reduce Motion it only fades, all at once.
+    func focusReveal(_ index: Int, shown: Bool) -> some View {
+        modifier(FocusReveal(index: index, shown: shown))
+    }
+
+    /// A refusal — a wrong password, a pair that is not one: a 240 ms shake, side to side, that
+    /// comes to rest where it started, each time `trigger` changes. Under Reduce Motion nothing
+    /// moves: a red pulse over the box (`cornerRadius` is the box's) instead. The caller adds the
+    /// warning haptic and says what was refused in words.
+    func focusShake(_ trigger: Int, cornerRadius: CGFloat) -> some View {
+        modifier(FocusShake(trigger: trigger, cornerRadius: cornerRadius))
+    }
+
+    /// `focusReveal` that runs by itself the first time the block appears — for blocks that
+    /// arrive with their data (a report's rows) or with a new question (a reviewed card's rows).
+    func focusEntrance(_ index: Int) -> some View {
+        modifier(FocusEntrance(index: index))
+    }
+}
+
+private struct FocusEntrance: ViewModifier {
+    let index: Int
+    @State private var shown = false
+
+    func body(content: Content) -> some View {
+        content
+            .focusReveal(index, shown: shown)
+            .onAppear { shown = true }
+    }
+}
+
+/// A score that counts up from 0 when it appears: its digits roll once, in one `Motion.focus`
+/// beat — ticking through every number would break the focus zones' 250 ms. A later change rolls
+/// the same way. Under Reduce Motion it is simply there; VoiceOver hears the final number.
+struct RollingNumber: View {
+    let value: Double
+    var suffix = ""
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown: Double = 0
+
+    var body: some View {
+        Text("\(ScoreText.string(reduceMotion ? value : shown))\(suffix)")
+            .contentTransition(.numericText(value: shown))
+            .accessibilityLabel("\(ScoreText.string(value))\(suffix)")
+            .onAppear { withAnimation(Motion.focus) { shown = value } }
+            .onChange(of: value) { _, new in withAnimation(Motion.focus) { shown = new } }
+    }
+}
+```
+
+- [ ] **Step 2: A task's gain is measured from hand-in; outcome confetti; `FrameBox` moves in**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
+        let entry = queue.record(work, xpBefore: xpBefore, stageVisible: !covered)
+```
+with:
+
+```swift
+    func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
+        // Measured from hand-in at the latest: a rise the header took since the work started (a
+        // return to the app, a reconnect) is not this work's, and holding it back now would drop
+        // the pill to the old total, un-animated (`XPDelta.baseline`).
+        let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpNow)
+        let entry = queue.record(work, xpBefore: baseline, stageVisible: !covered)
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+extension CGRect {
+    /// The middle of a measured control; nil before it has been measured.
+    var celebrationPoint: CGPoint? { self == .zero ? nil : CGPoint(x: midX, y: midY) }
+}
+```
+with:
+
+```swift
+extension CGRect {
+    /// The middle of a measured control; nil before it has been measured.
+    var celebrationPoint: CGPoint? { self == .zero ? nil : CGPoint(x: midX, y: midY) }
+}
+
+/// A measured frame kept out of SwiftUI state: written on every scroll frame, read only when
+/// something celebrates from it — so measuring never re-renders the page.
+@MainActor
+final class FrameBox {
+    var rect: CGRect = .zero
+}
+
+/// The confetti of a good OUTCOME — a midterm passed, an assessment that beat the last one —
+/// drawn by the page that shows it, so it is seen wherever that page is: the Me sheet too, which
+/// the root overlay sits under. One burst from the top of the page each time `trigger` changes
+/// (the page changes it once, from `OutcomeMemory`); none under Reduce Motion, half under Low
+/// Power (`MotionBudget`). Never takes a touch, never read by VoiceOver — the page says the news
+/// in words.
+struct OutcomeConfetti: View {
+    let trigger: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bursts: [ConfettiBurst] = []
+
+    var body: some View {
+        GeometryReader { box in
+            ConfettiCanvas(bursts: bursts)
+                .onChange(of: trigger) { _, _ in fire(in: box.size) }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func fire(in size: CGSize) {
+        let budget = MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+        let count = budget.confetti(44)
+        guard count > 0, size.width > 0 else { return }
+        bursts.append(.make(x: size.width / 2, y: size.height * 0.2, count: count))
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(ConfettiBurst.lifetime + 0.2))
+            bursts.removeAll { $0.isFinished(at: .now) }
+        }
+    }
+}
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift` — replace:
+
+```swift
+/// A measured frame kept out of SwiftUI state: written on every scroll frame, read only when a
+/// coin bursts — so measuring never re-renders the tab.
+@MainActor
+final class FrameBox {
+    var rect: CGRect = .zero
+}
+
+// MARK: - The board
+```
+with:
+
+```swift
+// MARK: - The board
+```
+
+- [ ] **Step 3: Covers drop the tab bar's room**
+
+**Edit** `ios/MasterSAT/Sources/Screens/RootView.swift` — replace:
+
+```swift
+    private func sheetDismissed() {
+        router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
+        celebrations.setSheetUp(router.showingMe || router.certificate != nil)
+    }
+}
+```
+with:
+
+```swift
+    private func sheetDismissed() {
+        router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
+        celebrations.setSheetUp(router.showingMe || router.certificate != nil)
+    }
+}
+
+extension View {
+    /// Put on a full-screen cover's content. The tab bar's room (`contentMargins(.bottom, …)` on
+    /// each tab, above) travels by environment into anything presented from inside a tab, and a
+    /// cover has no bar under it — its scroll views would end a bar's height short of the bottom.
+    /// An inner margin replaces the inherited one (checked on the simulator, 2026-10-21).
+    func noBarClearance() -> some View {
+        contentMargins(.bottom, 0)
+    }
+}
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+                assessmentAttemptId = nil
+                Task { await load() }
+            }
+            .coversCelebrations(celebrations)
+```
+with:
+
+```swift
+                assessmentAttemptId = nil
+                Task { await load() }
+            }
+            .coversCelebrations(celebrations)
+            .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                dismiss()
+            }
+            .coversCelebrations(celebrations)
+```
+with:
+
+```swift
+                dismiss()
+            }
+            .coversCelebrations(celebrations)
+            .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentBoardViews.swift` — replace:
+
+```swift
+                Task { await model.load(session.student) }
+            }
+            .coversCelebrations(celebrations)
+```
+with:
+
+```swift
+                Task { await model.load(session.student) }
+            }
+            .coversCelebrations(celebrations)
+            .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabSetPage.swift` — replace:
+
+```swift
+                    Task { await load() }
+                }
+                .coversCelebrations(celebrations)
+```
+with:
+
+```swift
+                    Task { await load() }
+                }
+                .coversCelebrations(celebrations)
+                .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Stories/StoriesRail.swift` — replace:
+
+```swift
+            StoryViewer(stories: item.stories, startIndex: item.index)
+```
+with:
+
+```swift
+            StoryViewer(stories: item.stories, startIndex: item.index)
+                .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Stories/StoryViewer.swift` — replace:
+
+```swift
+            CommunitySafariView(url: page.url) { link = nil }
+                .ignoresSafeArea()
+```
+with:
+
+```swift
+            CommunitySafariView(url: page.url) { link = nil }
+                .ignoresSafeArea()
+                .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/LiveQuiz/LiveQuizJoinView.swift` — replace:
+
+```swift
+                model.presented = nil
+            }
+            .environment(session)
+```
+with:
+
+```swift
+                model.presented = nil
+            }
+            .environment(session)
+            .noBarClearance()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Events/EventsView.swift` — replace:
+
+```swift
+            EventTicketView(ticket: ticket)
+```
+with:
+
+```swift
+            EventTicketView(ticket: ticket)
+                .noBarClearance()
+```
+
+- [ ] **Step 4: The survey's Submit is measured without re-rendering**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Surveys/SurveyFillView.swift` — replace:
+
+```swift
+    /// Where Submit is, so the confetti leaves from it.
+    @State private var submitFrame: CGRect = .zero
+```
+with:
+
+```swift
+    /// Where Submit is, so the confetti leaves from it. Boxed: it is written on every scroll frame.
+    @State private var submitSpot = FrameBox()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Surveys/SurveyFillView.swift` — replace:
+
+```swift
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { submitFrame = $0 }
+```
+with:
+
+```swift
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { submitSpot.rect = $0 }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Surveys/SurveyFillView.swift` — replace:
+
+```swift
+                celebrations.celebrate(.survey, xpBefore: xpBefore, at: submitFrame.celebrationPoint)
+```
+with:
+
+```swift
+                celebrations.celebrate(.survey, xpBefore: xpBefore, at: submitSpot.rect.celebrationPoint)
+```
+
+- [ ] **Step 5: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then:
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSAT/Sources
+grep -rn "\.fullScreenCover(" Screens | grep -v "Account/\|CommunityChrome" | wc -l   # 8
+grep -rn "noBarClearance()" Screens | grep -v "func noBarClearance" | wc -l        # 8
+grep -rn "submitFrame\|class FrameBox" . | grep -v Celebrations.swift              # nothing
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Support/Motion/Motion.swift \
+        ios/MasterSAT/Sources/Support/Motion/Celebrations.swift \
+        ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift \
+        ios/MasterSAT/Sources/Screens/RootView.swift \
+        ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift \
+        ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift \
+        ios/MasterSAT/Sources/Screens/Assessments/AssessmentBoardViews.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/VocabSetPage.swift \
+        ios/MasterSAT/Sources/Screens/Stories/StoriesRail.swift \
+        ios/MasterSAT/Sources/Screens/Stories/StoryViewer.swift \
+        ios/MasterSAT/Sources/Screens/LiveQuiz/LiveQuizJoinView.swift \
+        ios/MasterSAT/Sources/Screens/Events/EventsView.swift \
+        ios/MasterSAT/Sources/Screens/Surveys/SurveyFillView.swift
+git commit -m "feat(ios): focus-zone motion kit; covers drop the tab bar's room; a task's gain is measured from hand-in
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 34: The assessment runner — the question turns, choices fill, the cross-out is drawn, "Saved"
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` (`AssessmentRunnerView`, `QuestionMapSheet`, `AssessmentChoiceRow`, `AssessmentSubmittedView`'s entrance)
+
+**Interfaces:**
+- Consumes: `AssessmentRunner.savedCount` (Task 31); `FocusTurn`, `.focusTurn`, `FocusPress`, `focusReveal`, `Motion.focus` (Task 33); `AssessmentRunner.go(to:)`, `answeredCount`, `unsaved`, `flagged` (existing).
+- Produces: nothing new outside the file. `AssessmentRunnerView`'s initializer and `onSubmitted` are unchanged, so its three presenters (homework page, board, review's retry) are untouched.
+
+What the student gets (approved design §3, focus zone): the next question comes in from the right (the previous one from the left, a map jump from its side) in 200 ms and opens at its top; a picked choice fills in 200 ms with a selection tick — the same tick for every choice, flag and cross-out, because the runner never says whether an answer is right; crossing out draws a line through the whole option, left to right; the flag glyph bounces when a question is flagged (chrome — the one spring here); "Saved" appears under the answered count for a moment after the server confirmed an answer; the answered count rolls when it moves; the question map's cells settle in, row by row, within 250 ms. The full celebration stays where phase 2 put it: after the hand-in, once the cover has gone.
+
+Decisions in this task:
+- **No answered-count bar** (controller ruling): "N/M" is already on screen, and a bar would restate it. The count rolls instead.
+- **The cross-out is drawn, not typed.** A line is drawn across the whole option, as Bluebook rules out an answer; the option's own CSS strike-through goes, because toggling it reloaded the option's KaTeX web view (`RichTextView.updateUIView` re-renders on any change of its signature) — a flash and a height jump on every cross-out.
+- **Answered cells on the map are the runner's selection blue, not green.** Green means "correct" on the review; the runner never says correct.
+- **A question change resets the scroll to its top** (it kept the last question's offset), and a typed answer's keyboard closes as the question turns — the field belongs to the question that left.
+
+Rules (repeat): never a hint at right or wrong while answering — no colour, no haptic and no motion differs between a right and a wrong choice; ≤250 ms, no overshoot over content, a spring only on chrome; Reduce Motion → fades (the turn is a crossfade, the line simply appears, the map fades in, the flag does not bounce); no announcement per tap ("Saved" is hidden from VoiceOver — the existing "Some answers haven't saved yet" line is what a VoiceOver user needs); new controls keep ≥44 pt targets.
+
+- [ ] **Step 1: State, the haptic, the turn**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+    /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
+    @AppStorage("assessmentZoom") private var zoom: Double = 1.0
+```
+with:
+
+```swift
+    /// Text scale. Matches the web's 70%–150% range and its 10-point steps.
+    @AppStorage("assessmentZoom") private var zoom: Double = 1.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Which way the last question change went — the arriving question comes in from that side.
+    @State private var turn: FocusTurn = .forward
+    /// One tick per choice picked, option crossed out or question flagged: the selection haptic.
+    /// Every pick ticks alike — the runner never says whether an answer is right.
+    @State private var picks = 0
+    /// Bumped only when a question is flagged (not when the flag comes off): the flag's bounce.
+    @State private var flagBounces = 0
+    /// "Saved" is showing, for a moment after the server confirmed an answer.
+    @State private var showSaved = false
+    @State private var savedFade: Task<Void, Never>?
+
+    /// The top of the scrolled page — a new question opens here.
+    private static let top = "runner.top"
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+        .background(Theme.background)
+        .task {
+            if runner == nil {
+                let created = AssessmentRunner(attemptId: attemptId, api: session.assessments)
+```
+with:
+
+```swift
+        .background(Theme.background)
+        // The hand-in screen fades in rather than cutting.
+        .animation(Motion.focus, value: didSubmit)
+        .sensoryFeedback(.selection, trigger: picks)
+        .task {
+            if runner == nil {
+                let created = AssessmentRunner(attemptId: attemptId, api: session.assessments)
+```
+
+- [ ] **Step 2: The question turns; the page opens at its top; "Saved" listens**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    setHeader(runner)
+                    questionCard(runner, question)
+
+                    if !runner.unsaved.isEmpty {
+                        // Say it rather than showing a silent tick. A student who loses
+                        // signal mid-quiz deserves to know what has not landed.
+                        Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.warning)
+                    }
+                }
+                .padding(14)
+            }
+
+            footer(runner)
+        }
+        .sheet(isPresented: $showMap) {
+            QuestionMapSheet(runner: runner) { index in
+                runner.go(to: index)
+                showMap = false
+            }
+```
+with:
+
+```swift
+            ScrollViewReader { scroller in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        setHeader(runner)
+                            .id(Self.top)
+                        // A ZStack, so the question leaving and the one arriving overlap for
+                        // their 200 ms instead of stacking and pushing the page down.
+                        ZStack {
+                            questionCard(runner, question)
+                                .id(question.id)
+                                .transition(.focusTurn(turn, reduceMotion: reduceMotion))
+                        }
+
+                        if !runner.unsaved.isEmpty {
+                            // Say it rather than showing a silent tick. A student who loses
+                            // signal mid-quiz deserves to know what has not landed.
+                            Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.warning)
+                        }
+                    }
+                    .padding(14)
+                }
+                .onChange(of: runner.currentIndex) { _, _ in
+                    // A new question opens at its top, not where the last one was left.
+                    scroller.scrollTo(Self.top, anchor: .top)
+                }
+            }
+
+            footer(runner)
+        }
+        .onChange(of: runner.savedCount) { _, _ in flashSaved() }
+        .sheet(isPresented: $showMap) {
+            QuestionMapSheet(runner: runner) { index in
+                move(to: index, runner)
+                showMap = false
+            }
+```
+
+- [ ] **Step 3: The answered count rolls; "Saved" under it**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+            Spacer(minLength: 0)
+            Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
+                .font(.system(size: 14, weight: .bold).monospacedDigit())
+                .foregroundStyle(Theme.textSecondary)
+        }
+```
+with:
+
+```swift
+            Spacer(minLength: 0)
+            VStack(alignment: .trailing, spacing: 3) {
+                // The count is the progress: it rolls when it moves, and no bar restates it.
+                Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
+                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .foregroundStyle(Theme.textSecondary)
+                    .contentTransition(reduceMotion ? .identity : .numericText(value: Double(runner.answeredCount)))
+                    .animation(Motion.focus, value: runner.answeredCount)
+                    .accessibilityLabel("\(runner.answeredCount) of \(runner.questions.count) answered")
+                // A quiet word once the server has an answer — never while a write is failing,
+                // when the warning under the question says what has not landed.
+                Label("Saved", systemImage: "checkmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textLabel)
+                    .opacity(showSaved && runner.unsaved.isEmpty ? 1 : 0)
+                    .animation(Motion.focus, value: showSaved)
+                    .accessibilityHidden(true)
+            }
+        }
+```
+
+- [ ] **Step 4: The flag bounces when it goes on**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+    private func flagButton(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
+        Button {
+            runner.toggleFlag(question.id)
+        } label: {
+            let isFlagged = runner.flagged.contains(question.id)
+            HStack(spacing: 5) {
+                Image(systemName: isFlagged ? "flag.fill" : "flag")
+                    .font(.system(size: 12, weight: .bold))
+                Text(isFlagged ? "Flagged" : "Flag")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(isFlagged ? Theme.flagged : Theme.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.background))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+```
+with:
+
+```swift
+    private func flagButton(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
+        let isFlagged = runner.flagged.contains(question.id)
+        return Button {
+            runner.toggleFlag(question.id)
+            picks += 1
+            if !isFlagged { flagBounces += 1 }
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: isFlagged ? "flag.fill" : "flag")
+                    .font(.system(size: 12, weight: .bold))
+                    // Chrome beside the question, never over it — the one spring the runner
+                    // allows. Not under Reduce Motion.
+                    .symbolEffect(.bounce, value: reduceMotion ? 0 : flagBounces)
+                Text(isFlagged ? "Flagged" : "Flag")
+                    .font(.system(size: 12, weight: .bold))
+            }
+            .foregroundStyle(isFlagged ? Theme.flagged : Theme.textSecondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.background))
+            .contentShape(Capsule())
+            .animation(Motion.focus, value: isFlagged)
+        }
+        .buttonStyle(.plain)
+    }
+```
+
+- [ ] **Step 5: Choices fill and tick; True / False press like them**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                        onTap: {
+                            // Tapping the chosen answer again clears it — a student who
+                            // changes their mind to "no answer" must be able to say so.
+                            let current = runner.answers[question.id]
+                            runner.setAnswer(current == .string(choice.id) ? .null : .string(choice.id), for: question.id)
+                        },
+                        onEliminate: { toggleElimination(choice.id, on: question, runner: runner) }
+```
+with:
+
+```swift
+                        onTap: {
+                            // Tapping the chosen answer again clears it — a student who
+                            // changes their mind to "no answer" must be able to say so.
+                            let current = runner.answers[question.id]
+                            runner.setAnswer(current == .string(choice.id) ? .null : .string(choice.id), for: question.id)
+                            picks += 1
+                        },
+                        onEliminate: {
+                            toggleElimination(choice.id, on: question, runner: runner)
+                            picks += 1
+                        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                    Button {
+                        runner.setAnswer(.bool(value), for: question.id)
+                    } label: {
+```
+with:
+
+```swift
+                    Button {
+                        runner.setAnswer(.bool(value), for: question.id)
+                        picks += 1
+                    } label: {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                            .foregroundStyle(chosen ? Theme.accent : Color.primary)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+```
+with:
+
+```swift
+                            .foregroundStyle(chosen ? Theme.accent : Color.primary)
+                            .contentShape(Rectangle())
+                            .animation(Motion.focus, value: chosen)
+                    }
+                    .buttonStyle(FocusPress())
+```
+
+- [ ] **Step 6: Previous and Next turn the page**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+            Button {
+                runner.previous()
+            } label: {
+                Image(systemName: "chevron.left")
+```
+with:
+
+```swift
+            Button {
+                move(to: runner.currentIndex - 1, runner)
+            } label: {
+                Image(systemName: "chevron.left")
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                Button {
+                    runner.next()
+                } label: {
+```
+with:
+
+```swift
+                Button {
+                    move(to: runner.currentIndex + 1, runner)
+                } label: {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+    @MainActor
+    private func submit() {
+        // `didSubmit` is the one-shot: the hand-in is announced to the presenter exactly once.
+```
+with:
+
+```swift
+    /// Another question: the arriving one comes in from the side it is on. The turn is set
+    /// before the change, in the same update, so the arriving view reads it.
+    @MainActor
+    private func move(to index: Int, _ runner: AssessmentRunner) {
+        guard index != runner.currentIndex, runner.questions.indices.contains(index) else { return }
+        turn = FocusTurn.from(runner.currentIndex, to: index)
+        withAnimation(Motion.focus) { runner.go(to: index) }
+    }
+
+    /// "Saved" for a moment after the server confirmed a write; another confirmation keeps it up.
+    @MainActor
+    private func flashSaved() {
+        showSaved = true
+        savedFade?.cancel()
+        savedFade = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            showSaved = false
+        }
+    }
+
+    @MainActor
+    private func submit() {
+        // `didSubmit` is the one-shot: the hand-in is announced to the presenter exactly once.
+```
+
+- [ ] **Step 7: The question map settles in; answered is blue, not green**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
+```
+with:
+
+```swift
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 5)
+    /// The cells have arrived — they settle in row by row, within 250 ms.
+    @State private var shown = false
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                                    Text(ScoreText.string(index + 1))
+                                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                                        .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.success : Color.primary))
+                                        .frame(maxWidth: .infinity, minHeight: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                                .fill(isCurrent ? Theme.accent : (isAnswered ? Theme.successSoft : Theme.surface2))
+                                        )
+```
+with:
+
+```swift
+                                    // Answered is the runner's selection blue: green means
+                                    // "correct" on the review, and the runner never says so.
+                                    Text(ScoreText.string(index + 1))
+                                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                                        .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.accent : Color.primary))
+                                        .frame(maxWidth: .infinity, minHeight: 48)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                                                .fill(isCurrent ? Theme.accent : (isAnswered ? Theme.accentSoft : Theme.surface2))
+                                        )
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        legend("Current", Theme.accent)
+                        legend("Answered", Theme.successSoft)
+```
+with:
+
+```swift
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .focusReveal(index / columns.count, shown: shown)
+                            .accessibilityLabel("Question \(index + 1), \(isAnswered ? "answered" : "blank")\(isFlagged ? ", flagged" : "")")
+                            .accessibilityAddTraits(isCurrent ? .isSelected : [])
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        legend("Current", Theme.accent)
+                        legend("Answered", Theme.accentSoft)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+            .background(Theme.background)
+            .navigationTitle("Question navigation")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+```
+with:
+
+```swift
+            .background(Theme.background)
+            .navigationTitle("Question navigation")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .onAppear { shown = true }
+    }
+```
+
+- [ ] **Step 8: A choice fills; a cross-out is drawn**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+    let onTap: @MainActor () -> Void
+    var onEliminate: (@MainActor () -> Void)?
+
+    private var borderColour: Color {
+        isSelected ? Theme.accent : Theme.separator.opacity(0.9)
+    }
+```
+with:
+
+```swift
+    let onTap: @MainActor () -> Void
+    var onEliminate: (@MainActor () -> Void)?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var borderColour: Color {
+        isSelected ? Theme.accent : Theme.separator.opacity(0.9)
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                    VStack(alignment: .leading, spacing: 8) {
+                        RichText(text: choice.text, scale: scale, struckThrough: isEliminated)
+```
+with:
+
+```swift
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Not struck through in the text: toggling that re-rendered a rich
+                        // option's web view. The line is drawn over the option instead (below).
+                        RichText(text: choice.text, scale: scale)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+                // A button's label is only hit-testable where it DRAWS, so without this only
+                // the glyphs themselves respond to a tap.
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isEliminated)
+```
+with:
+
+```swift
+                // A button's label is only hit-testable where it DRAWS, so without this only
+                // the glyphs themselves respond to a tap.
+                .contentShape(Rectangle())
+                .overlay { crossOut }
+                .animation(Motion.focus, value: isSelected)
+            }
+            .buttonStyle(FocusPress())
+            .disabled(isEliminated)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` — replace:
+
+```swift
+        .opacity(isEliminated ? 0.55 : 1)
+    }
+}
+```
+with:
+
+```swift
+        .opacity(isEliminated ? 0.55 : 1)
+        .animation(Motion.focus, value: isEliminated)
+    }
+
+    /// The line through a ruled-out option, drawn left to right — Bluebook's cross-out. Under
+    /// Reduce Motion it is not drawn, it simply appears.
+    private var crossOut: some View {
+        GeometryReader { box in
+            Path { line in
+                line.move(to: CGPoint(x: 12, y: box.size.height / 2))
+                line.addLine(to: CGPoint(x: max(12, box.size.width - 12), y: box.size.height / 2))
+            }
+            .trim(from: 0, to: isEliminated || reduceMotion ? 1 : 0)
+            .stroke(Theme.textSecondary, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+            .opacity(isEliminated ? 1 : 0)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+```
+
+- [ ] **Step 9: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -n "runner.next()\|runner.previous()\|struckThrough: isEliminated\|successSoft" ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift` prints only the `AssessmentSubmittedView` line (`Circle().fill(Theme.successSoft)` — the hand-in is done, green is right there).
+
+- [ ] **Step 10: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Assessments/AssessmentRunnerView.swift
+git commit -m "feat(ios): the runner turns questions, fills choices, draws the cross-out and says Saved — calmly
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 35: Flashcards — a 250 ms flip, a swipe for the verdict; every finished round is announced
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` (`VocabStudyView.restart`/`exit`, `FlashcardView`, `FlipCard`)
+
+**Interfaces:**
+- Consumes: `Motion.focus`, `Motion.focusTap` (Task 33); `VocabStudyRunner.flush(isPartial:)`, `isFinished`, `isStarted` (existing).
+- Produces: `FlipCard.onSwipe: (@MainActor (Bool) -> Void)?` (declared BEFORE `onFlip`, default nil — so `FlipCard(word:flipped:) { … }` still compiles); `FlashcardView.flipAnimation` (`easeInOut`, 0.25 s). No other API change.
+
+What the student gets (approved design §3, focus zone "flashcards (3D flip + swipe)"): the card turns over in 250 ms with no wobble (it used a spring that overshot), with a selection tick; dragging it sideways tilts it with the finger, and past 110 pt a stamp says what letting go will do — "Correct" to the right, "Still learning" to the left — with one selection tick as it crosses; letting go there gives that verdict exactly as the buttons do (the card comes back to the middle and shows the definition for the hold); short of it, the card comes back and nothing is given. The buttons stay: they are the way in for VoiceOver and for anyone who does not swipe. Swiping is off while a verdict is held, as the buttons are.
+
+Hand-off fix (phase 2): **leaving a word game with an unsaved round could save without a celebration.** A round's grading call can fail; the round is then graded by a later flush — when the student taps "Study again" (the old runner is flushed after it is let go, and nothing watches it any more) or leaves (the flush runs as the cover closes, and the `onChange` may never fire). Both paths now report a finish the server confirmed. `reportFinish` is the cover's one-shot, so nothing is ever announced twice, and only a flush that left the runner `isFinished` reports — a failed one never does.
+
+Rules (repeat): ≤250 ms and no overshoot over the card (it IS the content); under Reduce Motion the flip is a crossfade (no rotation — and the back face is not mirrored), the drag follows the finger with no tilt; flashcards are self-graded, so the stamp is the student's own verdict, never the app's; celebrate once, only after the server confirmed.
+
+- [ ] **Step 1: A finished round is announced on every path that saves it**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+        // Whatever the last run still holds — a grading call that failed, answers not yet
+        // sent — goes out before the run is let go, rather than vanishing with it.
+        if let previous, previous.isStarted, !previous.isFinished {
+            Task { await previous.flush(isPartial: true) }
+        }
+        await begin()
+    }
+
+    @MainActor
+    private func exit() {
+        Task {
+            await runner?.flush(isPartial: true)
+            onClose()
+        }
+    }
+```
+with:
+
+```swift
+        // Whatever the last run still holds — a grading call that failed, answers not yet
+        // sent — goes out before the run is let go, rather than vanishing with it.
+        if let previous, previous.isStarted, !previous.isFinished {
+            Task {
+                await previous.flush(isPartial: true)
+                // A finished round whose first grading call failed is graded by this flush, and
+                // nothing watches the old runner any more: its finish is reported here.
+                if previous.isFinished { reportFinish() }
+            }
+        }
+        await begin()
+    }
+
+    @MainActor
+    private func exit() {
+        Task {
+            await runner?.flush(isPartial: true)
+            // Leaving can be what grades a finished round; say so before the cover goes — the
+            // change may never reach `onChange` once it is closing. A no-op if it was said.
+            if runner?.isFinished == true { reportFinish() }
+            onClose()
+        }
+    }
+```
+
+- [ ] **Step 2: The flip is quicker and calm; the card can be swiped**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+    /// The hold after a verdict — long enough that the definition is actually read.
+    static let holdSeconds = 5
+```
+with:
+
+```swift
+    /// The hold after a verdict — long enough that the definition is actually read.
+    static let holdSeconds = 5
+    /// The card turning over: 250 ms, eased in and out, no overshoot — the card is the content.
+    static let flipAnimation = Animation.easeInOut(duration: 0.25)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+    /// The throttle itself. Separate from `hold` because two taps can land before the view
+    /// re-renders with the buttons disabled.
+    @State private var locked = false
+```
+with:
+
+```swift
+    /// The throttle itself. Separate from `hold` because two taps can land before the view
+    /// re-renders with the buttons disabled.
+    @State private var locked = false
+    /// One tick per flip the student asked for — the selection haptic.
+    @State private var flips = 0
+
+    /// The swipe gives a verdict exactly as the buttons do, and is off when they are.
+    private var swipeVerdict: (@MainActor (Bool) -> Void)? {
+        guard hold == nil, !locked else { return nil }
+        return { answer($0) }
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+        .task { if deck.isEmpty { deck = set.words } }
+        // The mode is left by a button, not a navigation, so nothing else would stop the
+        // hold: without this it keeps counting and deals a card in a screen that is gone.
+        .onDisappear { holdTask?.cancel() }
+    }
+```
+with:
+
+```swift
+        .task { if deck.isEmpty { deck = set.words } }
+        // The mode is left by a button, not a navigation, so nothing else would stop the
+        // hold: without this it keeps counting and deals a card in a screen that is gone.
+        .onDisappear { holdTask?.cancel() }
+        .sensoryFeedback(.selection, trigger: flips)
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+                    FlipCard(word: word, flipped: flipped) {
+                        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped.toggle() }
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                if let hold {
+                    FlashcardHoldStrip(correct: hold.correct, secondsLeft: hold.secondsLeft, total: Self.holdSeconds)
+                        .padding(.horizontal, 16)
+                } else {
+                    Text("Tap the card to flip it.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(minHeight: 20)
+                }
+```
+with:
+
+```swift
+                    FlipCard(word: word, flipped: flipped, onSwipe: swipeVerdict) {
+                        withAnimation(Self.flipAnimation) { flipped.toggle() }
+                        flips += 1
+                    }
+                    .padding(.horizontal, 16)
+                }
+
+                if let hold {
+                    FlashcardHoldStrip(correct: hold.correct, secondsLeft: hold.secondsLeft, total: Self.holdSeconds)
+                        .padding(.horizontal, 16)
+                } else {
+                    Text("Tap to flip — swipe right if you knew it, left to see it again.")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 20)
+                }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+        // The hold is meant to teach, so the answer has to be on screen for it.
+        withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { flipped = true }
+```
+with:
+
+```swift
+        // The hold is meant to teach, so the answer has to be on screen for it.
+        withAnimation(Self.flipAnimation) { flipped = true }
+```
+
+- [ ] **Step 3: The card turns, tilts with the finger, and stamps the verdict it would give**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+struct FlipCard: View {
+    let word: VocabWord
+    let flipped: Bool
+    let onFlip: @MainActor () -> Void
+
+    var body: some View {
+        ZStack {
+            face(back: false).opacity(flipped ? 0 : 1)
+            face(back: true)
+                .opacity(flipped ? 1 : 0)
+                .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+        }
+        .rotation3DEffect(.degrees(flipped ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        .frame(maxWidth: .infinity)
+        .frame(height: 360)
+        .contentShape(Rectangle())
+        .onTapGesture { onFlip() }
+    }
+```
+with:
+
+```swift
+struct FlipCard: View {
+    let word: VocabWord
+    let flipped: Bool
+    /// Swiping gives the verdict — right "Correct", left "Still learning" — a shortcut for the
+    /// buttons under the card. Nil while a verdict is held: the card only flips then.
+    var onSwipe: (@MainActor (Bool) -> Void)? = nil
+    let onFlip: @MainActor () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// How far the card is being dragged sideways.
+    @State private var drag: CGFloat = 0
+
+    /// Past this far, letting go gives the verdict.
+    private static let threshold: CGFloat = 110
+
+    /// The verdict letting go would give now — nil until the card has gone far enough.
+    private var leaning: Bool? {
+        abs(drag) >= Self.threshold ? drag > 0 : nil
+    }
+
+    var body: some View {
+        ZStack {
+            face(back: false).opacity(flipped ? 0 : 1)
+            face(back: true)
+                .opacity(flipped ? 1 : 0)
+                // Under Reduce Motion the card does not turn, so its back is not mirrored either.
+                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
+        }
+        // Under Reduce Motion the faces crossfade instead.
+        .rotation3DEffect(.degrees(flipped && !reduceMotion ? 180 : 0), axis: (x: 0, y: 1, z: 0))
+        .overlay(alignment: .top) { stamp }
+        .offset(x: drag)
+        // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
+        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) / 18), anchor: .bottom)
+        .frame(maxWidth: .infinity)
+        .frame(height: 360)
+        .contentShape(Rectangle())
+        .onTapGesture { onFlip() }
+        // Simultaneous, so the faces' own up-and-down scrolling still works.
+        .simultaneousGesture(swipe)
+        .animation(Motion.focusTap, value: leaning)
+        .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
+    }
+
+    private var swipe: some Gesture {
+        DragGesture(minimumDistance: 16)
+            .onChanged { value in
+                // Sideways only: an up-and-down drag is a long definition scrolling.
+                guard onSwipe != nil, abs(value.translation.width) > abs(value.translation.height) else { return }
+                drag = value.translation.width
+            }
+            .onEnded { _ in
+                let verdict = leaning
+                withAnimation(Motion.focus) { drag = 0 }
+                if let verdict { onSwipe?(verdict) }
+            }
+    }
+
+    /// What letting go would do, once the card has gone far enough — the student's own verdict
+    /// on themselves (flashcards are self-graded), never the app's.
+    @ViewBuilder
+    private var stamp: some View {
+        if let leaning {
+            Label(leaning ? "Correct" : "Still learning", systemImage: leaning ? "checkmark" : "arrow.counterclockwise")
+                .font(.system(size: 14, weight: .heavy))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .background(Capsule().fill(leaning ? Theme.success : Theme.warning))
+                .padding(.top, 16)
+                .transition(.opacity)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+```
+
+- [ ] **Step 4: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -n "spring(" ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` prints nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift
+git commit -m "feat(ios): flashcards turn in 250 ms and swipe for the verdict; a round saved on the way out is still celebrated
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 36: The test, matching and speed while answering
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` (`MatchingRound`, `MatchCardTile`)
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift`
+
+**Interfaces:**
+- Consumes: `VocabGames.spellingTiles`, `VocabGames.SpellingTile` (Task 31); `FocusPress`, `.focusTurn`, `focusShake`, `Motion.focus`, `Motion.focusTap` (Task 33).
+- Produces: `MatchCardTile.misses: Int` (declared after `isWrong`; the one caller is in the same file). Nothing else outside the files.
+
+What the student gets (approved design §3):
+- **Test** — every answer presses calmly (`FocusPress`, alike for all) and ticks alike, and the next question comes in from the right in 200 ms; the spelling question's tiles fill with the letters as they are typed, each dropping into its well in 120 ms. Still no right or wrong until the end: no colour, no haptic and no motion differs between a right and a wrong answer — a typed letter looks the same whether it is right or not (`spellingTiles` never compares).
+- **Matching** — the game the design lets speak while playing: a found pair pops (up 4% and back, 220 ms) and then fades; a pair that is not one shakes (240 ms, a red pulse under Reduce Motion) with a warning haptic; every other pick ticks.
+- **Speed** — under ten seconds the clock pulses once a second, with the second, instead of breathing in a loop beside the word; the 3-2-1 lead-in comes in without overshoot; answers press calmly and tick alike.
+
+Rules (repeat): ≤250 ms, no overshoot over content — the match pop is the one exception the design names, kept to 4% so a tile never reaches its neighbour (10 pt apart); Reduce Motion → fades (the turn is a crossfade, letters fade in, the pop and the clock pulse are off, the shake is a red pulse); haptics: selection for picks, warning for a matching miss; VoiceOver reads the spelling well as one line ("b, r, i, blank, blank"), never "underscore".
+
+- [ ] **Step 1: The test — calm presses, one tick per answer, the question turns**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+    @State private var typed = ""
+    @FocusState private var spellingFocused: Bool
+```
+with:
+
+```swift
+    @State private var typed = ""
+    @FocusState private var spellingFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+            ScrollView {
+                if let question = current {
+                    VStack(spacing: 16) {
+                        switch question.kind {
+                        case .mcq: multipleChoice(question)
+                        case .trueFalse: trueFalse(question)
+                        case .spelling: spelling(question)
+                        }
+                    }
+                    .padding(16)
+                    .id(question.id)
+                }
+            }
+        }
+```
+with:
+
+```swift
+            ScrollView {
+                // A ZStack, so the question leaving and the next one overlap for their 200 ms
+                // instead of stacking.
+                ZStack {
+                    if let question = current {
+                        VStack(spacing: 16) {
+                            switch question.kind {
+                            case .mcq: multipleChoice(question)
+                            case .trueFalse: trueFalse(question)
+                            case .spelling: spelling(question)
+                            }
+                        }
+                        .padding(16)
+                        .id(question.id)
+                        .transition(.focusTurn(.forward, reduceMotion: reduceMotion))
+                    }
+                }
+            }
+            // One tick per answer, the same for every answer: nothing is graded until the end.
+            .sensoryFeedback(.selection, trigger: answers.count)
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+```
+with:
+
+```swift
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(FocusPress())
+                }
+            }
+        }
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+            .frame(maxWidth: .infinity, minHeight: 88)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.card)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+```
+with:
+
+```swift
+            .frame(maxWidth: .infinity, minHeight: 88)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.card)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(FocusPress())
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+        if index + 1 < questions.count {
+            index += 1
+            return
+        }
+```
+with:
+
+```swift
+        if index + 1 < questions.count {
+            withAnimation(Motion.focus) { index += 1 }
+            return
+        }
+```
+
+- [ ] **Step 2: The spelling well fills as the student types**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+                // Letter tiles: the given letter is filled, the blanks are dashed wells,
+                // punctuation is bare structure rather than something to guess.
+                FlowLayout(spacing: 6) {
+                    ForEach(Array(VocabGames.maskWord(question.word, revealing: question.revealIndex).enumerated()), id: \.offset) { _, character in
+                        letterTile(character)
+                    }
+                }
+```
+with:
+
+```swift
+                // Letter tiles: the given letter is filled, the blanks are dashed wells that
+                // take the typed letters as they come, punctuation is bare structure rather
+                // than something to guess. A typed letter looks the same right or wrong.
+                let tiles = VocabGames.spellingTiles(word: question.word, revealing: question.revealIndex, typed: typed)
+                FlowLayout(spacing: 6) {
+                    ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
+                        letterTile(tile)
+                    }
+                }
+                .animation(Motion.focusTap, value: typed)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.spoken(tiles))
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+    private func letterTile(_ character: String) -> some View {
+        let isBlank = character == "_"
+        let isStructural = !isBlank && !(character.first?.isLetter ?? false)
+        return Text(isStructural ? character : character.uppercased())
+            .font(.system(size: 17, weight: .heavy))
+            .foregroundStyle(isBlank ? Theme.textLabel : (isStructural ? Theme.textLabel : Theme.success))
+            .frame(width: isStructural ? 12 : 34, height: 42)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(isStructural ? .clear : (isBlank ? Theme.background : Theme.successSoft))
+            )
+            .overlay(
+                Group {
+                    if isBlank {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.separator, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    } else if !isStructural {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    }
+                }
+            )
+    }
+```
+with:
+
+```swift
+    @ViewBuilder
+    private func letterTile(_ tile: VocabGames.SpellingTile) -> some View {
+        if tile.kind == .structure {
+            Text(tile.character)
+                .font(.system(size: 17, weight: .heavy))
+                .foregroundStyle(Theme.textLabel)
+                .frame(width: 12, height: 42)
+        } else {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(tile.kind == .given ? Theme.successSoft : (tile.kind == .typed ? Theme.card : Theme.background))
+                .overlay {
+                    switch tile.kind {
+                    case .blank:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.separator, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    case .given:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    default:
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .stroke(Theme.separator, lineWidth: 1)
+                    }
+                }
+                .overlay {
+                    if !tile.character.isEmpty {
+                        Text(tile.character.uppercased())
+                            .font(.system(size: 17, weight: .heavy))
+                            .foregroundStyle(tile.kind == .given ? Theme.success : Color.primary)
+                            // A new letter is a new view, so it drops into its well.
+                            .id(tile.character)
+                            .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                    }
+                }
+                .frame(width: 34, height: 42)
+        }
+    }
+
+    /// The well as VoiceOver reads it: the letters there so far, "blank" for the rest.
+    private static func spoken(_ tiles: [VocabGames.SpellingTile]) -> String {
+        tiles.map { tile in
+            switch tile.kind {
+            case .blank: return "blank"
+            case .structure: return tile.character == " " ? "space" : tile.character
+            case .given, .typed: return tile.character.lowercased()
+            }
+        }.joined(separator: ", ")
+    }
+```
+
+- [ ] **Step 3: Matching — a pop for a pair, a shake for a miss**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+    @State private var wrongPair: Set<String> = []
+    @State private var isLocked = false
+```
+with:
+
+```swift
+    @State private var wrongPair: Set<String> = []
+    @State private var isLocked = false
+    /// One tick per pick that is not a miss — the selection haptic. A miss buzzes a warning
+    /// instead, never both at once.
+    @State private var taps = 0
+    /// Per card, how many wrong pairs it was part of — its shake's trigger.
+    @State private var misses: [String: Int] = [:]
+    /// Every wrong pair in the round — the warning haptic's trigger.
+    @State private var missCount = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+                            isSelected: selected == card.id,
+                            isWrong: wrongPair.contains(card.id)
+                        ) {
+```
+with:
+
+```swift
+                            isSelected: selected == card.id,
+                            isWrong: wrongPair.contains(card.id),
+                            misses: misses[card.id] ?? 0
+                        ) {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+        .task { if cards.isEmpty { cards = VocabGames.matchCards(for: words) } }
+    }
+```
+with:
+
+```swift
+        .task { if cards.isEmpty { cards = VocabGames.matchCards(for: words) } }
+        .sensoryFeedback(.selection, trigger: taps)
+        .sensoryFeedback(.warning, trigger: missCount)
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+        guard !isLocked, !matched.contains(card.id) else { return }
+        guard let firstId = selected else {
+            selected = card.id
+            return
+        }
+        if firstId == card.id {
+            selected = nil
+            return
+        }
+        guard let first = cards.first(where: { $0.id == firstId }) else {
+            selected = card.id
+            return
+        }
+
+        if VocabGames.isPair(first, card) {
+            onPairFound(card.wordId)
+```
+with:
+
+```swift
+        guard !isLocked, !matched.contains(card.id) else { return }
+        guard let firstId = selected else {
+            selected = card.id
+            taps += 1
+            return
+        }
+        if firstId == card.id {
+            selected = nil
+            taps += 1
+            return
+        }
+        guard let first = cards.first(where: { $0.id == firstId }) else {
+            selected = card.id
+            taps += 1
+            return
+        }
+
+        if VocabGames.isPair(first, card) {
+            taps += 1
+            onPairFound(card.wordId)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+        onMistake(first.wordId, card.wordId)
+        wrongPair = [first.id, card.id]
+```
+with:
+
+```swift
+        onMistake(first.wordId, card.wordId)
+        misses[first.id, default: 0] += 1
+        misses[card.id, default: 0] += 1
+        missCount += 1
+        wrongPair = [first.id, card.id]
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+    let isWrong: Bool
+    let onTap: @MainActor () -> Void
+```
+with:
+
+```swift
+    let isWrong: Bool
+    /// How many wrong pairs this card was part of — each one shakes it.
+    let misses: Int
+    let onTap: @MainActor () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+        .buttonStyle(.plain)
+        .disabled(isMatched)
+        .opacity(isMatched ? 0.25 : 1)
+        .scaleEffect(isMatched ? 0.94 : (isSelected ? 1.02 : 1))
+        .offset(x: isWrong ? -4 : 0)
+        .animation(.spring(response: 0.28, dampingFraction: 0.6), value: isSelected)
+        .animation(.easeOut(duration: 0.2), value: isMatched)
+        .animation(.default.repeatCount(3, autoreverses: true).speed(6), value: isWrong)
+```
+with:
+
+```swift
+        .buttonStyle(FocusPress())
+        .disabled(isMatched)
+        // A found pair pops — up 4% and back in 220 ms, never as far as a neighbour 10 pt away —
+        // then fades to make room. Not under Reduce Motion.
+        .keyframeAnimator(initialValue: 1.0, trigger: reduceMotion ? false : isMatched) { tile, pop in
+            tile.scaleEffect(pop)
+        } keyframes: { _ in
+            KeyframeTrack {
+                CubicKeyframe(1.04, duration: 0.1)
+                CubicKeyframe(1.0, duration: 0.12)
+            }
+        }
+        .opacity(isMatched ? 0.25 : 1)
+        .scaleEffect(isMatched ? 0.94 : (isSelected ? 1.02 : 1))
+        // A pair that is not one shakes with its red edge (a red pulse under Reduce Motion).
+        .focusShake(misses, cornerRadius: Theme.Radius.card)
+        .animation(Motion.focusTap, value: isSelected)
+        .animation(.easeOut(duration: 0.2).delay(reduceMotion ? 0 : 0.22), value: isMatched)
+        .animation(Motion.focusTap, value: isWrong)
+```
+
+- [ ] **Step 4: Speed — the clock pulses with the last ten seconds**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+    @State private var answered = 0
+    @State private var correct = 0
+```
+with:
+
+```swift
+    @State private var answered = 0
+    @State private var correct = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+        .task { await begin() }
+        .onDisappear { clock?.cancel() }
+    }
+```
+with:
+
+```swift
+        .task { await begin() }
+        .onDisappear { clock?.cancel() }
+        // One tick per answer, the same for every answer.
+        .sensoryFeedback(.selection, trigger: answered)
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+                    // Re-mounted per tick so the pop replays 3 → 2 → 1.
+                    .id(tick)
+                    .transition(.scale.combined(with: .opacity))
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.6), value: tick)
+```
+with:
+
+```swift
+                    // Re-mounted per tick, so each number comes in — 3 → 2 → 1 — without
+                    // overshoot. Under Reduce Motion they crossfade.
+                    .id(tick)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.8).combined(with: .opacity))
+            }
+            .animation(Motion.focus, value: tick)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+                    .scaleEffect(isUrgent ? 1.06 : 1)
+                    .animation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true), value: isUrgent)
+```
+with:
+
+```swift
+                    // Under ten seconds the clock pulses once a second, with the second — not a
+                    // loop breathing beside the word. Its red says the rest, and nothing moves
+                    // under Reduce Motion.
+                    .keyframeAnimator(initialValue: 1.0, trigger: isUrgent && !reduceMotion ? secondsLeft : 0) { pill, scale in
+                        pill.scaleEffect(scale)
+                    } keyframes: { _ in
+                        KeyframeTrack {
+                            CubicKeyframe(1.08, duration: 0.1)
+                            CubicKeyframe(1.0, duration: 0.15)
+                        }
+                    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+```
+with:
+
+```swift
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(FocusPress())
+```
+
+- [ ] **Step 5: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then:
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSAT/Sources/Screens/Vocabulary
+grep -n "repeatForever\|repeatCount\|spring(" VocabTestView.swift MatchingView.swift SpeedView.swift   # nothing
+grep -n "maskWord" VocabTestView.swift                                                               # nothing
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift
+git commit -m "feat(ios): the test fills its spelling well and turns calmly; matching pops and shakes; speed's clock pulses with its last seconds
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 37: The games' end screen — the accuracy rolls up; confetti only for a round the server says mastered its game
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` (`ModeStat`, `ModeOutcomeView`, new `ModeStatValue`)
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` (`StudyOutcome`, the call to `ModeOutcomeView`, the flashcards' stats)
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift`, `MatchingView.swift`, `SpeedView.swift` (their stats)
+
+**Interfaces:**
+- Consumes: `CelebrationRule.vocabRound` (Task 30); `RollingNumber` (Task 33).
+- Produces: `ModeStat.percent: Int?` (after `tone`, default nil) and `static func ModeStat.accuracy(_ percent: Int, tone: ModeStat.Tone = .neutral) -> ModeStat`. **Removed:** `StudyOutcome.celebrate` and `ModeOutcomeView.celebrate` — every reader is in this task.
+
+What the student gets: on the end screen of every word game the accuracy's digits roll up from 0 in one 200 ms beat. The confetti (`VocabCelebration`) and the trophy's pop play only when the server says this round mastered its game (`CelebrationRule.vocabRound`) — never on the phone's own belief that the round was clean (the web fires on that; here it played before the server had graded the round, and once on a save that then failed), and not for a set mastered by earlier rounds while this one was not clean. Handing the round in is still celebrated every time, once the cover has gone (phase 2) — this is the outcome on top, never a second effort party.
+
+Rules (repeat): celebrate only after the server confirmed; an outcome only when passed or improved — for a word game, mastered; ≤250 ms in a focus zone, so the accuracy's digits roll once (`numericText`) rather than ticking through every number; under Reduce Motion the number is simply there and the trophy does not pop (`VocabCelebration` already draws nothing under Reduce Motion); VoiceOver reads the final number, never a passing one.
+
+- [ ] **Step 1: A stat can roll up**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` — replace:
+
+```swift
+    let label: String
+    let value: String
+    var tone: Tone = .neutral
+
+    var id: String { label }
+}
+```
+with:
+
+```swift
+    let label: String
+    let value: String
+    var tone: Tone = .neutral
+    /// A percentage that rolls up from 0 when the end screen appears; `value` is its text.
+    var percent: Int? = nil
+
+    var id: String { label }
+
+    /// The round's accuracy — the number that rolls up.
+    static func accuracy(_ percent: Int, tone: Tone = .neutral) -> ModeStat {
+        ModeStat(label: "Accuracy", value: "\(ScoreText.string(percent))%", tone: tone, percent: percent)
+    }
+}
+
+/// A stat's number: an accuracy rolls up from 0 when the end screen appears (`RollingNumber`).
+private struct ModeStatValue: View {
+    let stat: ModeStat
+
+    var body: some View {
+        if let percent = stat.percent {
+            RollingNumber(value: Double(percent), suffix: "%")
+        } else {
+            Text(stat.value)
+        }
+    }
+}
+```
+
+- [ ] **Step 2: The end screen parties by the rule**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` — replace:
+
+```swift
+    var restartLabel = "Study again"
+    /// A clean sweep from the mode's own point of view. Mastering the game or the set
+    /// celebrates too, even when this round was not the clean one that did it.
+    var celebrate = false
+    let onRestart: @MainActor () -> Void
+```
+with:
+
+```swift
+    var restartLabel = "Study again"
+    let onRestart: @MainActor () -> Void
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` — replace:
+
+```swift
+    @State private var trophyPopped = false
+
+    private var partying: Bool {
+        celebrate || summary?.modeMastered == true || summary?.mastery.isMastered == true
+    }
+```
+with:
+
+```swift
+    @State private var trophyPopped = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// A good outcome by the one rule (`CelebrationRule.vocabRound`): the server says this round
+    /// mastered its game. Not the mode's own belief that it was clean (it fired before the round
+    /// was graded), and not a set mastered by earlier rounds while this one was not clean. The
+    /// hand-in itself is celebrated every time once the cover has gone — this is the outcome on
+    /// top of it, never a second effort party.
+    private var partying: Bool { CelebrationRule.vocabRound(summary) }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` — replace:
+
+```swift
+        .onAppear {
+            guard partying else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.5).delay(0.15)) { trophyPopped = true }
+        }
+        .onChange(of: partying) { _, now in
+            if now { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { trophyPopped = true } }
+        }
+```
+with:
+
+```swift
+        .onAppear {
+            // The trophy is chrome on the hero, never over the stats: its spring is allowed —
+            // not under Reduce Motion.
+            guard partying, !reduceMotion else { return }
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.5).delay(0.15)) { trophyPopped = true }
+        }
+        .onChange(of: partying) { _, now in
+            if now, !reduceMotion { withAnimation(.spring(response: 0.45, dampingFraction: 0.5)) { trophyPopped = true } }
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift` — replace:
+
+```swift
+                VStack(spacing: 6) {
+                    Text(stat.value)
+                        .font(.system(size: 25, weight: .heavy).monospacedDigit())
+```
+with:
+
+```swift
+                VStack(spacing: 6) {
+                    ModeStatValue(stat: stat)
+                        .font(.system(size: 25, weight: .heavy).monospacedDigit())
+```
+
+- [ ] **Step 3: The modes hand over their accuracy, and no longer decide to party**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+    var restartLabel = "Study again"
+    /// A clean sweep by the mode's own measure — confetti, as the web fires it.
+    var celebrate = false
+    /// Extra content between the stats and the actions. Only the test uses it.
+```
+with:
+
+```swift
+    var restartLabel = "Study again"
+    /// Extra content between the stats and the actions. Only the test uses it.
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+                        restartLabel: outcome.restartLabel,
+                        celebrate: outcome.celebrate,
+                        onRestart: { Task { await restart() } },
+```
+with:
+
+```swift
+                        restartLabel: outcome.restartLabel,
+                        onRestart: { Task { await restart() } },
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift` — replace:
+
+```swift
+                    ModeStat(
+                        label: "Accuracy",
+                        value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: reviewed)))%",
+                        tone: .success
+                    ),
+                ],
+                celebrate: correct == reviewed
+            ))
+```
+with:
+
+```swift
+                    .accuracy(VocabGames.accuracyPercent(correct: correct, of: reviewed), tone: .success),
+                ]
+            ))
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift` — replace:
+
+```swift
+                ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: right, of: answers.count)))%"),
+```
+with:
+
+```swift
+                .accuracy(VocabGames.accuracyPercent(correct: right, of: answers.count)),
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift` — replace:
+
+```swift
+                ModeStat(label: "Accuracy", value: "\(ScoreText.string(VocabGames.accuracyPercent(correct: correct, of: answered)))%"),
+```
+with:
+
+```swift
+                .accuracy(VocabGames.accuracyPercent(correct: correct, of: answered)),
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift` — replace:
+
+```swift
+                ModeStat(
+                    label: "Clean first try",
+                    value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
+                ),
+            ],
+            celebrate: mistakes == 0
+        ))
+```
+with:
+
+```swift
+                ModeStat(
+                    label: "Clean first try",
+                    value: "\(ScoreText.string(cleanFirstTry))/\(ScoreText.string(set.words.count))"
+                ),
+            ]
+        ))
+```
+
+- [ ] **Step 4: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -rn "celebrate:" ios/MasterSAT/Sources/Screens/Vocabulary/` prints nothing, and `grep -rn "label: \"Accuracy\"" ios/MasterSAT/Sources/Screens/Vocabulary/` prints only `StudyShell.swift` (`ModeStat.accuracy`).
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Vocabulary/StudyShell.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/VocabStudyView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/VocabTestView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/MatchingView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/SpeedView.swift
+git commit -m "feat(ios): the games' accuracy rolls up; confetti only for a round the server says mastered its game
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 38: Homework upload — thumbnails come in, a ring per file with its real progress, a tick
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` (`HomeworkDetailView`'s hand-in card and `submit`; new `UploadMeter`, `StagedFileRow`, `UploadRing`)
+
+**Interfaces:**
+- Consumes: `StudentAPI.submitHomework(…, onFileProgress:)` (Task 32); `FrameBox`, `Motion.focus`, `Motion.focusTap` (Task 33); `CelebrationCenter.celebrate` (phase 2, unchanged call).
+- Produces (internal types, in the page's file): `@MainActor @Observable final class UploadMeter { private(set) var sent: [String: Double]; func report(_ fractions: [Double], tokens: [String]); func reset() }`; `struct StagedFileRow: View`; `struct UploadRing: View`.
+
+What the student gets (approved design §3, focus zone "homework upload"): a picked photo's row comes in (scale from 92% and fade, 200 ms) and its thumbnail fades in once it is made (off the main thread — `UIImage.byPreparingThumbnail`); a file shows a document glyph. While the hand-in goes up, each row's remove button becomes a ring that fills with THAT file's share of the upload — real bytes, from Task 32 — and turns into a tick when all of it has gone. When the server confirms, the rows fade out and the hand-in is celebrated once, from the Hand in button, as before ("Send again" included — effort, every time).
+
+Decisions in this task:
+- **A ring is real or it is not there** (the owner's "no decorative progress bars"): the fraction is the request's sent bytes over the file's place in the body. A tick means "all of this file's bytes have gone"; the hand-in is confirmed only by the server, which is what the celebration waits for.
+- **A ring never runs backwards.** A token refresh re-sends the body from zero; the meter keeps the highest fraction it has shown, so the rings wait full instead of emptying and refilling.
+- **The progress lives in its own small `@Observable` (`UploadMeter`), read only by the rows.** URLSession reports every few kilobytes; written to the page's `@State`, every report would re-render the whole homework page.
+- **The remove button gets a 44 pt target** without growing the row (negative padding), and rows are removed by token, not by index.
+
+Hand-off fix (phase 2): `handInFrame` was `@State` written on every scroll frame — now a `FrameBox` (`handInSpot`), read only when the hand-in is celebrated.
+
+Rules (repeat): celebrate once per hand-in, only after the server confirmed (the existing two success paths — a lost response whose files are already there counts as in); error ≠ empty; ≤250 ms, no overshoot; Reduce Motion → fades (rows and the tick fade; the ring still fills — it is information, not decoration); VoiceOver: a ring reads "Sending, 40 percent" / "Sent", the thumbnail is hidden (the row's name says what it is), no announcement per chunk.
+
+- [ ] **Step 1: State — the boxed hand-in spot, thumbnails, the meter**
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+    @Environment(CelebrationCenter.self) private var celebrations
+    /// Where the Hand in button is, so the confetti leaves from it.
+    @State private var handInFrame: CGRect = .zero
+```
+with:
+
+```swift
+    @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Where the Hand in button is, so the confetti leaves from it. Boxed: it is written on every
+    /// scroll frame and read only when the hand-in is celebrated.
+    @State private var handInSpot = FrameBox()
+    /// A small picture of each staged photo, by file token — made once, off the main thread.
+    @State private var thumbnails: [String: UIImage] = [:]
+    /// How far each staged file has gone up while the hand-in is sending.
+    @State private var meter = UploadMeter()
+```
+
+- [ ] **Step 2: Staged rows come in, with their thumbnail and, while sending, their ring**
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+            ForEach(Array(staged.enumerated()), id: \.element.token) { index, file in
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.badge.plus").foregroundStyle(Theme.accent)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(file.filename).font(.system(size: 14, weight: .medium))
+                        Text(SubmissionLimits.megabytes(file.data.count))
+                            .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                    }
+                    Spacer()
+                    Button {
+                        staged.remove(at: index)
+                        actionError = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textLabel)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Remove \(file.filename)")
+                }
+                .cardStyle(padding: 13)
+            }
+```
+with:
+
+```swift
+            ForEach(staged, id: \.token) { file in
+                StagedFileRow(
+                    file: file,
+                    thumbnail: thumbnails[file.token],
+                    meter: meter,
+                    sending: isUploading
+                ) {
+                    withAnimation(Motion.focus) { staged.removeAll { $0.token == file.token } }
+                    thumbnails[file.token] = nil
+                    actionError = nil
+                }
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity))
+            }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInFrame = $0 }
+```
+with:
+
+```swift
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInSpot.rect = $0 }
+```
+
+- [ ] **Step 3: Staging animates the row in and makes the thumbnail**
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+        actionError = nil
+        staged.append(file)
+    }
+```
+with:
+
+```swift
+        actionError = nil
+        withAnimation(Motion.focus) { staged.append(file) }
+        guard file.mimeType.hasPrefix("image/") else { return }
+        // Decoded and shrunk off the main thread: a camera photo is twelve megapixels.
+        let token = file.token
+        let data = file.data
+        Task {
+            let small = await UIImage(data: data)?.byPreparingThumbnail(ofSize: CGSize(width: 132, height: 132))
+            guard let small, staged.contains(where: { $0.token == token }) else { return }
+            withAnimation(Motion.focus) { thumbnails[token] = small }
+        }
+    }
+```
+
+- [ ] **Step 4: Sending reports each file's share; the rows go once the server has them**
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+        let xpBefore = celebrations.xpNow
+        isUploading = true
+        actionError = nil
+        Task {
+            defer { isUploading = false }
+            do {
+                let updated = try await session.student.submitHomework(
+                    classroomId: classroomId,
+                    assignmentId: a.id,
+                    files: staged,
+                    expectedRevision: submission?.revision
+                )
+                // Only clear the staged files once the server has them.
+                staged = []
+                submission = updated
+                // Effort, every time — "Send again" included.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
+```
+with:
+
+```swift
+        let xpBefore = celebrations.xpNow
+        isUploading = true
+        actionError = nil
+        meter.reset()
+        // One request carries every file; each row's ring shows its own file's share of it.
+        let tokens = staged.map(\.token)
+        let progress = meter
+        Task {
+            defer { isUploading = false }
+            do {
+                let updated = try await session.student.submitHomework(
+                    classroomId: classroomId,
+                    assignmentId: a.id,
+                    files: staged,
+                    expectedRevision: submission?.revision,
+                    onFileProgress: { fractions in
+                        Task { @MainActor in progress.report(fractions, tokens: tokens) }
+                    }
+                )
+                // Only clear the staged files once the server has them.
+                withAnimation(Motion.focus) { staged = [] }
+                thumbnails = [:]
+                submission = updated
+                // Effort, every time — "Send again" included.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+                staged = []
+                submission = (try? await session.student.mySubmission(
+                    classroomId: classroomId,
+                    assignmentId: a.id
+                )) ?? submission
+                // The earlier attempt did land: the work is in.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInFrame.celebrationPoint)
+```
+with:
+
+```swift
+                withAnimation(Motion.focus) { staged = [] }
+                thumbnails = [:]
+                submission = (try? await session.student.mySubmission(
+                    classroomId: classroomId,
+                    assignmentId: a.id
+                )) ?? submission
+                // The earlier attempt did land: the work is in.
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+```
+
+- [ ] **Step 5: The meter, the row and the ring**
+
+**Edit** `ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` — replace:
+
+```swift
+struct SubmittedFileRow: View {
+    let file: SubmissionFile
+```
+with:
+
+```swift
+/// How far each staged file has gone up, by file token — written as URLSession reports the
+/// request's body going out, read only by the rows, so the page around them does not re-render
+/// with every chunk.
+@MainActor
+@Observable
+final class UploadMeter {
+    private(set) var sent: [String: Double] = [:]
+
+    /// The upload's latest numbers, in the order of `tokens`. Only ever forward: a token refresh
+    /// sends the body again from zero, and a ring never runs backwards.
+    func report(_ fractions: [Double], tokens: [String]) {
+        for (token, fraction) in zip(tokens, fractions) where fraction > (sent[token] ?? 0) {
+            sent[token] = fraction
+        }
+    }
+
+    func reset() {
+        if !sent.isEmpty { sent = [:] }
+    }
+}
+
+/// One file waiting to be handed in: its thumbnail (a photo) or a document glyph, its name and
+/// size, and a way to take it off — or, while the hand-in is going up, its own progress ring.
+struct StagedFileRow: View {
+    let file: MultipartForm.File
+    let thumbnail: UIImage?
+    let meter: UploadMeter
+    let sending: Bool
+    let onRemove: @MainActor () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            preview
+            VStack(alignment: .leading, spacing: 1) {
+                Text(file.filename)
+                    .font(.system(size: 14, weight: .medium))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(SubmissionLimits.megabytes(file.data.count))
+                    .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+            }
+            Spacer()
+            if sending {
+                UploadRing(fraction: meter.sent[file.token] ?? 0)
+            } else {
+                Button(action: onRemove) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(Theme.textLabel)
+                        // A 44 pt target without growing the row.
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                        .padding(.vertical, -10)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(file.filename)")
+            }
+        }
+        .cardStyle(padding: 13)
+    }
+
+    private var preview: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.accentSoft)
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+                    .transition(.opacity)
+            } else {
+                Image(systemName: file.mimeType.hasPrefix("image/") ? "photo" : "doc.badge.plus")
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+        .frame(width: 44, height: 44)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityHidden(true)
+    }
+}
+
+/// One file's real upload progress — its bytes sent over its size — then a tick once all of it
+/// has gone. The hand-in itself is confirmed by the server, not by the ticks.
+struct UploadRing: View {
+    let fraction: Double
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var done: Bool { fraction >= 1 }
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Theme.surface2, lineWidth: 3)
+            Circle()
+                .trim(from: 0, to: min(max(fraction, 0), 1))
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if done {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.accent)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+            }
+        }
+        .frame(width: 26, height: 26)
+        .animation(Motion.focusTap, value: fraction)
+        .animation(Motion.focus, value: done)
+        .accessibilityElement()
+        .accessibilityLabel(done ? "Sent" : "Sending, \(Int(fraction * 100)) percent")
+    }
+}
+
+struct SubmittedFileRow: View {
+    let file: SubmissionFile
+```
+
+- [ ] **Step 6: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -n "handInFrame" ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift` prints nothing.
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/HomeworkDetailView.swift
+git commit -m "feat(ios): the hand-in shows each photo, a ring with its real upload progress, and a tick
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 39: The review and the midterm report — the score counts up, rows settle in, the filter turns the card; confetti only for passed or improved
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Support/PageChrome.swift` (`PillTabs.motion`)
+- Modify: `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` (`AssessmentReviewView`, `ScoreHero`, `ReviewQuestionCard`)
+- Modify: `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift`
+
+**Interfaces:**
+- Consumes: `CelebrationRule`, `OutcomeMemory`, `OutcomeBook`, `AssessmentReview.setKey` (Task 30); `RollingNumber`, `focusEntrance`, `FocusTurn`, `.focusTurn`, `OutcomeConfetti`, `Motion.focus` (Task 33); `View.detachedRefresh` (phase 2).
+- Produces: `PillTabs.motion: Animation` (after `selection`, default `Motion.snappy` — every existing caller is unchanged); `ScoreHero.improvedFrom: Double?` (after `questions`, default nil).
+
+What the student gets (approved design §3, focus zone "reviews"):
+- **Assessment review** — the percentage counts up from 0 in one 200 ms roll, the three counts under it settle in one after another (within 250 ms); the filter's pill slides calmly (`Motion.focus`, not the playful spring) and the card turns the way the chips run — a chip to the right brings its first question in from the right — as Previous and Next turn it back and forward; each card's answer rows settle in and the explanation opens last ("Why this answer works" stays open — the web shows it open, and hiding it behind a tap would cost every student a tap on the screen that exists to explain). An attempt that beat the attempt before it on the same set says "Up from 60%" in the hero every time, and the first time it is shown the page bursts confetti, ticks success and tells VoiceOver "Better than last time — up from 60 percent."
+- **Midterm report** — the score counts up; the four numbers, the skills to work on and the skills in the paper settle in; a midterm the centre marked passed bursts confetti, ticks success and says "Passed. Well done." the first time its report is shown. A pre-midterm (never judged) and a midterm still to pass never do.
+
+Decisions in this task:
+- **Once, the first time it is shown, on this phone** (`OutcomeMemory` in `UserDefaults`, per student): opening a result again is not a new event. "The attempt before" is the newest earlier attempt this phone showed on the same set — the phone is only ever handed a homework's newest attempt — so a first review on a new phone proves nothing and celebrates nothing.
+- **The confetti is the page's own** (`OutcomeConfetti`), not the root overlay's: the midterm report is also reached inside the Me sheet, which the root overlay sits under.
+- **The midterm report refreshes detached** and neither page stores a cancelled load as a failure — the phase-2 rules, taken now because this task rebuilds both pages (as phase 3 did for the Rewards pages).
+
+Rules (repeat): an outcome is celebrated only when passed or improved, once, after the server's data says so; effort (handing in) is already celebrated and is not touched; ≤250 ms, no overshoot; Reduce Motion → the numbers are simply there, rows fade in, the turn is a crossfade, no confetti (the words and the haptic stay); growth-oriented copy ("Better than last time", "To improve", "Keep going"); no announcement storm — one sentence, once.
+
+- [ ] **Step 1: `PillTabs` can slide calmly**
+
+**Edit** `ios/MasterSAT/Sources/Support/PageChrome.swift` — replace:
+
+```swift
+    let items: [Item]
+    @Binding var selection: Tab
+    @Namespace private var pill
+```
+with:
+
+```swift
+    let items: [Item]
+    @Binding var selection: Tab
+    /// How the selected pill slides: the playful spring by default, `Motion.focus` in a focus
+    /// zone. A fade under Reduce Motion either way.
+    var motion: Animation = Motion.snappy
+    @Namespace private var pill
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/PageChrome.swift` — replace:
+
+```swift
+                        withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = item.tab }
+```
+with:
+
+```swift
+                        withAnimation(reduceMotion ? Motion.focus : motion) { selection = item.tab }
+```
+
+- [ ] **Step 2: The review — state, the outcome, the turn**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+    @Environment(CelebrationCenter.self) private var celebrations
+    @State private var xpAtRetry: Int?
+```
+with:
+
+```swift
+    @Environment(CelebrationCenter.self) private var celebrations
+    @State private var xpAtRetry: Int?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Which way the card last turned — the arriving one comes in from that side.
+    @State private var turn: FocusTurn = .forward
+    /// The score this attempt beat, when it beat the one before it on the same set.
+    @State private var improvedFrom: Double?
+    /// Bumped once, the first time a beaten score is shown: the confetti and the success haptic.
+    @State private var outcomeTicks = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                        ScoreHero(review: review, questions: questions)
+```
+with:
+
+```swift
+                        ScoreHero(review: review, questions: questions, improvedFrom: improvedFrom)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                        PillTabs(items: tabs, selection: $filter)
+
+                        if let current {
+                            ReviewQuestionCard(
+                                question: current,
+                                index: shown.firstIndex(where: { $0.id == current.id }) ?? 0,
+                                total: shown.count
+                            )
+                            navigation
+```
+with:
+
+```swift
+                        PillTabs(items: tabs, selection: filterSelection, motion: Motion.focus)
+
+                        if let current {
+                            // A ZStack, so the card leaving and the one arriving overlap for their
+                            // 200 ms. Keyed by the filter too: the same question under another
+                            // filter is another card.
+                            ZStack {
+                                ReviewQuestionCard(
+                                    question: current,
+                                    index: shown.firstIndex(where: { $0.id == current.id }) ?? 0,
+                                    total: shown.count
+                                )
+                                .id("\(filter.rawValue).\(current.id)")
+                                .transition(.focusTurn(turn, reduceMotion: reduceMotion))
+                            }
+                            navigation
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+        .navigationTitle("Review")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+        .onChange(of: filter) { index = 0 }
+```
+with:
+
+```swift
+        // An outcome's confetti, drawn by the page itself so it is seen wherever the page is.
+        .overlay { OutcomeConfetti(trigger: outcomeTicks) }
+        .sensoryFeedback(.success, trigger: outcomeTicks)
+        .navigationTitle("Review")
+        .navigationBarTitleDisplayMode(.inline)
+        .task { await load() }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+    private var navigation: some View {
+        HStack(spacing: 10) {
+            Button { index = max(0, index - 1) } label: {
+```
+with:
+
+```swift
+    /// The filter, turning the card the way the chips run: a chip to the right brings its first
+    /// question in from the right. The question resets to the first in the same update, so the
+    /// card turns once.
+    private var filterSelection: Binding<Filter> {
+        Binding(
+            get: { filter },
+            set: { next in
+                let order = Filter.allCases
+                turn = FocusTurn.from(order.firstIndex(of: filter) ?? 0, to: order.firstIndex(of: next) ?? 0)
+                index = 0
+                filter = next
+            }
+        )
+    }
+
+    private var navigation: some View {
+        HStack(spacing: 10) {
+            Button {
+                turn = .back
+                withAnimation(Motion.focus) { index = max(0, index - 1) }
+            } label: {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+            Button { index = min(shown.count - 1, index + 1) } label: {
+```
+with:
+
+```swift
+            Button {
+                turn = .forward
+                withAnimation(Motion.focus) { index = min(shown.count - 1, index + 1) }
+            } label: {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+    @MainActor
+    private func load() async {
+        loadError = nil
+        do {
+            review = try await session.assessments.review(attemptId: attemptId)
+        } catch let error as APIError {
+            loadError = error.errorDescription
+        } catch {
+            loadError = error.localizedDescription
+        }
+    }
+}
+```
+with:
+
+```swift
+    @MainActor
+    private func load() async {
+        loadError = nil
+        do {
+            let loaded = try await session.assessments.review(attemptId: attemptId)
+            review = loaded
+            remember(loaded)
+        } catch let error as APIError {
+            // A cancelled load is not a failure (`APIClient` reports a cancellation as transport).
+            guard !Task.isCancelled else { return }
+            loadError = error.errorDescription
+        } catch {
+            guard !Task.isCancelled else { return }
+            loadError = error.localizedDescription
+        }
+    }
+
+    /// The outcome rule (`CelebrationRule.assessment`, by way of `OutcomeMemory`): a marked attempt
+    /// that beat the one before it on the same set says so every time it is shown, and is
+    /// celebrated once — confetti, a success haptic, one sentence for VoiceOver.
+    @MainActor
+    private func remember(_ review: AssessmentReview) {
+        guard let result = review.result, let setKey = review.setKey,
+              case .signedIn(let user) = session.phase else { return }
+        let book = OutcomeBook()
+        var memory = book.read(userID: user.id)
+        let beaten = memory.showAssessment(setKey: setKey, attemptId: attemptId, percent: result.percent)
+        let fresh = memory.celebrate(OutcomeMemory.assessmentKey(attemptId), if: beaten != nil)
+        book.write(memory, userID: user.id)
+        if improvedFrom != beaten { improvedFrom = beaten }
+        guard fresh, let beaten else { return }
+        outcomeTicks += 1
+        AccessibilityNotification.Announcement("Better than last time — up from \(ScoreText.string(beaten)) percent.").post()
+    }
+}
+```
+
+- [ ] **Step 3: The hero counts up, its numbers settle in, and says when it beat the last attempt**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+struct ScoreHero: View {
+    let review: AssessmentReview
+    let questions: [AssessmentReviewQuestion]
+```
+with:
+
+```swift
+struct ScoreHero: View {
+    let review: AssessmentReview
+    let questions: [AssessmentReviewQuestion]
+    /// The score this attempt beat, when it beat the one before it on the same set.
+    var improvedFrom: Double? = nil
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+            if let result = review.result {
+                Text("\(ScoreText.string(result.percent))%")
+                    .font(.system(size: 56, weight: .black).monospacedDigit())
+```
+with:
+
+```swift
+            if let result = review.result {
+                RollingNumber(value: result.percent, suffix: "%")
+                    .font(.system(size: 56, weight: .black).monospacedDigit())
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
+            } else {
+```
+with:
+
+```swift
+                    .multilineTextAlignment(.center)
+                    .padding(.top, 4)
+                if let improvedFrom {
+                    Label("Up from \(ScoreText.string(improvedFrom))%", systemImage: "arrow.up.right")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(.white.opacity(0.2)))
+                        .padding(.top, 10)
+                }
+            } else {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                stat(count(.correct), "Correct")
+                stat(count(.incorrect), "To improve")
+                stat(count(.unanswered), "Skipped")
+```
+with:
+
+```swift
+                stat(count(.correct), "Correct").focusEntrance(0)
+                stat(count(.incorrect), "To improve").focusEntrance(1)
+                stat(count(.unanswered), "Skipped").focusEntrance(2)
+```
+
+- [ ] **Step 4: A card's answer rows settle in; the explanation opens last**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                    if question.choices.isEmpty {
+                        typedAnswers
+                    } else {
+                        ForEach(question.choices) { choice in
+                            ReviewChoiceRow(
+                                choice: choice,
+                                isCorrectAnswer: matches(question.correctAnswer, choice.id),
+                                isStudentAnswer: matches(question.studentAnswer, choice.id)
+                            )
+                        }
+                    }
+```
+with:
+
+```swift
+                    if question.choices.isEmpty {
+                        typedAnswers.focusEntrance(0)
+                    } else {
+                        ForEach(Array(question.choices.enumerated()), id: \.element.id) { position, choice in
+                            ReviewChoiceRow(
+                                choice: choice,
+                                isCorrectAnswer: matches(question.correctAnswer, choice.id),
+                                isStudentAnswer: matches(question.studentAnswer, choice.id)
+                            )
+                            .focusEntrance(position)
+                        }
+                    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift` — replace:
+
+```swift
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                            .stroke(Theme.accent.opacity(0.15), lineWidth: 1)
+                    )
+                }
+```
+with:
+
+```swift
+                    .overlay(
+                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                            .stroke(Theme.accent.opacity(0.15), lineWidth: 1)
+                    )
+                    // Open, as the web has it — it settles in last, after the answers.
+                    .focusEntrance(max(question.choices.count, 1))
+                }
+```
+
+- [ ] **Step 5: The midterm report — counts up, settles in, celebrates a pass once**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+    @State private var isLoading = true
+    @State private var pdf: PDFRequest?
+```
+with:
+
+```swift
+    @State private var isLoading = true
+    @State private var pdf: PDFRequest?
+    /// Bumped once, the first time a passed midterm's report is shown: confetti and the haptic.
+    @State private var outcomeTicks = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+        .background(Theme.background)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load() }
+        .task { await load() }
+```
+with:
+
+```swift
+        .background(Theme.background)
+        // The page's own confetti: this report is also opened inside the Me sheet, which the
+        // root overlay sits under.
+        .overlay { OutcomeConfetti(trigger: outcomeTicks) }
+        .sensoryFeedback(.success, trigger: outcomeTicks)
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        // Detached: `load` writes state this page reads, and that must not cancel its requests.
+        .detachedRefresh { await load() }
+        .task { await load() }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(ScoreText.string(score))
+                    .font(.system(size: 60, weight: .heavy).monospacedDigit())
+```
+with:
+
+```swift
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Group {
+                    if let score { RollingNumber(value: score) } else { Text(ScoreText.string(score)) }
+                }
+                    .font(.system(size: 60, weight: .heavy).monospacedDigit())
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+                if report.isGraded, let score = report.score {
+                    MidtermStatTile(
+                        label: "Score",
+                        value: ScoreText.string(score),
+                        sub: report.passMark.map { "Pass mark \(ScoreText.string($0))" }
+                            ?? report.midterm.scoreCeiling.map { "of \(ScoreText.string($0))" }
+                    )
+                }
+                MidtermStatTile(
+                    label: "Correct",
+                    value: "\(ScoreText.string(report.correctCount))/\(ScoreText.string(report.totalCount))",
+                    sub: "\(report.accuracyPercent)% accuracy"
+                )
+                MidtermStatTile(label: "To improve", value: ScoreText.string(report.wrongCount), sub: nil)
+                MidtermStatTile(
+                    label: "Focus \(noun)s",
+                    value: ScoreText.string(report.skills.count),
+                    sub: report.skills.count == 1 ? "\(noun) to work on" : "\(noun)s to work on"
+                )
+```
+with:
+
+```swift
+                if report.isGraded, let score = report.score {
+                    MidtermStatTile(
+                        label: "Score",
+                        value: ScoreText.string(score),
+                        sub: report.passMark.map { "Pass mark \(ScoreText.string($0))" }
+                            ?? report.midterm.scoreCeiling.map { "of \(ScoreText.string($0))" }
+                    )
+                    .focusEntrance(0)
+                }
+                MidtermStatTile(
+                    label: "Correct",
+                    value: "\(ScoreText.string(report.correctCount))/\(ScoreText.string(report.totalCount))",
+                    sub: "\(report.accuracyPercent)% accuracy"
+                )
+                .focusEntrance(1)
+                MidtermStatTile(label: "To improve", value: ScoreText.string(report.wrongCount), sub: nil)
+                    .focusEntrance(2)
+                MidtermStatTile(
+                    label: "Focus \(noun)s",
+                    value: ScoreText.string(report.skills.count),
+                    sub: report.skills.count == 1 ? "\(noun) to work on" : "\(noun)s to work on"
+                )
+                .focusEntrance(3)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+                ForEach(report.skills) { SkillRow(skill: $0) }
+```
+with:
+
+```swift
+                ForEach(Array(report.skills.enumerated()), id: \.element.id) { position, skill in
+                    SkillRow(skill: skill).focusEntrance(position)
+                }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+                        if index > 0 { Divider() }
+                        CoveredRow(skill: skill)
+```
+with:
+
+```swift
+                        if index > 0 { Divider() }
+                        CoveredRow(skill: skill).focusEntrance(index)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift` — replace:
+
+```swift
+        // Held separately on purpose: a missing report must not blank a released score.
+        do {
+            report = try await breakdown
+            reportProblem = nil
+        } catch {
+            report = nil
+            reportProblem = MidtermReportUnavailable(error)
+        }
+
+        do {
+            result = try await review
+        } catch let error as APIError {
+            // Only a failure of BOTH is a failure of the screen.
+            if report == nil { loadError = error.errorDescription ?? "Result not available yet." }
+        } catch {
+            if report == nil { loadError = error.localizedDescription }
+        }
+    }
+}
+```
+with:
+
+```swift
+        // Held separately on purpose: a missing report must not blank a released score.
+        do {
+            report = try await breakdown
+            reportProblem = nil
+        } catch {
+            // A cancelled load is not a failure (`APIClient` reports a cancellation as transport).
+            guard !Task.isCancelled else { return }
+            report = nil
+            reportProblem = MidtermReportUnavailable(error)
+        }
+
+        do {
+            result = try await review
+        } catch let error as APIError {
+            guard !Task.isCancelled else { return }
+            // Only a failure of BOTH is a failure of the screen.
+            if report == nil { loadError = error.errorDescription ?? "Result not available yet." }
+        } catch {
+            guard !Task.isCancelled else { return }
+            if report == nil { loadError = error.localizedDescription }
+        }
+        if let report { remember(report) }
+    }
+
+    /// The outcome rule (`CelebrationRule.midterm`, once by way of `OutcomeMemory`): a midterm the
+    /// centre marked passed is celebrated the first time its report is shown — confetti, a
+    /// success haptic, one sentence for VoiceOver. A pre-midterm, or one still to pass, never is.
+    @MainActor
+    private func remember(_ report: MidtermErrorReport) {
+        guard case .signedIn(let user) = session.phase else { return }
+        let book = OutcomeBook()
+        var memory = book.read(userID: user.id)
+        let passed = CelebrationRule.midterm(isGraded: report.isGraded, passed: report.passed)
+        guard memory.celebrate(OutcomeMemory.midtermKey(attemptId), if: passed) else { return }
+        book.write(memory, userID: user.id)
+        outcomeTicks += 1
+        AccessibilityNotification.Announcement("Passed. Well done.").post()
+    }
+}
+```
+
+- [ ] **Step 6: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then:
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSAT/Sources/Screens
+grep -n "\.refreshable" Midterms/MidtermReportView.swift          # nothing
+grep -n "onChange(of: filter)" Assessments/AssessmentReviewView.swift   # nothing
+```
+
+- [ ] **Step 7: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Support/PageChrome.swift \
+        ios/MasterSAT/Sources/Screens/Assessments/AssessmentReviewView.swift \
+        ios/MasterSAT/Sources/Screens/Midterms/MidtermReportView.swift
+git commit -m "feat(ios): reviews count up and settle in; confetti once for a passed midterm or a beaten score
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 40: Sign in and register — the logo springs in, the panel breathes (and holds still under Reduce Motion), a wrong password shakes
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` (`BrandLockup`, `FloatingShapes`, `AuthField`, `PasswordField`)
+- Modify: `ios/MasterSAT/Sources/Screens/Auth/AuthView.swift` (`SignInForm`)
+- Modify: `ios/MasterSAT/Sources/Screens/Account/AccountComponents.swift` (`AccountSecureField`)
+- Modify: `ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift` (`AccountPasswordForm`)
+
+**Interfaces:**
+- Consumes: `focusShake`, `Motion.pop` (Task 33 / phase 1); `AuthErrorCopy.classify`, `AccountCopy.passwordFailure`, `PasswordChangeCheck.Field.current` (existing).
+- Produces: `AuthField.shakes: Int` (after `icon`, default 0); `PasswordField.shakes: Int` (after `field`, default 0); `AccountSecureField.shakes: Int` (after `field`, default 0). Every existing call compiles unchanged.
+
+Which screens: the sign-in screen is `Screens/Auth/AuthView.swift` (`SignInForm`, `RegisterForm`) with its brand panel in `Screens/Auth/AuthChrome.swift`. `Screens/Account/AccountSignInView.swift` — named in the brief — is the Me sheet's "Sign-in & password" settings page; the only wrong password there is the current one when changing it, and it gets the same shake.
+
+What the student gets (approved design §3, focus zone "sign-in"):
+- The MasterSAT mark springs in as the brand panel appears (from 70%, `Motion.pop`) — chrome above the form, never over it, so the spring is allowed; it fades in under Reduce Motion. On a phone the panel is the header band; on an iPad it is the left half.
+- The panel breathes: its shapes drift slowly (13–16 s, the web's `dz-float` keyframes, already there). Under Reduce Motion they now hold still — they did not.
+- A wrong email or password shakes the password box (240 ms) with a warning haptic, and VoiceOver hears the same sentence the alert shows. Under Reduce Motion the box pulses red instead. Being offline, throttled or refused for another reason only says so — no shake: the password was not the problem.
+- Changing the password in the Me sheet: when the server says the current password is wrong, its box shakes the same way.
+
+Rules (repeat): ≤250 ms and no overshoot over the form (the shake comes to rest where it started; the spring is on the logo only); Reduce Motion → the logo fades, the shapes hold still, the shake is a red pulse; haptics — warning for a wrong password; English, plain copy (the existing sentences).
+
+- [ ] **Step 1: The logo springs in; the shapes hold still under Reduce Motion**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+    var body: some View {
+        HStack(spacing: 11) {
+            BrandMark(height: height)
+            Text("MasterSAT")
+```
+with:
+
+```swift
+    var body: some View {
+        HStack(spacing: 11) {
+            BrandMark(height: height)
+                .modifier(LogoArrival())
+            Text("MasterSAT")
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+/// The site's `<aside class="authbrand">`.
+```
+with:
+
+```swift
+/// The mark arriving as the panel appears: it springs up from 70% — chrome above the form, never
+/// over it, so a spring is allowed. Under Reduce Motion it only fades in.
+private struct LogoArrival: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var arrived = false
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(arrived || reduceMotion ? 1 : 0.7)
+            .opacity(arrived ? 1 : 0)
+            .onAppear {
+                withAnimation(reduceMotion ? .easeOut(duration: 0.2) : Motion.pop.delay(0.1)) { arrived = true }
+            }
+    }
+}
+
+/// The site's `<aside class="authbrand">`.
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+private struct FloatingShapes: View {
+    let compact: Bool
+    @State private var drifting = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            let w = geometry.size.width
+            let h = geometry.size.height
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.10))
+                    .frame(width: 280, height: 280)
+                    .position(x: w + 30, y: -20)
+                    .offset(y: drifting ? 14 : -14)
+                    .animation(.easeInOut(duration: 14).repeatForever(autoreverses: true), value: drifting)
+
+                RoundedRectangle(cornerRadius: 44, style: .continuous)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: 200, height: 200)
+                    .position(x: w - 60, y: h + 40)
+                    .offset(x: drifting ? -12 : 12)
+                    .animation(.easeInOut(duration: 16).repeatForever(autoreverses: true), value: drifting)
+
+                Circle()
+                    .stroke(.white.opacity(0.11), lineWidth: 18)
+                    .frame(width: 150, height: 150)
+                    .position(x: -20, y: h - 60)
+                    .offset(y: drifting ? -16 : 16)
+                    .animation(.easeInOut(duration: 13).repeatForever(autoreverses: true), value: drifting)
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.white.opacity(0.07))
+                    .frame(width: 60, height: 60)
+                    .position(x: w - (compact ? 70 : 120), y: compact ? 130 : 90)
+                    .offset(x: drifting ? 10 : -10, y: drifting ? -8 : 8)
+                    .animation(.easeInOut(duration: 15).repeatForever(autoreverses: true), value: drifting)
+```
+with:
+
+```swift
+private struct FloatingShapes: View {
+    let compact: Bool
+    @State private var drifting = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// The panel breathes — unless Reduce Motion is on: then every shape holds still at rest.
+    private var breathing: Bool { drifting && !reduceMotion }
+
+    /// One slow drift, `seconds` each way. Under Reduce Motion a short settle to rest instead,
+    /// which also replaces a drift already running when it is switched on.
+    private func drift(_ seconds: Double) -> Animation {
+        reduceMotion ? .easeOut(duration: 0.3) : .easeInOut(duration: seconds).repeatForever(autoreverses: true)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let w = geometry.size.width
+            let h = geometry.size.height
+            ZStack {
+                Circle()
+                    .fill(.white.opacity(0.10))
+                    .frame(width: 280, height: 280)
+                    .position(x: w + 30, y: -20)
+                    .offset(y: breathing ? 14 : -14)
+                    .animation(drift(14), value: breathing)
+
+                RoundedRectangle(cornerRadius: 44, style: .continuous)
+                    .fill(.white.opacity(0.08))
+                    .frame(width: 200, height: 200)
+                    .position(x: w - 60, y: h + 40)
+                    .offset(x: breathing ? -12 : 12)
+                    .animation(drift(16), value: breathing)
+
+                Circle()
+                    .stroke(.white.opacity(0.11), lineWidth: 18)
+                    .frame(width: 150, height: 150)
+                    .position(x: -20, y: h - 60)
+                    .offset(y: breathing ? -16 : 16)
+                    .animation(drift(13), value: breathing)
+
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(.white.opacity(0.07))
+                    .frame(width: 60, height: 60)
+                    .position(x: w - (compact ? 70 : 120), y: compact ? 130 : 90)
+                    .offset(x: breathing ? 10 : -10, y: breathing ? -8 : 8)
+                    .animation(drift(15), value: breathing)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+                        .position(x: 40, y: h * 0.62)
+                        .offset(y: drifting ? 12 : -12)
+                        .animation(.easeInOut(duration: 11).repeatForever(autoreverses: true), value: drifting)
+```
+with:
+
+```swift
+                        .position(x: 40, y: h * 0.62)
+                        .offset(y: breathing ? 12 : -12)
+                        .animation(drift(11), value: breathing)
+```
+
+- [ ] **Step 2: A field box can shake**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+struct AuthField<Accessory: View>: View {
+    let label: String
+    var icon: String?
+    @ViewBuilder let content: () -> Accessory
+```
+with:
+
+```swift
+struct AuthField<Accessory: View>: View {
+    let label: String
+    var icon: String?
+    /// Bumped when what was typed here was refused — the box shakes (`focusShake`).
+    var shakes: Int = 0
+    @ViewBuilder let content: () -> Accessory
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+            .padding(.horizontal, 13)
+            .frame(height: 48)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+            )
+        }
+    }
+}
+```
+with:
+
+```swift
+            .padding(.horizontal, 13)
+            .frame(height: 48)
+            .background(Theme.card)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+            )
+            .focusShake(shakes, cornerRadius: Theme.Radius.control)
+        }
+    }
+}
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` — replace:
+
+```swift
+    @FocusState.Binding var focus: AuthFocus?
+    let field: AuthFocus
+    let onSubmit: () -> Void
+
+    @State private var revealed = false
+
+    var body: some View {
+        AuthField(label: label, icon: "lock") {
+```
+with:
+
+```swift
+    @FocusState.Binding var focus: AuthFocus?
+    let field: AuthFocus
+    /// Bumped when the server refused this password — the box shakes.
+    var shakes: Int = 0
+    let onSubmit: () -> Void
+
+    @State private var revealed = false
+
+    var body: some View {
+        AuthField(label: label, icon: "lock", shakes: shakes) {
+```
+
+- [ ] **Step 3: A wrong password shakes the box, buzzes, and is said**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthView.swift` — replace:
+
+```swift
+    @State private var retryable = false
+    @State private var forgotOpen = false
+    @FocusState private var focus: AuthFocus?
+```
+with:
+
+```swift
+    @State private var retryable = false
+    @State private var forgotOpen = false
+    @FocusState private var focus: AuthFocus?
+    /// Bumped when the server said the email or password is wrong: the password box shakes and
+    /// a warning haptic plays. Other failures (offline, throttled) only say so.
+    @State private var refusals = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthView.swift` — replace:
+
+```swift
+            PasswordField(
+                label: "Password",
+                text: $password,
+                focus: $focus,
+                field: .password,
+                onSubmit: { if canSubmit { submit() } }
+            )
+
+            HStack {
+                Spacer()
+                Button("Forgot password?") { forgotOpen.toggle() }
+```
+with:
+
+```swift
+            PasswordField(
+                label: "Password",
+                text: $password,
+                focus: $focus,
+                field: .password,
+                shakes: refusals,
+                onSubmit: { if canSubmit { submit() } }
+            )
+
+            HStack {
+                Spacer()
+                Button("Forgot password?") { forgotOpen.toggle() }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Auth/AuthView.swift` — replace:
+
+```swift
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+        }
+    }
+
+    private func submit() {
+        focus = nil
+        error = nil
+        Task {
+            do {
+                try await session.signIn(
+                    email: email.trimmingCharacters(in: .whitespaces),
+                    password: password
+                )
+            } catch {
+                let copy = AuthErrorCopy.classify(error)
+                self.error = copy.message
+                retryable = copy.retryable
+            }
+        }
+    }
+```
+with:
+
+```swift
+            .frame(maxWidth: .infinity)
+            .padding(.top, 8)
+        }
+        .sensoryFeedback(.warning, trigger: refusals)
+    }
+
+    private func submit() {
+        focus = nil
+        error = nil
+        Task {
+            do {
+                try await session.signIn(
+                    email: email.trimmingCharacters(in: .whitespaces),
+                    password: password
+                )
+            } catch {
+                let copy = AuthErrorCopy.classify(error)
+                self.error = copy.message
+                retryable = copy.retryable
+                // On this screen a 401 is a wrong email or password (`AuthErrorCopy`).
+                if case .unauthorized? = error as? APIError { refusals += 1 }
+                // The alert appears where the eye is not; VoiceOver hears it once.
+                AccessibilityNotification.Announcement(copy.message).post()
+            }
+        }
+    }
+```
+
+- [ ] **Step 4: The current password shakes when the server refuses it**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountComponents.swift` — replace:
+
+```swift
+    let focus: FocusState<Focus?>.Binding
+    let field: Focus
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+            AccountFieldBox(icon: "lock", invalid: error != nil) {
+```
+with:
+
+```swift
+    let focus: FocusState<Focus?>.Binding
+    let field: Focus
+    /// Bumped when the server refused this password — the box shakes (`focusShake`).
+    var shakes: Int = 0
+    var onSubmit: () -> Void = {}
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+            AccountFieldBox(icon: "lock", invalid: error != nil) {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountComponents.swift` — replace:
+
+```swift
+                .accessibilityLabel(revealed ? "Hide passwords" : "Show passwords")
+            }
+            AccountFieldNote(hint: hint, error: error)
+```
+with:
+
+```swift
+                .accessibilityLabel(revealed ? "Hide passwords" : "Show passwords")
+            }
+            .focusShake(shakes, cornerRadius: Theme.Radius.control)
+            AccountFieldNote(hint: hint, error: error)
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift` — replace:
+
+```swift
+    @State private var saving = false
+    @FocusState private var focus: Field?
+```
+with:
+
+```swift
+    @State private var saving = false
+    @FocusState private var focus: Field?
+    /// Bumped when the server said the current password is wrong: its box shakes and buzzes.
+    @State private var currentRefusals = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift` — replace:
+
+```swift
+                focus: $focus,
+                field: Field.current,
+                onSubmit: { focus = .new }
+            )
+```
+with:
+
+```swift
+                focus: $focus,
+                field: Field.current,
+                shakes: currentRefusals,
+                onSubmit: { focus = .new }
+            )
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift` — replace:
+
+```swift
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.accentSoft))
+    }
+```
+with:
+
+```swift
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Theme.accentSoft))
+        .sensoryFeedback(.warning, trigger: currentRefusals)
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift` — replace:
+
+```swift
+        } catch {
+            errors = AccountCopy.passwordFailure(error)
+        }
+```
+with:
+
+```swift
+        } catch {
+            errors = AccountCopy.passwordFailure(error)
+            // The server's refusal of the current password is keyed to its field.
+            if errors[PasswordChangeCheck.Field.current.rawValue] != nil { currentRefusals += 1 }
+        }
+```
+
+- [ ] **Step 5: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -n "drifting ?" ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift` prints nothing (every shape reads `breathing`).
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Auth/AuthChrome.swift \
+        ios/MasterSAT/Sources/Screens/Auth/AuthView.swift \
+        ios/MasterSAT/Sources/Screens/Account/AccountComponents.swift \
+        ios/MasterSAT/Sources/Screens/Account/AccountSignInView.swift
+git commit -m "feat(ios): sign-in — the logo springs in, the panel holds still under Reduce Motion, a wrong password shakes
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 41: Run it, prove it, open the PR
+
+**Files:** none (verification). Run by the controller, not a subagent.
+
+- [ ] **Step 1: Kit green**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test 2>&1 | tail -2`
+Expected: `✔ Test run with 759 tests … passed` (740 + 11 + 5 + 3). Only a literal pass counts.
+
+- [ ] **Step 2: A local backend with phase-4 work on it**
+
+Migrate and seed exactly as Task 9 Step 2, run Task 19's `/tmp/seed_phase2.py` (its "Phase 2 set" of five words is every game's fixture; it is idempotent) and Task 29's `/tmp/seed_phase3.py`, and start the `ios-redesign-backend` preview. Then save as `/tmp/seed_phase4.py`:
+
+```python
+from datetime import timedelta
+from django.contrib.auth import get_user_model
+from django.utils import timezone
+from classes.models import Assignment, Classroom
+from assessments.models import AssessmentSet, AssessmentQuestion, HomeworkAssignment
+
+U = get_user_model()
+owner = U.objects.get(email="uat_owner@mastersat.test")
+math = Classroom.objects.get(name="UAT Math Class")
+
+def homework(title, days_ahead):
+    assignment, _ = Assignment.objects.get_or_create(
+        classroom=math, title=title,
+        defaults={"created_by": owner, "category": Assignment.CATEGORY_HOMEWORK,
+                  "status": Assignment.STATUS_PUBLISHED, "max_score": 100,
+                  "due_at": timezone.now() + timedelta(days=days_ahead)})
+    return assignment
+
+# Six questions: four with four choices (the cross-out, the map's two rows), a number, a true/false.
+quiz = homework("Phase 4 · the runner", 3)
+aset, _ = AssessmentSet.objects.get_or_create(
+    title="Phase 4 runner",
+    defaults={"subject": "math", "category": "Algebra › Linear equations", "review_status": "approved", "created_by": owner})
+choices = [
+    ("3x = 12. What is x?", ["2", "3", "4", "6"], "C", "Divide both sides by 3: x = 12 ÷ 3 = 4."),
+    ("x + 5 = 9. What is x?", ["4", "5", "9", "14"], "A", "Take 5 from both sides: x = 9 − 5 = 4."),
+    ("2x − 1 = 7. What is x?", ["3", "4", "6", "8"], "B", "Add 1, then halve: 2x = 8, so x = 4."),
+    ("Which line is steepest?", ["y = x", "y = 2x", "y = 3x", "y = x/2"], "C", "The slope is the number in front of x; 3 is the largest."),
+]
+for order, (prompt, options, answer, why) in enumerate(choices):
+    AssessmentQuestion.objects.get_or_create(
+        assessment_set=aset, order=order,
+        defaults={"prompt": prompt, "question_type": "multiple_choice",
+                  "choices": [{"id": key, "text": text} for key, text in zip("ABCD", options)],
+                  "correct_answer": answer, "explanation": why})
+AssessmentQuestion.objects.get_or_create(
+    assessment_set=aset, order=4,
+    defaults={"prompt": "12 ÷ 4 = ?", "question_type": "numeric", "correct_answer": "3",
+              "explanation": "Four threes make twelve."})
+AssessmentQuestion.objects.get_or_create(
+    assessment_set=aset, order=5,
+    defaults={"prompt": "7 is a prime number.", "question_type": "boolean", "correct_answer": True,
+              "explanation": "Its only divisors are 1 and 7."})
+HomeworkAssignment.objects.get_or_create(classroom=math, assessment_set=aset, defaults={"assignment": quiz, "assigned_by": owner})
+
+homework("Phase 4 · photos", 2)
+print("phase 4 fixtures ready")
+```
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/backend
+SECRET_KEY=dev-secret DEBUG=True ~/.pyenv/versions/3.12.2/bin/python3 manage.py shell -c "exec(open('/tmp/seed_phase4.py').read())"
+git -C .. status --short   # nothing new under backend/ (db.sqlite3 is gitignored)
+```
+Expected: `phase 4 fixtures ready`.
+
+- [ ] **Step 3: Run on the simulator against it**
+
+Build (the build check), then:
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSAT
+xcrun simctl boot "iPhone 17 Pro" 2>/dev/null
+xcrun simctl install booted build/dd/Build/Products/Debug-iphonesimulator/MasterSAT.app
+xcrun simctl spawn booted defaults write uz.mastersat.app apiBaseURL http://localhost:8000
+xcrun simctl launch booted uz.mastersat.app -apiBaseURL "http://localhost:8000"
+```
+Sign in as `uat_s1@mastersat.test` (password in `seed_classroom_uat.py`). Screenshot each item (`sleep 2; xcrun simctl io booted screenshot <name>.png`); for motion, a screen recording is the evidence:
+
+1. **The runner turns calmly:** Class → Tasks → To do → "Phase 4 · the runner" → Start. Next → the question comes in from the right in ~200 ms, the old one fades, nothing bounces; Previous → from the left; each question opens at its top. The header reads "0/6"; there is no progress bar.
+2. **Choices, never a verdict:** pick C on question 1 → the choice fills in blue in ~200 ms with a selection tick; "0/6" rolls to "1/6"; "Saved" appears under it and fades after about a second. Pick A instead → the same fill, the same tick — no green, no red, nothing different for a right or a wrong choice anywhere in the runner. Tap the chosen one again → it clears, "1/6" rolls back to "0/6".
+3. **Cross-out and flag:** tap the minus beside B → a line draws through the whole option, left to right, and it dims; tap again → the line goes. Flag → the glyph bounces once with a tick; unflag → no bounce.
+4. **The map:** "1 / 6 ⌃" → the cells settle in row by row within a quarter second; answered cells are light blue (not green), the current one solid blue, the flag shows; the legend says the same. VoiceOver (if on): "Question 2, answered, flagged". Jump to 5 → it comes in from the right; jump to 2 → from the left.
+5. **The first hand-in — half right on purpose:** answer questions 1, 2 and 3 wrongly and 4, 5 ("3") and 6 (True) correctly. On question 5 the keyboard opens; Next → it closes as the question turns. Scroll each question to its end: the content stops at the footer — no empty band a tab bar tall (the covers' `noBarClearance`). Hand in → Hand in → "Handed in" fades in → Done → the check and confetti play once the runner has gone; "+N XP" flies only if the header's XP rose.
+6. **Review, first attempt:** Class → Tasks → Results → the "Phase 4 · the runner" result (its review) → the percentage rolls up from 0 to 50%, the three counts under it settle in one after another; no confetti, no "Up from" (the first attempt this phone has shown). "To improve" → the pill slides without a bounce and the card comes in from the right; "All" → from the left; Next / Previous turn it forward and back; on each card the answer rows settle in and "Why this answer works" opens last.
+7. **Review, improved:** "Retry assessment" → answer all six correctly → Hand in → Done (the review closes, Class reloads). Open the new result → "100%" rolls up, "Up from 50%" sits under it, confetti bursts from the top once, a success haptic; VoiceOver: "Better than last time — up from 50 percent." Back, open it again → "Up from 50%" is still there; no confetti.
+8. **Flashcards:** Class → English → "five words" → the set → Flashcards. Tap → the card turns in a quarter second, a tick, no wobble. Drag it right slowly → it tilts with the finger; at about a third of the screen "Correct" stamps on with a tick; let go → it comes back to the middle, shows the definition, the hold strip runs (exactly as the "Correct" button). Drag left a little and let go → it comes back, nothing is given. During a hold, dragging does nothing. Clear the round with every card "Correct" → the end screen's accuracy rolls up to 100%; once "Saving your progress…" has gone: "Game mastered", the confetti and the trophy's pop. Back → the check and confetti play once the cover has gone (effort). Play again with one "Still learning" → no confetti on the end screen.
+9. **Test:** Test → every answer dips a little when pressed and ticks alike, the next question comes in from the right. On a spelling question type the word → each letter drops into its well, the given letter stays where it is; a wrong letter looks exactly like a right one. The end: accuracy rolls up; the review lists what to look at again.
+10. **Matching:** tap a word, then its meaning → a tick each; the pair pops (a small swell) and fades. Tap a word and a wrong meaning → both shake briefly, red, with a warning haptic.
+11. **Speed:** 3-2-1 comes in without overshoot. Answer one, then wait: at 0:10 the clock turns red and from then on pulses once a second, with the second — no continuous breathing. Answers tick alike.
+12. **Upload:** Class → "Phase 4 · photos" → Photo → pick three → each row comes in and its thumbnail fades in; × on one → its row fades out. Hand in → each row's × becomes a ring that fills and turns into a tick (on localhost the bytes go almost at once — the recording, frame by frame, shows ring → tick); the rows fade out; the check and confetti leave from the Hand in button once; back on Today, "+15 XP" flies into the pill.
+13. **The hand-in baseline (phase 3 hand-off):** note the pill's XP. Results → the newest "Phase 4 · the runner" review → Retry assessment → the runner opens; send the app to the background (`xcrun simctl launch booted com.apple.Preferences`); award `services.award(s1, "MANUAL", idempotency_key="p4-mid-session", points=20, actor=owner, reason="phase 4 demo")` in a shell; bring the app back; hand in → Done. Expected: the pill never shows less than it did before the hand-in; "+20" flies once (the welcome-back caption), and the quiz's own gain — if any — flies on its own, never with the 20 in it.
+14. **Sign in:** Me → Sign out. The sign-in screen: the mark springs in from small, the panel's shapes drift slowly. Type a wrong password → Sign in → the password box shakes once, a warning haptic, the alert says "The email or password you entered is incorrect." (VoiceOver hears it). Stop the backend preview → Sign in → "Cannot connect to the server…", no shake; start it again. "Register now" → the panel's mark springs in again, five fields. Sign in correctly.
+15. **Change password:** Me → Account → Sign-in & password → Change password → a wrong current password and a valid new one twice → Update → the current box shakes, warning haptic, "That isn't your current password." under it. Cancel.
+16. **Reduce Motion** (`xcrun simctl spawn booted defaults write com.apple.Accessibility ReduceMotionEnabled -bool true`, relaunch): the runner's questions crossfade; the cross-out line appears without drawing; the flag does not bounce; the map fades in; the flashcard crossfades (no turn, the back not mirrored) and a drag moves it without tilting; a matching miss pulses red without shaking and a match does not pop; the speed clock does not pulse; the review's numbers are simply there and rows fade in; the sign-in mark fades in and the shapes hold still; a wrong password pulses the box red. No confetti anywhere (an improved review still says "Up from…" and ticks success). Turn it off (`-bool false`), relaunch.
+17. **VoiceOver spot checks** (Settings → Accessibility → VoiceOver, or the Accessibility Inspector): the runner's count reads "1 of 6 answered"; a map cell reads "Question 3, blank"; the cross-out button "Cross out option B"; a spelling well reads "b, r, blank, blank, blank"; an upload ring "Sending, 40 percent" then "Sent"; the improved review's sentence is heard once; nothing speaks per tap.
+18. **Dark mode** (`xcrun simctl ui booted appearance dark`): the runner (map colours, the cross-out line), the games (the stamp, the tiles), the upload rings, the review and the sign-in screen are readable; back to light.
+
+Not reproducible locally (say so in the PR): a passed midterm's confetti — a released, graded midterm needs a sitting on the web and a teacher's release, and timed sittings stay out of the app (covered by `CelebrationRuleTests.midterm` and `OutcomeMemoryTests.once`; the report's count-up and settle-in show on any midterm report the local database has); a ring filling slowly — localhost uploads finish at once (a device on a slow network, or the Network Link Conditioner, shows it).
+
+Record a 60-second walk-through of items 1–4, 8 and 10 in the background: `xcrun simctl io booted recordVideo --codec h264 /tmp/phase4.mp4` (Ctrl-C to stop).
+
+- [ ] **Step 4: Nothing unexpected in the tree, every commit by Viltrumlik**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git status --short                                   # empty
+git log --format='%an <%ae> %s' origin/main..HEAD | grep -v "Viltrumlik <viltrumlik@gmail.com>" || echo "all Viltrumlik"
+```
+
+- [ ] **Step 5: Push and open the PR (merge after #308)**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git push origin HEAD:refs/heads/feat/ios-redesign-phase4
+gh pr create --base main --head feat/ios-redesign-phase4 \
+  --title "iOS redesign — phase 4: focus zones (merge after #308)" --body-file /tmp/pr-phase4.md
+```
+`/tmp/pr-phase4.md` says: **stacked on #308 (itself on #305 and #304) — merge those first; until then this diff includes phases 1–3**; what changed (the focus-zone motion kit and its rules; the runner: turns, fills, the drawn cross-out, the flag, "Saved", the rolling count, the map — and no right/wrong while answering; flashcards: the 250 ms flip and the swipe; test, matching, speed; the games' end screen; the homework upload's thumbnails and real per-file rings; the review and the midterm report; sign-in; outcomes celebrated once, only when passed or improved; the hand-offs: covers without the bar's room, the hand-in baseline, boxed frames, the word game's unsaved round); what did not (no backend change — the kit only reads `assignment_id` the review already sent, and reports a request's sent bytes; Explore, Me and the app-wide polish are phase 5); the Step 3 checklist with results, including what could not be seen locally; and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+
+- [ ] **Step 6: iOS 17 / 18**
+
+Run `xcrun simctl list runtimes | grep -E "iOS 1[78]"`. If a runtime is there, create a device on it, install, and repeat items 1, 3, 8 and 14 (`symbolEffect`, `keyframeAnimator` and `sensoryFeedback` are iOS 17 APIs; the turn is a plain transition); note the results in the PR. If none is installed, write under "Not verified" that the iOS 17/18 paths are unchecked and leave the ~8 GB runtime download to the owner.
+
+- [ ] **Step 7: Send the owner the demo**
+
+Send the screenshots and `/tmp/phase4.mp4` (SendUserFile), one line per item to look at. Merge only after the owner's "ha", and after #304, #305 and #308.
 
 ## Phase 5 — Explore + Me + polish (outline)
 
@@ -10880,3 +15708,31 @@ Carried into later phases (found in phase 3 reviews, deliberately deferred):
   - Celebrations: a replayed all-done has no hero bounce; burst rest frames are hand-synced to the generator keyframes.
   - Tests/docs: `historyWindow` (50) mirrors the backend without a drift test; `AwayCheck.remember()`'s decision table lives in the app target (move to the kit); missing kit tests listed in the phase 3 reviews (decrease-before-resolve, LastSeen nil round-trip, merged away+task label); the AwayCheck header and `Outcome.read` doc nits.
 - **Owner:** check phases 1–3 once on an iOS 18 and ideally iOS 17 simulator runtime (only iOS 26.3 is installed, ~8 GB); TestFlight needs a paid Apple Developer account.
+
+## Phase 4 outcome (2026-10-22) and what it hands to later phases
+
+Done on `feat/ios-redesign-phase4` (PR "merge after #308"): Tasks 30–40 with their fix rounds, one device fix found in Task 41 (an improved review's confetti), one final-review fix wave. Kit 786 tests. Every task was reviewed; the whole branch (opus) said "with fixes" → fixed and re-reviewed. Device-checked on the iOS 26.3 simulator against a local backend with synthetic data (Task 41 items 1–13, 16, 18), frame by frame from screen recordings.
+
+Decisions taken during phase 4 that later phases build on (rulings P4-R1..R11 in the PR):
+- **Focus motion is its own vocabulary** (`Motion.focus`, `focusTap`, `focusStep`, `FocusTurn`, `focusReveal`, `focusEntrance`, `focusShake`, `RollingNumber`): ≤ 250 ms, no overshoot over content, springs only on chrome (flag, logo, trophy). Reduce Motion never restructures the tree — both tracks always exist and the setting only picks which one is seen (P4-R7), so a live toggle keeps focus, scroll and descendant state.
+- **Never a right/wrong signal while answering**: the runner and the vocab test fill and tick every choice alike, answered map cells are blue, a spelling well mirrors what was typed (P4-R5); the grade is decided only at submit (`fold` both sides, P4-R10).
+- **Outcomes celebrate once, only when passed or improved** (`CelebrationRule`, `OutcomeMemory` per student): "the attempt before" is the newest earlier attempt this phone knew of the same set — the student's lists and the review carry only a homework's newest attempt, never the one before it — compared in whole percents rounded half-to-even (P4-R6); lists note what they carry (`noteSeen`) so an attempt taken on the web still counts as "before". Old passed midterms get one burst the first time they are opened after the update (P4-R11).
+- **"+XP" from a hand-in is measured from the hand-in** (`XPDelta.baseline`): a refresh or a welcome-back award during the session never makes the pill dip or folds into the task's own gain (device item 13: 435 held through the cover, "+20 Manual adjustment" flew once, then 455).
+- **Upload progress is real**: `APIClient.send(onBodySent:)` reports sent bytes (`BodyProgress` never runs backwards), `MultipartForm.fileRanges()` maps them to files, `UploadRelay` coalesces onto the main actor; rings fill per file and turn into ticks.
+- **Covers carry `.noBarClearance()`**: the tab bar's `contentMargins` travels into everything presented from a tab; a full-screen cover zeroes it.
+- **Trigger-driven modifiers never sit on a `Group { if … }` whose branch flips in the same update** (`.animation(_:value:)`, `keyframeAnimator(trigger:)`, `.overlay` with an `onChange`): the Group hands them to each branch and the new one is born past its trigger. Use a stable container (`ZStack` + full frame) or animate at the write site. `.onChange` / `.task` on a Group survive the flip. Found on device: the improved review's confetti never played (60bf40e9); the runner's "Handed in" never faded (fix wave).
+- **The DEBUG simulator stays pinned to the local backend** (`simctl spawn booted defaults write uz.mastersat.app apiBaseURL http://localhost:8000`).
+
+Carried into later phases (found in phase 4 reviews and on device, deliberately deferred):
+- **Phase 5 (code):**
+  - Runner/test: a very fast second tap can land on the arriving question (pre-existing); the last answer's selection tick is lost when the end screen replaces the view; `flagRowHeight` 24 is estimated (Dynamic Type audit); toolbar targets 34×30; turning Reduce Motion off after a flag gives one stray bounce.
+  - Flashcards: 45° split flicker; unbounded drag; VoiceOver focus after a verdict and re-reading on flip.
+  - Spelling: IME tail over the cap; `spoken()` names fewer marks than `fold` folds; `PlainTyping` one-shot lookup.
+  - Games: Matching has no accuracy stat (owner's call); `ModeStat.value` duplicates `percent`; the "Mistakes" tile in danger red (copy pass).
+  - Upload: unreachable cancellation catch / stale rect when leaving mid-upload; the 0% ring dot; trash enabled mid-upload; unbounded thumbnail tasks; a third copy of the Empty/decode block.
+  - Outcomes: move `noteSeen(in:)` / `wholePercent` to the kit and call `noteSeen` from the board and homework loads; `ClassView` captures the user id at load start; the hero rounds half away from zero while "Up from" rounds half to even (differs at x.5); the review's turn direction depends on `Filter.allCases` matching the tab order; the filter chips' press bounce is a spring in a focus zone.
+  - Sign-in: a `/me` 401 after a good login reads as a wrong password; a stale announcement after switching to Register; the Register alert is not announced; the 30-pt eye button.
+  - Motion: `Stagger` / `ZoomDestination` still branch on Reduce Motion; sheets inherit the bar margin; `RootView`'s `OfflineOverlay` has the same dead `Group` + `.animation(value:)`.
+- **Phase 5 (device observations, pre-existing):** right after a hand-in the homework page's "What to do" row can still read "Continue · 1 answered" though the attempt is graded (the row comes from the list payload, re-read later); the review's pinned filter chips slide under the back button when scrolled; HomeworkDetail shows a stale "Not started" for ~0.3 s after a cover closes and still says "Not started" for a word homework after three games; tab roots scroll content under the status bar with no material; a reviewed quiz homework still offers "Start"/"Continue" and "up to +15 XP" during a retry (pay comes from the first attempt); Results reads "No results yet" while a retry is in progress (lists carry the newest started attempt); Today once came up scrolled ~55 pt after a hand-in (not reproduced); Me → Sign-in & password wraps "Emai / l" beside the Confirmed badge.
+- **Not verified on device:** the sign-in and change-password shakes (Task 41 items 14–15; the simulator panel stopped focusing text fields mid-check) and VoiceOver (item 17; the simulator has no VoiceOver). Both read correct in the final review.
+- **Owner:** iOS 17/18 are unchecked (only the iOS 26.3 runtime is installed, ~8 GB); TestFlight needs a paid Apple Developer account. `seed_phase4`'s "Phase 4 · photos" needs `allow_file_upload=True` to pay XP locally.

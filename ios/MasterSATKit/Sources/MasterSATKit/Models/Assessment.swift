@@ -336,6 +336,9 @@ public struct AssessmentReviewQuestion: Decodable, Sendable, Equatable, Identifi
 }
 
 public struct AssessmentReviewMeta: Decodable, Sendable, Equatable {
+    /// The homework the attempt belongs to — with the set's title, what tells one set's attempts
+    /// from another's (`AssessmentReview.setKey`).
+    public let assignmentId: Int?
     public let assignmentTitle: String?
     public let setTitle: String?
     public let setCategory: String?
@@ -343,6 +346,7 @@ public struct AssessmentReviewMeta: Decodable, Sendable, Equatable {
     public let questionCount: Int
 
     private enum CodingKeys: String, CodingKey {
+        case assignmentId = "assignment_id"
         case assignmentTitle = "assignment_title"
         case setTitle = "set_title"
         case setCategory = "set_category"
@@ -352,6 +356,7 @@ public struct AssessmentReviewMeta: Decodable, Sendable, Equatable {
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        assignmentId = try? c.decodeIfPresent(Int.self, forKey: .assignmentId)
         assignmentTitle = try? c.decodeIfPresent(String.self, forKey: .assignmentTitle)
         setTitle = try? c.decodeIfPresent(String.self, forKey: .setTitle)
         setCategory = try? c.decodeIfPresent(String.self, forKey: .setCategory)
@@ -386,6 +391,14 @@ public struct AssessmentReview: Decodable, Sendable, Equatable {
     public let teacherFeedback: TeacherFeedback?
 
     public var missed: [AssessmentReviewQuestion] { questions.filter { $0.isCorrect == false } }
+
+    /// Which set this is an attempt at, for comparing it with the attempt before: the homework
+    /// and the set's title (one homework carries a set once). Nil when the server did not say
+    /// which homework — then nothing is compared and nothing is celebrated as improved.
+    public var setKey: String? {
+        guard let assignmentId = meta?.assignmentId else { return nil }
+        return OutcomeMemory.setKey(assignmentId: assignmentId, setTitle: meta?.setTitle)
+    }
 
     private enum CodingKeys: String, CodingKey {
         case meta, result, questions

@@ -157,6 +157,8 @@ struct AccountSecureField<Focus: Hashable>: View {
     var submitLabel: SubmitLabel = .next
     let focus: FocusState<Focus?>.Binding
     let field: Focus
+    /// Bumped when the server refused this password — the box shakes (`focusShake`).
+    var shakes: Int = 0
     var onSubmit: () -> Void = {}
 
     var body: some View {
@@ -194,6 +196,7 @@ struct AccountSecureField<Focus: Hashable>: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(revealed ? "Hide passwords" : "Show passwords")
             }
+            .focusShake(shakes, cornerRadius: Theme.Radius.control)
             AccountFieldNote(hint: hint, error: error)
         }
     }

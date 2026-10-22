@@ -57,6 +57,7 @@ struct StoryViewer: View {
         .fullScreenCover(item: $link) { page in
             CommunitySafariView(url: page.url) { link = nil }
                 .ignoresSafeArea()
+                .noBarClearance()
         }
     }
 

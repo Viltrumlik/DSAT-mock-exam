@@ -165,7 +165,8 @@ struct VocabTestQuestionTests {
 
     @Test("Spelling reveals one letter and blanks the rest")
     func maskingKeepsStructure() {
-        // Spaces and hyphens stay: they are structure, not the answer.
+        // Spaces and hyphens stay visible, so the shape is not a guess. They are still part of the
+        // answer: the grader compares the whole string, so the student types them too.
         #expect(VocabGames.maskWord("well-known", revealing: 0) == ["w", "_", "_", "_", "-", "_", "_", "_", "_", "_"])
         #expect(VocabGames.maskWord("ad hoc", revealing: nil).joined() == "__ ___")
     }
@@ -183,6 +184,49 @@ struct VocabTestQuestionTests {
         #expect(!VocabGames.spellingIsCorrect("candor", "candid"))
         // An empty target must never grade an empty answer as right.
         #expect(!VocabGames.spellingIsCorrect("", ""))
+    }
+
+    /// The grade the spelling question sends: both sides folded, then the platform's rule —
+    /// exactly as `VocabTestView` calls it.
+    private func graded(_ typed: String, _ word: String) -> Bool {
+        VocabGames.spellingIsCorrect(VocabGames.foldTypography(typed), VocabGames.foldTypography(word))
+    }
+
+    @Test("Typographic quotes and dashes fold to their plain forms; everything else is left alone")
+    func foldTypography() {
+        #expect(VocabGames.foldTypography("don\u{2019}t") == "don't")
+        #expect(VocabGames.foldTypography("\u{2018}tis") == "'tis")
+        #expect(VocabGames.foldTypography("o\u{02BC}clock") == "o'clock")
+        #expect(VocabGames.foldTypography("\u{201C}ad hoc\u{201D}") == "\"ad hoc\"")
+        for dash in ["\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}"] {
+            #expect(VocabGames.foldTypography("well\(dash)being") == "well-being", "U+\(String(dash.unicodeScalars.first!.value, radix: 16))")
+        }
+        #expect(VocabGames.foldTypography("Café, ad hoc — no") == "Café, ad hoc - no")
+        #expect(VocabGames.foldTypography("  Brisk\n") == "  Brisk\n", "case and spaces are the grader's to handle")
+    }
+
+    @Test("A curly or straight mark, a dash or a hyphen, is right whichever side has which")
+    func spellingGradeFoldsBothSides() {
+        // Straight typed, curly stored — and the other way round.
+        #expect(graded("don't", "don\u{2019}t"))
+        #expect(graded("don\u{2019}t", "don't"))
+        // A non-breaking hyphen in an imported word; an en dash from the keyboard.
+        #expect(graded("well-being", "well\u{2011}being"))
+        #expect(graded("well\u{2011}being", "well-being"))
+        #expect(graded("well\u{2013}being", "well-being"))
+        #expect(graded("well-being", "well\u{2013}being"))
+        // Case and surrounding whitespace, on top of the folding.
+        #expect(graded("  DON\u{2019}T ", "don't"))
+        #expect(graded("Well\u{2013}Being\n", "well\u{2011}being"))
+    }
+
+    @Test("Folding never turns a wrong spelling right")
+    func spellingGradeStillRefusesAWrongSpelling() {
+        #expect(!graded("recieve", "receive"))
+        #expect(!graded("dont", "don\u{2019}t"), "the apostrophe is part of the word")
+        #expect(!graded("wellbeing", "well\u{2011}being"), "so is the hyphen")
+        #expect(!graded("don\u{2019}s", "don't"))
+        #expect(!graded("", ""))
     }
 
     @Test("Accuracy never divides by zero")

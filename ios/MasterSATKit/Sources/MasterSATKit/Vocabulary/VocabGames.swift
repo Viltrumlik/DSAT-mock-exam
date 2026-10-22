@@ -165,10 +165,62 @@ public enum VocabGames {
         return letters[min(letters.count - 1, Int(rng() * Double(letters.count)))]
     }
 
+    /// One tile of the spelling question's well.
+    public struct SpellingTile: Sendable, Equatable {
+        public enum Kind: Sendable, Equatable {
+            /// The letter given away (`TestQuestion.revealIndex`), shown as the hint until the
+            /// student types on its position.
+            case given
+            /// A character the student typed, at the position it landed on: a letter, or any
+            /// other character (a digit, a hyphen) — a wrong one looks exactly like a right one.
+            case typed
+            /// A letter position still to type.
+            case blank
+            /// A space, hyphen or apostrophe the student has not typed over yet, shown as a
+            /// faint placeholder. It is a placeholder, not a free pass: the grader compares the
+            /// whole string, so these characters have to be typed too.
+            case structure
+        }
+
+        public let kind: Kind
+        /// What the tile shows, as typed (the view sets the case); empty for a blank.
+        public let character: String
+
+        public init(kind: Kind, character: String) {
+            self.kind = kind
+            self.character = character
+        }
+    }
+
+    /// The well as the student has filled it so far: what was typed, position by position.
+    ///
+    /// The n-th typed character sits on the n-th position of the word — EVERY character, spaces,
+    /// hyphens, apostrophes and anything else included — because the grader (`spellingIsCorrect`)
+    /// compares the whole string, shape and all. A word with a hyphen is therefore not finished
+    /// when its letters are in: "wellbeing" leaves "well-being" one position short, and the well
+    /// shows it. A position the student has not reached shows what it holds for them: the given
+    /// letter (the hint), a faint placeholder for a space/hyphen/apostrophe, or an empty well.
+    /// Typing on the given letter's position replaces the hint with what was typed. Characters
+    /// typed past the end of the word are not shown. Leading or trailing spaces are not trimmed
+    /// here, though the grader trims them.
+    ///
+    /// Nothing here compares a typed character with the word's: a tile's kind never depends on
+    /// whether it is right. The test says nothing until its end.
+    public static func spellingTiles(word: String, revealing index: Int?, typed: String) -> [SpellingTile] {
+        let entered = Array(typed)
+        return Array(word).enumerated().map { offset, character in
+            if offset < entered.count { return SpellingTile(kind: .typed, character: String(entered[offset])) }
+            if !character.isLetter { return SpellingTile(kind: .structure, character: String(character)) }
+            if offset == index { return SpellingTile(kind: .given, character: String(character)) }
+            return SpellingTile(kind: .blank, character: "")
+        }
+    }
+
     /// The word as blanks with one position filled in.
     ///
-    /// Non-letters — spaces, hyphens, apostrophes — stay visible. They are structure, not
-    /// the answer, and hiding them would turn spelling into guessing at the shape too.
+    /// Non-letters — spaces, hyphens, apostrophes — stay visible, so the shape of the word is not
+    /// part of what the student has to guess. They are still part of the answer: the grader
+    /// compares the whole string, so the student types them too.
     public static func maskWord(_ word: String, revealing index: Int?) -> [String] {
         Array(word).enumerated().map { offset, character in
             offset == index || !character.isLetter ? String(character) : "_"
@@ -179,6 +231,22 @@ public enum VocabGames {
     public static func spellingIsCorrect(_ input: String, _ word: String) -> Bool {
         let target = normalise(word)
         return !target.isEmpty && normalise(input) == target
+    }
+
+    /// Typographic quotes and dashes as their plain forms. The keyboard can produce ’ for ' and
+    /// — for --, and a word imported from a spreadsheet can carry a ’ or a non-breaking hyphen,
+    /// so the spelling test folds BOTH sides before `spellingIsCorrect`: a student is never
+    /// refused for which of the two looks they typed. Used only when an answer is graded — the
+    /// grade the phone sends — never in the well.
+    public static func foldTypography(_ text: String) -> String {
+        String(text.map { character -> Character in
+            switch character {
+            case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
+            case "\u{201C}", "\u{201D}": return "\""
+            case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
+            default: return character
+            }
+        })
     }
 
     // MARK: - Test

@@ -154,6 +154,7 @@ private struct LiveQuizJoinScreen: View {
                 model.presented = nil
             }
             .environment(session)
+            .noBarClearance()
         }
         .onChange(of: model.presented) { _, presented in
             // Back from a game: the list has moved on.

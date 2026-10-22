@@ -141,6 +141,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
                 Task { await model.load(session.student) }
             }
             .coversCelebrations(celebrations)
+            .noBarClearance()
         }
         .alert(
             "Couldn't start this assessment",

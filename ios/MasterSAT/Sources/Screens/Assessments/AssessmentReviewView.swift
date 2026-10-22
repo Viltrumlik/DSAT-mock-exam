@@ -39,6 +39,13 @@ struct AssessmentReviewView: View {
     @State private var retryError: String?
     @Environment(CelebrationCenter.self) private var celebrations
     @State private var xpAtRetry: Int?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Which way the card last turned — the arriving one comes in from that side.
+    @State private var turn: FocusTurn = .forward
+    /// The score this attempt beat, when it beat the attempt before it on the same set.
+    @State private var improvedFrom: Double?
+    /// Bumped once, the first time a beaten score is shown: the confetti and the success haptic.
+    @State private var outcomeTicks = 0
 
     private var questions: [AssessmentReviewQuestion] { review?.questions ?? [] }
 
@@ -67,11 +74,15 @@ struct AssessmentReviewView: View {
     }
 
     var body: some View {
-        Group {
+        // A ZStack, not a Group: a Group hands its modifiers to each branch, so the confetti
+        // overlay would live on the 20 pt spinner and be rebuilt — already past its trigger —
+        // on the content that replaces it in the same update. One full-size view keeps one
+        // overlay, sized to the page, from the first frame.
+        ZStack {
             if let review {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        ScoreHero(review: review, questions: questions)
+                        ScoreHero(review: review, questions: questions, improvedFrom: improvedFrom)
 
                         // Offered once the attempt is marked, as the web's result page offers
                         // it — a submission still waiting for its mark has nothing to retry yet.
@@ -81,14 +92,21 @@ struct AssessmentReviewView: View {
                             teacherNote(feedback)
                         }
 
-                        PillTabs(items: tabs, selection: $filter)
+                        PillTabs(items: tabs, selection: filterSelection, motion: Motion.focus)
 
                         if let current {
-                            ReviewQuestionCard(
-                                question: current,
-                                index: shown.firstIndex(where: { $0.id == current.id }) ?? 0,
-                                total: shown.count
-                            )
+                            // A ZStack, so the card leaving and the one arriving overlap for their
+                            // 200 ms. Keyed by the filter too: the same question under another
+                            // filter is another card.
+                            ZStack {
+                                ReviewQuestionCard(
+                                    question: current,
+                                    index: shown.firstIndex(where: { $0.id == current.id }) ?? 0,
+                                    total: shown.count
+                                )
+                                .id("\(filter.rawValue).\(current.id)")
+                                .transition(.focusTurn(turn, reduceMotion: reduceMotion))
+                            }
                             navigation
                         } else {
                             DashedEmpty(
@@ -106,10 +124,13 @@ struct AssessmentReviewView: View {
                 ProgressView()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // An outcome's confetti, drawn by the page itself so it is seen wherever the page is.
+        .overlay { OutcomeConfetti(trigger: outcomeTicks) }
+        .sensoryFeedback(.success, trigger: outcomeTicks)
         .navigationTitle("Review")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .onChange(of: filter) { index = 0 }
         .fullScreenCover(item: $retryAttemptId) { id in
             AssessmentRunnerView(attemptId: id, onSubmitted: {
                 celebrations.celebrate(.assessment, xpBefore: xpAtRetry)
@@ -120,6 +141,7 @@ struct AssessmentReviewView: View {
                 dismiss()
             }
             .coversCelebrations(celebrations)
+            .noBarClearance()
         }
         .alert(
             "Couldn't start this assessment",
@@ -189,16 +211,38 @@ struct AssessmentReviewView: View {
         )
     }
 
+    /// The filter, turning the card the way the chips run: a chip to the right brings its first
+    /// question in from the right. The question resets to the first in the same update, so the
+    /// card turns once. The chip already chosen changes nothing (the place in its list is kept).
+    private var filterSelection: Binding<Filter> {
+        Binding(
+            get: { filter },
+            set: { next in
+                guard next != filter else { return }
+                let order = Filter.allCases
+                turn = FocusTurn.from(order.firstIndex(of: filter) ?? 0, to: order.firstIndex(of: next) ?? 0)
+                index = 0
+                filter = next
+            }
+        )
+    }
+
     private var navigation: some View {
         HStack(spacing: 10) {
-            Button { index = max(0, index - 1) } label: {
+            Button {
+                turn = .back
+                withAnimation(Motion.focus) { index = max(0, index - 1) }
+            } label: {
                 Label("Previous", systemImage: "chevron.left").frame(maxWidth: .infinity)
             }
             .buttonStyle(SecondaryButtonStyle(fullWidth: true))
             .disabled(index == 0)
             .opacity(index == 0 ? 0.4 : 1)
 
-            Button { index = min(shown.count - 1, index + 1) } label: {
+            Button {
+                turn = .forward
+                withAnimation(Motion.focus) { index = min(shown.count - 1, index + 1) }
+            } label: {
                 Label("Next", systemImage: "chevron.right").frame(maxWidth: .infinity)
             }
             .buttonStyle(SecondaryButtonStyle(fullWidth: true))
@@ -211,12 +255,43 @@ struct AssessmentReviewView: View {
     private func load() async {
         loadError = nil
         do {
-            review = try await session.assessments.review(attemptId: attemptId)
+            let loaded = try await session.assessments.review(attemptId: attemptId)
+            review = loaded
+            // The page left while the answer was on its way: keep the review for its return, but
+            // weigh nothing — remembering now would mark the outcome celebrated with no page to
+            // show it. The load the return restarts weighs it, on screen.
+            guard !Task.isCancelled else { return }
+            remember(loaded)
         } catch let error as APIError {
+            // A cancelled load is not a failure (`APIClient` reports a cancellation as transport).
+            guard !Task.isCancelled else { return }
             loadError = error.errorDescription
         } catch {
+            guard !Task.isCancelled else { return }
             loadError = error.localizedDescription
         }
+    }
+
+    /// The outcome rule (`CelebrationRule.assessment`, by way of `OutcomeMemory`): a marked attempt
+    /// that beat the newest earlier attempt this phone knew of the same set says so every time it
+    /// is shown, and is celebrated once — confetti, a success haptic, one sentence for VoiceOver.
+    /// Only a marked attempt (`result`) is weighed, and one whose set the server did not name
+    /// (`setKey` nil) is compared with nothing and remembered nowhere.
+    @MainActor
+    private func remember(_ review: AssessmentReview) {
+        guard let result = review.result, case .signedIn(let user) = session.phase else { return }
+        let book = OutcomeBook()
+        var memory = book.read(userID: user.id)
+        let before = memory
+        let beaten = memory.showAssessment(setKey: review.setKey, attemptId: attemptId, percent: result.percent)
+        let fresh = memory.celebrate(OutcomeMemory.assessmentKey(attemptId), if: beaten != nil)
+        if memory != before { book.write(memory, userID: user.id) }
+        if improvedFrom != beaten { improvedFrom = beaten }
+        guard fresh, let beaten else { return }
+        outcomeTicks += 1
+        AccessibilityNotification.Announcement(
+            "Better than last time — up from \(ScoreText.wholePercent(beaten)) percent."
+        ).post()
     }
 }
 
@@ -264,6 +339,8 @@ enum Outcome {
 struct ScoreHero: View {
     let review: AssessmentReview
     let questions: [AssessmentReviewQuestion]
+    /// The score this attempt beat, when it beat the attempt before it on the same set.
+    var improvedFrom: Double? = nil
 
     private var title: String {
         review.meta?.setTitle?.nilIfBlank
@@ -287,7 +364,7 @@ struct ScoreHero: View {
                 .multilineTextAlignment(.center)
 
             if let result = review.result {
-                Text("\(ScoreText.string(result.percent))%")
+                RollingNumber(value: result.percent, suffix: "%")
                     .font(.system(size: 56, weight: .black).monospacedDigit())
                     .tracking(-2)
                     .foregroundStyle(.white)
@@ -297,6 +374,15 @@ struct ScoreHero: View {
                     .foregroundStyle(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
+                if let improvedFrom {
+                    Label("Up from \(ScoreText.wholePercent(improvedFrom))%", systemImage: "arrow.up.right")
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(.white.opacity(0.2)))
+                        .padding(.top, 10)
+                }
             } else {
                 // Submitted but not yet marked. Naming that beats an absent score, which
                 // reads as a zero.
@@ -308,9 +394,9 @@ struct ScoreHero: View {
             }
 
             HStack(spacing: 12) {
-                stat(count(.correct), "Correct")
-                stat(count(.incorrect), "To improve")
-                stat(count(.unanswered), "Skipped")
+                stat(count(.correct), "Correct").focusEntrance(0)
+                stat(count(.incorrect), "To improve").focusEntrance(1)
+                stat(count(.unanswered), "Skipped").focusEntrance(2)
             }
             .padding(.top, 24)
         }
@@ -404,14 +490,15 @@ struct ReviewQuestionCard: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Overline("Answer analysis")
                     if question.choices.isEmpty {
-                        typedAnswers
+                        typedAnswers.focusEntrance(0)
                     } else {
-                        ForEach(question.choices) { choice in
+                        ForEach(Array(question.choices.enumerated()), id: \.element.id) { position, choice in
                             ReviewChoiceRow(
                                 choice: choice,
                                 isCorrectAnswer: matches(question.correctAnswer, choice.id),
                                 isStudentAnswer: matches(question.studentAnswer, choice.id)
                             )
+                            .focusEntrance(position)
                         }
                     }
                 }
@@ -434,6 +521,8 @@ struct ReviewQuestionCard: View {
                         RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
                             .stroke(Theme.accent.opacity(0.15), lineWidth: 1)
                     )
+                    // Open, as the web has it — it settles in last, after the answers.
+                    .focusEntrance(max(question.choices.count, 1))
                 }
             }
             .padding(18)
@@ -500,18 +589,20 @@ struct ReviewQuestionCard: View {
                     .stroke(outcome == .correct ? Theme.success : (question.wasAnswered ? Theme.danger : Theme.separator), lineWidth: 2)
             )
 
+            // An ink panel with its own text colour: dark with white text in light mode, light
+            // with dark text in dark mode — never white on white.
             VStack(alignment: .leading, spacing: 6) {
                 Text("CORRECT ANSWER")
                     .font(.system(size: 10, weight: .heavy)).tracking(0.9)
-                    .foregroundStyle(.white.opacity(0.7))
+                    .foregroundStyle(Theme.onInk.opacity(0.7))
                 Text(question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
                     .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(Theme.onInk)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.primary)
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.ink)
             )
         }
     }
@@ -586,5 +677,45 @@ extension String {
     var nilIfBlank: String? {
         let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - What the phone knows of the student's scores
+
+extension ScoreText {
+    /// A percent in the whole percents the outcome rule compares in — rounded half to even, like
+    /// `CelebrationRule.assessment`. `string(_:)` rounds half away from zero, and "Up from X%" must
+    /// name the very number the rule weighed: 12.5 is 12 to the rule, and "13%" would claim a
+    /// lower mark was beaten than the one that was.
+    static func wholePercent(_ value: Double) -> String {
+        String(Int(value.rounded(.toNearestOrEven)))
+    }
+}
+
+extension OutcomeBook {
+    /// Every completed, graded assessment attempt a my-assignments list carries becomes known to
+    /// this phone (`OutcomeMemory.noteSeen`), so that an attempt taken on the web — or finished
+    /// before its review was ever opened — is the attempt before the next one. Read per
+    /// `AssessmentHomeworkLink`: the list's top-level `assessment_progress` covers only the first
+    /// bundled set. The key is built as the review builds it. Never celebrates anything.
+    ///
+    /// Run when a list arrives, before any review decides "improved". Synchronous, so it cannot
+    /// interleave with a review's own read-and-write of the same memory on the main actor.
+    func noteSeen(in assignments: [AssignmentListing], userID: Int) {
+        var memory = read(userID: userID)
+        let before = memory
+        for assignment in assignments {
+            for link in assignment.assessmentHomeworks {
+                // `percent` is only sent with a mark; a submission still waiting for one has none.
+                guard let progress = link.progress, progress.isCompleted, progress.graded != false,
+                      let attemptId = progress.attemptId, let percent = progress.percent else { continue }
+                memory.noteSeen(
+                    setKey: OutcomeMemory.setKey(assignmentId: assignment.id, setTitle: link.assessmentSet?.title),
+                    attemptId: attemptId,
+                    percent: Double(percent)
+                )
+            }
+        }
+        if memory != before { write(memory, userID: userID) }
     }
 }

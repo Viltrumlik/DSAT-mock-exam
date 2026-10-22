@@ -133,6 +133,9 @@ private struct SignInForm: View {
     @State private var retryable = false
     @State private var forgotOpen = false
     @FocusState private var focus: AuthFocus?
+    /// Bumped when the server said the email or password is wrong: the password box shakes and
+    /// a warning haptic plays. Other failures (offline, throttled) only say so.
+    @State private var refusals = 0
 
     private var canSubmit: Bool {
         !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !session.isWorking
@@ -183,6 +186,7 @@ private struct SignInForm: View {
                 text: $password,
                 focus: $focus,
                 field: .password,
+                shakes: refusals,
                 onSubmit: { if canSubmit { submit() } }
             )
 
@@ -222,6 +226,7 @@ private struct SignInForm: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
         }
+        .sensoryFeedback(.warning, trigger: refusals)
     }
 
     private func submit() {
@@ -237,6 +242,10 @@ private struct SignInForm: View {
                 let copy = AuthErrorCopy.classify(error)
                 self.error = copy.message
                 retryable = copy.retryable
+                // On this screen a 401 is a wrong email or password (`AuthErrorCopy`).
+                if case .unauthorized? = error as? APIError { refusals += 1 }
+                // The alert appears where the eye is not; VoiceOver hears it once.
+                AccessibilityNotification.Announcement(copy.message).post()
             }
         }
     }
