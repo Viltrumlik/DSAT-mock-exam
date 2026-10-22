@@ -351,9 +351,13 @@ struct RewardsHubView: View {
         converting = true
         convertNote = nil
         var answered = false
+        // Coins were minted. Only that note is news the screen already shows; every other note
+        // is the only spoken signal that the conversion did not happen.
+        var minted = false
         do {
             let result = try await session.rewards.convert(points: nil)
             answered = true
+            minted = result.minted > 0
             let after = before.applying(result.balances)
             setMine(after)
             if result.minted > 0 { celebrateMint() }
@@ -369,6 +373,7 @@ struct RewardsHubView: View {
         if !answered {
             if let fresh, fresh.coins > before.coins {
                 // The answer was lost but the conversion was not.
+                minted = true
                 celebrateMint()
                 convertNote = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
             } else if fresh != nil {
@@ -383,9 +388,10 @@ struct RewardsHubView: View {
         coinsFocused = true
         if let convertNote {
             // After the card has been read, not over it: speech started by the cursor's move is
-            // not cut off, and a line that arrives with it is not lost.
-            try? await Task.sleep(for: .milliseconds(400))
-            celebrations.announce(convertNote, queued: true)
+            // not cut off. A success waits its turn behind that read; a conversion that did not
+            // go through is said at normal priority, so it cannot be dropped.
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            celebrations.announce(convertNote, queued: minted)
         }
     }
 

@@ -214,10 +214,8 @@ struct LessonCalendarCard: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
                 )
-                // Drawn 38, tappable 44; the extra is handed back to layout so the row is as it was.
-                .padding(3)
-                .contentShape(Rectangle())
-                .padding(-3)
+                // Drawn 38, tappable 44; the row is as it was.
+                .hitTarget()
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)

@@ -23,6 +23,7 @@ struct RankUpOverlay: View {
                 RankUpCard(
                     rise: rise,
                     reduceMotion: celebrations.reduceMotion,
+                    speechRemaining: { celebrations.speechRemaining() },
                     onBoard: {
                         celebrations.dismissRankUp()
                         // Fresh: a Rewards root already open would not reload, and the hero must
@@ -48,6 +49,9 @@ struct RankUpOverlay: View {
 struct RankUpCard: View {
     let rise: Rise
     let reduceMotion: Bool
+    /// How much longer VoiceOver is expected to be speaking an earlier line (the XP line of the
+    /// same return, which no flight delays under Reduce Motion).
+    let speechRemaining: @MainActor () -> Duration
     let onBoard: () -> Void
     let onClose: () -> Void
 
@@ -93,12 +97,15 @@ struct RankUpCard: View {
         .accessibilityAddTraits(.isModal)
         // VoiceOver's two-finger scrub puts it away, as it does a sheet.
         .accessibilityAction(.escape, onClose)
-        // The card does not wait to be found: the cursor comes to it. Lowered first so a second
-        // rise, which swaps `rise` under this same view, moves it again; and after a beat, because
-        // a cursor set in the frame the card is inserted in finds nothing there yet.
+        // The card does not wait to be found: the cursor comes to it, and its title is the whole
+        // announcement. Lowered first so a second rise, which swaps `rise` under this same view,
+        // moves it again. After a beat, because a cursor set in the frame the card is inserted in
+        // finds nothing there yet — and longer while an earlier line is still being spoken (the
+        // XP of this return), since a cursor move cuts speech off rather than queueing behind it.
         .task(id: rise) {
             newsFocused = false
-            try? await Task.sleep(for: .milliseconds(150))
+            let wait = max(.milliseconds(150), min(speechRemaining(), .seconds(8)))
+            try? await Task.sleep(for: wait)
             if !Task.isCancelled { newsFocused = true }
         }
     }

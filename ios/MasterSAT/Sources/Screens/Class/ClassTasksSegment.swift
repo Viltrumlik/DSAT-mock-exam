@@ -221,15 +221,20 @@ struct AssessmentResultRow: View {
             parts.append("being marked")
         }
         if let iso = entry.progress?.lastActivityAt, let date = JSONCoding.parseServerDate(iso) {
-            let f = DateFormatter()
-            f.locale = Locale(identifier: "en_US_POSIX")
-            f.calendar = ServicesTime.calendar
-            f.timeZone = ServicesTime.tashkent
-            f.dateFormat = "EEE d MMM"
-            parts.append(f.string(from: date))
+            parts.append(Self.spokenDay.string(from: date))
         }
         return parts.joined(separator: ", ")
     }
+
+    /// Built once: every result row asks for its day on every render.
+    private static let spokenDay: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = ServicesTime.calendar
+        f.timeZone = ServicesTime.tashkent
+        f.dateFormat = "EEE d MMM"
+        return f
+    }()
 }
 
 /// A midterm sat: its score once the teacher has released it — named, never blank, until then.

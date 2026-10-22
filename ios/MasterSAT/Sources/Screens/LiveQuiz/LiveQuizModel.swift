@@ -160,9 +160,13 @@ final class LiveQuizModel {
         game.currentAnswer?.state == .sending
     }
 
-    func pick(_ choiceId: String) {
-        guard game.canSubmit(at: Date()) else { return }
+    /// Whether the pick took: false past the deadline, when the row's tap arrived a beat after
+    /// the room closed it.
+    @discardableResult
+    func pick(_ choiceId: String) -> Bool {
+        guard game.canSubmit(at: Date()) else { return false }
         draft = choiceId
+        return true
     }
 
     /// Send the picked option. If the line is down it stays "sending" and goes again as soon

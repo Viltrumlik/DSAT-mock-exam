@@ -534,9 +534,8 @@ struct AssessmentRunnerView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                         .fill(Theme.ink.opacity(0.85))
                 )
-                // Drawn ~41 pt, tappable 44: the pill keeps its look, centred in the taller target.
-                .frame(minHeight: Self.minTarget)
-                .contentShape(Rectangle())
+                // Drawn ~41 pt, tappable 44; the pill keeps its look.
+                .hitTarget(Self.minTarget)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Question \(runner.currentIndex + 1) of \(runner.questions.count)")

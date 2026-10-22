@@ -313,8 +313,8 @@ private struct LiveQuizGameScreen: View {
 /// locked for a moment would come back from believing it had time it does not have.
 private struct LiveQuizQuestionPanel: View {
     let model: LiveQuizModel
-    /// Taps on a choice — the haptic's trigger. `model.draft` also clears when the next question
-    /// opens and when an answer is sent, and a buzz at those is not the student's hand.
+    /// Picks that changed the choice — the haptic's trigger. `model.draft` also clears when the
+    /// next question opens and when an answer is sent, and a buzz at those is not the student's hand.
     @State private var picks = 0
 
     var body: some View {
@@ -340,8 +340,10 @@ private struct LiveQuizQuestionPanel: View {
                             isSelected: model.shownChoice == choice.id,
                             isDisabled: !canSubmit
                         ) {
-                            model.pick(choice.id)
-                            picks += 1
+                            // A buzz is for a different choice taking: not the one already chosen,
+                            // and not a tap the deadline refused.
+                            let changes = model.shownChoice != choice.id
+                            if model.pick(choice.id), changes { picks += 1 }
                         }
                     }
                 }

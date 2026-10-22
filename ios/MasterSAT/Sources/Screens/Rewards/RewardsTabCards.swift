@@ -197,11 +197,8 @@ struct CoinsCard: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(Theme.accent))
-                        // Drawn ~27 pt, tappable 44: the extra reach is handed back to layout, so
-                        // the card does not grow (hit testing is not clipped to the layout frame).
-                        .padding(.vertical, 9)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, -9)
+                        // Drawn ~27 pt, tappable 44; the card does not grow.
+                        .hitTarget()
                     }
                     .buttonStyle(PressBounce())
                     .disabled(converting)
@@ -225,9 +222,7 @@ struct CoinsCard: View {
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(RewardsPalette.accentText)
                     // Drawn ~15 pt, tappable 44, as the Convert button is.
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                    .padding(.vertical, -14)
+                    .hitTarget()
                 }
                 .buttonStyle(.plain)
             }

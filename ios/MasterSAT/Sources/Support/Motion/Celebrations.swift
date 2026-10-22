@@ -240,6 +240,7 @@ final class CelebrationCenter {
     /// behind speech already under way (low priority) instead of cutting it off — for a line that
     /// follows another one.
     func announce(_ text: String, queued: Bool = false) {
+        noteSpeech(text, after: queued)
         guard queued else {
             AccessibilityNotification.Announcement(text).post()
             return
@@ -247,6 +248,23 @@ final class CelebrationCenter {
         var spoken = AttributedString(text)
         spoken.accessibilitySpeechAnnouncementPriority = .low
         AccessibilityNotification.Announcement(spoken).post()
+    }
+
+    /// When the last line announced is expected to have been spoken. An estimate, since VoiceOver
+    /// does not say; kept only while VoiceOver is running, as nothing is spoken otherwise.
+    @ObservationIgnored private var speechEnds = ContinuousClock.now
+
+    private func noteSpeech(_ text: String, after queued: Bool) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        // A line that cuts in starts now; a queued one starts when the speech under way ends.
+        let start = queued ? max(speechEnds, .now) : .now
+        speechEnds = start + .milliseconds(text.count * 70)
+    }
+
+    /// How much longer VoiceOver is expected to be speaking what was announced. A cursor move cuts
+    /// speech off, so whatever moves it for a student waits for this (the rank-up card).
+    func speechRemaining() -> Duration {
+        max(.zero, speechEnds - .now)
     }
 
     // MARK: - A quiet stage
@@ -381,8 +399,8 @@ final class CelebrationCenter {
         let gainCanFly = queue.hasConfirmedGain && target != nil
         guard !covered, flights.isEmpty, !gainCanFly, let rise = rankCards.show() else { return }
         rankUp = rise
-        // After the XP line it follows, not over it.
-        announce("You moved up to number \(rise.to) overall.", queued: true)
+        // Not announced here: the card's cursor lands on "You moved up to #N" and reads it
+        // (`RankUpCard`), after whatever is still being said — the XP line of this same return.
     }
 
     // MARK: - What can be seen

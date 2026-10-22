@@ -135,13 +135,8 @@ struct LessonsUnavailableRow: View {
                 Text("Try again")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.accent)
-                    // Drawn 12 pt, tappable 44 tall and wide; the extra is handed back to layout,
-                    // so the quiet row stays quiet.
-                    .padding(.vertical, 14)
-                    .padding(.horizontal, 8)
-                    .contentShape(Rectangle())
-                    .padding(.vertical, -14)
-                    .padding(.horizontal, -8)
+                    // Drawn 12 pt, tappable 44; the quiet row stays quiet.
+                    .hitTarget()
             }
             .buttonStyle(PressBounce())
         }
