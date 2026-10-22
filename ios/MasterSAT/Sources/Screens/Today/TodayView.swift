@@ -179,6 +179,11 @@ struct TodayView: View {
                 loadSeen()
                 Task { await load() }
             }
+            // The ring bounces WITH the double confetti, so a week finished under a sheet or a
+            // cover bounces when its confetti plays there, not unseen beneath it.
+            .onChange(of: celebrations.allDonePlays) { _, _ in
+                if !reduceMotion { heroBounce += 1 }
+            }
             .navigationDestination(for: AssignmentListing.self) { assignment in
                 HomeworkDetailView(assignment: assignment).zoomDestination(id: assignment.id, in: zoom)
             }
@@ -344,12 +349,12 @@ struct TodayView: View {
         celebrateIfWeekJustFinished()
     }
 
-    /// The week's last homework just went in: double confetti, and the ring bounces.
+    /// The week's last homework just went in: double confetti, and the ring bounces as it plays
+    /// (`allDonePlays`).
     private func celebrateIfWeekJustFinished() {
         let week = plan.week
         if TodayPlan.justFinished(previous: lastWeek, current: week) {
             celebrations.allDone()
-            if !reduceMotion { heroBounce += 1 }
         }
         lastWeek = week
     }

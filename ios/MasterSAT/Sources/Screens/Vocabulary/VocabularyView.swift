@@ -35,6 +35,11 @@ struct VocabularyView: View {
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// "Review today" steps aside while the search field holds text, so the results start at the
+    /// top of a small phone with the keyboard up. Its own state, written in an animation as the
+    /// field empties or fills, rather than an animation keyed on the whole page.
+    @State private var reviewHidden = false
     @State private var sections: [VocabSection] = []
     @State private var mySets: [VocabMySet] = []
     @State private var groups: [VocabHomeworkGroup] = []
@@ -99,7 +104,11 @@ struct VocabularyView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Words").stagger(0, shown: shown)
 
-                    reviewCard.stagger(1, shown: shown)
+                    if !reviewHidden {
+                        reviewCard
+                            .stagger(1, shown: shown)
+                            .transition(.opacity)
+                    }
 
                     WordSearchField(query: $query).stagger(2, shown: shown)
 
@@ -146,6 +155,11 @@ struct VocabularyView: View {
             }
             // A newer keystroke cancels the older search; a cancelled search stores nothing.
             .onChange(of: searchText) { _, text in runSearch(text, pause: true) }
+            // Fades out with the first letter and back when the field is cleared; under Reduce
+            // Motion it simply goes and comes back (the animation is the only thing it picks).
+            .onChange(of: searchText.isEmpty) { _, empty in
+                withAnimation(reduceMotion ? nil : Motion.focus) { reviewHidden = !empty }
+            }
             .onChange(of: segment) { _, _ in
                 if !segmentPicked { segmentPicked = true }
             }
