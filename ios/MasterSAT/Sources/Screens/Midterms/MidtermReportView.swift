@@ -353,7 +353,11 @@ struct MidtermReportView: View {
     private func load() async {
         loadError = nil
         isLoading = true
-        defer { isLoading = false }
+        // Only a load that finished or truly failed ends the loading state. One cancelled with
+        // the page returns with nothing set, and "not loading, no score, no error" reads as
+        // "Submitted" — shown on the page's return until the restarted load lands. A real
+        // failure still ends it, on `loadError` (RetryNotice), never on the empty notice.
+        defer { if !Task.isCancelled { isLoading = false } }
 
         async let review = session.results.midtermResult(attemptId: attemptId)
         async let breakdown = session.results.midtermErrorReport(attemptId: attemptId)
