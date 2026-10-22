@@ -492,12 +492,14 @@ struct AssessmentRunnerView: View {
                         .font(.system(size: 14, weight: .bold).monospacedDigit())
                     Image(systemName: "chevron.up").font(.system(size: 10, weight: .bold))
                 }
-                .foregroundStyle(.white)
+                // An ink pill with its own text colour: a dark pill and white text in light mode,
+                // a light pill and dark text in dark mode — never white on white.
+                .foregroundStyle(Theme.onInk)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                        .fill(Color.primary.opacity(0.85))
+                        .fill(Theme.ink.opacity(0.85))
                 )
                 .contentShape(Rectangle())
             }
