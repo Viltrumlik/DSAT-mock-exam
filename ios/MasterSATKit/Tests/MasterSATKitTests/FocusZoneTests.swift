@@ -128,3 +128,92 @@ import Testing
         }
     }
 }
+
+/// What VoiceOver says for the marks a spelling answer can hold, against what the grade folds.
+///
+/// A student who types a curly quote or an en dash is graded as if they had typed the plain one
+/// (`foldTypography`), so the well must not read it as silence: VoiceOver skips most bare
+/// punctuation, and a mark that is graded but never heard is a mistake nobody can find.
+@Suite struct SpellingSpokenTests {
+
+    private func tile(_ kind: VocabGames.SpellingTile.Kind, _ character: String) -> VocabGames.SpellingTile {
+        VocabGames.SpellingTile(kind: kind, character: character)
+    }
+
+    /// What `spoken` says for one typed character.
+    private func said(_ character: String) -> String {
+        VocabGames.spoken([tile(.typed, character)])
+    }
+
+    /// A character `spoken` has no name for comes back as itself, lowercased.
+    private func isNamed(_ character: String) -> Bool {
+        let heard = said(character)
+        return !heard.isEmpty && heard != character.lowercased()
+    }
+
+    @Test("Every character the grade folds is named, and so is the plain form it folds to")
+    func everyFoldedMarkIsNamed() {
+        // Swept over the whole BMP rather than a hand-written list, so a mark added to the fold
+        // and forgotten here fails this test instead of passing it by omission.
+        var folded: [String] = []
+        for value in UInt32(0x20)...UInt32(0xFFFF) {
+            guard let scalar = Unicode.Scalar(value) else { continue }
+            let text = String(Character(scalar))
+            let plain = VocabGames.foldTypography(text)
+            guard plain != text else { continue }
+            folded.append(text)
+            #expect(isNamed(text), "U+\(String(value, radix: 16, uppercase: true)) is folded to \(plain) but VoiceOver says \(said(text))")
+            #expect(isNamed(plain), "\(plain) is what U+\(String(value, radix: 16, uppercase: true)) folds to, and VoiceOver says \(said(plain))")
+        }
+        #expect(folded.count >= 11, "the sweep found the marks the fold knows about")
+    }
+
+    @Test("The shared list is what both sides use: each mark folds to its plain form and is spoken by its name")
+    func theListDrivesBothSides() {
+        #expect(!VocabGames.spellingMarks.isEmpty)
+        for mark in VocabGames.spellingMarks {
+            #expect(VocabGames.foldTypography(String(mark.character)) == String(mark.plain), "\(mark.name)")
+            #expect(said(String(mark.character)) == mark.name)
+            // The plain form is a listed mark too: a folded answer is still heard.
+            #expect(VocabGames.spellingMarks.contains { $0.character == mark.plain }, "\(mark.name) folds to an unlisted character")
+        }
+        // No character is listed twice with two meanings.
+        let characters = VocabGames.spellingMarks.map(\.character)
+        #expect(Set(characters).count == characters.count)
+    }
+
+    @Test("The marks are named the way a person would say them")
+    func names() {
+        #expect(said(" ") == "space")
+        #expect(said("-") == "hyphen")
+        #expect(said("\u{2011}") == "hyphen")
+        #expect(said("\u{2013}") == "dash")
+        #expect(said("\u{2014}") == "dash")
+        #expect(said("'") == "apostrophe")
+        #expect(said("\u{2019}") == "apostrophe")
+        #expect(said("\u{02BC}") == "apostrophe")
+        #expect(said("\"") == "quote")
+        #expect(said("\u{201C}") == "quote")
+        #expect(said("\u{201D}") == "quote")
+    }
+
+    @Test("A mark is read the same whether it is the placeholder, the hint or what was typed")
+    func kindDoesNotChangeTheName() {
+        for mark in VocabGames.spellingMarks {
+            let heard = [VocabGames.SpellingTile.Kind.typed, .given, .structure].map {
+                VocabGames.spoken([tile($0, String(mark.character))])
+            }
+            #expect(Set(heard) == [mark.name])
+        }
+    }
+
+    @Test("Letters are read as they are, an empty position is a blank, and the line is one list")
+    func lettersAndBlanks() {
+        #expect(VocabGames.spoken([tile(.typed, "B"), tile(.given, "R"), tile(.blank, "")]) == "b, r, blank")
+        #expect(VocabGames.spoken([]) == "")
+
+        let tiles = VocabGames.spellingTiles(word: "don't well-being", revealing: 0, typed: "don\u{2019}t w")
+        #expect(VocabGames.spoken(tiles).hasPrefix("d, o, n, apostrophe, t, space, w, blank"))
+        #expect(VocabGames.spoken(tiles).contains("hyphen"))
+    }
+}
