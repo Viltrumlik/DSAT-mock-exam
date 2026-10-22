@@ -84,9 +84,7 @@ struct SurveysWaitingCard: View {
             }
 
             // One survey opens its form; several open the list, as the web's button does.
-            NavigationLink {
-                SurveysWaitingDestination(surveyId: others > 0 ? nil : featured.id)
-            } label: {
+            NavigationLink(value: others > 0 ? AppLink.surveys : AppLink.survey(id: featured.id)) {
                 Text("Take the survey")
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
@@ -97,18 +95,6 @@ struct SurveysWaitingCard: View {
     private func load() async {
         guard let open = try? await SurveysAPI(client: session.client).open() else { return }
         waiting = open
-    }
-}
-
-private struct SurveysWaitingDestination: View {
-    let surveyId: Int?
-
-    var body: some View {
-        if let surveyId {
-            SurveyFillView(surveyId: surveyId)
-        } else {
-            SurveysListView()
-        }
     }
 }
 

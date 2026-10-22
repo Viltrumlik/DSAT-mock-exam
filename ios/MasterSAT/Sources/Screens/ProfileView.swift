@@ -11,16 +11,21 @@ import MasterSATKit
 /// - **Settings** is the web's section menu. Study goal and Appearance are not in it: the
 ///   goal is set from Overview (and Home), and the app follows the phone's own light/dark.
 ///
-/// Under the tabs, on every tab: the rows the web's account menu carries on a phone —
-/// Surveys and Events — and Sign out.
+/// Under the tabs, on every tab: My progress, and Sign out. (Surveys and Events live in
+/// Explore now.) The page is the Me sheet, opened from the avatar in every tab's header.
 ///
 /// Every panel loads and fails on its own (`ProfileModel`), and a failure is never drawn as
 /// "nothing here". The hero draws from the session's copy of the account at once, so the page
 /// is never blank while the rest arrives.
 struct ProfileView: View {
     let user: CurrentUser
+    @Binding var path: NavigationPath
 
     enum Tab: Hashable { case overview, classes, settings }
+
+    /// Pages this page's own header and rows push that no `AppLink` names — values on `path`,
+    /// so a link into the Me sheet can pop them (a `NavigationLink { destination }` cannot be).
+    enum Route: Hashable { case accountDetails }
 
     @Environment(Session.self) private var session
     @Environment(\.openURL) private var openURL
@@ -39,7 +44,7 @@ struct ProfileView: View {
     private var current: CurrentUser { model.savedUser ?? user }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -59,6 +64,12 @@ struct ProfileView: View {
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .accountDetails: AccountDetailsView()
+                }
+            }
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .refreshable { await model.refreshAll(session) }
             // Not `.task`: a push cancels a task, and a cancelled load would read as a failed one.
             .onAppear { Task { await model.appeared(session) } }
@@ -174,27 +185,16 @@ struct ProfileView: View {
 
     // MARK: - Under the tabs
 
-    /// The web's account menu on a phone — Surveys and Events are always there, never gated
-    /// on a count: for a student who has answered every survey this row is the only way to
-    /// the surveys page. Then Sign out.
+    /// My progress, then Sign out. Surveys and Events moved to the Explore tab.
     private var moreRows: some View {
         VStack(spacing: 10) {
             ProfileLinkRow(
-                icon: "list.clipboard",
-                title: "Surveys",
-                subtitle: "Tell the learning center how it's going",
-                badge: model.openSurveys.flatMap { $0 > 0 ? "\($0) open" : nil }
-            ) {
-                SurveysListView()
-            }
-            ProfileLinkRow(
-                icon: "calendar",
-                title: "Events",
-                subtitle: "What's coming up, and your tickets",
-                badge: model.openEvents.flatMap { $0 > 0 ? "\($0) open" : nil }
-            ) {
-                EventsView()
-            }
+                icon: "chart.line.uptrend.xyaxis",
+                title: "My progress",
+                subtitle: "How you're doing, beside your group",
+                badge: nil,
+                route: AppLink.progress
+            )
             Button("Sign out") { confirmingSignOut = true }
                 .buttonStyle(PrimaryButtonStyle(tone: Theme.danger, fullWidth: true))
                 .padding(.top, 6)
@@ -335,9 +335,7 @@ private struct ProfileHeroCard: View {
             }
 
             HStack(spacing: 8) {
-                NavigationLink {
-                    AccountDetailsView()
-                } label: {
+                NavigationLink(value: ProfileView.Route.accountDetails) {
                     Label("Edit profile", systemImage: "pencil")
                 }
                 .buttonStyle(AccountPillButtonStyle(kind: .solid, tone: Theme.accent))
@@ -371,17 +369,15 @@ private struct ProfileHeroCard: View {
 
 /// A row that opens a page: the tile, what it is, one line on what is behind it, and a count
 /// when there is something open.
-private struct ProfileLinkRow<Destination: View>: View {
+private struct ProfileLinkRow<Route: Hashable>: View {
     let icon: String
     let title: String
     let subtitle: String
     var badge: String?
-    @ViewBuilder let destination: () -> Destination
+    let route: Route
 
     var body: some View {
-        NavigationLink {
-            destination()
-        } label: {
+        NavigationLink(value: route) {
             HStack(spacing: 13) {
                 IconTile(systemName: icon, tone: Theme.accent)
                 VStack(alignment: .leading, spacing: 2) {

@@ -10,7 +10,15 @@ import MasterSATKit
 /// 1080px. Homework and midterm results follow, because on a phone Home is also the place
 /// a student checks before a lesson.
 struct DashboardView: View {
+    /// Pages this root pushes that no `AppLink` names. Every push from here is a VALUE on
+    /// `path` — a `NavigationLink { destination }` never enters the path, so re-tapping the
+    /// tab (or a link to it) could not pop it.
+    enum Route: Hashable {
+        case midtermReport(attemptId: Int, title: String)
+    }
+
     let user: CurrentUser
+    @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
 
@@ -28,7 +36,6 @@ struct DashboardView: View {
     @State private var isLoading = true
     @State private var showingGoal = false
     @State private var savingExamDate = false
-    @State private var openedAssignmentId: Int?
     @State private var promptDismissed = false
     /// Bumped by pull-to-refresh, so the pieces that load themselves (stories, the survey
     /// card, the chip row) reload with the rest of the page.
@@ -75,7 +82,7 @@ struct DashboardView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     header
@@ -146,7 +153,7 @@ struct DashboardView: View {
                 .padding(16)
             }
             .background(Theme.background)
-            .navigationTitle("Home")
+            .navigationTitle("Today")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable {
@@ -159,11 +166,14 @@ struct DashboardView: View {
             .onChange(of: user) { profile = nil }
             .onChange(of: viewYear) { Task { await loadSchedule() } }
             .onChange(of: viewMonth) { Task { await loadSchedule() } }
-            .navigationDestination(item: $openedAssignmentId) { id in
-                if let assignment = assignments.first(where: { $0.id == id }) {
-                    HomeworkDetailView(assignment: assignment)
+            .navigationDestination(for: AssignmentListing.self) { HomeworkDetailView(assignment: $0) }
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .midtermReport(let attemptId, let title):
+                    MidtermReportView(attemptId: attemptId, title: title)
                 }
             }
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .sheet(isPresented: $showingGoal) {
                 GoalSheet(
                     english: sectionTargets.english ?? 700,
@@ -175,22 +185,13 @@ struct DashboardView: View {
         }
     }
 
-    /// The web's top bar, on the phone: what sits beside the page rather than in it.
-    private var topBar: some View {
-        HStack(spacing: 8) {
-            Spacer(minLength: 0)
-            HomeEventsButton()
-            NavigationLink { PointsView() } label: { RewardsPointsPill() }
-                .buttonStyle(.plain)
-            // RootTabView routes what the inbox opens, the same way it routes a tapped push.
-            NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
-        }
-    }
-
     private var header: some View {
         VStack(alignment: .leading, spacing: 14) {
-            topBar
-            PageTitle("Welcome back, \(current.firstName?.isEmpty == false ? current.firstName! : current.displayName)")
+            AppHeader(
+                title: "Today",
+                subtitle: Date.now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                showsBell: true
+            )
             Button {
                 showingGoal = true
             } label: {
@@ -225,9 +226,7 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             DotHeading(title: "Homework", count: dueSoon.count)
             ForEach(dueSoon) { assignment in
-                NavigationLink {
-                    HomeworkDetailView(assignment: assignment)
-                } label: {
+                NavigationLink(value: assignment) {
                     HomeworkRow(assignment: assignment).cardStyle()
                 }
                 .buttonStyle(.plain)
@@ -244,14 +243,12 @@ struct DashboardView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
                 DotHeading(title: "Your results", count: results.count, tone: Theme.success)
-                NavigationLink("See all") { MidtermsView() }
+                NavigationLink("See all", value: AppLink.midterms)
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.accent)
             }
             ForEach(results) { midterm in
-                NavigationLink {
-                    MidtermReportView(attemptId: midterm.attemptId ?? 0, title: midterm.title)
-                } label: {
+                NavigationLink(value: Route.midtermReport(attemptId: midterm.attemptId ?? 0, title: midterm.title)) {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(midterm.title)
@@ -295,8 +292,8 @@ struct DashboardView: View {
         // A calendar row for homework opens that homework. A class row has nothing deeper
         // to show on a phone, so an unmatched tap does nothing rather than pushing an
         // empty screen — the row still reads as information.
-        guard let id = event.assignmentId, assignments.contains(where: { $0.id == id }) else { return }
-        openedAssignmentId = id
+        guard let id = event.assignmentId, let assignment = assignments.first(where: { $0.id == id }) else { return }
+        path.append(assignment)
     }
 
     // MARK: - Loading
