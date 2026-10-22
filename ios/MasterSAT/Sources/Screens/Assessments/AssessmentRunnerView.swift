@@ -51,7 +51,11 @@ struct AssessmentRunnerView: View {
     }
 
     var body: some View {
-        Group {
+        // A ZStack, not a Group: a Group hands its modifiers to each branch and rebuilds them with
+        // every branch that replaces another, so a fade watching `didSubmit` never played. One
+        // full-size view keeps one set, and the runner leaving and "Handed in" arriving crossfade
+        // in place.
+        ZStack {
             if let runner {
                 if runner.isLoading {
                     ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -74,9 +78,8 @@ struct AssessmentRunnerView: View {
                 ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
-        // The hand-in screen fades in rather than cutting.
-        .animation(Motion.focus, value: didSubmit)
         .sensoryFeedback(.selection, trigger: picks)
         .task {
             if runner == nil {
@@ -546,7 +549,9 @@ struct AssessmentRunnerView: View {
         guard let runner, !didSubmit else { return }
         Task {
             if await runner.submit(), !didSubmit {
-                didSubmit = true
+                // The hand-in screen fades in rather than cutting — a crossfade, so the same under
+                // Reduce Motion. Animated at the write, so nothing else in this update fades with it.
+                withAnimation(Motion.focus) { didSubmit = true }
                 onSubmitted?()
             }
         }
