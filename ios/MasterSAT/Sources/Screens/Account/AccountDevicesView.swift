@@ -76,7 +76,7 @@ struct AccountDevicesView: View {
         .task {
             if load.isLoading { await reload() }
         }
-        .refreshable { await reload() }
+        .detachedRefresh { await reload() }
         .confirmationDialog(
             "Sign out everywhere?",
             isPresented: $confirmingEverywhere,

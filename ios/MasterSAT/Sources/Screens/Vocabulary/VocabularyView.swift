@@ -429,7 +429,8 @@ struct VocabularyView: View {
     }
 
     private var loadingSlot: some View {
-        // Up to three of these show at once, one per section; each is the shape of its cards.
+        // Only the selected segment's list is drawn, so one of these shows at a time, in the shape
+        // of that list's cards.
         LoadingSkeleton(rows: 2, height: 84, style: .cards)
     }
 

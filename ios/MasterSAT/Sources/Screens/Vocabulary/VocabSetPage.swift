@@ -45,7 +45,7 @@ struct VocabSetView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if detail == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .fullScreenCover(item: $studying) { mode in
             if let detail {
                 VocabStudyView(mode: mode, set: detail, assignmentId: assignmentId, onFinished: {

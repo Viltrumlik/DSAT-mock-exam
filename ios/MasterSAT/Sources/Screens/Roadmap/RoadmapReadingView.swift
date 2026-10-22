@@ -48,7 +48,7 @@ struct RoadmapReadingView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if reading == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .navigationDestination(item: $homework) { target in
             HomeworkDetailView(assignment: target.assignment)
         }

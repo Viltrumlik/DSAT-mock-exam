@@ -76,7 +76,7 @@ struct ServicesView: View {
         // Runs again whenever the page comes back into view — coming back from the calendar
         // with a new booking is exactly when "Your next hour" has changed.
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .sheet(isPresented: $showingChecklist) {
             SatChecklistSheet(dates: examDates) { await loadExamDates() }
         }

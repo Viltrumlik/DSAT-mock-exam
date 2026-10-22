@@ -63,6 +63,9 @@ struct TodayView: View {
     /// The homework did not load and there is none from an earlier load to show instead.
     private var homeworkFailed: Bool { loadError != nil && assignments.isEmpty }
 
+    /// The last refresh failed over homework an earlier load brought: the rows stay, and say so.
+    private var homeworkStale: Bool { loadError != nil && !assignments.isEmpty }
+
     private var freshResult: MidtermListing? {
         TodayPlan.freshResult(midterms, seen: seenResults, firstRun: isFirstRun)
     }
@@ -196,7 +199,8 @@ struct TodayView: View {
         let next = plan.upNext(limit: Self.upNextLimit)
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
-                DotHeading(title: "Up next", count: hasLoaded ? plan.homework.count + plan.lessons.count : nil)
+                // No count over a failure: a zero beside "didn't load" would read as "nothing owed".
+                DotHeading(title: "Up next", count: hasLoaded && !homeworkFailed ? plan.homework.count + plan.lessons.count : nil)
                 if next.more > 0 {
                     Button("See all") { router.showClassToDo() }
                         .font(.system(size: 13, weight: .bold))
@@ -223,6 +227,7 @@ struct TodayView: View {
                     LessonsUnavailableRow { await load() }
                 }
             }
+            if homeworkStale { StaleNote() }
         }
         .animation(rowAnimation, value: next.items.map(\.id))
     }
@@ -286,6 +291,10 @@ struct TodayView: View {
         var freshHomework: [AssignmentListing]?
         do {
             freshHomework = try await homework
+        } catch where Task.isCancelled {
+            // Not a failure: `APIClient` wraps a cancellation as a transport error, and an error
+            // here would put "Couldn't refresh" under rows that are fine.
+            return
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {

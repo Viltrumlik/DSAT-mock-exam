@@ -140,7 +140,7 @@ private struct LiveQuizJoinScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background)
-        .refreshable { await model.loadRunning() }
+        .detachedRefresh { await model.loadRunning() }
         // The web re-reads the list every 15 s; so does this, while the screen is up and no
         // game is open over it.
         .task {

@@ -24,7 +24,11 @@ struct WorkRow: View {
         case .homework:
             // Classwork is done in class and never owed: whatever date it carries is not a
             // deadline, so it is never "Due" or "Catch up" (the detail page says "In class" too).
-            if item.isClasswork { return ("In class", false) }
+            // The day it was held, as the class page's classwork rows write it.
+            if item.isClasswork {
+                guard let assigned = item.assignment?.assignedAt else { return ("In class", false) }
+                return ("In class · \(HomeworkWording.shortDate(assigned))", false)
+            }
             // `catchUp` is the kit's call, not the label's: a homework that is not behind has a
             // date and nothing else to say, so `DueLabel` is told not to decide "late" itself.
             return DueLabel.text(item.dueAt, handedIn: !item.catchUp)

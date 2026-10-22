@@ -44,7 +44,7 @@ struct MyProgressView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if report == nil || peers == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
     }
 
     /// "Overall" only once there is an overall to show — a tile reading "—" while the page is

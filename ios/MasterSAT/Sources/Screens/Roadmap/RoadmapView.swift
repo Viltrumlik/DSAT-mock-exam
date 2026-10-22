@@ -16,6 +16,7 @@ import MasterSATKit
 /// path is drawn natively through the circles' centres.
 struct RoadmapView: View {
     @Environment(Session.self) private var session
+    @Environment(AppRouter.self) private var router
 
     @State private var roadmap: RoadmapResponse?
     @State private var loadError: String?
@@ -63,7 +64,7 @@ struct RoadmapView: View {
         // Runs again whenever the page comes back into view — after the reading or the
         // homework — so a lesson just read or finished shows it without a pull.
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .sheet(item: $sheet, onDismiss: performPendingPush) { item in
             RoadmapLessonSheet(item: item, student: session.student) { push in
                 // A lookup that lands after the student closed this sheet goes nowhere —
@@ -129,9 +130,9 @@ struct RoadmapView: View {
                 title: "No roadmap yet",
                 message: "Join a class to see your learning path across every level."
             ) {
-                NavigationLink {
-                    ClassesListView()
-                } label: {
+                // The Class tab is a tab, not a page to push: this switches to it and leaves
+                // Explore's stack where it was.
+                Button { router.show(.classes) } label: {
                     HStack(spacing: 8) {
                         Text("Go to Classes")
                         Image(systemName: "arrow.right")

@@ -49,7 +49,7 @@ struct SupportBookingView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.refreshAll() }
+        .detachedRefresh { await model.refreshAll() }
         // Keyed on the foreground: going to the background cancels the poll, and coming back
         // restarts it with an immediate re-read of both lists — the student is about to act on
         // what the page says. Leaving the page cancels it too.

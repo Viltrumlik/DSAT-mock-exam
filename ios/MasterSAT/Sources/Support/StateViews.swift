@@ -239,6 +239,19 @@ extension View {
     }
 }
 
+/// The line under a list whose refresh failed while its rows were already on screen. The rows stay —
+/// a failure never blanks what loaded — and this says they may be old. Not a retry: the next pull
+/// or return reads again, and the caller stops drawing it on the first success.
+struct StaleNote: View {
+    var body: some View {
+        Label("Couldn't refresh — showing what last loaded", systemImage: "wifi.exclamationmark")
+            .font(.system(size: 12.5, weight: .semibold))
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 // MARK: - Shared pieces
 
 /// A state's words: VoiceOver reads the title and the sentence under it as one element.

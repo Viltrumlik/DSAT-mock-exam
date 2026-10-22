@@ -48,7 +48,7 @@ struct VocabSectionView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if detail == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
     }
 
     private func header(_ detail: VocabSectionDetail) -> some View {

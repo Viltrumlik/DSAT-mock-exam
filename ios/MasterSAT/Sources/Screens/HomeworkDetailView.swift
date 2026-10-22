@@ -818,6 +818,11 @@ struct HomeworkDetailView: View {
                 classroomId: classroomId,
                 assignmentId: assignmentId
             )
+        } catch where Task.isCancelled {
+            // Leaving the page (a push over it, a pop) cancels `.task`, and `APIClient` wraps that
+            // as a transport failure. Not a failure, so nothing is stored: the page that comes
+            // back loads again, and until then it still reads as loading, not as "didn't load".
+            return
         } catch let error as APIError {
             submissionError = error.errorDescription
         } catch {
@@ -829,6 +834,8 @@ struct HomeworkDetailView: View {
             // It carries this student's attempt at each set, as a list row does: noted, an
             // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
             if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
+        } catch where Task.isCancelled {
+            return
         } catch let error as APIError {
             detailError = error.errorDescription ?? "Assignment not available"
         } catch {

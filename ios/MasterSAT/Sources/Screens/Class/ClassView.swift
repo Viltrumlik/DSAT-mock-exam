@@ -32,6 +32,9 @@ struct ClassView: View {
     /// show a spinner or a retry, never "Nothing to do here", and no badge counts them.
     @State private var homeworkState = ClassSourceState.pending
     @State private var midtermState = ClassSourceState.pending
+    /// The last refresh failed over a list that was already on screen (`ClassSourceState` keeps
+    /// the old rows and forgets that it failed). The rows stay; one line under them says so.
+    @State private var refreshFailed = false
     /// The next two weeks of lessons, for the class cards. The calendar loads its own month.
     @State private var upcoming: [ScheduleEvent] = []
     @State private var liveRooms: [LiveQuizSummary] = []
@@ -200,6 +203,8 @@ struct ClassView: View {
             }
             .stagger(4, shown: shown)
 
+            if refreshFailed { StaleNote() }
+
             Button { joining = true } label: {
                 Label("Join another class", systemImage: "person.badge.plus")
                     .font(.system(size: 13, weight: .bold))
@@ -241,7 +246,7 @@ struct ClassView: View {
         // day back keeps today's lesson in the window on a phone that is already into tomorrow.
         let start = now.addingTimeInterval(-86_400)
         let end = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
-        // A list that failed shows a spinner again while this retries.
+        // A list that failed shows its skeleton again while this retries.
         if homeworkState == .failed { homeworkState = .pending }
         if midtermState == .failed { midtermState = .pending }
         async let rooms = classroomsAPI.classrooms()
@@ -261,6 +266,10 @@ struct ClassView: View {
                 chip = resolved
             }
             classesError = nil
+        } catch where Task.isCancelled {
+            // Not a failure: `APIClient` wraps a cancellation as a transport error. Nothing is
+            // stored, so a first load stays a skeleton and a refresh keeps its rows unmarked.
+            return
         } catch let error as APIError {
             classesError = error.errorDescription ?? "Couldn't load your classes."
         } catch {
@@ -272,6 +281,7 @@ struct ClassView: View {
         // Each of the rest fails on its own and keeps what was on screen. Homework and midterms
         // also say whether they arrived: a failure with nothing loaded is a retry, not "nothing".
         let freshHomework = try? await homework
+        if Task.isCancelled { return }
         if let freshHomework {
             withAnimation(motion) { assignments = freshHomework }
             // Every marked attempt the list carries becomes known to this phone, before any review
@@ -280,8 +290,15 @@ struct ClassView: View {
         }
         homeworkState.finish(succeeded: freshHomework != nil)
         let freshMidterms = try? await papers
+        if Task.isCancelled { return }
         if let freshMidterms { midterms = freshMidterms }
         midtermState.finish(succeeded: freshMidterms != nil)
+        // A failure over rows that were already here leaves `.loaded` as it was, so it is read
+        // off the outcomes: any source that failed while it had something to show.
+        let stale = (classesError != nil && !classrooms.isEmpty)
+            || (freshHomework == nil && homeworkState == .loaded)
+            || (freshMidterms == nil && midtermState == .loaded)
+        if refreshFailed != stale { refreshFailed = stale }
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
         if let fresh = try? await lessons { upcoming = fresh }
         if let fresh = try? await quizzes {

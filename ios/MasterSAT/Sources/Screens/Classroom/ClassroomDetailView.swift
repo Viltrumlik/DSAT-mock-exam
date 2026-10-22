@@ -72,7 +72,7 @@ struct ClassroomDetailView: View {
             }
             .padding(16)
         }
-        .refreshable { await refresh(classroom) }
+        .detachedRefresh { await refresh(classroom) }
         .task(id: tab) { await loadTab(tab, classroom: classroom, force: false) }
         .task { await loadHeader(classroom) }
         .sheet(isPresented: $showingTelegram, onDismiss: { Task { await loadTelegram() } }) {

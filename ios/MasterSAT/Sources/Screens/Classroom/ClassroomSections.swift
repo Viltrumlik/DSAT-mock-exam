@@ -56,9 +56,25 @@ private struct SectionBody<Value, Loaded: View>: View {
 
 // MARK: - Overview: the class board
 
+/// What the class ranking is made of. Naming the ways to earn is the point: a student who can see
+/// what moves the number can decide to move it. Said once per screen — under a class of its own
+/// inside that class's section, under All once above the class groups.
+struct ClassroomRankingsExplainer: View {
+    let forEachClass: Bool
+
+    var body: some View {
+        Text("XP earned in \(forEachClass ? "each class" : "this class") — attendance, homework and support sessions. It comes with you if you change group.")
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(Theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct ClassroomRankingsSection: View {
     let load: ClassroomLoad<RankingBoard>
     let isStudent: Bool
+    /// False under All, where the Class tab says it once above every group instead.
+    var showsExplainer = true
     let retry: @MainActor () async -> Void
 
     var body: some View {
@@ -67,12 +83,7 @@ struct ClassroomRankingsSection: View {
                 Image(systemName: "trophy.fill").foregroundStyle(Theme.accent)
                 Text("Class rankings").font(.system(size: 22, weight: .heavy)).tracking(-0.4)
             }
-            // Naming the ways to earn is the point: a student who can see what moves the
-            // number can decide to move it.
-            Text("XP earned in this class — attendance, homework and support sessions. It comes with you if you change group.")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if showsExplainer { ClassroomRankingsExplainer(forEachClass: false) }
 
             SectionBody(
                 load: load,

@@ -135,7 +135,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
             .padding(16)
         }
         .background(Theme.background)
-        .refreshable { await model.load(session) }
+        .detachedRefresh { await model.load(session) }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if loadsOnAppear { await model.load(session) } }

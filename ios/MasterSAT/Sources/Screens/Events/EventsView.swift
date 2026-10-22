@@ -49,7 +49,7 @@ private struct EventsScreen: View {
             }
             .padding(16)
         }
-        .refreshable { await model.load() }
+        .detachedRefresh { await model.load() }
         .task { await model.load() }
         // Seats fill and the two-hour window closes while the app is away.
         .onChange(of: scenePhase) { _, phase in

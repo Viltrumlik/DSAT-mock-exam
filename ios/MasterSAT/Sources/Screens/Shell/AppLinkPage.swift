@@ -9,7 +9,6 @@ struct AppLinkPage: View {
 
     var body: some View {
         switch link {
-        case .classes: ClassesListView()
         case .classroom(let id): LearnMoreClassroomView(classroomId: id)
         case .homework(let classroomId, let assignmentId):
             HomeworkDetailView(classroomId: classroomId, assignmentId: assignmentId)
@@ -32,7 +31,8 @@ struct AppLinkPage: View {
         case .liveQuiz: LiveQuizJoinView()
         case .vocabularySet(let id): VocabSetView(setId: id, title: "")
         case .vocabularySection(let id): VocabSectionView(sectionId: id, title: "")
-        case .home, .vocabulary, .profile, .certificate, .unknown:
+        // `.classes` is a tab placement (`AppRouter.show`): no link pushes it.
+        case .home, .classes, .vocabulary, .profile, .certificate, .unknown:
             ContentUnavailableView("Nothing to open", systemImage: "link")
         }
     }

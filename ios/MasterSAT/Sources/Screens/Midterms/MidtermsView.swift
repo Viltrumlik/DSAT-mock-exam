@@ -125,7 +125,7 @@ struct MidtermsView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .task { await load() }
     }
 

@@ -31,7 +31,7 @@ struct SurveysListView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .onAppear { Task { await load() } }
     }
 

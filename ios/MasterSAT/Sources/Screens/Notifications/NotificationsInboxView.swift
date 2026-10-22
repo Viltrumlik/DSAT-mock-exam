@@ -88,7 +88,7 @@ struct NotificationsInboxView: View {
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: filter) { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
     }
 
     // MARK: - Pieces

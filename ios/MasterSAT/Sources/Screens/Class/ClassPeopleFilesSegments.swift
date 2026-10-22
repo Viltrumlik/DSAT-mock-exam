@@ -37,14 +37,20 @@ struct ClassPeopleSegment: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 26) {
+            // What the rankings are made of is said once, above the groups, not under each class.
+            if classes.count > 1 { ClassroomRankingsExplainer(forEachClass: true) }
             ForEach(classes) { room in
                 VStack(alignment: .leading, spacing: 14) {
                     if classes.count > 1 { ClassGroupHeading(room: room) }
-                    ClassroomRankingsSection(load: model.board(room.id), isStudent: room.isStudent) {
-                        await model.loadBoard(room.id, api: session.classrooms, force: true)
+                    ClassroomRankingsSection(
+                        load: model.board(room.id),
+                        isStudent: room.isStudent,
+                        showsExplainer: classes.count == 1
+                    ) {
+                        await model.load(.board, room.id, api: session.classrooms, force: true)
                     }
                     ClassroomPeopleSection(load: model.members(room.id)) {
-                        await model.loadMembers(room.id, api: session.classrooms, force: true)
+                        await model.load(.members, room.id, api: session.classrooms, force: true)
                     }
                 }
             }
@@ -69,7 +75,7 @@ struct ClassFilesSegment: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if classes.count > 1 { ClassGroupHeading(room: room) }
                     ClassroomMaterialsSection(load: model.files(room.id)) {
-                        await model.loadMaterials(room.id, api: session.classrooms, force: true)
+                        await model.load(.files, room.id, api: session.classrooms, force: true)
                     }
                 }
             }
