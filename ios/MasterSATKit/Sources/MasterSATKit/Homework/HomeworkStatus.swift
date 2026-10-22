@@ -12,6 +12,11 @@ public enum HomeworkStatus {
     /// "submitted" — nothing was handed in.
     public static let completed = "completed"
 
+    /// What a quiz the server has just accepted raises its homework to, before any read says so.
+    /// "Submitted" is the least that is true: a graded attempt is past it, and the server's own
+    /// word replaces it the moment a read brings one.
+    public static let handedIn = "submitted"
+
     /// What to read the chip from: the submission's status, else the row's — except that a word
     /// homework the server still calls "not started" reads "in progress" once any set has been
     /// played, and "completed" once every set has.
@@ -20,8 +25,33 @@ public enum HomeworkStatus {
     /// server and refreshed with the row; a hand-in's is the submission's. And a homework that also
     /// has a file to hand in or a paper to sit is never "completed" by its sets alone
     /// (`HomeworkProgress.isDone` knows the difference).
-    public static func shown(for homework: AssignmentListing, submission: Submission?) -> String? {
-        let reported = submission?.workflowStatus ?? homework.workflowStatus
+    ///
+    /// `floor` is a status the page has seen the server confirm — the hand-in of the quiz the status
+    /// follows (`isStatusQuiz`) — which the row it holds has not caught up with. A row that is
+    /// behind it reads as the floor, so the chip does not go back to "Not started" for the moments
+    /// between a quiz closing and the next read landing. It never covers a word the server has
+    /// already said (anything past "in progress", or a word it does not know), nor a submission's
+    /// own status, and the page drops it once a read reaches it (`reached`).
+    public static func shown(for homework: AssignmentListing, submission: Submission?, floor: String? = nil) -> String? {
+        let said = submission?.workflowStatus
+        let status = base(for: homework, reported: said ?? homework.workflowStatus)
+        guard let floor, said == nil, rank(status) < rank(floor) else { return status }
+        return floor
+    }
+
+    /// Whether a status the server reported is at or past `floor` — its word has caught up with
+    /// what the page already knew, and the floor is no longer needed.
+    public static func reached(_ status: String?, _ floor: String) -> Bool {
+        rank(status) >= rank(floor)
+    }
+
+    /// The server's status for a homework is its FIRST quiz's (`my_assignments` reads `hws[0]`):
+    /// handing in any later quiz moves nothing, and must not raise a floor.
+    public static func isStatusQuiz(_ homeworkId: Int, of homework: AssignmentListing) -> Bool {
+        homework.assessmentHomeworks.first?.homeworkId == homeworkId
+    }
+
+    private static func base(for homework: AssignmentListing, reported: String?) -> String? {
         guard isNotStarted(reported), homework.assessmentHomeworks.isEmpty else { return reported }
         // A set with no words has nothing to play: it is never owed, and playing it proves nothing.
         let sets = homework.vocabHomeworks.filter { $0.wordCount > 0 }
@@ -29,6 +59,17 @@ public enum HomeworkStatus {
         if HomeworkProgress.isDone(homework) { return completed }
         if sets.contains(where: { $0.state.lowercased() != "not_started" }) { return "in_progress" }
         return reported
+    }
+
+    /// How far a status has got: not started, begun, handed in, then everything past that (graded,
+    /// reviewed, returned, completed — and any word this build does not know, which is never "behind").
+    private static func rank(_ status: String?) -> Int {
+        switch (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "", "not_started": return 0
+        case "in_progress": return 1
+        case "submitted": return 2
+        default: return 3
+        }
     }
 
     /// Work that is with the teacher already — or finished, for words — so its deadline is a date,

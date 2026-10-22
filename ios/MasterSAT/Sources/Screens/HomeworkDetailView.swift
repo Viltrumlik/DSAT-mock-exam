@@ -80,6 +80,15 @@ struct HomeworkDetailView: View {
     @State private var sendFailed = false
     /// The header's XP when a quiz was opened — what its hand-in's gain is measured from.
     @State private var xpAtQuizStart: Int?
+    /// The quiz the open cover is running (its homework id).
+    @State private var openedQuiz: Int?
+    /// What the page knows the server has confirmed that its row has not caught up with: set when the
+    /// runner reports the hand-in of the quiz the status follows, dropped when a read reaches it. Until
+    /// then the chip does not slip back to "Not started" for the moments between the cover closing and
+    /// the next read landing. Belongs to this homework's page alone — another homework is another page.
+    @State private var statusFloor: String?
+    /// Which loads are on and when one last finished (nothing draws from it).
+    @State private var loadGate = LoadGate()
 
     /// The list row — the freshest the page has read, else the one it was opened from.
     private var row: AssignmentListing? { freshRow ?? seed }
@@ -122,7 +131,12 @@ struct HomeworkDetailView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await load() }
+        .task {
+            // Back in view a moment after a load the student asked for (a quiz cover closing) or
+            // finished: that load covers it.
+            guard !loadGate.coversAppearance else { return }
+            await load()
+        }
         .navigationDestination(item: $reviewAttemptId) { id in
             AssessmentReviewView(attemptId: id)
         }
@@ -130,10 +144,13 @@ struct HomeworkDetailView: View {
             // Celebrated the moment it is handed in; the cover keeps it waiting until it has gone.
             AssessmentRunnerView(attemptId: id, onSubmitted: {
                 celebrations.celebrate(.assessment, xpBefore: xpAtQuizStart)
+                raiseStatusFloor()
             }) {
                 assessmentAttemptId = nil
                 // Read again, the student's row included: the quiz just handed in is graded on the
-                // server, and the row this page holds still says what it said before.
+                // server, and the row this page holds still says what it said before. Marked as asked
+                // for: the page coming back into view a moment later (`.task` restarts) stands down
+                // rather than reading all of it a second time (`LoadGate`).
                 Task { await load(rereadingRow: true) }
             }
             .coversCelebrations(celebrations)
@@ -187,7 +204,15 @@ struct HomeworkDetailView: View {
     /// The chip's status: the hand-in's, else the row's — and for a homework of word sets, read from
     /// the sets themselves, since the server never marks those handed in (`HomeworkStatus`).
     private func status(_ a: AssignmentListing) -> String? {
-        HomeworkStatus.shown(for: a, submission: submission)
+        HomeworkStatus.shown(for: a, submission: submission, floor: statusFloor)
+    }
+
+    /// The runner reports a hand-in the server accepted. When it is the quiz the homework's status
+    /// follows (its first), the chip reads "Submitted" at once rather than what the row held before.
+    /// A later quiz moves nothing on the server, so it raises nothing here.
+    private func raiseStatusFloor() {
+        guard let openedQuiz, let current, HomeworkStatus.isStatusQuiz(openedQuiz, of: current) else { return }
+        statusFloor = HomeworkStatus.handedIn
     }
 
     /// With the teacher already — its deadline is a date, not something to catch up on.
@@ -615,6 +640,7 @@ struct HomeworkDetailView: View {
                 // Continue twice cannot restart a half-finished quiz from scratch.
                 let attempt = try await session.assessments.start(homeworkId: link.homeworkId)
                 xpAtQuizStart = celebrations.xpNow
+                openedQuiz = link.homeworkId
                 assessmentAttemptId = attempt.id
             } catch let error as APIError {
                 actionError = error.errorDescription
@@ -818,8 +844,13 @@ struct HomeworkDetailView: View {
             isLoading = false
             return
         }
+        loadGate.began(asked: rereadingRow)
+        var completed = false
+        defer { loadGate.ended(asked: rereadingRow, completed: completed) }
         detailError = nil
         submissionError = nil
+        // The floor this load starts under: only a read that began with it in place can retire it.
+        let floorAtStart = statusFloor
         // Whose page this is, taken before anything is asked for: a quick sign-in as someone else
         // while it loads must not teach the new student's memory the old one's attempts.
         let userID: Int? = if case .signedIn(let user) = session.phase { user.id } else { nil }
@@ -857,22 +888,25 @@ struct HomeworkDetailView: View {
             return
         } catch let error as APIError {
             detailError = error.errorDescription ?? "Assignment not available"
-            adopt(row)
+            adopt(row, floor: floorAtStart)
             isLoading = false
+            completed = true
             return
         } catch {
             detailError = error.localizedDescription
-            adopt(row)
+            adopt(row, floor: floorAtStart)
             isLoading = false
+            completed = true
             return
         }
         // Together, so a page opened from a link appears whole rather than first without its words.
         detail = full
-        adopt(row)
+        adopt(row, floor: floorAtStart)
         // It carries this student's attempt at each set, as a list row does: noted, an
         // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
         if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
         isLoading = false
+        completed = true
     }
 
     /// The student's row from `my-assignments`, or nil when it was not asked for or could not be read.
@@ -885,11 +919,46 @@ struct HomeworkDetailView: View {
     }
 
     /// Keeps a row the read brought; never replaces what the page knows with nothing, and does not
-    /// write (and so re-render) for a row that is the one already held.
+    /// write (and so re-render) for a row that is the one already held. A row whose status has
+    /// reached the floor the read began under retires it; one that has not leaves it standing.
     @MainActor
-    private func adopt(_ row: AssignmentListing?) {
-        guard let row, row != freshRow else { return }
-        freshRow = row
+    private func adopt(_ row: AssignmentListing?, floor: String?) {
+        guard let row else { return }
+        if let floor, HomeworkStatus.reached(row.workflowStatus, floor) { statusFloor = nil }
+        if row != freshRow { freshRow = row }
+    }
+}
+
+/// What the page's loads are doing, kept out of SwiftUI state because nothing draws from it.
+///
+/// Closing a quiz cover loads the page on purpose (the explicit load, which re-reads the student's
+/// row) and may restart the page's `.task` when it comes back into view — each would read the whole
+/// `my-assignments` list, the heaviest call on the page. A load the student asked for is therefore
+/// counted, and the page appearing stands down while one is on or one finished a moment ago. The
+/// appearance's own load is never counted as running: a cancelled one (the page was left) unwinds
+/// late, and counting it could stand down the load of the page's return and leave it empty.
+@MainActor
+final class LoadGate {
+    private var asked = 0
+    private var finishedAt: ContinuousClock.Instant?
+    /// Long enough for a cover's dismissal to finish and the page to reappear; short enough that a
+    /// pull or a return a few seconds later always reads again.
+    private static let settle: Duration = .seconds(2)
+
+    func began(asked wasAsked: Bool) {
+        if wasAsked { asked += 1 }
+    }
+
+    /// A load that was cancelled (the page was left) did not finish and does not count as one.
+    func ended(asked wasAsked: Bool, completed: Bool) {
+        if wasAsked { asked -= 1 }
+        if completed { finishedAt = .now }
+    }
+
+    var coversAppearance: Bool {
+        if asked > 0 { return true }
+        guard let finishedAt else { return false }
+        return ContinuousClock.now - finishedAt < Self.settle
     }
 }
 

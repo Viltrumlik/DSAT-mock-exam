@@ -115,6 +115,66 @@ import Testing
         #expect(HomeworkStatus.shown(for: homework, submission: nil) == nil)
     }
 
+    // MARK: - A hand-in the page has seen the server accept
+
+    private func quiz(_ ids: [Int], status: String? = "not_started") throws -> AssignmentListing {
+        var json: [String: Any] = ["id": 1, "assessment_homeworks": ids.map { ["homework_id": $0] }]
+        if let status { json["workflow_status"] = status }
+        return try listing(json)
+    }
+
+    @Test("A quiz the server just accepted holds the chip at Submitted until a read says so")
+    func floorLiftsAStaleRow() throws {
+        for stale in ["not_started", "NOT_STARTED", "in_progress"] {
+            let row = try quiz([5], status: stale)
+            #expect(HomeworkStatus.shown(for: row, submission: nil, floor: HomeworkStatus.handedIn) == "submitted")
+        }
+        let missing = try quiz([5], status: nil)
+        #expect(HomeworkStatus.shown(for: missing, submission: nil, floor: HomeworkStatus.handedIn) == "submitted")
+    }
+
+    @Test("The floor never covers what the server has already said — graded, reviewed, returned or anything unknown")
+    func floorYieldsToTheServer() throws {
+        for said in ["submitted", "GRADED", "reviewed", "returned", "completed", "something_new"] {
+            let row = try quiz([5], status: said)
+            #expect(HomeworkStatus.shown(for: row, submission: nil, floor: HomeworkStatus.handedIn) == said)
+        }
+    }
+
+    @Test("A submission that reports its own status keeps the word it gave")
+    func floorDoesNotOverrideASubmission() throws {
+        let row = try quiz([5], status: "not_started")
+        let draft = try submission(status: "DRAFT", workflow: "NOT_STARTED")
+        #expect(HomeworkStatus.shown(for: row, submission: draft, floor: HomeworkStatus.handedIn) == "NOT_STARTED")
+    }
+
+    @Test("Without a floor nothing changes")
+    func noFloor() throws {
+        let row = try quiz([5], status: "not_started")
+        #expect(HomeworkStatus.shown(for: row, submission: nil) == "not_started")
+        #expect(HomeworkStatus.shown(for: row, submission: nil, floor: nil) == "not_started")
+    }
+
+    @Test("A read has caught up with the floor when it reports Submitted or anything past it")
+    func reaching() {
+        #expect(HomeworkStatus.reached("submitted", HomeworkStatus.handedIn))
+        #expect(HomeworkStatus.reached("GRADED", HomeworkStatus.handedIn))
+        #expect(HomeworkStatus.reached("reviewed", HomeworkStatus.handedIn))
+        #expect(HomeworkStatus.reached("something_new", HomeworkStatus.handedIn))
+        #expect(!HomeworkStatus.reached("in_progress", HomeworkStatus.handedIn))
+        #expect(!HomeworkStatus.reached("not_started", HomeworkStatus.handedIn))
+        #expect(!HomeworkStatus.reached(nil, HomeworkStatus.handedIn))
+    }
+
+    @Test("Only the homework's first quiz speaks for its status")
+    func firstQuizOnly() throws {
+        // The server's status is the first quiz's (`my_assignments`): handing in the second moves nothing.
+        let bundle = try quiz([5, 6])
+        #expect(HomeworkStatus.isStatusQuiz(5, of: bundle))
+        #expect(!HomeworkStatus.isStatusQuiz(6, of: bundle))
+        #expect(!HomeworkStatus.isStatusQuiz(5, of: try listing(["id": 1])))
+    }
+
     @Test("A completed word homework counts as with the teacher already")
     func completedIsHandedIn() {
         #expect(HomeworkStatus.isWithTheTeacher(HomeworkStatus.completed))
