@@ -258,6 +258,10 @@ struct FlashcardView: View {
     @State private var locked = false
     /// One tick per flip the student asked for — the selection haptic.
     @State private var flips = 0
+    /// Cards dealt after a verdict (and rounds started): each one moves VoiceOver to the card.
+    @State private var deals = 0
+    /// VoiceOver's cursor on the card.
+    @AccessibilityFocusState private var cardFocused: Bool
 
     /// The swipe gives a verdict exactly as the buttons do, and is off when they are.
     private var swipeVerdict: (@MainActor (Bool) -> Void)? {
@@ -284,6 +288,16 @@ struct FlashcardView: View {
             }
         }
         .task { if deck.isEmpty { deck = set.words } }
+        // The cursor stays where the student left it — on the verdict button they pressed, which
+        // sits disabled for the hold — while the card in front of it is replaced. After a deal,
+        // it moves to the new card. The wait lets the update that deals the card finish first
+        // (focus can only land on an element that exists), and leaving the screen cancels it.
+        .task(id: deals) {
+            guard deals > 0 else { return }
+            cardFocused = false
+            try? await Task.sleep(for: .milliseconds(150))
+            if !Task.isCancelled { cardFocused = true }
+        }
         // The mode is left by a button, not a navigation, so nothing else would stop the
         // hold: without this it keeps counting and deals a card in a screen that is gone.
         .onDisappear { holdTask?.cancel() }
@@ -307,6 +321,7 @@ struct FlashcardView: View {
                         withAnimation(Self.flipAnimation) { flipped.toggle() }
                         flips += 1
                     }
+                    .accessibilityFocused($cardFocused)
                     // A new card is a new view: a finger still down from the last one, or a
                     // definition scrolled halfway, never carries over to the next word.
                     .id(word.id)
@@ -483,6 +498,7 @@ struct FlashcardView: View {
 
         if index + 1 < deck.count {
             index += 1
+            deals += 1
             return
         }
         if missed.isEmpty {
@@ -507,6 +523,7 @@ struct FlashcardView: View {
         flipped = false
         round += 1
         phase = .study
+        deals += 1
     }
 }
 
@@ -557,6 +574,43 @@ private struct FlashcardHoldStrip: View {
     }
 }
 
+/// The card's two faces and the turn between them.
+///
+/// Only one face is ever drawn. `turn` (0 word up, 1 definition up) is what animates, so this body
+/// runs for every frame of the turn and the faces change places at the half-way frame, where the
+/// card is edge-on and shows nothing: the change cannot be seen. The first build kept both faces
+/// drawn and cross-faded their opacity along the whole turn, so for 250 ms a mirrored ghost of the
+/// face turning away lay over the face turning in — plainest a little before 45° — and the card
+/// flickered. Under Reduce Motion the card does not turn and the faces cross-fade instead; the
+/// tree is the same either way, the setting only picks the values.
+private struct FlipFaces<Front: View, Back: View>: View, Animatable {
+    var turn: Double
+    let calm: Bool
+    let front: Front
+    let back: Back
+
+    // `nonisolated`: `Animatable` is, and a `View`'s members are main-actor otherwise.
+    nonisolated var animatableData: Double {
+        get { turn }
+        set { turn = newValue }
+    }
+
+    var body: some View {
+        let backUp = turn >= 0.5
+        ZStack {
+            front
+                .opacity(calm ? 1 - turn : (backUp ? 0 : 1))
+                .allowsHitTesting(!backUp)
+            back
+                .opacity(calm ? turn : (backUp ? 1 : 0))
+                .allowsHitTesting(backUp)
+                // Pre-turned, so that once the card has turned it reads the right way round.
+                .rotation3DEffect(.degrees(calm ? 0 : 180), axis: (x: 0, y: 1, z: 0))
+        }
+        .rotation3DEffect(.degrees(calm ? 0 : turn * 180), axis: (x: 0, y: 1, z: 0))
+    }
+}
+
 /// A two-sided card. The corner chip is the flip affordance — the whole face responds, but
 /// nothing about a word on its own says there is a back.
 struct FlipCard: View {
@@ -575,6 +629,21 @@ struct FlipCard: View {
 
     /// Past this far, letting go gives the verdict.
     private static let threshold: CGFloat = 110
+    /// The card follows the finger exactly this far…
+    private static let reach: CGFloat = 160
+    /// …then is held back like a rubber band: each point further moves it less, and it never
+    /// goes more than this much past `reach`.
+    private static let stretch: CGFloat = 40
+
+    /// Where the card is drawn for a drag of `translation`. The slope is 1 at `reach` and falls
+    /// away smoothly from there, so the card does not catch as it passes the point. The verdict
+    /// is decided on the finger, not on this: pulling harder gives no other answer.
+    static func follow(_ translation: CGFloat) -> CGFloat {
+        let distance = abs(translation)
+        guard distance > reach else { return translation }
+        let held = reach + stretch * (1 - exp(-(distance - reach) / stretch))
+        return translation < 0 ? -held : held
+    }
 
     /// How far a drag moves the card: only a mostly sideways one does, so a long definition
     /// being scrolled up and down never nudges it. The same rule draws the card and decides the
@@ -597,46 +666,45 @@ struct FlipCard: View {
         ? UIColor(red: 15 / 255, green: 23 / 255, blue: 42 / 255, alpha: 1) : .white })
 
     var body: some View {
-        ZStack {
-            face(back: false).opacity(flipped ? 0 : 1)
-            face(back: true)
-                .opacity(flipped ? 1 : 0)
-                // Under Reduce Motion the card does not turn, so its back is not mirrored either.
-                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
-        }
-        // Under Reduce Motion the faces crossfade instead.
-        .rotation3DEffect(.degrees(flipped && !reduceMotion ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-        // The stamp's own beat (120 ms) is scoped to the stamp: the card's return and its
-        // 250 ms turn keep theirs.
-        .overlay(alignment: .top) { stamp.animation(Motion.focusTap, value: leaning) }
-        .offset(x: drag)
-        // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
-        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) / 18), anchor: .bottom)
-        .frame(maxWidth: .infinity)
-        .frame(height: 360)
-        .contentShape(Rectangle())
-        .onTapGesture { onFlip() }
-        // Simultaneous, so the faces' own up-and-down scrolling still works.
-        .simultaneousGesture(swipe)
-        .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
-        // One element for VoiceOver: it reads the side that is up, a double-tap turns the card
-        // over (the other side is one turn away), and the two verdicts are actions on it — only
-        // while a verdict is allowed (`onSwipe` is nil during the hold), like the buttons below.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spokenSide)
-        .accessibilityHint(flipped ? "Double-tap to turn it back to the word." : "Double-tap to turn it over to the definition.")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { onFlip() }
-        .accessibilityActions {
-            if let onSwipe {
-                Button("Correct") { onSwipe(true) }
-                Button("Still learning") { onSwipe(false) }
+        let shift = Self.follow(drag)
+        FlipFaces(turn: flipped ? 1 : 0, calm: reduceMotion, front: face(back: false), back: face(back: true))
+            // The stamp's own beat (120 ms) is scoped to the stamp: the card's return and its
+            // 250 ms turn keep theirs.
+            .overlay(alignment: .top) { stamp.animation(Motion.focusTap, value: leaning) }
+            .offset(x: shift)
+            // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
+            .rotationEffect(.degrees(reduceMotion ? 0 : Double(shift) / 18), anchor: .bottom)
+            .frame(maxWidth: .infinity)
+            .frame(height: 360)
+            .contentShape(Rectangle())
+            .onTapGesture { onFlip() }
+            // Simultaneous, so the faces' own up-and-down scrolling still works.
+            .simultaneousGesture(swipe)
+            .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
+            // One element for VoiceOver: it reads the side that is up, a double-tap turns the card
+            // over (the other side is one turn away), and the two verdicts are actions on it — only
+            // while a verdict is allowed (`onSwipe` is nil during the hold), like the buttons below.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.spokenSide(of: word, flipped: flipped))
+            .accessibilityHint(flipped ? "Double-tap to turn it back to the word." : "Double-tap to turn it over to the definition.")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onFlip() }
+            .accessibilityActions {
+                if let onSwipe {
+                    Button("Correct") { onSwipe(true) }
+                    Button("Still learning") { onSwipe(false) }
+                }
             }
-        }
+            // VoiceOver does not read a label that changes under its cursor, so a turn would
+            // pass in silence. Say the side now up — whoever turned the card, the student or the
+            // verdict that holds the definition open.
+            .onChange(of: flipped) { _, now in
+                AccessibilityNotification.Announcement(Self.spokenSide(of: word, flipped: now)).post()
+            }
     }
 
-    /// The side that is up, in full — what the eye reads.
-    private var spokenSide: String {
+    /// A side in full — what the eye reads.
+    private static func spokenSide(of word: VocabWord, flipped: Bool) -> String {
         var parts: [String] = []
         if flipped {
             parts.append("Definition: \(word.definition)")
