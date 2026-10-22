@@ -358,6 +358,9 @@ struct PointsView: View {
             let fresh = try await api.me()
             rewards = fresh
             meFailed = false
+            // "Pull down to check" has been done: the balance now says what happened. Not the
+            // conversion's own read-back, which picks its line after this returns.
+            if !isConverting, outcome == .unconfirmed { outcome = nil }
             return fresh
         } catch {
             guard !Task.isCancelled else { return nil }

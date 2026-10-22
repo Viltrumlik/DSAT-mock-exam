@@ -59,10 +59,19 @@ struct RankHeroContent: View {
                             .font(.system(size: 13, weight: .bold))
                             .foregroundStyle(Theme.textSecondary)
                     }
-                    Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Two lines held whether or not "N XP to pass Malika" wraps, so a new name or
+                    // a longer number never grows the card by a line under the student's thumb.
+                    // A hidden two-line twin holds them rather than a line limit, so a larger
+                    // text size still grows the line instead of cutting it off.
+                    ZStack(alignment: .topLeading) {
+                        Text(verbatim: " \n ")
+                            .font(.system(size: 13, weight: .heavy))
+                            .hidden()
+                        Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
+                            .font(.system(size: 13, weight: .heavy))
+                            .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             Spacer(minLength: 0)
@@ -142,6 +151,10 @@ struct StreakCard: View {
 /// Coins to spend, and the one-tap convert. Look B.
 struct CoinsCard: View {
     let rewards: MyRewards?
+    /// `/rewards/me/` failed with nothing kept. The card still leads to Points — the ledger's
+    /// own "All your points" link waits for the same read — so the page that can say more is
+    /// never out of reach.
+    var failed = false
     let converting: Bool
     /// What the last conversion did — or that it did not go through.
     let note: String?
@@ -194,6 +207,20 @@ struct CoinsCard: View {
                         .font(.system(size: 11, weight: .heavy))
                         .foregroundStyle(Theme.textLabel)
                 }
+            } else if failed {
+                NavigationLink(value: AppLink.points) {
+                    HStack(spacing: 3) {
+                        Text("Points & coins")
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                    }
+                    .font(.system(size: 12, weight: .heavy))
+                    .foregroundStyle(RewardsPalette.accentText)
+                    // Drawn ~15 pt, tappable 44, as the Convert button is.
+                    .padding(.vertical, 14)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -14)
+                }
+                .buttonStyle(.plain)
             }
             if let note {
                 Text(note)
@@ -225,6 +252,8 @@ struct RewardsBoardSection: View {
     /// Only a board that answers the chosen metric and window; nil while it loads.
     let board: LeaderboardBoard?
     let failed: Bool
+    /// The board's latest read failed while this one stays on screen (`StaleNote`).
+    var stale = false
     let retry: @MainActor () async -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -311,7 +340,21 @@ struct RewardsBoardSection: View {
                         RewardsBoardRow(row: me, metric: metric, mine: true)
                     }
                 }
+                // Where the student's own row would be. XP says it in the hero above ("Your
+                // first XP puts you on it"); a student with no run would otherwise find nothing
+                // about themselves on the strike board.
+                if metric == .strikes, me == nil {
+                    Label("Come to your next lesson to start a run, and you'll appear here.", systemImage: "flame.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Theme.strike.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
             }
+            if stale { StaleNote() }
             if !board.scopeNote.isEmpty {
                 Text(board.scopeNote)
                     .font(.system(size: 12, weight: .medium))

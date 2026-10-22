@@ -23,6 +23,9 @@ struct LeaderboardView: View {
     /// query: it is the last good answer to what is being asked, not to a chip since changed.
     @State private var boardQuery: LeaderboardQuery?
     @State private var boardFailed = false
+    /// The last read of the question on screen failed, and the board it last answered stays:
+    /// said in one line (`StaleNote`), never as an error over rows that are there.
+    @State private var refreshFailed = false
     @State private var isLoading = true
     @State private var filters: LeaderboardFilters?
     @State private var filtersFailed = false
@@ -253,6 +256,8 @@ struct LeaderboardView: View {
             standingsHeader
             standingsBody
 
+            if refreshFailed, board != nil, !boardFailed { StaleNote() }
+
             if let board, !boardFailed, board.showsYourPosition, let my = board.my {
                 VStack(alignment: .leading, spacing: 8) {
                     Divider()
@@ -383,6 +388,8 @@ struct LeaderboardView: View {
     private func loadBoard() async {
         isLoading = true
         let asked = query
+        // A new chip asks something else: the line was about the old question's board.
+        if refreshFailed, boardQuery != asked { refreshFailed = false }
         let api = LeaderboardAPI(client: session.client)
         do {
             let fresh = try await api.board(asked)
@@ -390,15 +397,19 @@ struct LeaderboardView: View {
             board = fresh
             boardQuery = asked
             boardFailed = false
+            if refreshFailed { refreshFailed = false }
             // The default slice is the one the "while you were away" baseline follows; what the
             // student has seen here is not news the next time they come back.
             if asked == LeaderboardQuery() { rewards.noteRank(fresh.standing?.rank) }
         } catch {
             guard !Task.isCancelled, asked == query else { return }
-            // A pull that fails on a flaky connection leaves the working board where it is;
-            // only a board that answers something else (or none yet) gives way to the error.
+            // A pull that fails on a flaky connection leaves the working board where it is, and
+            // says so in a line under it; only a board that answers something else (or none
+            // yet) gives way to the error.
             let unanswered = board == nil || boardQuery != asked
             if boardFailed != unanswered { boardFailed = unanswered }
+            let stale = !unanswered
+            if refreshFailed != stale { refreshFailed = stale }
         }
         isLoading = false
     }

@@ -63,6 +63,9 @@ final class AwayCheck {
         // Before the read: a rise another refresh brings meanwhile is held, never shown early.
         // Every path below resolves it — an entry left pending would hold the pill for good.
         let away = celebrations.expectAway(xpSeen: seen?.xp)
+        // On every path, after the board too: until then the stage is not quiet, so the hub
+        // never reads a place this check is about to put on a card.
+        defer { celebrations.awayCheckEnded() }
         let ticket = rewards.ticket()
         // Out WITH the read, not after it: a caption's rules never add a second round trip to
         // the time the pill is held. Only a student with a baseline can have a gain to name.

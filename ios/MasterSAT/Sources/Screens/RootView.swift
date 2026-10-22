@@ -138,7 +138,7 @@ private struct RewardsRefresher: View {
             // or a place the header has not rolled to. A check that was skipped or failed read
             // nothing new. Any other tab reloads as it is opened.
             guard outcome == .read else { return }
-            celebrations.whenQuiet { router.reloadIfShowing(.rewards) }
+            celebrations.whenQuiet("welcome-back.reload") { router.reloadIfShowing(.rewards) }
         }
     }
 
