@@ -257,6 +257,10 @@ struct AssessmentReviewView: View {
         do {
             let loaded = try await session.assessments.review(attemptId: attemptId)
             review = loaded
+            // The page left while the answer was on its way: keep the review for its return, but
+            // weigh nothing — remembering now would mark the outcome celebrated with no page to
+            // show it. The load the return restarts weighs it, on screen.
+            guard !Task.isCancelled else { return }
             remember(loaded)
         } catch let error as APIError {
             // A cancelled load is not a failure (`APIClient` reports a cancellation as transport).

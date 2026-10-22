@@ -379,6 +379,9 @@ struct MidtermReportView: View {
             guard !Task.isCancelled else { return }
             if report == nil { loadError = error.localizedDescription }
         }
+        // The page left while the answers were on their way: nothing is remembered as celebrated
+        // with no page to show it. The load its return restarts celebrates, on screen.
+        guard !Task.isCancelled else { return }
         if let report { remember(report) }
     }
 
