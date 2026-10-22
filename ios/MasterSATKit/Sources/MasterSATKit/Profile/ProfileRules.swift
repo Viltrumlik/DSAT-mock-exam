@@ -20,95 +20,6 @@ public enum ProfileHomework {
         let key = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return key == "submitted" || key == "graded" || key == "reviewed"
     }
-
-    /// The colour a due date is drawn in.
-    public enum DueTone: Sendable, Equatable {
-        /// Past its date — "Catch up", never "Overdue".
-        case catchUp
-        /// Today, tomorrow, or within three days.
-        case soon
-        case later
-        case none
-    }
-
-    public struct Due: Sendable, Equatable {
-        public let text: String
-        public let tone: DueTone
-
-        public init(text: String, tone: DueTone) {
-            self.text = text
-            self.tone = tone
-        }
-    }
-
-    /// "Catch up", "Due today", "Due tomorrow", "Due in 6 days", "No due date".
-    ///
-    /// Days are calendar days, so work due at nine tonight is "Due today" and work due at nine
-    /// tomorrow morning is "Due tomorrow" even late this evening.
-    public static func dueLabel(_ dueAt: String?, now: Date = Date(), calendar: Calendar = .current) -> Due {
-        guard let dueAt, let due = JSONCoding.parseServerDate(dueAt) else {
-            return Due(text: "No due date", tone: .none)
-        }
-        if due < now { return Due(text: "Catch up", tone: .catchUp) }
-        let days = ProfileCalendar.days(from: now, to: due, calendar: calendar)
-        switch days {
-        case ...0: return Due(text: "Due today", tone: .soon)
-        case 1: return Due(text: "Due tomorrow", tone: .soon)
-        default: return Due(text: "Due in \(days) days", tone: days <= 3 ? .soon : .later)
-        }
-    }
-
-    public struct Summary: Sendable, Equatable {
-        public let total: Int
-        public let turnedIn: Int
-        /// Still to do, the one to start next first: work to catch up on, then by due date,
-        /// undated last.
-        public let toDo: [AssignmentListing]
-        /// Of `toDo`, how many are past their date.
-        public let catchUp: Int
-
-        /// The Homework tile's figure: the share turned in, whole percent. Nil when nothing
-        /// has been set — a 0% there would read as a verdict on work that does not exist.
-        public var turnedInPercent: Int? {
-            guard total > 0 else { return nil }
-            return Int((Double(turnedIn) / Double(total) * 100).rounded())
-        }
-    }
-
-    public static func summarise(_ rows: [AssignmentListing], now: Date = Date()) -> Summary {
-        func due(_ row: AssignmentListing) -> Date {
-            row.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
-        }
-        let toDo = rows
-            .filter { !isTurnedIn($0.workflowStatus) }
-            .sorted { lhs, rhs in
-                let l = due(lhs), r = due(rhs)
-                return l != r ? l < r : lhs.id < rhs.id
-            }
-        return Summary(
-            total: rows.count,
-            turnedIn: rows.count - toDo.count,
-            toDo: toDo,
-            catchUp: toDo.filter { due($0) < now }.count
-        )
-    }
-
-    /// "22 questions" for work that is a set of questions (a quiz, a past paper, a practice
-    /// pack, a mock); nil for anything else, or when the server gave no count.
-    public static func sizeLabel(_ row: AssignmentListing) -> String? {
-        guard let count = row.itemCount, count > 0,
-              ["assessment", "pastpaper", "practice", "mock"].contains((row.contentType ?? "").lowercased())
-        else { return nil }
-        return "\(count) question\(count == 1 ? "" : "s")"
-    }
-
-    /// The line under a row's title: "Math Middle A · 22 questions".
-    public static func rowDetail(_ row: AssignmentListing) -> String {
-        [row.classroomName, sizeLabel(row)]
-            .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty }
-            .joined(separator: " · ")
-    }
 }
 
 // MARK: - Lessons
@@ -534,34 +445,6 @@ public enum ProfileWording {
         case "test_admin", "test_auditor": return "Content team"
         default: return "Staff"
         }
-    }
-
-    /// The Strikes tile's line.
-    public static func strikesDetail(currentStreak: Int, bestStreak: Int) -> String {
-        guard currentStreak > 0 else { return "Attend your next lesson to start a run." }
-        return "\(currentStreak) \(currentStreak == 1 ? "lesson" : "lessons") in a row · best \(bestStreak)"
-    }
-
-    /// The Points tile's line.
-    public static func coinsDetail(_ coins: Int) -> String {
-        "\(coins) \(coins == 1 ? "coin" : "coins") to spend in the shop"
-    }
-
-    /// The Homework tile's line.
-    public static func homeworkDetail(_ summary: ProfileHomework.Summary) -> String {
-        summary.total == 0 ? "Nothing has been set yet." : "\(summary.turnedIn) of \(summary.total) turned in"
-    }
-
-    /// The Homework tile's figure: "80%", or "—" when nothing has been set.
-    public static func homeworkValue(_ summary: ProfileHomework.Summary) -> String {
-        summary.turnedInPercent.map { "\($0)%" } ?? "—"
-    }
-
-    /// Homework to do's empty answer: all handed in, or nothing set at all.
-    public static func homeworkEmpty(_ summary: ProfileHomework.Summary) -> String {
-        summary.total > 0
-            ? "You're all caught up — nothing to hand in right now."
-            : "No homework has been set for your classes yet."
     }
 
     /// The toast after "Copy username".
