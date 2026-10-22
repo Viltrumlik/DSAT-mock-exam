@@ -368,7 +368,8 @@ struct PasswordField: View {
                 Image(systemName: revealed ? "eye.slash" : "eye")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.textLabel)
-                    .frame(width: 30, height: 44)
+                    // A full 44 pt square to hit.
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -381,45 +382,4 @@ struct PasswordField: View {
 /// on either of them.
 enum AuthFocus: Hashable {
     case email, password, firstName, lastName, username
-}
-
-/// The sentence to show when a sign-in or a sign-up fails, and whether trying the same
-/// thing again could work. A port of the web's `classifyLoginError`.
-enum AuthErrorCopy {
-    static func classify(_ error: Error) -> (message: String, retryable: Bool) {
-        guard let api = error as? APIError else {
-            return (error.localizedDescription, false)
-        }
-        switch api {
-        case .transport:
-            return ("Cannot connect to the server. Check your internet connection and try again.", true)
-        case .unauthorized:
-            // On this screen a 401 is a wrong password, not an expired session — the
-            // student has no session yet. `APIError`'s own wording is written for the
-            // other case and would send them looking for a problem they do not have.
-            return ("The email or password you entered is incorrect.", false)
-        case .forbidden(let detail, _):
-            // The server's own words: a teacher signing in here is told to use the teacher
-            // portal, and a frozen account is told it is frozen.
-            return (detail.isEmpty ? "Your account has been restricted. Contact support." : detail, false)
-        case .validation(let detail, _, _):
-            return (detail.isEmpty ? "Please check the details you entered." : detail, false)
-        case .http(let status, let detail) where status == 429:
-            return (detail.isEmpty ? "Too many attempts. Please wait a minute before trying again." : detail, false)
-        case .http(let status, let detail) where status >= 500:
-            return (detail.isEmpty ? "Server error. Please try again in a moment." : detail, true)
-        case .http(_, let detail):
-            return (detail.isEmpty ? "Something went wrong. Please try again." : detail, true)
-        case .conflict(let detail):
-            return (detail.isEmpty ? "Something went wrong. Please try again." : detail, false)
-        case .unavailable:
-            // A release in progress. The words say "wait", because that is all it takes.
-            return (api.errorDescription ?? "MasterSAT is updating right now. Please try again in a minute.", true)
-        case .upgradeRequired:
-            // The update screen is already covering this one; this is only its caption.
-            return (api.errorDescription ?? "Please update the app to sign in.", false)
-        case .decoding, .notAuthenticated:
-            return (api.errorDescription ?? "Something went wrong. Please try again.", false)
-        }
-    }
 }

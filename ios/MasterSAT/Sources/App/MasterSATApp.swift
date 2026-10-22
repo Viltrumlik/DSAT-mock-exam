@@ -233,7 +233,9 @@ final class Session {
             return user
         } catch {
             await client.signOutLocally()
-            throw error
+            // Reached only straight after a token exchange that worked, so a 401 here is not a
+            // wrong password (`AccountDidNotLoad`); the form must not say it is.
+            throw AccountDidNotLoad.after(error)
         }
     }
 
