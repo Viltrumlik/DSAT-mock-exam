@@ -91,6 +91,54 @@ import Testing
         #expect(MidtermWording.startsIn(now.addingTimeInterval(-1), now: now) == nil)
     }
 
+    // MARK: - The Me sheet's results
+
+    @Test("The Me sheet lists the newest sittings whose score is out, three at most")
+    func latestResults() throws {
+        func sat(_ midterm: Int, attempt: Int, released: Bool = true, resit: Bool = false) throws -> MidtermListing {
+            try row([
+                "midterm_id": midterm, "attempt_id": attempt, "state": "COMPLETED", "submitted": true,
+                "results_visible": released, "score": 640, "resit_open": resit,
+            ])
+        }
+        let list = [
+            try sat(1, attempt: 5),
+            try sat(2, attempt: 12),
+            try sat(3, attempt: 20, released: false),
+            try row(["midterm_id": 4, "is_open": true]),
+            try sat(5, attempt: 30, resit: true),
+            try sat(6, attempt: 8),
+            try sat(7, attempt: 3),
+        ]
+        #expect(MidtermResults.latest(list).map(\.attemptId) == [12, 8, 5])
+        #expect(MidtermResults.latest(list, limit: 1).map(\.attemptId) == [12])
+        #expect(MidtermResults.latest([try sat(3, attempt: 20, released: false)]).isEmpty)
+    }
+
+    @Test("A certificate opens only when the listing says it is ready and gives its code")
+    func certificateCode() throws {
+        let ready = try row(["certificate": ["available": true, "code": " MS-4K29 "]])
+        #expect(ready.certificateCode == "MS-4K29")
+        let notYet = try row(["certificate": ["available": false, "code": "MS-4K29"]])
+        #expect(notYet.certificateCode == nil)
+        let noCode = try row(["certificate": ["available": true, "code": ""]])
+        #expect(noCode.certificateCode == nil)
+        #expect(try row([:]).certificateCode == nil)
+    }
+
+    @Test("Passed is the centre's mark, and a pre-midterm never carries one")
+    func markedPassed() throws {
+        func report(passed: Any, graded: Bool) throws -> MidtermErrorReport {
+            try JSONCoding.decoder.decode(MidtermErrorReport.self, from: JSONSerialization.data(withJSONObject: [
+                "midterm": ["id": 1, "title": "M"], "passed": passed, "is_graded": graded,
+            ]))
+        }
+        #expect(try report(passed: true, graded: true).markedPassed)
+        #expect(try !report(passed: false, graded: true).markedPassed)
+        #expect(try !report(passed: NSNull(), graded: true).markedPassed)
+        #expect(try !report(passed: true, graded: false).markedPassed)
+    }
+
     // MARK: - Error report
 
     @Test("The report lists every topic the paper tested, and speaks of topics on a junior paper")

@@ -62,6 +62,30 @@ extension MidtermListing {
 
     /// The score to show: only once the teacher has released it.
     public var releasedScore: Double? { resultsVisible ? score : nil }
+
+    /// The code to open this row's certificate by — only for one the listing says is ready.
+    public var certificateCode: String? {
+        guard let certificate, certificate.available else { return nil }
+        let code = certificate.code.trimmingCharacters(in: .whitespaces)
+        return code.isEmpty ? nil : code
+    }
+}
+
+/// The Me sheet's "Midterms & certificates" list.
+public enum MidtermResults {
+    /// Up to `limit` sittings whose score is out, the newest sitting first.
+    ///
+    /// Newest by attempt: a finished row carries no date, and the server numbers sittings as
+    /// they begin — Class → Results orders them the same way. Only what the midterm page files
+    /// under Past attempts: a granted re-sit still carries the old mark it is about to replace.
+    public static func latest(_ midterms: [MidtermListing], limit: Int = 3) -> [MidtermListing] {
+        Array(
+            midterms
+                .filter { $0.bucket == .past && $0.releasedScore != nil && $0.attemptId != nil }
+                .sorted { ($0.attemptId ?? 0) > ($1.attemptId ?? 0) }
+                .prefix(max(0, limit))
+        )
+    }
 }
 
 public enum MidtermWording {
@@ -94,6 +118,10 @@ extension MidtermErrorReport {
 
     /// "Topics" / "Skills".
     public var nounPluralTitle: String { noun == "topic" ? "Topics" : "Skills" }
+
+    /// The centre marked this sitting passed. Only the report says so — the midterm list
+    /// carries no pass mark — and a pre-midterm, scored but never judged, never is.
+    public var markedPassed: Bool { isGraded && passed == true }
 
     /// Round((total − wrong) / total × 100), the web's accuracy; 0 for an empty paper.
     public var accuracyPercent: Int {
