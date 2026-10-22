@@ -34,6 +34,11 @@ struct HomeworkDetailView: View {
 
     @Environment(Session.self) private var session
     @State private var detail: AssignmentListing?
+    /// The student's own row as the server describes it NOW — status, each quiz's progress, each
+    /// word set's state. The row this page was opened from is a snapshot of the moment the list
+    /// loaded; after a quiz or some word games it is behind. Never cleared once read: until the
+    /// next read lands, the page keeps the last thing it knew.
+    @State private var freshRow: AssignmentListing?
     @State private var detailError: String?
     @State private var submission: Submission?
     /// The hand-in could not be read. Its section says so rather than offering a first
@@ -59,8 +64,13 @@ struct HomeworkDetailView: View {
     /// Where the Hand in button is, so the confetti leaves from it. Boxed: it is written on every
     /// scroll frame and read only when the hand-in is celebrated.
     @State private var handInSpot = FrameBox()
-    /// A small picture of each staged photo, by file token — made once, off the main thread.
-    @State private var thumbnails: [String: UIImage] = [:]
+    /// The Hand in button is on screen. A push over this page, or leaving it, takes the button away
+    /// without any new measurement when it comes back, so the frame in `handInSpot` is only the
+    /// button's while this is true; a hand-in that finishes meanwhile leaves from the default spot.
+    @State private var handInShown = false
+    /// A small picture of each staged photo, by file token — made once, off the main thread, a few
+    /// at a time, and let go of when its file is taken off.
+    @State private var thumbnails = ThumbnailMaker()
     /// How far each staged file has gone up while the hand-in is sending.
     @State private var meter = UploadMeter()
     /// The files the hand-in on its way is carrying: only these rows show a ring (a file added
@@ -71,11 +81,14 @@ struct HomeworkDetailView: View {
     /// The header's XP when a quiz was opened — what its hand-in's gain is measured from.
     @State private var xpAtQuizStart: Int?
 
+    /// The list row — the freshest the page has read, else the one it was opened from.
+    private var row: AssignmentListing? { freshRow ?? seed }
+
     /// The row, enriched — never replaced — by the detail (see `AssignmentListing.merging`).
     private var current: AssignmentListing? {
-        switch (seed, detail) {
-        case let (seed?, detail?): return seed.merging(detail: detail)
-        case let (seed?, nil): return seed
+        switch (row, detail) {
+        case let (row?, detail?): return row.merging(detail: detail)
+        case let (row?, nil): return row
         case let (nil, detail?): return classroomHint.map { detail.inClassroom(id: $0, name: nil) } ?? detail
         case (nil, nil): return nil
         }
@@ -119,7 +132,9 @@ struct HomeworkDetailView: View {
                 celebrations.celebrate(.assessment, xpBefore: xpAtQuizStart)
             }) {
                 assessmentAttemptId = nil
-                Task { await load() }
+                // Read again, the student's row included: the quiz just handed in is graded on the
+                // server, and the row this page holds still says what it said before.
+                Task { await load(rereadingRow: true) }
             }
             .coversCelebrations(celebrations)
             .noBarClearance()
@@ -169,9 +184,15 @@ struct HomeworkDetailView: View {
 
     // MARK: - Header
 
+    /// The chip's status: the hand-in's, else the row's — and for a homework of word sets, read from
+    /// the sets themselves, since the server never marks those handed in (`HomeworkStatus`).
+    private func status(_ a: AssignmentListing) -> String? {
+        HomeworkStatus.shown(for: a, submission: submission)
+    }
+
     /// With the teacher already — its deadline is a date, not something to catch up on.
     private func isHandedIn(_ a: AssignmentListing) -> Bool {
-        ["submitted", "graded", "reviewed"].contains((submission?.workflowStatus ?? a.workflowStatus ?? "").lowercased())
+        HomeworkStatus.isWithTheTeacher(status(a))
     }
 
     /// The site's assignment hero — the kind of work, the title, and its dates — then the
@@ -191,7 +212,7 @@ struct HomeworkDetailView: View {
             )
 
             if !a.isClasswork {
-                let status = submission?.workflowStatus ?? a.workflowStatus
+                let status = status(a)
                 Chip(text: StatusLabel.homework(status), tone: StatusLabel.tone(status))
             }
 
@@ -470,7 +491,8 @@ struct HomeworkDetailView: View {
             // Not offered until we know what is already handed in.
             VStack(alignment: .leading, spacing: 10) {
                 Overline("Hand in")
-                LoadingSkeleton(rows: 1, height: 72, style: .cards)
+                // The hand-in is a focus zone: the blocks hold still.
+                LoadingSkeleton(rows: 1, height: 72, style: .cards, pulse: false)
             }
         } else if a.offersFileUpload, let submissionError {
             // Not knowing what is already handed in is not "nothing handed in".
@@ -510,19 +532,20 @@ struct HomeworkDetailView: View {
 
             if let files = submission?.files, !files.isEmpty {
                 ForEach(files) { file in
-                    SubmittedFileRow(file: file) { await remove(file, assignmentId: a.id) }
+                    // Not while a hand-in is going up: it was built on the revision this file is part of.
+                    SubmittedFileRow(file: file, removalPaused: isUploading) { await remove(file, assignmentId: a.id) }
                 }
             }
 
             ForEach(staged, id: \.token) { file in
                 StagedFileRow(
                     file: file,
-                    thumbnail: thumbnails[file.token],
+                    thumbnail: thumbnails.picture(for: file.token),
                     meter: meter,
                     sending: sendingTokens.contains(file.token)
                 ) {
                     withAnimation(Motion.focus) { staged.removeAll { $0.token == file.token } }
-                    thumbnails[file.token] = nil
+                    thumbnails.drop(file.token)
                     actionError = nil
                     sendFailed = false
                 }
@@ -562,6 +585,8 @@ struct HomeworkDetailView: View {
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(isUploading || (staged.isEmpty && submission?.files.isEmpty != false))
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { handInSpot.rect = $0 }
+            .onAppear { handInShown = true }
+            .onDisappear { handInShown = false }
 
             if let actionError {
                 Text(actionError)
@@ -613,20 +638,8 @@ struct HomeworkDetailView: View {
         sendFailed = false
         withAnimation(Motion.focus) { staged.append(file) }
         guard file.mimeType.hasPrefix("image/") else { return }
-        // Decoded and shrunk off the main thread: a camera photo is twelve megapixels. Until it is
-        // ready the row shows a photo glyph; the picture fades in over it. The thumbnail keeps the
-        // photo's shape — `byPreparingThumbnail` returns exactly the size asked for, so a square
-        // request squashed a portrait screenshot — and the tile crops it to its square.
-        let token = file.token
-        let data = file.data
-        Task {
-            let small = await Task.detached(priority: .userInitiated) { () -> UIImage? in
-                guard let image = UIImage(data: data), let size = image.size.fillingSquare(of: 176) else { return nil }
-                return await image.byPreparingThumbnail(ofSize: size)
-            }.value
-            guard let small, staged.contains(where: { $0.token == token }) else { return }
-            withAnimation(Motion.focus) { thumbnails[token] = small }
-        }
+        // Until the picture is ready the row shows a photo glyph; the picture fades in over it.
+        thumbnails.make(for: file)
     }
 
     @MainActor
@@ -687,6 +700,9 @@ struct HomeworkDetailView: View {
 
     // MARK: - Sending
 
+    /// Where the confetti of a hand-in leaves from: the button, while it is on screen.
+    private var handInPoint: CGPoint? { handInShown ? handInSpot.rect.celebrationPoint : nil }
+
     @MainActor
     private func submit(_ a: AssignmentListing, limits: SubmissionLimits) {
         guard let classroomId, !isUploading else { return }
@@ -733,24 +749,22 @@ struct HomeworkDetailView: View {
                 // Confirmed: celebrated at once, before anything else is awaited, so the XP it is
                 // measured from is the one at hand-in. Only what the server has leaves the staged
                 // files, and the rows fade out as the submitted files come in.
-                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInPoint)
                 withAnimation(Motion.focus) {
                     staged.removeAll { carried.contains($0.token) }
-                    for token in tokens { thumbnails[token] = nil }
+                    for token in tokens { thumbnails.drop(token) }
                     submission = updated
                 }
-            } catch where error is CancellationError || Task.isCancelled {
-                // Stopped, not failed: nothing to say, and the files stay where they are.
             } catch APIError.validation(_, _, let fields) where fields["file_tokens"] != nil {
                 // "Token already used": an earlier attempt DID land — its response was lost on
                 // the way back. The files are already on the server, so re-read what it holds
                 // instead of telling the student the upload failed and inviting a duplicate.
                 // The work is in: celebrated now, before the re-read below is awaited (a refresh
                 // that lands meanwhile would already hold the payout), and only once.
-                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInSpot.rect.celebrationPoint)
+                celebrations.celebrate(.homework, xpBefore: xpBefore, at: handInPoint)
                 withAnimation(Motion.focus) {
                     staged.removeAll { carried.contains($0.token) }
-                    for token in tokens { thumbnails[token] = nil }
+                    for token in tokens { thumbnails.drop(token) }
                 }
                 submission = (try? await session.student.mySubmission(
                     classroomId: classroomId,
@@ -781,7 +795,7 @@ struct HomeworkDetailView: View {
 
     @MainActor
     private func remove(_ file: SubmissionFile, assignmentId: Int) async {
-        guard let classroomId else { return }
+        guard let classroomId, !isUploading else { return }
         actionError = nil
         do {
             submission = try await session.student.submitHomework(
@@ -799,7 +813,7 @@ struct HomeworkDetailView: View {
     }
 
     @MainActor
-    private func load() async {
+    private func load(rereadingRow: Bool = false) async {
         guard let classroomId else {
             isLoading = false
             return
@@ -809,9 +823,15 @@ struct HomeworkDetailView: View {
         // Whose page this is, taken before anything is asked for: a quick sign-in as someone else
         // while it loads must not teach the new student's memory the old one's attempts.
         let userID: Int? = if case .signedIn(let user) = session.phase { user.id } else { nil }
+        // The student's own row — status, each quiz's progress, each word set's state — is what the
+        // assignment endpoint does not keep (`AssignmentListing.merging`). A page opened from a list
+        // row was just handed a fresh one; a page opened from a link has none; and any load after the
+        // first (a quiz closed, word games played, a pull, a return) finds the one it holds behind.
+        let readsRow = rereadingRow || seed == nil || !isLoading
         // The detail enriches a list row; with no row (a deep link) it IS the page, and its
         // failure is the page's failure.
         async let fullAssignment = session.student.assignment(classroomId: classroomId, id: assignmentId)
+        async let studentRow = readRow(readsRow)
         do {
             // nil is "nothing handed in yet" — a normal state, not a failure.
             submission = try await session.student.mySubmission(
@@ -828,20 +848,48 @@ struct HomeworkDetailView: View {
         } catch {
             submissionError = error.localizedDescription
         }
+        // Awaited before the detail, which can throw: a row that did arrive is not lost with it.
+        let row = await studentRow
+        let full: AssignmentListing
         do {
-            let full = try await fullAssignment
-            detail = full
-            // It carries this student's attempt at each set, as a list row does: noted, an
-            // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
-            if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
+            full = try await fullAssignment
         } catch where Task.isCancelled {
             return
         } catch let error as APIError {
             detailError = error.errorDescription ?? "Assignment not available"
+            adopt(row)
+            isLoading = false
+            return
         } catch {
             detailError = error.localizedDescription
+            adopt(row)
+            isLoading = false
+            return
         }
+        // Together, so a page opened from a link appears whole rather than first without its words.
+        detail = full
+        adopt(row)
+        // It carries this student's attempt at each set, as a list row does: noted, an
+        // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
+        if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
         isLoading = false
+    }
+
+    /// The student's row from `my-assignments`, or nil when it was not asked for or could not be read.
+    /// A failure here costs only freshness — the page keeps the row it has — so it says nothing:
+    /// the detail and the hand-in carry the failures a student can act on.
+    @MainActor
+    private func readRow(_ wanted: Bool) async -> AssignmentListing? {
+        guard wanted, let rows = try? await session.student.assignments() else { return nil }
+        return rows.first { $0.id == assignmentId }
+    }
+
+    /// Keeps a row the read brought; never replaces what the page knows with nothing, and does not
+    /// write (and so re-render) for a row that is the one already held.
+    @MainActor
+    private func adopt(_ row: AssignmentListing?) {
+        guard let row, row != freshRow else { return }
+        freshRow = row
     }
 }
 
@@ -1163,6 +1211,79 @@ private extension CGSize {
     }
 }
 
+/// Makes the small pictures the staged photo rows show — three at a time, never more, and a
+/// picture's job is let go of the moment its file is taken off.
+///
+/// A camera photo is twelve megapixels, so each picture is decoded and shrunk off the main thread.
+/// Without a ceiling a student who picks twenty photos starts twenty decodes at once, and one who
+/// takes a photo off the list still pays for it. The thumbnail keeps the photo's shape —
+/// `byPreparingThumbnail` returns exactly the size asked for, so a square request squashed a
+/// portrait screenshot — and the tile crops it to its square.
+@MainActor
+@Observable
+final class ThumbnailMaker {
+    /// Decodes running at once. Three keep a burst of picks from competing with the scroll and the
+    /// upload itself, and are still ahead of a student adding photos one by one.
+    static let limit = 3
+
+    private struct Job {
+        let token: String
+        let data: Data
+    }
+
+    private var pictures: [String: UIImage] = [:]
+    private var waiting: [Job] = []
+    /// A cancelled decode stays here until it has actually stopped, so the ceiling holds even
+    /// while a decode that cannot be interrupted mid-call is winding down.
+    private var running: [String: Task<Void, Never>] = [:]
+
+    func picture(for token: String) -> UIImage? { pictures[token] }
+
+    /// Queues the file's picture. Only an image has one.
+    func make(for file: MultipartForm.File) {
+        waiting.append(Job(token: file.token, data: file.data))
+        pump()
+    }
+
+    /// The file is gone: its job leaves the queue or is cancelled, and its picture with it.
+    func drop(_ token: String) {
+        waiting.removeAll { $0.token == token }
+        running[token]?.cancel()
+        if pictures[token] != nil { pictures[token] = nil }
+    }
+
+    private func pump() {
+        while running.count < Self.limit, !waiting.isEmpty {
+            let job = waiting.removeFirst()
+            running[job.token] = Task(priority: .userInitiated) { [weak self] in
+                let small = await Self.decode(job.data)
+                self?.finish(job.token, small, dropped: Task.isCancelled)
+            }
+        }
+    }
+
+    private func finish(_ token: String, _ picture: UIImage?, dropped: Bool) {
+        running[token] = nil
+        if !dropped, let picture {
+            withAnimation(Motion.focus) { pictures[token] = picture }
+        }
+        pump()
+    }
+
+    /// Off the main thread, and stopped early when the job is cancelled — `Task.detached` does not
+    /// inherit a cancellation, so the handler hands it on.
+    nonisolated private static func decode(_ data: Data) async -> UIImage? {
+        let work = Task.detached(priority: .userInitiated) { () -> UIImage? in
+            guard !Task.isCancelled, let image = UIImage(data: data),
+                  let size = image.size.fillingSquare(of: 176) else { return nil }
+            // The decode itself cannot be interrupted, but the work after a cancel can be skipped.
+            guard !Task.isCancelled else { return nil }
+            return await image.byPreparingThumbnail(ofSize: size)
+        }
+        return await withTaskCancellationHandler { await work.value } onCancel: { work.cancel() }
+    }
+}
+
 /// One file's real upload progress — its bytes sent over its size — then a tick once all of it
 /// has gone. The hand-in itself is confirmed by the server, not by the ticks.
 struct UploadRing: View {
@@ -1177,7 +1298,9 @@ struct UploadRing: View {
             Circle().stroke(Theme.surface2, lineWidth: 3)
             Circle()
                 .trim(from: 0, to: shown)
-                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                // A round cap draws a dot even for a zero-length arc: a file that has not started
+                // going up shows the bare track, and the cap arrives with the first of it.
+                .stroke(Theme.accent, style: StrokeStyle(lineWidth: 3, lineCap: shown > 0 ? .round : .butt))
                 .rotationEffect(.degrees(-90))
             if done {
                 Image(systemName: "checkmark")
@@ -1205,6 +1328,9 @@ struct UploadRing: View {
 
 struct SubmittedFileRow: View {
     let file: SubmissionFile
+    /// A hand-in is going up: the trash stays, dimmed and dead, because taking a file off now would
+    /// change the revision that request was built on.
+    var removalPaused = false
     /// `nil` once hand-in has closed: the file is shown, not offered for removal.
     let onRemove: (@MainActor () async -> Void)?
 
@@ -1233,6 +1359,8 @@ struct SubmittedFileRow: View {
                     Image(systemName: "trash").foregroundStyle(Theme.danger)
                 }
                 .buttonStyle(.plain)
+                .disabled(removalPaused)
+                .opacity(removalPaused ? 0.35 : 1)
                 .accessibilityLabel("Remove \(file.displayName)")
             }
         }

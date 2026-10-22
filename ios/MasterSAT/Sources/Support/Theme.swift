@@ -1,4 +1,5 @@
 import SwiftUI
+import MasterSATKit
 
 /// The platform's design tokens, ported from the web's `globals.css`.
 ///
@@ -276,6 +277,8 @@ enum StatusLabel {
         switch (workflowStatus ?? "").lowercased() {
         case "graded", "reviewed": return "Reviewed"
         case "submitted": return "Submitted"
+        // Words only (`HomeworkStatus`): every set played, nothing handed in.
+        case HomeworkStatus.completed: return "Completed"
         case "returned": return "Ready to revise"
         case "in_progress": return "In progress"
         default: return "Not started"
@@ -284,7 +287,7 @@ enum StatusLabel {
 
     static func tone(_ workflowStatus: String?) -> Chip.Tone {
         switch (workflowStatus ?? "").lowercased() {
-        case "graded", "reviewed": return .success
+        case "graded", "reviewed", HomeworkStatus.completed: return .success
         case "submitted": return .accent
         case "returned": return .warning
         default: return .neutral
@@ -293,7 +296,7 @@ enum StatusLabel {
 
     static func color(_ workflowStatus: String?) -> Color {
         switch (workflowStatus ?? "").lowercased() {
-        case "graded", "reviewed": return Theme.success
+        case "graded", "reviewed", HomeworkStatus.completed: return Theme.success
         case "submitted": return Theme.accent
         case "returned": return Theme.warning
         default: return Theme.textSecondary
