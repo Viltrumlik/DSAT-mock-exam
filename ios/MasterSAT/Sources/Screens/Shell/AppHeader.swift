@@ -26,38 +26,61 @@ struct AppHeader: View {
         self.showsBell = showsBell
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                if let subtitle {
-                    if let shortSubtitle {
-                        ViewThatFits(in: .horizontal) {
+            if typeSize.isAccessibilitySize {
+                // The pills keep their size (they are capped) but the row they shared with the
+                // line of context is gone: the title leads, the line wraps under it, the pills sit
+                // on a row of their own. Only a change of the setting flips this, so the pills
+                // are rebuilt once, never mid-flight.
+                PageTitle(title)
+                if let subtitle { line(subtitle) }
+                HStack(spacing: 8) {
+                    StrikeChip().fixedSize()
+                    XPPill().fixedSize()
+                    Spacer(minLength: 0)
+                    if showsBell { bell }
+                    AvatarButton()
+                }
+            } else {
+                HStack(spacing: 8) {
+                    if let subtitle {
+                        if let shortSubtitle {
+                            ViewThatFits(in: .horizontal) {
+                                line(subtitle)
+                                line(shortSubtitle)
+                            }
+                        } else {
                             line(subtitle)
-                            line(shortSubtitle)
                         }
-                    } else {
-                        line(subtitle)
                     }
+                    Spacer(minLength: 0)
+                    // Fixed: when the row is tight it is the line of context that gives way.
+                    StrikeChip().fixedSize()
+                    XPPill().fixedSize()
+                    if showsBell { bell }
+                    AvatarButton()
                 }
-                Spacer(minLength: 0)
-                // Fixed: when the row is tight it is the line of context that gives way.
-                StrikeChip().fixedSize()
-                XPPill().fixedSize()
-                if showsBell {
-                    // RootTabView routes what the inbox opens, the same way it routes a push.
-                    NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
-                }
-                AvatarButton()
+                PageTitle(title)
             }
-            PageTitle(title)
         }
+    }
+
+    /// RootTabView routes what the inbox opens, the same way it routes a push.
+    private var bell: some View {
+        NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
     }
 
     private func line(_ text: String) -> some View {
         Text(text)
             .appFont(13, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
-            .lineLimit(1)
+            // One line while it shares a row; once it has the row to itself it wraps rather than
+            // cut a date or a lesson to "…".
+            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
+            .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
             .accessibilityLabel(subtitleLabel ?? text)
     }
 }
@@ -100,6 +123,9 @@ struct StrikeChip: View {
             .padding(.trailing, 10)
             .padding(.vertical, 3)
             .background(Theme.card, in: Capsule())
+            // Header chrome: the pills sit beside the avatar on every tab, so they stop growing at
+            // `xxxLarge`; the large content viewer shows them bigger while they are pressed.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .sensoryFeedback(.impact(weight: .medium), trigger: grows)
             .onGeometryChange(for: Bool.self) { proxy in
                 let frame = proxy.frame(in: .global)
@@ -121,6 +147,9 @@ struct StrikeChip: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
+            .accessibilityShowsLargeContentViewer {
+                Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
+            }
         }
     }
 
@@ -159,6 +188,7 @@ struct XPPill: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Theme.card, in: Capsule())
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .keyframeAnimator(initialValue: PillPulse(), trigger: pulses) { content, pulse in
                 content.scaleEffect(pulse.scale)
             } keyframes: { _ in
@@ -186,6 +216,7 @@ struct XPPill: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(shown) XP")
+            .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
         }
     }
 
@@ -216,14 +247,13 @@ struct AvatarButton: View {
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Theme.accent, in: Circle())
-                // The only way into Me, so it gets the 44-pt minimum target — drawn 34, tappable
-                // 44. The negative padding hands the extra 5 pt back to layout, so the header
-                // does not shift; hit testing is not clipped to the layout frame.
-                .padding(5)
-                .contentShape(Rectangle())
-                .padding(-5)
+                // Initials in a fixed 34-pt disc: they stop growing at `xxxLarge` (the disc does not).
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                // The only way into Me, so it gets the 44-pt minimum target — drawn 34, tappable 44.
+                .hitTarget(44)
         }
         .buttonStyle(PressBounce())
         .accessibilityLabel("Your profile")
+        .accessibilityShowsLargeContentViewer { Label("Your profile", systemImage: "person.crop.circle") }
     }
 }

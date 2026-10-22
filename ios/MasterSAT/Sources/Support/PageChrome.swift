@@ -237,7 +237,7 @@ struct HeroHeader<Trailing: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
+            AdaptiveStack(rowAlignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
                         Image(systemName: eyebrowIcon).appFont(11, weight: .bold)
@@ -264,7 +264,7 @@ struct HeroHeader<Trailing: View>: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer(minLength: 0)
+                AdaptiveSpacer()
                 trailing()
             }
 
@@ -319,12 +319,15 @@ extension HeroHeader where Trailing == EmptyView {
 /// gradient's own sizing, and every hero on the site carries two or four of these.
 private struct HeroTileFlow: View {
     let tiles: [HeroTile]
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let rows = stride(from: 0, to: tiles.count, by: 2).map { Array(tiles[$0..<min($0 + 2, tiles.count)]) }
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 28) {
+                // Two to a row; one to a row at the accessibility sizes, where half the hero is too
+                // narrow for a label and its number.
+                AdaptiveStack(spacing: 28, columnSpacing: 14) {
                     ForEach(row) { tile in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(tile.label.uppercased())
@@ -349,7 +352,7 @@ private struct HeroTileFlow: View {
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel("\(tile.label), \(tile.value)")
                     }
-                    if row.count == 1 { Spacer(minLength: 0).frame(maxWidth: .infinity) }
+                    if row.count == 1, !typeSize.isAccessibilitySize { Spacer(minLength: 0).frame(maxWidth: .infinity) }
                 }
             }
         }

@@ -53,7 +53,9 @@ struct WorkRow: View {
                         .multilineTextAlignment(.leading)
                 }
                 if when != nil || item.xpCap != nil {
-                    HStack(spacing: 8) {
+                    // The due line and the XP chip share a line; at the accessibility sizes the
+                    // chip drops under the date instead of pushing it off the row.
+                    AdaptiveStack(spacing: 8, columnSpacing: 4) {
                         if let when {
                             // A passed deadline is information, never an accusation.
                             Text(when.text)

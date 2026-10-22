@@ -23,7 +23,9 @@ struct RankHeroContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 12) {
+        // The trophy beside the place; above it at the accessibility sizes, where a place set
+        // that large would otherwise shrink to a fraction beside an 88-pt trophy.
+        AdaptiveStack(spacing: 12) {
             LottieClip(.trophy, playback: reduceMotion ? .still : .once)
                 .id(plays)
                 .frame(width: 88, height: 88)
@@ -74,7 +76,7 @@ struct RankHeroContent: View {
                     }
                 }
             }
-            Spacer(minLength: 0)
+            AdaptiveSpacer()
             Image(systemName: "chevron.right")
                 .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textLabel)

@@ -96,7 +96,9 @@ struct RewardsHubView: View {
                         .cardStyle(padding: 8)
                     }
 
-                    HStack(alignment: .top, spacing: 12) {
+                    // Side by side; one above the other at the accessibility sizes, where half the
+                    // phone cannot hold a number set that large.
+                    AdaptiveStack(rowAlignment: .top, spacing: 12) {
                         StreakCard(
                             streak: celebrations.streakShown(rewards.streak) ?? mine?.currentStreak,
                             best: mine?.bestStreak

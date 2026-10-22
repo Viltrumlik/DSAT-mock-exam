@@ -197,7 +197,9 @@ struct AssessmentRunnerView: View {
     /// Save-and-exit, the calculator, and the zoom control. Chrome only — the set's own
     /// identity lives in the card below, where the site puts it.
     private func toolbar(_ runner: AssessmentRunner) -> some View {
-        HStack(spacing: 12) {
+        // One row; two at the accessibility sizes — "Save and exit" above, the tools below —
+        // since a 40-pt label and three 44-pt buttons are wider than the phone once the words grow.
+        AdaptiveStack(spacing: 12, columnSpacing: 0) {
             Button {
                 Task {
                     // Never leave without writing. iOS can kill a backgrounded app
@@ -214,30 +216,34 @@ struct AssessmentRunnerView: View {
             }
             .buttonStyle(.plain)
 
-            Spacer(minLength: 0)
+            AdaptiveSpacer()
 
-            if offersCalculator {
-                Button { showCalculator = true } label: {
-                    Image(systemName: "function")
-                        .appFont(16, weight: .semibold)
-                        .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
-                        .frame(width: Self.minTarget, height: Self.minTarget)
-                        .contentShape(Rectangle())
+            HStack(spacing: 12) {
+                if offersCalculator {
+                    Button { showCalculator = true } label: {
+                        Image(systemName: "function")
+                            .appFont(16, weight: .semibold)
+                            .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
+                            .frame(width: Self.minTarget, height: Self.minTarget)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Calculator")
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Calculator")
-            }
 
-            HStack(spacing: 2) {
-                zoomButton("textformat.size.smaller", label: "Smaller text", enabled: zoom > 0.7) {
-                    zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
-                }
-                Text("\(Int(zoom * 100))%")
-                    .appFont(11, weight: .bold).monospacedDigit()
-                    .foregroundStyle(Theme.textSecondary)
-                    .frame(width: 40)
-                zoomButton("textformat.size.larger", label: "Larger text", enabled: zoom < 1.5) {
-                    zoom = min(1.5, (zoom + 0.1).rounded(toPlaces: 2))
+                HStack(spacing: 2) {
+                    zoomButton("textformat.size.smaller", label: "Smaller text", enabled: zoom > 0.7) {
+                        zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
+                    }
+                    Text("\(Int(zoom * 100))%")
+                        .appFont(11, weight: .bold).monospacedDigit()
+                        .foregroundStyle(Theme.textSecondary)
+                        // At least 40 pt, as it was; "100%" set large needs more, not an ellipsis.
+                        .frame(minWidth: 40)
+                        .fixedSize()
+                    zoomButton("textformat.size.larger", label: "Larger text", enabled: zoom < 1.5) {
+                        zoom = min(1.5, (zoom + 0.1).rounded(toPlaces: 2))
+                    }
                 }
             }
         }
@@ -263,7 +269,7 @@ struct AssessmentRunnerView: View {
 
     /// The site's runner header: class, subject, set title, and how far along you are.
     private func setHeader(_ runner: AssessmentRunner) -> some View {
-        HStack(alignment: .center, spacing: 12) {
+        AdaptiveStack(spacing: 12, columnSpacing: 8) {
             VStack(alignment: .leading, spacing: 2) {
                 // The site also shows the classroom above the subject; the attempt bundle
                 // does not carry it, and one extra request per question screen to print a
@@ -279,7 +285,7 @@ struct AssessmentRunnerView: View {
                     .appFont(16, weight: .heavy)
                     .lineLimit(2)
             }
-            Spacer(minLength: 0)
+            AdaptiveSpacer()
             VStack(alignment: .trailing, spacing: 3) {
                 // The count is the progress: it rolls when it moves, and no bar restates it.
                 Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
@@ -504,7 +510,8 @@ struct AssessmentRunnerView: View {
 
     /// Previous · question map · next — the web's bottom bar.
     private func footer(_ runner: AssessmentRunner) -> some View {
-        HStack(spacing: 10) {
+        // Three controls in a row; in a column at the accessibility sizes, each as wide as it needs.
+        AdaptiveStack(spacing: 10) {
             Button {
                 move(to: runner.currentIndex - 1, runner)
             } label: {

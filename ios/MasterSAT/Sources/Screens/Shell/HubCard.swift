@@ -23,7 +23,9 @@ struct HubCard<Route: Hashable>: View {
 
     var body: some View {
         NavigationLink(value: route) {
-            HStack(spacing: 14) {
+            // The count and the chevron go under the words at the accessibility sizes, where beside
+            // them they would leave the title a column a few letters wide.
+            AdaptiveStack(spacing: 14, columnSpacing: 10) {
                 IconTile(systemName: icon, tone: tone, size: 46)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
@@ -43,20 +45,22 @@ struct HubCard<Route: Hashable>: View {
                             .transition(.opacity)
                     }
                 }
-                Spacer(minLength: 0)
-                // Zero is not shown: no badge says "nothing waiting" better than a grey 0.
-                if let count, count > 0 {
-                    Text(ScoreText.string(count))
-                        .appFont(12, weight: .heavy, design: .rounded).monospacedDigit()
-                        .foregroundStyle(tone)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(tone.opacity(0.13)))
-                        .contentTransition(.numericText(value: Double(count)))
+                AdaptiveSpacer()
+                HStack(spacing: 14) {
+                    // Zero is not shown: no badge says "nothing waiting" better than a grey 0.
+                    if let count, count > 0 {
+                        Text(ScoreText.string(count))
+                            .appFont(12, weight: .heavy, design: .rounded).monospacedDigit()
+                            .foregroundStyle(tone)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(tone.opacity(0.13)))
+                            .contentTransition(.numericText(value: Double(count)))
+                    }
+                    Image(systemName: "chevron.right")
+                        .appFont(13, weight: .bold)
+                        .foregroundStyle(Theme.textLabel)
                 }
-                Image(systemName: "chevron.right")
-                    .appFont(13, weight: .bold)
-                    .foregroundStyle(Theme.textLabel)
             }
             .cardStyle()
             .contentShape(Rectangle())

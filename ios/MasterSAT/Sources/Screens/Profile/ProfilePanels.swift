@@ -31,7 +31,9 @@ struct ProfileGoalPanel: View {
                 .buttonStyle(AccountPillButtonStyle(kind: .soft, tone: ProfileTone.primary))
                 .disabled(model.isSavingGoal)
         } content: {
-            HStack(alignment: .top, spacing: 10) {
+            // Two wells side by side; stacked at the accessibility sizes, where each would be half
+            // the phone's width.
+            AdaptiveStack(rowAlignment: .top, spacing: 10) {
                 targetWell
                 testDayWell
             }

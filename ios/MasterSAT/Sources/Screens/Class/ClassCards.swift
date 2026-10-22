@@ -30,7 +30,9 @@ struct ClassLessonCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             NavigationLink(value: AppLink.classroom(id: room.id)) {
-                HStack(spacing: 12) {
+                // A class name set in the accessibility sizes does not fit beside the tile, so
+                // the tile heads the card and the words take its full width.
+                AdaptiveStack(spacing: 12) {
                     IconTile(systemName: room.isMath ? "function" : "book.closed.fill", tone: tone, size: 44)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(room.name)
@@ -42,7 +44,7 @@ struct ClassLessonCard: View {
                             .foregroundStyle(next?.isOnNow == true ? Theme.success : Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: 0)
+                    AdaptiveSpacer()
                     Image(systemName: "chevron.right")
                         .appFont(12, weight: .bold)
                         .foregroundStyle(Theme.textLabel)
@@ -54,7 +56,8 @@ struct ClassLessonCard: View {
             .accessibilityHint("Opens the class page")
 
             if liveQuizOn || telegram.title != nil {
-                HStack(spacing: 10) {
+                // Two buttons side by side; one above the other once their labels need the width.
+                AdaptiveStack(spacing: 10) {
                     if liveQuizOn {
                         // No join by room id exists: the join screen lists the rooms and takes the code.
                         NavigationLink(value: AppLink.liveQuiz(sessionId: nil)) {

@@ -34,7 +34,8 @@ struct TodayHero: View {
     }
 
     var body: some View {
-        HStack(spacing: 18) {
+        // The ring beside the week's words; above them at the accessibility sizes.
+        AdaptiveStack(spacing: 18) {
             ZStack {
                 Circle().stroke(tone.opacity(0.14), lineWidth: 11)
                 Circle()
@@ -49,6 +50,11 @@ struct TodayHero: View {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
                         .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
                         .contentTransition(.numericText())
+                        // A fixed ring: "12/12" at a large text size shrinks to fit inside the
+                        // stroke rather than run over it.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .padding(.horizontal, 11)
                 }
             }
             .frame(width: 88, height: 88)
@@ -73,7 +79,7 @@ struct TodayHero: View {
                     .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
-            Spacer(minLength: 0)
+            AdaptiveSpacer()
         }
         .cardStyle(padding: 18)
         .onAppear { draw(progress.fraction) }
@@ -165,7 +171,7 @@ struct FreshResultCard: View {
                     }
                 }
             }
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 Button("See your report", action: onOpen)
                     .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 Button("Later", action: onLater)

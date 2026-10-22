@@ -24,6 +24,10 @@ extension AppTab {
 }
 
 /// The floating capsule: a sliding pill under the open tab, a bounce on the tapped icon.
+///
+/// Its text stops growing at `xxxLarge`: five labels share a phone's width and a capsule that
+/// follows the accessibility sizes would be wider than the phone. Past that the system's large
+/// content viewer names the tab a student is pressing, as it does for its own tab bar.
 struct FloatingTabBar: View {
     @Binding var selection: AppTab
     let onReselect: (AppTab) -> Void
@@ -69,11 +73,13 @@ struct FloatingTabBar: View {
                 }
                 .buttonStyle(PressBounce())
                 .accessibilityLabel(tab.title)
+                .accessibilityShowsLargeContentViewer { Label(tab.title, systemImage: tab.icon) }
                 .accessibilityAddTraits(selection == tab ? .isSelected : [])
                 // The open tab's own tap is "back to the top" (`onReselect`); the others open.
                 .accessibilityHint(selection == tab ? "Double-tap to go back to the top" : "")
             }
         }
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(6)
         .background(.ultraThinMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.13), radius: 18, y: 6)

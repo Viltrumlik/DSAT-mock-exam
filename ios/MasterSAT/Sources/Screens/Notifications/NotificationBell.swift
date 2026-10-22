@@ -55,9 +55,14 @@ struct NotificationBell: View {
                     }
                 }
                 .contentShape(Circle())
+                // Header chrome: the bell is a fixed 42-pt disc, so its glyph and badge stop at
+                // `xxxLarge` (the large content viewer shows it bigger while it is pressed). Set
+                // on the label, not the button: the inbox sheet below is a page and keeps growing.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(NotificationBadge.accessibilityLabel(for: count))
+        .accessibilityShowsLargeContentViewer { Label(NotificationBadge.accessibilityLabel(for: count), systemImage: "bell") }
         .sheet(isPresented: $showingInbox, onDismiss: {
             if let link = chosenLink {
                 chosenLink = nil
