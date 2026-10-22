@@ -619,12 +619,15 @@ struct HomeworkDetailView: View {
         withAnimation(Motion.focus) { staged.append(file) }
         guard file.mimeType.hasPrefix("image/") else { return }
         // Decoded and shrunk off the main thread: a camera photo is twelve megapixels. Until it is
-        // ready the row shows a photo glyph; the picture fades in over it.
+        // ready the row shows a photo glyph; the picture fades in over it. The thumbnail keeps the
+        // photo's shape — `byPreparingThumbnail` returns exactly the size asked for, so a square
+        // request squashed a portrait screenshot — and the tile crops it to its square.
         let token = file.token
         let data = file.data
         Task {
-            let small = await Task.detached(priority: .userInitiated) {
-                await UIImage(data: data)?.byPreparingThumbnail(ofSize: CGSize(width: 176, height: 176))
+            let small = await Task.detached(priority: .userInitiated) { () -> UIImage? in
+                guard let image = UIImage(data: data), let size = image.size.fillingSquare(of: 176) else { return nil }
+                return await image.byPreparingThumbnail(ofSize: size)
             }.value
             guard let small, staged.contains(where: { $0.token == token }) else { return }
             withAnimation(Motion.focus) { thumbnails[token] = small }
@@ -1136,6 +1139,18 @@ struct StagedFileRow: View {
         .frame(width: 44, height: 44)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .accessibilityHidden(true)
+    }
+}
+
+private extension CGSize {
+    /// This size scaled, shape kept, until its shorter side is `side` — the smallest picture that
+    /// still fills a `side` square once cropped (aspect fill). Never scaled up: a small picture
+    /// keeps its own size. Nil for a size with no area.
+    func fillingSquare(of side: CGFloat) -> CGSize? {
+        let shorter = min(width, height)
+        guard shorter > 0 else { return nil }
+        let scale = min(1, side / shorter)
+        return CGSize(width: (width * scale).rounded(), height: (height * scale).rounded())
     }
 }
 
