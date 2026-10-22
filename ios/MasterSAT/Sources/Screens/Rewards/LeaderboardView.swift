@@ -213,7 +213,9 @@ struct LeaderboardView: View {
             var piece = AttributedString(part.label)
             if part.isActive {
                 piece.foregroundColor = .primary
-                piece.font = .system(size: 13, weight: .bold)
+                // The line is footnote-sized (13 pt) and grows with it; a fixed 13 would shrink
+                // the active parts against the rest once the text is set larger.
+                piece.font = .footnote.weight(.bold)
             }
             text += piece
         }

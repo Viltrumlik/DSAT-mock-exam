@@ -385,10 +385,9 @@ private struct LiveQuizQuestionPanel: View {
                     .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
             }
             // A single word is the thing to read at arm's length; a definition is a sentence.
+            let isWord = question.form == "word_to_definition"
             Text(question.prompt)
-                .font(question.form == "word_to_definition"
-                      ? .system(size: 30, weight: .heavy)
-                      : .system(size: 20, weight: .bold))
+                .appFont(isWord ? 30 : 20, weight: isWord ? .heavy : .bold)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .cardStyle(padding: 18)
