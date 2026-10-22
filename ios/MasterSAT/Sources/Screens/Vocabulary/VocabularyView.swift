@@ -396,11 +396,11 @@ struct VocabularyView: View {
             VStack(spacing: 14) {
                 HStack {
                     Text("Sets you built")
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                     Spacer()
                     Button { isBuilding = true } label: {
                         Label("New set", systemImage: "plus")
-                            .font(.system(size: 13, weight: .heavy))
+                            .appFont(13, weight: .heavy)
                             .padding(.vertical, 8)
                             .padding(.leading, 12)
                             .contentShape(Rectangle())
@@ -425,7 +425,7 @@ struct VocabularyView: View {
                     .overlay(alignment: .topTrailing) {
                         Button { pendingDelete = set } label: {
                             Image(systemName: "trash")
-                                .font(.system(size: 14, weight: .semibold))
+                                .appFont(14, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(width: 36, height: 36)
                                 .contentShape(Rectangle())
@@ -557,7 +557,7 @@ struct VocabHomeworkGroupCard: View {
                 )
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.assignmentTitle)
-                        .font(.system(size: 17, weight: .heavy))
+                        .appFont(17, weight: .heavy)
                         .lineLimit(2)
                     FlowLayout(spacing: 6) {
                         if let name = group.classroomName, !name.isEmpty {
@@ -619,9 +619,9 @@ struct VocabHomeworkGroupCard: View {
 
     private func classroomChip(_ name: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "person.2.fill").font(.system(size: 10, weight: .bold))
+            Image(systemName: "person.2.fill").appFont(10, weight: .bold)
                 .accessibilityHidden(true)
-            Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            Text(name).appFont(12, weight: .semibold).lineLimit(1)
         }
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 10)

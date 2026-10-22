@@ -46,13 +46,13 @@ struct HomeworkRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(assignment.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
                     Text(StatusLabel.homework(assignment.workflowStatus))
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(StatusLabel.color(assignment.workflowStatus))
 
                     if let due = DueLabel.text(assignment.dueAt, handedIn: ["submitted", "graded", "reviewed"].contains((assignment.workflowStatus ?? "").lowercased())) {
@@ -60,20 +60,20 @@ struct HomeworkRow: View {
                         // States a fact. Even a passed deadline is phrased as information,
                         // never as an accusation.
                         Text(due.text)
-                            .font(.system(size: 12, weight: .semibold))
+                            .appFont(12, weight: .semibold)
                             .foregroundStyle(due.late ? Theme.warning : Theme.textSecondary)
                     }
                 }
 
                 if !contents.isEmpty {
                     Text(contents.joined(separator: " · "))
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(11, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                 }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .foregroundStyle(Theme.textLabel)
                 .accessibilityHidden(true)
         }

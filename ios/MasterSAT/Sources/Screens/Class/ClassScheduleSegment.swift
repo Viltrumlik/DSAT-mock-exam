@@ -34,7 +34,7 @@ struct ClassScheduleSegment: View {
                 }
             if failed {
                 Label("The calendar didn't load just now. Pull down to try again.", systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             SelectedDayCard(dayKey: selectedDay, events: month.byDate[selectedDay ?? ""] ?? [], onOpen: open)

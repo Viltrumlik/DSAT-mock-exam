@@ -46,13 +46,13 @@ struct RoadmapLessonSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(title)
-                .font(.system(size: 19, weight: .heavy, design: .rounded))
+                .appFont(19, weight: .heavy, design: .rounded)
                 .fixedSize(horizontal: false, vertical: true)
 
             FlowLayout(spacing: 6) {
                 ForEach(Array(tags.enumerated()), id: \.offset) { _, tag in
                     Text(tag)
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -69,7 +69,7 @@ struct RoadmapLessonSheet: View {
                     }
                     Text(action.label)
                 }
-                .font(.system(size: 16, weight: .heavy, design: .rounded))
+                .appFont(16, weight: .heavy, design: .rounded)
                 .foregroundStyle(buttonText)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
@@ -83,9 +83,9 @@ struct RoadmapLessonSheet: View {
             if let openError {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("That didn’t open")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                     Text(openError)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -94,7 +94,7 @@ struct RoadmapLessonSheet: View {
 
             if let readAgain = action.readAgainDeliveryId {
                 Button("Read it again") { onPush(.reading(deliveryId: readAgain)) }
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .appFont(13, weight: .heavy, design: .rounded)
                     .foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity)
                     .disabled(isOpening)

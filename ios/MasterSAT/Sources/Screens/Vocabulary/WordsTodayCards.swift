@@ -46,7 +46,7 @@ struct ReviewTodayCard: View {
         case .loading:
             VStack(alignment: .leading, spacing: 10) {
                 Text(verbatim: "000 words still to master")
-                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .appFont(22, weight: .heavy, design: .rounded)
                     .redacted(reason: .placeholder)
                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                     .fill(Theme.surface2)
@@ -110,9 +110,9 @@ struct ReviewTodayCard: View {
     private func headline(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .appFont(20, weight: .heavy, design: .rounded)
             Text(detail)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -124,15 +124,15 @@ struct ReviewTodayCard: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(ScoreText.string(review.wordsToMaster))
-                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .appFont(34, weight: .black, design: .rounded)
                         .contentTransition(reduceMotion ? .identity : .numericText(value: Double(review.wordsToMaster)))
                     Text(review.wordsToMaster == 1 ? "word still to master" : "words still to master")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 if review.wordsMastered > 0 {
                     Text(verbatim: "\(ScoreText.string(review.wordsMastered)) mastered so far")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                 }
             }
@@ -144,10 +144,10 @@ struct ReviewTodayCard: View {
         VStack(alignment: .leading, spacing: 3) {
             Overline("Next up")
             Text(title)
-                .font(.system(size: 16, weight: .heavy))
+                .appFont(16, weight: .heavy)
                 .lineLimit(2)
             Text(detail)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -171,7 +171,7 @@ struct ReviewTodayCard: View {
                 if starting {
                     ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "play.fill").font(.system(size: 13, weight: .bold))
+                    Image(systemName: "play.fill").appFont(13, weight: .bold)
                 }
                 Text(starting ? "Opening…" : "Start")
             }
@@ -185,7 +185,7 @@ struct ReviewTodayCard: View {
     @ViewBuilder private var noteLine: some View {
         if let note {
             Text(note)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -217,7 +217,7 @@ struct WordSearchField: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .font(.system(size: 15, weight: .medium))
+        .appFont(15, weight: .medium)
         .padding(.leading, 14)
         .padding(.trailing, query.isEmpty ? 14 : 0)
         .frame(minHeight: 44)

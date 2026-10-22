@@ -73,7 +73,7 @@ struct SpeedView: View {
             ZStack {
                 Circle().fill(Theme.amberSoft).frame(width: 220, height: 220)
                 Text("\(max(1, tick))")
-                    .font(.system(size: 108, weight: .bold, design: .rounded))
+                    .appFont(108, weight: .bold, design: .rounded)
                     .monospacedDigit()
                     .foregroundStyle(Theme.amber)
                     // Re-mounted per tick, so each number comes in — 3 → 2 → 1 — without
@@ -85,9 +85,9 @@ struct SpeedView: View {
 
             VStack(spacing: 6) {
                 Text("\(VocabGames.speedRoundSeconds) seconds. Pick the right meaning.")
-                    .font(.system(size: 17, weight: .bold))
+                    .appFont(17, weight: .bold)
                 Text("Answer as many as you can.")
-                    .font(.system(size: 14))
+                    .appFont(14)
                     .foregroundStyle(Theme.textSecondary)
             }
             .multilineTextAlignment(.center)
@@ -103,7 +103,7 @@ struct SpeedView: View {
                 VStack(spacing: 12) {
                     Overline("Which meaning fits?")
                     Text(prompt.word)
-                        .font(.system(size: 46, weight: .bold, design: .rounded))
+                        .appFont(46, weight: .bold, design: .rounded)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.5)
                         .lineLimit(2)
@@ -149,14 +149,14 @@ struct SpeedView: View {
                         } label: {
                             HStack(alignment: .top, spacing: 12) {
                                 Text("\(position + 1)")
-                                    .font(.system(size: 15, weight: .bold))
+                                    .appFont(15, weight: .bold)
                                     .frame(width: 32, height: 32)
                                     .background(Circle().fill(Theme.surface2))
                                     .foregroundStyle(Theme.textSecondary)
                                 Text(option.text)
                                     // Big type: this is the thing being read under time
                                     // pressure, on a phone, possibly on a bus.
-                                    .font(.system(size: 19, weight: .semibold))
+                                    .appFont(19, weight: .semibold)
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)

@@ -61,7 +61,7 @@ struct VocabSectionView: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         Image(systemName: VocabPalette.glyph(sectionId: sectionId))
-                            .font(.system(size: 18, weight: .semibold))
+                            .appFont(18, weight: .semibold)
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
@@ -74,7 +74,7 @@ struct VocabSectionView: View {
                     }
                     HStack(alignment: .center, spacing: 2) {
                         Text(detail.title)
-                            .font(.system(size: 26, weight: .heavy))
+                            .appFont(26, weight: .heavy)
                             .tracking(-0.6)
                             .fixedSize(horizontal: false, vertical: true)
                         VocabExplainButton(
@@ -84,7 +84,7 @@ struct VocabSectionView: View {
                     }
                     if let description = detail.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 13))
+                            .appFont(13)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -143,17 +143,17 @@ struct VocabSectionView: View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(label.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .tracking(1.0)
                     .foregroundStyle(Theme.textSecondary)
                 Text(ScoreText.string(value))
-                    .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                    .appFont(26, weight: .heavy).monospacedDigit()
                     .tracking(-0.5)
                     .foregroundStyle(ink)
             }
             Spacer(minLength: 0)
             Text(detail)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.trailing)
         }
@@ -162,7 +162,7 @@ struct VocabSectionView: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.background))
         .overlay(alignment: .bottomTrailing) {
             Image(systemName: icon)
-                .font(.system(size: 52, weight: .light))
+                .appFont(52, weight: .light)
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 8, y: 10)
                 .allowsHitTesting(false)

@@ -50,11 +50,11 @@ struct FloatingTabBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         Image(systemName: tab.icon)
-                            .font(.system(size: 19, weight: .semibold))
+                            .appFont(19, weight: .semibold)
                             .symbolEffect(.bounce.up, value: taps[tab, default: 0])
                             .accessibilityHidden(true)
                         Text(tab.title)
-                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .appFont(10, weight: .bold, design: .rounded)
                     }
                     .foregroundStyle(selection == tab ? Theme.accent : Theme.textSecondary)
                     .frame(maxWidth: .infinity)

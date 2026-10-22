@@ -207,7 +207,7 @@ struct ClassView: View {
 
             Button { joining = true } label: {
                 Label("Join another class", systemImage: "person.badge.plus")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.accent)
                     .frame(maxWidth: .infinity)
             }

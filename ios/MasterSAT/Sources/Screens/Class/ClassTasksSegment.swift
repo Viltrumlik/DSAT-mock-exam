@@ -182,24 +182,24 @@ struct AssessmentResultRow: View {
             IconTile(systemName: style.icon, tone: style.tone, size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 Text([entry.classroomName, style.label].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 0)
             if entry.state == .completed, entry.progress?.graded == true, let percent = entry.progress?.percent {
                 Text("\(percent)%")
-                    .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
+                    .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
                     .foregroundStyle(Theme.success)
             } else {
                 Chip(text: "Being marked", icon: "clock", tone: .neutral)
             }
             if opens {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
             }
         }
@@ -247,13 +247,13 @@ struct MidtermResultRow: View {
             IconTile(systemName: "calendar.badge.clock", tone: Theme.amber, size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(midterm.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 let subject = MidtermWording.subjectLabel(midterm.subject)
                 if !subject.isEmpty {
                     Text(subject)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -261,11 +261,11 @@ struct MidtermResultRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
+                        .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")
-                            .font(.system(size: 11, weight: .medium))
+                            .appFont(11, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -274,7 +274,7 @@ struct MidtermResultRow: View {
             }
             if opens {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
             }
         }

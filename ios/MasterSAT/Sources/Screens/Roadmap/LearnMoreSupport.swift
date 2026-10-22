@@ -69,10 +69,10 @@ struct LearnMoreSectionHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 20, weight: .heavy))
+                .appFont(20, weight: .heavy)
                 .tracking(-0.3)
             Text(description)
-                .font(.system(size: 13.5, weight: .medium))
+                .appFont(13.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

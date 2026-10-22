@@ -208,7 +208,7 @@ struct TodayView: View {
                 DotHeading(title: "Up next", count: hasLoaded && !homeworkFailed ? plan.homework.count + plan.lessons.count : nil)
                 if next.more > 0 {
                     Button("See all") { router.showClassToDo() }
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.accent)
                 }
             }

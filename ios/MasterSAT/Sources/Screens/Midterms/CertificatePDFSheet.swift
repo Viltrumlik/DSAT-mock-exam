@@ -34,11 +34,11 @@ struct CertificatePDFSheet: View {
                 } else if let failure {
                     VStack(spacing: 14) {
                         Image(systemName: "doc.badge.clock")
-                            .font(.system(size: 30))
+                            .appFont(30)
                             .foregroundStyle(Theme.warning)
                             .accessibilityHidden(true)
                         Text(failure.message)
-                            .font(.system(size: 15, weight: .semibold))
+                            .appFont(15, weight: .semibold)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                         if failure.retryable {
@@ -52,7 +52,7 @@ struct CertificatePDFSheet: View {
                     VStack(spacing: 12) {
                         ProgressView().controlSize(.large)
                         Text("Preparing…")
-                            .font(.system(size: 15, weight: .semibold))
+                            .appFont(15, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -44,7 +44,7 @@ struct SatChecklistSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     Text("Send these six things to the registrar on Telegram.")
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(15, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
 
                     VStack(alignment: .leading, spacing: 22) {
@@ -103,10 +103,10 @@ struct SatChecklistSheet: View {
                             dismiss()
                         } label: {
                             HStack(spacing: 8) {
-                                Image(systemName: "paperplane.fill").font(.system(size: 14, weight: .bold))
+                                Image(systemName: "paperplane.fill").appFont(14, weight: .bold)
                                     .accessibilityHidden(true)
                                 Text(verbatim: "Message @\(Self.telegramHandle) on Telegram")
-                                Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .bold)).opacity(0.8)
+                                Image(systemName: "arrow.up.right").appFont(12, weight: .bold).opacity(0.8)
                                     .accessibilityHidden(true)
                             }
                         }
@@ -155,7 +155,7 @@ struct SatChecklistSheet: View {
                         .frame(width: 54, height: 54)
                         .overlay(
                             Image(systemName: "play.fill")
-                                .font(.system(size: 21))
+                                .appFont(21)
                                 .foregroundStyle(.black)
                                 .offset(x: 2)
                                 .accessibilityHidden(true)
@@ -167,16 +167,16 @@ struct SatChecklistSheet: View {
 
                 HStack(spacing: 8) {
                     Image(systemName: "play.rectangle.fill")
-                        .font(.system(size: 14))
+                        .appFont(14)
                         .foregroundStyle(Theme.danger)
                         .accessibilityHidden(true)
                     Text(Self.accountVideoTitle)
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityHidden(true)
                 }
@@ -240,7 +240,7 @@ struct SatChecklistSheet: View {
 private extension Text {
     func checklistBody() -> some View {
         self
-            .font(.system(size: 14, weight: .medium))
+            .appFont(14, weight: .medium)
             .foregroundStyle(Theme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -255,7 +255,7 @@ private struct ChecklistStep<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Text(verbatim: String(number))
-                .font(.system(size: 13, weight: .heavy))
+                .appFont(13, weight: .heavy)
                 .foregroundStyle(Theme.accent)
                 .frame(width: 28, height: 28)
                 .background(
@@ -264,7 +264,7 @@ private struct ChecklistStep<Content: View>: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 9) {
                 Text(title)
-                    .font(.system(size: 15, weight: .heavy))
+                    .appFont(15, weight: .heavy)
                     .foregroundStyle(Color.primary)
                     .padding(.top, 4)
                     .fixedSize(horizontal: false, vertical: true)
@@ -286,12 +286,12 @@ private struct ChecklistCallout<Content: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(tone)
                 .padding(.top, 1)
                 .accessibilityHidden(true)
             content()
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Color.primary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -311,11 +311,11 @@ private struct ChecklistChip: View {
     var body: some View {
         HStack(spacing: 5) {
             if let icon {
-                Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                Image(systemName: icon).appFont(11, weight: .bold)
                     .accessibilityHidden(true)
             }
             Text(text)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(Theme.accent)
@@ -339,11 +339,11 @@ private struct ChecklistCopyRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .tracking(0.6)
                     .foregroundStyle(Theme.textSecondary)
                 Text(verbatim: value)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .appFont(15, weight: .bold, design: .monospaced)
                     .foregroundStyle(Color.primary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -353,10 +353,10 @@ private struct ChecklistCopyRow: View {
             Button(action: copy) {
                 HStack(spacing: 5) {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
                         .accessibilityHidden(true)
                     Text(copied ? "Copied" : "Copy")
-                        .font(.system(size: 12.5, weight: .bold))
+                        .appFont(12.5, weight: .bold)
                 }
                 .foregroundStyle(copied ? Theme.success : Theme.accent)
                 .padding(.horizontal, 12)

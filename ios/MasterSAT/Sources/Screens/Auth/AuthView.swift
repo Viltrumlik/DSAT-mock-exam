@@ -101,7 +101,7 @@ struct AuthView: View {
 
     private var copyright: some View {
         Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-            .font(.system(size: 12, weight: .medium))
+            .appFont(12, weight: .medium)
             .foregroundStyle(Theme.textLabel)
     }
 
@@ -151,7 +151,7 @@ private struct SignInForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Welcome back")
-                .font(.system(size: 30, weight: .heavy))
+                .appFont(30, weight: .heavy)
                 .tracking(-0.8)
                 .padding(.bottom, 2)
 
@@ -163,7 +163,7 @@ private struct SignInForm: View {
                     if retryable {
                         Button(action: submit) {
                             Label("Retry", systemImage: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .bold))
+                                .appFont(12, weight: .bold)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Theme.accent)
@@ -200,12 +200,12 @@ private struct SignInForm: View {
             HStack {
                 Spacer()
                 Button("Forgot password?") { forgotOpen.toggle() }
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             if forgotOpen {
                 Text("Ask your teacher or the MasterSAT center to reset your password.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -226,13 +226,13 @@ private struct SignInForm: View {
 
             HStack(spacing: 5) {
                 Text("Don't have an account?")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                 Button("Register now") {
                     attempt?.cancel()
                     onRegister()
                 }
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity)
@@ -299,10 +299,10 @@ private struct RegisterForm: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Create your account")
-                    .font(.system(size: 30, weight: .heavy))
+                    .appFont(30, weight: .heavy)
                     .tracking(-0.8)
                 Text("Join the MasterSAT program.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.bottom, 2)
@@ -311,7 +311,7 @@ private struct RegisterForm: View {
                 AuthAlert(tone: .danger, message: error) {
                     if duplicateName {
                         Button("Sign in instead", action: onSignIn)
-                            .font(.system(size: 12, weight: .bold))
+                            .appFont(12, weight: .bold)
                             .foregroundStyle(Theme.accent)
                     }
                 }
@@ -381,10 +381,10 @@ private struct RegisterForm: View {
 
             HStack(spacing: 5) {
                 Text("Already have an account?")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                 Button("Sign in", action: onSignIn)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity)

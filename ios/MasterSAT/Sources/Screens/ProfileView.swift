@@ -261,9 +261,9 @@ private struct ProfileHeroCard: View {
                     )
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
-                        Image(systemName: "person.crop.circle").font(.system(size: 11, weight: .bold))
+                        Image(systemName: "person.crop.circle").appFont(11, weight: .bold)
                             .accessibilityHidden(true)
-                        Text(verbatim: "Profile · \(identity.role)").font(.system(size: 12, weight: .heavy))
+                        Text(verbatim: "Profile · \(identity.role)").appFont(12, weight: .heavy)
                             .accessibilityLabel("Profile, \(identity.role)")
                     }
                     .foregroundStyle(Theme.accent)
@@ -272,14 +272,14 @@ private struct ProfileHeroCard: View {
                     .background(Capsule().fill(Theme.accentSoft))
 
                     Text(verbatim: identity.name)
-                        .font(.system(size: 25, weight: .heavy))
+                        .appFont(25, weight: .heavy)
                         .tracking(-0.6)
                         .foregroundStyle(.primary)
                         .lineLimit(2)
                         .minimumScaleFactor(0.8)
                     if !identity.username.isEmpty {
                         Text(verbatim: "@\(identity.username)")
-                            .font(.system(size: 14.5, weight: .medium))
+                            .appFont(14.5, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
@@ -345,7 +345,7 @@ private struct ProfileHeroCard: View {
     private var closeButton: some View {
         Button(action: onClose) {
             Image(systemName: "xmark")
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 32, height: 32)
                 .background(Theme.surface2, in: Circle())
@@ -368,11 +368,11 @@ struct DetailRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(label)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             Text(value)
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 11)

@@ -37,9 +37,9 @@ struct SurveysWaitingCard: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(featured.title)
-                    .font(.system(size: 15, weight: .heavy))
+                    .appFont(15, weight: .heavy)
                 Text(SurveyListRow.meta(featured))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
 
@@ -48,21 +48,21 @@ struct SurveysWaitingCard: View {
             if featured.pointsAward > 0 {
                 HStack(spacing: 6) {
                     Image(systemName: "star.fill")
-                        .font(.system(size: 12))
+                        .appFont(12)
                         .foregroundStyle(Theme.amber)
                         .accessibilityHidden(true)
                     Text("Finishing it earns you \(ScoreText.string(featured.pointsAward)) points.")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                 }
             } else {
                 Text("It only takes a minute.")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
 
             if others > 0 {
                 Text("And \(ScoreText.string(others)) more \(others == 1 ? "survey is" : "surveys are") waiting after this one.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
 

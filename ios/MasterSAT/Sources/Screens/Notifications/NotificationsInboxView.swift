@@ -116,7 +116,7 @@ struct NotificationsInboxView: View {
                 filter.category == nil ? "Mark all as read" : "Mark this section as read",
                 systemImage: "checkmark"
             )
-            .font(.system(size: 13, weight: .heavy))
+            .appFont(13, weight: .heavy)
             .foregroundStyle(Theme.accent)
         }
         .buttonStyle(.plain)
@@ -167,14 +167,14 @@ struct NotificationsInboxView: View {
     private var staleNotice: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.warning)
                 .accessibilityHidden(true)
             Text("Notifications aren't loading.")
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
             Spacer(minLength: 8)
             Button("Try again") { Task { await load() } }
-                .font(.system(size: 13, weight: .heavy))
+                .appFont(13, weight: .heavy)
                 .foregroundStyle(Theme.accent)
                 .buttonStyle(.plain)
         }
@@ -288,23 +288,23 @@ private struct NotificationRow: View {
                 .padding(.top, 6)
             VStack(alignment: .leading, spacing: 3) {
                 Text(notification.title)
-                    .font(.system(size: 15, weight: notification.isRead ? .semibold : .heavy))
+                    .appFont(15, weight: notification.isRead ? .semibold : .heavy)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 if !notification.body.isEmpty {
                     Text(notification.body)
-                        .font(.system(size: 13, weight: notification.isRead ? .medium : .bold))
+                        .appFont(13, weight: notification.isRead ? .medium : .bold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
                 Text(meta)
-                    .font(.system(size: 11, weight: notification.isRead ? .semibold : .heavy))
+                    .appFont(11, weight: notification.isRead ? .semibold : .heavy)
                     .foregroundStyle(Theme.textLabel)
             }
             Spacer(minLength: 0)
             if notification.link != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                     .padding(.top, 4)
                     .accessibilityHidden(true)

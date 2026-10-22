@@ -55,7 +55,7 @@ struct AppHeader: View {
 
     private func line(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold))
+            .appFont(13, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
             .lineLimit(1)
             .accessibilityLabel(subtitleLabel ?? text)
@@ -92,7 +92,7 @@ struct StrikeChip: View {
                         }
                     }
                 Text(String(streak))
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .appFont(13, weight: .heavy, design: .rounded)
                     .foregroundStyle(Theme.strike)
                     .contentTransition(.numericText(value: Double(streak)))
             }
@@ -151,10 +151,10 @@ struct XPPill: View {
             // XP still in the air is not on the pill yet: it rolls up when the flight lands.
             let shown = max(0, xp - celebrations.heldXP)
             HStack(spacing: 4) {
-                Image(systemName: "bolt.fill").font(.system(size: 11, weight: .black))
+                Image(systemName: "bolt.fill").appFont(11, weight: .black)
                 Text("\(shown) XP").contentTransition(.numericText(value: Double(shown)))
             }
-            .font(.system(size: 13, weight: .heavy, design: .rounded))
+            .appFont(13, weight: .heavy, design: .rounded)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
@@ -212,7 +212,7 @@ struct AvatarButton: View {
     var body: some View {
         Button { router.openMe() } label: {
             Text(initials)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .appFont(13, weight: .heavy, design: .rounded)
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Theme.accent, in: Circle())

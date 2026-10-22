@@ -98,14 +98,14 @@ struct VocabSetView: View {
                     .frame(width: 56, height: 56)
                     .overlay(
                         Image(systemName: glyph)
-                            .font(.system(size: 25, weight: .semibold))
+                            .appFont(25, weight: .semibold)
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 10) {
                     FlowLayout(spacing: 6) {
                         Text(detail.section?.title ?? "My set")
-                            .font(.system(size: 12, weight: .heavy))
+                            .appFont(12, weight: .heavy)
                             .foregroundStyle(tone.ink)
                             .lineLimit(1)
                             .padding(.horizontal, 11)
@@ -116,7 +116,7 @@ struct VocabSetView: View {
                         }
                     }
                     Text(detail.title)
-                        .font(.system(size: 28, weight: .heavy))
+                        .appFont(28, weight: .heavy)
                         .tracking(-0.7)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -126,7 +126,7 @@ struct VocabSetView: View {
             if detail.isCustom {
                 Button { isEditing = true } label: {
                     Label("Edit words", systemImage: "pencil")
-                        .font(.system(size: 13, weight: .heavy))
+                        .appFont(13, weight: .heavy)
                         .foregroundStyle(.primary)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 8)
@@ -151,12 +151,12 @@ struct VocabSetView: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("MASTERY")
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
                         .tracking(1.0)
                         .foregroundStyle(Theme.textSecondary)
                     Spacer()
                     Text("\(ScoreText.string(mastery.percent))%")
-                        .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                        .appFont(13, weight: .heavy).monospacedDigit()
                         .foregroundStyle(tone.ink)
                 }
                 VocabMasteryBar(mastery: mastery, legend: true)
@@ -177,13 +177,13 @@ struct VocabSetView: View {
     private func factTile(_ label: String, icon: String, value: String, ink: Color = .primary) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(.system(size: 10.5, weight: .bold))
+                .appFont(10.5, weight: .bold)
                 .tracking(0.9)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(.system(size: 24, weight: .heavy).monospacedDigit())
+                .appFont(24, weight: .heavy).monospacedDigit()
                 .tracking(-0.5)
                 .foregroundStyle(ink)
         }
@@ -196,7 +196,7 @@ struct VocabSetView: View {
         .overlay(alignment: .bottomTrailing) {
             // The glyph is carved into the block rather than printed on it.
             Image(systemName: icon)
-                .font(.system(size: 44, weight: .light))
+                .appFont(44, weight: .light)
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 6, y: 8)
                 .allowsHitTesting(false)
@@ -216,21 +216,21 @@ struct VocabSetView: View {
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Study this set")
-                    .font(.system(size: 20, weight: .heavy))
+                    .appFont(20, weight: .heavy)
                     .tracking(-0.3)
                 Text("Play a game with every word right and it is mastered — a quarter of the bar each. All four, and the set is done.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if empty {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("Nothing to study yet", systemImage: "exclamationmark.triangle.fill")
-                        .font(.system(size: 14, weight: .heavy))
+                        .appFont(14, weight: .heavy)
                         .foregroundStyle(Theme.warning)
                     Text("This set has no words, so the study modes stay locked."
                          + (detail.isCustom ? " Add a few words and they will unlock straight away." : ""))
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -284,27 +284,27 @@ struct VocabModeCard: View {
                     .frame(width: 48, height: 48)
                     .overlay(
                         Image(systemName: VocabPalette.gameGlyph(mode.kitMode))
-                            .font(.system(size: 21, weight: .semibold))
+                            .appFont(21, weight: .semibold)
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(VocabPalette.gameName(mode.kitMode))
-                            .font(.system(size: 17, weight: .heavy))
+                            .appFont(17, weight: .heavy)
                             .foregroundStyle(.primary)
                         Spacer(minLength: 0)
                         score
                     }
                     Text(VocabPalette.gameBlurb(mode.kitMode))
-                        .font(.system(size: 13))
+                        .appFont(13)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if isEnabled {
                         HStack(spacing: 5) {
-                            Text(mastered ? "Play again" : "Start").font(.system(size: 13, weight: .bold))
-                            Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                            Text(mastered ? "Play again" : "Start").appFont(13, weight: .bold)
+                            Image(systemName: "arrow.right").appFont(11, weight: .bold)
                                 .accessibilityHidden(true)
                         }
                         .foregroundStyle(tone.ink)
@@ -343,8 +343,8 @@ struct VocabModeCard: View {
 
     private var score: some View {
         HStack(spacing: 4) {
-            if mastered { Image(systemName: "checkmark.circle.fill").font(.system(size: 11, weight: .bold)) }
-            Text(mastered ? "1/1" : "0/1").font(.system(size: 12, weight: .heavy).monospacedDigit())
+            if mastered { Image(systemName: "checkmark.circle.fill").appFont(11, weight: .bold) }
+            Text(mastered ? "1/1" : "0/1").appFont(12, weight: .heavy).monospacedDigit()
         }
         // Unearned reads in the game's own tint, not a grey badge.
         .foregroundStyle(mastered ? VocabPalette.mastered.ink : tone.ink)
@@ -373,16 +373,16 @@ struct VocabWordList: View {
                     .frame(width: 44, height: 44)
                     .overlay(
                         Image(systemName: "textformat")
-                            .font(.system(size: 18, weight: .semibold))
+                            .appFont(18, weight: .semibold)
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Words").font(.system(size: 20, weight: .heavy)).tracking(-0.3)
+                    Text("Words").appFont(20, weight: .heavy).tracking(-0.3)
                     Text(filter == .all
                          ? "\(ScoreText.string(shown.count)) in this set"
                          : "\(ScoreText.string(shown.count)) of \(ScoreText.string(words.count)) shown")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
@@ -427,18 +427,18 @@ struct VocabWordRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(word.word)
-                        .font(.system(size: 18, weight: .heavy))
+                        .appFont(18, weight: .heavy)
                         .tracking(-0.2)
                     if let part = word.partOfSpeech, !part.isEmpty {
                         Overline(part)
                     }
                 }
                 Text(word.definition)
-                    .font(.system(size: 14.5))
+                    .appFont(14.5)
                     .fixedSize(horizontal: false, vertical: true)
                 if let example = word.example, !example.isEmpty {
                     Text(verbatim: "“\(example)”")
-                        .font(.system(size: 13.5).italic())
+                        .appFont(13.5).italic()
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 12)
@@ -453,7 +453,7 @@ struct VocabWordRow: View {
                             .padding(.vertical, 4)
                         ForEach(Array(word.synonyms.enumerated()), id: \.offset) { _, synonym in
                             Text(synonym)
-                                .font(.system(size: 12, weight: .semibold))
+                                .appFont(12, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 3)

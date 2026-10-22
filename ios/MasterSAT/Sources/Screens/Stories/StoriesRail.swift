@@ -75,13 +75,13 @@ struct StoriesRail: View {
     private var failure: some View {
         HStack(spacing: 5) {
             Text("Stories didn't load.")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Button {
                 Task { await load() }
             } label: {
                 Text("Try again")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .underline()
                     .foregroundStyle(Theme.accent)
             }
@@ -134,7 +134,7 @@ private struct StoryCircle: View {
                         .padding(3)
                 }
             Text(story.title)
-                .font(.system(size: 11, weight: .bold))
+                .appFont(11, weight: .bold)
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)

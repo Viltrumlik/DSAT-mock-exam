@@ -14,16 +14,16 @@ struct GoalSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 22) {
                 Text("Each section is 200–800.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
 
                 slider("Math score", value: $math)
                 slider("English score", value: $english)
 
                 HStack {
-                    Text("Overall").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                    Text("Overall").appFont(13, weight: .semibold).foregroundStyle(Theme.textSecondary)
                     Text(ScoreText.string(english + math))
-                        .font(.system(size: 18, weight: .heavy).monospacedDigit())
+                        .appFont(18, weight: .heavy).monospacedDigit()
                         .foregroundStyle(Theme.accent)
                     Spacer()
                 }
@@ -58,9 +58,9 @@ struct GoalSheet: View {
     private func slider(_ label: String, value: Binding<Int>) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Text(label).font(.system(size: 14, weight: .semibold))
+                Text(label).appFont(14, weight: .semibold)
                 Text(ScoreText.string(value.wrappedValue))
-                    .font(.system(size: 14, weight: .heavy).monospacedDigit())
+                    .appFont(14, weight: .heavy).monospacedDigit()
             }
             Slider(
                 value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0) }),

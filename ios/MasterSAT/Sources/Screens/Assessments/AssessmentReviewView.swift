@@ -215,11 +215,11 @@ struct AssessmentReviewView: View {
     private func teacherNote(_ feedback: TeacherFeedback) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("From your teacher", systemImage: "text.bubble.fill")
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
                 .foregroundStyle(Theme.warning)
-            Text(feedback.body).font(.system(size: 15))
+            Text(feedback.body).appFont(15)
             if let name = feedback.teacherName, !name.isEmpty {
-                Text(name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                Text(name).appFont(12, weight: .semibold).foregroundStyle(Theme.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -370,13 +370,13 @@ struct ScoreHero: View {
         VStack(spacing: 0) {
             if let classroom = review.meta?.classroomName?.nilIfBlank {
                 Text(classroom.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .tracking(1.6)
                     .foregroundStyle(.white.opacity(0.7))
                     .padding(.bottom, 6)
             }
             Text(title.uppercased())
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .tracking(1.2)
                 .foregroundStyle(.white.opacity(0.9))
                 .multilineTextAlignment(.center)
@@ -384,18 +384,18 @@ struct ScoreHero: View {
             if let result = review.result {
                 // The whole percent "Up from X%" below is weighed in, so the two never disagree at x.5.
                 RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)), suffix: "%")
-                    .font(.system(size: 56, weight: .black).monospacedDigit())
+                    .appFont(56, weight: .black).monospacedDigit()
                     .tracking(-2)
                     .foregroundStyle(.white)
                     .padding(.top, 12)
                 Text("\(ScoreText.string(result.correctCount)) of \(ScoreText.string(result.totalQuestions)) correct · \(ScoreText.string(result.scorePoints)) of \(ScoreText.string(result.maxPoints)) pts")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
                 if let improvedFrom {
                     Label("Up from \(ScoreText.wholePercent(improvedFrom))%", systemImage: "arrow.up.right")
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
@@ -406,7 +406,7 @@ struct ScoreHero: View {
                 // Submitted but not yet marked. Naming that beats an absent score, which
                 // reads as a zero.
                 Text("Grading in progress — check back shortly.")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
                     .padding(.top, 14)
@@ -445,10 +445,10 @@ struct ScoreHero: View {
     private func stat(_ value: Int, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(ScoreText.string(value))
-                .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                .appFont(26, weight: .heavy).monospacedDigit()
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 11, weight: .bold))
+                .appFont(11, weight: .bold)
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -525,7 +525,7 @@ struct ReviewQuestionCard: View {
                 if let explanation = question.explanation, !explanation.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Why this answer works", systemImage: "lightbulb.fill")
-                            .font(.system(size: 11, weight: .heavy))
+                            .appFont(11, weight: .heavy)
                             .tracking(1.2)
                             .foregroundStyle(Theme.accent)
                         RichText(text: explanation, serif: true)
@@ -559,17 +559,17 @@ struct ReviewQuestionCard: View {
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: outcome.icon)
-                .font(.system(size: 18))
+                .appFont(18)
                 .foregroundStyle(outcome.tone)
                 .accessibilityHidden(true)
             Text("Question \(ScoreText.string(index + 1))")
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
             Text("of \(ScoreText.string(total))")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             Text(outcome.label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(0.8)
                 .foregroundStyle(outcome.tone)
                 .padding(.horizontal, 10)
@@ -587,14 +587,14 @@ struct ReviewQuestionCard: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("YOUR ANSWER")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.9)
+                    .appFont(10, weight: .heavy).tracking(0.9)
                     .foregroundStyle(Theme.textSecondary)
                 if question.wasAnswered {
                     Text(question.studentAnswer.displayText)
-                        .font(.system(size: 18, weight: .bold))
+                        .appFont(18, weight: .bold)
                         .foregroundStyle(outcome == .correct ? Theme.success : Theme.danger)
                 } else {
-                    Text("Omitted").font(.system(size: 18, weight: .bold).italic())
+                    Text("Omitted").appFont(18, weight: .bold).italic()
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -613,10 +613,10 @@ struct ReviewQuestionCard: View {
             // with dark text in dark mode — never white on white.
             VStack(alignment: .leading, spacing: 6) {
                 Text("CORRECT ANSWER")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.9)
+                    .appFont(10, weight: .heavy).tracking(0.9)
                     .foregroundStyle(Theme.onInk.opacity(0.7))
                 Text(question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
-                    .font(.system(size: 18, weight: .bold))
+                    .appFont(18, weight: .bold)
                     .foregroundStyle(Theme.onInk)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -654,7 +654,7 @@ struct ReviewChoiceRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             Text(choice.id)
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -674,11 +674,11 @@ struct ReviewChoiceRow: View {
             // gets it in words — "Your answer", never a verdict on the student.
             if isCorrectAnswer {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16)).foregroundStyle(Theme.success)
+                    .appFont(16).foregroundStyle(Theme.success)
                     .accessibilityLabel("Correct answer")
             } else if isStudentAnswer {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16)).foregroundStyle(Theme.danger)
+                    .appFont(16).foregroundStyle(Theme.danger)
                     .accessibilityLabel("Your answer")
             }
         }

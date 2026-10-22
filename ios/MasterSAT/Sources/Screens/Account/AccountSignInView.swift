@@ -42,7 +42,7 @@ struct AccountSignInView: View {
                     telegramRow(profile)
                     passwordRow(profile)
                     Text("Forgot your password? Your learning center can set a new one for you.")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -202,11 +202,11 @@ struct AccountMethodRow<Status: View, Action: View, Expanded: View>: View {
                 IconTile(systemName: icon, tone: tone, size: 38)
                 BadgedHeading {
                     // Never wrapped: a name that is squeezed to make room for its badge reads "Emai" / "l".
-                    Text(title).font(.system(size: 15, weight: .heavy)).fixedSize()
+                    Text(title).appFont(15, weight: .heavy).fixedSize()
                     // One view even for a row with no badge, so the layout can count on three.
                     ZStack { status() }
                     Text(verbatim: detail)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
@@ -342,7 +342,7 @@ struct AccountPasswordForm: View {
 
             if let detail = errors["detail"] {
                 Text(detail)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -350,7 +350,7 @@ struct AccountPasswordForm: View {
             // Not the web's "You stay signed in here": for the app the server cannot tell this
             // phone from the others, so it is signed out with them.
             Text("Changing it signs you out on every device, this phone too. You'll sign in again with the new password.")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 

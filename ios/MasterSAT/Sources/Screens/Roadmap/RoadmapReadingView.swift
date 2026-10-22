@@ -59,7 +59,7 @@ struct RoadmapReadingView: View {
             dismiss()
         } label: {
             Label("Back to the roadmap", systemImage: "arrow.left")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
         }
         .buttonStyle(.plain)
@@ -136,9 +136,9 @@ struct RoadmapReadingView: View {
                     .foregroundStyle(Theme.danger)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("That didn’t save").font(.system(size: 14, weight: .bold))
+                    Text("That didn’t save").appFont(14, weight: .bold)
                     Text("Your place wasn’t recorded — try the button again.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -158,14 +158,14 @@ struct RoadmapReadingView: View {
         VStack(alignment: .leading, spacing: 12) {
             if reading.read {
                 Label("You’ve read this", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.success)
             } else if reading.requireReadConfirmation {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Finished reading?")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                     Text("Press the button and your homework for this lesson opens underneath.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -207,9 +207,9 @@ struct RoadmapReadingView: View {
 
                 if let homeworkError {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("That didn’t open").font(.system(size: 13, weight: .bold))
+                        Text("That didn’t open").appFont(13, weight: .bold)
                         Text(homeworkError)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -224,7 +224,7 @@ struct RoadmapReadingView: View {
                         ? "The homework for this lesson isn’t available right now."
                         : "No homework has been set for this lesson yet."
                 )
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             }
@@ -299,7 +299,7 @@ struct RoadmapSectionCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 if !section.heading.isEmpty {
                     Text(verbatim: section.heading)
-                        .font(.system(size: 17, weight: .heavy))
+                        .appFont(17, weight: .heavy)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                 }
@@ -327,7 +327,7 @@ struct RoadmapSectionCard: View {
         VStack(alignment: .leading, spacing: 12) {
             ForEach(Array(section.paragraphs.enumerated()), id: \.offset) { _, paragraph in
                 Text(verbatim: paragraph)
-                    .font(.system(size: 15.5))
+                    .appFont(15.5)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -355,11 +355,11 @@ struct RoadmapSectionImage: View {
                 case .failure:
                     VStack(spacing: 10) {
                         Image(systemName: "photo")
-                            .font(.system(size: 22))
+                            .appFont(22)
                             .foregroundStyle(Theme.textLabel)
                             .accessibilityHidden(true)
                         Text("The picture didn’t load.")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                         Button("Try again") { Task { await reload() } }
                             .buttonStyle(SecondaryButtonStyle())
@@ -381,7 +381,7 @@ struct RoadmapSectionImage: View {
 
             if !caption.isEmpty {
                 Text(verbatim: caption)
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -419,22 +419,22 @@ struct RoadmapSectionVideo: View {
                         .frame(width: 54, height: 54)
                         .overlay(
                             Image(systemName: "play.fill")
-                                .font(.system(size: 20))
+                                .appFont(20)
                                 .foregroundStyle(Theme.danger)
                                 .accessibilityHidden(true)
                         )
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Watch the lesson video")
-                            .font(.system(size: 16, weight: .bold))
+                            .appFont(16, weight: .bold)
                             .foregroundStyle(.primary)
                         Text(url.host ?? url.absoluteString)
-                            .font(.system(size: 12))
+                            .appFont(12)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 14))
+                        .appFont(14)
                         .foregroundStyle(Theme.textLabel)
                         .accessibilityHidden(true)
                 }

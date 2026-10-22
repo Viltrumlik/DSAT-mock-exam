@@ -97,13 +97,13 @@ struct RoadmapStage: View {
             Rectangle().fill(Theme.card.opacity(0.62))
             VStack(spacing: 6) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 24, weight: .semibold))
+                    .appFont(24, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
                 Text("Locked")
-                    .font(.system(size: 17, weight: .heavy, design: .rounded))
+                    .appFont(17, weight: .heavy, design: .rounded)
                 Text(message)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .appFont(13.5, weight: .bold)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
@@ -138,7 +138,7 @@ struct RoadmapStage: View {
             .accessibilityHidden(true)
 
             Text(levelLocked ? "Locked" : "Lessons are being prepared")
-                .font(.system(size: 19, weight: .heavy, design: .rounded))
+                .appFont(19, weight: .heavy, design: .rounded)
                 .multilineTextAlignment(.center)
                 .padding(.bottom, 6)
             Text(
@@ -146,7 +146,7 @@ struct RoadmapStage: View {
                     ? "Finish the level before it to open this one."
                     : "As soon as the first lesson is ready it appears here as a step on your path."
             )
-            .font(.system(size: 14, weight: .semibold))
+            .appFont(14, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
             .multilineTextAlignment(.center)
             .fixedSize(horizontal: false, vertical: true)
@@ -336,7 +336,7 @@ struct RoadmapStartBubble: View {
     var body: some View {
         VStack(spacing: 0) {
             Text("START")
-                .font(.system(size: 14.5, weight: .heavy, design: .rounded))
+                .appFont(14.5, weight: .heavy, design: .rounded)
                 .foregroundStyle(Theme.accent)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 7)

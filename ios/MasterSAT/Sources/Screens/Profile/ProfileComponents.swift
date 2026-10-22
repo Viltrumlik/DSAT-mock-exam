@@ -38,7 +38,7 @@ struct ProfileEyebrow: View {
 
     var body: some View {
         Text(verbatim: text.uppercased())
-            .font(.system(size: 10.5, weight: .heavy))
+            .appFont(10.5, weight: .heavy)
             .tracking(0.95)
             .foregroundStyle(tone)
     }
@@ -83,12 +83,12 @@ struct ProfilePanel<Actions: View, Content: View>: View {
             IconTile(systemName: icon, tone: tone, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .tracking(-0.2)
                     .foregroundStyle(.primary)
                 if let description {
                     Text(verbatim: description)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -184,11 +184,11 @@ struct ProfileChip: View {
 
     private var chip: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Image(systemName: icon).appFont(11, weight: .bold)
                 .accessibilityHidden(true)
             // Verbatim: an address or a phone number is not markdown, and must not become a link.
             Text(verbatim: text)
-                .font(.system(size: 12.5, weight: .bold))
+                .appFont(12.5, weight: .bold)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -235,7 +235,7 @@ struct ProfileScoreRow: View {
             )
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .appFont(13.5, weight: .bold)
                     .foregroundStyle(.primary)
                     .lineLimit(titleLines)
                     .multilineTextAlignment(.leading)
@@ -255,19 +255,19 @@ struct ProfileScoreRow: View {
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 0) {
                 Text(verbatim: score)
-                    .font(.system(size: 20, weight: .heavy))
+                    .appFont(20, weight: .heavy)
                     .monospacedDigit()
                     .foregroundStyle(.primary)
                 if let ceiling {
                     Text(verbatim: "/ \(ceiling)")
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(11, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityLabel("out of \(ceiling)")
                 }
             }
             if opens {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
             }
@@ -277,7 +277,7 @@ struct ProfileScoreRow: View {
     @ViewBuilder private var detailText: some View {
         if !detail.isEmpty {
             Text(verbatim: detail)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
         }
@@ -285,7 +285,7 @@ struct ProfileScoreRow: View {
 
     private var passedTag: some View {
         Label("Passed", systemImage: "checkmark.seal.fill")
-            .font(.system(size: 11, weight: .heavy))
+            .appFont(11, weight: .heavy)
             .foregroundStyle(ProfileTone.emerald)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)

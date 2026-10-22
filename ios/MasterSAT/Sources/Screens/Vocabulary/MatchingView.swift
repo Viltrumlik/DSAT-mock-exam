@@ -126,7 +126,7 @@ private struct MatchingRound: View {
         VStack(spacing: 14) {
             HStack {
                 Text("Tap a word, then its meaning.")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 StudyPill(
@@ -241,7 +241,7 @@ private struct MatchCardTile: View {
             Text(card.text)
                 // A word is the thing being learned, so it gets the big type; a
                 // definition is a sentence and has to fit.
-                .font(.system(size: card.face == .word ? 21 : 15, weight: card.face == .word ? .bold : .medium))
+                .appFont(card.face == .word ? 21 : 15, weight: card.face == .word ? .bold : .medium)
                 .multilineTextAlignment(.center)
                 .lineLimit(4)
                 .minimumScaleFactor(0.7)

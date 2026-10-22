@@ -108,7 +108,7 @@ struct VocabStudyView: View {
             VStack(spacing: 12) {
                 ProgressView().controlSize(.large)
                 Text("Dealing your words…")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,15 +121,15 @@ struct VocabStudyView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 26))
+                        .appFont(26)
                         .foregroundStyle(Theme.warning)
                         .frame(width: 56, height: 56)
                         .background(Circle().fill(Theme.warningSoft))
                         .accessibilityHidden(true)
                     Text("Couldn't start this round")
-                        .font(.system(size: 18, weight: .heavy))
+                        .appFont(18, weight: .heavy)
                     Text(error.errorDescription ?? ErrorState.nothingLost)
-                        .font(.system(size: 14))
+                        .appFont(14)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -334,7 +334,7 @@ struct FlashcardView: View {
                         .padding(.horizontal, 16)
                 } else {
                     Text("Tap to flip — swipe right if you knew it, left to see it again.")
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
@@ -359,9 +359,9 @@ struct FlashcardView: View {
         let held = hold != nil
         return Button { answer(isCorrect) } label: {
             HStack(spacing: 9) {
-                Image(systemName: icon).font(.system(size: 17, weight: .bold))
+                Image(systemName: icon).appFont(17, weight: .bold)
                     .accessibilityHidden(true)
-                Text(label).font(.system(size: 16, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.8)
+                Text(label).appFont(16, weight: .heavy).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(tone)
             .frame(maxWidth: .infinity, minHeight: 60)
@@ -406,7 +406,7 @@ struct FlashcardView: View {
                     .frame(height: 10)
                     .clipShape(Capsule())
                     Text("\(ScoreText.string(learned.count)) of \(ScoreText.string(deck.count)) cards cleared this round")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .cardStyle(padding: 18)
@@ -439,10 +439,10 @@ struct FlashcardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 IconTile(systemName: icon, tone: tone, size: 34)
-                Text(title).font(.system(size: 15, weight: .heavy))
+                Text(title).appFont(15, weight: .heavy)
                 Spacer(minLength: 0)
                 Text(ScoreText.string(words.count))
-                    .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                    .appFont(13, weight: .heavy).monospacedDigit()
                     .foregroundStyle(tone)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
@@ -450,7 +450,7 @@ struct FlashcardView: View {
             }
             if words.isEmpty {
                 if let emptyText {
-                    Text(emptyText).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                    Text(emptyText).appFont(13).foregroundStyle(Theme.textSecondary)
                 }
             } else {
                 WrappingChips(words: words.map(\.word), tone: tone)
@@ -543,7 +543,7 @@ private struct FlashcardHoldStrip: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .foregroundStyle(correct ? Theme.success : Theme.warning)
                         .accessibilityHidden(true)
                 )
@@ -551,7 +551,7 @@ private struct FlashcardHoldStrip: View {
                 Text(correct
                      ? "Nice — sit with the definition for a beat."
                      : "Read it through — you'll see this one again.")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .fixedSize(horizontal: false, vertical: true)
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
@@ -741,7 +741,7 @@ struct FlipCard: View {
     private var stamp: some View {
         if let leaning {
             Label(leaning ? "Correct" : "Still learning", systemImage: leaning ? "checkmark" : "arrow.counterclockwise")
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .foregroundStyle(Self.stampInk)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -760,14 +760,14 @@ struct FlipCard: View {
                 Overline(back ? "Definition" : "Word")
                 if back {
                     Text(word.definition)
-                        .font(.system(size: 21, weight: .bold))
+                        .appFont(21, weight: .bold)
                         .multilineTextAlignment(.center)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
                     if let example = word.example, !example.isEmpty {
                         HStack(alignment: .top, spacing: 0) {
                             Rectangle().fill(Theme.accent.opacity(0.4)).frame(width: 3)
                             Text("“\(example)”")
-                                .font(.system(size: 13).italic())
+                                .appFont(13).italic()
                                 .foregroundStyle(Theme.textSecondary)
                                 .multilineTextAlignment(.leading)
                                 .padding(.horizontal, 12)
@@ -785,7 +785,7 @@ struct FlipCard: View {
                     Text(word.word)
                         // One word on an otherwise empty screen. It can afford to be big,
                         // and being big is the point.
-                        .font(.system(size: 42, weight: .heavy, design: .rounded))
+                        .appFont(42, weight: .heavy, design: .rounded)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.4)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
@@ -804,9 +804,9 @@ struct FlipCard: View {
         )
         .overlay(alignment: .bottomTrailing) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 10, weight: .bold))
+                Image(systemName: "arrow.triangle.2.circlepath").appFont(10, weight: .bold)
                     .accessibilityHidden(true)
-                Text(back ? "Flip for word" : "Flip for definition").font(.system(size: 11, weight: .heavy))
+                Text(back ? "Flip for word" : "Flip for definition").appFont(11, weight: .heavy)
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 10)
@@ -820,7 +820,7 @@ struct FlipCard: View {
 
     private func partChip(_ part: String) -> some View {
         Text(part)
-            .font(.system(size: 12, weight: .bold).italic())
+            .appFont(12, weight: .bold).italic()
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
@@ -840,7 +840,7 @@ struct WrappingChips: View {
         FlowLayout(spacing: 6) {
             ForEach(Array(words.enumerated()), id: \.offset) { _, word in
                 Text(word)
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)

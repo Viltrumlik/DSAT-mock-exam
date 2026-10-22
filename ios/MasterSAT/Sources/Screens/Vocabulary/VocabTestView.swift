@@ -110,14 +110,14 @@ struct VocabTestView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Text(Self.letters[min(position, Self.letters.count - 1)])
-                                .font(.system(size: 13, weight: .heavy))
+                                .appFont(13, weight: .heavy)
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.background)
                                 )
                                 .foregroundStyle(Theme.textSecondary)
                             Text(option)
-                                .font(.system(size: 15, weight: .semibold))
+                                .appFont(15, weight: .semibold)
                                 .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                         }
@@ -173,9 +173,9 @@ struct VocabTestView: View {
     private func verdictButton(_ label: String, icon: String, tone: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 22)).foregroundStyle(tone)
+                Image(systemName: icon).appFont(22).foregroundStyle(tone)
                     .accessibilityHidden(true)
-                Text(label).font(.system(size: 15, weight: .heavy)).foregroundStyle(.primary)
+                Text(label).appFont(15, weight: .heavy).foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, minHeight: 88)
             .background(
@@ -220,7 +220,7 @@ struct VocabTestView: View {
                 .accessibilityLabel(VocabGames.spoken(tiles))
 
                 TextField("Type the word", text: $typed)
-                    .font(.system(size: 20, weight: .bold))
+                    .appFont(20, weight: .bold)
                     .multilineTextAlignment(.center)
                     // The grader compares the text exactly, so the keyboard may change nothing
                     // of it: no capitals, no autocorrect, and (below) no smart quotes or dashes.
@@ -310,7 +310,7 @@ struct VocabTestView: View {
     /// small scale-up that settles without overshoot, a plain fade under Reduce Motion.
     private func glyph(_ tile: VocabGames.SpellingTile, tone: Color) -> some View {
         Text(verbatim: tile.kind == .typed || tile.kind == .given ? tile.character.uppercased() : tile.character)
-            .font(.system(size: 17, weight: .heavy))
+            .appFont(17, weight: .heavy)
             .foregroundStyle(tone)
             .id("\(tile.kind)-\(tile.character)")
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
@@ -524,9 +524,9 @@ struct TestReview: View {
                 DotHeading(title: "Look at these again", count: wrong.count, tone: Theme.danger)
                 ForEach(wrong) { answer in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(answer.word).font(.system(size: 16, weight: .heavy))
+                        Text(answer.word).appFont(16, weight: .heavy)
                         Text(answer.definition)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 10) {
@@ -544,11 +544,11 @@ struct TestReview: View {
     private func answerBox(_ label: String, _ value: String, tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(0.8)
                 .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .font(.system(size: 15, weight: .bold))
+                .appFont(15, weight: .bold)
                 .foregroundStyle(tone)
                 .multilineTextAlignment(.leading)
         }
@@ -576,23 +576,23 @@ struct QuestionShell<Content: View>: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.success)
                         .frame(width: 26, height: 26)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
                         .accessibilityHidden(true)
                     Text(kicker.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
                         .tracking(1.1)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Text(prompt)
-                    .font(.system(size: 19, weight: .bold))
+                    .appFont(19, weight: .bold)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                 Text("QUESTION \(ScoreText.string(step)) OF \(ScoreText.string(total))")
-                    .font(.system(size: 10, weight: .heavy))
+                    .appFont(10, weight: .heavy)
                     .tracking(0.9)
                     .foregroundStyle(Theme.textLabel)
                     .padding(.top, 12)

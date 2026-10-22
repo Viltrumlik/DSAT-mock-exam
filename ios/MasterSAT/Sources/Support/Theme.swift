@@ -140,7 +140,7 @@ struct Overline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .bold))
+            .appFont(11, weight: .bold)
             .tracking(1.2)
             .foregroundStyle(Theme.textLabel)
     }
@@ -171,8 +171,8 @@ struct Chip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.system(size: 10, weight: .bold)).accessibilityHidden(true) }
-            Text(text).font(.system(size: 12, weight: .bold, design: .rounded))
+            if let icon { Image(systemName: icon).appFont(10, weight: .bold).accessibilityHidden(true) }
+            Text(text).appFont(12, weight: .bold, design: .rounded)
         }
         .foregroundStyle(colour)
         .padding(.horizontal, 10)
@@ -191,7 +191,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .appFont(15, weight: .bold)
             .foregroundStyle(text)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
@@ -209,7 +209,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .appFont(15, weight: .bold)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)

@@ -148,13 +148,13 @@ struct LessonCalendarCard: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 20, weight: .semibold))
+                    .appFont(20, weight: .semibold)
                     .foregroundStyle(Theme.accent)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Lesson calendar").font(.system(size: 17, weight: .heavy)).tracking(-0.2)
+                    Text("Lesson calendar").appFont(17, weight: .heavy).tracking(-0.2)
                     Text("Tap a day to see what's on")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
@@ -163,7 +163,7 @@ struct LessonCalendarCard: View {
             HStack(spacing: 10) {
                 monthButton("chevron.left", label: "Previous month") { step(-1) }
                 Text(monthLabel)
-                    .font(.system(size: 15, weight: .heavy))
+                    .appFont(15, weight: .heavy)
                     .frame(maxWidth: .infinity)
                 monthButton("chevron.right", label: "Next month") { step(1) }
             }
@@ -171,7 +171,7 @@ struct LessonCalendarCard: View {
             HStack(spacing: 4) {
                 ForEach(Self.weekdays, id: \.self) { day in
                     Text(day)
-                        .font(.system(size: 10, weight: .heavy))
+                        .appFont(10, weight: .heavy)
                         .tracking(0.6)
                         .foregroundStyle(Theme.textLabel)
                         .frame(maxWidth: .infinity)
@@ -206,7 +206,7 @@ struct LessonCalendarCard: View {
     private func monthButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 38, height: 38)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.background))
@@ -280,7 +280,7 @@ private struct DayCell: View {
                     Circle().stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
                 }
                 Text(ScoreText.string(model.day))
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .monospacedDigit()
                     .foregroundStyle(foreground)
             }
@@ -339,7 +339,7 @@ private struct FlowLegend: View {
                             }
                             .frame(width: 15, height: 15)
                             Text(item.label)
-                                .font(.system(size: 12, weight: .semibold))
+                                .appFont(12, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -362,20 +362,20 @@ struct NextLessonCard: View {
             HStack(spacing: 9) {
                 Circle().fill(Theme.accent).frame(width: 9, height: 9)
                 Text("NEXT LESSON")
-                    .font(.system(size: 12, weight: .heavy))
+                    .appFont(12, weight: .heavy)
                     .tracking(1.4)
                     .foregroundStyle(Theme.accent)
             }
 
             if let event, let date = DayKey.date(from: event.date) {
                 Text(event.title)
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
                     .tracking(-0.3)
                     .padding(.top, 16)
                     .fixedSize(horizontal: false, vertical: true)
                 if !event.sub.isEmpty {
                     Text(event.sub)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.top, 5)
                 }
@@ -390,7 +390,7 @@ struct NextLessonCard: View {
                 } label: {
                     HStack(spacing: 8) {
                         Text("\(Self.cta(event)) · \(Self.relative(date))")
-                        Image(systemName: "arrow.right").font(.system(size: 14, weight: .bold))
+                        Image(systemName: "arrow.right").appFont(14, weight: .bold)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle(fullWidth: true))
@@ -400,11 +400,11 @@ struct NextLessonCard: View {
                 .opacity(Self.openable(event) ? 1 : 0.55)
             } else {
                 Text("You're all caught up")
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
                     .tracking(-0.3)
                     .padding(.top, 16)
                 Text("Upcoming lessons will appear here.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .padding(.top, 5)
             }
@@ -463,7 +463,7 @@ struct SelectedDayCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text(heading).font(.system(size: 14, weight: .heavy))
+            Text(heading).appFont(14, weight: .heavy)
             if events.isEmpty {
                 DashedEmpty(title: "No lessons scheduled", hint: "A good day for vocabulary.")
             } else {
@@ -498,12 +498,12 @@ struct LessonRow: View {
             IconTile(systemName: visual.icon, tone: visual.tone, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(event.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 if !event.sub.isEmpty {
                     Text(event.sub)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
@@ -511,7 +511,7 @@ struct LessonRow: View {
             Spacer(minLength: 0)
             if !event.time.isEmpty {
                 Text(event.time)
-                    .font(.system(size: 13, weight: .bold).monospacedDigit())
+                    .appFont(13, weight: .bold).monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
             }
         }

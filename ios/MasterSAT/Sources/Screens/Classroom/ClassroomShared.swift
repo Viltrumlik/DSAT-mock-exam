@@ -23,20 +23,20 @@ struct JoinClassSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Join a class").font(.system(size: 20, weight: .heavy))
+                Text("Join a class").appFont(20, weight: .heavy)
                 Text("Enter the code your teacher gave you.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("Class code")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                 TextField("", text: $code, prompt: Text(verbatim: "e.g. 7QX2KP"))
                     .textInputAutocapitalization(.characters)
                     .autocorrectionDisabled()
-                    .font(.system(size: 17, weight: .bold, design: .monospaced))
+                    .appFont(17, weight: .bold, design: .monospaced)
                     .focused($focused)
                     .submitLabel(.join)
                     .onSubmit(join)
@@ -47,7 +47,7 @@ struct JoinClassSheet: View {
                             .stroke(error == nil ? Theme.separator : Theme.danger, lineWidth: 1)
                     )
                 if let error {
-                    Text(error).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.danger)
+                    Text(error).appFont(12, weight: .semibold).foregroundStyle(Theme.danger)
                 }
             }
 

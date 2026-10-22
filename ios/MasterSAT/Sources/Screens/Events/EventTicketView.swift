@@ -28,7 +28,7 @@ struct EventTicketView: View {
             VStack(spacing: 18) {
                 HStack {
                     Button("Done") { dismiss() }
-                        .font(.system(size: 17, weight: .semibold))
+                        .appFont(17, weight: .semibold)
                         .foregroundStyle(.white)
                     Spacer()
                 }
@@ -50,7 +50,7 @@ struct EventTicketView: View {
 
                 if case .failed(let message) = saveState {
                     Text(message)
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)

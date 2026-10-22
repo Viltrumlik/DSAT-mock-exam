@@ -50,19 +50,19 @@ struct ProfileGoalPanel: View {
             ProfileEyebrow("Target score", tone: ProfileTone.primary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(verbatim: ScoreText.string(user.targetScore))
-                    .font(.system(size: 28, weight: .heavy))
+                    .appFont(28, weight: .heavy)
                     .monospacedDigit()
                     .tracking(-0.8)
                 if user.targetScore != nil {
                     Text(verbatim: "/ 1600")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
             .lineLimit(1)
             .minimumScaleFactor(0.7)
             Text(verbatim: ProfileGoal.sectionsLine(total: user.targetScore, english: user.targetEnglish, math: user.targetMath))
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -92,27 +92,27 @@ struct ProfileGoalPanel: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "chevron.up.chevron.down")
-                            .font(.system(size: 9, weight: .bold))
+                            .appFont(9, weight: .bold)
                             .foregroundStyle(ProfileTone.amber)
                             .accessibilityHidden(true)
                     }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(verbatim: day.value)
-                        .font(.system(size: 28, weight: .heavy))
+                        .appFont(28, weight: .heavy)
                         .monospacedDigit()
                         .tracking(-0.8)
                         .foregroundStyle(.primary)
                     if let unit = day.unit {
                         Text(verbatim: unit)
-                            .font(.system(size: 14, weight: .bold))
+                            .appFont(14, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 Text(verbatim: day.detail)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
@@ -144,7 +144,7 @@ struct ProfileGoalPanel: View {
             let rows = ProfileResults.recent(load.value ?? [])
             if rows.isEmpty {
                 Text("Your scores show up here after your first practice test.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 14)
@@ -235,12 +235,12 @@ struct ProfileChecklistPanel: View {
                     ForEach(done) { item in
                         HStack(spacing: 4) {
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .heavy))
+                                .appFont(11, weight: .heavy)
                                 .foregroundStyle(ProfileTone.emerald)
                                 .accessibilityHidden(true)
                             Text(verbatim: item.doneLabel)
                         }
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .appFont(12.5, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -256,9 +256,9 @@ struct ProfileChecklistPanel: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: item.label)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .appFont(13.5, weight: .bold)
                 Text(verbatim: item.hint)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -290,7 +290,7 @@ struct ProfileChecklistPanel: View {
                 onRetry: { Task { await onRetry(.examDates) } }
             ) {
                 Text(verbatim: item.action)
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(ProfileTone.violet)
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
@@ -336,7 +336,7 @@ struct ProfilePaymentsPanel: View {
             description: "Your course payments, on your profile."
         ) {
             Text("Coming soon")
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
                 .foregroundStyle(ProfileTone.violet)
                 .padding(.horizontal, 11)
                 .padding(.vertical, 5)
@@ -346,12 +346,12 @@ struct ProfilePaymentsPanel: View {
                 ForEach(Self.previews) { row in
                     HStack(spacing: 12) {
                         Image(systemName: row.icon)
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(ProfileTone.violet)
                             .frame(width: 18)
                             .accessibilityHidden(true)
                         Text(verbatim: row.label)
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 13)
@@ -364,7 +364,7 @@ struct ProfilePaymentsPanel: View {
                 }
             }
             Text("Until then, payments are made at your learning center as usual.")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }

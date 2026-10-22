@@ -139,7 +139,7 @@ private struct SurveyFillScreen: View {
             VStack(spacing: 14) {
                 if model.done && model.doneAnonymously {
                     Label("Sent without your name", systemImage: "eye.slash")
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -216,7 +216,7 @@ private struct SurveyFillScreen: View {
     private var anonymityCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("How should this be sent?")
-                .font(.system(size: 15, weight: .bold))
+                .appFont(15, weight: .bold)
             SurveyAnonymityChoice(
                 icon: "person.crop.circle",
                 label: "With my name",
@@ -240,9 +240,9 @@ private struct SurveyFillScreen: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Couldn't send your answers")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                 Text(message)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -262,7 +262,7 @@ private struct SurveyFillScreen: View {
             Text(missing == 0
                  ? "Ready to send."
                  : "\(CommunityFormat.count(missing, "question", "questions")) still to answer.")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 8)
@@ -330,7 +330,7 @@ private struct SurveyQuestionCard: View {
             HStack(alignment: .top, spacing: 14) {
                 // The homework detail numbers its steps exactly this way.
                 Text(verbatim: String(number))
-                    .font(.system(size: 14, weight: .heavy))
+                    .appFont(14, weight: .heavy)
                     .foregroundStyle(gap == nil ? Theme.accent : Theme.danger)
                     .frame(width: 30, height: 30)
                     .background(
@@ -341,12 +341,12 @@ private struct SurveyQuestionCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     (Text(question.prompt)
                         + (question.isRequired ? Text(" *").foregroundStyle(Theme.danger) : Text("")))
-                        .font(.system(size: 16, weight: .bold))
+                        .appFont(16, weight: .bold)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel(question.isRequired ? "\(question.prompt), required" : question.prompt)
                     if !question.helpText.isEmpty {
                         Text(question.helpText)
-                            .font(.system(size: 14))
+                            .appFont(14)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -374,7 +374,7 @@ private struct SurveyQuestionCard: View {
                 Text(gap == .answer
                      ? "This one still needs an answer."
                      : "Please add a short note to go with your answer.")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .accessibilityFocused(spokenGap, equals: question.id)
             }
@@ -392,14 +392,14 @@ private struct SurveyQuestionCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 5) {
                 Text(question.followUpRequired ? "Please tell us more" : "Anything you'd like to add?")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                 if question.followUpRequired {
                     Text("*")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.danger)
                 } else {
                     Text("Optional")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -440,21 +440,21 @@ private struct SurveyAnonymityChoice: View {
         Button(action: action) {
             HStack(alignment: .top, spacing: 11) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(16, weight: .semibold)
                     .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
                     .frame(width: 20)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .foregroundStyle(Color.primary)
                     Text(hint)
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 18))
+                    .appFont(18)
                     .foregroundStyle(selected ? Theme.accent : Theme.textLabel)
                     .accessibilityHidden(true)
             }

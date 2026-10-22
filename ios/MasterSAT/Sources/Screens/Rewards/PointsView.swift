@@ -126,7 +126,7 @@ struct PointsView: View {
                 sub: "Most of what you earn adds XP too — each rule below says. A lower score never takes it away, only a corrected record does."
             ) {
                 Image(systemName: "bolt.fill")
-                    .font(.system(size: 17, weight: .bold))
+                    .appFont(17, weight: .bold)
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(.white.opacity(0.2)))
@@ -162,10 +162,10 @@ struct PointsView: View {
         return VStack(alignment: .leading, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(headline.overline.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .tracking(0.7)
                 Text(headline.sentence)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(.white)
@@ -175,7 +175,7 @@ struct PointsView: View {
                 TextField("", text: $amountText, prompt: Text(verbatim: "Points").foregroundStyle(Color.black.opacity(0.4)))
                     .keyboardType(.numberPad)
                     .focused($amountFocused)
-                    .font(.system(size: 16, weight: .bold).monospacedDigit())
+                    .appFont(16, weight: .bold).monospacedDigit()
                     .foregroundStyle(Color.black)
                     .tint(Theme.accent)
                     .padding(.horizontal, 12)
@@ -207,7 +207,7 @@ struct PointsView: View {
                         if isConverting {
                             ProgressView().controlSize(.small).tint(Theme.accent)
                         } else {
-                            Image(systemName: "arrow.left.arrow.right").font(.system(size: 13, weight: .bold))
+                            Image(systemName: "arrow.left.arrow.right").appFont(13, weight: .bold)
                                 .accessibilityHidden(true)
                         }
                         Text(isConverting ? "Converting…" : "Convert")
@@ -222,7 +222,7 @@ struct PointsView: View {
             // behind, which is otherwise read as points going missing.
             if let message = preview.message {
                 Text(message)
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(.white.opacity(0.92))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -238,10 +238,10 @@ struct PointsView: View {
         case .failed, .unconfirmed: "exclamationmark.circle.fill"
         }
         return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: icon).font(.system(size: 14, weight: .bold))
+            Image(systemName: icon).appFont(14, weight: .bold)
                 .accessibilityHidden(true)
             Text(outcome.text)
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(.white)
@@ -545,17 +545,17 @@ struct RewardsWalletTile<Media: View>: View {
             media()
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .tracking(0.7)
                 Text(value)
-                    .font(.system(size: 26, weight: .heavy))
+                    .appFont(26, weight: .heavy)
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 // Wraps rather than truncates: the XP rule takes a sentence to state honestly.
                 if let sub {
                     Text(sub)
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -588,7 +588,7 @@ struct RewardsHeroButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .foregroundStyle(prominent ? Theme.accent : Color.white)
                 .lineLimit(1)
                 .fixedSize()
@@ -621,11 +621,11 @@ struct RewardsAwardRow: View {
             IconTile(systemName: RewardsEventIcon.symbol(for: award.event), size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(award.label)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .lineLimit(1)
                 if !subtitle.isEmpty {
                     Text(subtitle)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
@@ -634,7 +634,7 @@ struct RewardsAwardRow: View {
             // A conversion is the one row that SPENDS, so it is the one that must not wear a
             // green plus: signed, and neutral-coloured.
             Text(award.signedPoints)
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .monospacedDigit()
                 .foregroundStyle(award.isSpend ? Theme.textSecondary : Theme.success)
         }
@@ -651,23 +651,23 @@ private struct RewardsRuleRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 12) {
                 Text(rule.label)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
                 Spacer(minLength: 8)
                 if let amount = rule.amountText {
                     Text(amount)
-                        .font(.system(size: 14, weight: .heavy))
+                        .appFont(14, weight: .heavy)
                         .monospacedDigit()
                 } else {
                     Text("Set by your teacher")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(12, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
             if let hint = rule.hint {
                 Text(hint)
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -685,15 +685,15 @@ private struct RewardsCoinRow: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(transaction.title)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .lineLimit(1)
                 Text(RewardsDate.short(transaction.createdAt))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 12)
             Text(transaction.signedAmount)
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .monospacedDigit()
                 .foregroundStyle(transaction.isSpend ? Theme.textSecondary : Theme.success)
         }

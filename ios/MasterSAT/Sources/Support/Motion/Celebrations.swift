@@ -609,7 +609,7 @@ struct TaskCompleteBadge: View {
     var body: some View {
         if reduceMotion {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64, weight: .bold))
+                .appFont(64, weight: .bold)
                 .foregroundStyle(Theme.success)
                 .background(Circle().fill(Theme.card).padding(6))
         } else {
@@ -674,7 +674,7 @@ struct XPFlightView: View {
 
     var body: some View {
         Text("+\(flight.amount) XP")
-            .font(.system(size: 22, weight: .black, design: .rounded))
+            .appFont(22, weight: .black, design: .rounded)
             // The deeper amber: the bright one is under 3:1 on a white card.
             .foregroundStyle(Theme.warning)
             // A card behind the number while it hangs — it crosses headings and cards on the way
@@ -695,7 +695,7 @@ struct XPFlightView: View {
             .overlay(alignment: .bottom) {
                 if let label = flight.label {
                     Text(label)
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .appFont(11, weight: .heavy, design: .rounded)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)

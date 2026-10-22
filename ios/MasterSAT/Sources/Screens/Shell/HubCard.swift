@@ -27,16 +27,16 @@ struct HubCard<Route: Hashable>: View {
                 IconTile(systemName: icon, tone: tone, size: 46)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .font(.system(size: 16, weight: .heavy, design: .rounded))
+                        .appFont(16, weight: .heavy, design: .rounded)
                         .foregroundStyle(.primary)
                     Text(subtitle)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                         .contentTransition(.opacity)
                     if let detail {
                         Text(detail)
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .foregroundStyle(Theme.accent)
                             .multilineTextAlignment(.leading)
                             .contentTransition(.opacity)
@@ -47,7 +47,7 @@ struct HubCard<Route: Hashable>: View {
                 // Zero is not shown: no badge says "nothing waiting" better than a grey 0.
                 if let count, count > 0 {
                     Text(ScoreText.string(count))
-                        .font(.system(size: 12, weight: .heavy, design: .rounded).monospacedDigit())
+                        .appFont(12, weight: .heavy, design: .rounded).monospacedDigit()
                         .foregroundStyle(tone)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
@@ -55,7 +55,7 @@ struct HubCard<Route: Hashable>: View {
                         .contentTransition(.numericText(value: Double(count)))
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
             }
             .cardStyle()

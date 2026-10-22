@@ -36,7 +36,7 @@ struct AccountPageHeading<Accessory: View>: View {
                 accessory()
             }
             Text(description)
-                .font(.system(size: 14, weight: .medium))
+                .appFont(14, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -56,7 +56,7 @@ struct AccountStatusPill: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .heavy))
+            .appFont(11.5, weight: .heavy)
             .foregroundStyle(tone)
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
@@ -85,7 +85,7 @@ struct AccountPillButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(kind == .solid ? Color.white : tone)
                 .padding(.horizontal, kind == .quiet ? 8 : 13)
                 .padding(.vertical, 8)
@@ -126,7 +126,7 @@ struct AccountTextField<Focus: Hashable>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             AccountFieldBox(icon: icon, invalid: error != nil) {
                 // `Text(verbatim:)`: a plain-string prompt is a LocalizedStringKey, and SwiftUI
@@ -164,7 +164,7 @@ struct AccountSecureField<Focus: Hashable>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             AccountFieldBox(icon: "lock", invalid: error != nil) {
                 Group {
@@ -188,7 +188,7 @@ struct AccountSecureField<Focus: Hashable>: View {
                     focus.wrappedValue = field
                 } label: {
                     Image(systemName: revealed ? "eye.slash" : "eye")
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(15, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                         .frame(width: 30, height: 44)
                         .contentShape(Rectangle())
@@ -212,7 +212,7 @@ struct AccountFieldBox<Content: View>: View {
         HStack(spacing: 10) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(invalid ? Theme.danger : Theme.textLabel)
                     .frame(width: 16)
                     .accessibilityHidden(true)
@@ -238,12 +238,12 @@ struct AccountFieldNote: View {
     var body: some View {
         if let error {
             Text(error)
-                .font(.system(size: 12.5, weight: .semibold))
+                .appFont(12.5, weight: .semibold)
                 .foregroundStyle(Theme.danger)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let hint {
             Text(hint)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -314,17 +314,17 @@ struct AccountMenuRow<Route: Hashable>: View {
                 IconTile(systemName: icon, tone: tone)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 16, weight: .bold))
+                        .appFont(16, weight: .bold)
                         .foregroundStyle(.primary)
                     Text(hint)
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 0)
                 if let badge { AccountStatusPill(text: badge, tone: Theme.warning) }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
             }

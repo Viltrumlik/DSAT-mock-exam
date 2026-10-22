@@ -46,7 +46,7 @@ struct ServicesNotice: View {
             ErrorState(title: title, message: message ?? ErrorState.nothingLost, style: .inline, retry: retry)
             if let detail, !detail.isEmpty {
                 Text(detail)
-                    .font(.system(size: 11, weight: .medium))
+                    .appFont(11, weight: .medium)
                     .foregroundStyle(Theme.textLabel)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -104,8 +104,8 @@ struct ServicesTonePill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)).accessibilityHidden(true) }
-            Text(text).font(.system(size: 12.5, weight: .bold))
+            if let icon { Image(systemName: icon).appFont(11, weight: .bold).accessibilityHidden(true) }
+            Text(text).appFont(12.5, weight: .bold)
         }
         .foregroundStyle(tone)
         .padding(.horizontal, 11)
@@ -180,12 +180,12 @@ struct ServicesCheckboxStyle: ToggleStyle {
         } label: {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 21, weight: .medium))
+                    .appFont(21, weight: .medium)
                     .foregroundStyle(configuration.isOn ? Theme.accent : Theme.textSecondary)
                     // The box is heard as the value below, not as a symbol's name.
                     .accessibilityHidden(true)
                 configuration.label
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Color.primary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)

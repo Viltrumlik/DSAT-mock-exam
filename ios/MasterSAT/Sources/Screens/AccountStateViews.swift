@@ -116,11 +116,11 @@ struct StateScreen<Actions: View>: View {
                     .padding(.bottom, 14)
             }
             Text(title)
-                .font(.system(size: 26, weight: .heavy))
+                .appFont(26, weight: .heavy)
                 .tracking(-0.6)
                 .multilineTextAlignment(.center)
             Text(message)
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 10)

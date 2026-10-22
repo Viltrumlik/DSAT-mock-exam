@@ -29,7 +29,7 @@ struct MeMidtermsPanel: View {
             NavigationLink(value: AppLink.midterms) {
                 HStack(spacing: 4) {
                     Text("All midterms")
-                    Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                    Image(systemName: "arrow.right").appFont(11, weight: .bold)
                         .accessibilityHidden(true)
                 }
             }

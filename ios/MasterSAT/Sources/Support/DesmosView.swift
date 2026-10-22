@@ -148,7 +148,7 @@ struct CalculatorPanel: View {
 
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(Theme.surface2))
@@ -166,15 +166,15 @@ struct CalculatorPanel: View {
             if didFail {
                 VStack(spacing: 10) {
                     Image(systemName: "wifi.exclamationmark")
-                        .font(.system(size: 28))
+                        .appFont(28)
                         .foregroundStyle(Theme.warning)
                         .accessibilityHidden(true)
                     Text("The calculator needs a connection")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                     // Named rather than left blank: a student staring at an empty box
                     // during a maths question will assume the app is broken.
                     Text("Desmos loads from the internet. It will come back when you are online.")
-                        .font(.system(size: 13))
+                        .appFont(13)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                     Button("Try again") { didFail = false }

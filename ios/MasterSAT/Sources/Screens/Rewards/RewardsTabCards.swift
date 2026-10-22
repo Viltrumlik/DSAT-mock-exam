@@ -32,17 +32,17 @@ struct RankHeroContent: View {
                 case .loading:
                     VStack(alignment: .leading, spacing: 0) {
                         Text(verbatim: "#00")
-                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .appFont(40, weight: .black, design: .rounded)
                             .redacted(reason: .placeholder)
                         Text("overall · all time")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 case .unranked:
                     Text("Not on the board yet")
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .appFont(20, weight: .heavy, design: .rounded)
                     Text("Your first XP puts you on it — come to a lesson or hand in homework.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 case .ranked(let rank, let pass):
@@ -51,12 +51,12 @@ struct RankHeroContent: View {
                     VStack(alignment: .leading, spacing: 0) {
                         // A place is an identifier: never "#1,204".
                         Text(verbatim: "#\(rank)")
-                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .appFont(40, weight: .black, design: .rounded)
                             .contentTransition(.numericText(value: Double(rank)))
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                         Text("overall · all time")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                     // Two lines held whether or not "N XP to pass Malika" wraps, so a new name or
@@ -65,10 +65,10 @@ struct RankHeroContent: View {
                     // text size still grows the line instead of cutting it off.
                     ZStack(alignment: .topLeading) {
                         Text(verbatim: " \n ")
-                            .font(.system(size: 13, weight: .heavy))
+                            .appFont(13, weight: .heavy)
                             .hidden()
                         Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
-                            .font(.system(size: 13, weight: .heavy))
+                            .appFont(13, weight: .heavy)
                             .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -76,7 +76,7 @@ struct RankHeroContent: View {
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textLabel)
         }
         .padding(16)
@@ -115,21 +115,21 @@ struct StreakCard: View {
             HStack(spacing: 4) {
                 LottieClip(.strikeFlame).frame(width: 34, height: 34)
                 Text(ScoreText.string(streak))
-                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .appFont(28, weight: .black, design: .rounded)
                     .foregroundStyle(Theme.strike)
                     .contentTransition(.numericText(value: Double(streak ?? 0)))
             }
             Text(streak == 1 ? "lesson in a row" : "lessons in a row")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             if let best, best > 0 {
                 Text(verbatim: "Best: \(best)")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
             } else if streak == 0 {
                 Text("Your next lesson starts one")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
             }
         }
@@ -170,11 +170,11 @@ struct CoinsCard: View {
                 HStack(spacing: 6) {
                     RewardsCoinArt(kind: .coin, size: 30)
                     Text(ScoreText.string(rewards?.coins))
-                        .font(.system(size: 28, weight: .black, design: .rounded))
+                        .appFont(28, weight: .black, design: .rounded)
                         .contentTransition(.numericText(value: Double(rewards?.coins ?? 0)))
                 }
                 Text(rewards?.coins == 1 ? "coin to spend" : "coins to spend")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textSecondary)
             }
             .accessibilityElement(children: .ignore)
@@ -188,11 +188,11 @@ struct CoinsCard: View {
                             if converting {
                                 ProgressView().controlSize(.mini).tint(.white)
                             } else {
-                                Image(systemName: "arrow.left.arrow.right").font(.system(size: 11, weight: .bold))
+                                Image(systemName: "arrow.left.arrow.right").appFont(11, weight: .bold)
                             }
                             Text(converting ? "Converting…" : "Convert points")
                         }
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -209,17 +209,17 @@ struct CoinsCard: View {
                     )
                 } else {
                     Text(verbatim: "\(RewardsFormat.count(rewards.pointsToNextCoin, "point")) to your next coin")
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
                         .foregroundStyle(Theme.textLabel)
                 }
             } else if failed {
                 NavigationLink(value: AppLink.points) {
                     HStack(spacing: 3) {
                         Text("Points & coins")
-                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                        Image(systemName: "chevron.right").appFont(10, weight: .bold)
                             .accessibilityHidden(true)
                     }
-                    .font(.system(size: 12, weight: .heavy))
+                    .appFont(12, weight: .heavy)
                     .foregroundStyle(RewardsPalette.accentText)
                     // Drawn ~15 pt, tappable 44, as the Convert button is.
                     .hitTarget()
@@ -228,7 +228,7 @@ struct CoinsCard: View {
             }
             if let note {
                 Text(note)
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -269,7 +269,7 @@ struct RewardsBoardSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Leaderboard")
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .appFont(20, weight: .heavy, design: .rounded)
                 .accessibilityAddTraits(.isHeader)
             SegmentBar(
                 items: [.init(segment: LeaderboardMetric.xp, title: "XP"), .init(segment: LeaderboardMetric.strikes, title: "Strikes")],
@@ -282,8 +282,8 @@ struct RewardsBoardSection: View {
             if metric == .xp {
                 NavigationLink(value: AppLink.leaderboard) {
                     HStack(spacing: 4) {
-                        Text("See the full board").font(.system(size: 14, weight: .bold))
-                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                        Text("See the full board").appFont(14, weight: .bold)
+                        Image(systemName: "chevron.right").appFont(12, weight: .bold)
                             .accessibilityHidden(true)
                     }
                     .foregroundStyle(RewardsPalette.accentText)
@@ -305,7 +305,7 @@ struct RewardsBoardSection: View {
                     withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { window = value }
                 } label: {
                     Text(LeaderboardFilters.fallbackWindowLabel(value))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .appFont(13, weight: .bold, design: .rounded)
                         .foregroundStyle(active ? Color.white : Theme.textSecondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -342,7 +342,7 @@ struct RewardsBoardSection: View {
                     }
                     if let me, !top.contains(where: { $0.studentId == me.studentId }) {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textLabel)
                             .accessibilityHidden(true)
                         RewardsBoardRow(row: me, metric: metric, mine: true)
@@ -353,7 +353,7 @@ struct RewardsBoardSection: View {
                 // about themselves on the strike board.
                 if metric == .strikes, me == nil {
                     Label("Come to your next lesson to start a run, and you'll appear here.", systemImage: "flame.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fixedSize(horizontal: false, vertical: true)
@@ -365,7 +365,7 @@ struct RewardsBoardSection: View {
             if stale { StaleNote() }
             if !board.scopeNote.isEmpty {
                 Text(board.scopeNote)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -404,12 +404,12 @@ struct RewardsBoardRow: View {
             LeaderboardRankBadge(rank: row.rank, highlight: mine)
             LeaderboardAvatar(row: row, size: 34)
             Text(row.displayName)
-                .font(.system(size: 14, weight: mine ? .heavy : .semibold))
+                .appFont(14, weight: mine ? .heavy : .semibold)
                 .lineLimit(1)
             if mine { LeaderboardYouTag() }
             Spacer(minLength: 6)
             Text(value)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .appFont(13, weight: .heavy, design: .rounded)
                 .monospacedDigit()
                 .foregroundStyle(mine ? RewardsPalette.accentText : Theme.textSecondary)
                 .fixedSize()
@@ -450,8 +450,8 @@ struct XPLedgerCard: View {
             }
             NavigationLink(value: AppLink.points) {
                 HStack(spacing: 4) {
-                    Text("All your points").font(.system(size: 14, weight: .bold))
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                    Text("All your points").appFont(14, weight: .bold)
+                    Image(systemName: "chevron.right").appFont(12, weight: .bold)
                         .accessibilityHidden(true)
                 }
                 .foregroundStyle(RewardsPalette.accentText)

@@ -43,12 +43,12 @@ struct WorkRow: View {
             IconTile(systemName: visual.icon, tone: visual.tone, size: 42)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 if !item.detail.isEmpty {
                     Text(item.detail)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
@@ -57,7 +57,7 @@ struct WorkRow: View {
                         if let when {
                             // A passed deadline is information, never an accusation.
                             Text(when.text)
-                                .font(.system(size: 12, weight: when.late ? .heavy : .semibold))
+                                .appFont(12, weight: when.late ? .heavy : .semibold)
                                 .foregroundStyle(when.late ? Theme.warning : Theme.textSecondary)
                         }
                         if let cap = item.xpCap { XPCapChip(amount: cap) }
@@ -67,7 +67,7 @@ struct WorkRow: View {
             Spacer(minLength: 0)
             if item.assignment != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
             }
@@ -84,8 +84,8 @@ struct XPCapChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
-            Text("up to +\(amount) XP").font(.system(size: 11, weight: .heavy, design: .rounded))
+            Image(systemName: "bolt.fill").appFont(9, weight: .black)
+            Text("up to +\(amount) XP").appFont(11, weight: .heavy, design: .rounded)
         }
         .foregroundStyle(Theme.amber)
         .padding(.horizontal, 8)

@@ -129,9 +129,9 @@ struct LeaderboardView: View {
                         query.scope = scope
                     } label: {
                         HStack(spacing: 7) {
-                            Image(systemName: icon(for: scope)).font(.system(size: 13, weight: .bold))
+                            Image(systemName: icon(for: scope)).appFont(13, weight: .bold)
                                 .accessibilityHidden(true)
-                            Text(label(for: scope)).font(.system(size: 14, weight: .bold)).lineLimit(1)
+                            Text(label(for: scope)).appFont(14, weight: .bold).lineLimit(1)
                         }
                         .foregroundStyle(active ? Theme.accent : Color.white)
                         .padding(.horizontal, 15)
@@ -160,11 +160,11 @@ struct LeaderboardView: View {
                 showingFilters = true
             } label: {
                 HStack(spacing: 7) {
-                    Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .bold))
-                    Text("Filters").font(.system(size: 14, weight: .bold))
+                    Image(systemName: "slider.horizontal.3").appFont(13, weight: .bold)
+                    Text("Filters").appFont(14, weight: .bold)
                     if count > 0 {
                         Text(ScoreText.string(count))
-                            .font(.system(size: 11, weight: .heavy))
+                            .appFont(11, weight: .heavy)
                             .foregroundStyle(.white)
                             .frame(minWidth: 20, minHeight: 20)
                             .background(Circle().fill(Theme.accent))
@@ -179,7 +179,7 @@ struct LeaderboardView: View {
             .accessibilityLabel(count > 0 ? "Filters, \(count) active" : "Filters")
 
             Text(summary)
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
                 .contentShape(Rectangle())
@@ -192,11 +192,11 @@ struct LeaderboardView: View {
                     query.resetFilters()
                 } label: {
                     HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .bold))
+                        Image(systemName: "arrow.counterclockwise").appFont(12, weight: .bold)
                             .accessibilityHidden(true)
                         Text("Reset")
                     }
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(RewardsPalette.accentText)
                 }
                 .buttonStyle(.plain)
@@ -271,7 +271,7 @@ struct LeaderboardView: View {
             if let board, !boardFailed, board.my == nil {
                 HStack(spacing: 12) {
                     Image(systemName: "bolt.fill")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .foregroundStyle(.white)
                         .frame(width: 32, height: 32)
                         .background(
@@ -280,7 +280,7 @@ struct LeaderboardView: View {
                         )
                         .accessibilityHidden(true)
                     Text("Earn your first XP and you'll appear here.")
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -296,20 +296,20 @@ struct LeaderboardView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(.white)
                     .frame(width: 32, height: 32)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(RewardsPalette.gold.fill))
                     .shadow(color: RewardsPalette.gold.solid.opacity(0.45), radius: 6, x: 0, y: 3)
                     .accessibilityHidden(true)
                 Text("Standings")
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .accessibilityAddTraits(.isHeader)
                 Button {
                     showingOrdering = true
                 } label: {
                     Image(systemName: "info.circle")
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(15, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .buttonStyle(.plain)
@@ -325,7 +325,7 @@ struct LeaderboardView: View {
             // what explains a total that shrank when a filter was pressed.
             if let note = board?.scopeNote, !note.isEmpty, !boardFailed {
                 Text(note)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -335,9 +335,9 @@ struct LeaderboardView: View {
     private var orderingExplainer: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("How the board is ordered")
-                .font(.system(size: 15, weight: .heavy))
+                .appFont(15, weight: .heavy)
             Text("It ranks on **XP**, highest first. When two students are level on XP, the one who earned it across more separate awards is placed above — steady work outranks a single big one. The line under the filters says which XP this particular board is counting.")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -529,7 +529,7 @@ private struct LeaderboardFiltersSheet: View {
     private func chip(_ title: String, active: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .lineLimit(1)
                 .foregroundStyle(active ? Color.white : Theme.textSecondary)
                 .padding(.horizontal, 14)
@@ -582,22 +582,22 @@ struct LeaderboardStandingRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(row.displayName)
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .lineLimit(1)
                     if row.isMe { LeaderboardYouTag() }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(row.place)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
                         Text(ScoreText.string(row.xp))
-                            .font(.system(size: 14, weight: .heavy))
+                            .appFont(14, weight: .heavy)
                             .monospacedDigit()
                         Text("XP")
-                            .font(.system(size: 11, weight: .bold))
+                            .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                     .fixedSize()
@@ -641,7 +641,7 @@ struct LeaderboardRankBadge: View {
     var body: some View {
         let medal = RewardsPalette.medal(forRank: rank)
         Text(String(rank))
-            .font(.system(size: 13, weight: .heavy))
+            .appFont(13, weight: .heavy)
             .monospacedDigit()
             .foregroundStyle(medal != nil || highlight ? Color.white : Theme.textSecondary)
             .shadow(color: medal != nil ? Color.black.opacity(0.3) : .clear, radius: 1, x: 0, y: 1)
@@ -697,7 +697,7 @@ struct LeaderboardAvatar: View {
 struct LeaderboardYouTag: View {
     var body: some View {
         Text("YOU")
-            .font(.system(size: 10, weight: .heavy))
+            .appFont(10, weight: .heavy)
             .tracking(0.6)
             .foregroundStyle(.white)
             .padding(.horizontal, 6)
@@ -715,9 +715,9 @@ struct LeaderboardGoalLine: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "arrow.up.forward").font(.system(size: pill ? 12 : 10, weight: .bold))
+            Image(systemName: "arrow.up.forward").appFont(pill ? 12 : 10, weight: .bold)
                 .accessibilityHidden(true)
-            Text(goal.text).font(.system(size: pill ? 12 : 11, weight: .bold))
+            Text(goal.text).appFont(pill ? 12 : 11, weight: .bold)
         }
         .foregroundStyle(RewardsPalette.accentText)
         .padding(.horizontal, pill ? 12 : 0)
@@ -831,7 +831,7 @@ private struct LeaderboardPodiumColumn: View {
         VStack(spacing: 0) {
             if isWinner {
                 Image(systemName: "crown.fill")
-                    .font(.system(size: 26, weight: .bold))
+                    .appFont(26, weight: .bold)
                     .foregroundStyle(RewardsPalette.crown)
                     .shadow(color: RewardsPalette.crown.opacity(0.55), radius: 4, x: 0, y: 3)
                     .padding(.bottom, 4)
@@ -848,7 +848,7 @@ private struct LeaderboardPodiumColumn: View {
             // Two lines rather than an ellipsis: each step has under a hundred points, and the
             // three names are the point of the podium.
             Text(row.displayName)
-                .font(.system(size: 13, weight: .heavy))
+                .appFont(13, weight: .heavy)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .padding(.top, 10)
@@ -857,18 +857,18 @@ private struct LeaderboardPodiumColumn: View {
                 LeaderboardYouTag().padding(.top, 4)
             }
             Text(row.branch ?? "No branch yet")
-                .font(.system(size: 11, weight: .semibold))
+                .appFont(11, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(1)
                 .padding(.top, 2)
                 .padding(.horizontal, 2)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(ScoreText.string(row.xp))
-                    .font(.system(size: 18, weight: .heavy))
+                    .appFont(18, weight: .heavy)
                     .monospacedDigit()
                     .foregroundStyle(isWinner ? medal.solid : Color.primary)
                 Text("XP")
-                    .font(.system(size: 10, weight: .bold))
+                    .appFont(10, weight: .bold)
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.top, 4)
@@ -898,7 +898,7 @@ private struct LeaderboardPodiumColumn: View {
             .animation(ease(0.7, delay: barDelay), value: staged)
 
             Text(String(row.rank))
-                .font(.system(size: 30, weight: .heavy))
+                .appFont(30, weight: .heavy)
                 .foregroundStyle(.white)
                 .shadow(color: Color.black.opacity(0.35), radius: 3, x: 0, y: 2)
                 .padding(.top, 6)

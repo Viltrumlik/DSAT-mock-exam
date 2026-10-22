@@ -73,10 +73,10 @@ struct RankUpCard: View {
                 // A place is an identifier, not a quantity: never "#1,204". Its own words are the
                 // announcement — the cursor lands here and reads them (see the task below).
                 Text(verbatim: "You moved up to #\(rise.to)")
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .appFont(24, weight: .heavy, design: .rounded)
                     .accessibilityFocused($newsFocused)
                 Text(verbatim: "Overall · all time · up from #\(rise.from)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     // The dots are pauses, not words.
                     .accessibilityLabel("Overall, all time, up from #\(rise.from)")

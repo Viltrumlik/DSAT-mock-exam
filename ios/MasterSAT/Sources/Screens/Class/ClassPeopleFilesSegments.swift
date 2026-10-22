@@ -17,7 +17,7 @@ struct ClassGroupHeading: View {
                 .fill(room.isMath ? Theme.subjectMath : Theme.subjectEnglish)
                 .frame(width: 9, height: 9)
             Text(room.name)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .appFont(13, weight: .heavy, design: .rounded)
                 .textCase(.uppercase)
                 .tracking(0.8)
                 .foregroundStyle(Theme.textSecondary)

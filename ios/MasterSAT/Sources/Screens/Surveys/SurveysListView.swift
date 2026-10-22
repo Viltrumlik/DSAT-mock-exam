@@ -115,17 +115,17 @@ struct SurveyListRow: View {
             IconTile(systemName: "list.clipboard", size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(survey.title)
-                    .font(.system(size: 15, weight: .heavy))
+                    .appFont(15, weight: .heavy)
                     .foregroundStyle(Color.primary)
                     .lineLimit(2)
                 Text(Self.meta(survey))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
             Spacer(minLength: 8)
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textLabel)
                 .accessibilityHidden(true)
         }

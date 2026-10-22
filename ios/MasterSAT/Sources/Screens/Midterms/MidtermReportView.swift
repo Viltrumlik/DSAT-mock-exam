@@ -41,7 +41,7 @@ struct MidtermReportView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Overline("Midterm result")
                     Text(heading)
-                        .font(.system(size: 26, weight: .heavy))
+                        .appFont(26, weight: .heavy)
                         .tracking(-0.6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -97,7 +97,7 @@ struct MidtermReportView: View {
     private var scoreHero: some View {
         VStack(spacing: 12) {
             Text("YOUR SCORE")
-                .font(.system(size: 11, weight: .heavy))
+                .appFont(11, weight: .heavy)
                 .tracking(1.2)
                 .foregroundStyle(.white.opacity(0.8))
 
@@ -106,14 +106,14 @@ struct MidtermReportView: View {
                 Group {
                     if let score { RollingNumber(value: score) } else { Text(ScoreText.string(score)) }
                 }
-                .font(.system(size: 60, weight: .heavy).monospacedDigit())
+                .appFont(60, weight: .heavy).monospacedDigit()
                 .tracking(-1.5)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 if let ceiling {
                     Text("/ \(ScoreText.string(ceiling))")
-                        .font(.system(size: 18, weight: .bold))
+                        .appFont(18, weight: .bold)
                         .foregroundStyle(.white.opacity(0.75))
                 }
             }
@@ -121,7 +121,7 @@ struct MidtermReportView: View {
             if let rank = certificate?.rank {
                 Text(certificate?.cohortSize.map { "Class rank \(ScoreText.string(rank)) of \(ScoreText.string($0))" }
                      ?? "Class rank \(ScoreText.string(rank))")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.9))
             }
 
@@ -143,7 +143,7 @@ struct MidtermReportView: View {
             if certificate?.available == true {
                 Button { pdf = .certificate } label: {
                     Label("Download certificate", systemImage: "arrow.down.doc.fill")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .foregroundStyle(Theme.accent)
                         .padding(.horizontal, 18)
                         .padding(.vertical, 11)
@@ -186,9 +186,9 @@ struct MidtermReportView: View {
 
     private func heroChip(_ text: String, icon: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10, weight: .bold))
+            Image(systemName: icon).appFont(10, weight: .bold)
                 .accessibilityHidden(true)
-            Text(text).font(.system(size: 12, weight: .heavy))
+            Text(text).appFont(12, weight: .heavy)
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 11)
@@ -234,14 +234,14 @@ struct MidtermReportView: View {
                             .filter { !$0.isEmpty }
                             .joined(separator: " · ")
                     )
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Button { pdf = .report } label: {
                     Label("Download report", systemImage: "arrow.down.doc")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                 }
                 .buttonStyle(SecondaryButtonStyle())
             }
@@ -307,7 +307,7 @@ struct MidtermReportView: View {
                     "\(ScoreText.string(report.unclassifiedWrong)) of your \(ScoreText.string(report.wrongCount)) mistakes came from questions that are not tagged to a \(noun) yet, so they are not in the list above.",
                     systemImage: "info.circle"
                 )
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -336,12 +336,12 @@ struct MidtermReportView: View {
     private func notice(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 30))
+                .appFont(30)
                 .foregroundStyle(Theme.warning)
                 .accessibilityHidden(true)
-            Text(title).font(.system(size: 17, weight: .bold))
+            Text(title).appFont(17, weight: .bold)
             Text(message)
-                .font(.system(size: 14, weight: .medium))
+                .appFont(14, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -421,19 +421,19 @@ private struct MidtermStatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(1.1)
                 .foregroundStyle(Theme.textLabel)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .font(.system(size: 24, weight: .heavy).monospacedDigit())
+                .appFont(24, weight: .heavy).monospacedDigit()
                 .tracking(-0.6)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             if let sub {
                 Text(sub)
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
@@ -465,17 +465,17 @@ private struct SkillRow: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(skill.skill)
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .multilineTextAlignment(.leading)
                     if let domain = skill.domain, !domain.isEmpty {
                         Text(domain)
-                            .font(.system(size: 11, weight: .medium))
+                            .appFont(11, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
                 Spacer(minLength: 0)
                 Text("\(ScoreText.string(skill.wrong)) of \(ScoreText.string(skill.total))")
-                    .font(.system(size: 12, weight: .heavy).monospacedDigit())
+                    .appFont(12, weight: .heavy).monospacedDigit()
                     .foregroundStyle(tone)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -496,22 +496,22 @@ private struct CoveredRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: full ? "checkmark.circle.fill" : "circle.fill")
-                .font(.system(size: full ? 15 : 7))
+                .appFont(full ? 15 : 7)
                 .foregroundStyle(full ? Theme.success : Theme.warning)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(skill.skill)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .multilineTextAlignment(.leading)
                 if let domain = skill.domain, !domain.isEmpty {
                     Text(domain)
-                        .font(.system(size: 11, weight: .medium))
+                        .appFont(11, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer(minLength: 0)
             Text("\(ScoreText.string(skill.correct))/\(ScoreText.string(skill.total))")
-                .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                .appFont(13, weight: .heavy).monospacedDigit()
                 .foregroundStyle(full ? Theme.success : Theme.textSecondary)
         }
         .padding(.vertical, 9)

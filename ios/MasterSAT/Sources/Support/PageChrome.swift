@@ -68,11 +68,11 @@ struct CardHeading: View {
             IconTile(systemName: icon, tone: tone)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .tracking(-0.2)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -90,10 +90,10 @@ struct DotHeading: View {
     var body: some View {
         HStack(spacing: 9) {
             Circle().fill(tone).frame(width: 10, height: 10)
-            Text(title).font(.system(size: 15, weight: .heavy))
+            Text(title).appFont(15, weight: .heavy)
             if let count {
                 Text(ScoreText.string(count))
-                    .font(.system(size: 12, weight: .heavy))
+                    .appFont(12, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
@@ -115,11 +115,11 @@ struct DashedEmpty: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             if let hint {
                 Text(hint)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textLabel)
                     .multilineTextAlignment(.center)
             }
@@ -146,11 +146,11 @@ struct ScoreBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .heavy))
+                .appFont(11, weight: .heavy)
                 .tracking(1.3)
                 .foregroundStyle(emphasised ? Theme.accent.opacity(0.85) : Theme.textLabel)
             Text(ScoreText.string(value))
-                .font(.system(size: 30, weight: .heavy))
+                .appFont(30, weight: .heavy)
                 .monospacedDigit()
                 .tracking(-0.9)
                 .foregroundStyle(emphasised ? Theme.accent : .primary)
@@ -182,11 +182,11 @@ struct InfoBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(1.1)
                 .foregroundStyle(Theme.textLabel)
             Text(value)
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -240,9 +240,9 @@ struct HeroHeader<Trailing: View>: View {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
+                        Image(systemName: eyebrowIcon).appFont(11, weight: .bold)
                             .accessibilityHidden(true)
-                        Text(eyebrow).font(.system(size: 12, weight: .heavy))
+                        Text(eyebrow).appFont(12, weight: .heavy)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
@@ -250,7 +250,7 @@ struct HeroHeader<Trailing: View>: View {
                     .background(Capsule().fill(.white.opacity(0.2)))
 
                     Text(title)
-                        .font(.system(size: 28, weight: .heavy))
+                        .appFont(28, weight: .heavy)
                         .tracking(-0.7)
                         .foregroundStyle(.white)
                         .padding(.top, 14)
@@ -258,7 +258,7 @@ struct HeroHeader<Trailing: View>: View {
 
                     if let blurb {
                         Text(blurb)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(.white.opacity(0.78))
                             .padding(.top, 10)
                             .fixedSize(horizontal: false, vertical: true)
@@ -328,15 +328,15 @@ private struct HeroTileFlow: View {
                     ForEach(row) { tile in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(tile.label.uppercased())
-                                .font(.system(size: 11, weight: .heavy))
+                                .appFont(11, weight: .heavy)
                                 .tracking(0.7)
                                 .foregroundStyle(.white.opacity(0.72))
                             HStack(spacing: 6) {
                                 Image(systemName: tile.icon)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .appFont(12, weight: .semibold)
                                     .foregroundStyle(.white.opacity(0.8))
                                 Text(tile.value)
-                                    .font(.system(size: 17, weight: .heavy))
+                                    .appFont(17, weight: .heavy)
                                     .monospacedDigit()
                                     .foregroundStyle(.white)
                             }
@@ -393,12 +393,12 @@ struct PillTabs<Tab: Hashable>: View {
                         withAnimation(reduceMotion || focusZone ? Motion.focus : Motion.snappy) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: item.icon).font(.system(size: 12, weight: .bold))
+                            Image(systemName: item.icon).appFont(12, weight: .bold)
                                 .accessibilityHidden(true)
-                            Text(item.title).font(.system(size: 14, weight: .bold))
+                            Text(item.title).appFont(14, weight: .bold)
                             if let count = item.count {
                                 Text(ScoreText.string(count))
-                                    .font(.system(size: 11, weight: .heavy))
+                                    .appFont(11, weight: .heavy)
                                     .monospacedDigit()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 1)

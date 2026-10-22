@@ -45,9 +45,9 @@ struct NotificationSettingsView: View {
                     ForEach(StudentReminder.Kind.allCases, id: \.self) { kind in
                         Toggle(isOn: binding(for: kind)) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(label(kind)).font(.system(size: 15, weight: .bold))
+                                Text(label(kind)).appFont(15, weight: .bold)
                                 Text(explanation(kind))
-                                    .font(.system(size: 12, weight: .medium))
+                                    .appFont(12, weight: .medium)
                                     .foregroundStyle(Theme.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -59,7 +59,7 @@ struct NotificationSettingsView: View {
                 }
 
                 Text("Reminders are set on this phone from your own homework and midterm dates — nothing is sent from a server, so they work offline. A score published while the app is closed is announced the next time you open it.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -105,11 +105,11 @@ struct NotificationSettingsView: View {
         case .granted:
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18))
+                    .appFont(18)
                     .foregroundStyle(Theme.success)
                     .accessibilityHidden(true)
                 Text("Notifications are on")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                 Spacer(minLength: 0)
                 Chip(text: "\(ScoreText.string(service.pendingCount)) set", tone: .success)
             }
@@ -189,9 +189,9 @@ struct ReminderPromptCard: View {
                 IconTile(systemName: "bell.badge", tone: Theme.accent, size: 42)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Never miss a deadline")
-                        .font(.system(size: 16, weight: .heavy))
+                        .appFont(16, weight: .heavy)
                     Text("Get a nudge before homework is due and before a midterm starts.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }

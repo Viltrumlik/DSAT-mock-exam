@@ -33,11 +33,11 @@ struct CommunityStateCard<Actions: View>: View {
             IconTile(systemName: icon, tone: tone, size: 60)
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 18, weight: .heavy))
+                    .appFont(18, weight: .heavy)
                     .tracking(-0.2)
                 if let message {
                     Text(message)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -93,7 +93,7 @@ struct CommunityRemoteImage: View {
             Rectangle().fill(Theme.surface2)
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .appFont(22)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
             } else {
@@ -199,7 +199,7 @@ struct CommunityFieldChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 15))
+            .appFont(15)
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
             .background(

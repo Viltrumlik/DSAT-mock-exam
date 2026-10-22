@@ -43,11 +43,11 @@ struct TodayHero: View {
                     .rotationEffect(.degrees(-90))
                 if progress.isComplete {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 26, weight: .heavy))
+                        .appFont(26, weight: .heavy)
                         .foregroundStyle(tone)
                 } else {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
-                        .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
+                        .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
                         .contentTransition(.numericText())
                 }
             }
@@ -63,14 +63,14 @@ struct TodayHero: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("THIS WEEK")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .tracking(1.2)
                     .foregroundStyle(Theme.textLabel)
                 Text(headline)
-                    .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    .appFont(20, weight: .heavy, design: .rounded)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(subline)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 0)
@@ -103,9 +103,9 @@ struct AllDoneCard: View {
         VStack(spacing: 10) {
             StateArt(.allDone)
             Text("You're all caught up")
-                .font(.system(size: 17, weight: .heavy, design: .rounded))
+                .appFont(17, weight: .heavy, design: .rounded)
             Text("New work from your teachers shows up here.")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -122,18 +122,18 @@ struct LessonsUnavailableRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.warning)
                 .accessibilityHidden(true)
             Text("Today's lessons didn't load.")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             Button {
                 Task { await retry() }
             } label: {
                 Text("Try again")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.accent)
                     // Drawn 12 pt, tappable 44; the quiet row stays quiet.
                     .hitTarget()
@@ -156,11 +156,11 @@ struct FreshResultCard: View {
             if let score = midterm.score {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(ScoreText.string(score))
-                        .font(.system(size: 32, weight: .heavy, design: .rounded).monospacedDigit())
+                        .appFont(32, weight: .heavy, design: .rounded).monospacedDigit()
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -195,15 +195,15 @@ struct SATCountdownRow: View {
                 IconTile(systemName: "calendar", tone: Theme.accentDeep, size: 38)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 15, weight: .heavy, design: .rounded))
+                        .appFont(15, weight: .heavy, design: .rounded)
                         .foregroundStyle(.primary)
                     Text(day.detail)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityHidden(true)
             }

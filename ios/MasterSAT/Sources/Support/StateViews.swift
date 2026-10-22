@@ -132,7 +132,7 @@ struct ErrorState: View {
                 StateArt(offline ? .offline : .error).padding(.bottom, 2)
             case .inline:
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 20, weight: .semibold))
+                    .appFont(20, weight: .semibold)
                     .foregroundStyle(Theme.warning)
                     .accessibilityHidden(true)
             }
@@ -245,7 +245,7 @@ extension View {
 struct StaleNote: View {
     var body: some View {
         Label("Couldn't refresh — showing what last loaded", systemImage: "wifi.exclamationmark")
-            .font(.system(size: 12.5, weight: .semibold))
+            .appFont(12.5, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
@@ -263,10 +263,10 @@ private struct StateText: View {
     var body: some View {
         VStack(spacing: compact ? 4 : 6) {
             Text(title)
-                .font(.system(size: compact ? 15 : 16, weight: compact ? .bold : .heavy))
+                .appFont(compact ? 15 : 16, weight: compact ? .bold : .heavy)
             if let message {
                 Text(message)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -282,7 +282,7 @@ private struct StateButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         let shape = RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .appFont(15, weight: .bold)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 18)
             .frame(minHeight: 44)

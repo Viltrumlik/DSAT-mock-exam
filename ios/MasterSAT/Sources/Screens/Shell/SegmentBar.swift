@@ -35,7 +35,7 @@ struct SegmentBar<Segment: Hashable>: View {
                     withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = item.segment }
                 } label: {
                     Text(item.title)
-                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .appFont(14, weight: .bold, design: .rounded)
                         .foregroundStyle(active ? Color.primary : Theme.textSecondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)

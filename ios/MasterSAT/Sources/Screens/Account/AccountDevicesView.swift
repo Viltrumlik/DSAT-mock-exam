@@ -105,12 +105,12 @@ struct AccountDevicesView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(verbatim: device.label)
-                            .font(.system(size: 15, weight: .heavy))
+                            .appFont(15, weight: .heavy)
                             .lineLimit(1)
                         if isThis { AccountStatusPill(text: "This device", tone: Theme.success) }
                     }
                     Text(verbatim: detail)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
@@ -142,7 +142,7 @@ struct AccountDevicesView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Don't recognise a device? Sign it out and change your password. A device you sign out stops within a few hours, the next time it renews its sign-in.")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 

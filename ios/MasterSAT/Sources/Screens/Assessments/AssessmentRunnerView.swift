@@ -163,7 +163,7 @@ struct AssessmentRunnerView: View {
                                 // Say it rather than showing a silent tick. A student who loses
                                 // signal mid-quiz deserves to know what has not landed.
                                 Label("Some answers haven't saved yet — they'll retry.", systemImage: "arrow.clockwise")
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .appFont(12, weight: .semibold)
                                     .foregroundStyle(Theme.warning)
                             }
                         }
@@ -207,7 +207,7 @@ struct AssessmentRunnerView: View {
                 }
             } label: {
                 Text("Save and exit")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.accent)
                     .frame(minHeight: Self.minTarget)
                     .contentShape(Rectangle())
@@ -219,7 +219,7 @@ struct AssessmentRunnerView: View {
             if offersCalculator {
                 Button { showCalculator = true } label: {
                     Image(systemName: "function")
-                        .font(.system(size: 16, weight: .semibold))
+                        .appFont(16, weight: .semibold)
                         .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
                         .frame(width: Self.minTarget, height: Self.minTarget)
                         .contentShape(Rectangle())
@@ -233,7 +233,7 @@ struct AssessmentRunnerView: View {
                     zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
                 }
                 Text("\(Int(zoom * 100))%")
-                    .font(.system(size: 11, weight: .bold).monospacedDigit())
+                    .appFont(11, weight: .bold).monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 40)
                 zoomButton("textformat.size.larger", label: "Larger text", enabled: zoom < 1.5) {
@@ -251,7 +251,7 @@ struct AssessmentRunnerView: View {
     private func zoomButton(_ icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 16, weight: .semibold))
+                .appFont(16, weight: .semibold)
                 .frame(width: Self.minTarget, height: Self.minTarget)
                 .contentShape(Rectangle())
         }
@@ -270,20 +270,20 @@ struct AssessmentRunnerView: View {
                 // line of chrome is not a trade worth making.
                 if let subject = runner.bundle?.set?.subject, !subject.isEmpty {
                     Text(subject.humanisedSubject.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
                         .tracking(1.8)
                         .foregroundStyle(Theme.accent)
                         .lineLimit(1)
                 }
                 Text(runner.bundle?.set?.title ?? "Assessment")
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                     .lineLimit(2)
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 3) {
                 // The count is the progress: it rolls when it moves, and no bar restates it.
                 Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
-                    .font(.system(size: 14, weight: .bold).monospacedDigit())
+                    .appFont(14, weight: .bold).monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
                     .contentTransition(reduceMotion ? .identity : .numericText(value: Double(runner.answeredCount)))
                     .animation(Motion.focus, value: runner.answeredCount)
@@ -309,7 +309,7 @@ struct AssessmentRunnerView: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("QUESTION \(ScoreText.string(runner.currentIndex + 1)) OF \(ScoreText.string(runner.questions.count))")
-                    .font(.system(size: 10, weight: .bold))
+                    .appFont(10, weight: .bold)
                     .tracking(1.4)
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
@@ -371,14 +371,14 @@ struct AssessmentRunnerView: View {
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isFlagged ? "flag.fill" : "flag")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     // Chrome beside the question, never over it — the one spring the runner
                     // allows.
                     .symbolEffect(.bounce, value: flagBounces)
                     // The word beside it says it; the glyph would read "flag, Flag".
                     .accessibilityHidden(true)
                 Text(isFlagged ? "Flagged" : "Flag")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
             }
             .foregroundStyle(isFlagged ? Theme.flagged : Theme.textSecondary)
             .padding(.horizontal, 10)
@@ -509,7 +509,7 @@ struct AssessmentRunnerView: View {
                 move(to: runner.currentIndex - 1, runner)
             } label: {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .frame(width: 46, height: 44)
             }
             .buttonStyle(SecondaryButtonStyle())
@@ -522,8 +522,8 @@ struct AssessmentRunnerView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("\(ScoreText.string(runner.currentIndex + 1)) / \(ScoreText.string(runner.questions.count))")
-                        .font(.system(size: 14, weight: .bold).monospacedDigit())
-                    Image(systemName: "chevron.up").font(.system(size: 10, weight: .bold))
+                        .appFont(14, weight: .bold).monospacedDigit()
+                    Image(systemName: "chevron.up").appFont(10, weight: .bold)
                 }
                 // An ink pill with its own text colour: a dark pill and white text in light mode,
                 // a light pill and dark text in dark mode — never white on white.
@@ -561,7 +561,7 @@ struct AssessmentRunnerView: View {
                 } label: {
                     HStack(spacing: 6) {
                         Text("Next")
-                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold))
+                        Image(systemName: "chevron.right").appFont(13, weight: .bold)
                             .accessibilityHidden(true)
                     }
                     .frame(maxWidth: .infinity)
@@ -622,7 +622,7 @@ private struct SavedMark: View {
 
     var body: some View {
         Label("Saved", systemImage: "checkmark")
-            .font(.system(size: 11, weight: .semibold))
+            .appFont(11, weight: .semibold)
             .foregroundStyle(Theme.textLabel)
             .opacity(shown && runner.unsaved.isEmpty ? 1 : 0)
             .animation(Motion.focus, value: shown)
@@ -672,7 +672,7 @@ struct QuestionMapSheet: View {
                                     // Answered is the runner's selection blue: green means
                                     // "correct" on the review, and the runner never says so.
                                     Text(ScoreText.string(index + 1))
-                                        .font(.system(size: 15, weight: .bold).monospacedDigit())
+                                        .appFont(15, weight: .bold).monospacedDigit()
                                         .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.accent : Color.primary))
                                         .frame(maxWidth: .infinity, minHeight: 48)
                                         .background(
@@ -685,7 +685,7 @@ struct QuestionMapSheet: View {
                                         )
                                     if isFlagged {
                                         Image(systemName: "flag.fill")
-                                            .font(.system(size: 9))
+                                            .appFont(9)
                                             .foregroundStyle(Theme.flagged)
                                             .padding(5)
                                     }
@@ -704,9 +704,9 @@ struct QuestionMapSheet: View {
                         legend("Answered", Theme.accentSoft)
                         legend("Blank", Theme.surface2)
                         HStack(spacing: 5) {
-                            Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(Theme.flagged)
+                            Image(systemName: "flag.fill").appFont(9).foregroundStyle(Theme.flagged)
                                 .accessibilityHidden(true)
-                            Text("Flagged").font(.system(size: 11, weight: .semibold))
+                            Text("Flagged").appFont(11, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                         }
                     }
@@ -723,7 +723,7 @@ struct QuestionMapSheet: View {
     private func legend(_ label: String, _ colour: Color) -> some View {
         HStack(spacing: 5) {
             RoundedRectangle(cornerRadius: 3).fill(colour).frame(width: 11, height: 11)
-            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+            Text(label).appFont(11, weight: .semibold).foregroundStyle(Theme.textSecondary)
         }
     }
 }
@@ -800,7 +800,7 @@ struct AssessmentChoiceRow: View {
             if let onEliminate {
                 Button(action: onEliminate) {
                     Image(systemName: isEliminated ? "arrow.uturn.backward" : "minus.circle")
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(15, weight: .semibold)
                         .foregroundStyle(isEliminated ? Theme.textSecondary : Theme.textLabel)
                         .frame(minWidth: 44, maxWidth: 44, minHeight: 64)
                         .background(
@@ -842,13 +842,13 @@ struct AssessmentSubmittedView: View {
             ZStack {
                 Circle().fill(Theme.successSoft).frame(width: 96, height: 96)
                 Image(systemName: "checkmark")
-                    .font(.system(size: 40, weight: .bold))
+                    .appFont(40, weight: .bold)
                     .foregroundStyle(Theme.success)
                     .accessibilityHidden(true)
             }
-            Text("Handed in").font(.system(size: 24, weight: .heavy))
+            Text("Handed in").appFont(24, weight: .heavy)
             Text("Your teacher will see it. Marking may take a little while.")
-                .font(.system(size: 15))
+                .appFont(15)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
             Button("Done") { onClose() }

@@ -34,17 +34,17 @@ struct ClassLessonCard: View {
                     IconTile(systemName: room.isMath ? "function" : "book.closed.fill", tone: tone, size: 44)
                     VStack(alignment: .leading, spacing: 3) {
                         Text(room.name)
-                            .font(.system(size: 17, weight: .heavy, design: .rounded))
+                            .appFont(17, weight: .heavy, design: .rounded)
                             .foregroundStyle(.primary)
                             .multilineTextAlignment(.leading)
                         Text(lessonLine)
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .foregroundStyle(next?.isOnNow == true ? Theme.success : Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(12, weight: .bold)
                         .foregroundStyle(Theme.textLabel)
                         .accessibilityHidden(true)
                 }

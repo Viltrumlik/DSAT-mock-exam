@@ -34,7 +34,7 @@ struct NotificationBell: View {
             showingInbox = true
         } label: {
             Image(systemName: "bell")
-                .font(.system(size: 17, weight: .semibold))
+                .appFont(17, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 42, height: 42)
                 .background(Circle().fill(Theme.card))
@@ -42,7 +42,7 @@ struct NotificationBell: View {
                 .overlay(alignment: .topTrailing) {
                     if let text = NotificationBadge.text(for: count) {
                         Text(text)
-                            .font(.system(size: 10, weight: .heavy))
+                            .appFont(10, weight: .heavy)
                             .monospacedDigit()
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)

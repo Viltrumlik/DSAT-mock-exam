@@ -55,10 +55,10 @@ struct OfflineBanner: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "wifi.slash").font(.system(size: 12, weight: .bold))
+            Image(systemName: "wifi.slash").appFont(12, weight: .bold)
                 .accessibilityHidden(true)
             Text("You're offline — what's on screen may be out of date.")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }

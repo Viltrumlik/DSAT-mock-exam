@@ -166,7 +166,7 @@ struct HomeworkDetailView: View {
                     // The list row is on screen, but the teacher's side of it — instructions,
                     // files, the papers — did not arrive. Said, not silently left out.
                     Label("Some of this homework could not be loaded just now. Pull down to try again.", systemImage: "exclamationmark.triangle")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 // Keyed off the submission's own status (DRAFT/SUBMITTED/REVIEWED/RETURNED).
@@ -278,10 +278,10 @@ struct HomeworkDetailView: View {
                 IconTile(systemName: returned ? "arrow.uturn.backward.circle.fill" : "checkmark.seal.fill", tone: tone)
                 VStack(alignment: .leading, spacing: 2) {
                     // The site's own titles: a returned piece is an invitation to revise.
-                    Text(returned ? "Revision requested" : "Feedback").font(.system(size: 16, weight: .heavy))
+                    Text(returned ? "Revision requested" : "Feedback").appFont(16, weight: .heavy)
                     if let at = review.reviewedAt {
                         Text(RelativeTime.short(at))
-                            .font(.system(size: 12, weight: .medium))
+                            .appFont(12, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -289,13 +289,13 @@ struct HomeworkDetailView: View {
                 if let score = review.scoreText {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(score)
-                            .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                            .appFont(22, weight: .heavy).monospacedDigit()
                             .foregroundStyle(tone)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                         if review.isAuto {
                             Text("Auto-marked")
-                                .font(.system(size: 11, weight: .bold))
+                                .appFont(11, weight: .bold)
                                 .foregroundStyle(Theme.textSecondary)
                         }
                     }
@@ -303,11 +303,11 @@ struct HomeworkDetailView: View {
             }
             if let feedback = review.feedback, !feedback.isEmpty {
                 Text(feedback)
-                    .font(.system(size: 15))
+                    .appFont(15)
                     .fixedSize(horizontal: false, vertical: true)
             } else if !returned {
                 Text("No written feedback — your score is shown above.")
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -317,10 +317,10 @@ struct HomeworkDetailView: View {
     private func returnNote(_ note: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Label("From your teacher", systemImage: "text.bubble.fill")
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.warning)
             // A returned homework is an invitation to revise, so the note leads.
-            Text(note).font(.system(size: 15))
+            Text(note).appFont(15)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
@@ -356,22 +356,22 @@ struct HomeworkDetailView: View {
                             .frame(width: 54, height: 54)
                             .overlay(
                                 Image(systemName: "play.fill")
-                                    .font(.system(size: 20))
+                                    .appFont(20)
                                     .foregroundStyle(Theme.danger)
                                     .accessibilityHidden(true)
                             )
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Watch the lesson video")
-                                .font(.system(size: 16, weight: .bold))
+                                .appFont(16, weight: .bold)
                                 .foregroundStyle(.primary)
                             Text(url.host ?? raw)
-                                .font(.system(size: 12))
+                                .appFont(12)
                                 .foregroundStyle(Theme.textSecondary)
                                 .lineLimit(1)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right.square")
-                            .font(.system(size: 14))
+                            .appFont(14)
                             .foregroundStyle(Theme.textLabel)
                             .accessibilityHidden(true)
                     }
@@ -420,7 +420,7 @@ struct HomeworkDetailView: View {
                     // where the student stands on each, but never started from the phone.
                     ForEach(papers) { ComputerPaperRow(paper: $0) }
                     Label("Open this on a computer — papers are sat there.", systemImage: "laptopcomputer")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, 4)
                 }
@@ -487,18 +487,18 @@ struct HomeworkDetailView: View {
                                 IconTile(systemName: "link", tone: Theme.accent, size: 36)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(link.label.isEmpty ? (url.host ?? link.url) : link.label)
-                                        .font(.system(size: 14, weight: .semibold))
+                                        .appFont(14, weight: .semibold)
                                         .foregroundStyle(.primary)
                                         .lineLimit(1)
                                     if !link.label.isEmpty {
                                         Text(url.host ?? link.url)
-                                            .font(.system(size: 11))
+                                            .appFont(11)
                                             .foregroundStyle(Theme.textSecondary)
                                             .lineLimit(1)
                                     }
                                 }
                                 Spacer()
-                                Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(Theme.textLabel)
+                                Image(systemName: "arrow.up.right").appFont(11).foregroundStyle(Theme.textLabel)
                                     .accessibilityHidden(true)
                             }
                             .cardStyle(padding: 12)
@@ -543,13 +543,13 @@ struct HomeworkDetailView: View {
                         : "Hand-in closed at the deadline.",
                     systemImage: "lock.fill"
                 )
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             }
         } else if a.offersFileUpload {
             uploadCard(a)
         } else if let actionError {
-            Text(actionError).font(.system(size: 13)).foregroundStyle(Theme.danger)
+            Text(actionError).appFont(13).foregroundStyle(Theme.danger)
         }
     }
 
@@ -618,12 +618,12 @@ struct HomeworkDetailView: View {
 
             if let actionError {
                 Text(actionError)
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             } else if staged.isEmpty && submission?.files.isEmpty != false {
                 Text("Add a photo of your work, or a file, then hand it in. Up to \(limits.maxFilesPerSubmission) files, \(SubmissionLimits.megabytes(limits.maxFileBytes)) each.")
-                    .font(.system(size: 12))
+                    .appFont(12)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -1015,17 +1015,17 @@ struct TaskRowLabel: View {
                 .frame(width: 44, height: 44)
                 .overlay(
                     Image(systemName: isDone ? "checkmark" : icon)
-                        .font(.system(size: 17, weight: .semibold))
+                        .appFont(17, weight: .semibold)
                         .foregroundStyle(isDone ? Theme.success : tone)
                         .accessibilityHidden(true)
                 )
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 if !subtitle.isEmpty {
-                    Text(subtitle).font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+                    Text(subtitle).appFont(12).foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer(minLength: 0)
@@ -1033,7 +1033,7 @@ struct TaskRowLabel: View {
                 ProgressView()
             } else {
                 Text(actionLabel)
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(isDone ? Theme.textSecondary : .white)
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
@@ -1067,11 +1067,11 @@ struct ComputerPaperRow: View {
                 IconTile(systemName: paper.mode == .review ? "checkmark" : "doc.text", tone: Theme.info, size: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(paper.name)
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                     Text([paper.kind.rawValue, paper.subject].compactMap { $0 }.joined(separator: " · "))
-                        .font(.system(size: 12))
+                        .appFont(12)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
@@ -1083,7 +1083,7 @@ struct ComputerPaperRow: View {
             if let attemptId = paper.certificateAttemptId {
                 Button { showingCertificate = true } label: {
                     Label("Certificate", systemImage: "rosette")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .sheet(isPresented: $showingCertificate) {
@@ -1106,17 +1106,17 @@ private struct AttachmentRow: View {
             IconTile(systemName: kind.family == .image ? "photo.fill" : "doc.fill", tone: Theme.accent, size: 36)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.fileName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 Text([kind.label, file.size.map(SubmissionLimits.megabytes)].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 0)
             Label("Download", systemImage: "arrow.down.circle")
                 .labelStyle(.iconOnly)
-                .font(.system(size: 18))
+                .appFont(18)
                 .foregroundStyle(Theme.accent)
         }
         .cardStyle(padding: 12)
@@ -1213,11 +1213,11 @@ struct StagedFileRow: View {
                 preview
                 VStack(alignment: .leading, spacing: 1) {
                     Text(file.filename)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Text(SubmissionLimits.megabytes(file.data.count))
-                        .font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                        .appFont(11).foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
             }
@@ -1378,7 +1378,7 @@ struct UploadRing: View {
                 .rotationEffect(.degrees(-90))
             if done {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(Theme.accent)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             }
@@ -1415,9 +1415,9 @@ struct SubmittedFileRow: View {
             Image(systemName: "paperclip").foregroundStyle(Theme.textSecondary)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
-                Text(file.displayName).font(.system(size: 14, weight: .medium))
+                Text(file.displayName).appFont(14, weight: .medium)
                 if let type = file.fileType, !type.isEmpty {
-                    Text(type).font(.system(size: 11)).foregroundStyle(Theme.textSecondary)
+                    Text(type).appFont(11).foregroundStyle(Theme.textSecondary)
                 }
             }
             Spacer()

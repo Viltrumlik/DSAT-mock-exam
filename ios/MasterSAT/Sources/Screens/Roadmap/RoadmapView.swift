@@ -88,7 +88,7 @@ struct RoadmapView: View {
         VStack(alignment: .leading, spacing: 6) {
             PageTitle("Roadmap")
             Text("Your path, step by step. Finish a level to open the next one.")
-                .font(.system(size: 14.5, weight: .semibold))
+                .appFont(14.5, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -113,7 +113,7 @@ struct RoadmapView: View {
             if loadError != nil {
                 // A refresh that failed over a page already loaded: keep what loaded, and say so.
                 Label("Couldn’t refresh — this is the roadmap as it last loaded.", systemImage: "wifi.exclamationmark")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .appFont(12.5, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             levels(of: track)
@@ -318,19 +318,19 @@ struct RoadmapLevelBanner: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(level.levelLabel)
-                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                    .appFont(21, weight: .heavy, design: .rounded)
                     .foregroundStyle(fill == nil ? Color.primary : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Text(subtitle)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .appFont(13.5, weight: .bold)
                     .foregroundStyle(fill == nil ? Theme.textSecondary : .white.opacity(0.92))
             }
             Spacer(minLength: 8)
             HStack(spacing: 5) {
-                Image(systemName: pillIcon).font(.system(size: 11, weight: .heavy))
+                Image(systemName: pillIcon).appFont(11, weight: .heavy)
                     .accessibilityHidden(true)
-                Text(state.pillText).font(.system(size: 12, weight: .heavy))
+                Text(state.pillText).appFont(12, weight: .heavy)
             }
             .foregroundStyle(fill ?? Theme.textSecondary)
             .padding(.horizontal, 11)
@@ -338,7 +338,7 @@ struct RoadmapLevelBanner: View {
             .background(Capsule().fill(fill == nil ? Theme.surface2 : Color.white.opacity(0.94)))
             .fixedSize()
             Image(systemName: "chevron.down")
-                .font(.system(size: 15, weight: .heavy))
+                .appFont(15, weight: .heavy)
                 .foregroundStyle(fill == nil ? Theme.textSecondary : .white.opacity(0.9))
                 .rotationEffect(.degrees(isOpen ? 0 : -90))
                 .accessibilityHidden(true)
