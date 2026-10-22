@@ -233,6 +233,22 @@ public enum VocabGames {
         return !target.isEmpty && normalise(input) == target
     }
 
+    /// Typographic quotes and dashes as their plain forms. The keyboard can produce ’ for ' and
+    /// — for --, and a word imported from a spreadsheet can carry a ’ or a non-breaking hyphen,
+    /// so the spelling test folds BOTH sides before `spellingIsCorrect`: a student is never
+    /// refused for which of the two looks they typed. Used only when an answer is graded — the
+    /// grade the phone sends — never in the well.
+    public static func foldTypography(_ text: String) -> String {
+        String(text.map { character -> Character in
+            switch character {
+            case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
+            case "\u{201C}", "\u{201D}": return "\""
+            case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
+            default: return character
+            }
+        })
+    }
+
     // MARK: - Test
 
     /// A test walks every word once, cycling through the three kinds in this order.

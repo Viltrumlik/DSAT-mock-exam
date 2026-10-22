@@ -312,21 +312,6 @@ struct VocabTestView: View {
         entry(raw, for: word).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Typographic quotes and dashes as their plain forms. The keyboard can produce ’ for ' and
-    /// — for --, and a word imported from a spreadsheet can carry a ’ or a non-breaking hyphen,
-    /// so grading folds BOTH sides: a student is never refused for which of the two looks they
-    /// typed. Used only when an answer is graded, never in the well.
-    private static func fold(_ text: String) -> String {
-        String(text.map { character -> Character in
-            switch character {
-            case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
-            case "\u{201C}", "\u{201D}": return "\""
-            case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
-            default: return character
-            }
-        })
-    }
-
     // MARK: - Answering
 
     private static let letters = ["A", "B", "C", "D"]
@@ -339,7 +324,9 @@ struct VocabTestView: View {
             question: question,
             given: given,
             expected: question.word,
-            correct: VocabGames.spellingIsCorrect(Self.fold(given), Self.fold(question.word))
+            correct: VocabGames.spellingIsCorrect(
+                VocabGames.foldTypography(given), VocabGames.foldTypography(question.word)
+            )
         )
     }
 
@@ -387,7 +374,7 @@ struct VocabTestView: View {
 /// would refuse them. This looks for the `UITextField` beside it and sets its traits (smart
 /// quotes, dashes and inserts, autocorrect, spell check, capitals) directly. If the field is
 /// not found, nothing changes — grading folds typographic quotes and dashes on both sides
-/// (`VocabTestView.fold`), so a curly one is never refused either way.
+/// (`VocabGames.foldTypography`), so a curly one is never refused either way.
 private struct PlainTyping: UIViewRepresentable {
     let field: SpellingField
 
