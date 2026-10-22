@@ -563,21 +563,19 @@ struct AssessmentRunnerView: View {
 /// A quiet "Saved" under the answered count, for a moment after the server confirmed a write.
 ///
 /// It says a write landed — not that everything has, and not that the answer on screen has — so
-/// it appears only when `savedCount` rises (never for the value the runner opened with, never on
-/// a tap), and not while a write is failing: the warning under the question says what has not
-/// landed. Its own view, reading the runner itself, so a landing redraws only this word. Another
-/// confirmation keeps it up; the task is cancelled with the view. VoiceOver is not told: a
-/// student who needs to know is told what has not saved, in words.
+/// it appears only when `savedCount` rises while it is on screen (never for the value it finds on
+/// coming on screen, never on a tap), and not while a write is failing: the warning under the
+/// question says what has not landed. Its own view, and the only one reading `savedCount`, so a
+/// landing redraws only this word. Another confirmation keeps it up; the task is cancelled with
+/// the view. VoiceOver is not told: a student who needs to know is told what has not saved, in
+/// words.
 private struct SavedMark: View {
     let runner: AssessmentRunner
-    /// The confirmations the runner had when this appeared — those are not news.
-    @State private var opened: Int
+    /// The confirmations already counted when this came on screen — those are not news. Nil while
+    /// it is off screen: the task's first run reads it. Never read in an `init` — that runs inside
+    /// the runner's body, which then redrew on every save.
+    @State private var opened: Int?
     @State private var shown = false
-
-    init(runner: AssessmentRunner) {
-        self.runner = runner
-        _opened = State(initialValue: runner.savedCount)
-    }
 
     var body: some View {
         Label("Saved", systemImage: "checkmark")
@@ -587,13 +585,23 @@ private struct SavedMark: View {
             .animation(Motion.focus, value: shown)
             .accessibilityHidden(true)
             .task(id: runner.savedCount) {
-                guard runner.savedCount > opened else { return }
+                let saved = runner.savedCount
+                // Coming on screen — the first time, or back after confirmations it never saw:
+                // what it finds is the baseline, not news.
+                guard let baseline = opened else {
+                    opened = saved
+                    return
+                }
+                guard saved > baseline else { return }
                 shown = true
                 try? await Task.sleep(for: .seconds(1.2))
                 guard !Task.isCancelled else { return }
                 shown = false
             }
-            .onDisappear { shown = false }
+            .onDisappear {
+                shown = false
+                opened = nil
+            }
     }
 }
 
