@@ -30,9 +30,8 @@ struct LearnMoreErrorCard: View {
 /// of why, and — where there is one — the way forward.
 ///
 /// `EmptyState`'s compact form, without art: it also stands inside loaded pages (a lesson with no
-/// reading yet). `icon` is kept so the call sites stay as they are; it is no longer drawn.
+/// reading yet).
 struct LearnMoreEmptyCard<Action: View>: View {
-    let icon: String
     let title: String
     let message: String
     @ViewBuilder var action: () -> Action
@@ -48,8 +47,8 @@ struct LearnMoreEmptyCard<Action: View>: View {
 }
 
 extension LearnMoreEmptyCard where Action == EmptyView {
-    init(icon: String, title: String, message: String) {
-        self.init(icon: icon, title: title, message: message) { EmptyView() }
+    init(title: String, message: String) {
+        self.init(title: title, message: message) { EmptyView() }
     }
 }
 
@@ -175,7 +174,7 @@ struct LearnMoreClassroomView: View {
                         .padding(16)
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                LoadingSkeleton(rows: 2, height: 130, style: .cards, label: "Opening class").skeletonPage()
             }
         }
         .background(Theme.background)

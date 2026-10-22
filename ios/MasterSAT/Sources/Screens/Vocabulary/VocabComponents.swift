@@ -495,7 +495,7 @@ struct VocabGameGuide: View {
 /// `ErrorState`: the Words page can show four of these at once, one per section.
 struct VocabErrorNotice: View {
     let title: String
-    var message = "Something went wrong on our end. Check your connection and try again."
+    var message = ErrorState.nothingLost
     let retry: @MainActor () async -> Void
 
     var body: some View {
@@ -505,10 +505,8 @@ struct VocabErrorNotice: View {
 
 /// An empty answer with something to do about it: a dashed slot, and one way forward.
 ///
-/// `EmptyState`'s compact form, without art: the Words page can show three at once. `icon` is
-/// kept so the call sites stay as they are; it is no longer drawn.
+/// `EmptyState`'s compact form, without art: the Words page can show three at once.
 struct VocabEmptyState: View {
-    let icon: String
     let title: String
     let message: String
     var actionTitle: String?

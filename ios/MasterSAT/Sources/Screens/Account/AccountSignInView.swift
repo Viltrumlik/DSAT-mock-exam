@@ -32,7 +32,8 @@ struct AccountSignInView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    // The email, Telegram and password rows.
+                    LoadingSkeleton(rows: 3, height: 76, style: .cards)
                 case .failed(let message):
                     RetryNotice(message: message) { await reload() }
                         .cardStyle()

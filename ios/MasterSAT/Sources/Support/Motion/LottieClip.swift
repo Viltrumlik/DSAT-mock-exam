@@ -35,6 +35,16 @@ enum LottieAsset: String, CaseIterable {
         case .coinBurst, .starBurst, .allDone, .noTasks, .noWords, .offline, .error: false
         }
     }
+
+    /// Whether `LottieClip(_:)` plays it as a state's art — once, then holds its picture — when the
+    /// caller does not say. `.once` is blank under Reduce Motion, which is right for a burst that
+    /// ends blank and wrong for art that has something to say.
+    var settlesByDefault: Bool {
+        switch self {
+        case .allDone, .noTasks, .noWords, .offline, .error: true
+        case .strikeFlame, .taskComplete, .trophy, .coinBurst, .starBurst: false
+        }
+    }
 }
 
 /// A Lottie, played the way the student's settings allow.
@@ -57,9 +67,11 @@ struct LottieClip: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// `loops` nil: the asset's own default (`LottieAsset.loopsByDefault`).
+    /// `loops` nil: the asset's own default (`LottieAsset.loopsByDefault`). One that does not loop
+    /// plays once, and a state's art settles on its picture (`LottieAsset.settlesByDefault`).
     init(_ asset: LottieAsset, loops: Bool? = nil) {
-        self.init(asset, playback: (loops ?? asset.loopsByDefault) ? .loop : .once)
+        let looping = loops ?? asset.loopsByDefault
+        self.init(asset, playback: looping ? .loop : (asset.settlesByDefault ? .settle : .once))
     }
 
     init(_ asset: LottieAsset, playback: Playback) {

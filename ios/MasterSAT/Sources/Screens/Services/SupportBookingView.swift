@@ -150,10 +150,8 @@ struct SupportBookingView: View {
     @ViewBuilder private var calendarSection: some View {
         switch model.calendar {
         case .loading:
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 36)
-                .cardStyle()
+            // A teacher's card with her free hours.
+            LoadingSkeleton(rows: 2, height: 120, style: .cards, label: "Loading the calendar")
         case .failed(let reason):
             ServicesNotice(
                 title: "The calendar isn't loading right now.",
@@ -238,10 +236,7 @@ struct SupportBookingView: View {
 
             switch model.bookings {
             case .loading:
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .cardStyle()
+                LoadingSkeleton(rows: 2, height: 64, label: "Loading your sessions")
             case .failed(let reason):
                 // Not an empty state: "no sessions yet" would be a lie, and the calendar above
                 // would seem to offer hours this student has already taken.

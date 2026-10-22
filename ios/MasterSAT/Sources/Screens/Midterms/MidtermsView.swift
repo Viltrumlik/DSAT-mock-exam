@@ -89,7 +89,7 @@ struct MidtermsView: View {
                 )
 
                 if isLoading && !hasLoaded {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                    LoadingSkeleton(rows: 3, height: 84, style: .cards)
                 } else if let loadError, midterms.isEmpty {
                     // A failed load is never "no midterms yet".
                     RetryNotice(message: loadError) { await load() }

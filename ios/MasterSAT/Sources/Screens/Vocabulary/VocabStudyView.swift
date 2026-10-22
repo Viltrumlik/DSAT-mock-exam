@@ -127,7 +127,7 @@ struct VocabStudyView: View {
                         .background(Circle().fill(Theme.warningSoft))
                     Text("Couldn't start this round")
                         .font(.system(size: 18, weight: .heavy))
-                    Text(error.errorDescription ?? "Something went wrong on our end.")
+                    Text(error.errorDescription ?? ErrorState.nothingLost)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)

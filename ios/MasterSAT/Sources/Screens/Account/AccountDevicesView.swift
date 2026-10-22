@@ -46,7 +46,7 @@ struct AccountDevicesView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    LoadingSkeleton(rows: 3, height: 78, style: .cards)
                 case .failed(let message):
                     // "No devices" here would tell a student nobody is signed in as them — the
                     // one thing this page exists to let them check.

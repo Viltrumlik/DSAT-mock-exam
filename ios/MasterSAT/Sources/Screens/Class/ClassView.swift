@@ -133,20 +133,22 @@ struct ClassView: View {
     @ViewBuilder
     private var content: some View {
         if !hasLoaded && classrooms.isEmpty {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+            // A class card or two, then the segment under them.
+            LoadingSkeleton(rows: 2, height: 100, style: .cards)
         } else if let classesError, classrooms.isEmpty {
             // A failed load is never "no classes yet".
             ClassroomErrorState(
                 title: "Couldn't load your classes",
-                message: "Something went wrong on our end. Check your connection and try again."
+                message: ErrorState.nothingLost
             ) { await load() }
             .accessibilityHint(classesError)
         } else if classrooms.isEmpty {
-            VStack(spacing: 12) {
-                DashedEmpty(title: "No classes yet", hint: "Have a class code? Join now to get started.")
-                Button("Join with a code") { joining = true }
-                    .buttonStyle(SecondaryButtonStyle())
-            }
+            EmptyState(
+                art: .noTasks,
+                title: "No classes yet",
+                message: "Have a class code? Join now to get started.",
+                action: (title: "Join with a code", run: { joining = true })
+            )
         } else {
             if !filter.chips.isEmpty {
                 PillTabs(items: chipItems, selection: $chip).stagger(1, shown: shown)

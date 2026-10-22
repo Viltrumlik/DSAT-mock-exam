@@ -105,7 +105,6 @@ struct MyProgressView: View {
         if let report {
             if report.tracks.isEmpty {
                 LearnMoreEmptyCard(
-                    icon: "chart.line.uptrend.xyaxis",
                     title: "Nothing to show yet",
                     message: "Once you are enrolled in a class with a level, your attendance and homework for it appear here."
                 )

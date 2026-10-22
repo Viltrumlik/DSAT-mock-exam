@@ -50,8 +50,7 @@ struct UnreachableView: View {
 
     var body: some View {
         StateScreen(
-            icon: "wifi.exclamationmark",
-            tone: Theme.warning,
+            art: .offline,
             title: "Can’t reach MasterSAT",
             message: "Check your internet connection. You’re still signed in — nothing is lost."
         ) {
@@ -71,19 +70,48 @@ struct UnreachableView: View {
     }
 }
 
-/// The shared layout of a whole-screen state: an icon, a headline, a sentence, the actions.
+/// The shared layout of a whole-screen state: a mark, a headline, a sentence, the actions.
 struct StateScreen<Actions: View>: View {
-    let icon: String
-    let tone: Color
+    /// What stands above the title: an icon tile, or — where the state is a failure the student
+    /// can do something about — its art, which is the screen's one animation.
+    private enum Mark {
+        case icon(String, tone: Color)
+        case art(LottieAsset)
+    }
+
+    private let mark: Mark
     let title: String
     let message: String
     @ViewBuilder let actions: () -> Actions
 
+    init(
+        icon: String, tone: Color, title: String, message: String,
+        @ViewBuilder actions: @escaping () -> Actions
+    ) {
+        mark = .icon(icon, tone: tone)
+        self.title = title
+        self.message = message
+        self.actions = actions
+    }
+
+    init(art: LottieAsset, title: String, message: String, @ViewBuilder actions: @escaping () -> Actions) {
+        mark = .art(art)
+        self.title = title
+        self.message = message
+        self.actions = actions
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 40)
-            IconTile(systemName: icon, tone: tone, size: 72)
-                .padding(.bottom, 22)
+            switch mark {
+            case .icon(let icon, let tone):
+                IconTile(systemName: icon, tone: tone, size: 72)
+                    .padding(.bottom, 22)
+            case .art(let asset):
+                StateArt(asset, size: 128)
+                    .padding(.bottom, 14)
+            }
             Text(title)
                 .font(.system(size: 26, weight: .heavy))
                 .tracking(-0.6)

@@ -31,7 +31,8 @@ struct AccountDetailsView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    // The photo card, then the fields.
+                    LoadingSkeleton(rows: 2, height: 130, style: .cards)
                 case .failed(let message):
                     RetryNotice(message: message) { await reload() }
                         .cardStyle()

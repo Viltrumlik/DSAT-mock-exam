@@ -88,13 +88,12 @@ struct TodayHero: View {
     }
 }
 
-/// Nothing owed and nothing left today. The check is still until phase 5 brings an all-done
-/// Lottie of its own.
+/// Nothing owed and nothing left today. The page's one piece of art: it settles on a tick, once,
+/// so a finished day looks finished rather than busy.
 struct AllDoneCard: View {
     var body: some View {
         VStack(spacing: 10) {
-            LottieClip(.taskComplete, playback: .still)
-                .frame(width: 84, height: 84)
+            StateArt(.allDone)
             Text("You're all caught up")
                 .font(.system(size: 17, weight: .heavy, design: .rounded))
             Text("New work from your teachers shows up here.")

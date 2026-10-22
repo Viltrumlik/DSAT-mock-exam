@@ -47,7 +47,8 @@ struct MidtermReportView: View {
                 }
 
                 if isLoading && result == nil && report == nil {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 60)
+                    // The score card, then the report.
+                    LoadingSkeleton(rows: 2, height: 140, style: .cards)
                 } else if let loadError {
                     RetryNotice(message: loadError) { await load() }
                 } else if released {

@@ -170,7 +170,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
         case .failed:
             AssessmentLoadError { await model.load(session) }
         case .loading where model.assignments.isEmpty:
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+            LoadingSkeleton(rows: 3, height: 96, style: .cards)
         default:
             if !trimmedQuery.isEmpty {
                 // Search is the other way to locate something, so it looks across every
@@ -547,12 +547,7 @@ struct AssessmentLoadError: View {
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        ErrorState(
-            title: "Couldn't load your assessments",
-            message: "Something went wrong on our end. Check your connection and try again.",
-            style: .page,
-            retry: retry
-        )
+        ErrorState(title: "Couldn't load your assessments", style: .page, retry: retry)
     }
 }
 

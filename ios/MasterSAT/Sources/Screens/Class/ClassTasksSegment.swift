@@ -60,17 +60,14 @@ struct ClassTasksSegment: View {
         }
     }
 
-    /// What stands in for a list that has not arrived: a spinner while it is on its way, a retry
-    /// when it failed.
+    /// What stands in for a list that has not arrived: rows' worth of shape while it is on its way,
+    /// a retry when it failed.
     @ViewBuilder
-    private func unavailable(_ state: ClassSourceState, message: String) -> some View {
+    private func unavailable(_ state: ClassSourceState, message: String, rows: Int = 3) -> some View {
         if state == .failed {
             RetryNotice(message: message, retry: retry)
         } else {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-                .accessibilityLabel("Loading")
+            LoadingSkeleton(rows: rows, height: 80, style: .cards)
         }
     }
 
@@ -79,7 +76,12 @@ struct ClassTasksSegment: View {
         if homework != .loaded {
             unavailable(homework, message: "Your homework didn't load. Check your connection and try again.")
         } else if tasks.toDo.isEmpty {
-            DashedEmpty(title: "Nothing to do here", hint: "New work from your teachers shows up here.")
+            // The tab's one piece of art: Done and Results are second lists, and keep their dashes.
+            EmptyState(
+                art: .noTasks,
+                title: "Nothing to do here",
+                message: "New work from your teachers shows up here."
+            )
         } else {
             VStack(spacing: 10) {
                 ForEach(tasks.toDo) { item in
@@ -115,7 +117,7 @@ struct ClassTasksSegment: View {
     }
 
     /// Quizzes follow the homework fetch, midterms their own. Each part shows once its source is
-    /// in; what is still on its way is a spinner and what failed is a retry, so "No results yet"
+    /// in; what is still on its way is a skeleton and what failed is a retry, so "No results yet"
     /// is said only when both sources have answered.
     @ViewBuilder
     private var results: some View {
@@ -159,7 +161,9 @@ struct ClassTasksSegment: View {
                     let failed = homework == .failed || midterms == .failed
                     unavailable(failed ? .failed : .pending, message: shownAny
                         ? "Some of your results didn't load. Check your connection and try again."
-                        : "Your results didn't load. Check your connection and try again.")
+                        : "Your results didn't load. Check your connection and try again.",
+                        // Under rows that are already in, one more is enough to say "still coming".
+                        rows: shownAny ? 1 : 3)
                 }
             }
         }

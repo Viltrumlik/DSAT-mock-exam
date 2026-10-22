@@ -54,7 +54,7 @@ struct ClassesListView: View {
                     // A failed load is never "no classes yet".
                     ClassroomErrorState(
                         title: "Couldn't load your classes",
-                        message: "Something went wrong on our end. Check your connection and try again."
+                        message: ErrorState.nothingLost
                     ) { await load() }
                     .accessibilityHint(loadError)
                 } else if classrooms.isEmpty {

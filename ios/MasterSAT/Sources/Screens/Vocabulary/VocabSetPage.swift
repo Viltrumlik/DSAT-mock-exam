@@ -38,7 +38,8 @@ struct VocabSetView: View {
                 }
                 .background(Theme.background)
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.background)
+                // The header, then the words.
+                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(Theme.background)
             }
         }
         .navigationTitle("")

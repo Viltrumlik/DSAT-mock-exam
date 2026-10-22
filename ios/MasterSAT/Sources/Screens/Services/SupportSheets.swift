@@ -269,9 +269,7 @@ struct SupportAddMemberSheet: View {
                 // that would send a student to a teacher about a problem that does not exist.
                 switch classmates {
                 case .loading:
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                    LoadingSkeleton(rows: 3, height: 48, label: "Loading your classmates")
                 case .failed(let reason):
                     VStack(alignment: .leading, spacing: 8) {
                         SupportSheetError(message: "Couldn't load your classmates.")

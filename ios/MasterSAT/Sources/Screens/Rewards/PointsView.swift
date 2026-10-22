@@ -272,7 +272,7 @@ struct PointsView: View {
                     }
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                LoadingSkeleton(rows: 3, height: 44)
             }
         }
         .cardStyle(padding: 18)
@@ -306,7 +306,7 @@ struct PointsView: View {
                     }
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 12)
+                LoadingSkeleton(rows: 3, height: 34)
             }
         }
         .cardStyle(padding: 18)

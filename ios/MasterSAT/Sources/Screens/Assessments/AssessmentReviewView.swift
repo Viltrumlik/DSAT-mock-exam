@@ -121,7 +121,8 @@ struct AssessmentReviewView: View {
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
-                ProgressView()
+                // The score card, then the question under it.
+                LoadingSkeleton(rows: 2, height: 160, style: .cards).skeletonPage()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

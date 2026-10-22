@@ -102,13 +102,8 @@ struct HomeworkDetailView: View {
                     .padding(16)
                 }
             } else {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Opening assignment…")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The title and its facts, then what to do.
+                LoadingSkeleton(rows: 3, height: 90, style: .cards, label: "Opening assignment").skeletonPage()
             }
         }
         .background(Theme.background)
@@ -475,7 +470,7 @@ struct HomeworkDetailView: View {
             // Not offered until we know what is already handed in.
             VStack(alignment: .leading, spacing: 10) {
                 Overline("Hand in")
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 16)
+                LoadingSkeleton(rows: 1, height: 72, style: .cards)
             }
         } else if a.offersFileUpload, let submissionError {
             // Not knowing what is already handed in is not "nothing handed in".

@@ -47,11 +47,16 @@ private struct OfflineOverlay: View {
     @Environment(Session.self) private var session
 
     var body: some View {
-        Group {
+        // A stable container that stays, with the banner coming and going inside it: an animation
+        // keyed to a value, set on a `Group` whose branch flips in that same update, is applied to
+        // the view being inserted or removed and can miss it.
+        ZStack(alignment: .top) {
             if !session.connectivity.isOnline {
-                OfflineBanner().allowsHitTesting(false)
+                OfflineBanner()
             }
         }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
     }
 }

@@ -482,7 +482,8 @@ private struct LeaderboardFiltersSheet: View {
                             message: "The board itself is unaffected — only the filter choices failed to load."
                         ) { await retry() }
                     } else {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                        // The chips the filters will hold.
+                        LoadingSkeleton(rows: 3, height: 40)
                     }
                 }
                 .padding(20)

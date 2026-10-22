@@ -72,7 +72,6 @@ struct RoadmapReadingView: View {
         if deliveryId <= 0 {
             // Not a request that can succeed, so not a spinner that never ends.
             LearnMoreEmptyCard(
-                icon: "book.pages",
                 title: "That isn’t a lesson link",
                 message: "The address is missing a lesson number."
             ) { backButton }
@@ -82,7 +81,6 @@ struct RoadmapReadingView: View {
             switch failure {
             case .notFound:
                 LearnMoreEmptyCard(
-                    icon: "book.pages",
                     title: "Nothing to read here",
                     message: "This lesson isn’t one of yours, or it hasn’t reached your class yet."
                 ) { backButton }
@@ -123,7 +121,6 @@ struct RoadmapReadingView: View {
 
         if reading.sections.isEmpty {
             LearnMoreEmptyCard(
-                icon: "book.pages",
                 title: "Nothing written for this lesson yet",
                 message: "Your teacher hasn’t added the reading for it. The homework is below if it has been set."
             )

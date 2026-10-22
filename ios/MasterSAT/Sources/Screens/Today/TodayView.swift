@@ -204,10 +204,12 @@ struct TodayView: View {
                 }
             }
             if !hasLoaded {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if let loadError, assignments.isEmpty {
-                // A failed load is never "all caught up".
-                RetryNotice(message: loadError) { await load() }
+                // The rows' own shape, so the page does not jump when they arrive.
+                LoadingSkeleton(rows: 3, height: 80, style: .cards)
+            } else if homeworkFailed {
+                // A failed load is never "all caught up". The week card above says it too, in a
+                // line; this is the page's one piece of art.
+                ErrorState(title: "Today's work didn't load") { await load() }
             } else if plan.isAllClear && lessonsFailed {
                 // Nothing owed, but tonight's lessons are unknown: not "all caught up" either.
                 RetryNotice(message: "Couldn't load today's lessons.") { await load() }

@@ -90,26 +90,19 @@ struct ReviewTodayCard: View {
             startButton(for: title)
             noteLine
         case .caughtUp:
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "checkmark.seal.fill")
-                    .font(.system(size: 28))
-                    .foregroundStyle(Theme.success)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("All caught up")
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
-                    Text("Every word is mastered. Play any set to keep them fresh.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .accessibilityElement(children: .combine)
+            // The Words page's one piece of art: this and "nothing yet" never show together, and
+            // its other empty slots are the compact form.
+            EmptyState(
+                art: .allDone,
+                title: "All caught up",
+                message: "Every word is mastered. Play any set to keep them fresh."
+            )
         case .nothingYet:
             // A brand-new account, or one whose only word homework is a set with no words yet.
-            headline(
-                "No words to review yet",
-                detail: "Once a word list is published, or a teacher sets word homework with words in it, it lands here."
+            EmptyState(
+                art: .noWords,
+                title: "No words to review yet",
+                message: "Once a word list is published, or a teacher sets word homework with words in it, it lands here."
             )
         }
     }

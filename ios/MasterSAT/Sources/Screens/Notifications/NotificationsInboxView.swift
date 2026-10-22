@@ -156,15 +156,10 @@ struct NotificationsInboxView: View {
 
     /// Nothing loaded, and the load failed.
     private var failure: some View {
-        ContentUnavailableView {
-            Label("Notifications aren't loading.", systemImage: "wifi.exclamationmark")
-        } description: {
-            Text("Nothing has been missed — the list just couldn't be fetched.")
-        } actions: {
-            Button("Try again") { Task { await load() } }
-                .buttonStyle(SecondaryButtonStyle())
-        }
-        .padding(.top, 12)
+        ErrorState(
+            title: "Notifications aren't loading.",
+            message: "Nothing has been missed — the list just couldn't be fetched."
+        ) { await load() }
     }
 
     /// A list from earlier is on screen, and refreshing it failed. The list stays — it is still

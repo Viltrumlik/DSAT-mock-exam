@@ -52,13 +52,8 @@ struct ClassroomDetailView: View {
                     .padding(16)
                 }
             } else {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Opening classroom…")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The class's header, then its tabs.
+                LoadingSkeleton(rows: 2, height: 130, style: .cards, label: "Opening class").skeletonPage()
             }
         }
         .background(Theme.background)

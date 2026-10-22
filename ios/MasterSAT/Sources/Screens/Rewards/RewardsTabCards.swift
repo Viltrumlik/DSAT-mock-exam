@@ -326,10 +326,7 @@ struct RewardsBoardSection: View {
             )
             .cardStyle(padding: 8)
         } else {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-                .accessibilityLabel("Loading the leaderboard")
+            LoadingSkeleton(rows: 5, height: 48, label: "Loading the leaderboard")
         }
     }
 }

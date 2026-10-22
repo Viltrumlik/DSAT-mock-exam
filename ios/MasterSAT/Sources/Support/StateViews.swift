@@ -150,8 +150,11 @@ struct ErrorState: View {
 
     private var retryButton: some View {
         Button {
+            // Flipped here, not inside the task: a second tap in the gap before the task starts
+            // would otherwise send a second request.
+            guard !retrying else { return }
+            retrying = true
             Task {
-                retrying = true
                 await retry()
                 retrying = false
             }
@@ -167,6 +170,8 @@ struct ErrorState: View {
         }
         .buttonStyle(StateButtonStyle())
         .disabled(retrying)
+        // The spinner says nothing to VoiceOver; the label does.
+        .accessibilityLabel(retrying ? "Trying again" : "Try again")
     }
 }
 
@@ -183,15 +188,18 @@ struct LoadingSkeleton: View {
     let height: CGFloat
     let style: Style
     let pulse: Bool
+    /// What VoiceOver hears for the whole run of blocks.
+    let label: String
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var dimmed = false
 
-    init(rows: Int = 3, height: CGFloat = 56, style: Style = .rows, pulse: Bool = true) {
+    init(rows: Int = 3, height: CGFloat = 56, style: Style = .rows, pulse: Bool = true, label: String = "Loading") {
         self.rows = rows
         self.height = height
         self.style = style
         self.pulse = pulse
+        self.label = label
     }
 
     private var breathes: Bool { pulse && !reduceMotion }
@@ -216,9 +224,18 @@ struct LoadingSkeleton: View {
             $0.opacity(dimmed ? 0.55 : 1)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading")
+        .accessibilityLabel(label)
         .onAppear { dimmed = breathes }
         .onChange(of: breathes) { _, now in dimmed = now }
+    }
+}
+
+extension View {
+    /// For a `LoadingSkeleton` standing in for a whole pushed page: pinned to the top inside the
+    /// page's own 16 pt margin, where its content will start, rather than centred like the spinner
+    /// it replaces.
+    func skeletonPage() -> some View {
+        padding(16).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

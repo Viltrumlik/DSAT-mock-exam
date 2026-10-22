@@ -117,10 +117,7 @@ struct RoadmapView: View {
             }
             levels(of: track)
         } else if loadError != nil, roadmap == nil {
-            LearnMoreErrorCard(
-                title: "Couldn't load your roadmap",
-                message: "Something went wrong on our end. Check your connection and try again."
-            ) { await load() }
+            LearnMoreErrorCard(title: "Couldn't load your roadmap") { await load() }
         } else if roadmap == nil {
             VStack(spacing: 14) {
                 ForEach(0..<4, id: \.self) { _ in LearnMoreSkeleton(height: 76) }
@@ -129,7 +126,6 @@ struct RoadmapView: View {
             .accessibilityLabel("Loading your roadmap")
         } else {
             LearnMoreEmptyCard(
-                icon: "graduationcap.fill",
                 title: "No roadmap yet",
                 message: "Join a class to see your learning path across every level."
             ) {

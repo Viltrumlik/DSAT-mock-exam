@@ -49,7 +49,7 @@ private struct SectionBody<Value, Loaded: View>: View {
         } else if load.error != nil {
             ClassroomErrorState(title: failureTitle, message: failureMessage, retry: retry)
         } else {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+            LoadingSkeleton(rows: 3, height: 56)
         }
     }
 }

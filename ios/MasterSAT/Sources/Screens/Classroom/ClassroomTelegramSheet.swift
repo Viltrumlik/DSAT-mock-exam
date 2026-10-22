@@ -79,7 +79,7 @@ struct ClassroomTelegramSheet: View {
                             message: "Something went wrong reading this class's Telegram group."
                         ) { await load() }
                     } else {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                        LoadingSkeleton(rows: 3, height: 64)
                     }
                 }
                 .padding(20)

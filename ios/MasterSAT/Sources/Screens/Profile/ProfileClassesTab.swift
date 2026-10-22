@@ -26,7 +26,7 @@ struct ProfileClassesTab: View {
         } else if model.classes.isFailed {
             ClassroomErrorState(
                 title: "Couldn't load your classes",
-                message: "Something went wrong on our end. Check your connection and try again."
+                message: ErrorState.nothingLost
             ) { onRetry(.classes) }
             .cardStyle(padding: 8)
         } else if let rooms = model.memberClasses {

@@ -323,7 +323,6 @@ struct VocabularyView: View {
             }
         } else if groups.isEmpty {
             VocabEmptyState(
-                icon: "graduationcap",
                 title: "No vocabulary homework right now",
                 message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the word bank."
             )
@@ -346,7 +345,6 @@ struct VocabularyView: View {
             }
         } else if sections.isEmpty {
             VocabEmptyState(
-                icon: "books.vertical",
                 title: "No word lists published yet",
                 message: "Your teachers publish vocabulary sections here. In the meantime you can build a set of your own.",
                 actionTitle: "Build my own set",
@@ -376,7 +374,6 @@ struct VocabularyView: View {
             }
         } else if mySets.isEmpty {
             VocabEmptyState(
-                icon: "sparkles",
                 title: "Make a set of the words you keep missing",
                 message: "Pull any words from the word bank into a set of your own, then study it with all four games.",
                 actionTitle: "New set",
@@ -432,7 +429,8 @@ struct VocabularyView: View {
     }
 
     private var loadingSlot: some View {
-        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+        // Up to three of these show at once, one per section; each is the shape of its cards.
+        LoadingSkeleton(rows: 2, height: 84, style: .cards)
     }
 
     private func createdLabel(_ iso: String?) -> String? {

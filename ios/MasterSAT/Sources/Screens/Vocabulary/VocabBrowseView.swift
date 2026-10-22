@@ -41,7 +41,8 @@ struct VocabSectionView: View {
                 }
                 .background(Theme.background)
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.background)
+                // The header, then the set cards.
+                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(Theme.background)
             }
         }
         .navigationTitle("")
@@ -176,7 +177,6 @@ struct VocabSectionView: View {
     private func setList(_ detail: VocabSectionDetail) -> some View {
         if detail.sets.isEmpty {
             VocabEmptyState(
-                icon: "books.vertical",
                 title: "This section has no sets yet",
                 message: "Sets show up as soon as the words are published. Try another section in the meantime."
             )
