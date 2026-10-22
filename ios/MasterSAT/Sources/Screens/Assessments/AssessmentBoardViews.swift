@@ -110,6 +110,9 @@ struct AssessmentBoardScaffold<Content: View>: View {
     @State private var query = ""
     @State private var runnerAttemptId: Int?
     @State private var refusal: AssessmentStartRefusal?
+    @Environment(CelebrationCenter.self) private var celebrations
+    /// The header's XP when the runner opened — what a hand-in's gain is measured from.
+    @State private var xpAtStart: Int?
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 
@@ -131,10 +134,13 @@ struct AssessmentBoardScaffold<Content: View>: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { if loadsOnAppear { await model.load(session.student) } }
         .fullScreenCover(item: $runnerAttemptId) { id in
-            AssessmentRunnerView(attemptId: id) {
+            AssessmentRunnerView(attemptId: id, onSubmitted: {
+                celebrations.celebrate(.assessment, xpBefore: xpAtStart)
+            }) {
                 runnerAttemptId = nil
                 Task { await model.load(session.student) }
             }
+            .coversCelebrations(celebrations)
         }
         .alert(
             "Couldn't start this assessment",
@@ -193,6 +199,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
             guard let result = await model.start(entry, api: session.assessments) else { return }
             switch result {
             case .opened(let attemptId):
+                xpAtStart = celebrations.xpNow
                 runnerAttemptId = attemptId
             case .refused(let message, let stale):
                 refusal = AssessmentStartRefusal(message: message, stale: stale)

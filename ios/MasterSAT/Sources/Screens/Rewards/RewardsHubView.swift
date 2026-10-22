@@ -27,7 +27,7 @@ struct RewardsHubView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            TabRootScroll(tab: .rewards, onRefresh: { await load() }) {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Rewards")
 
@@ -87,7 +87,6 @@ struct RewardsHubView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .refreshable { await load() }
             .onAppear { Task { await load() } }
         }
     }
@@ -146,12 +145,14 @@ struct RewardsHubView: View {
     @MainActor
     private func loadMe() async {
         let api = session.rewards
+        // Taken before asking, so an answer older than the header's own refresh cannot wind it back.
+        let ticket = rewards.ticket()
         do {
             let me = try await api.me()
             mine = me
             meFailed = false
             // The header's XP and streak read the same answer, so the two cannot disagree.
-            rewards.apply(me)
+            rewards.apply(me, ticket: ticket)
         } catch {
             meFailed = true
         }

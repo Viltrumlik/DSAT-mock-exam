@@ -463,3 +463,27 @@ enum RelativeTime {
         return f.string(from: date)
     }
 }
+
+// MARK: - Retry
+
+struct RetryNotice: View {
+    let message: String
+    /// Main-actor on purpose: every caller passes a closure that touches view state.
+    let retry: @MainActor () async -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 26))
+                .foregroundStyle(Theme.warning)
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+            Button("Try again") { Task { await retry() } }
+                .buttonStyle(SecondaryButtonStyle())
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+}

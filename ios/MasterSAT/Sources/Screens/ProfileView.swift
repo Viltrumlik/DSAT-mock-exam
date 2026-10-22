@@ -70,7 +70,8 @@ struct ProfileView: View {
                 }
             }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .refreshable { await model.refreshAll(session) }
+            // Detached: ten requests run under it, and the page re-renders as each lands.
+            .detachedRefresh { await model.refreshAll(session) }
             // Not `.task`: a push cancels a task, and a cancelled load would read as a failed one.
             .onAppear { Task { await model.appeared(session) } }
             .onChange(of: tab) { _, now in

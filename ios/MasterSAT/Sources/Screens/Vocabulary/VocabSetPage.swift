@@ -20,6 +20,9 @@ struct VocabSetView: View {
     @State private var studying: StudyMode?
     @State private var filter: VocabWordFilter = .all
     @State private var isEditing = false
+    @Environment(CelebrationCenter.self) private var celebrations
+    /// The header's XP when a game opened — what the round's gain is measured from.
+    @State private var xpAtStudyStart: Int?
 
     var body: some View {
         Group {
@@ -44,12 +47,18 @@ struct VocabSetView: View {
         .refreshable { await load() }
         .fullScreenCover(item: $studying) { mode in
             if let detail {
-                VocabStudyView(mode: mode, set: detail, assignmentId: assignmentId) {
+                VocabStudyView(mode: mode, set: detail, assignmentId: assignmentId, onFinished: {
+                    celebrations.celebrate(.vocabSession, xpBefore: xpAtStudyStart)
+                }) {
                     studying = nil
                     // Progress moved; repaint from the server rather than guessing.
                     Task { await load() }
                 }
+                .coversCelebrations(celebrations)
             }
+        }
+        .onChange(of: studying) { _, mode in
+            if mode != nil { xpAtStudyStart = celebrations.xpNow }
         }
         .sheet(isPresented: $isEditing) {
             if let detail {

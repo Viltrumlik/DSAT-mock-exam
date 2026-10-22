@@ -37,6 +37,8 @@ struct AssessmentReviewView: View {
     @State private var isRetrying = false
     @State private var retryAttemptId: Int?
     @State private var retryError: String?
+    @Environment(CelebrationCenter.self) private var celebrations
+    @State private var xpAtRetry: Int?
 
     private var questions: [AssessmentReviewQuestion] { review?.questions ?? [] }
 
@@ -109,12 +111,15 @@ struct AssessmentReviewView: View {
         .task { await load() }
         .onChange(of: filter) { index = 0 }
         .fullScreenCover(item: $retryAttemptId) { id in
-            AssessmentRunnerView(attemptId: id) {
+            AssessmentRunnerView(attemptId: id, onSubmitted: {
+                celebrations.celebrate(.assessment, xpBefore: xpAtRetry)
+            }) {
                 retryAttemptId = nil
                 onRetryClosed?()
                 // This review is of the attempt before; the new one lives on the board.
                 dismiss()
             }
+            .coversCelebrations(celebrations)
         }
         .alert(
             "Couldn't start this assessment",
@@ -148,7 +153,9 @@ struct AssessmentReviewView: View {
         isRetrying = true
         defer { isRetrying = false }
         do {
-            retryAttemptId = try await session.assessments.start(homeworkId: homeworkId).id
+            let attempt = try await session.assessments.start(homeworkId: homeworkId)
+            xpAtRetry = celebrations.xpNow
+            retryAttemptId = attempt.id
         } catch let error as APIError {
             retryError = error.errorDescription
         } catch {

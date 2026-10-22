@@ -5,11 +5,24 @@ import MasterSATKit
 struct AppHeader: View {
     let title: String
     var subtitle: String?
+    /// The same line, shorter, for a phone that cannot fit `subtitle` beside the pills. The
+    /// pills never give way, so the line is what changes shape: wide if it fits, else this.
+    var shortSubtitle: String?
+    /// What VoiceOver reads for the line, when it is more than the line shows.
+    var subtitleLabel: String?
     var showsBell: Bool
 
-    init(title: String, subtitle: String? = nil, showsBell: Bool = false) {
+    init(
+        title: String,
+        subtitle: String? = nil,
+        shortSubtitle: String? = nil,
+        subtitleLabel: String? = nil,
+        showsBell: Bool = false
+    ) {
         self.title = title
         self.subtitle = subtitle
+        self.shortSubtitle = shortSubtitle
+        self.subtitleLabel = subtitleLabel
         self.showsBell = showsBell
     }
 
@@ -17,14 +30,19 @@ struct AppHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                        .lineLimit(1)
+                    if let shortSubtitle {
+                        ViewThatFits(in: .horizontal) {
+                            line(subtitle)
+                            line(shortSubtitle)
+                        }
+                    } else {
+                        line(subtitle)
+                    }
                 }
                 Spacer(minLength: 0)
-                StrikeChip()
-                XPPill()
+                // Fixed: when the row is tight it is the line of context that gives way.
+                StrikeChip().fixedSize()
+                XPPill().fixedSize()
                 if showsBell {
                     // RootTabView routes what the inbox opens, the same way it routes a push.
                     NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
@@ -33,6 +51,14 @@ struct AppHeader: View {
             }
             PageTitle(title)
         }
+    }
+
+    private func line(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.textSecondary)
+            .lineLimit(1)
+            .accessibilityLabel(subtitleLabel ?? text)
     }
 }
 
@@ -63,25 +89,27 @@ private struct PillPulse { var scale = 1.0 }
 struct XPPill: View {
     @Environment(RewardsStore.self) private var rewards
     @Environment(CelebrationCenter.self) private var celebrations
-    /// Every tab has its own header and so its own pill, and a flight must land on the one on
-    /// screen. Only the pill that is showing reports where it is, and it reports again the
-    /// moment it appears — a pill that is back on screen has not moved, so geometry alone
-    /// would never tell the center that the target is its again.
+    /// Which pill this is. Every tab has its own header, so there are several; a flight lands on
+    /// the one on screen, and only that one pulses and buzzes.
+    @State private var owner = UUID()
     @State private var frame = CGRect.zero
     @State private var showing = false
+    @State private var pulses = 0
 
     var body: some View {
         if let xp = rewards.xp {
+            // XP still in the air is not on the pill yet: it rolls up when the flight lands.
+            let shown = max(0, xp - celebrations.heldXP)
             HStack(spacing: 4) {
                 Image(systemName: "bolt.fill").font(.system(size: 11, weight: .black))
-                Text("\(xp) XP").contentTransition(.numericText(value: Double(xp)))
+                Text("\(shown) XP").contentTransition(.numericText(value: Double(shown)))
             }
             .font(.system(size: 13, weight: .heavy, design: .rounded))
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Theme.card, in: Capsule())
-            .keyframeAnimator(initialValue: PillPulse(), trigger: celebrations.landedCount) { content, pulse in
+            .keyframeAnimator(initialValue: PillPulse(), trigger: pulses) { content, pulse in
                 content.scaleEffect(pulse.scale)
             } keyframes: { _ in
                 KeyframeTrack(\.scale) {
@@ -89,27 +117,35 @@ struct XPPill: View {
                     SpringKeyframe(1.0, duration: 0.5, spring: .bouncy(duration: 0.5, extraBounce: 0.3))
                 }
             }
-            .sensoryFeedback(.increase, trigger: celebrations.landedCount)
+            .sensoryFeedback(.increase, trigger: pulses)
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
                 frame = $0
-                if showing { celebrations.setXPTarget($0) }
+                report()
             }
             .onAppear {
                 showing = true
-                if frame != .zero { celebrations.setXPTarget(frame) }
+                celebrations.pillAppeared()
+                report()
             }
-            .onDisappear { showing = false }
+            .onDisappear {
+                showing = false
+                celebrations.clearXPTarget(owner: owner)
+            }
+            .onChange(of: celebrations.landing) { _, landing in
+                if landing?.owner == owner { pulses += 1 }
+            }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(xp) XP")
-            #if DEBUG
-            // Motion check only: a long-press throws a celebration so the kit can be seen
-            // before phase 2 wires the real triggers. Compiled out of release builds; phase 2
-            // deletes it.
-            .onLongPressGesture {
-                celebrations.confetti(at: CGPoint(x: 200, y: 420), size: .everything)
-                celebrations.flyXP(15, from: CGPoint(x: 200, y: 520))
-            }
-            #endif
+            .accessibilityLabel("\(shown) XP")
+        }
+    }
+
+    /// Only a pill that is showing and on screen can catch a flight. Scrolled up off the top,
+    /// it hands the job back, and a flight waits until a pill is in view again.
+    private func report() {
+        if showing, frame != .zero, frame.maxY > 0 {
+            celebrations.setXPTarget(frame, owner: owner)
+        } else {
+            celebrations.clearXPTarget(owner: owner)
         }
     }
 }

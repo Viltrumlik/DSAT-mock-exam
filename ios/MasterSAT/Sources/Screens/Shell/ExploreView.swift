@@ -9,7 +9,7 @@ struct ExploreView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
+            TabRootScroll(tab: .explore) {
                 VStack(alignment: .leading, spacing: 14) {
                     AppHeader(title: "Explore").stagger(0, shown: shown)
                     HubCard(title: "Roadmap", subtitle: "Your level, lesson by lesson, and what comes next",

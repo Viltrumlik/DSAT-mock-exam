@@ -6,6 +6,12 @@ struct CertificateCode: Identifiable {
     var id: String { code }
 }
 
+/// "Scroll this tab's root to its top" — a fresh nonce each time, so a second tap asks again.
+struct ScrollRequest: Equatable {
+    let tab: AppTab
+    let nonce: Int
+}
+
 /// Which tab is open, each tab's stack, and the two sheets.
 ///
 /// One `NavigationPath` per tab, as separate properties: an `@Observable` notifies per
@@ -28,6 +34,11 @@ final class AppRouter {
     var me = NavigationPath()
     var showingMe = false
     var certificate: CertificateCode?
+    private(set) var scrollToTop: ScrollRequest?
+    /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
+    /// Class root has applied it (`classToDoShown`), so it lands whether Class was already built
+    /// or is built by this very tap, and applies exactly once.
+    private(set) var wantsClassToDo = false
 
     /// A sheet asked for while the other sheet was up; opened once that one has gone.
     /// Nothing renders from it, so it stays out of observation.
@@ -36,10 +47,7 @@ final class AppRouter {
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
         switch link.placement {
         case .tab(let tab):
-            queued = nil
-            closeSheets()
-            select(tab)
-            popToRoot(tab)
+            show(tab)
         case .push(let tab, let page):
             queued = nil
             closeSheets()
@@ -86,8 +94,40 @@ final class AppRouter {
         open(next, baseURL: baseURL, openURL: openURL)
     }
 
-    /// Tapping the open tab again goes back to its top, as everywhere on iOS.
-    func reselect(_ tab: AppTab) { popToRoot(tab) }
+    /// Switch to a tab at its root, closing any sheet — a link to the tab itself, or "See all".
+    func show(_ tab: AppTab) {
+        queued = nil
+        closeSheets()
+        select(tab)
+        popToRoot(tab)
+    }
+
+    /// Today's "See all": Class, on Tasks → To do for every class — not wherever it was last left.
+    func showClassToDo() {
+        if !wantsClassToDo { wantsClassToDo = true }
+        show(.classes)
+        // At the top of the list, not wherever Class was last scrolled to.
+        requestScrollToTop(.classes)
+    }
+
+    /// The Class root has put itself on Tasks → To do.
+    func classToDoShown() {
+        if wantsClassToDo { wantsClassToDo = false }
+    }
+
+    /// Tapping the open tab again goes back to its top, as everywhere on iOS: a pushed page pops
+    /// to the root; a root already showing scrolls back up.
+    func reselect(_ tab: AppTab) {
+        if isAtRoot(tab) {
+            requestScrollToTop(tab)
+        } else {
+            popToRoot(tab)
+        }
+    }
+
+    private func requestScrollToTop(_ tab: AppTab) {
+        scrollToTop = ScrollRequest(tab: tab, nonce: (scrollToTop?.nonce ?? 0) + 1)
+    }
 
     private func closeSheets() {
         if showingMe { showingMe = false }
@@ -96,6 +136,16 @@ final class AppRouter {
 
     private func select(_ tab: AppTab) {
         if selection != tab { selection = tab }
+    }
+
+    private func isAtRoot(_ tab: AppTab) -> Bool {
+        switch tab {
+        case .today: return today.isEmpty
+        case .classes: return classes.isEmpty
+        case .words: return words.isEmpty
+        case .rewards: return rewards.isEmpty
+        case .explore: return explore.isEmpty
+        }
     }
 
     private func popToRoot(_ tab: AppTab) {

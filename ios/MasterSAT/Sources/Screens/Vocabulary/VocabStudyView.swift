@@ -24,6 +24,9 @@ struct VocabStudyView: View {
     let mode: StudyMode
     let set: VocabSetDetail
     var assignmentId: Int?
+    /// Called once, when the server has the first round of this cover (its grading call landed);
+    /// the set page celebrates it. A round whose save failed is not announced until a retry lands.
+    var onFinished: (@MainActor () -> Void)? = nil
     let onClose: @MainActor () -> Void
 
     @Environment(Session.self) private var session
@@ -33,6 +36,8 @@ struct VocabStudyView: View {
     /// Bumped to replay the mode. Every mode holds its deck in `@State`, so a fresh
     /// identity is what re-deals it — resetting fields one by one would forget one.
     @State private var runKey = 0
+    /// Once per cover: "Study again" is more practice, not another finish to announce.
+    @State private var reportedFinish = false
 
     var body: some View {
         Group {
@@ -71,6 +76,12 @@ struct VocabStudyView: View {
             }
         }
         .task { await begin() }
+        // The round is in once the server has it: the flashcards send the grading call at their
+        // final verdict, the other modes in `finish`. Watching the runner's own flag (not the
+        // end screen) keeps a failed save from being celebrated.
+        .onChange(of: runner?.isFinished == true) { _, saved in
+            if saved { reportFinish() }
+        }
         .onChange(of: scenePhase) { _, phase in
             // Leaving mid-run banks what has been answered so far. Without this, a student
             // who does 20 of 25 cards and takes a call gets credited for none of them.
@@ -146,6 +157,14 @@ struct VocabStudyView: View {
         // The grading call — what marks the set complete and can master this game. A latch:
         // the flashcards already sent it at the final verdict, and this only waits for it.
         Task { await runner?.complete() }
+    }
+
+    /// The one-shot: the first saved round of this cover is announced, never a replay.
+    @MainActor
+    private func reportFinish() {
+        guard !reportedFinish else { return }
+        reportedFinish = true
+        onFinished?()
     }
 
     @MainActor
