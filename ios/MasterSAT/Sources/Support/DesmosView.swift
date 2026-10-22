@@ -154,6 +154,7 @@ struct CalculatorPanel: View {
                         .background(Circle().fill(Theme.surface2))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close calculator")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

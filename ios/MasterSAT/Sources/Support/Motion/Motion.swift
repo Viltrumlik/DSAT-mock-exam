@@ -13,10 +13,18 @@ enum Motion {
     static let snappy = Animation.spring(response: 0.38, dampingFraction: 0.62)
     /// Whole blocks entering a screen.
     static let bouncy = Animation.spring(response: 0.55, dampingFraction: 0.56)
+    /// How long `focus` runs. Named so a screen that must wait out a turn (hit testing off while
+    /// a question arrives) waits for the length the animation really has.
+    static let focusSeconds = 0.2
+    /// How long `focusTap` runs — the beat a last tick is given before its screen is replaced.
+    static let focusTapSeconds = 0.12
+    /// How long a question turning in is in flight: `focus` and a frame of slack. Until it has
+    /// passed, a tap must not reach the question that is arriving.
+    static let focusTurnSeconds = focusSeconds + 0.03
     /// Focus zones: short and without overshoot, so nothing moves over the content.
-    static let focus = Animation.easeOut(duration: 0.2)
+    static let focus = Animation.easeOut(duration: focusSeconds)
     /// Focus zones, the shortest beat: a press, a tick, a pulse.
-    static let focusTap = Animation.easeOut(duration: 0.12)
+    static let focusTap = Animation.easeOut(duration: focusTapSeconds)
     /// The beat between blocks of a focus-zone entrance (`focusReveal`) — at most three of them,
     /// so the whole entrance is over within 250 ms.
     static let focusStep = 0.03

@@ -21,6 +21,8 @@ struct SpeedView: View {
     @State private var clock: Task<Void, Never>?
     @State private var answered = 0
     @State private var correct = 0
+    /// The last word has been answered; the end screen follows one `focusTap` beat later.
+    @State private var finishing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isUrgent: Bool { secondsLeft <= 10 }
@@ -51,6 +53,14 @@ struct SpeedView: View {
             }
         }
         .task { await begin() }
+        // The last answer's tick plays on this view, and the end screen replaces it: one beat lets
+        // it be felt. Leaving inside that beat cuts the wait short but the round still ends — it
+        // is over, and ending it is what grades the run.
+        .task(id: finishing) {
+            guard finishing else { return }
+            try? await Task.sleep(for: .seconds(Motion.focusTapSeconds))
+            end()
+        }
         .onDisappear { clock?.cancel() }
         // One tick per answer, the same for every answer.
         .sensoryFeedback(.selection, trigger: answered)
@@ -178,6 +188,7 @@ struct SpeedView: View {
 
     @MainActor
     private func answer(prompt: VocabGames.SpeedPrompt, option: VocabGames.SpeedOption) {
+        guard !finishing else { return }
         // Reported the instant it is picked: a sixty-second round is one a student
         // abandons mid-way, and the answers up to that point still count.
         runner.record(wordId: prompt.wordId, correct: option.isCorrect)
@@ -186,7 +197,9 @@ struct SpeedView: View {
         if index + 1 < prompts.count {
             index += 1
         } else {
-            end()
+            // The clock stops with the last word, as `end()` would stop it.
+            clock?.cancel()
+            finishing = true
         }
     }
 

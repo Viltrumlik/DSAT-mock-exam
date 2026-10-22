@@ -34,8 +34,19 @@ struct AssessmentRunnerView: View {
     /// One tick per choice picked, option crossed out or question flagged: the selection haptic.
     /// Every pick ticks alike — the runner never says whether an answer is right.
     @State private var picks = 0
-    /// Bumped only when a question is flagged (not when the flag comes off): the flag's bounce.
+    /// Bumped only by a tap that flags a question (not when the flag comes off, and not under
+    /// Reduce Motion): the flag's bounce. It is the bounce's trigger and nothing else is, so
+    /// switching Reduce Motion off later has no change to play.
     @State private var flagBounces = 0
+    /// A question is arriving: until its turn is over a tap lands on nothing, so a second tap
+    /// made while the page was still turning cannot answer the question that has just come in.
+    @State private var turning = false
+    /// One more per turn — restarts the wait that ends `turning`.
+    @State private var turns = 0
+    /// What the flag's capsule really measures (a 12 pt line and 5 pt above and below it, at
+    /// today's text size), read from the layout rather than assumed: the row it sits in takes
+    /// exactly that, whatever its 44 pt tap target adds around it.
+    @State private var flagCapsuleHeight: CGFloat = 24
     /// The typed answer's field. Dropped as the question turns: the field belongs to the
     /// question that left, and must not carry its keyboard into the next one.
     @FocusState private var answerFocused: Bool
@@ -81,6 +92,13 @@ struct AssessmentRunnerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.background)
         .sensoryFeedback(.selection, trigger: picks)
+        // The turn is over once the new question is in (`Motion.focus` and a frame). Each turn
+        // restarts the wait; leaving the screen cancels it.
+        .task(id: turns) {
+            guard turning else { return }
+            try? await Task.sleep(for: .seconds(Motion.focusTurnSeconds))
+            if !Task.isCancelled { turning = false }
+        }
         .task {
             if runner == nil {
                 let created = AssessmentRunner(attemptId: attemptId, api: session.assessments)
@@ -139,6 +157,7 @@ struct AssessmentRunnerView: View {
                                     .id(question.id)
                                     .transition(.focusTurn(turn, reduceMotion: reduceMotion))
                             }
+                            .allowsHitTesting(!turning)
 
                             if !runner.unsaved.isEmpty {
                                 // Say it rather than showing a silent tick. A student who loses
@@ -179,16 +198,21 @@ struct AssessmentRunnerView: View {
     /// identity lives in the card below, where the site puts it.
     private func toolbar(_ runner: AssessmentRunner) -> some View {
         HStack(spacing: 12) {
-            Button("Save and exit") {
+            Button {
                 Task {
                     // Never leave without writing. iOS can kill a backgrounded app
                     // outright, so "we'll send it later" is not a promise the app can keep.
                     await runner.flush()
                     onClose()
                 }
+            } label: {
+                Text("Save and exit")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                    .frame(minHeight: Self.minTarget)
+                    .contentShape(Rectangle())
             }
-            .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(Theme.accent)
+            .buttonStyle(.plain)
 
             Spacer(minLength: 0)
 
@@ -197,40 +221,44 @@ struct AssessmentRunnerView: View {
                     Image(systemName: "function")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
-                        .frame(width: 34, height: 30)
+                        .frame(width: Self.minTarget, height: Self.minTarget)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Calculator")
             }
 
             HStack(spacing: 2) {
-                zoomButton("textformat.size.smaller", enabled: zoom > 0.7) {
+                zoomButton("textformat.size.smaller", label: "Smaller text", enabled: zoom > 0.7) {
                     zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
                 }
                 Text("\(Int(zoom * 100))%")
                     .font(.system(size: 11, weight: .bold).monospacedDigit())
                     .foregroundStyle(Theme.textSecondary)
                     .frame(width: 40)
-                zoomButton("textformat.size.larger", enabled: zoom < 1.5) {
+                zoomButton("textformat.size.larger", label: "Larger text", enabled: zoom < 1.5) {
                     zoom = min(1.5, (zoom + 0.1).rounded(toPlaces: 2))
                 }
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        // The buttons are 44 pt tall themselves, so the bar needs little around them: the same
+        // 50 pt it had when its glyphs were 30 pt tall inside 10 pt of padding.
+        .padding(.vertical, 3)
         .background(Theme.card)
     }
 
-    private func zoomButton(_ icon: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+    private func zoomButton(_ icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 16, weight: .semibold))
-                .frame(width: 34, height: 30)
+                .frame(width: Self.minTarget, height: Self.minTarget)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
         .foregroundStyle(enabled ? Theme.textSecondary : Theme.textLabel.opacity(0.5))
+        .accessibilityLabel(label)
     }
 
     /// The site's runner header: class, subject, set title, and how far along you are.
@@ -336,15 +364,17 @@ struct AssessmentRunnerView: View {
         return Button {
             runner.toggleFlag(question.id)
             picks += 1
-            // The bounce is for the flag going on — read after the toggle, not from the render.
-            if runner.flagged.contains(question.id) { flagBounces += 1 }
+            // The bounce is for the flag going on — read after the toggle, not from the render —
+            // and not under Reduce Motion: the setting decides here whether there is a change to
+            // play, so the symbol's trigger is the flag alone.
+            if !reduceMotion, runner.flagged.contains(question.id) { flagBounces += 1 }
         } label: {
             HStack(spacing: 5) {
                 Image(systemName: isFlagged ? "flag.fill" : "flag")
                     .font(.system(size: 12, weight: .bold))
                     // Chrome beside the question, never over it — the one spring the runner
-                    // allows. Not under Reduce Motion.
-                    .symbolEffect(.bounce, value: reduceMotion ? 0 : flagBounces)
+                    // allows.
+                    .symbolEffect(.bounce, value: flagBounces)
                     // The word beside it says it; the glyph would read "flag, Flag".
                     .accessibilityHidden(true)
                 Text(isFlagged ? "Flagged" : "Flag")
@@ -355,6 +385,11 @@ struct AssessmentRunnerView: View {
             .padding(.vertical, 5)
             .background(Capsule().fill(isFlagged ? Theme.flagged.opacity(0.14) : Theme.background))
             .animation(Motion.focus, value: isFlagged)
+            // Measured before the target is built around it. A no-op write is skipped: this runs
+            // again for every question card.
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                if abs(height - flagCapsuleHeight) > 0.5 { flagCapsuleHeight = height }
+            }
             // The capsule is drawn at its own size, inside a 44 pt target.
             .frame(minHeight: Self.minTarget)
             .contentShape(Rectangle())
@@ -363,14 +398,11 @@ struct AssessmentRunnerView: View {
         .accessibilityAddTraits(isFlagged ? .isSelected : [])
         // The target is 44 pt tall but takes the capsule's room in the row: the extra falls
         // above and below it, in the card's padding, so "QUESTION n OF m" does not grow.
-        .frame(height: Self.flagRowHeight)
+        .frame(height: flagCapsuleHeight)
     }
 
     /// The smallest tappable height the app allows a control.
     private static let minTarget: CGFloat = 44
-    /// What the flag takes in the question's header row: its capsule (a 12 pt line and 5 pt
-    /// above and below), whatever its tap target adds around it.
-    private static let flagRowHeight: CGFloat = 24
 
     @ViewBuilder
     private func answerControl(_ runner: AssessmentRunner, _ question: AssessmentQuestion) -> some View {
@@ -481,6 +513,7 @@ struct AssessmentRunnerView: View {
                     .frame(width: 46, height: 44)
             }
             .buttonStyle(SecondaryButtonStyle())
+            .accessibilityLabel("Previous question")
             .disabled(runner.currentIndex == 0)
             .opacity(runner.currentIndex == 0 ? 0.4 : 1)
 
@@ -542,6 +575,10 @@ struct AssessmentRunnerView: View {
         guard index != runner.currentIndex, runner.questions.indices.contains(index) else { return }
         turn = FocusTurn.from(runner.currentIndex, to: index)
         answerFocused = false
+        // Raised with the change itself, so there is no frame in which the arriving question can
+        // be tapped; `.task(id: turns)` lowers it when the turn is over.
+        turning = true
+        turns += 1
         withAnimation(Motion.focus) { runner.go(to: index) }
     }
 
