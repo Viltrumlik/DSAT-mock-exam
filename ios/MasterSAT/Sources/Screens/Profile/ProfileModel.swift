@@ -47,10 +47,6 @@ final class ProfileModel {
     var groups: [Int: TelegramGroupState] = [:]
     var selectedClassId: Int?
 
-    // The rows under the tabs — badges only: nil (not fetched) shows no badge, never "0 open".
-    var openSurveys: Int?
-    var openEvents: Int?
-
     /// A goal or date saved here, until the session's own copy of the account catches up.
     var savedUser: CurrentUser?
     var isSavingGoal = false
@@ -70,16 +66,15 @@ final class ProfileModel {
     // MARK: - Loading
 
     /// Everything the first time the page appears; after that — coming back from a page it
-    /// opened — only what those pages change: the details, the rewards, the homework and the
-    /// badges. Pull to refresh reloads the lot.
+    /// opened — only what those pages change: the details, the rewards and the homework. Pull
+    /// to refresh reloads the lot.
     func appeared(_ session: Session) async {
         if hasAppeared {
             async let identity: Void = session.refreshUser()
             async let details: Void = loadAccount(session)
             async let wallet: Void = loadRewards(session)
             async let work: Void = loadHomework(session)
-            async let badges: Void = loadCounts(session)
-            _ = await (identity, details, wallet, work, badges)
+            _ = await (identity, details, wallet, work)
         } else {
             hasAppeared = true
             await refreshAll(session)
@@ -99,8 +94,7 @@ final class ProfileModel {
         async let dates: Void = loadExamDates(session)
         async let rooms: Void = loadClasses(session, refreshing: true)
         async let timetable: Void = loadScheduleIfOpened(session)
-        async let badges: Void = loadCounts(session)
-        _ = await (identity, details, signIn, wallet, work, results, dates, rooms, timetable, badges)
+        _ = await (identity, details, signIn, wallet, work, results, dates, rooms, timetable)
     }
 
     func loadAccount(_ session: Session) async {
@@ -145,15 +139,6 @@ final class ProfileModel {
         async let telegram: Void = loadGroups(session)
         async let mates: Void = loadSelectedPeople(session, force: refreshing)
         _ = await (telegram, mates)
-    }
-
-    func loadCounts(_ session: Session) async {
-        async let surveys = CommunityCounts.openSurveys(session)
-        async let events = CommunityCounts.eventsOpenForSignUp(session)
-        let (s, e) = await (surveys, events)
-        // A failed count keeps the last badge rather than dropping it on a blink.
-        if let s { openSurveys = s }
-        if let e { openEvents = e }
     }
 
     // MARK: - The Classes tab
