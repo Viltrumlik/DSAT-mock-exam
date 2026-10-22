@@ -18,63 +18,52 @@ struct ProfileLoad<Value> {
     var isFailed: Bool { value == nil && failed }
 }
 
-/// The profile page's state: every panel's data, loaded side by side and failing on its own —
-/// the web's `/profile`, where each tab's data is its own request with its own failure.
+/// The Me sheet's state: what its panels show, each read side by side and failing on its own.
 ///
-/// Overview reads `/users/me/` (phone, Telegram), `/users/telegram/config/`, `/rewards/me/`,
-/// `/classes/my-assignments/`, `/exams/attempts/` and `/users/exam-dates/`; the Classes tab's
-/// count needs `/classes/`. The rest of the Classes tab — the timetable, each class's
-/// Telegram group, the classmates — waits until the tab is first opened, as on the web.
+/// It reads `/users/me/` (the phone and Telegram, for the hero and the checklist),
+/// `/users/telegram/config/`, `/exams/attempts/` and `/users/exam-dates/` (Your goal), and
+/// `/midterms/mine/` (Midterms & certificates) — and re-reads the session's own copy of the
+/// account, which the goal and the date are drawn from.
+///
+/// `ProfileLoad.isLoading` stays unused here, as in `ExploreModel`: no panel draws it, and a
+/// write nobody reads would redraw the page for nothing. Which reads are out is kept aside.
 @MainActor
 @Observable
 final class ProfileModel {
-    // Overview
-    var account = ProfileLoad<AccountProfile>()
+    private(set) var account = ProfileLoad<AccountProfile>()
     /// Nil until known, and on failure — the web treats a failed lookup as "no Telegram
     /// sign-in here", which only hides the checklist's Telegram step.
-    var telegramSignIn: TelegramSignInConfig?
-    var rewards = ProfileLoad<MyRewards>()
-    var homework = ProfileLoad<[AssignmentListing]>()
-    var attempts = ProfileLoad<[ProfileAttempt]>()
-    var examDates = ProfileLoad<[ExamDateOption]>()
-
-    // Classes
-    var classes = ProfileLoad<[Classroom]>()
-    var schedule = ProfileLoad<[ScheduleEvent]>()
-    var people: [Int: ProfileLoad<[ClassroomMember]>] = [:]
-    /// Each class's Telegram group, where the lookup answered. A class missing here falls
-    /// back to its static link — `TelegramGroupButton.resolve` — which still works.
-    var groups: [Int: TelegramGroupState] = [:]
-    var selectedClassId: Int?
+    private(set) var telegramSignIn: TelegramSignInConfig?
+    private(set) var attempts = ProfileLoad<[ProfileAttempt]>()
+    private(set) var examDates = ProfileLoad<[ExamDateOption]>()
+    private(set) var midterms = ProfileLoad<[MidtermListing]>()
+    /// What the centre marked each shown sitting, by attempt. The list carries no pass mark,
+    /// so it is read from each sitting's report; a sitting missing here simply shows no
+    /// "Passed" — the panel never says "not passed", so an unknown claims nothing.
+    private(set) var passed: [Int: Bool] = [:]
 
     /// A goal or date saved here, until the session's own copy of the account catches up.
     var savedUser: CurrentUser?
-    var isSavingGoal = false
-    var isSavingExamDate = false
+    private(set) var isSavingGoal = false
+    private(set) var isSavingExamDate = false
 
-    private var hasAppeared = false
-    private var classesOpened = false
+    @ObservationIgnored private var hasAppeared = false
+    @ObservationIgnored private var inFlight: Set<AnyKeyPath> = []
+    @ObservationIgnored private var askingPassed: Set<Int> = []
 
-    /// The classes the student holds a seat in.
-    var memberClasses: [Classroom]? { classes.value.map(ProfileClasses.memberships) }
-
-    var selectedClass: Classroom? {
-        guard let list = memberClasses else { return nil }
-        return list.first { $0.id == selectedClassId } ?? list.first
-    }
+    /// The sittings the Midterms panel shows, newest first.
+    var shownMidterms: [MidtermListing] { MidtermResults.latest(midterms.value ?? []) }
 
     // MARK: - Loading
 
     /// Everything the first time the page appears; after that — coming back from a page it
-    /// opened — only what those pages change: the details, the rewards and the homework. Pull
-    /// to refresh reloads the lot.
+    /// opened — only what those pages change: the account (Account, Sign-in & password) and
+    /// the session's copy of it. Pull to refresh reloads the lot.
     func appeared(_ session: Session) async {
         if hasAppeared {
             async let identity: Void = session.refreshUser()
             async let details: Void = loadAccount(session)
-            async let wallet: Void = loadRewards(session)
-            async let work: Void = loadHomework(session)
-            _ = await (identity, details, wallet, work)
+            _ = await (identity, details)
         } else {
             hasAppeared = true
             await refreshAll(session)
@@ -82,19 +71,16 @@ final class ProfileModel {
     }
 
     /// Also re-reads the session's own copy of the account: the goal and the date on this page
-    /// are read from it, and Home saves them without touching it — so a goal changed on Home
+    /// are read from it, and Today saves them without touching it — so a goal changed there
     /// would otherwise show here as the old one.
     func refreshAll(_ session: Session) async {
         async let identity: Void = session.refreshUser()
         async let details: Void = loadAccount(session)
         async let signIn: Void = loadTelegramSignIn(session)
-        async let wallet: Void = loadRewards(session)
-        async let work: Void = loadHomework(session)
         async let results: Void = loadAttempts(session)
         async let dates: Void = loadExamDates(session)
-        async let rooms: Void = loadClasses(session, refreshing: true)
-        async let timetable: Void = loadScheduleIfOpened(session)
-        _ = await (identity, details, signIn, wallet, work, results, dates, rooms, timetable)
+        async let papers: Void = loadMidterms(session)
+        _ = await (identity, details, signIn, results, dates, papers)
     }
 
     func loadAccount(_ session: Session) async {
@@ -104,17 +90,8 @@ final class ProfileModel {
 
     func loadTelegramSignIn(_ session: Session) async {
         let api = AccountAPI(client: session.client)
-        if let config = try? await api.telegramConfig() { telegramSignIn = config }
-    }
-
-    func loadRewards(_ session: Session) async {
-        let api = session.rewards
-        await run(\.rewards) { try await api.me() }
-    }
-
-    func loadHomework(_ session: Session) async {
-        let api = session.student
-        await run(\.homework) { try await api.assignments() }
+        let request = Task { try await api.telegramConfig() }
+        if let config = try? await request.value, telegramSignIn != config { telegramSignIn = config }
     }
 
     func loadAttempts(_ session: Session) async {
@@ -127,109 +104,45 @@ final class ProfileModel {
         await run(\.examDates) { try await api.examDates() }
     }
 
-    /// The class list. Once the Classes tab has been opened, a list that lands brings the
-    /// tab's pieces that hang off it — each class's Telegram group, the chosen class's
-    /// classmates — so opening the tab before the list arrives loses nothing.
-    func loadClasses(_ session: Session, refreshing: Bool = false) async {
-        let api = session.classrooms
-        await run(\.classes) { try await api.classrooms() }
-        let ids = memberClasses?.map(\.id) ?? []
-        if selectedClassId.map({ !ids.contains($0) }) ?? true { selectedClassId = ids.first }
-        guard classesOpened, classes.value != nil else { return }
-        async let telegram: Void = loadGroups(session)
-        async let mates: Void = loadSelectedPeople(session, force: refreshing)
-        _ = await (telegram, mates)
-    }
-
-    // MARK: - The Classes tab
-
-    /// The first time the Classes tab opens: the timetable, each class's Telegram group, and
-    /// the selected class's classmates.
-    func openClasses(_ session: Session) async {
-        guard !classesOpened else { return }
-        classesOpened = true
-        async let timetable: Void = loadSchedule(session)
-        async let pieces: Void = loadClassPieces(session)
-        _ = await (timetable, pieces)
-    }
-
-    /// "Try again" on the Classes tab: the list (and what hangs off it) and the timetable.
-    func retryClasses(_ session: Session) async {
-        async let rooms: Void = loadClasses(session, refreshing: true)
-        async let timetable: Void = loadSchedule(session)
-        _ = await (rooms, timetable)
-    }
-
-    /// The Telegram groups and classmates when the list is in; the list itself when it is
-    /// not — it brings them when it lands. A list already on its way is left to do that.
-    private func loadClassPieces(_ session: Session) async {
-        if classes.value != nil {
-            async let telegram: Void = loadGroups(session)
-            async let mates: Void = loadSelectedPeople(session, force: false)
-            _ = await (telegram, mates)
-        } else if !classes.isLoading {
-            await loadClasses(session)
-        }
-    }
-
-    private func loadScheduleIfOpened(_ session: Session) async {
-        if classesOpened { await loadSchedule(session) }
-    }
-
-    /// Three weeks ahead from today — the web's window. Enough for every class's next lesson.
-    func loadSchedule(_ session: Session) async {
+    /// The list `MidtermsView` reads, then the verdict of each sitting it shows.
+    func loadMidterms(_ session: Session) async {
         let api = session.student
-        let today = Calendar.current.startOfDay(for: Date())
-        let until = Calendar.current.date(byAdding: .day, value: 21, to: today) ?? today
-        await run(\.schedule) { try await api.schedule(from: today, to: until) }
+        await run(\.midterms) { try await api.midterms() }
+        await loadVerdicts(session)
     }
 
-    func loadGroups(_ session: Session) async {
-        guard let rooms = memberClasses, !rooms.isEmpty else { return }
-        let api = ClassroomTelegramAPI(client: session.client)
-        await withTaskGroup(of: (Int, TelegramGroupState?).self) { group in
-            for room in rooms {
-                group.addTask { (room.id, try? await api.state(classroomId: room.id)) }
+    /// Each shown sitting's report, once per sheet: only its `passed` is wanted. A report the
+    /// server will not give — sealed, or a sitting scored before per-question results were
+    /// kept — is an answer too ("no mark to show"); a failed or cancelled read is asked again
+    /// the next time the list loads.
+    private func loadVerdicts(_ session: Session) async {
+        let ids = shownMidterms.compactMap(\.attemptId).filter { passed[$0] == nil && !askingPassed.contains($0) }
+        guard !ids.isEmpty else { return }
+        askingPassed.formUnion(ids)
+        let api = session.results
+        await withTaskGroup(of: (Int, Bool?).self) { group in
+            for id in ids {
+                group.addTask {
+                    let request = Task { try await api.midtermErrorReport(attemptId: id) }
+                    do {
+                        return (id, try await request.value.markedPassed)
+                    } catch APIError.forbidden, APIError.conflict {
+                        return (id, false)
+                    } catch {
+                        return (id, nil)
+                    }
+                }
             }
-            for await (id, state) in group {
-                if let state { groups[id] = state }
+            for await (id, verdict) in group {
+                askingPassed.remove(id)
+                if let verdict, passed[id] != verdict { passed[id] = verdict }
             }
         }
-    }
-
-    func loadGroup(_ classroomId: Int, session: Session) async {
-        if let state = try? await ClassroomTelegramAPI(client: session.client).state(classroomId: classroomId) {
-            groups[classroomId] = state
-        }
-    }
-
-    /// "Classmates" on a card: that class, its list loaded if it is not already.
-    func select(_ classroomId: Int, session: Session) async {
-        selectedClassId = classroomId
-        await loadSelectedPeople(session, force: false)
-    }
-
-    func loadSelectedPeople(_ session: Session, force: Bool) async {
-        guard let room = selectedClass else { return }
-        var load = people[room.id] ?? ProfileLoad()
-        guard force || (load.value == nil && !load.isLoading) else { return }
-        load.isLoading = true
-        people[room.id] = load
-        let api = session.classrooms
-        do {
-            let rows = try await api.people(classroomId: room.id)
-            load.value = rows
-            load.failed = false
-        } catch {
-            load.failed = true
-        }
-        load.isLoading = false
-        people[room.id] = load
     }
 
     // MARK: - Saving the goal
 
-    /// The same save Home makes, through the same call. Never retried on its own.
+    /// The same save Today makes, through the same call. Never retried on its own.
     func saveGoal(english: Int, math: Int, session: Session) async -> Bool {
         guard !isSavingGoal else { return false }
         isSavingGoal = true
@@ -257,23 +170,35 @@ final class ProfileModel {
         }
     }
 
+    /// The session caught up with a save made here (or with an edit made elsewhere).
+    func sessionCaughtUp() {
+        if savedUser != nil { savedUser = nil }
+    }
+
     // MARK: - Plumbing
 
-    /// Load one panel through its key path. A second call while one is out is dropped — the
+    /// One panel's read, finished whatever becomes of the task that asked: a push or a pull can
+    /// cancel that task mid-request, and `APIClient` words a cancellation as a transport
+    /// failure, which would be stored as one. A second call while one is out is dropped — the
     /// page appearing twice must not send everything twice.
-    private func run<Value: Sendable>(
-        _ path: ReferenceWritableKeyPath<ProfileModel, ProfileLoad<Value>>,
-        _ fetch: @Sendable () async throws -> Value
+    ///
+    /// Every write is guarded: each one notifies the page whether or not the value changed.
+    private func run<Value: Equatable & Sendable>(
+        _ slot: ReferenceWritableKeyPath<ProfileModel, ProfileLoad<Value>>,
+        _ fetch: @escaping @Sendable () async throws -> Value
     ) async {
-        guard !self[keyPath: path].isLoading else { return }
-        self[keyPath: path].isLoading = true
+        guard !inFlight.contains(slot) else { return }
+        inFlight.insert(slot)
+        defer { inFlight.remove(slot) }
+        let request = Task { try await fetch() }
         do {
-            let value = try await fetch()
-            self[keyPath: path].value = value
-            self[keyPath: path].failed = false
+            let value = try await request.value
+            if self[keyPath: slot].value != value { self[keyPath: slot].value = value }
+            if self[keyPath: slot].failed { self[keyPath: slot].failed = false }
         } catch {
-            self[keyPath: path].failed = true
+            // A failure nobody is waiting for any more says nothing.
+            guard !Task.isCancelled else { return }
+            if !self[keyPath: slot].failed { self[keyPath: slot].failed = true }
         }
-        self[keyPath: path].isLoading = false
     }
 }

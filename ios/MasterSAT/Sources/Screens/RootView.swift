@@ -249,23 +249,15 @@ struct RootTabView: View {
         .environment(celebrations)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
-            ProfileView(user: user, path: $router.me)
-                .overlay(alignment: .topTrailing) {
-                    Button { router.showingMe = false } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Theme.surface2, in: Circle())
-                    }
-                    .buttonStyle(PressBounce())
-                    .padding(16)
-                    .accessibilityLabel("Close")
-                }
-                .presentationDragIndicator(.visible)
-                .environment(router)
-                .environment(rewards)
-                .environment(celebrations)
+            // The close button lives in the page's hero, on its root only: laid over the sheet,
+            // it sat on every pushed page's toolbar too.
+            ProfileView(user: user, path: $router.me) {
+                if router.showingMe { router.showingMe = false }
+            }
+            .presentationDragIndicator(.visible)
+            .environment(router)
+            .environment(rewards)
+            .environment(celebrations)
         }
         .sheet(item: $router.certificate, onDismiss: { sheetDismissed() }) {
             MidtermCertificateSheet(code: $0.code)

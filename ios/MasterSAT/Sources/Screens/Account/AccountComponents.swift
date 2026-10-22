@@ -294,19 +294,21 @@ struct AccountAvatar: View {
     }
 }
 
-/// A row that opens a settings page: the tile, the page's name, the web menu's hint.
-struct AccountMenuRow<Destination: View>: View {
+/// A row that opens a page: the tile, the page's name, the web menu's hint.
+///
+/// It pushes a value, and the stack root it sits on says where that value goes — the Me sheet's
+/// root declares every page its rows open. A closure destination pushed from a stack root is
+/// the push SwiftUI drops.
+struct AccountMenuRow<Route: Hashable>: View {
     let icon: String
     let tone: Color
     let title: String
     let hint: String
     var badge: String?
-    @ViewBuilder let destination: () -> Destination
+    let route: Route
 
     var body: some View {
-        NavigationLink {
-            destination()
-        } label: {
+        NavigationLink(value: route) {
             HStack(spacing: 13) {
                 IconTile(systemName: icon, tone: tone)
                 VStack(alignment: .leading, spacing: 2) {

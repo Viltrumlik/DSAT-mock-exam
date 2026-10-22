@@ -3,7 +3,7 @@ import MasterSATKit
 
 // The profile's pieces of the house design — the web's `features/profile/profileUi.tsx`:
 // white panels, a tint of each thing's own colour behind its icon, and one palette for the
-// three tabs so a colour means the same thing wherever it shows up.
+// whole page so a colour means the same thing wherever it shows up.
 
 /// The web's profile palette: primary for the student's own figures, emerald for what is
 /// done, amber for strikes and what is due, sky for classes, violet for what is coming, rose
@@ -205,6 +205,91 @@ struct ProfilePlaceholderRows: View {
 
     var body: some View {
         LoadingSkeleton(rows: count, height: height)
+    }
+}
+
+/// One scored sitting on a panel: the subject's tile, the paper and a line under it, the score.
+/// Latest results and the midterm rows share it, so a score reads the same in both; the caller
+/// puts it on `profileRow()` and combines it for VoiceOver.
+struct ProfileScoreRow: View {
+    let math: Bool
+    let title: String
+    let detail: String
+    let score: String
+    /// The scale under the score — a midterm's 100 or 800; an SAT score needs none.
+    var ceiling: String?
+    /// The centre marked the sitting passed. Only ever said when true: there is no "not passed".
+    var passed = false
+    /// The row opens a page, and the chevron says so.
+    var opens = false
+    /// A midterm's name runs long ("Midterm 2 · Algebra and functions"); a test's does not.
+    var titleLines = 1
+
+    var body: some View {
+        HStack(spacing: 12) {
+            IconTile(
+                systemName: math ? "function" : "book.closed.fill",
+                tone: math ? ProfileTone.sky : ProfileTone.emerald,
+                size: 34
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title)
+                    .font(.system(size: 13.5, weight: .bold))
+                    .foregroundStyle(.primary)
+                    .lineLimit(titleLines)
+                    .multilineTextAlignment(.leading)
+                    // Its own height: in the row's stacks a second line is otherwise cut.
+                    .fixedSize(horizontal: false, vertical: true)
+                if passed {
+                    // Beside the subject while both fit whole, under it when they do not:
+                    // "Reading & Writing" must not be cut short to make room.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { detailText; passedTag }
+                        VStack(alignment: .leading, spacing: 4) { detailText; passedTag }
+                    }
+                } else {
+                    detailText
+                }
+            }
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 0) {
+                Text(verbatim: score)
+                    .font(.system(size: 20, weight: .heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                if let ceiling {
+                    Text(verbatim: "/ \(ceiling)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityLabel("out of \(ceiling)")
+                }
+            }
+            if opens {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
+            }
+        }
+    }
+
+    @ViewBuilder private var detailText: some View {
+        if !detail.isEmpty {
+            Text(verbatim: detail)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    private var passedTag: some View {
+        Label("Passed", systemImage: "checkmark.seal.fill")
+            .font(.system(size: 11, weight: .heavy))
+            .foregroundStyle(ProfileTone.emerald)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(ProfileTone.emerald.opacity(0.13)))
+            .fixedSize()
     }
 }
 
