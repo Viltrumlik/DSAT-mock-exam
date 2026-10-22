@@ -86,14 +86,7 @@ public actor APIClient {
     /// Send and decode. Retries exactly once, after a successful token refresh.
     public func send<T: Decodable & Sendable>(_ endpoint: Endpoint, as type: T.Type = T.self) async throws -> T {
         let data = try await sendForData(endpoint)
-        if T.self == Empty.self, let empty = Empty() as? T { return empty }
-        do {
-            return try JSONCoding.decoder.decode(T.self, from: data)
-        } catch {
-            let detail = String(describing: error)
-            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
-            throw APIError.decoding(context: endpoint.path, underlying: detail)
-        }
+        return try decoded(data, as: T.self, endpoint: endpoint)
     }
 
     /// Send and ignore the body.
@@ -113,14 +106,7 @@ public actor APIClient {
         onBodySent: @escaping @Sendable (Int64) -> Void
     ) async throws -> T {
         let data = try await sendForData(endpoint, progress: BodyProgress(onBodySent))
-        if T.self == Empty.self, let empty = Empty() as? T { return empty }
-        do {
-            return try JSONCoding.decoder.decode(T.self, from: data)
-        } catch {
-            let detail = String(describing: error)
-            onEvent(.decodingFailed(path: endpoint.path, detail: detail))
-            throw APIError.decoding(context: endpoint.path, underlying: detail)
-        }
+        return try decoded(data, as: T.self, endpoint: endpoint)
     }
 
     /// Send and decode, throwing a coded refusal (`{"code": "full", "detail": "…"}`) as
@@ -131,6 +117,12 @@ public actor APIClient {
     /// failure that is not a coded refusal behave exactly as in `send`.
     public func sendCoded<T: Decodable & Sendable>(_ endpoint: Endpoint, as type: T.Type = T.self) async throws -> T {
         let data = try await sendForData(endpoint, codedRefusals: true)
+        return try decoded(data, as: T.self, endpoint: endpoint)
+    }
+
+    /// The one place a 2xx body becomes a model: `Empty` for an endpoint with nothing to say, else the
+    /// shared decoder — a body that does not match is reported (`decodingFailed`) and thrown loud.
+    private func decoded<T: Decodable & Sendable>(_ data: Data, as type: T.Type, endpoint: Endpoint) throws -> T {
         if T.self == Empty.self, let empty = Empty() as? T { return empty }
         do {
             return try JSONCoding.decoder.decode(T.self, from: data)
