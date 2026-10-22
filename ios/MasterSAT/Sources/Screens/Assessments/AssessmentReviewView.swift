@@ -74,7 +74,11 @@ struct AssessmentReviewView: View {
     }
 
     var body: some View {
-        Group {
+        // A ZStack, not a Group: a Group hands its modifiers to each branch, so the confetti
+        // overlay would live on the 20 pt spinner and be rebuilt — already past its trigger —
+        // on the content that replaces it in the same update. One full-size view keeps one
+        // overlay, sized to the page, from the first frame.
+        ZStack {
             if let review {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
@@ -120,6 +124,7 @@ struct AssessmentReviewView: View {
                 ProgressView()
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         // An outcome's confetti, drawn by the page itself so it is seen wherever the page is.
         .overlay { OutcomeConfetti(trigger: outcomeTicks) }
         .sensoryFeedback(.success, trigger: outcomeTicks)
