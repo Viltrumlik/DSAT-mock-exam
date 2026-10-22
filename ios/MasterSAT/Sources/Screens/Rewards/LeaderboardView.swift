@@ -130,6 +130,7 @@ struct LeaderboardView: View {
                     } label: {
                         HStack(spacing: 7) {
                             Image(systemName: icon(for: scope)).font(.system(size: 13, weight: .bold))
+                                .accessibilityHidden(true)
                             Text(label(for: scope)).font(.system(size: 14, weight: .bold)).lineLimit(1)
                         }
                         .foregroundStyle(active ? Theme.accent : Color.white)
@@ -192,6 +193,7 @@ struct LeaderboardView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .bold))
+                            .accessibilityHidden(true)
                         Text("Reset")
                     }
                     .font(.system(size: 13, weight: .bold))
@@ -276,6 +278,7 @@ struct LeaderboardView: View {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(LinearGradient(colors: [Theme.accent, Theme.accentHover], startPoint: .topLeading, endPoint: .bottomTrailing))
                         )
+                        .accessibilityHidden(true)
                     Text("Earn your first XP and you'll appear here.")
                         .font(.system(size: 13, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)
@@ -713,6 +716,7 @@ struct LeaderboardGoalLine: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: "arrow.up.forward").font(.system(size: pill ? 12 : 10, weight: .bold))
+                .accessibilityHidden(true)
             Text(goal.text).font(.system(size: pill ? 12 : 11, weight: .bold))
         }
         .foregroundStyle(RewardsPalette.accentText)
@@ -831,6 +835,7 @@ private struct LeaderboardPodiumColumn: View {
                     .foregroundStyle(RewardsPalette.crown)
                     .shadow(color: RewardsPalette.crown.opacity(0.55), radius: 4, x: 0, y: 3)
                     .padding(.bottom, 4)
+                    .accessibilityHidden(true)
             }
             LeaderboardMedalAvatar(
                 row: row,

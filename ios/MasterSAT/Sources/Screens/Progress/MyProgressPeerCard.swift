@@ -119,6 +119,7 @@ struct MyProgressPeerCard: View {
             HStack(spacing: 6) {
                 Text("Open class")
                 Image(systemName: "arrow.right")
+                    .accessibilityHidden(true)
             }
             .font(.system(size: 13, weight: .bold))
             .foregroundStyle(Theme.accent)
@@ -185,6 +186,7 @@ struct MyProgressInsightRow: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: 16)
+                .accessibilityHidden(true)
             Text(insight.text)
                 .font(.system(size: 13.5, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)

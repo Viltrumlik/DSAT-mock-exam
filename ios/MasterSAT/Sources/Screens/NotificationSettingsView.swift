@@ -107,6 +107,7 @@ struct NotificationSettingsView: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
                 Text("Notifications are on")
                     .font(.system(size: 15, weight: .bold))
                 Spacer(minLength: 0)

@@ -36,6 +36,7 @@ struct CertificatePDFSheet: View {
                         Image(systemName: "doc.badge.clock")
                             .font(.system(size: 30))
                             .foregroundStyle(Theme.warning)
+                            .accessibilityHidden(true)
                         Text(failure.message)
                             .font(.system(size: 15, weight: .semibold))
                             .multilineTextAlignment(.center)

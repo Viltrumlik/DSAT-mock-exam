@@ -127,6 +127,7 @@ struct SurveyListRow: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
         }
         .padding(.vertical, 12)
         .contentShape(Rectangle())

@@ -86,6 +86,7 @@ struct StudyShell<Content: View>: View {
             Button(action: onExit) {
                 HStack(spacing: 5) {
                     Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
+                        .accessibilityHidden(true)
                     Text("Back").font(.system(size: 13, weight: .bold))
                 }
                 .foregroundStyle(Theme.textSecondary)
@@ -128,7 +129,7 @@ struct StudyPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
+            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)).accessibilityHidden(true) }
             Text(text).font(.system(size: 13, weight: .heavy).monospacedDigit())
         }
         .foregroundStyle(tone)
@@ -279,6 +280,7 @@ struct ModeOutcomeView: View {
                         .foregroundStyle(.white)
                         .scaleEffect(trophyPopped ? 1.12 : 1)
                         .rotationEffect(.degrees(trophyPopped ? -8 : 0))
+                        .accessibilityHidden(true)
                 )
             Text(title)
                 .font(.system(size: 27, weight: .heavy))

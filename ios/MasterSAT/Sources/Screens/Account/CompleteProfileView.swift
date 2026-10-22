@@ -65,6 +65,7 @@ struct CompleteProfileView: View {
                         Image(systemName: "checkmark.shield")
                             .font(.system(size: 13, weight: .semibold))
                             .padding(.top, 1)
+                            .accessibilityHidden(true)
                         Text("You can't use the rest of the app until this is done.")
                             .font(.system(size: 13, weight: .medium))
                             .fixedSize(horizontal: false, vertical: true)
@@ -149,6 +150,7 @@ struct CompleteProfileView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy)
+            .accessibilityLabel(busy ? "Saving" : (emailMissing ? "Save and continue" : "Save"))
 
             if emailMissing {
                 Text("Next, confirm your email address with a code.")
@@ -198,6 +200,7 @@ struct CompleteProfileView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(finishing)
+            .accessibilityLabel(finishing ? "Continuing" : "Continue")
         }
     }
 

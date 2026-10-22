@@ -392,6 +392,7 @@ struct AssessmentNavCard: View {
                             Image(systemName: icon)
                                 .font(.system(size: big ? 22 : 18, weight: .semibold))
                                 .foregroundStyle(tone)
+                                .accessibilityHidden(true)
                         )
                     Text(title)
                         .font(.system(size: big ? 21 : 16, weight: .heavy))
@@ -401,6 +402,7 @@ struct AssessmentNavCard: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 14, weight: .bold))
                         .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
                 }
                 Text(line)
                     .font(.system(size: 13, weight: .semibold))
@@ -453,6 +455,7 @@ struct AssessmentSectionHead: View {
                 Image(systemName: icon)
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.system(size: 19, weight: .heavy))
                     .tracking(-0.2)
@@ -491,6 +494,7 @@ struct AssessmentCrumbs: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 11, weight: .bold))
                             .foregroundStyle(Theme.textLabel)
+                            .accessibilityHidden(true)
                     }
                     if let action = crumb.action {
                         Button(action: action) {
@@ -631,6 +635,7 @@ struct AssessmentCard: View {
                 .padding(.top, 12)
             HStack(spacing: 6) {
                 Image(systemName: "book").font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text([entry.classroomName, style.label].filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.system(size: 12, weight: .semibold))
             }
@@ -664,6 +669,7 @@ struct AssessmentCard: View {
             IconTile(systemName: style.icon, tone: style.tone, size: 36)
             HStack(spacing: 5) {
                 Image(systemName: style.icon).font(.system(size: 10, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(style.label).font(.system(size: 11, weight: .heavy))
             }
             .foregroundStyle(.white)
@@ -676,12 +682,14 @@ struct AssessmentCard: View {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 19))
                     .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
             case .inProgress:
                 Image(systemName: "hourglass")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundStyle(Theme.amber)
                     .frame(width: 30, height: 30)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.amberSoft))
+                    .accessibilityHidden(true)
             case .todo:
                 EmptyView()
             }
@@ -694,6 +702,7 @@ struct AssessmentCard: View {
         if count > 0 {
             HStack(spacing: 6) {
                 Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text("\(ScoreText.string(count)) question\(count == 1 ? "" : "s") · ~\(ScoreText.string(entry.estimatedMinutes)) min")
                     .font(.system(size: 12, weight: .semibold))
             }
@@ -733,6 +742,7 @@ struct AssessmentCard: View {
             Bar(fraction: total > 0 ? Double(answered) / Double(total) : 0, tone: Theme.amber, height: 8)
             HStack(spacing: 6) {
                 Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text("Last opened \(RelativeTime.short(progress?.lastActivityAt))")
                     .font(.system(size: 12, weight: .semibold))
             }
@@ -763,6 +773,7 @@ struct AssessmentCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: toImprove > 0 ? "flag.fill" : "checkmark.circle.fill")
                         .font(.system(size: 11, weight: .bold))
+                        .accessibilityHidden(true)
                     Text(toImprove > 0 ? "\(ScoreText.string(toImprove)) to improve" : "Perfect score")
                         .font(.system(size: 13, weight: .heavy))
                 }
@@ -774,6 +785,7 @@ struct AssessmentCard: View {
             // as a zero.
             HStack(spacing: 6) {
                 Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text("Submitted — grading in progress").font(.system(size: 12, weight: .bold))
             }
             .foregroundStyle(Theme.textSecondary)
@@ -811,6 +823,7 @@ struct AssessmentCard: View {
                         Text("Starting…")
                     } else {
                         Image(systemName: "play.circle")
+                            .accessibilityHidden(true)
                         Text("Start")
                     }
                 }
@@ -831,6 +844,7 @@ struct AssessmentDueChip: View {
     var body: some View {
         HStack(spacing: 6) {
             Image(systemName: "calendar").font(.system(size: 11, weight: .semibold))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 12, weight: catchUp ? .heavy : .bold))
         }
         .foregroundStyle(catchUp ? Theme.amber : Theme.textSecondary)

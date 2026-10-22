@@ -220,6 +220,8 @@ private struct SignInForm: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
+            // The spinner has no words of its own.
+            .accessibilityLabel(session.isWorking ? "Signing in" : "Sign in")
             .padding(.top, 2)
 
             HStack(spacing: 5) {
@@ -374,6 +376,7 @@ private struct RegisterForm: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
+            .accessibilityLabel(session.isWorking ? "Creating your account" : "Create account")
             .padding(.top, 2)
 
             HStack(spacing: 5) {

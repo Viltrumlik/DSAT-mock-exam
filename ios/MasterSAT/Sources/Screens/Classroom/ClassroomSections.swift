@@ -81,6 +81,7 @@ struct ClassroomRankingsSection: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "trophy.fill").foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
                 Text("Class rankings").font(.system(size: 22, weight: .heavy)).tracking(-0.4)
             }
             if showsExplainer { ClassroomRankingsExplainer(forEachClass: false) }
@@ -147,6 +148,7 @@ private struct ClassroomPodium: View {
                         Image(systemName: "crown.fill")
                             .font(.system(size: 18))
                             .foregroundStyle(Theme.amber)
+                            .accessibilityHidden(true)
                     }
                     ZStack(alignment: .bottom) {
                         Avatar(url: row.photoURL, name: row.name, size: first ? 60 : 52)
@@ -303,6 +305,7 @@ private struct ClassworkRow: View {
             Image(systemName: "chevron.right")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
@@ -550,6 +553,7 @@ private struct PeopleHeading: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon).font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.accent)
+                .accessibilityHidden(true)
             Text(title).font(.system(size: 16, weight: .heavy))
             Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
@@ -593,6 +597,7 @@ private struct ClassroomSearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
             TextField("", text: $text, prompt: Text(verbatim: placeholder))
                 .font(.system(size: 14, weight: .semibold))
                 .textInputAutocapitalization(.never)

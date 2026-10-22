@@ -49,6 +49,7 @@ struct SupportConfirmSheet: View {
                             .font(.system(size: 13))
                             .foregroundStyle(Theme.info)
                             .padding(.top, 1)
+                            .accessibilityHidden(true)
                         Text(note)
                             .font(.system(size: 13.5, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
@@ -328,6 +329,7 @@ struct SupportAddMemberSheet: View {
                     Image(systemName: "checkmark")
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Theme.accent)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 12)
@@ -498,6 +500,7 @@ private struct SupportSheetError: View {
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.danger)
                 .padding(.top, 1)
+                .accessibilityHidden(true)
             Text(message)
                 .font(.system(size: 13.5, weight: .semibold))
                 .foregroundStyle(Theme.danger)

@@ -185,6 +185,7 @@ struct ProfileChip: View {
     private var chip: some View {
         HStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                .accessibilityHidden(true)
             // Verbatim: an address or a phone number is not markdown, and must not become a link.
             Text(verbatim: text)
                 .font(.system(size: 12.5, weight: .bold))

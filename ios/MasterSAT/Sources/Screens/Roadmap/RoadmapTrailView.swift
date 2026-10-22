@@ -99,6 +99,7 @@ struct RoadmapStage: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
                 Text("Locked")
                     .font(.system(size: 17, weight: .heavy, design: .rounded))
                 Text(message)

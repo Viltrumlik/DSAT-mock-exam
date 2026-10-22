@@ -60,6 +60,7 @@ struct JoinClassSheet: View {
                 }
                 .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 .disabled(trimmed.isEmpty || isJoining)
+                .accessibilityLabel(isJoining ? "Joining" : "Join class")
             }
         }
         .padding(20)
@@ -111,6 +112,8 @@ struct Avatar: View {
         }
         .frame(width: size, height: size)
         .clipShape(Circle())
+        // Always beside the name it stands for; its initials would be read as letters ahead of it.
+        .accessibilityHidden(true)
     }
 
     private var initials: some View {

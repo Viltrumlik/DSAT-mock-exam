@@ -61,6 +61,8 @@ struct BrandLockup: View {
         HStack(spacing: 11) {
             BrandMark(height: height)
                 .modifier(LogoArrival())
+                // The word beside it names the brand; the mark would read it a second time.
+                .accessibilityHidden(true)
             Text("MasterSAT")
                 .font(.system(size: fontSize, weight: .heavy))
                 .tracking(-0.4)
@@ -161,6 +163,7 @@ private struct PromiseRow: View {
                     Image(systemName: icon)
                         .font(.system(size: compact ? 13 : 15, weight: .semibold))
                         .foregroundStyle(.white)
+                        .accessibilityHidden(true)
                 )
             Text(text)
                 .font(.system(size: compact ? 14 : 15, weight: .medium))
@@ -264,6 +267,7 @@ struct AuthField<Accessory: View>: View {
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.textLabel)
                         .frame(width: 16)
+                        .accessibilityHidden(true)
                 }
                 content()
             }
@@ -302,6 +306,7 @@ struct AuthAlert<Action: View>: View {
             Image(systemName: tone == .danger ? "exclamationmark.circle.fill" : "info.circle.fill")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(colour)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(message)
                     .font(.system(size: 13, weight: .semibold))

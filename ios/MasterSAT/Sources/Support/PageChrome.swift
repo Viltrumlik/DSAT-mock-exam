@@ -29,6 +29,8 @@ struct PageTitle: View {
             .tracking(-0.5)
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The page's name: the first stop on the rotor's Headings.
+            .accessibilityAddTraits(.isHeader)
     }
 }
 

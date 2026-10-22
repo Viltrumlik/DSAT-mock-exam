@@ -358,6 +358,7 @@ struct HomeworkDetailView: View {
                                 Image(systemName: "play.fill")
                                     .font(.system(size: 20))
                                     .foregroundStyle(Theme.danger)
+                                    .accessibilityHidden(true)
                             )
                         VStack(alignment: .leading, spacing: 3) {
                             Text("Watch the lesson video")
@@ -372,6 +373,7 @@ struct HomeworkDetailView: View {
                         Image(systemName: "arrow.up.right.square")
                             .font(.system(size: 14))
                             .foregroundStyle(Theme.textLabel)
+                            .accessibilityHidden(true)
                     }
                     .cardStyle()
                 }
@@ -497,6 +499,7 @@ struct HomeworkDetailView: View {
                                 }
                                 Spacer()
                                 Image(systemName: "arrow.up.right").font(.system(size: 11)).foregroundStyle(Theme.textLabel)
+                                    .accessibilityHidden(true)
                             }
                             .cardStyle(padding: 12)
                         }
@@ -1014,6 +1017,7 @@ struct TaskRowLabel: View {
                     Image(systemName: isDone ? "checkmark" : icon)
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundStyle(isDone ? Theme.success : tone)
+                        .accessibilityHidden(true)
                 )
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -1260,6 +1264,7 @@ struct StagedFileRow: View {
             } else {
                 Image(systemName: file.mimeType.hasPrefix("image/") ? "photo" : "doc.fill")
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
             }
         }
         .frame(width: 44, height: 44)
@@ -1408,6 +1413,7 @@ struct SubmittedFileRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "paperclip").foregroundStyle(Theme.textSecondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(file.displayName).font(.system(size: 14, weight: .medium))
                 if let type = file.fileType, !type.isEmpty {

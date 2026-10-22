@@ -62,6 +62,7 @@ struct LiveQuizConnectionBanner: View {
         HStack(spacing: 10) {
             Image(systemName: "wifi.slash")
                 .font(.system(size: 14, weight: .semibold))
+                .accessibilityHidden(true)
             Text(text)
                 .font(.system(size: 14, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)

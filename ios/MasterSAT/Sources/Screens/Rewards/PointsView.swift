@@ -130,6 +130,7 @@ struct PointsView: View {
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(.white.opacity(0.2)))
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -207,6 +208,7 @@ struct PointsView: View {
                             ProgressView().controlSize(.small).tint(Theme.accent)
                         } else {
                             Image(systemName: "arrow.left.arrow.right").font(.system(size: 13, weight: .bold))
+                                .accessibilityHidden(true)
                         }
                         Text(isConverting ? "Converting…" : "Convert")
                     }
@@ -237,6 +239,7 @@ struct PointsView: View {
         }
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: icon).font(.system(size: 14, weight: .bold))
+                .accessibilityHidden(true)
             Text(outcome.text)
                 .font(.system(size: 14, weight: .bold))
                 .fixedSize(horizontal: false, vertical: true)

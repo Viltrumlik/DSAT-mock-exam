@@ -109,6 +109,7 @@ struct SearchField: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
             TextField(placeholder, text: $text, prompt: Text(verbatim: placeholder))
                 .font(.system(size: 14, weight: .semibold))
                 .textInputAutocapitalization(.never)

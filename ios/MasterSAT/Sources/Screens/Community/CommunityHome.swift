@@ -50,6 +50,7 @@ struct SurveysWaitingCard: View {
                     Image(systemName: "star.fill")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.amber)
+                        .accessibilityHidden(true)
                     Text("Finishing it earns you \(ScoreText.string(featured.pointsAward)) points.")
                         .font(.system(size: 14, weight: .bold))
                 }

@@ -271,6 +271,7 @@ private struct LiveQuizJoinScreen: View {
                 Image(systemName: "dot.radiowaves.left.and.right")
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)

@@ -26,6 +26,7 @@ struct RewardsHero<Content: View>: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(eyebrow).font(.system(size: 12, weight: .heavy))
             }
             .foregroundStyle(.white)
@@ -94,6 +95,7 @@ struct RewardsHeroStat: View {
                 Image(systemName: icon)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.8))
+                    .accessibilityHidden(true)
                 Text(value)
                     .font(.system(size: 17, weight: .heavy))
                     .monospacedDigit()

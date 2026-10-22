@@ -440,6 +440,7 @@ struct AccountPasswordChangedView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(leaving)
+            .accessibilityLabel(leaving ? "Signing you out" : "Sign in again")
         }
     }
 }

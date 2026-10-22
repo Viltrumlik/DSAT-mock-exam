@@ -46,6 +46,7 @@ struct ClassLessonCard: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
                 }
                 .contentShape(Rectangle())
             }

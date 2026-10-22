@@ -73,6 +73,7 @@ struct AccountEmailCodeFlow: View {
                 Image(systemName: "checkmark.shield")
                     .font(.system(size: 13, weight: .semibold))
                     .padding(.top, 1)
+                    .accessibilityHidden(true)
                 Text("Confirming sets this as the address for your account.")
                     .font(.system(size: 13, weight: .medium))
                     .fixedSize(horizontal: false, vertical: true)
@@ -114,6 +115,7 @@ struct AccountEmailCodeFlow: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy)
+            .accessibilityLabel(busy ? "Sending the code" : "Send code")
         }
     }
 
@@ -150,6 +152,7 @@ struct AccountEmailCodeFlow: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy || !EmailCodeEntry.isComplete(code))
+            .accessibilityLabel(busy ? "Confirming" : "Confirm")
 
             HStack {
                 Button("Use a different address") {

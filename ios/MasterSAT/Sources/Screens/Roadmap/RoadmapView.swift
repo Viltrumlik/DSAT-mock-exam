@@ -136,6 +136,7 @@ struct RoadmapView: View {
                     HStack(spacing: 8) {
                         Text("Go to Classes")
                         Image(systemName: "arrow.right")
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -328,6 +329,7 @@ struct RoadmapLevelBanner: View {
             Spacer(minLength: 8)
             HStack(spacing: 5) {
                 Image(systemName: pillIcon).font(.system(size: 11, weight: .heavy))
+                    .accessibilityHidden(true)
                 Text(state.pillText).font(.system(size: 12, weight: .heavy))
             }
             .foregroundStyle(fill ?? Theme.textSecondary)
@@ -339,6 +341,7 @@ struct RoadmapLevelBanner: View {
                 .font(.system(size: 15, weight: .heavy))
                 .foregroundStyle(fill == nil ? Theme.textSecondary : .white.opacity(0.9))
                 .rotationEffect(.degrees(isOpen ? 0 : -90))
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)

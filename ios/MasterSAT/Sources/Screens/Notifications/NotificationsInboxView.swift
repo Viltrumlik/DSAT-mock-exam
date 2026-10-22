@@ -169,6 +169,7 @@ struct NotificationsInboxView: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             Text("Notifications aren't loading.")
                 .font(.system(size: 13, weight: .bold))
             Spacer(minLength: 8)
@@ -306,6 +307,7 @@ private struct NotificationRow: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.textLabel)
                     .padding(.top, 4)
+                    .accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 16)

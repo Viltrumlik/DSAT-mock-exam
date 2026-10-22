@@ -187,6 +187,7 @@ struct MidtermReportView: View {
     private func heroChip(_ text: String, icon: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 12, weight: .heavy))
         }
         .foregroundStyle(.white)
@@ -337,6 +338,7 @@ struct MidtermReportView: View {
             Image(systemName: icon)
                 .font(.system(size: 30))
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             Text(title).font(.system(size: 17, weight: .bold))
             Text(message)
                 .font(.system(size: 14, weight: .medium))

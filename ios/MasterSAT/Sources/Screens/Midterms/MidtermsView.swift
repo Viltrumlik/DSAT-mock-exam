@@ -209,6 +209,7 @@ struct MidtermCountdownCard: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 Image(systemName: "calendar.badge.clock").font(.system(size: 12, weight: .bold))
+                    .accessibilityHidden(true)
                 Text("NEXT MIDTERM").font(.system(size: 12, weight: .heavy)).tracking(1.1)
             }
             .foregroundStyle(.white.opacity(0.85))
@@ -231,6 +232,7 @@ struct MidtermCountdownCard: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "clock").font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(Countdown.fullDate(opensAt))
                     .font(.system(size: 13, weight: .semibold))
             }
@@ -364,6 +366,7 @@ private struct MidtermRow: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -428,6 +431,7 @@ private struct StatusLine: View {
     var body: some View {
         HStack(spacing: 7) {
             Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 13, weight: .bold))
             if let detail {
                 Text("· \(detail)")

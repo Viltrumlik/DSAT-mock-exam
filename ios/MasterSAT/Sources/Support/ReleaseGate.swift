@@ -106,6 +106,8 @@ struct UpdateRequiredView: View {
                 .frame(width: 64, height: 64)
                 .foregroundStyle(Theme.accent)
                 .padding(.bottom, 24)
+                // The asset's own name would be read; the title below says what this is.
+                .accessibilityHidden(true)
 
             Text("Time to update")
                 .font(.system(size: 28, weight: .heavy))
@@ -157,6 +159,7 @@ struct UpdateRequiredView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle(fullWidth: true))
                 .disabled(checking)
+                .accessibilityLabel(checking ? "Checking again" : "Check again")
             }
             .padding(.bottom, 24)
         }

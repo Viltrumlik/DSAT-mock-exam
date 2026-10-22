@@ -51,6 +51,7 @@ struct AccountAboutView: View {
                             Image(systemName: "arrow.up.right")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(Theme.accent)
+                                .accessibilityHidden(true)
                         }
                         .padding(.vertical, 11)
                         .contentShape(Rectangle())

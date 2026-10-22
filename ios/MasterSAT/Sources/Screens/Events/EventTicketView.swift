@@ -65,6 +65,7 @@ struct EventTicketView: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Image(systemName: saveState == .saved ? "checkmark" : "square.and.arrow.down")
+                                    .accessibilityHidden(true)
                             }
                             Text(saveTitle)
                         }
@@ -79,6 +80,7 @@ struct EventTicketView: View {
                         ) {
                             HStack(spacing: 7) {
                                 Image(systemName: "square.and.arrow.up")
+                                    .accessibilityHidden(true)
                                 Text("Share")
                             }
                         }

@@ -63,6 +63,7 @@ struct VocabSectionView: View {
                         Image(systemName: VocabPalette.glyph(sectionId: sectionId))
                             .font(.system(size: 18, weight: .semibold))
                             .foregroundStyle(tone.solid)
+                            .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 8) {
                     FlowLayout(spacing: 6) {
@@ -165,6 +166,7 @@ struct VocabSectionView: View {
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 8, y: 10)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -299,10 +301,12 @@ struct CustomSetBuilderView: View {
                                     Image(systemName: picked.contains { $0.id == word.id }
                                           ? "checkmark.circle.fill" : "plus.circle")
                                         .foregroundStyle(Theme.accent)
+                                        .accessibilityHidden(true)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityValue(picked.contains { $0.id == word.id } ? "Added" : "")
                         }
                     }
                 } header: {
@@ -332,6 +336,7 @@ struct CustomSetBuilderView: View {
                         if isSaving { ProgressView() } else { Text(editing == nil ? "Create" : "Save").bold() }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || picked.isEmpty || isSaving)
+                    .accessibilityLabel(isSaving ? "Saving" : (editing == nil ? "Create" : "Save"))
                 }
             }
             .onAppear(perform: seed)

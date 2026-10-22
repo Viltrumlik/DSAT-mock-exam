@@ -128,6 +128,7 @@ struct SupportBookingView: View {
             Image(systemName: icon)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 14, weight: .bold))
@@ -189,6 +190,7 @@ struct SupportBookingView: View {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             Text("The calendar couldn't refresh — what you see may be out of date.")
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
@@ -289,6 +291,7 @@ private struct SupportHeroHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(eyebrow).font(.system(size: 12, weight: .heavy))
             }
             .foregroundStyle(.white)
@@ -323,6 +326,7 @@ private struct SupportHeroHeader: View {
                             Image(systemName: tile.icon)
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundStyle(.white.opacity(0.8))
+                                .accessibilityHidden(true)
                             Text(tile.value)
                                 .font(.system(size: 16, weight: .heavy))
                                 .monospacedDigit()
@@ -611,6 +615,7 @@ private struct SupportSessionRow: View {
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.success)
                         .padding(.top, 1)
+                        .accessibilityHidden(true)
                     Text(booking.teacherNote)
                         .font(.system(size: 12.5, weight: .semibold))
                         .fixedSize(horizontal: false, vertical: true)

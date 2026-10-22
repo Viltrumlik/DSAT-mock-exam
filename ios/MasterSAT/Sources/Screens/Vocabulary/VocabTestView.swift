@@ -174,6 +174,7 @@ struct VocabTestView: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: icon).font(.system(size: 22)).foregroundStyle(tone)
+                    .accessibilityHidden(true)
                 Text(label).font(.system(size: 15, weight: .heavy)).foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, minHeight: 88)
@@ -579,6 +580,7 @@ struct QuestionShell<Content: View>: View {
                         .foregroundStyle(Theme.success)
                         .frame(width: 26, height: 26)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
+                        .accessibilityHidden(true)
                     Text(kicker.uppercased())
                         .font(.system(size: 11, weight: .heavy))
                         .tracking(1.1)

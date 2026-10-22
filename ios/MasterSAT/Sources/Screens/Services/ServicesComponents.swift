@@ -104,7 +104,7 @@ struct ServicesTonePill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
+            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)).accessibilityHidden(true) }
             Text(text).font(.system(size: 12.5, weight: .bold))
         }
         .foregroundStyle(tone)

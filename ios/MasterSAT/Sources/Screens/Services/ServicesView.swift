@@ -245,6 +245,7 @@ private struct ServiceFact: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(tone)
                 .frame(width: 22)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
                     .font(.system(size: 10.5, weight: .heavy))
@@ -281,6 +282,7 @@ private struct ServiceAction: View {
         HStack(spacing: 6) {
             Text(title).font(.system(size: 13.5, weight: .bold))
             Image(systemName: "arrow.right").font(.system(size: 12, weight: .bold))
+                .accessibilityHidden(true)
         }
         .foregroundStyle(tone)
         .padding(.horizontal, 14)

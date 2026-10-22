@@ -100,6 +100,7 @@ struct VocabSetView: View {
                         Image(systemName: glyph)
                             .font(.system(size: 25, weight: .semibold))
                             .foregroundStyle(tone.solid)
+                            .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 10) {
                     FlowLayout(spacing: 6) {
@@ -199,6 +200,7 @@ struct VocabSetView: View {
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 6, y: 8)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -284,6 +286,7 @@ struct VocabModeCard: View {
                         Image(systemName: VocabPalette.gameGlyph(mode.kitMode))
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(tone.solid)
+                            .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -302,6 +305,7 @@ struct VocabModeCard: View {
                         HStack(spacing: 5) {
                             Text(mastered ? "Play again" : "Start").font(.system(size: 13, weight: .bold))
                             Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                                .accessibilityHidden(true)
                         }
                         .foregroundStyle(tone.ink)
                         .padding(.horizontal, 14)
@@ -347,6 +351,7 @@ struct VocabModeCard: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(mastered ? Theme.successSoft : tone.track))
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel(mastered ? "Mastered — one clean run" : "Not mastered yet")
     }
 }
@@ -366,7 +371,12 @@ struct VocabWordList: View {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(tone.tile)
                     .frame(width: 44, height: 44)
-                    .overlay(Image(systemName: "textformat").font(.system(size: 18, weight: .semibold)).foregroundStyle(tone.solid))
+                    .overlay(
+                        Image(systemName: "textformat")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(tone.solid)
+                            .accessibilityHidden(true)
+                    )
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Words").font(.system(size: 20, weight: .heavy)).tracking(-0.3)
                     Text(filter == .all

@@ -313,6 +313,9 @@ private struct LiveQuizGameScreen: View {
 /// locked for a moment would come back from believing it had time it does not have.
 private struct LiveQuizQuestionPanel: View {
     let model: LiveQuizModel
+    /// Taps on a choice — the haptic's trigger. `model.draft` also clears when the next question
+    /// opens and when an answer is sent, and a buzz at those is not the student's hand.
+    @State private var picks = 0
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { context in
@@ -336,10 +339,13 @@ private struct LiveQuizQuestionPanel: View {
                             choice: choice,
                             isSelected: model.shownChoice == choice.id,
                             isDisabled: !canSubmit
-                        ) { model.pick(choice.id) }
+                        ) {
+                            model.pick(choice.id)
+                            picks += 1
+                        }
                     }
                 }
-                .sensoryFeedback(.selection, trigger: model.draft)
+                .sensoryFeedback(.selection, trigger: picks)
                 footer(game: game, canSubmit: canSubmit, outOfTime: outOfTime)
             }
         }

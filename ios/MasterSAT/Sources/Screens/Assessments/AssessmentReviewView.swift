@@ -177,6 +177,7 @@ struct AssessmentReviewView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.counterclockwise")
+                        .accessibilityHidden(true)
                 }
                 Text(isRetrying ? "Starting…" : "Retry assessment")
             }
@@ -560,6 +561,7 @@ struct ReviewQuestionCard: View {
             Image(systemName: outcome.icon)
                 .font(.system(size: 18))
                 .foregroundStyle(outcome.tone)
+                .accessibilityHidden(true)
             Text("Question \(ScoreText.string(index + 1))")
                 .font(.system(size: 14, weight: .heavy))
             Text("of \(ScoreText.string(total))")
@@ -668,12 +670,16 @@ struct ReviewChoiceRow: View {
 
             Spacer(minLength: 0)
 
+            // The mark is the only thing that tells these two rows from the others, so VoiceOver
+            // gets it in words — "Your answer", never a verdict on the student.
             if isCorrectAnswer {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 16)).foregroundStyle(Theme.success)
+                    .accessibilityLabel("Correct answer")
             } else if isStudentAnswer {
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 16)).foregroundStyle(Theme.danger)
+                    .accessibilityLabel("Your answer")
             }
         }
         .padding(14)

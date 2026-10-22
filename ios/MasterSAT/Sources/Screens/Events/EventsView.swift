@@ -300,6 +300,7 @@ private struct EventRowView: View {
                             ProgressView()
                         } else {
                             Image(systemName: "ticket")
+                                .accessibilityHidden(true)
                         }
                         // Rendering takes the server a few seconds; say what the wait is for.
                         Text(loading ? "Preparing your ticket…" : "Download ticket")
@@ -354,6 +355,7 @@ private struct PastEventRow: View {
                 Image(systemName: "star.fill")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.amber)
+                    .accessibilityHidden(true)
                 Text("Attended · +\(CommunityFormat.count(points, "point", "points"))")
             }
             .font(.system(size: 12, weight: .heavy))
@@ -396,6 +398,7 @@ private struct EventWhenWhere: View {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
                 .frame(width: 14)
+                .accessibilityHidden(true)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         }

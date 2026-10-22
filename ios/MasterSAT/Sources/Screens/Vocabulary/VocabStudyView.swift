@@ -125,6 +125,7 @@ struct VocabStudyView: View {
                         .foregroundStyle(Theme.warning)
                         .frame(width: 56, height: 56)
                         .background(Circle().fill(Theme.warningSoft))
+                        .accessibilityHidden(true)
                     Text("Couldn't start this round")
                         .font(.system(size: 18, weight: .heavy))
                     Text(error.errorDescription ?? ErrorState.nothingLost)
@@ -359,6 +360,7 @@ struct FlashcardView: View {
         return Button { answer(isCorrect) } label: {
             HStack(spacing: 9) {
                 Image(systemName: icon).font(.system(size: 17, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(label).font(.system(size: 16, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(tone)
@@ -543,6 +545,7 @@ private struct FlashcardHoldStrip: View {
                     Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(correct ? Theme.success : Theme.warning)
+                        .accessibilityHidden(true)
                 )
             VStack(alignment: .leading, spacing: 8) {
                 Text(correct
@@ -802,6 +805,7 @@ struct FlipCard: View {
         .overlay(alignment: .bottomTrailing) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 10, weight: .bold))
+                    .accessibilityHidden(true)
                 Text(back ? "Flip for word" : "Flip for definition").font(.system(size: 11, weight: .heavy))
             }
             .foregroundStyle(Theme.textSecondary)

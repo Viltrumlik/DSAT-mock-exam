@@ -620,6 +620,7 @@ struct VocabHomeworkGroupCard: View {
     private func classroomChip(_ name: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: "person.2.fill").font(.system(size: 10, weight: .bold))
+                .accessibilityHidden(true)
             Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
         }
         .foregroundStyle(Theme.textSecondary)

@@ -94,6 +94,7 @@ struct ProfileGoalPanel: View {
                         Image(systemName: "chevron.up.chevron.down")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(ProfileTone.amber)
+                            .accessibilityHidden(true)
                     }
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
@@ -236,6 +237,7 @@ struct ProfileChecklistPanel: View {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 11, weight: .heavy))
                                 .foregroundStyle(ProfileTone.emerald)
+                                .accessibilityHidden(true)
                             Text(verbatim: item.doneLabel)
                         }
                         .font(.system(size: 12.5, weight: .semibold))
@@ -347,6 +349,7 @@ struct ProfilePaymentsPanel: View {
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(ProfileTone.violet)
                             .frame(width: 18)
+                            .accessibilityHidden(true)
                         Text(verbatim: row.label)
                             .font(.system(size: 13, weight: .semibold))
                         Spacer(minLength: 0)

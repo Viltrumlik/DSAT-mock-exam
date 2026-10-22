@@ -95,6 +95,7 @@ struct CommunityRemoteImage: View {
                 Image(systemName: icon)
                     .font(.system(size: 22))
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             } else {
                 ProgressView()
             }

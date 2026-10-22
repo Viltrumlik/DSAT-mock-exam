@@ -104,8 +104,10 @@ struct SatChecklistSheet: View {
                         } label: {
                             HStack(spacing: 8) {
                                 Image(systemName: "paperplane.fill").font(.system(size: 14, weight: .bold))
+                                    .accessibilityHidden(true)
                                 Text(verbatim: "Message @\(Self.telegramHandle) on Telegram")
                                 Image(systemName: "arrow.up.right").font(.system(size: 12, weight: .bold)).opacity(0.8)
+                                    .accessibilityHidden(true)
                             }
                         }
                         .buttonStyle(PrimaryButtonStyle(fullWidth: true))
@@ -156,6 +158,7 @@ struct SatChecklistSheet: View {
                                 .font(.system(size: 21))
                                 .foregroundStyle(.black)
                                 .offset(x: 2)
+                                .accessibilityHidden(true)
                         )
                         .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
                 }
@@ -166,6 +169,7 @@ struct SatChecklistSheet: View {
                     Image(systemName: "play.rectangle.fill")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.danger)
+                        .accessibilityHidden(true)
                     Text(Self.accountVideoTitle)
                         .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(Color.primary)
@@ -174,6 +178,7 @@ struct SatChecklistSheet: View {
                     Image(systemName: "arrow.up.right")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Theme.textSecondary)
+                        .accessibilityHidden(true)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
@@ -284,6 +289,7 @@ private struct ChecklistCallout<Content: View>: View {
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(tone)
                 .padding(.top, 1)
+                .accessibilityHidden(true)
             content()
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(Color.primary)
@@ -306,6 +312,7 @@ private struct ChecklistChip: View {
         HStack(spacing: 5) {
             if let icon {
                 Image(systemName: icon).font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
             }
             Text(text)
                 .font(.system(size: 13, weight: .bold))
@@ -347,6 +354,7 @@ private struct ChecklistCopyRow: View {
                 HStack(spacing: 5) {
                     Image(systemName: copied ? "checkmark" : "doc.on.doc")
                         .font(.system(size: 11, weight: .bold))
+                        .accessibilityHidden(true)
                     Text(copied ? "Copied" : "Copy")
                         .font(.system(size: 12.5, weight: .bold))
                 }

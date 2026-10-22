@@ -215,6 +215,7 @@ struct AccountFieldBox<Content: View>: View {
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(invalid ? Theme.danger : Theme.textLabel)
                     .frame(width: 16)
+                    .accessibilityHidden(true)
             }
             content()
         }
@@ -325,6 +326,7 @@ struct AccountMenuRow<Route: Hashable>: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
             .cardStyle()
             .contentShape(Rectangle())

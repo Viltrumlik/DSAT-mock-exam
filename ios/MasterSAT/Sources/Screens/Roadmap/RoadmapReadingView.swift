@@ -134,6 +134,7 @@ struct RoadmapReadingView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(Theme.danger)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("That didn’t save").font(.system(size: 14, weight: .bold))
                     Text("Your place wasn’t recorded — try the button again.")
@@ -176,6 +177,7 @@ struct RoadmapReadingView: View {
                             ProgressView().tint(.white)
                         } else {
                             Image(systemName: "checkmark.circle.fill")
+                                .accessibilityHidden(true)
                         }
                         Text("I’ve finished reading")
                     }
@@ -193,9 +195,11 @@ struct RoadmapReadingView: View {
                             ProgressView().tint(.white)
                         } else {
                             Image(systemName: "doc.text.fill")
+                                .accessibilityHidden(true)
                         }
                         Text("Open the homework")
                         Image(systemName: "arrow.right")
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle(fullWidth: true))
@@ -353,6 +357,7 @@ struct RoadmapSectionImage: View {
                         Image(systemName: "photo")
                             .font(.system(size: 22))
                             .foregroundStyle(Theme.textLabel)
+                            .accessibilityHidden(true)
                         Text("The picture didn’t load.")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.textSecondary)
@@ -416,6 +421,7 @@ struct RoadmapSectionVideo: View {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 20))
                                 .foregroundStyle(Theme.danger)
+                                .accessibilityHidden(true)
                         )
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Watch the lesson video")
@@ -430,6 +436,7 @@ struct RoadmapSectionVideo: View {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.background))

@@ -573,6 +573,7 @@ private struct ShopBagTile: View {
                 .font(.system(size: glyph, weight: .medium))
                 .foregroundStyle(shelf == .coin ? RewardsPalette.accentText : Theme.amber)
                 .opacity(0.85)
+                .accessibilityHidden(true)
         }
     }
 }

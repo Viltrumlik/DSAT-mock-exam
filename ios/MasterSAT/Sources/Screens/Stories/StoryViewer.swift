@@ -105,6 +105,7 @@ struct StoryViewer: View {
                             VStack(spacing: 10) {
                                 Image(systemName: "photo")
                                     .font(.system(size: 28))
+                                    .accessibilityHidden(true)
                                 Text(story.title)
                                     .font(.system(size: 20, weight: .heavy))
                                     .multilineTextAlignment(.center)

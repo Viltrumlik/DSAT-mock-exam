@@ -397,6 +397,7 @@ private struct SurveyChoiceRow: View {
                 Image(systemName: glyph)
                     .font(.system(size: 19))
                     .foregroundStyle(selected ? Theme.accent : Theme.textLabel)
+                    .accessibilityHidden(true)
                 Text(text)
                     .font(.system(size: 15, weight: .medium))
                     .foregroundStyle(Color.primary)

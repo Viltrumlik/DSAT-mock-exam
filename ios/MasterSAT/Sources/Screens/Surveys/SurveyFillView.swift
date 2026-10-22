@@ -237,6 +237,7 @@ private struct SurveyFillScreen: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.circle.fill")
                 .foregroundStyle(Theme.danger)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Couldn't send your answers")
                     .font(.system(size: 14, weight: .bold))
@@ -276,6 +277,7 @@ private struct SurveyFillScreen: View {
                         ProgressView().tint(.white)
                     } else {
                         Image(systemName: "list.clipboard")
+                            .accessibilityHidden(true)
                     }
                     Text(model.isSubmitting ? "Sending…" : "Submit")
                 }
@@ -441,6 +443,7 @@ private struct SurveyAnonymityChoice: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
                     .frame(width: 20)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(label)
                         .font(.system(size: 14, weight: .bold))
@@ -453,6 +456,7 @@ private struct SurveyAnonymityChoice: View {
                 Image(systemName: selected ? "largecircle.fill.circle" : "circle")
                     .font(.system(size: 18))
                     .foregroundStyle(selected ? Theme.accent : Theme.textLabel)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
