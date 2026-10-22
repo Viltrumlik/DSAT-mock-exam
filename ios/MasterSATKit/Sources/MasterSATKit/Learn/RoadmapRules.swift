@@ -61,6 +61,16 @@ public struct RoadmapLessonAction: Sendable, Equatable {
     public var isEnabled: Bool { target != nil }
 }
 
+/// What a student's own level asks of them next: the answer under Explore's roadmap card.
+public enum RoadmapNextLesson: Equatable, Sendable {
+    /// Released and waiting — homework to do, or a midterm sitting scheduled.
+    case open(RoadmapLesson)
+    /// Nothing is open, and this is the next one to be released.
+    case upcoming(RoadmapLesson)
+    /// Every lesson is finished. `nextLevel` is the label of the rung above; nil on the top one.
+    case levelDone(nextLevel: String?)
+}
+
 public enum RoadmapRules {
 
     // MARK: Levels
@@ -96,6 +106,26 @@ public enum RoadmapRules {
     /// Only the student's own level starts open; the page is tall, and opening every rung
     /// would bury the one they came to see.
     public static func opensByDefault(_ state: RoadmapLevelState) -> Bool { state == .current }
+
+    /// The lesson to point a student at: the first one open now, else the first still to come,
+    /// else the level is done. A midterm counts like any lesson.
+    ///
+    /// Read off the OWN level only. Every other rung is a bare outline with no `state`, so
+    /// nothing on it can be open — and the server withholds the rest on purpose. Nil when there
+    /// is nothing honest to say: no own level, no lessons published on it yet (a level being
+    /// prepared is not a level finished), or a lesson in a state this build does not know —
+    /// "done" is claimed only when every lesson says so. `RoadmapView.currentNodeID` keeps its
+    /// own scroll logic; this one is about wording, not position.
+    public static func nextLesson(in track: RoadmapTrack) -> RoadmapNextLesson? {
+        guard let index = track.ownLevelIndex else { return nil }
+        let lessons = track.levels[index].lessons
+        if let open = lessons.first(where: { $0.state == .available }) { return .open(open) }
+        if let soon = lessons.first(where: { $0.state == .upcoming }) { return .upcoming(soon) }
+        guard !lessons.isEmpty, lessons.allSatisfy({ $0.state == .completed }) else { return nil }
+        // A blank label is no label, as on Home's chip: "next: " must never be drawn.
+        let next = track.nextLevelLabel.flatMap { $0.isEmpty ? nil : $0 }
+        return .levelDone(nextLevel: next)
+    }
 
     // MARK: Lessons
 
