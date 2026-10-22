@@ -33,54 +33,27 @@ enum ServicesError {
 
 /// A load that failed, said as the site says it: what happened, that nothing is lost, and
 /// a way to try again. The technical reason sits underneath, small, for whoever is helping.
+///
+/// The compact `ErrorState`, on a card: both callers are sections of the booking page.
 struct ServicesNotice: View {
     let title: String
     var message: String?
     var detail: String?
     let retry: @MainActor () async -> Void
 
-    @State private var retrying = false
-
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.warning)
-            Text(title)
-                .font(.system(size: 15, weight: .bold))
-                .multilineTextAlignment(.center)
-            if let message {
-                Text(message)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
-            }
+        VStack(spacing: 0) {
+            ErrorState(title: title, message: message ?? ErrorState.nothingLost, style: .inline, retry: retry)
             if let detail, !detail.isEmpty {
                 Text(detail)
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.textLabel)
                     .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 8)
             }
-            Button {
-                Task {
-                    retrying = true
-                    await retry()
-                    retrying = false
-                }
-            } label: {
-                if retrying {
-                    ProgressView().frame(minWidth: 80)
-                } else {
-                    Text("Try again")
-                }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(retrying)
-            .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
-        .cardStyle(padding: 18)
+        .cardStyle(padding: 8)
     }
 }
 

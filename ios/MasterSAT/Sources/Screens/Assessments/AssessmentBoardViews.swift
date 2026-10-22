@@ -540,33 +540,19 @@ struct AssessmentNotice: View {
     }
 }
 
-/// The board failed to load — said as a failure, with a way to try again.
+/// The board failed to load — said as a failure, with a way to try again. Its one caller is the
+/// whole board, so it is the page form of `ErrorState`, with the art (amber, never red: nothing
+/// the student did went wrong).
 struct AssessmentLoadError: View {
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.danger)
-                .frame(width: 72, height: 72)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.dangerSoft))
-            Text("Couldn't load your assessments")
-                .font(.system(size: 20, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text("Something went wrong on our end. Check your connection and try again.")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button { Task { await retry() } } label: {
-                Label("Try again", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .padding(.horizontal, 20)
+        ErrorState(
+            title: "Couldn't load your assessments",
+            message: "Something went wrong on our end. Check your connection and try again.",
+            style: .page,
+            retry: retry
+        )
     }
 }
 

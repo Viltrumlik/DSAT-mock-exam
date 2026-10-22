@@ -88,7 +88,8 @@ public struct ConfettiBurst: Sendable, Identifiable {
 /// What the student's settings allow the celebrations to do.
 ///
 /// Reduce Motion is a promise: nothing flies, nothing loops, nothing is thrown. Low Power
-/// Mode keeps the celebration but halves the work.
+/// Mode keeps the celebration but halves the work, and rests every loop on its still picture —
+/// a loop is the one motion that never finishes, so it is what Low Power gives up.
 public struct MotionBudget: Sendable, Equatable {
     public var reduceMotion: Bool
     public var lowPower: Bool
@@ -104,5 +105,5 @@ public struct MotionBudget: Sendable, Equatable {
     }
 
     public var allowsFlights: Bool { !reduceMotion }
-    public var allowsLoopingLottie: Bool { !reduceMotion }
+    public var allowsLoopingLottie: Bool { !reduceMotion && !lowPower }
 }

@@ -296,31 +296,14 @@ struct Avatar: View {
 }
 
 /// A load that failed, in the site's two lines: what could not be loaded, and what to do.
-/// Never an empty state — "nothing here" is only for a successful empty answer.
+/// Never an empty state — "nothing here" is only for a successful empty answer. The compact
+/// `ErrorState`: the Me sheet can show three of these at once, one per panel.
 struct ClassroomErrorState: View {
     let title: String
     let message: String
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 26))
-                .foregroundStyle(Theme.warning)
-            Text(title)
-                .font(.system(size: 16, weight: .bold))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
-        .padding(.horizontal, 16)
+        ErrorState(title: title, message: message, style: .inline, retry: retry)
     }
 }

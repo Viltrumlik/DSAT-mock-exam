@@ -104,6 +104,14 @@ import Testing
         #expect(MotionBudget(reduceMotion: false, lowPower: true).allowsFlights)
     }
 
+    @Test("A loop plays only with neither Reduce Motion nor Low Power on; Low Power still flies")
+    func loopingBudget() {
+        #expect(MotionBudget(reduceMotion: false, lowPower: false).allowsLoopingLottie)
+        #expect(!MotionBudget(reduceMotion: false, lowPower: true).allowsLoopingLottie, "a loop never ends, so Low Power rests it")
+        #expect(!MotionBudget(reduceMotion: true, lowPower: false).allowsLoopingLottie)
+        #expect(MotionBudget(reduceMotion: false, lowPower: true).allowsFlights, "a flight is short: Low Power keeps it")
+    }
+
     @Test("Reduce Motion and Low Power together: Reduce Motion is a promise, so nothing is thrown or flown")
     func combinedBudgets() {
         let both = MotionBudget(reduceMotion: true, lowPower: true)

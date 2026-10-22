@@ -491,35 +491,22 @@ struct VocabGameGuide: View {
 
 // MARK: - States
 
-/// A failed load, named as one — never an empty state. The web's `VocabErrorState`.
+/// A failed load, named as one — never an empty state. The web's `VocabErrorState`. The compact
+/// `ErrorState`: the Words page can show four of these at once, one per section.
 struct VocabErrorNotice: View {
     let title: String
     var message = "Something went wrong on our end. Check your connection and try again."
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 26))
-                .foregroundStyle(Theme.warning)
-            Text(title)
-                .font(.system(size: 16, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .padding(.horizontal, 16)
+        ErrorState(title: title, message: message, style: .inline, retry: retry)
     }
 }
 
 /// An empty answer with something to do about it: a dashed slot, and one way forward.
+///
+/// `EmptyState`'s compact form, without art: the Words page can show three at once. `icon` is
+/// kept so the call sites stay as they are; it is no longer drawn.
 struct VocabEmptyState: View {
     let icon: String
     let title: String
@@ -528,35 +515,16 @@ struct VocabEmptyState: View {
     var action: (@MainActor () -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Theme.accent)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Theme.accentSoft))
-            Text(title)
-                .font(.system(size: 15, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if let actionTitle, let action {
-                Button(action: action) {
-                    Label(actionTitle, systemImage: "plus")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
-        .padding(.horizontal, 18)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-        )
+        EmptyState(title: title, message: message, action: way)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+            )
+    }
+
+    private var way: (title: String, run: @MainActor () -> Void)? {
+        guard let actionTitle, let action else { return nil }
+        return (actionTitle, action)
     }
 }
 

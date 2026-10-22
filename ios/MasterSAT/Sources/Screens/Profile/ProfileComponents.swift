@@ -198,21 +198,13 @@ struct ProfileChip: View {
     }
 }
 
-/// Grey blocks where rows are about to be. A placeholder, never a zero.
+/// Grey blocks where rows are about to be. A placeholder, never a zero: `LoadingSkeleton` rows.
 struct ProfilePlaceholderRows: View {
     var count = 2
     var height: CGFloat = 56
 
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(0..<count, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Theme.surface2)
-                    .frame(height: height)
-            }
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading")
+        LoadingSkeleton(rows: count, height: height)
     }
 }
 

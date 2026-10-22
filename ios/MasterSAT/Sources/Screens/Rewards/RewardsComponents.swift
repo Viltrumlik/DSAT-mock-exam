@@ -143,48 +143,17 @@ struct RewardsCoinArt: View {
 /// A failed load, said as a failure — the web's `ErrorState`: a title, what it means for the
 /// student, and a way to try again. Never an empty state: "nothing here" after a failure
 /// reads as a student having earned nothing.
+///
+/// The compact `ErrorState`: every one of these stands in a section or a card. The surface around
+/// it — the hero's chunky edge, a section's card — is its caller's, and stays.
 struct RewardsErrorState: View {
     let title: String
     let message: String
     /// Main-actor on purpose: every caller passes a closure that touches view state.
     let retry: @MainActor () async -> Void
 
-    @State private var retrying = false
-
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.warning)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.system(size: 15, weight: .bold))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task {
-                    retrying = true
-                    await retry()
-                    retrying = false
-                }
-            } label: {
-                if retrying {
-                    ProgressView().frame(minWidth: 80)
-                } else {
-                    Text("Try again")
-                }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(retrying)
-            .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .padding(.horizontal, 12)
+        ErrorState(title: title, message: message, style: .inline, retry: retry)
     }
 }
 

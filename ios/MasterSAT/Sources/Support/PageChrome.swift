@@ -474,24 +474,14 @@ enum RelativeTime {
 
 // MARK: - Retry
 
+/// A load that failed, with the retry. The compact `ErrorState`: it stands inside sections as often
+/// as for whole pages (Today shows two at once), and the art is kept to one per screen.
 struct RetryNotice: View {
     let message: String
     /// Main-actor on purpose: every caller passes a closure that touches view state.
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 26))
-                .foregroundStyle(Theme.warning)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        ErrorState(title: message, style: .inline, retry: retry)
     }
 }

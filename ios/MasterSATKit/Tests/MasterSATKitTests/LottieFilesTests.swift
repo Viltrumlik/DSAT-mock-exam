@@ -50,6 +50,21 @@ import Testing
         #expect(!layers.isEmpty, "\(name): no layers, so nothing to draw")
     }
 
+    /// `LottieClip` pauses on this marker for every still picture (`.still`, a loop under Reduce
+    /// Motion or Low Power, a settling state under Reduce Motion). A clip without it pauses on its
+    /// first frame, which for most of them is blank.
+    @Test("A clip has a `rest` marker inside its frames: the picture a still clip shows", arguments: LottieFilesTests.files)
+    func hasARestMarker(name: String) throws {
+        let object = try JSONSerialization.jsonObject(with: data(name))
+        let json = try #require(object as? [String: Any], "\(name) is not a JSON object")
+        let markers = try #require(json["markers"] as? [[String: Any]], "\(name): no `markers`")
+        let rest = try #require(markers.first { $0["cm"] as? String == "rest" }, "\(name): no marker with `cm` \"rest\"")
+        let frame = try #require(rest["tm"] as? Double, "\(name): the `rest` marker has no frame `tm`")
+        let inPoint = try #require(json["ip"] as? Double)
+        let outPoint = try #require(json["op"] as? Double)
+        #expect(frame >= inPoint && frame <= outPoint, "\(name): rests at frame \(frame), outside \(inPoint)...\(outPoint)")
+    }
+
     @Test("A clip is small: at most 15,000 bytes", arguments: LottieFilesTests.files)
     func fitsTheBudget(name: String) throws {
         let size = try data(name).count
