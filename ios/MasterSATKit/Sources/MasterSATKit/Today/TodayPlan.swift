@@ -31,6 +31,7 @@ public struct TodayPlan: Sendable, Equatable {
         assignments: [AssignmentListing],
         events: [ScheduleEvent],
         homeworkXP: Int?,
+        lessonHours: [Int: Int] = [:],
         now: Date = Date(),
         calendar: Calendar = .current
     ) {
@@ -40,7 +41,7 @@ public struct TodayPlan: Sendable, Equatable {
                 .filter { !HomeworkProgress.isDone($0) }
                 .map { WorkItem.homework($0, homeworkXP: homeworkXP, now: now) }
         )
-        lessons = Self.todaysLessons(events, now: now, calendar: calendar)
+        lessons = Self.todaysLessons(events, lessonHours: lessonHours, now: now, calendar: calendar)
         week = Self.week(assigned, now: now, calendar: calendar)
     }
 
@@ -63,12 +64,32 @@ public struct TodayPlan: Sendable, Equatable {
         return rule.points
     }
 
+    /// Each class's lesson length, by classroom id, for `init(lessonHours:)`. A class with no
+    /// length is left out — absent means the default two hours, the same as a length of 0.
+    public static func lessonHours(of classes: [Classroom]) -> [Int: Int] {
+        Dictionary(classes.compactMap { room in room.lessonHours.map { (room.id, $0) } }, uniquingKeysWith: { first, _ in first })
+    }
+
     /// The newest released midterm score the student has not opened from Today.
-    public static func freshResult(_ midterms: [MidtermListing], seen: Set<Int>) -> MidtermListing? {
-        midterms
-            .filter { $0.submitted && $0.resultsVisible && $0.score != nil }
+    ///
+    /// On the very first load (`firstRun`: nothing is stored for this student yet) nothing is
+    /// fresh. Every score already out was released before the student ever opened Today, and a
+    /// card for a score from last month reads as news that is not; the caller marks
+    /// `releasedAttempts` seen instead, so only a result released later surfaces.
+    public static func freshResult(_ midterms: [MidtermListing], seen: Set<Int>, firstRun: Bool) -> MidtermListing? {
+        guard !firstRun else { return nil }
+        return released(midterms)
             .filter { $0.attemptId.map { !seen.contains($0) } ?? false }
             .max { ($0.attemptId ?? 0) < ($1.attemptId ?? 0) }
+    }
+
+    /// Every released midterm score, by attempt — what the first load marks seen.
+    public static func releasedAttempts(_ midterms: [MidtermListing]) -> Set<Int> {
+        Set(released(midterms).compactMap(\.attemptId))
+    }
+
+    private static func released(_ midterms: [MidtermListing]) -> [MidtermListing] {
+        midterms.filter { $0.submitted && $0.resultsVisible && $0.score != nil }
     }
 
     /// The step from "not all done" to "all done" — the moment the hero celebrates. Never on
@@ -78,14 +99,20 @@ public struct TodayPlan: Sendable, Equatable {
         return current.isComplete
     }
 
-    static func todaysLessons(_ events: [ScheduleEvent], now: Date, calendar: Calendar) -> [WorkItem] {
+    /// `lessonHours` is each class's lesson length (classroom id → hours). A lesson whose class
+    /// has no entry, and a mock or midterm (no class), lasts the default two hours.
+    static func todaysLessons(_ events: [ScheduleEvent], lessonHours: [Int: Int], now: Date, calendar: Calendar) -> [WorkItem] {
         let kinds: Set<ScheduleEvent.Kind> = [.classMeeting, .mock, .midterm]
         return events
             .filter { kinds.contains($0.type) }
             .compactMap { event -> (event: ScheduleEvent, start: Date)? in
                 guard let day = ProfileCalendar.date(fromDay: event.date, calendar: calendar),
                       calendar.isDate(day, inSameDayAs: now),
-                      let window = ProfileLessons.window(of: event, hours: 2, calendar: calendar),
+                      let window = ProfileLessons.window(
+                          of: event,
+                          hours: ProfileLessons.lessonLength(hours: event.classroomId.flatMap { lessonHours[$0] }),
+                          calendar: calendar
+                      ),
                       window.end > now else { return nil }
                 return (event, window.start)
             }

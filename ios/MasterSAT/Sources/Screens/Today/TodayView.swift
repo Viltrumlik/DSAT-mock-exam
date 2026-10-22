@@ -36,6 +36,13 @@ struct TodayView: View {
     @State private var lessonsFailed = false
     @State private var hasLoaded = false
     @State private var seenResults: Set<Int> = []
+    /// Nothing is stored for this student yet, so Today has never loaded for them: the scores
+    /// already out are old news and are marked seen without a card (`TodayPlan.freshResult`).
+    @State private var isFirstRun = false
+    /// Each class's lesson length, so a three-hour lesson stays on Today for three hours.
+    @State private var lessonHours: [Int: Int] = [:]
+    /// The classes have answered at least once; until then the lengths are unknown, not absent.
+    @State private var classesKnown = false
     @State private var lastWeek: TodayPlan.Progress?
     @State private var heroBounce = 0
     @State private var promptDismissed = false
@@ -47,13 +54,18 @@ struct TodayView: View {
     /// Worked out on the learning center's calendar — Tashkent's Monday-to-Sunday week and
     /// Tashkent's "today" — whatever time zone the phone is in.
     private var plan: TodayPlan {
-        TodayPlan(assignments: assignments, events: todayEvents, homeworkXP: homeworkXP, calendar: ServicesTime.calendar)
+        TodayPlan(
+            assignments: assignments, events: todayEvents, homeworkXP: homeworkXP,
+            lessonHours: lessonHours, calendar: ServicesTime.calendar
+        )
     }
 
     /// The homework did not load and there is none from an earlier load to show instead.
     private var homeworkFailed: Bool { loadError != nil && assignments.isEmpty }
 
-    private var freshResult: MidtermListing? { TodayPlan.freshResult(midterms, seen: seenResults) }
+    private var freshResult: MidtermListing? {
+        TodayPlan.freshResult(midterms, seen: seenResults, firstRun: isFirstRun)
+    }
 
     private var seenKey: String { "today.seenResults.\(user.id)" }
 
@@ -88,6 +100,8 @@ struct TodayView: View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .today, onRefresh: {
                 refreshTick += 1
+                // A class joined or re-timed since the last look: ask for the lengths again.
+                classesKnown = false
                 await load()
             }) {
                 VStack(alignment: .leading, spacing: 18) {
@@ -226,8 +240,12 @@ struct TodayView: View {
     // MARK: - Fresh result
 
     private func loadSeen() {
-        let stored = Set(UserDefaults.standard.array(forKey: seenKey) as? [Int] ?? [])
+        let saved = UserDefaults.standard.array(forKey: seenKey) as? [Int]
+        let stored = Set(saved ?? [])
         if stored != seenResults { seenResults = stored }
+        // No key at all, not an empty one: written the first time a load marks what is out.
+        let first = saved == nil
+        if first != isFirstRun { isFirstRun = first }
     }
 
     private func markSeen(_ attemptId: Int) {
@@ -236,12 +254,22 @@ struct TodayView: View {
         UserDefaults.standard.set(Array(seenResults).sorted(), forKey: seenKey)
     }
 
+    /// The first load ever: every score already out is old news. Written even when there are
+    /// none, so the next load knows this was not the first.
+    private func markFirstRunSeen(_ midterms: [MidtermListing]) {
+        seenResults.formUnion(TodayPlan.releasedAttempts(midterms))
+        UserDefaults.standard.set(Array(seenResults).sorted(), forKey: seenKey)
+        isFirstRun = false
+    }
+
     // MARK: - Loading
 
     @MainActor
     private func load() async {
         let student = session.student
         let rewardsAPI = session.rewards
+        let classroomsAPI = session.classrooms
+        let needsClasses = !classesKnown
         let now = Date.now
         // The endpoint reads its dates on the phone's calendar and the plan reads Tashkent's;
         // a day either side covers both, and the plan keeps only the events of its own today.
@@ -250,6 +278,9 @@ struct TodayView: View {
         async let papers = student.midterms()
         async let rules = rewardsAPI.rules()
         async let events = student.schedule(from: now.addingTimeInterval(-day), to: now.addingTimeInterval(day))
+        // Only the lesson lengths come from the classes, so they are asked for once, not on every
+        // return to the tab (a pull to refresh asks again).
+        async let rooms = needsClasses ? (try? await classroomsAPI.classrooms()) : nil
         var freshHomework: [AssignmentListing]?
         do {
             freshHomework = try await homework
@@ -269,6 +300,7 @@ struct TodayView: View {
             if let freshHomework { assignments = freshHomework }
             if let freshPapers { midterms = freshPapers }
         }
+        if isFirstRun, let freshPapers { markFirstRunSeen(freshPapers) }
         if let freshHomework {
             loadError = nil
             // Today is opened most, so it keeps the device's reminders in step with the work.
@@ -284,6 +316,13 @@ struct TodayView: View {
         // The XP labels and today's lessons are extras: losing either never takes the page down.
         // Losing the lessons is remembered, though: an empty list must not read as a free evening.
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
+        // A failed lookup leaves the lengths as they were (two hours, on a first look): losing
+        // them never takes the page down, and the next load asks again.
+        if let fresh = await rooms {
+            let hours = TodayPlan.lessonHours(of: ProfileClasses.memberships(fresh))
+            if hours != lessonHours { lessonHours = hours }
+            classesKnown = true
+        }
         do {
             todayEvents = try await events
             lessonsFailed = false

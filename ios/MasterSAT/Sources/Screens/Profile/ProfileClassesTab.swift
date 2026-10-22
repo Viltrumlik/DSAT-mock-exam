@@ -77,7 +77,9 @@ private struct ProfileClassCard: View {
     let onTelegram: (TelegramGroupButton) -> Void
 
     private var lesson: ProfileLessons.Next? {
-        schedule.value.flatMap { ProfileLessons.next(in: $0, classroomId: room.id, hours: room.lessonHours) }
+        schedule.value.flatMap {
+            ProfileLessons.next(in: $0, classroomId: room.id, hours: room.lessonHours, calendar: ServicesTime.calendar)
+        }
     }
 
     var body: some View {
@@ -180,7 +182,7 @@ private struct ProfileClassCard: View {
     private var lessonLine: String {
         if schedule.isPending { return "Checking the timetable…" }
         if schedule.isFailed { return "The timetable didn't load" }
-        return lesson.map { ProfileLessons.label($0) } ?? "None scheduled yet"
+        return lesson.map { ProfileLessons.label($0, calendar: ServicesTime.calendar) } ?? "None scheduled yet"
     }
 
     private func fact(_ icon: String, _ text: String) -> some View {

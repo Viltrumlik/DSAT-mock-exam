@@ -242,6 +242,26 @@ enum ProfileFixtures {
         #expect(later?.isOnNow == false)
     }
 
+    @Test("One lesson reads the same on every phone: counted on Tashkent's clock, not the phone's")
+    func labelOnTashkentClock() throws {
+        // 00:30 on Tuesday 15 September in Tashkent is still Monday afternoon (15:30) in New York.
+        let now = F.local(15, 0, 30)
+        var abroad = Calendar(identifier: .gregorian)
+        abroad.timeZone = TimeZone(identifier: "America/New_York")!
+        let lessons = [try F.lesson("2026-09-15", "09:00", classroom: 1)]
+        func read(_ calendar: Calendar) -> (next: ProfileLessons.Next?, text: String?) {
+            let next = ProfileLessons.next(in: lessons, classroomId: 1, hours: 2, now: now, calendar: calendar)
+            return (next, next.map { ProfileLessons.label($0, now: now, calendar: calendar) })
+        }
+        // The lesson is at 09:00 Tashkent time, and it is already Tuesday there.
+        let tashkent = read(ServicesTime.calendar)
+        #expect(tashkent.text == "Today at 09:00")
+        // The phone's own zone would put the same lesson at another moment and call it tomorrow.
+        let phone = read(abroad)
+        #expect(phone.text == "Tomorrow at 09:00")
+        #expect(phone.next?.start != tashkent.next?.start)
+    }
+
     @Test("Clock times are read out of free text")
     func clockTimes() {
         #expect(ProfileLessons.clockTimes(in: "8:00-10:00").map { $0.hour } == [8, 10])

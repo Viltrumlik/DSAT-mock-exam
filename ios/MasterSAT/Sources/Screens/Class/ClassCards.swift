@@ -22,7 +22,7 @@ struct ClassLessonCard: View {
             // A lesson the schedule gave no time: it is today, and nothing says it has begun.
             when = "Lesson today"
         } else {
-            when = "Next lesson · \(ProfileLessons.label(next))"
+            when = "Next lesson · \(ProfileLessons.label(next, calendar: ServicesTime.calendar))"
         }
         return place.isEmpty ? when : "\(when) · \(place)"
     }

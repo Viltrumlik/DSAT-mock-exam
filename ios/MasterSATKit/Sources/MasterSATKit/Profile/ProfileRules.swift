@@ -148,8 +148,7 @@ public enum ProfileLessons {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> Next? {
-        // The web's `Math.max(0.5, Number(hours) || 2)`: no length (or zero) means two hours.
-        let length = max(0.5, (hours ?? 0) > 0 ? Double(hours ?? 0) : 2)
+        let length = lessonLength(hours: hours)
         var best: Next?
         for event in events where event.type == .classMeeting && event.classroomId == classroomId {
             guard let window = window(of: event, hours: length, calendar: calendar), window.end > now else { continue }
@@ -172,6 +171,13 @@ public enum ProfileLessons {
         guard lesson.hasTime else { return day }
         let clock = calendar.dateComponents([.hour, .minute], from: lesson.start)
         return "\(day) at \(String(format: "%02d:%02d", clock.hour ?? 0, clock.minute ?? 0))"
+    }
+
+    /// How long a class's lesson lasts, in hours — the web's `Math.max(0.5, Number(hours) || 2)`:
+    /// no length (or zero) means two hours. One rule for the class card and for Today, so the
+    /// same lesson is "on now" in both or in neither.
+    static func lessonLength(hours: Int?) -> Double {
+        max(0.5, (hours ?? 0) > 0 ? Double(hours ?? 0) : 2)
     }
 
     /// A lesson's start and end. `time` is a start ("14:00") or a range ("08:00-10:00"); with

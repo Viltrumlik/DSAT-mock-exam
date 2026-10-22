@@ -156,7 +156,9 @@ struct ClassView: View {
                 ForEach(visibleClasses) { room in
                     ClassLessonCard(
                         room: room,
-                        next: ProfileLessons.next(in: upcoming, classroomId: room.id, hours: room.lessonHours),
+                        next: ProfileLessons.next(
+                            in: upcoming, classroomId: room.id, hours: room.lessonHours, calendar: ServicesTime.calendar
+                        ),
                         telegram: TelegramGroupButton.resolve(state: telegram[room.id], classroomGroupURL: room.telegramGroupURL),
                         liveQuizOn: liveRooms.contains { $0.classroomId == room.id },
                         onTelegram: { openTelegram(room) }
@@ -232,8 +234,11 @@ struct ClassView: View {
         let student = session.student
         let rewardsAPI = session.rewards
         let live = LiveQuizAPI(client: session.client)
-        let start = Date.now
-        let end = Calendar.current.date(byAdding: .day, value: 14, to: start) ?? start
+        let now = Date.now
+        // The endpoint reads its dates on the phone's calendar and the cards read Tashkent's: a
+        // day back keeps today's lesson in the window on a phone that is already into tomorrow.
+        let start = now.addingTimeInterval(-86_400)
+        let end = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
         // A list that failed shows a spinner again while this retries.
         if homeworkState == .failed { homeworkState = .pending }
         if midtermState == .failed { midtermState = .pending }

@@ -434,15 +434,20 @@ struct PillTabs<Tab: Hashable>: View {
 /// A passed deadline reads "Catch up · Tue", never "Overdue" and never "Late". The student
 /// already knows they are behind; the app's job is to make the next step obvious, not to
 /// score the last one.
+///
+/// The day is Tashkent's, like every other date in the app: a deadline written for the learning
+/// center's evening must name the same weekday on a phone set to another zone.
 enum DueLabel {
     /// `handedIn`: work that is already with the teacher is never "catch up" — the student is
     /// not behind on it, and the deadline is just a date.
     static func text(_ iso: String?, handedIn: Bool = false) -> (text: String, late: Bool)? {
         guard let iso, let date = JSONCoding.parseServerDate(iso) else { return nil }
         let late = date < Date() && !handedIn
-        let days = abs(Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0)
+        let days = abs(ServicesTime.calendar.dateComponents([.day], from: Date(), to: date).day ?? 0)
         let f = DateFormatter()
         f.locale = .autoupdatingCurrent
+        f.calendar = ServicesTime.calendar
+        f.timeZone = ServicesTime.tashkent
         f.setLocalizedDateFormatFromTemplate(days <= 6 ? "EEE" : "MMMd")
         let label = f.string(from: date)
         return (late ? "Catch up · \(label)" : "Due \(label)", late)

@@ -13,6 +13,10 @@ import Foundation
 /// finished, and then either the server says the work is in, or quizzes and word sets were all
 /// there was. A paper sat on a computer, or a file to hand in, leaves no trace on the list row,
 /// so for those the server's word is the only word.
+///
+/// A word set with no words has nothing to play, so it is never owed — the rule
+/// `VocabHomeworkGroup.isComplete` keeps for Words. Once the teacher fills it, its count is no
+/// longer 0 and the homework is owed again.
 public enum HomeworkProgress {
     /// Content sat on a computer, under exam conditions.
     static let paperKinds: Set<String> = ["PASTPAPER", "MOCK", "PRACTICE"]
@@ -21,7 +25,7 @@ public enum HomeworkProgress {
         if homework.assessmentHomeworks.contains(where: { !AssessmentCardState.of($0.progress).isDone }) {
             return false
         }
-        if homework.vocabHomeworks.contains(where: { $0.state.lowercased() != "completed" }) {
+        if homework.vocabHomeworks.contains(where: { $0.wordCount > 0 && $0.state.lowercased() != "completed" }) {
             return false
         }
         if ProfileHomework.isTurnedIn(homework.workflowStatus) { return true }
