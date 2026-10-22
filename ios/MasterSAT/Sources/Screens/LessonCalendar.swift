@@ -150,6 +150,7 @@ struct LessonCalendarCard: View {
                 Image(systemName: "calendar")
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Lesson calendar").font(.system(size: 17, weight: .heavy)).tracking(-0.2)
                     Text("Tap a day to see what's on")
@@ -160,11 +161,11 @@ struct LessonCalendarCard: View {
             }
 
             HStack(spacing: 10) {
-                monthButton("chevron.left") { step(-1) }
+                monthButton("chevron.left", label: "Previous month") { step(-1) }
                 Text(monthLabel)
                     .font(.system(size: 15, weight: .heavy))
                     .frame(maxWidth: .infinity)
-                monthButton("chevron.right") { step(1) }
+                monthButton("chevron.right", label: "Next month") { step(1) }
             }
 
             HStack(spacing: 4) {
@@ -196,11 +197,13 @@ struct LessonCalendarCard: View {
                 .init(label: "Next lesson", stroke: .clear, fill: Theme.accent, ring: true, dashed: false),
                 .init(label: "Today", stroke: Theme.accent, fill: .clear, ring: false, dashed: true),
             ])
+            // The key to the marks; a day's cell says its own marks aloud (`DayCellModel.spoken`).
+            .accessibilityHidden(true)
         }
         .cardStyle(padding: 18)
     }
 
-    private func monthButton(_ icon: String, action: @escaping () -> Void) -> some View {
+    private func monthButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 14, weight: .bold))
@@ -211,9 +214,13 @@ struct LessonCalendarCard: View {
                     RoundedRectangle(cornerRadius: 10, style: .continuous)
                         .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                // Drawn 38, tappable 44; the extra is handed back to layout so the row is as it was.
+                .padding(3)
+                .contentShape(Rectangle())
+                .padding(-3)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
     }
 
     private func step(_ delta: Int) {
@@ -238,6 +245,17 @@ struct DayCellModel: Identifiable {
     let hasAssignment: Bool
 
     var id: String { key }
+
+    /// What the colours say, in words: "14, today, class". Without it a day is only its number.
+    var spoken: String {
+        var parts = [ScoreText.string(day)]
+        if isToday { parts.append("today") }
+        if isNext { parts.append("next lesson") }
+        if hasTest { parts.append("test") }
+        if hasClass { parts.append("class") }
+        if hasAssignment { parts.append("homework due") }
+        return parts.joined(separator: ", ")
+    }
 }
 
 private struct DayCell: View {
@@ -275,6 +293,10 @@ private struct DayCell: View {
         }
         .buttonStyle(.plain)
         .disabled(!model.inMonth)
+        .accessibilityLabel(model.spoken)
+        .accessibilityAddTraits(model.isSelected ? .isSelected : [])
+        // The grid's spill-over days from the months either side are dimmed and cannot be chosen.
+        .accessibilityHidden(!model.inMonth)
     }
 
     private var foreground: Color {
@@ -374,6 +396,7 @@ struct NextLessonCard: View {
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .accessibilityLabel("\(Self.cta(event)) · \(Self.relative(date))".spokenSeparators)
                 .padding(.top, 16)
                 .disabled(!Self.openable(event))
                 .opacity(Self.openable(event) ? 1 : 0.55)

@@ -69,7 +69,7 @@ struct HubCard<Route: Hashable>: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// "Events. Your ticket: Open day. Tue, 28 Oct · Ticket 4K29. 2 open for sign-up."
+    /// "Events. Your ticket: Open day. Tue, 28 Oct, Ticket 4K29. 2 open for sign-up."
     private var spokenLabel: String {
         var parts = [title, subtitle]
         if let detail { parts.append(detail) }
@@ -79,6 +79,7 @@ struct HubCard<Route: Hashable>: View {
         }
         // Each part is a sentence of its own, so a full stop it already carries is not doubled.
         let sentences = parts.map { $0.hasSuffix(".") ? String($0.dropLast()) : $0 }
-        return sentences.joined(separator: ". ") + "."
+        // Separators are read as pauses, here only: the card still shows its "·".
+        return sentences.joined(separator: ". ").spokenSeparators + "."
     }
 }

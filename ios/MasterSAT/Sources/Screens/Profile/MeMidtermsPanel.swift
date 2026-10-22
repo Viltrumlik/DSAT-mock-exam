@@ -30,6 +30,7 @@ struct MeMidtermsPanel: View {
                 HStack(spacing: 4) {
                     Text("All midterms")
                     Image(systemName: "arrow.right").font(.system(size: 11, weight: .bold))
+                        .accessibilityHidden(true)
                 }
             }
             .buttonStyle(AccountPillButtonStyle(kind: .quiet, tone: ProfileTone.primary))

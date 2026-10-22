@@ -191,6 +191,7 @@ struct VocabMetaChip: View {
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.system(size: 10, weight: .bold))
+                .accessibilityHidden(true)
             Text(text).font(.system(size: 12, weight: .bold)).monospacedDigit()
         }
         .foregroundStyle(ink)
@@ -290,6 +291,7 @@ struct VocabSetCard: View {
                 // What the link does, drawn as a capsule — the card is the one target.
                 HStack(spacing: 5) {
                     Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
+                        .accessibilityHidden(true)
                     Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
                         .font(.system(size: 13, weight: .bold))
                 }
@@ -313,7 +315,10 @@ struct VocabEmptySetRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            // Only the tile is dimmed: this row's words must stay at the contrast the secondary
+            // text style gives them, and the whole row at 75% took them below it.
             IconTile(systemName: "character.book.closed.fill", tone: Theme.textSecondary, size: 40)
+                .opacity(0.75)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.system(size: 16, weight: .heavy))
@@ -328,7 +333,6 @@ struct VocabEmptySetRow: View {
             Spacer(minLength: 0)
         }
         .cardStyle(padding: 16)
-        .opacity(0.75)
         .accessibilityElement(children: .combine)
     }
 }
@@ -356,6 +360,7 @@ struct VocabSectionCard: View {
                         Image(systemName: VocabPalette.glyph(sectionId: section.id))
                             .font(.system(size: 21, weight: .semibold))
                             .foregroundStyle(shown.solid)
+                            .accessibilityHidden(true)
                     )
 
                 VStack(alignment: .leading, spacing: 5) {
@@ -405,6 +410,7 @@ struct VocabSectionCard: View {
             HStack(spacing: 4) {
                 Text("Open section").font(.system(size: 13, weight: .bold))
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+                    .accessibilityHidden(true)
             }
             .foregroundStyle(tone.ink)
         }
@@ -459,6 +465,7 @@ struct VocabGameGuide: View {
                                 Image(systemName: VocabPalette.gameGlyph(mode))
                                     .font(.system(size: 19, weight: .semibold))
                                     .foregroundStyle(tone.solid)
+                                    .accessibilityHidden(true)
                             )
                         Text(VocabPalette.gameName(mode))
                             .font(.system(size: 14.5, weight: .heavy))

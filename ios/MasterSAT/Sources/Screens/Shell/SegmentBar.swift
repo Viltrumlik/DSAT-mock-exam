@@ -16,6 +16,9 @@ struct SegmentBar<Segment: Hashable>: View {
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
+    /// Taps that moved the segment — the haptic's trigger, not `selection`: the screen writes the
+    /// binding too (Today's "See all" sets Class back to Tasks), and that has no thumb on it.
+    @State private var tapped = 0
 
     /// The chosen segment's capsule. In light mode a white card on the grey track; in dark mode
     /// the card colour is almost the track's own, so it takes a lighter fill and a hairline edge.
@@ -28,6 +31,7 @@ struct SegmentBar<Segment: Hashable>: View {
                 let active = item.segment == selection
                 Button {
                     guard !active else { return }
+                    tapped += 1
                     withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = item.segment }
                 } label: {
                     Text(item.title)
@@ -47,11 +51,12 @@ struct SegmentBar<Segment: Hashable>: View {
                         .contentShape(Capsule())
                 }
                 .buttonStyle(PressBounce())
+                .accessibilityLabel(item.title.spokenSeparators)
                 .accessibilityAddTraits(active ? .isSelected : [])
             }
         }
         .padding(4)
         .background(Theme.surface2, in: Capsule())
-        .sensoryFeedback(.selection, trigger: selection)
+        .sensoryFeedback(.selection, trigger: tapped)
     }
 }

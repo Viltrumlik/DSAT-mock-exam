@@ -229,6 +229,10 @@ struct WordSearchField: View {
 /// row in every section that teaches it, and they would otherwise look identical.
 struct VocabSearchRow: View {
     let word: VocabWord
+    /// The row is the last answer, kept dimmed while the text typed since is searched: it does not
+    /// answer what is in the field now. Said by a value, as the dimming says it to the eye — never
+    /// by leaving the row out, which would let the list vanish under a student's cursor.
+    var stale = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -237,5 +241,9 @@ struct VocabSearchRow: View {
             }
             VocabWordRow(word: word)
         }
+        // Read as one while stale (the value belongs to the whole result); its parts stay apart
+        // when it is current. Both are arguments, not branches, so the row keeps its identity.
+        .accessibilityElement(children: stale ? .combine : .contain)
+        .accessibilityValue(stale ? "Not a match" : "")
     }
 }

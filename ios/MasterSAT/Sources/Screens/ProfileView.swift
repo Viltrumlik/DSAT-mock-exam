@@ -262,7 +262,9 @@ private struct ProfileHeroCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 5) {
                         Image(systemName: "person.crop.circle").font(.system(size: 11, weight: .bold))
+                            .accessibilityHidden(true)
                         Text(verbatim: "Profile · \(identity.role)").font(.system(size: 12, weight: .heavy))
+                            .accessibilityLabel("Profile, \(identity.role)")
                     }
                     .foregroundStyle(Theme.accent)
                     .padding(.horizontal, 10)
@@ -335,6 +337,8 @@ private struct ProfileHeroCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
         .overlay(alignment: .topTrailing) { closeButton }
+        // A container, so the close button's sort priority orders it among the hero's own parts.
+        .accessibilityElement(children: .contain)
     }
 
     /// A 32-pt circle in a 44-pt target — a thumb's size, whatever the circle's.
@@ -351,6 +355,9 @@ private struct ProfileHeroCard: View {
         .buttonStyle(PressBounce())
         .padding(6)
         .accessibilityLabel("Close")
+        // Laid over the hero, it would come after the hero's chips and buttons: the way out of the
+        // sheet is the first thing VoiceOver finds, not the last of the hero.
+        .accessibilitySortPriority(1)
     }
 }
 

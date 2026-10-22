@@ -31,6 +31,9 @@ struct FloatingTabBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var pill
     @State private var taps: [AppTab: Int] = [:]
+    /// Taps that opened another tab — the haptic's trigger. `selection` is also written by deep
+    /// links, "See all" and `showFresh`, which have no thumb on the glass and stay silent.
+    @State private var tapped = 0
 
     var body: some View {
         HStack(spacing: 0) {
@@ -41,6 +44,7 @@ struct FloatingTabBar: View {
                     if selection == tab {
                         onReselect(tab)
                     } else {
+                        tapped += 1
                         withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { selection = tab }
                     }
                 } label: {
@@ -48,6 +52,7 @@ struct FloatingTabBar: View {
                         Image(systemName: tab.icon)
                             .font(.system(size: 19, weight: .semibold))
                             .symbolEffect(.bounce.up, value: taps[tab, default: 0])
+                            .accessibilityHidden(true)
                         Text(tab.title)
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                     }
@@ -65,11 +70,16 @@ struct FloatingTabBar: View {
                 .buttonStyle(PressBounce())
                 .accessibilityLabel(tab.title)
                 .accessibilityAddTraits(selection == tab ? .isSelected : [])
+                // The open tab's own tap is "back to the top" (`onReselect`); the others open.
+                .accessibilityHint(selection == tab ? "Double-tap to go back to the top" : "")
             }
         }
         .padding(6)
         .background(.ultraThinMaterial, in: Capsule())
         .shadow(color: .black.opacity(0.13), radius: 18, y: 6)
-        .sensoryFeedback(.selection, trigger: selection)
+        .sensoryFeedback(.selection, trigger: tapped)
+        // One tab bar to VoiceOver, with its five tabs inside it.
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isTabBar)
     }
 }

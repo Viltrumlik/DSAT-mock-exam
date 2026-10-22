@@ -273,11 +273,10 @@ struct VocabularyView: View {
             // Not yet answered for this text: the last answer stays, dimmed, rather than
             // collapsing into a spinner on every keystroke.
             VStack(spacing: 12) {
-                ForEach(results) { VocabSearchRow(word: $0) }
+                ForEach(results) { VocabSearchRow(word: $0, stale: !fresh) }
             }
             .opacity(fresh ? 1 : 0.45)
             .animation(.easeOut(duration: 0.15), value: fresh)
-            .accessibilityHidden(!fresh)
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity)

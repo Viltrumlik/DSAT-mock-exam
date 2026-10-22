@@ -182,6 +182,8 @@ struct ServicesCheckboxStyle: ToggleStyle {
                 Image(systemName: configuration.isOn ? "checkmark.square.fill" : "square")
                     .font(.system(size: 21, weight: .medium))
                     .foregroundStyle(configuration.isOn ? Theme.accent : Theme.textSecondary)
+                    // The box is heard as the value below, not as a symbol's name.
+                    .accessibilityHidden(true)
                 configuration.label
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Color.primary)

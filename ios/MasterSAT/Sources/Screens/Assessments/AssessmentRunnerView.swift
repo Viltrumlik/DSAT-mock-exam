@@ -534,9 +534,13 @@ struct AssessmentRunnerView: View {
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                         .fill(Theme.ink.opacity(0.85))
                 )
+                // Drawn ~41 pt, tappable 44: the pill keeps its look, centred in the taller target.
+                .frame(minHeight: Self.minTarget)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Question \(runner.currentIndex + 1) of \(runner.questions.count)")
+            .accessibilityHint("Opens the question map")
 
             if runner.currentIndex == runner.questions.count - 1 {
                 Button {
@@ -550,6 +554,8 @@ struct AssessmentRunnerView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 .disabled(runner.isSubmitting)
+                // The spinner has no words; without this the button goes nameless mid-hand-in.
+                .accessibilityLabel(runner.isSubmitting ? "Handing in" : "Hand in")
             } else {
                 Button {
                     move(to: runner.currentIndex + 1, runner)
@@ -557,6 +563,7 @@ struct AssessmentRunnerView: View {
                     HStack(spacing: 6) {
                         Text("Next")
                         Image(systemName: "chevron.right").font(.system(size: 13, weight: .bold))
+                            .accessibilityHidden(true)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -699,6 +706,7 @@ struct QuestionMapSheet: View {
                         legend("Blank", Theme.surface2)
                         HStack(spacing: 5) {
                             Image(systemName: "flag.fill").font(.system(size: 9)).foregroundStyle(Theme.flagged)
+                                .accessibilityHidden(true)
                             Text("Flagged").font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(Theme.textSecondary)
                         }
@@ -837,6 +845,7 @@ struct AssessmentSubmittedView: View {
                 Image(systemName: "checkmark")
                     .font(.system(size: 40, weight: .bold))
                     .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
             }
             Text("Handed in").font(.system(size: 24, weight: .heavy))
             Text("Your teacher will see it. Marking may take a little while.")

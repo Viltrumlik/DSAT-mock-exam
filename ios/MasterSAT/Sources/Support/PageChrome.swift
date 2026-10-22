@@ -48,6 +48,9 @@ struct IconTile: View {
                     .font(.system(size: size * 0.46, weight: .semibold))
                     .foregroundStyle(tone)
             )
+            // Always beside the words it illustrates, so VoiceOver would only read a symbol's name
+            // ("calendar") ahead of them.
+            .accessibilityHidden(true)
     }
 }
 
@@ -236,6 +239,7 @@ struct HeroHeader<Trailing: View>: View {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
                         Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
+                            .accessibilityHidden(true)
                         Text(eyebrow).font(.system(size: 12, weight: .heavy))
                     }
                     .foregroundStyle(.white)
@@ -339,6 +343,9 @@ private struct HeroTileFlow: View {
                             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white.opacity(0.16)))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // The label and its number are one fact, without the glyph's name between.
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(tile.label), \(tile.value)")
                     }
                     if row.count == 1 { Spacer(minLength: 0).frame(maxWidth: .infinity) }
                 }
@@ -370,6 +377,9 @@ struct PillTabs<Tab: Hashable>: View {
     var focusZone = false
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Taps that changed the tab — the haptic's trigger, never `selection` itself: a link into a
+    /// page or a "See all" moves the binding without a thumb, and the phone must stay silent.
+    @State private var tapped = 0
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -377,10 +387,12 @@ struct PillTabs<Tab: Hashable>: View {
                 ForEach(items) { item in
                     let active = item.tab == selection
                     Button {
+                        if !active { tapped += 1 }
                         withAnimation(reduceMotion || focusZone ? Motion.focus : Motion.snappy) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: item.icon).font(.system(size: 12, weight: .bold))
+                                .accessibilityHidden(true)
                             Text(item.title).font(.system(size: 14, weight: .bold))
                             if let count = item.count {
                                 Text(ScoreText.string(count))
@@ -415,6 +427,9 @@ struct PillTabs<Tab: Hashable>: View {
                         .contentShape(Capsule())
                     }
                     .buttonStyle(PillPress(focusZone: focusZone))
+                    // The count is part of the name — "Done, 3" — and the chosen pill says so.
+                    .accessibilityLabel(item.count.map { "\(item.title), \(ScoreText.string($0))" } ?? item.title)
+                    .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }
             // A couple of points of vertical room so the selected pill's shadow is not
@@ -424,7 +439,7 @@ struct PillTabs<Tab: Hashable>: View {
         // No negative padding to "bleed" the row to the screen edge: it made the first pill
         // start off-screen. The row lines up with the cards under it instead.
         .scrollIndicators(.hidden)
-        .sensoryFeedback(.selection, trigger: selection)
+        .sensoryFeedback(.selection, trigger: tapped)
     }
 }
 
@@ -443,6 +458,15 @@ private struct PillPress: ButtonStyle {
 }
 
 // MARK: - Wording
+
+extension String {
+    /// A line written for the eye, said for the ear: the " · " between its parts (the roadmap's
+    /// "  ·  " too) is a pause. Left in, VoiceOver reads it as a word of its own, or drops the
+    /// pause altogether.
+    var spokenSeparators: String {
+        replacingOccurrences(of: "  ·  ", with: ", ").replacingOccurrences(of: " · ", with: ", ")
+    }
+}
 
 /// Deadlines, in the words the site uses.
 ///

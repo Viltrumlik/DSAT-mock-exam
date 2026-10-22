@@ -79,7 +79,15 @@ struct TodayHero: View {
         .onAppear { draw(progress.fraction) }
         .onChange(of: progress) { _, now in draw(now.fraction) }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(failed ? "This week: your homework didn't load." : "This week: \(headline). \(subline)")
+        .accessibilityLabel(spoken)
+    }
+
+    /// While the week is still on its way the ring knows nothing, so it says only that — not
+    /// "This week: This week", the placeholder headline read twice.
+    private var spoken: String {
+        if failed { return "This week: your homework didn't load." }
+        if !loaded { return "This week's homework, loading" }
+        return "This week: \(headline). \(subline)"
     }
 
     private func draw(_ fraction: Double) {
@@ -116,13 +124,26 @@ struct LessonsUnavailableRow: View {
             Image(systemName: "exclamationmark.circle")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             Text("Today's lessons didn't load.")
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
-            Button("Try again") { Task { await retry() } }
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(Theme.accent)
+            Button {
+                Task { await retry() }
+            } label: {
+                Text("Try again")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.accent)
+                    // Drawn 12 pt, tappable 44 tall and wide; the extra is handed back to layout,
+                    // so the quiet row stays quiet.
+                    .padding(.vertical, 14)
+                    .padding(.horizontal, 8)
+                    .contentShape(Rectangle())
+                    .padding(.vertical, -14)
+                    .padding(.horizontal, -8)
+            }
+            .buttonStyle(PressBounce())
         }
         .padding(.horizontal, 4)
     }
@@ -189,6 +210,7 @@ struct SATCountdownRow: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
             .cardStyle(padding: 14)
             .contentShape(Rectangle())

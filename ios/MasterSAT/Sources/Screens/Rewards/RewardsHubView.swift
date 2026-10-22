@@ -48,6 +48,8 @@ struct RewardsHubView: View {
     /// the burst would have given is still given — once, by the card.
     @State private var convertBuzz = 0
     @State private var coinsSpot = FrameBox()
+    /// VoiceOver's cursor, sent to the coins card when a conversion is over (`convert`).
+    @AccessibilityFocusState private var coinsFocused: Bool
     @State private var shown = false
     /// Each return to the tab: a new trophy (`RankHeroContent.plays`).
     @State private var trophyPlays = 0
@@ -99,7 +101,10 @@ struct RewardsHubView: View {
                             streak: celebrations.streakShown(rewards.streak) ?? mine?.currentStreak,
                             best: mine?.bestStreak
                         )
-                        CoinsCard(rewards: mine, failed: meFailed, converting: converting, note: convertNote) {
+                        CoinsCard(
+                            rewards: mine, failed: meFailed, converting: converting, note: convertNote,
+                            focus: $coinsFocused
+                        ) {
                             confirmingConvert = true
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { coinsSpot.rect = $0 }
@@ -373,7 +378,15 @@ struct RewardsHubView: View {
             }
         }
         converting = false
-        if let convertNote { AccessibilityNotification.Announcement(convertNote).post() }
+        // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
+        // cursor goes with it: the coins card is where the result shows, so the cursor goes there.
+        coinsFocused = true
+        if let convertNote {
+            // After the card has been read, not over it: speech started by the cursor's move is
+            // not cut off, and a line that arrives with it is not lost.
+            try? await Task.sleep(for: .milliseconds(400))
+            celebrations.announce(convertNote, queued: true)
+        }
     }
 
     /// A coin bursts where the card is; when the burst is skipped (a sheet or a cover is up) the

@@ -152,6 +152,11 @@ struct CalculatorPanel: View {
                         .foregroundStyle(Theme.textSecondary)
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(Theme.surface2))
+                        // Drawn 30, tappable 44; the extra is handed back to layout, so the
+                        // header is the height it was.
+                        .padding(7)
+                        .contentShape(Rectangle())
+                        .padding(-7)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close calculator")
@@ -166,6 +171,7 @@ struct CalculatorPanel: View {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.system(size: 28))
                         .foregroundStyle(Theme.warning)
+                        .accessibilityHidden(true)
                     Text("The calculator needs a connection")
                         .font(.system(size: 15, weight: .bold))
                     // Named rather than left blank: a student staring at an empty box

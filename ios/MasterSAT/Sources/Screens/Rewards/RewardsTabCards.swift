@@ -158,6 +158,9 @@ struct CoinsCard: View {
     let converting: Bool
     /// What the last conversion did — or that it did not go through.
     let note: String?
+    /// VoiceOver's cursor on the coin count: a conversion usually leaves no Convert button for it
+    /// to rest on, so the hub puts it here when the conversion is over.
+    var focus: AccessibilityFocusState<Bool>.Binding
     let onConvert: () -> Void
 
     var body: some View {
@@ -176,6 +179,7 @@ struct CoinsCard: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenCoins)
+            .accessibilityFocused(focus)
             Spacer(minLength: 0)
             if let rewards {
                 if rewards.convertibleCoins > 0 {
@@ -201,7 +205,11 @@ struct CoinsCard: View {
                     }
                     .buttonStyle(PressBounce())
                     .disabled(converting)
-                    .accessibilityLabel("Convert points into \(RewardsFormat.count(rewards.convertibleCoins, "coin"))")
+                    // The spinner has no words of its own.
+                    .accessibilityLabel(
+                        converting ? "Converting points"
+                            : "Convert points into \(RewardsFormat.count(rewards.convertibleCoins, "coin"))"
+                    )
                 } else {
                     Text(verbatim: "\(RewardsFormat.count(rewards.pointsToNextCoin, "point")) to your next coin")
                         .font(.system(size: 11, weight: .heavy))
@@ -212,6 +220,7 @@ struct CoinsCard: View {
                     HStack(spacing: 3) {
                         Text("Points & coins")
                         Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold))
+                            .accessibilityHidden(true)
                     }
                     .font(.system(size: 12, weight: .heavy))
                     .foregroundStyle(RewardsPalette.accentText)
@@ -257,6 +266,8 @@ struct RewardsBoardSection: View {
     let retry: @MainActor () async -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Taps on a window chip — the haptic's trigger, not `window`, which the hub also writes.
+    @State private var chipTaps = 0
 
     private static let topCount = 5
 
@@ -278,6 +289,7 @@ struct RewardsBoardSection: View {
                     HStack(spacing: 4) {
                         Text("See the full board").font(.system(size: 14, weight: .bold))
                         Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(RewardsPalette.accentText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -294,6 +306,7 @@ struct RewardsBoardSection: View {
                 let active = window == value
                 Button {
                     guard !active else { return }
+                    chipTaps += 1
                     withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { window = value }
                 } label: {
                     Text(LeaderboardFilters.fallbackWindowLabel(value))
@@ -308,7 +321,7 @@ struct RewardsBoardSection: View {
                 .accessibilityAddTraits(active ? .isSelected : [])
             }
         }
-        .sensoryFeedback(.selection, trigger: window)
+        .sensoryFeedback(.selection, trigger: chipTaps)
     }
 
     private var emptyHint: String {
@@ -444,6 +457,7 @@ struct XPLedgerCard: View {
                 HStack(spacing: 4) {
                     Text("All your points").font(.system(size: 14, weight: .bold))
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                        .accessibilityHidden(true)
                 }
                 .foregroundStyle(RewardsPalette.accentText)
                 .frame(maxWidth: .infinity, alignment: .trailing)

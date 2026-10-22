@@ -205,6 +205,30 @@ struct AssessmentResultRow: View {
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
+        // One element: what it is, how it went, when — not the tile, the class line, the percent
+        // and the chevron as four stops.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    /// "Linear equations, 80 percent, Tue 21 Oct" — the day is the last time anything happened on
+    /// the attempt, in the learning center's time, like every date in the app.
+    private var spoken: String {
+        var parts = [entry.title]
+        if entry.state == .completed, entry.progress?.graded == true, let percent = entry.progress?.percent {
+            parts.append("\(percent) percent")
+        } else {
+            parts.append("being marked")
+        }
+        if let iso = entry.progress?.lastActivityAt, let date = JSONCoding.parseServerDate(iso) {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.calendar = ServicesTime.calendar
+            f.timeZone = ServicesTime.tashkent
+            f.dateFormat = "EEE d MMM"
+            parts.append(f.string(from: date))
+        }
+        return parts.joined(separator: ", ")
     }
 }
 
@@ -251,5 +275,14 @@ struct MidtermResultRow: View {
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    /// "Midterm 2, 640 of 800" — or that the score is not out, which is not a score of nothing.
+    private var spoken: String {
+        guard let score = midterm.releasedScore else { return "\(midterm.title), not released" }
+        guard let ceiling = midterm.scoreCeiling else { return "\(midterm.title), \(ScoreText.string(score))" }
+        return "\(midterm.title), \(ScoreText.string(score)) of \(ScoreText.string(ceiling))"
     }
 }

@@ -51,6 +51,9 @@ struct RankUpCard: View {
     let onBoard: () -> Void
     let onClose: () -> Void
 
+    /// VoiceOver's cursor, on the line that says the news.
+    @AccessibilityFocusState private var newsFocused: Bool
+
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
@@ -63,12 +66,16 @@ struct RankUpCard: View {
             .accessibilityHidden(true)
 
             VStack(spacing: 4) {
-                // A place is an identifier, not a quantity: never "#1,204".
+                // A place is an identifier, not a quantity: never "#1,204". Its own words are the
+                // announcement — the cursor lands here and reads them (see the task below).
                 Text(verbatim: "You moved up to #\(rise.to)")
                     .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .accessibilityFocused($newsFocused)
                 Text(verbatim: "Overall · all time · up from #\(rise.from)")
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.textSecondary)
+                    // The dots are pauses, not words.
+                    .accessibilityLabel("Overall, all time, up from #\(rise.from)")
             }
             .multilineTextAlignment(.center)
 
@@ -86,5 +93,13 @@ struct RankUpCard: View {
         .accessibilityAddTraits(.isModal)
         // VoiceOver's two-finger scrub puts it away, as it does a sheet.
         .accessibilityAction(.escape, onClose)
+        // The card does not wait to be found: the cursor comes to it. Lowered first so a second
+        // rise, which swaps `rise` under this same view, moves it again; and after a beat, because
+        // a cursor set in the frame the card is inserted in finds nothing there yet.
+        .task(id: rise) {
+            newsFocused = false
+            try? await Task.sleep(for: .milliseconds(150))
+            if !Task.isCancelled { newsFocused = true }
+        }
     }
 }

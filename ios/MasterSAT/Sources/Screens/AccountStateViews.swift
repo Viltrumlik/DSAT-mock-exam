@@ -29,6 +29,7 @@ struct FrozenAccountView: View {
             }
             .buttonStyle(SecondaryButtonStyle(fullWidth: true))
             .disabled(checking)
+            .accessibilityLabel(checking ? "Checking again" : "Check again")
 
             Button {
                 Task { await session.signOut() }
@@ -66,6 +67,8 @@ struct UnreachableView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(retrying)
+            // The spinner says nothing to VoiceOver; the label does (as `ErrorState`'s retry does).
+            .accessibilityLabel(retrying ? "Trying again" : "Try again")
         }
     }
 }
