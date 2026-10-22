@@ -12,6 +12,12 @@ struct ScrollRequest: Equatable {
     let nonce: Int
 }
 
+/// "Read again what this tab's root shows" — a fresh nonce each time, so a second ask is seen.
+struct ReloadRequest: Equatable {
+    let tab: AppTab
+    let nonce: Int
+}
+
 /// Which tab is open, each tab's stack, and the two sheets.
 ///
 /// One `NavigationPath` per tab, as separate properties: an `@Observable` notifies per
@@ -35,6 +41,7 @@ final class AppRouter {
     var showingMe = false
     var certificate: CertificateCode?
     private(set) var scrollToTop: ScrollRequest?
+    private(set) var reloadRequest: ReloadRequest?
     /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
     /// Class root has applied it (`classToDoShown`), so it lands whether Class was already built
     /// or is built by this very tap, and applies exactly once.
@@ -102,6 +109,23 @@ final class AppRouter {
         popToRoot(tab)
     }
 
+    /// `show`, and the tab's root reads again, from its top. A root that comes into view reloads
+    /// itself as it appears; one already on screen at its root has nothing appear, so it is asked
+    /// (the trophy card's "See the board" lands on a hero that must show the place the card just
+    /// named). Either way the hero is what the student is sent to, so the root scrolls back up.
+    func showFresh(_ tab: AppTab) {
+        let onScreen = selection == tab && isAtRoot(tab)
+        show(tab)
+        if onScreen { requestReload(tab) }
+        requestScrollToTop(tab)
+    }
+
+    /// The app came back to the front: a tab root on screen reads again, since nothing about the
+    /// return makes it appear. A tab that is not open reloads when it is opened.
+    func reloadIfShowing(_ tab: AppTab) {
+        if selection == tab, isAtRoot(tab) { requestReload(tab) }
+    }
+
     /// Today's "See all": Class, on Tasks → To do for every class — not wherever it was last left.
     func showClassToDo() {
         if !wantsClassToDo { wantsClassToDo = true }
@@ -123,6 +147,10 @@ final class AppRouter {
         } else {
             popToRoot(tab)
         }
+    }
+
+    private func requestReload(_ tab: AppTab) {
+        reloadRequest = ReloadRequest(tab: tab, nonce: (reloadRequest?.nonce ?? 0) + 1)
     }
 
     private func requestScrollToTop(_ tab: AppTab) {

@@ -108,7 +108,14 @@ public struct VocabHomeworkGroup: Decodable, Sendable, Equatable, Identifiable {
 
     public var id: Int { assignmentId }
 
-    public var isComplete: Bool { !sets.isEmpty && sets.allSatisfy(\.completed) }
+    /// Every set that can be played has had a game finished. A set with no words has nothing to
+    /// play, so it never holds a homework back; a homework with nothing playable in it has
+    /// nothing to be complete — it is not "complete", and nothing is owed on it either
+    /// (`outstandingCount` is 0). The same set-less case `allSatisfy` would paint as finished.
+    public var isComplete: Bool {
+        let playable = sets.filter { $0.wordCount > 0 }
+        return !playable.isEmpty && playable.allSatisfy(\.completed)
+    }
 
     private enum CodingKeys: String, CodingKey {
         case sets

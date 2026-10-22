@@ -6140,14 +6140,4651 @@ Send the screenshots and `/tmp/phase2.mp4` (SendUserFile), one line per item to 
 
 ---
 
-## Phase 3 — Rewards + Words (outline)
+## Phase 3 — Rewards + Words
 
-- Kit: `LeaderboardQuery` gains `metric` (`XP` | `STRIKES`) → `?metric=STRIKES`; tests.
-- Kit (moved from phase 2): the last-seen XP / streak / rank, stored per student — its only reader is "while you were away"; that flight goes through `CelebrationQueue` like any other confirmed gain.
-- Rewards: trophy hero with rank + "N XP to pass <name>" (from the board row above the student), streak + coins cards (B chunky style), convert-to-coins on the coins card, leaderboard XP | Strikes with window chips, "Where your XP came from" (`MyRewards.history`), shop with a coin burst on purchase (new Lottie `coin-burst`).
-- "While you were away": on launch compare stored last-seen XP / streak / rank → XP flight labelled from the history row; streak up → flame grows + number rolls; rank up → trophy sheet (new Lottie `star-burst`).
-- Words: "Review today" hero (still-learning count) + Start; sets, sections, search, my sets restyled.
-- Verify, PR, demo.
+Branch `feat/ios-redesign-phase3` in `/Users/macbook/Projects/dsat-wt-ios-redesign`, built on phase 2 (PR #305, HEAD `6a5dd83b`). One PR into `main`, merged after #305.
+
+**What the student gets:** the Rewards tab becomes "where I stand and what I have" — a trophy hero with their place on the whole learning center's board ("#57 · overall · all time") and the one student to pass next ("121 XP to pass Malika"), chunky streak and coins cards (convert on the coins card), the board as XP | Strikes, "Where your XP came from", and the shop. Coming back to the app ("while you were away") flies the XP earned meanwhile into the header with what it was for, grows the flame when the run got longer, and shows a trophy card when they moved up a place. A purchase or a conversion bursts a coin. The Words tab opens on "Review today" — words still to master and ONE set that Start opens — with a search of the whole bank and the homework / bank / own-set lists in the new look.
+
+**Checked while this plan was written (2026-10-21).** In a throwaway worktree of `6a5dd83b`, every task below was applied exactly as written — by a script that executes each task's **Create** / **Rewrite** / **Edit** blocks verbatim, in order — and at every task end the kit tests passed (694 → 705 → 715 → 721 after Tasks 20–22) and, for Tasks 23–28, the app built (`** BUILD SUCCEEDED **`, no new warnings in the touched files). The two new Lottie files were decoded and rendered frame by frame with lottie-ios 4.6.1. A failure at execution therefore means the tree has moved since — read the named file before improvising.
+
+**How the code steps are written.** **Create** `path` — a new file, the whole of it. **Rewrite** `path` — the whole file replaced. **Edit** `path` — replace: OLD … with: NEW — OLD occurs exactly once in that file; replace it verbatim. Paths are from the repository root. Every app task ends with the build check of phase 2 ("The build check (used by every app task)").
+
+### Decisions taken where the design left room
+
+- **The hero's board is global, all time, XP — the owner's decision of 2026-10-21** (the approved design's "#4 in your class this week" is superseded, and the server has no week window — only `ALL` and `MONTH`). As built it asks `LeaderboardQuery.heroBoard` (the default board with `limit=200`, Ruling P3-R3 — the default 50 rows would hide the student to pass for ranks 51–200), and the welcome-back check asks the same; ties are numbered the same in the list and in `my` (`competition_ranks`), so every reader sees one number.
+- **"N XP to pass <name>" is offered only when it is provable.** The response carries the top 50 rows plus the student's own (`my`, from `rank_of`). Ranks are competition ranks, so exactly `rank − 1` students are ahead; only when all of them are in the response is the nearest one "directly above" — otherwise the hero says "Keep earning XP to climb" with no number. A tie-mate printed above the student is not passed (that changes no number); the line names the nearest better rank. #1 reads "You're top of the whole board"; no XP yet reads "Not on the board yet". First names only (`LeaderboardName.firstName`, after the email guard).
+- **The board on the tab is the global one: XP (All time · This month) | Strikes, the top five and the student's own row.** Strikes hides the window chips and sends neither window nor subject (the server forces all time and ignores the subject there). The full page (scopes, filters, podium) stays XP-only in this phase; "See the full board" shows under XP only.
+- **Convert on the coins card spends Max after a confirmation** (`convert(points: nil)` — every point that buys a whole coin); choosing an amount stays on the Points page. A confirmed conversion bursts a coin there and on the Points page too — coins arriving is the same event as a purchase.
+- **"Where your XP came from"** = the five newest earnings whose rule adds XP (`/rewards/rules/` `grants_xp`; without the rules every earning stays — the server's own fallback), amounts as the rows' points (equal to the XP for every XP-granting rule), then "All your points" → Points.
+- **The shop on the tab is a card to the Shop page** — the storefront is the heaviest rewards request and the tab already makes four; the coin burst plays where the purchase is confirmed, on the Shop page.
+- **The last-seen baseline lives in `UserDefaults`, one JSON value per user id** (`rewards.lastSeen.v1.<id>`): four integers do not justify a file (directory, atomic writes, migrations), it survives relaunch and updates, it is what Today's "fresh result" already uses per student, and a second account on the phone starts with no baseline.
+- **"While you were away" runs on launch AND on every return to the front.** iOS keeps a backgrounded app alive for hours, so a student coming back after a lesson rarely launches it — the return is the moment. It replaces the scene-active header refresh, so a quick app switch costs nothing extra and celebrates nothing unless something changed. One check at a time.
+- **"Seen" means shown:** the baseline stores the header's `xp − heldXP`, the flame's held number and the old rank while a rank-up card has not been shown — so a kill before a flight lands celebrates it next time, once. Written after every check and when the scene goes to the background.
+- **The board is read for the rank only when XP rose (or no rank was ever read):** a place only improves through the student's own XP, and the board costs two aggregates on the server.
+- **The trophy "sheet" is a drawn card at the root, not a `.sheet`:** a third sheet would fight the router's one-sheet rule and the Me sheet's queue. A chunky card over a dimmed backdrop, above the tab bar; tap outside / "Nice!" / "See the board" (→ Rewards at its root).
+- **Order on a return:** the XP flight first (it needs a visible pill), the flame at the same time (0.45 s after it is on screen), the trophy card after the flight has landed. Under a sheet or a cover all of it waits.
+- **The flight's caption** names the newest earning row added since the baseline ("Attendance", "Homework + 2 more"); a rise with no new row (a re-graded homework moves its own row) flies without a caption. VoiceOver hears every part, Reduce Motion or not.
+- **Words: the hero counts the bank's words still to master** — the server has no spaced repetition and no "learning" bucket (`new` | `mastered`), so nothing is "due"; words − mastered per section is the one exact number the hub loads. **Start** opens the word-homework set due soonest that is not mastered (catch-up first, bound to its homework); with none, the section with the most words still to master — one read of it, then its set with the most (`bestSet`) — falling back to the section page. The student's own sets are never Start's target (no word progress on them, and their words are bank words). All caught up and nothing yet are states, not errors; the hero needs both the bank and the homework and says so when either never loaded.
+- **Words lists:** a `SegmentBar` Homework · Word bank · My sets, opening on Homework when there is any, else the bank — decided once, never after the student picked; "New set" moves to the top of My sets; search on the tab (two letters, 300 ms pause, a failure is not "no matches").
+- **Look "B" arrives as `ChunkySurface`** (the prototype's `.chunky`, ported): the trophy hero, the streak and coins cards, the student's own board row and the trophy card — nowhere else. Words keeps look A with amber as its identity; actions stay brand blue (white on amber fails contrast). At most two looping Lottie on a screen: the header flame and the streak card's flame; the trophy plays once.
+- **The three Rewards pages refresh detached now** (Points, Shop, Leaderboard): this phase owns that tab, and the phase-2 `.refreshable` bug (a refresh cancelling its own requests) would show on exactly the screens it rebuilds. The other pushed pages stay on phase 5's list.
+- **`Leaderboard.swift` grows by more than the `metric` parameter the Global Constraints name:** the strike board's rows carry `strikes` (and the board its `metric`), so they are decoded; `passTarget` and `firstName` are pure logic over the same response. Still no backend change, and nothing else in an existing kit file changes outside `CelebrationQueue.swift`, which phase 2 created.
+
+### Phase 2 hand-off → tasks
+
+| Carried into phase 3 (Phase 2 outcome; Phase 1 outcome where noted) | Where |
+|---|---|
+| "While you were away" rework of interleaved refresh dips | Task 21 (`CelebrationQueue.held(xpNow:)`, away entries recorded before the read), Task 24 (`heldXP` reads it), Task 25 (`expectAway` before the request, `streakRose` before `apply`) |
+| The unanimated backstop landing | Task 24 (`settle` lands inside `withAnimation(Motion.snappy)`) |
+| `allDone()` dropped (not held) while a cover is up | Task 24 (`allDoneWaiting`, played in `stageCleared()`) |
+| Last-seen XP / streak / rank per student (ruled out of phase 2 → phase 3) | Task 21 (kit: `LastSeen`, `LastSeenBook`, `WelcomeBack`), Task 25 (app: `AwayCheck`) |
+| `metric` on the leaderboard query (Global Constraints) | Task 20 |
+| Phase 5 list: pushed pages on a plain `.refreshable` | Task 27 takes the three Rewards pages; the rest stay in phase 5 |
+| Phase 1 kit polish: enforce the 15 000-byte Lottie budget | Task 23 (the generator throws over budget) |
+| Phase 1 kit polish: a test that every `LottieAsset` loads | Not here — the project has no app test target to hold it; Task 29 sees each new asset play on the simulator |
+| Owner: check on an iOS 17 / 18 runtime | Task 29 Step 6 |
+
+### File structure (phase 3)
+
+Kit (`ios/MasterSATKit/Sources/MasterSATKit/`):
+- `Rewards/Leaderboard.swift` — `LeaderboardMetric`, the strike board's rows, `LeaderboardPass` / `passTarget`, `LeaderboardName.firstName`.
+- `Rewards/XPLedger.swift` — **new.** "Where your XP came from".
+- `Rewards/LastSeen.swift` — **new.** `LastSeen`, `LastSeenBook`, `Rise`, `WelcomeBack`.
+- `Motion/CelebrationQueue.swift` — away entries, flight captions, `held(xpNow:)`, `resolve` returns the gain.
+- `Vocabulary/VocabReview.swift` — **new.** "Review today".
+
+Kit tests (`ios/MasterSATKit/Tests/MasterSATKitTests/`): `RewardsTabTests.swift`, `WelcomeBackTests.swift`, `VocabReviewTests.swift` — **new.**
+
+App (`ios/`):
+- `tools/lottie/make-lottie.mjs` — `coin-burst`, `star-burst`, the byte budget; `MasterSAT/Resources/Lottie/{coin-burst,star-burst}.json` — **new**, generated.
+- `MasterSAT/Sources/Support/Chunky.swift` — **new.** Look B.
+- `MasterSAT/Sources/Support/Motion/LottieClip.swift` (two assets), `Celebrations.swift` (the hand-off fixes, captions, coin burst, away / flame / trophy), `RankUpCard.swift` — **new.**
+- `MasterSAT/Sources/Screens/Shell/RewardsStore.swift`, `AppHeader.swift` (`StrikeChip`), `AwayCheck.swift` — **new**; `MasterSAT/Sources/Screens/RootView.swift`.
+- `MasterSAT/Sources/Screens/Rewards/RewardsHubView.swift` (rewritten), `RewardsTabCards.swift` — **new**; `PointsView.swift`, `ShopView.swift`, `LeaderboardView.swift`.
+- `MasterSAT/Sources/Screens/Vocabulary/VocabularyView.swift` (rewritten), `WordsTodayCards.swift` — **new**; `VocabComponents.swift`.
+
+---
+
+### Task 20: The Rewards tab's numbers in the kit (`LeaderboardMetric`, strikes rows, `passTarget`, `XPLedger`)
+
+**Files:**
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift`
+- Create: `ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPLedger.swift`
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/RewardsTabTests.swift`
+
+**Interfaces:**
+- Consumes: `LeaderboardQuery`, `LeaderboardRow`, `LeaderboardBoard`, `LeaderboardName`, `PointAward`, `RewardRule` (all existing).
+- Produces: `public enum LeaderboardMetric: String { case xp = "XP", strikes = "STRIKES" }`; `LeaderboardQuery.metric` (init gains `metric: LeaderboardMetric = .xp` as its LAST parameter; `queryItems` sends `metric=STRIKES` and drops `window`/`subject` on the strike board; `activeFilterCount` counts only the branch there); `LeaderboardRow.strikes: Int?` (init gains `strikes: Int? = nil` as its last parameter) and `func score(_: LeaderboardMetric) -> Int`; `LeaderboardBoard.metric` (init gains `metric: LeaderboardMetric = .xp` as its FIRST parameter); `goal` is nil on the strike board; `public struct LeaderboardPass { name: String; xp: Int; rank: Int; var text: String }` and `LeaderboardBoard.passTarget: LeaderboardPass?`; `LeaderboardName.firstName(_:) -> String`; `public enum XPLedger { static func rows(_: [PointAward], rules: [RewardRule]?, limit: Int = 5) -> [PointAward] }`.
+
+Rules for this task (kit): no backend change — the server shipped `?metric=STRIKES` in #302 and serves `strikes` on every row of that board (`backend/rewards/views.py` `_row`), and `metric` in the board's meta. The strike board forces all time and ignores the subject server-side, so the app does not send what the server would overrule. Every mutating call in a test sits on its own line, never inside `#expect`.
+
+- [ ] **Step 1: Write the failing test**
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/RewardsTabTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct LeaderboardMetricTests {
+
+    private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+        try JSONCoding.decoder.decode(T.self, from: Data(json.utf8))
+    }
+
+    @Test("XP is the server's default, so it is not sent; the strike board sends only what it obeys")
+    func queryItems() {
+        let xp = LeaderboardQuery(scope: .global, window: "MONTH", subject: "MATH", branchId: 4)
+        #expect(xp.metric == .xp)
+        #expect(xp.queryItems.map(\.name) == ["scope", "window", "subject", "branch"])
+
+        let strikes = LeaderboardQuery(scope: .global, window: "MONTH", subject: "MATH", branchId: 4, metric: .strikes)
+        let sent = Dictionary(uniqueKeysWithValues: strikes.queryItems.map { ($0.name, $0.value ?? "") })
+        #expect(sent == ["scope": "GLOBAL", "metric": "STRIKES", "branch": "4"])
+        #expect(strikes.activeFilterCount == 1, "only the branch narrows a strike board")
+
+        let groupStrikes = LeaderboardQuery(scope: .group, metric: .strikes)
+        #expect(groupStrikes.queryItems.map(\.name) == ["scope", "metric"])
+        #expect(groupStrikes.activeFilterCount == 0)
+    }
+
+    @Test("A strike board decodes its metric and each row's run; it offers no XP goal")
+    func strikeBoardDecodes() throws {
+        let board = try decode(LeaderboardBoard.self, #"""
+        {"metric":"STRIKES","scope":"GLOBAL","window":"ALL","count":2,
+         "rows":[{"rank":1,"student_id":7,"name":"Aziz","xp":0,"awards":0,"strikes":12,"is_me":false},
+                 {"rank":2,"student_id":9,"name":"Madina","xp":0,"awards":0,"strikes":9,"is_me":true}],
+         "my":{"rank":2,"student_id":9,"name":"Madina","xp":0,"awards":0,"strikes":9,"is_me":true}}
+        """#)
+        #expect(board.metric == .strikes)
+        #expect(board.rows.map(\.strikes) == [12, 9])
+        #expect(board.rows[0].score(.strikes) == 12)
+        #expect(board.rows[0].score(.xp) == 0)
+        #expect(board.goal == nil)
+        #expect(board.passTarget == nil)
+    }
+
+    @Test("An XP board without `metric` (older server) reads as XP, and its rows carry no run")
+    func xpBoardDefaults() throws {
+        let board = try decode(LeaderboardBoard.self, #"""
+        {"rows":[{"rank":1,"student_id":7,"name":"Aziz","xp":40}],"my":null}
+        """#)
+        #expect(board.metric == .xp)
+        #expect(board.rows[0].strikes == nil)
+        #expect(board.rows[0].score(.strikes) == 0)
+    }
+}
+
+@Suite struct LeaderboardPassTests {
+
+    private func row(_ rank: Int, _ id: Int, _ xp: Int, name: String? = nil, me: Bool = false) -> LeaderboardRow {
+        LeaderboardRow(rank: rank, studentId: id, name: name ?? "S\(id)", xp: xp, isMe: me)
+    }
+
+    @Test("The student directly above, by first name, to pass and not to tie")
+    func directlyAbove() {
+        let me = row(4, 4, 150, me: true)
+        let board = LeaderboardBoard(rows: [row(1, 1, 400), row(2, 2, 300), row(3, 3, 270, name: "Malika Karimova"), me], my: me)
+        let pass = board.passTarget
+        #expect(pass == LeaderboardPass(name: "Malika", xp: 121, rank: 3))
+        #expect(pass?.text == "121 XP to pass Malika")
+    }
+
+    @Test("Nobody to pass at #1, without a standing, or on a board that is not XP")
+    func nothingToPass() {
+        let top = row(1, 1, 400, me: true)
+        #expect(LeaderboardBoard(rows: [top, row(2, 2, 300)], my: top).passTarget == nil)
+        #expect(LeaderboardBoard(rows: [row(1, 1, 400)], my: nil).passTarget == nil)
+        let me = row(2, 2, 300, me: true)
+        #expect(LeaderboardBoard(metric: .strikes, rows: [row(1, 1, 0), me], my: me).passTarget == nil)
+    }
+
+    @Test("Below the page: named only when every student ahead is in the response")
+    func belowThePage() {
+        let page = (1...50).map { row($0, $0, 1000 - $0) }
+        let next = row(51, 99, 900, me: true)
+        let reachable = LeaderboardBoard(rows: page, my: next)
+        #expect(reachable.passTarget == LeaderboardPass(name: "S50", xp: 51, rank: 50))
+
+        let far = row(57, 99, 600, me: true)
+        #expect(LeaderboardBoard(rows: page, my: far).passTarget == nil, "#51–#56 are not in the response")
+    }
+
+    @Test("Ties: a tie-mate printed above is not passed; a tie ahead is passed as one")
+    func ties() {
+        let me = row(2, 3, 300, me: true)
+        let tiedWithMe = LeaderboardBoard(rows: [row(1, 1, 400), row(2, 2, 300), me], my: me)
+        #expect(tiedWithMe.passTarget == LeaderboardPass(name: "S1", xp: 101, rank: 1))
+
+        let behindATie = row(4, 4, 300, me: true)
+        let tiedAhead = LeaderboardBoard(rows: [row(1, 1, 500), row(2, 2, 400), row(2, 3, 400), behindATie], my: behindATie)
+        #expect(tiedAhead.passTarget == LeaderboardPass(name: "S3", xp: 101, rank: 2))
+
+        // The page ends on a tie ahead of a student it does not show.
+        let cut = LeaderboardBoard(rows: [row(1, 1, 500), row(2, 2, 400), row(2, 3, 400)], my: row(4, 9, 100, me: true))
+        #expect(cut.passTarget == LeaderboardPass(name: "S3", xp: 301, rank: 2))
+    }
+
+    @Test("Level on XP but ranked below: one XP passes them")
+    func levelXP() {
+        let me = row(2, 2, 300, me: true)
+        #expect(LeaderboardBoard(rows: [row(1, 1, 300), me], my: me).passTarget?.xp == 1)
+    }
+
+    @Test("A first name is the first word of the shown name — never an address")
+    func firstName() {
+        #expect(LeaderboardName.firstName("Malika Karimova") == "Malika")
+        #expect(LeaderboardName.firstName("  Jasur  ") == "Jasur")
+        #expect(LeaderboardName.firstName("") == "Student")
+        #expect(LeaderboardName.firstName(LeaderboardName.display("malika@mail.uz")) == "malika")
+    }
+}
+
+@Suite struct XPLedgerTests {
+
+    private func award(_ id: Int, _ event: String, _ points: Int) -> PointAward {
+        PointAward(id: id, event: event, label: event.capitalized, points: points, awardedAt: "2026-10-20T10:00:00Z")
+    }
+
+    @Test("Earnings that add XP, newest first, at most five; a conversion spends and is left out")
+    func earningsOnly() {
+        let history = [
+            award(9, "COIN_CONVERSION", -30), award(8, "HOMEWORK", 15), award(7, "SURVEY", 10),
+            award(6, "ATTENDANCE_PRESENT", 5), award(5, "ATTENDANCE_PRESENT", 5), award(4, "HOMEWORK", 12),
+            award(3, "ATTENDANCE_LATE", 3), award(2, "ATTENDANCE_PRESENT", 5),
+        ]
+        let rules = [
+            RewardRule(event: "HOMEWORK", label: "Homework", points: 15),
+            RewardRule(event: "SURVEY", label: "Survey", points: 10, grantsXP: false),
+        ]
+        #expect(XPLedger.rows(history, rules: rules).map(\.id) == [8, 6, 5, 4, 3])
+        #expect(XPLedger.rows(history, rules: rules, limit: 2).map(\.id) == [8, 6])
+    }
+
+    @Test("Without the rules every earning is kept — a missing rule adds XP on the server too")
+    func withoutRules() {
+        let history = [award(2, "SURVEY", 10), award(1, "HOMEWORK", 15)]
+        #expect(XPLedger.rows(history, rules: nil).map(\.id) == [2, 1])
+        #expect(XPLedger.rows([], rules: nil).isEmpty)
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "LeaderboardMetricTests|LeaderboardPassTests|XPLedgerTests" 2>&1 | tail -5`
+Expected: build errors — `extra argument 'metric' in call`, `value of type 'LeaderboardBoard' has no member 'passTarget'`, `cannot find 'XPLedger' in scope`.
+
+- [ ] **Step 3: Add the metric to `Rewards/Leaderboard.swift`**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+/// What a board is being asked for. Everything the web sends, and nothing it does not: `limit`
+/// and `level` go out only as their server defaults, so they are not sent at all.
+public struct LeaderboardQuery: Sendable, Hashable {
+```
+with:
+
+```swift
+/// What a board ranks: XP earned, or the run of lessons attended right now (`?metric=STRIKES`,
+/// the server's #302). The strike board ranks the RUN, never the spendable balance.
+public enum LeaderboardMetric: String, Sendable, Hashable, CaseIterable {
+    case xp = "XP"
+    case strikes = "STRIKES"
+}
+
+/// What a board is being asked for. Everything the web sends, and nothing it does not: `limit`
+/// and `level` go out only as their server defaults, so they are not sent at all.
+public struct LeaderboardQuery: Sendable, Hashable {
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    public var branchId: Int?
+
+    public init(scope: LeaderboardScope = .global, window: String = LeaderboardQuery.allTime, subject: String? = nil, branchId: Int? = nil) {
+        self.scope = scope
+        self.window = window
+        self.subject = subject
+        self.branchId = branchId
+    }
+
+    /// Whether the branch filter applies to the board being asked for.
+    public var branchApplies: Bool { scope == .global && branchId != nil }
+
+    public var queryItems: [URLQueryItem] {
+        var items = [
+            URLQueryItem(name: "scope", value: scope.rawValue),
+            URLQueryItem(name: "window", value: window),
+        ]
+        if let subject, !subject.isEmpty { items.append(URLQueryItem(name: "subject", value: subject)) }
+        if branchApplies, let branchId { items.append(URLQueryItem(name: "branch", value: String(branchId))) }
+        return items
+    }
+
+    /// How many filters are narrowing the board — the badge on the Filters button.
+    public var activeFilterCount: Int {
+        (window != Self.allTime ? 1 : 0) + (subject != nil ? 1 : 0) + (branchApplies ? 1 : 0)
+    }
+```
+with:
+
+```swift
+    public var branchId: Int?
+    /// XP by default — the server's default, so it is only ever sent as `STRIKES`.
+    public var metric: LeaderboardMetric
+
+    public init(
+        scope: LeaderboardScope = .global,
+        window: String = LeaderboardQuery.allTime,
+        subject: String? = nil,
+        branchId: Int? = nil,
+        metric: LeaderboardMetric = .xp
+    ) {
+        self.scope = scope
+        self.window = window
+        self.subject = subject
+        self.branchId = branchId
+        self.metric = metric
+    }
+
+    /// Whether the branch filter applies to the board being asked for.
+    public var branchApplies: Bool { scope == .global && branchId != nil }
+
+    public var queryItems: [URLQueryItem] {
+        var items = [URLQueryItem(name: "scope", value: scope.rawValue)]
+        if metric == .strikes {
+            // A run is now, and it belongs to the student rather than to a subject: the server
+            // forces all time and ignores the subject on this board, so neither is sent.
+            items.append(URLQueryItem(name: "metric", value: metric.rawValue))
+        } else {
+            items.append(URLQueryItem(name: "window", value: window))
+            if let subject, !subject.isEmpty { items.append(URLQueryItem(name: "subject", value: subject)) }
+        }
+        if branchApplies, let branchId { items.append(URLQueryItem(name: "branch", value: String(branchId))) }
+        return items
+    }
+
+    /// How many filters are narrowing the board — the badge on the Filters button. On the strike
+    /// board only the branch narrows anything.
+    public var activeFilterCount: Int {
+        if metric == .strikes { return branchApplies ? 1 : 0 }
+        return (window != Self.allTime ? 1 : 0) + (subject != nil ? 1 : 0) + (branchApplies ? 1 : 0)
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    public let region: String?
+    public let isMe: Bool
+
+    public var id: Int { studentId }
+```
+with:
+
+```swift
+    public let region: String?
+    public let isMe: Bool
+    /// The run of lessons attended — filled on the strike board only (`xp` is 0 there).
+    public let strikes: Int?
+
+    public var id: Int { studentId }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+        region: String? = nil,
+        isMe: Bool = false
+    ) {
+        self.rank = rank
+        self.studentId = studentId
+        self.name = name
+        self.profileImageURL = profileImageURL
+        self.xp = xp
+        self.awards = awards
+        self.branch = branch
+        self.region = region
+        self.isMe = isMe
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case rank, name, xp, awards, branch, region
+```
+with:
+
+```swift
+        region: String? = nil,
+        isMe: Bool = false,
+        strikes: Int? = nil
+    ) {
+        self.rank = rank
+        self.studentId = studentId
+        self.name = name
+        self.profileImageURL = profileImageURL
+        self.xp = xp
+        self.awards = awards
+        self.branch = branch
+        self.region = region
+        self.isMe = isMe
+        self.strikes = strikes
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case rank, name, xp, awards, branch, region, strikes
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+        isMe = c.rewardsBool(.isMe) ?? false
+    }
+```
+with:
+
+```swift
+        isMe = c.rewardsBool(.isMe) ?? false
+        strikes = c.rewardsInt(.strikes)
+    }
+
+    /// The number this row is ranked on, on the given board.
+    public func score(_ metric: LeaderboardMetric) -> Int {
+        metric == .strikes ? (strikes ?? 0) : xp
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    /// First letters of the first two words, upper-cased; "?" when there are none.
+```
+with:
+
+```swift
+    /// The first word of a shown name — "Malika" for "Malika Karimova" — for a line that names
+    /// somebody in passing. "Student" when there is nothing to show.
+    public static func firstName(_ name: String) -> String {
+        name.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? "Student"
+    }
+
+    /// First letters of the first two words, upper-cased; "?" when there are none.
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+/// `GET /api/rewards/leaderboard/`.
+public struct LeaderboardBoard: Decodable, Sendable, Equatable {
+    public let scope: String
+```
+with:
+
+```swift
+/// "120 XP to pass Malika" — the next student up, by name. Growth-oriented by construction: it
+/// names the one place to take next, never the distance from the top.
+public struct LeaderboardPass: Sendable, Equatable {
+    public let name: String
+    public let xp: Int
+    public let rank: Int
+
+    public init(name: String, xp: Int, rank: Int) {
+        self.name = name
+        self.xp = xp
+        self.rank = rank
+    }
+
+    public var text: String { "\(xp) XP to pass \(name)" }
+}
+
+/// `GET /api/rewards/leaderboard/`.
+public struct LeaderboardBoard: Decodable, Sendable, Equatable {
+    /// What this board ranks — the meta the server sends back. An older server that never sent
+    /// it only ever had the XP board.
+    public let metric: LeaderboardMetric
+    public let scope: String
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    public init(
+        scope: String = LeaderboardScope.global.rawValue,
+        window: String = LeaderboardQuery.allTime,
+```
+with:
+
+```swift
+    public init(
+        metric: LeaderboardMetric = .xp,
+        scope: String = LeaderboardScope.global.rawValue,
+        window: String = LeaderboardQuery.allTime,
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+        my: LeaderboardRow?
+    ) {
+        self.scope = scope
+```
+with:
+
+```swift
+        my: LeaderboardRow?
+    ) {
+        self.metric = metric
+        self.scope = scope
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+        case scope, window, subject, level, count, rows, my
+```
+with:
+
+```swift
+        case metric, scope, window, subject, level, count, rows, my
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+        self.init(
+            scope: c.rewardsString(.scope) ?? LeaderboardScope.global.rawValue,
+```
+with:
+
+```swift
+        self.init(
+            metric: c.rewardsString(.metric).flatMap { LeaderboardMetric(rawValue: $0.uppercased()) } ?? .xp,
+            scope: c.rewardsString(.scope) ?? LeaderboardScope.global.rawValue,
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    public var goal: LeaderboardGoal? {
+        guard let my else { return nil }
+```
+with:
+
+```swift
+    public var goal: LeaderboardGoal? {
+        // An XP gap means nothing on the strike board.
+        guard metric == .xp, let my else { return nil }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift` — replace:
+
+```swift
+    /// The goal, when the viewer is standing on the podium — it is shown under the podium then.
+```
+with:
+
+```swift
+    /// The student to pass next, by name — the Rewards hero's line.
+    ///
+    /// Offered only when EVERY student ranked ahead of the viewer is in this response. Ranks are
+    /// competition ranks, so exactly `rank − 1` students are ahead; when all of them are here,
+    /// the nearest is the one directly above. A viewer past the page with a gap the response
+    /// does not show gets no line rather than a guess. A tie-mate printed above is not "above" —
+    /// passing them changes no number — so the line names the nearest better rank. Nil at #1,
+    /// without a standing, and on the strike board.
+    public var passTarget: LeaderboardPass? {
+        guard metric == .xp, let me = standing, me.rank > 1 else { return nil }
+        let ahead = rows.filter { $0.rank < me.rank && $0.studentId != me.studentId }
+        guard ahead.count == me.rank - 1, let above = ahead.last else { return nil }
+        return LeaderboardPass(
+            name: LeaderboardName.firstName(above.displayName),
+            xp: max(1, above.xp - me.xp + 1),
+            rank: above.rank
+        )
+    }
+
+    /// The goal, when the viewer is standing on the podium — it is shown under the podium then.
+```
+
+- [ ] **Step 4: Create `Rewards/XPLedger.swift`**
+
+**Create** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPLedger.swift`:
+
+```swift
+import Foundation
+
+/// "Where your XP came from" — the newest earnings that added XP, from `/rewards/me/`'s history.
+///
+/// The history is the points ledger, so two kinds of row are left out: a conversion (it spends
+/// points, and never touched XP) and an earning whose rule pays points only (a survey, since
+/// 2026-09-01 — `RewardRule.grantsXP`). Without the rules — not loaded yet, or failed — every
+/// earning stays: the server itself reads a missing rule as one that adds XP
+/// (`rewards/constants.py::_rule_grants_xp`). The amounts are the rows' points, which is the XP
+/// they added for every rule that grants XP.
+public enum XPLedger {
+    public static func rows(_ history: [PointAward], rules: [RewardRule]?, limit: Int = 5) -> [PointAward] {
+        let pointsOnly = Set((rules ?? []).filter { !$0.grantsXP }.map(\.event))
+        return Array(history.filter { $0.points > 0 && !pointsOnly.contains($0.event) }.prefix(limit))
+    }
+}
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "LeaderboardMetricTests|LeaderboardPassTests|XPLedgerTests|LeaderboardAPITests|LeaderboardLayoutTests" 2>&1 | tail -6`
+Expected: every suite passes — the three new ones (3 + 6 + 2 tests) and the existing leaderboard suites unchanged. Whole kit: `swift test 2>&1 | tail -2` → `✔ Test run with 705 tests … passed` (694 + 11).
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Rewards/Leaderboard.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Rewards/XPLedger.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/RewardsTabTests.swift
+git commit -m "feat(ios-kit): the strike board, the student to pass next, and where XP came from
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 21: "While you were away" in the kit (`LastSeen`, `LastSeenBook`, `WelcomeBack`, away flights in `CelebrationQueue`)
+
+**Files:**
+- Create: `ios/MasterSATKit/Sources/MasterSATKit/Rewards/LastSeen.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift`
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/WelcomeBackTests.swift`
+
+**Interfaces:**
+- Consumes: `CelebrationQueue`, `FinishedWork`, `XPDelta` (Task 12); `PointAward` (existing).
+- Produces: `public struct LastSeen: Codable { var xp: Int; var streak: Int; var rank: Int?; var newestAwardID: Int? }`; `public struct LastSeenBook { init(defaults: UserDefaults = .standard); static func key(userID:) -> String; func read(userID:) -> LastSeen?; func write(_:userID:) }`; `public struct Rise: Equatable { from: Int; to: Int }`; `public enum WelcomeBack { static func streak(seen: LastSeen?, now: Int) -> Rise?; static func rank(seen: Int?, now: Int?) -> Rise?; static func readsRank(seen: LastSeen?, xpNow: Int) -> Bool; static func label(history: [PointAward], since: Int?) -> String? }`; on `CelebrationQueue`: `Flight.label: String?`, `recordAway(xpSeen: Int?) -> Int`, `@discardableResult resolve(_:xpAfter:allowsFlights:label: String? = nil) -> Int` (the measured gain; the old three-argument statement still compiles), `held(xpNow: Int?) -> Int`.
+
+Why these shapes (read before coding):
+- **Where the baseline lives — `UserDefaults`, one small JSON value per student** (`rewards.lastSeen.v1.<userID>`). Four integers do not justify a file (no directory, no atomic-write or migration code), `UserDefaults` survives relaunch and app updates, it is what Today's "fresh result" already uses per student (`today.seenResults.<id>`), and the tests run it against a throwaway suite. Keyed by user id, so a second account on the phone never inherits the first one's numbers.
+- **No double count.** An away entry is an ordinary queue entry: `xpBefore` = the XP last seen, measured by the next `/rewards/me/` read. `measuredUpTo` already stops two entries from claiming one rise, so an away entry and a homework whose refreshes read the same total fly that gain once, whichever resolves first.
+- **No dip (phase 2 hand-off).** Today the pill shows `xp − held`, and `held` only grows when an entry RESOLVES — so a refresh that lands first (the launch refresh, the scene-active refresh, the Rewards hub) shows the new total, then the entry's resolve holds it back and the pill dips, then the flight lands and it rises again. `held(xpNow:)` also holds any rise above the lowest floor a still-pending entry will measure from, so the pill never shows a gain that a flight is about to bring. Confirmed gains sit below `measuredUpTo` and pending floors at or above it, so nothing is counted twice.
+- **Never a decrease, never on the first launch:** `XPDelta.gain` is 0 for a drop and for an unknown start; `WelcomeBack.streak` / `.rank` are nil without a baseline and for anything that did not improve.
+
+- [ ] **Step 1: Write the failing test**
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/WelcomeBackTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct LastSeenBookTests {
+
+    private func scratch() -> (UserDefaults, String) {
+        let name = "lastseen-tests-\(UUID().uuidString)"
+        return (UserDefaults(suiteName: name)!, name)
+    }
+
+    @Test("Nothing stored reads as no baseline; what was written reads back, per student")
+    func roundTrip() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        let book = LastSeenBook(defaults: defaults)
+        #expect(book.read(userID: 7) == nil)
+
+        let seen = LastSeen(xp: 120, streak: 4, rank: 57, newestAwardID: 901)
+        book.write(seen, userID: 7)
+        #expect(book.read(userID: 7) == seen)
+        #expect(book.read(userID: 8) == nil, "another account on the phone starts with no baseline")
+        #expect(LastSeenBook.key(userID: 7) == "rewards.lastSeen.v1.7")
+    }
+
+    @Test("A value that will not decode is no baseline, not a crash")
+    func corrupt() {
+        let (defaults, name) = scratch()
+        defer { defaults.removePersistentDomain(forName: name) }
+        defaults.set(Data("not json".utf8), forKey: LastSeenBook.key(userID: 3))
+        #expect(LastSeenBook(defaults: defaults).read(userID: 3) == nil)
+    }
+}
+
+@Suite struct WelcomeBackTests {
+
+    private func award(_ id: Int, _ label: String, _ points: Int) -> PointAward {
+        PointAward(id: id, event: "E\(id)", label: label, points: points, awardedAt: "2026-10-20T10:00:00Z")
+    }
+
+    @Test("The streak grew: from what was seen to now. Nothing without a baseline, or for a run that stayed or restarted")
+    func streak() {
+        let seen = LastSeen(xp: 100, streak: 4, rank: nil, newestAwardID: nil)
+        #expect(WelcomeBack.streak(seen: seen, now: 6) == Rise(from: 4, to: 6))
+        #expect(WelcomeBack.streak(seen: seen, now: 4) == nil)
+        #expect(WelcomeBack.streak(seen: seen, now: 1) == nil)
+        #expect(WelcomeBack.streak(seen: nil, now: 6) == nil)
+    }
+
+    @Test("A better place is a smaller number; unknown, the same or a lower place is not celebrated")
+    func rank() {
+        #expect(WelcomeBack.rank(seen: 60, now: 55) == Rise(from: 60, to: 55))
+        #expect(WelcomeBack.rank(seen: 55, now: 55) == nil)
+        #expect(WelcomeBack.rank(seen: 55, now: 61) == nil)
+        #expect(WelcomeBack.rank(seen: nil, now: 3) == nil)
+        #expect(WelcomeBack.rank(seen: 9, now: nil) == nil)
+    }
+
+    @Test("The board is read only when the place can have improved — XP rose — or was never read")
+    func readsRank() {
+        let seen = LastSeen(xp: 100, streak: 4, rank: 57, newestAwardID: nil)
+        #expect(WelcomeBack.readsRank(seen: seen, xpNow: 130))
+        #expect(!WelcomeBack.readsRank(seen: seen, xpNow: 100))
+        #expect(!WelcomeBack.readsRank(seen: seen, xpNow: 90))
+        #expect(WelcomeBack.readsRank(seen: nil, xpNow: 0), "the first launch records a baseline")
+        let neverRanked = LastSeen(xp: 100, streak: 4, rank: nil, newestAwardID: nil)
+        #expect(WelcomeBack.readsRank(seen: neverRanked, xpNow: 100))
+        let noXP = LastSeen(xp: 0, streak: 0, rank: nil, newestAwardID: nil)
+        #expect(!WelcomeBack.readsRank(seen: noXP, xpNow: 0), "no XP, no place on the board")
+    }
+
+    @Test("The flight names the newest earning since it was last seen, and counts the rest")
+    func label() {
+        let history = [award(9, "Homework", 15), award(8, "Converted to coins", -30), award(7, "Attendance", 5), award(5, "Attendance", 5)]
+        #expect(WelcomeBack.label(history: history, since: 7) == "Homework")
+        #expect(WelcomeBack.label(history: history, since: 6) == "Homework + 1 more")
+        #expect(WelcomeBack.label(history: history, since: nil) == "Homework + 2 more")
+        #expect(WelcomeBack.label(history: history, since: 9) == nil, "a rise on a row already seen has no new row to name")
+        #expect(WelcomeBack.label(history: [award(4, "", 5)], since: nil) == "Earned while you were away")
+    }
+}
+
+/// Every mutating call on its own line, never inside `#expect` (as `CelebrationQueueTests`).
+@Suite struct AwayFlightTests {
+
+    @Test("An away gain flies with its label and plays no check")
+    func flies() {
+        var queue = CelebrationQueue()
+        let away = queue.recordAway(xpSeen: 100)
+        let efforts = queue.takeEfforts(stageVisible: true)
+        #expect(efforts.isEmpty, "nothing was handed in, so there is no check")
+        let gained = queue.resolve(away, xpAfter: 130, allowsFlights: true, label: "Attendance + 1 more")
+        #expect(gained == 30)
+        #expect(queue.held == 30)
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 30)
+        #expect(flight?.label == "Attendance + 1 more")
+        if let flight { queue.land(flight.id) }
+        #expect(queue.isEmpty)
+    }
+
+    @Test("A refresh that lands before the entry resolves is held at once — the pill never dips")
+    func noDip() {
+        var queue = CelebrationQueue()
+        let away = queue.recordAway(xpSeen: 100)
+        #expect(queue.held(xpNow: nil) == 0)
+        #expect(queue.held(xpNow: 130) == 30, "the launch refresh landed first: still shows 100")
+        queue.resolve(away, xpAfter: 130, allowsFlights: true)
+        #expect(queue.held(xpNow: 130) == 30, "resolving changes nothing on screen")
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        if let flight { queue.land(flight.id) }
+        #expect(queue.held(xpNow: 130) == 0)
+
+        let task = queue.record(.homework, xpBefore: 130, stageVisible: true).id
+        #expect(queue.held(xpNow: 145) == 15, "a scene-active refresh beat the task's own")
+        queue.resolve(task, xpAfter: 145, allowsFlights: true)
+        #expect(queue.held(xpNow: 145) == 15)
+    }
+
+    @Test("An away entry and a task measured against the same total count the gain once")
+    func noDoubleCount() {
+        var queue = CelebrationQueue()
+        let away = queue.recordAway(xpSeen: 100)
+        let task = queue.record(.homework, xpBefore: 100, stageVisible: true).id
+        #expect(queue.held(xpNow: 115) == 15)
+        queue.resolve(away, xpAfter: 115, allowsFlights: true, label: "Homework")
+        queue.resolve(task, xpAfter: 115, allowsFlights: true)
+        #expect(queue.held == 15)
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 15)
+        #expect(flight?.label == "Homework")
+
+        var reversed = CelebrationQueue()
+        let first = reversed.record(.homework, xpBefore: 100, stageVisible: true).id
+        let second = reversed.recordAway(xpSeen: 100)
+        reversed.resolve(first, xpAfter: 115, allowsFlights: true)
+        reversed.resolve(second, xpAfter: 115, allowsFlights: true, label: "Homework")
+        #expect(reversed.held == 15)
+    }
+
+    @Test("First launch, a drop, a failed read, Reduce Motion: nothing is held and nothing flies")
+    func nothing() {
+        let cases: [(Int?, Int?, Bool)] = [(nil, 130, true), (130, 120, true), (100, nil, true), (100, 130, false)]
+        for (seen, after, flights) in cases {
+            var queue = CelebrationQueue()
+            let away = queue.recordAway(xpSeen: seen)
+            let gained = queue.resolve(away, xpAfter: after, allowsFlights: flights)
+            #expect(gained == (flights ? 0 : 30), "Reduce Motion still measures the gain, for VoiceOver")
+            #expect(queue.held == 0)
+            #expect(queue.held(xpNow: 130) == 0)
+            #expect(queue.isEmpty)
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "LastSeenBookTests|WelcomeBackTests|AwayFlightTests" 2>&1 | tail -5`
+Expected: build errors — `cannot find 'LastSeenBook' in scope`, `value of type 'CelebrationQueue' has no member 'recordAway'`.
+
+- [ ] **Step 3: Create `Rewards/LastSeen.swift`**
+
+**Create** `ios/MasterSATKit/Sources/MasterSATKit/Rewards/LastSeen.swift`:
+
+```swift
+import Foundation
+
+/// What the header last showed this student — the baseline "while you were away" measures from.
+///
+/// "Seen" means shown: XP still held for a flight that has not landed is not seen yet, so the
+/// app writes the number on the pill, not the server's.
+public struct LastSeen: Codable, Sendable, Equatable {
+    public var xp: Int
+    /// The run of lessons attended, as the flame showed it.
+    public var streak: Int
+    /// The place on the default board (global, all time, XP). Nil until a board has been read.
+    public var rank: Int?
+    /// The newest `/rewards/me/` history row when this was written — what the flight's label
+    /// counts new earnings from.
+    public var newestAwardID: Int?
+
+    public init(xp: Int, streak: Int, rank: Int?, newestAwardID: Int?) {
+        self.xp = xp
+        self.streak = streak
+        self.rank = rank
+        self.newestAwardID = newestAwardID
+    }
+}
+
+/// The baseline on the phone, one small JSON value per student in `UserDefaults`.
+///
+/// Four numbers: a file would add a directory, atomic writes and a migration story for nothing,
+/// and `UserDefaults` already survives relaunches and updates. Keyed by user id, so a second
+/// account on the same phone starts with no baseline and celebrates nothing on its first launch.
+/// A value that will not decode reads as no baseline — never a crash, never a celebration.
+public struct LastSeenBook {
+    private let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public static func key(userID: Int) -> String { "rewards.lastSeen.v1.\(userID)" }
+
+    public func read(userID: Int) -> LastSeen? {
+        guard let data = defaults.data(forKey: Self.key(userID: userID)) else { return nil }
+        return try? JSONDecoder().decode(LastSeen.self, from: data)
+    }
+
+    public func write(_ seen: LastSeen, userID: Int) {
+        guard let data = try? JSONEncoder().encode(seen) else { return }
+        defaults.set(data, forKey: Self.key(userID: userID))
+    }
+}
+
+/// A number that went the right way: a longer streak, or a better place (a smaller rank).
+public struct Rise: Sendable, Equatable {
+    public let from: Int
+    public let to: Int
+
+    public init(from: Int, to: Int) {
+        self.from = from
+        self.to = to
+    }
+}
+
+/// "While you were away" — what improved since the student last saw it. The XP part is not here:
+/// it is measured by `CelebrationQueue` like every other confirmed gain (`recordAway`).
+///
+/// Nothing is ever celebrated without a baseline (the first launch on this phone), and nothing
+/// that went down is ever named: a restarted run or a lower place is simply the new baseline.
+public enum WelcomeBack {
+    public static func streak(seen: LastSeen?, now: Int) -> Rise? {
+        guard let seen, now > seen.streak else { return nil }
+        return Rise(from: seen.streak, to: now)
+    }
+
+    public static func rank(seen: Int?, now: Int?) -> Rise? {
+        guard let seen, let now, now < seen else { return nil }
+        return Rise(from: seen, to: now)
+    }
+
+    /// Whether the welcome-back check reads the board: a place can only improve through the
+    /// student's own XP, so only when XP rose — or to take a first baseline. A student with no
+    /// XP has no place on the board (`rank_of` is null), so there is nothing to read.
+    public static func readsRank(seen: LastSeen?, xpNow: Int) -> Bool {
+        guard let seen else { return true }
+        return xpNow > seen.xp || (seen.rank == nil && xpNow > 0)
+    }
+
+    /// The flight's caption: the newest earning since the baseline ("Attendance"), and how many
+    /// more came with it. Nil when no new row explains the rise — a homework re-graded upward
+    /// changes its own row rather than adding one — and the flight then flies without a caption.
+    public static func label(history: [PointAward], since: Int?) -> String? {
+        let fresh = history.filter { $0.points > 0 && $0.id > (since ?? Int.min) }
+        guard let newest = fresh.first else { return nil }
+        let name = newest.label.isEmpty ? "Earned while you were away" : newest.label
+        return fresh.count == 1 ? name : "\(name) + \(fresh.count - 1) more"
+    }
+}
+```
+
+- [ ] **Step 4: Teach `Motion/CelebrationQueue.swift` away entries, labels and `held(xpNow:)`**
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+    public struct Flight: Sendable, Equatable, Identifiable {
+        public let id: Int
+        public let amount: Int
+    }
+
+    struct Entry: Sendable, Equatable {
+        let id: Int
+        let work: FinishedWork
+        let xpBefore: Int?
+        var effortShown: Bool
+        /// Nil while the refresh is out; 0 once it said nothing was earned, or nothing may fly.
+        var gain: Int?
+    }
+```
+with:
+
+```swift
+    public struct Flight: Sendable, Equatable, Identifiable {
+        public let id: Int
+        public let amount: Int
+        /// A caption under "+N XP" — set by a "while you were away" gain, nil for a task's.
+        public let label: String?
+    }
+
+    struct Entry: Sendable, Equatable {
+        let id: Int
+        /// Nil for a "while you were away" gain: nothing was handed in, so there is no check.
+        let work: FinishedWork?
+        let xpBefore: Int?
+        var effortShown: Bool
+        /// Nil while the refresh is out; 0 once it said nothing was earned, or nothing may fly.
+        var gain: Int?
+        var label: String?
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+    public var isEmpty: Bool { entries.isEmpty && flying.isEmpty }
+```
+with:
+
+```swift
+    /// XP the header holds back, given the total it shows the server's word for now: `held`,
+    /// plus any rise above the lowest floor a still-pending entry will measure from. A refresh
+    /// that lands before an entry resolves is then held at once, instead of showing and dipping
+    /// back when the entry resolves (phase 2 hand-off).
+    public func held(xpNow: Int?) -> Int {
+        guard let xpNow, let floor = pendingFloor else { return held }
+        return held + max(0, xpNow - floor)
+    }
+
+    /// The lowest total a pending entry will measure its gain from (`resolve`'s floor).
+    private var pendingFloor: Int? {
+        entries
+            .filter { $0.gain == nil }
+            .compactMap { entry in entry.xpBefore.map { max($0, measuredUpTo ?? $0) } }
+            .min()
+    }
+
+    public var isEmpty: Bool { entries.isEmpty && flying.isEmpty }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+        entries.append(Entry(id: id, work: work, xpBefore: xpBefore, effortShown: stageVisible, gain: nil))
+        return (id, stageVisible)
+    }
+```
+with:
+
+```swift
+        entries.append(Entry(id: id, work: work, xpBefore: xpBefore, effortShown: stageVisible, gain: nil, label: nil))
+        return (id, stageVisible)
+    }
+
+    /// "While you were away": XP the student has not seen, measured from what the header last
+    /// showed them (`xpSeen`, nil on the first launch) by the read that is about to go out.
+    /// Recorded BEFORE that read, so a rise landing meanwhile is held at once. No check, no
+    /// confetti — only a flight, once `resolve` says what was gained.
+    @discardableResult
+    public mutating func recordAway(xpSeen: Int?) -> Int {
+        let id = nextID
+        nextID += 1
+        entries.append(Entry(id: id, work: nil, xpBefore: xpSeen, effortShown: true, gain: nil, label: nil))
+        return id
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+        for index in entries.indices where !entries[index].effortShown {
+            entries[index].effortShown = true
+            shown.append(entries[index].work)
+        }
+```
+with:
+
+```swift
+        for index in entries.indices where !entries[index].effortShown {
+            entries[index].effortShown = true
+            if let work = entries[index].work { shown.append(work) }
+        }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+    /// The refresh after a task came back. Nothing earned — or no flights allowed — holds nothing.
+    public mutating func resolve(_ id: Int, xpAfter: Int?, allowsFlights: Bool) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        let floor = entries[index].xpBefore.map { max($0, measuredUpTo ?? $0) }
+        let gain = XPDelta.gain(before: floor, after: xpAfter)
+        if let xpAfter { measuredUpTo = max(measuredUpTo ?? xpAfter, xpAfter) }
+        entries[index].gain = allowsFlights ? gain : 0
+        dropSettled()
+    }
+```
+with:
+
+```swift
+    /// The refresh after a task came back. Nothing earned — or no flights allowed — holds nothing.
+    /// `label` captions the flight (a "while you were away" gain names what was earned). Returns
+    /// the gain it measured — also under Reduce Motion, where nothing is held, so the app can
+    /// still say it to VoiceOver.
+    @discardableResult
+    public mutating func resolve(_ id: Int, xpAfter: Int?, allowsFlights: Bool, label: String? = nil) -> Int {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return 0 }
+        let floor = entries[index].xpBefore.map { max($0, measuredUpTo ?? $0) }
+        let gain = XPDelta.gain(before: floor, after: xpAfter)
+        if let xpAfter { measuredUpTo = max(measuredUpTo ?? xpAfter, xpAfter) }
+        entries[index].gain = allowsFlights ? gain : 0
+        if let label { entries[index].label = label }
+        dropSettled()
+        return gain
+    }
+```
+
+**Edit** `ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift` — replace:
+
+```swift
+        let flight = Flight(id: nextID, amount: ready.reduce(0) { $0 + ($1.gain ?? 0) })
+```
+with:
+
+```swift
+        let flight = Flight(
+            id: nextID,
+            amount: ready.reduce(0) { $0 + ($1.gain ?? 0) },
+            label: ready.last(where: { $0.label != nil })?.label
+        )
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter "LastSeenBookTests|WelcomeBackTests|AwayFlightTests|CelebrationQueueTests|XPTruthTests" 2>&1 | tail -6`
+Expected: `LastSeenBookTests` (2), `WelcomeBackTests` (4), `AwayFlightTests` (4) pass, and the phase-2 `CelebrationQueueTests` / `XPTruthTests` still pass unchanged. Whole kit: `✔ Test run with 715 tests … passed` (705 + 10).
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Rewards/LastSeen.swift \
+        ios/MasterSATKit/Sources/MasterSATKit/Motion/CelebrationQueue.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/WelcomeBackTests.swift
+git commit -m "feat(ios-kit): what improved while you were away — per student, flown once, never a dip
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 22: Words' "Review today" in the kit (`VocabReview`)
+
+**Files:**
+- Create: `ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabReview.swift`
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/VocabReviewTests.swift`
+
+**Interfaces:**
+- Consumes: `VocabSection` (its `wordCount`, `progress.mastered`), `VocabHomeworkGroup` / `VocabSetSummary` (`mastery.isMastered`, `masteredModes`, `totalModes`), `VocabSectionDetail.SetRow` (`progress`), `JSONCoding.parseServerDate` — all existing.
+- Produces: `public struct VocabReview: Equatable { wordsToMaster: Int; wordsMastered: Int; next: Next; init(sections:homework:) ; static func bestSet(in: VocabSectionDetail) -> VocabSectionDetail.SetRow? }`; `public enum VocabReview.Next: Equatable { case homework(HomeworkSet), section(id: Int, title: String, wordsToMaster: Int), caughtUp, nothingYet }`; `public struct VocabReview.HomeworkSet: Equatable { setId, title, assignmentId, assignmentTitle, dueAt: String?, wordCount, gamesLeft }`.
+
+Why this shape (the honest number): the server has **no spaced repetition and no "learning" bucket** — a word is `new` or `mastered` (`VocabWordStatus`), and nothing is "due today". The one word count the hub already loads that is true is per section: words minus words mastered (the same two numbers the old hub totals added). So the hero says **"N words still to master"** (never "due"), and Start opens ONE existing study page:
+1. the word-homework set due soonest that is not mastered (a passed deadline counts as soonest — catch-up first, as on Today; same deadline → the order the server sent);
+2. with none, the bank section with the most words still to master — Start reads that section once and opens its set with the most words still to master (`bestSet`); the hub holds no per-set word counts, so this is the only honest way to pick "the set with the most";
+3. with nothing left to master, **all caught up** — a state, not an error; and with no words anywhere (nothing published, no homework), **nothing yet**.
+The student's own sets are never Start's target: they carry no word progress (`VocabMySet`), and their words are bank words, so they are mastered when the bank's are.
+
+- [ ] **Step 1: Write the failing test**
+
+**Create** `ios/MasterSATKit/Tests/MasterSATKitTests/VocabReviewTests.swift`:
+
+```swift
+import Foundation
+import Testing
+@testable import MasterSATKit
+
+@Suite struct VocabReviewTests {
+
+    private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {
+        try JSONCoding.decoder.decode(T.self, from: Data(json.utf8))
+    }
+
+    private func section(_ id: Int, words: Int, mastered: Int) -> String {
+        #"{"id":\#(id),"title":"Section \#(id)","set_count":2,"word_count":\#(words),"progress":{"new":\#(words - mastered),"mastered":\#(mastered),"total":\#(words)}}"#
+    }
+
+    private func set(_ id: Int, mastered: Int, words: Int = 10) -> String {
+        let modes = ["flashcard", "matching", "speed", "test"].enumerated()
+            .map { #""\#($0.element)":\#($0.offset < mastered)"# }.joined(separator: ",")
+        return #"{"id":\#(id),"title":"Set \#(id)","word_count":\#(words),"completed":\#(mastered > 0),"mastery":{"modes":{\#(modes)}}}"#
+    }
+
+    private func group(_ id: Int, due: String?, _ sets: [String]) -> String {
+        let dueJSON = due.map { #""\#($0)""# } ?? "null"
+        return #"{"assignment_id":\#(id),"assignment_title":"Homework \#(id)","classroom_id":1,"classroom_name":"English","due_at":\#(dueJSON),"sets":[\#(sets.joined(separator: ","))]}"#
+    }
+
+    @Test("The count is the bank's words still to master — exact, from the sections")
+    func count() throws {
+        let sections = try decode([VocabSection].self, "[\(section(1, words: 100, mastered: 40)),\(section(2, words: 50, mastered: 50))]")
+        let review = VocabReview(sections: sections, homework: [])
+        #expect(review.wordsToMaster == 60)
+        #expect(review.wordsMastered == 90)
+    }
+
+    @Test("Start opens the word homework due soonest that is not mastered — catch-up first")
+    func homeworkFirst() throws {
+        let homework = try decode([VocabHomeworkGroup].self, """
+        [\(group(10, due: "2026-10-25T18:00:00Z", [set(1, mastered: 4), set(2, mastered: 1, words: 12)])),
+         \(group(11, due: "2026-10-19T18:00:00Z", [set(3, mastered: 2)])),
+         \(group(12, due: nil, [set(4, mastered: 0)]))]
+        """)
+        let review = VocabReview(sections: [], homework: homework)
+        let expected = VocabReview.HomeworkSet(
+            setId: 3, title: "Set 3", assignmentId: 11, assignmentTitle: "Homework 11",
+            dueAt: "2026-10-19T18:00:00Z", wordCount: 10, gamesLeft: 2
+        )
+        #expect(review.next == .homework(expected))
+    }
+
+    @Test("A mastered set is never the target; no deadline comes last")
+    func skipsMastered() throws {
+        let homework = try decode([VocabHomeworkGroup].self, """
+        [\(group(12, due: nil, [set(4, mastered: 1)])), \(group(10, due: "2026-10-25T18:00:00Z", [set(1, mastered: 4)]))]
+        """)
+        guard case .homework(let next) = VocabReview(sections: [], homework: homework).next else {
+            Issue.record("expected a homework target")
+            return
+        }
+        #expect(next.setId == 4)
+        #expect(next.gamesLeft == 3)
+    }
+
+    @Test("No homework owed: the section with the most words still to master")
+    func sectionNext() throws {
+        let sections = try decode([VocabSection].self, "[\(section(1, words: 100, mastered: 90)),\(section(2, words: 80, mastered: 20)),\(section(3, words: 60, mastered: 0))]")
+        let homework = try decode([VocabHomeworkGroup].self, "[\(group(10, due: nil, [set(1, mastered: 4)]))]")
+        #expect(VocabReview(sections: sections, homework: homework).next == .section(id: 2, title: "Section 2", wordsToMaster: 60))
+    }
+
+    @Test("Everything mastered is all caught up; no words anywhere is nothing yet — neither is an error")
+    func endStates() throws {
+        let done = try decode([VocabSection].self, "[\(section(1, words: 30, mastered: 30))]")
+        #expect(VocabReview(sections: done, homework: []).next == .caughtUp)
+        let finishedHomework = try decode([VocabHomeworkGroup].self, "[\(group(10, due: nil, [set(1, mastered: 4)]))]")
+        #expect(VocabReview(sections: [], homework: finishedHomework).next == .caughtUp)
+        #expect(VocabReview(sections: [], homework: []).next == .nothingYet)
+    }
+
+    @Test("Inside a section, the set with the most words still to master; ties keep the server's order")
+    func bestSet() throws {
+        let detail = try decode(VocabSectionDetail.self, #"""
+        {"id":2,"title":"Section 2","sets":[
+          {"id":21,"title":"A","order":0,"word_count":10,"progress":{"mastered":10,"total":10}},
+          {"id":22,"title":"B","order":1,"word_count":12,"progress":{"mastered":4,"total":12}},
+          {"id":23,"title":"C","order":2,"word_count":9,"progress":{"mastered":1,"total":9}}]}
+        """#)
+        #expect(VocabReview.bestSet(in: detail)?.id == 22)
+
+        let allDone = try decode(VocabSectionDetail.self, #"""
+        {"id":2,"title":"S","sets":[{"id":21,"title":"A","word_count":5,"progress":{"mastered":5,"total":5}}]}
+        """#)
+        #expect(VocabReview.bestSet(in: allDone) == nil)
+    }
+}
+```
+
+- [ ] **Step 2: Run it to verify it fails**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter VocabReviewTests 2>&1 | tail -5`
+Expected: build error `cannot find 'VocabReview' in scope`.
+
+- [ ] **Step 3: Implement `Vocabulary/VocabReview.swift`**
+
+**Create** `ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabReview.swift`:
+
+```swift
+import Foundation
+
+/// The Words tab's "Review today": how many words are still to master, and the one set Start
+/// opens.
+///
+/// There is no spaced repetition on the server and no "learning" bucket — a word is new or
+/// mastered — so nothing is ever "due". The count is the bank's words not yet mastered (exact,
+/// per section, from the hub's own load), and Start opens the most useful set: the word
+/// homework due soonest that is not mastered; else the bank section with the most words still
+/// to master (Start reads it and opens its set with the most — `bestSet`); else all caught up.
+/// The student's own sets are never the target: they carry no word progress, and their words
+/// are bank words.
+public struct VocabReview: Equatable, Sendable {
+    public struct HomeworkSet: Equatable, Sendable {
+        public let setId: Int
+        public let title: String
+        public let assignmentId: Int
+        public let assignmentTitle: String
+        public let dueAt: String?
+        public let wordCount: Int
+        /// Games still to play clean — the number the set card shows as "n/4 games".
+        public let gamesLeft: Int
+
+        public init(setId: Int, title: String, assignmentId: Int, assignmentTitle: String, dueAt: String?, wordCount: Int, gamesLeft: Int) {
+            self.setId = setId
+            self.title = title
+            self.assignmentId = assignmentId
+            self.assignmentTitle = assignmentTitle
+            self.dueAt = dueAt
+            self.wordCount = wordCount
+            self.gamesLeft = gamesLeft
+        }
+    }
+
+    public enum Next: Equatable, Sendable {
+        case homework(HomeworkSet)
+        case section(id: Int, title: String, wordsToMaster: Int)
+        /// Every word there is to learn is mastered — a state to be proud of, not an error.
+        case caughtUp
+        /// Nothing published and no word homework: nothing to review yet.
+        case nothingYet
+    }
+
+    public let wordsToMaster: Int
+    public let wordsMastered: Int
+    public let next: Next
+
+    public init(sections: [VocabSection], homework: [VocabHomeworkGroup]) {
+        var toMaster = 0
+        var mastered = 0
+        var richest: (id: Int, title: String, left: Int)?
+        for section in sections {
+            let left = max(0, section.wordCount - section.progress.mastered)
+            toMaster += left
+            mastered += section.progress.mastered
+            if left > 0, left > (richest?.left ?? 0) {
+                richest = (section.id, section.title, left)
+            }
+        }
+        wordsToMaster = toMaster
+        wordsMastered = mastered
+
+        // Due soonest first; a passed deadline is the soonest of all; no deadline is last; the
+        // server's own order breaks ties.
+        var owed: [(due: Date, order: Int, set: HomeworkSet)] = []
+        for group in homework {
+            let due = group.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
+            for set in group.sets where !set.mastery.isMastered {
+                owed.append((due, owed.count, HomeworkSet(
+                    setId: set.id,
+                    title: set.title,
+                    assignmentId: group.assignmentId,
+                    assignmentTitle: group.assignmentTitle,
+                    dueAt: group.dueAt,
+                    wordCount: set.wordCount,
+                    gamesLeft: max(0, set.mastery.totalModes - set.mastery.masteredModes)
+                )))
+            }
+        }
+        if let first = owed.min(by: { ($0.due, $0.order) < ($1.due, $1.order) }) {
+            next = .homework(first.set)
+        } else if let richest {
+            next = .section(id: richest.id, title: richest.title, wordsToMaster: richest.left)
+        } else if mastered > 0 || homework.contains(where: { !$0.sets.isEmpty }) {
+            next = .caughtUp
+        } else {
+            next = .nothingYet
+        }
+    }
+
+    /// The set in an opened section with the most words still to master; the server's order
+    /// breaks ties. Nil when every word in it is mastered.
+    public static func bestSet(in detail: VocabSectionDetail) -> VocabSectionDetail.SetRow? {
+        var best: (row: VocabSectionDetail.SetRow, left: Int)?
+        for row in detail.sets {
+            let total = row.progress.total > 0 ? row.progress.total : row.wordCount
+            let left = max(0, total - row.progress.mastered)
+            if left > 0, left > (best?.left ?? 0) { best = (row, left) }
+        }
+        return best?.row
+    }
+}
+```
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test --filter VocabReviewTests 2>&1 | tail -3`
+Expected: `✔ Suite VocabReviewTests passed` (6 tests). Whole kit: `✔ Test run with 721 tests … passed` (715 + 6).
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSATKit/Sources/MasterSATKit/Vocabulary/VocabReview.swift \
+        ios/MasterSATKit/Tests/MasterSATKitTests/VocabReviewTests.swift
+git commit -m "feat(ios-kit): Review today — words still to master, and the one set Start opens
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 23: Two new Lottie files, the byte budget, and look "B" (`coin-burst`, `star-burst`, `ChunkySurface`)
+
+**Files:**
+- Modify: `ios/tools/lottie/make-lottie.mjs`
+- Create (generated): `ios/MasterSAT/Resources/Lottie/coin-burst.json`, `ios/MasterSAT/Resources/Lottie/star-burst.json`
+- Modify: `ios/MasterSAT/Sources/Support/Motion/LottieClip.swift` (`LottieAsset`)
+- Create: `ios/MasterSAT/Sources/Support/Chunky.swift`
+
+**Interfaces:**
+- Consumes: the generator's helpers (`A`, `S`, `P`, `sh`, `fl`, `st`, `tr`, `gr`, `el`, `star`, `rp`, `tm`, `L`, `anim`, `twinkle`, `POP`, `OUTE`, `LIN`); `Theme`, `Motion`.
+- Produces: `LottieAsset.coinBurst` (`coin-burst`, plays once, ends faded out — a shop purchase or a conversion), `LottieAsset.starBurst` (`star-burst`, plays once, ends faded out — behind the trophy when the student moves up a place); the generator refuses any file over **15 000 bytes** (phase 1 kit-polish item); `struct ChunkySurface: ViewModifier`, `extension View { func chunky(_ tint: Color, radius: CGFloat = Theme.Radius.card) -> some View }`, `struct ChunkyButtonStyle: ButtonStyle { init(tint: Color) }`.
+
+Rules for this task: Lottie is generated, never hand-edited (`node ios/tools/lottie/make-lottie.mjs`); the three phase-1 files must regenerate **byte-identical** (`git status` shows them unchanged). Look "B" is ONLY for motivation surfaces — the Rewards hero, the streak and coins cards, the student's own leaderboard row, celebration moments; everything else stays look A (`cardStyle`). Reduce Motion: a B press does not move, it dips in opacity (as `PressFeedback`).
+
+- [ ] **Step 1: Add the two animations and the budget to the generator**
+
+**Edit** `ios/tools/lottie/make-lottie.mjs` — replace:
+
+```js
+mkdirSync(OUT, { recursive: true });
+for (const data of [FLAME, CHECK, TROPHY]) {
+  const json = JSON.stringify(data);
+  writeFileSync(join(OUT, data.nm + '.json'), json);
+  console.log(data.nm, json.length, 'bytes');
+}
+```
+with:
+
+```js
+// Coin burst — plays once, then fades. A coin pops in, flips once, and small coins and sparks
+// fly out. Played where a purchase or a conversion was confirmed.
+const coin = s => [
+  gr([el(s * .5, s * .12), fl('#fff7d6', 70)], tr({ p: S([-s * .12, -s * .26]), r: S(-24) })),
+  gr([star(5, s * .1, s * .22), fl('#fff7d6')]),
+  gr([el(s * .72, s * .72), st('#f59e0b', s * .07)]),
+  gr([el(s, s), fl('#fbbf24')]),
+  gr([el(s, s), fl('#d97706')], tr({ p: S([0, s * .07]) })),
+];
+const flyer = (hex, size, from, to, rot, d) => gr([
+  gr([el(size, size), fl(hex)], tr({
+    p: A([[d, [0, -from]], [d + 30, [0, -to]]], OUTE),
+    s: A([[d, [0, 0]], [d + 6, [100, 100]], [d + 22, [100, 100]], [d + 34, [0, 0]]]),
+  })),
+  rp(8, 45),
+], tr({ r: S(rot) }));
+const COIN = anim('coin-burst', 84, [
+  L(1, 'coin', coin(84), {
+    s: A([[0, [0, 0, 100], POP], [14, [116, 116, 100]], [22, [100, 100, 100]], [34, [100, 100, 100]], [42, [12, 100, 100]], [50, [100, 100, 100]]]),
+    o: A([[60, 100], [82, 0]]),
+  }),
+  L(2, 'coins', [flyer('#fbbf24', 15, 38, 92, 0, 6), flyer('#f59e0b', 9, 32, 70, 22.5, 12)]),
+  L(3, 'sparks', [gr([sh(S(P([[0, -48], [0, -66]], [[0, 0], [0, 0]], [[0, 0], [0, 0]], false))),
+    tm(A([[10, 0], [26, 100]], OUTE), A([[4, 0], [18, 100]], OUTE)), st('#fde68a', 5), rp(8, 45)])], { r: S(22.5) }),
+]);
+
+// Star burst — plays once, then fades. A glow swells, rays turn, a ring of stars flies out and
+// a few twinkle. Played behind the trophy when the student moves up a place.
+const STARS = anim('star-burst', 100, [
+  L(1, 'twinkles', [twinkle(-70, -60, 30, '#fbbf24', 11), twinkle(72, -48, 44, '#2a68c0', 9),
+    twinkle(60, 66, 58, '#fbbf24', 10), twinkle(-62, 58, 70, '#2a68c0', 8)]),
+  L(2, 'stars', [gr([
+    gr([star(5, 4, 10), fl('#fbbf24')], tr({
+      p: A([[6, [0, -26]], [42, [0, -90]]], OUTE),
+      s: A([[6, [0, 0]], [16, [110, 110]], [56, [100, 100]], [78, [0, 0]]]),
+      r: A([[6, 0], [70, 120]]),
+    })),
+    rp(8, 45),
+  ])]),
+  L(3, 'rays', [gr([sh(S(P([[-7, -34], [7, -34], [0, -98]], [[0, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]]))), fl('#fbbf24', 34), rp(12, 30)])],
+    { r: A([[0, 0], [100, 40]], LIN), s: A([[0, [0, 0, 100], POP], [24, [100, 100, 100]]]), o: A([[70, 100], [98, 0]]) }),
+  L(4, 'glow', [gr([el(120, 120), fl('#fde68a', 40)])],
+    { s: A([[0, [0, 0, 100], POP], [18, [130, 130, 100]], [40, [100, 100, 100]]]), o: A([[0, 0], [6, 100], [74, 100], [98, 0]]) }),
+]);
+
+// Every file is decoded on the main thread when its view appears: keep each one small.
+const BUDGET = 15000;
+mkdirSync(OUT, { recursive: true });
+for (const data of [FLAME, CHECK, TROPHY, COIN, STARS]) {
+  const json = JSON.stringify(data);
+  if (json.length > BUDGET) throw new Error(`${data.nm} is ${json.length} bytes — over the ${BUDGET}-byte budget`);
+  writeFileSync(join(OUT, data.nm + '.json'), json);
+  console.log(data.nm, json.length, 'bytes');
+}
+```
+
+- [ ] **Step 2: Generate, and check the old three did not move**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+node ios/tools/lottie/make-lottie.mjs
+git status --short ios/MasterSAT/Resources/Lottie
+```
+Expected: five lines `<name> <n> bytes`, every n under 15000 (coin-burst ≈ 6.1 KB, star-burst ≈ 6.6 KB); `git status` lists ONLY `?? …/coin-burst.json` and `?? …/star-burst.json` — the phase-1 files regenerate byte-identical. Open each new file in a Lottie previewer only if one is at hand; the simulator check is Task 29.
+
+- [ ] **Step 3: Name them in `LottieAsset`**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/LottieClip.swift` — replace:
+
+```swift
+    case taskComplete = "task-complete"
+    case trophy
+}
+```
+with:
+
+```swift
+    case taskComplete = "task-complete"
+    case trophy
+    /// Plays once and fades: a purchase or a conversion went through.
+    case coinBurst = "coin-burst"
+    /// Plays once and fades, behind the trophy: the student moved up a place.
+    case starBurst = "star-burst"
+}
+```
+
+- [ ] **Step 4: Create look "B" — `Support/Chunky.swift`**
+
+**Create** `ios/MasterSAT/Sources/Support/Chunky.swift`:
+
+```swift
+import SwiftUI
+
+/// Look "B": chunky, with a thick lower edge in the surface's own colour — the owner's
+/// "pressable" look. ONLY on motivation surfaces: the Rewards hero, the streak and coins cards,
+/// the student's own leaderboard row, celebration moments. Everything else is look A
+/// (`cardStyle`), so B keeps meaning "this is yours, and it's worth something".
+///
+/// The edge is drawn below the face and the bottom padding makes room for it, so a chunky card
+/// never overlaps what follows it.
+struct ChunkySurface: ViewModifier {
+    static let edge: CGFloat = 4
+
+    let tint: Color
+    var radius: CGFloat = Theme.Radius.card
+    /// Pressed: the face sinks onto its edge.
+    var pressed = false
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        content
+            .background(Theme.card, in: shape)
+            .overlay(shape.strokeBorder(tint.opacity(0.35), lineWidth: 2))
+            .offset(y: pressed ? Self.edge : 0)
+            .background(shape.fill(tint.opacity(0.42)).offset(y: Self.edge))
+            .padding(.bottom, Self.edge)
+    }
+}
+
+extension View {
+    /// Look "B". See `ChunkySurface` for where it may be used.
+    func chunky(_ tint: Color, radius: CGFloat = Theme.Radius.card) -> some View {
+        modifier(ChunkySurface(tint: tint, radius: radius))
+    }
+}
+
+/// A chunky surface that is a button: pressing sinks the face onto its edge instead of the
+/// squash every other control does. Under Reduce Motion nothing moves; it dips in opacity.
+struct ChunkyButtonStyle: ButtonStyle {
+    let tint: Color
+
+    func makeBody(configuration: Configuration) -> some View {
+        Pressable(label: configuration.label, isPressed: configuration.isPressed, tint: tint)
+    }
+
+    private struct Pressable<Label: View>: View {
+        let label: Label
+        let isPressed: Bool
+        let tint: Color
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        var body: some View {
+            label
+                .modifier(ChunkySurface(tint: tint, pressed: isPressed && !reduceMotion))
+                .opacity(reduceMotion && isPressed ? 0.7 : 1)
+                .animation(reduceMotion ? .easeOut(duration: 0.12) : Motion.press, value: isPressed)
+        }
+    }
+}
+```
+
+- [ ] **Step 5: Build**
+
+Run the build check (top of phase 2). Expected: `exit=0`, `** BUILD SUCCEEDED **`. (`xcodegen generate` picks the two new JSON files up — `Resources/Lottie` is a resources folder.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/tools/lottie/make-lottie.mjs \
+        ios/MasterSAT/Resources/Lottie/coin-burst.json ios/MasterSAT/Resources/Lottie/star-burst.json \
+        ios/MasterSAT/Sources/Support/Motion/LottieClip.swift ios/MasterSAT/Sources/Support/Chunky.swift
+git commit -m "feat(ios): coin-burst and star-burst Lottie, a 15 KB budget, and the chunky look for rewards
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 24: Celebrations that never dip, never drop, and say where XP came from — plus the coin burst
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift`
+
+**Interfaces:**
+- Consumes: `CelebrationQueue.held(xpNow:)`, `Flight.label` (Task 21); `LottieAsset.coinBurst` (Task 23); `RewardsCoinArt` (`Screens/Rewards/RewardsComponents.swift`); `Motion`.
+- Produces: `XPFlight.label: String?` (drawn as a caption under "+N XP"); `struct CoinCue: Identifiable { id: UUID; at: CGPoint }`; on `CelebrationCenter`: `coin: CoinCue?`, `coinCount: Int`, `coinBurst(at: CGPoint?)`; `heldXP` now holds a rise a pending entry will claim; `allDone()` waits under a sheet or cover instead of being dropped; the 2.5 s backstop lands animated; `struct CoinBurstBadge: View { init(reduceMotion:) }`.
+
+The three phase-2 hand-off findings this task closes (Phase 2 outcome → Phase 3):
+1. **Interleaved refresh dips** — the pill showed a rise from a refresh that beat a task's own read, then dipped when the task resolved, then rose again with the flight. `heldXP` now reads `queue.held(xpNow: rewards?.xp)`: a rise above a pending entry's floor is held from the moment it arrives. Under Reduce Motion nothing is held (no flights), as before.
+2. **Unanimated backstop landing** — `settle` gave held XP back outside an animation, so the number jumped. It is now inside `withAnimation(Motion.snappy)`, like `landed`.
+3. **`allDone()` dropped under a cover** — it returned when covered. It now waits (`allDoneWaiting`) and plays in `stageCleared()`, after any waiting checks — the same rule every other celebration follows.
+
+Rules (repeat of the binding ones): celebrate once, after the server confirmed, from a one-shot guard — `coinBurst` is called by the page that got the server's yes, once per purchase or conversion; decorative overlays never take a touch (`CelebrationLayer` keeps `.allowsHitTesting(false)`); Reduce Motion: no Lottie burst — a still coin that fades in and out; full-screen covers never read `CelebrationCenter`; Swift 6 — delays are `Task.sleep`, never `DispatchQueue.main.asyncAfter`.
+
+- [ ] **Step 1: A flight carries its caption; a coin cue**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    /// The pill it was aimed at — the only one that pulses when it lands.
+    let owner: UUID
+}
+
+/// The check that pops where a piece of work was finished.
+struct EffortCue: Identifiable, Equatable {
+    let id = UUID()
+    let work: FinishedWork
+    let at: CGPoint
+}
+```
+with:
+
+```swift
+    /// The pill it was aimed at — the only one that pulses when it lands.
+    let owner: UUID
+    /// A caption under the number — what a "while you were away" gain was for.
+    let label: String?
+}
+
+/// The check that pops where a piece of work was finished.
+struct EffortCue: Identifiable, Equatable {
+    let id = UUID()
+    let work: FinishedWork
+    let at: CGPoint
+}
+
+/// The coin that bursts where a purchase or a conversion was confirmed.
+struct CoinCue: Identifiable, Equatable {
+    let id = UUID()
+    let at: CGPoint
+}
+```
+
+- [ ] **Step 2: The center — coin state, the held rise, `allDone` that waits**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    private(set) var landing: XPLanding?
+    private var queue = CelebrationQueue()
+
+    // Bookkeeping nothing renders from.
+    @ObservationIgnored private var target: PillTarget?
+```
+with:
+
+```swift
+    private(set) var landing: XPLanding?
+    /// The coin burst on screen now, if any.
+    private(set) var coin: CoinCue?
+    /// Bumps once per coin burst — its success haptic's trigger.
+    private(set) var coinCount = 0
+    private var queue = CelebrationQueue()
+
+    // Bookkeeping nothing renders from.
+    @ObservationIgnored private var target: PillTarget?
+    /// Everything due this week went in while a sheet or a cover was up: the double confetti
+    /// waits for the stage instead of being lost.
+    @ObservationIgnored private var allDoneWaiting = false
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    /// XP earned but not landed yet. Every pill shows `xp − heldXP`.
+    var heldXP: Int { queue.held }
+```
+with:
+
+```swift
+    /// XP earned but not landed yet — and, while an entry's own read is still out, any rise a
+    /// refresh that beat it has already brought (`CelebrationQueue.held(xpNow:)`), so the pill
+    /// never shows a gain a flight is about to bring and then dips. Every pill shows
+    /// `xp − heldXP`. Under Reduce Motion nothing flies, so nothing is held.
+    var heldXP: Int { reduceMotion ? queue.held : queue.held(xpNow: rewards?.xp) }
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    /// Everything due this week is in: double confetti. The hero bounces on its own.
+    func allDone() {
+        guard !covered else { return }
+        confetti(at: CGPoint(x: stage.width * 0.3, y: stage.height * 0.4), size: .everything)
+        confetti(at: CGPoint(x: stage.width * 0.7, y: stage.height * 0.4), size: .everything)
+        effortCount += 1
+        announce("Everything due this week is done.")
+    }
+```
+with:
+
+```swift
+    /// Everything due this week is in: double confetti. The hero bounces on its own. Under a
+    /// sheet or a cover it waits, and plays the moment the stage is clear.
+    func allDone() {
+        guard !covered else {
+            allDoneWaiting = true
+            return
+        }
+        playAllDone()
+    }
+
+    private func playAllDone() {
+        confetti(at: CGPoint(x: stage.width * 0.3, y: stage.height * 0.4), size: .everything)
+        confetti(at: CGPoint(x: stage.width * 0.7, y: stage.height * 0.4), size: .everything)
+        effortCount += 1
+        announce("Everything due this week is done.")
+    }
+
+    /// A purchase or a conversion went through — the server said so. A coin bursts where it was
+    /// confirmed (else mid-screen), with a success haptic. Called once per confirmed purchase or
+    /// conversion by the page that made it; the page's own message says what happened, so this
+    /// says nothing to VoiceOver. Under a sheet or a cover it is skipped — the overlay sits under
+    /// them (the Me sheet pushes Shop and Points too) — and the page's message still lands.
+    func coinBurst(at point: CGPoint?) {
+        guard !covered else { return }
+        let cue = CoinCue(at: point ?? stageCentre)
+        coin = cue
+        coinCount += 1
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.6))
+            if self?.coin?.id == cue.id { self?.coin = nil }
+        }
+    }
+```
+
+- [ ] **Step 3: Play what waited; caption the flight; land the backstop animated**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    private func stageCleared() {
+        if queue.hasHiddenEffort {
+            for work in queue.takeEfforts(stageVisible: true) { playEffort(work, at: nil) }
+        }
+        flyIfReady()
+    }
+```
+with:
+
+```swift
+    private func stageCleared() {
+        if queue.hasHiddenEffort {
+            for work in queue.takeEfforts(stageVisible: true) { playEffort(work, at: nil) }
+        }
+        if allDoneWaiting {
+            allDoneWaiting = false
+            playAllDone()
+        }
+        flyIfReady()
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+            to: CGPoint(x: pill.rect.midX, y: pill.rect.midY),
+            owner: pill.owner
+        ))
+```
+with:
+
+```swift
+            to: CGPoint(x: pill.rect.midX, y: pill.rect.midY),
+            owner: pill.owner,
+            label: flight.label
+        ))
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+        if let index = flights.firstIndex(where: { $0.id == id }) { flights.remove(at: index) }
+        if queue.isFlying(id) { queue.land(id) }
+    }
+```
+with:
+
+```swift
+        if let index = flights.firstIndex(where: { $0.id == id }) { flights.remove(at: index) }
+        // Animated, as `landed` is: the pill rolls up rather than jumping.
+        if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
+    }
+```
+
+- [ ] **Step 4: Draw the coin, and the caption**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+            ForEach(center.flights) { flight in
+                XPFlightView(flight: flight) { center.landed(flight) }
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: center.effort?.id)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { center.setStage($0) }
+        .sensoryFeedback(.success, trigger: center.effortCount)
+```
+with:
+
+```swift
+            if let coin = center.coin {
+                CoinBurstBadge(reduceMotion: center.reduceMotion)
+                    .frame(width: 150, height: 150)
+                    .position(coin.at)
+                    .id(coin.id)
+                    .transition(.opacity)
+            }
+            ForEach(center.flights) { flight in
+                XPFlightView(flight: flight) { center.landed(flight) }
+            }
+        }
+        .animation(.easeOut(duration: 0.25), value: center.effort?.id)
+        .animation(.easeOut(duration: 0.25), value: center.coin?.id)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { center.setStage($0) }
+        .sensoryFeedback(.success, trigger: center.effortCount)
+        .sensoryFeedback(.success, trigger: center.coinCount)
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+struct ConfettiCanvas: View {
+```
+with:
+
+```swift
+/// The coin burst. Under Reduce Motion a still coin, faded in and out by the layer.
+struct CoinBurstBadge: View {
+    let reduceMotion: Bool
+
+    var body: some View {
+        if reduceMotion {
+            RewardsCoinArt(kind: .coin, size: 72)
+        } else {
+            LottieClip(.coinBurst, playback: .once)
+        }
+    }
+}
+
+struct ConfettiCanvas: View {
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    var body: some View {
+        Text("+\(flight.amount) XP")
+            .font(.system(size: 22, weight: .black, design: .rounded))
+            .foregroundStyle(Theme.amber)
+            .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+            .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
+            .opacity(phase == 2 ? 0.3 : 1)
+            .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
+            .task {
+                withAnimation(Motion.pop) { phase = 1 }
+                do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
+                withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
+            }
+    }
+```
+with:
+
+```swift
+    var body: some View {
+        VStack(spacing: 4) {
+            Text("+\(flight.amount) XP")
+                .font(.system(size: 22, weight: .black, design: .rounded))
+                .foregroundStyle(Theme.amber)
+                .shadow(color: .black.opacity(0.18), radius: 5, y: 2)
+            // What it was for, while it hangs in the air; gone before it reaches the pill.
+            if let label = flight.label {
+                Text(label)
+                    .font(.system(size: 11, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Theme.card, in: Capsule())
+                    .opacity(phase == 1 ? 1 : 0)
+            }
+        }
+        .scaleEffect(phase == 0 ? 0.3 : (phase == 1 ? 1.35 : 0.55))
+        .opacity(phase == 2 ? 0.3 : 1)
+        .position(phase == 2 ? flight.to : CGPoint(x: flight.from.x - 20, y: flight.from.y - (phase == 0 ? 0 : 54)))
+        .task {
+            withAnimation(Motion.pop) { phase = 1 }
+            do { try await Task.sleep(for: .milliseconds(380)) } catch { return }
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.82)) { phase = 2 } completion: { onLand() }
+        }
+    }
+```
+
+- [ ] **Step 5: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Nothing calls `coinBurst` yet (Tasks 26–27), and no flight has a label yet (Task 25) — the behaviour on screen is unchanged except the three hand-off fixes.
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Support/Motion/Celebrations.swift
+git commit -m "fix(ios): the XP pill never dips, a late landing rolls, all-done waits for the stage; coin burst
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 25: "While you were away" — the flight, the flame, the trophy card
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Shell/RewardsStore.swift`
+- Modify: `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift`
+- Create: `ios/MasterSAT/Sources/Support/Motion/RankUpCard.swift`
+- Create: `ios/MasterSAT/Sources/Screens/Shell/AwayCheck.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Shell/AppHeader.swift` (`StrikeChip`)
+- Modify: `ios/MasterSAT/Sources/Screens/RootView.swift`
+
+**Interfaces:**
+- Consumes: `LastSeen`, `LastSeenBook`, `Rise`, `WelcomeBack`, `CelebrationQueue.recordAway` / `resolve(…label:) -> Int` (Task 21); `LeaderboardAPI.board`, `LeaderboardQuery()`, `LeaderboardBoard.standing` (existing); `LottieAsset.starBurst`, `.chunky` (Task 23); `XPFlight.label`, `heldXP` (Task 24); `AppRouter.show(_:)`.
+- Produces: `RewardsStore.rank: Int?`, `.newestAwardID: Int?` (bookkeeping, `@ObservationIgnored`), `noteRank(_: Int?)`; on `CelebrationCenter`: `expectAway(xpSeen:) -> Int`, `resolveAway(_:xpAfter:label:)`, `streakRose(_: Rise)`, `streakShown(_: Int?) -> Int?`, `streakHold`, `streakGrowth`, `flameAppeared()`, `flameDisappeared()`, `rankRose(_: Rise)`, `rankUp: Rise?`, `rankNotShown: Rise?`, `dismissRankUp()`; `RankUpOverlay`, `RankUpCard`; `@MainActor final class AwayCheck { init(book:); run(userID:session:rewards:celebrations:) async; remember(userID:rewards:celebrations:) }`.
+
+How it works (read before coding):
+- **When:** on launch (`RootTabView.onAppear`, replacing its plain header refresh) AND each time the app comes back to the front (the scene-active refresh becomes the check). iOS keeps a backgrounded app alive for hours, so a student returning after a lesson rarely launches the app — the return IS the moment. A quick app switch costs the one `/rewards/me/` read the header refresh already made, and celebrates nothing unless something changed. One check at a time (`running`).
+- **Order inside a check:** (1) read the baseline; (2) `expectAway(xpSeen:)` BEFORE the request, so a rise another refresh brings meanwhile is held, never shown early; (3) `/rewards/me/`; on failure resolve with nil — nothing flies, the baseline is untouched; (4) a longer streak → `streakRose` BEFORE `rewards.apply`, so the flame never shows the new number early; (5) `apply`, then `resolveAway` with the newest-row caption; (6) the default board (global, all time, XP — the owner's choice for the hero) only when `WelcomeBack.readsRank` says the place can have changed; a better place → `rankRose`; (7) write the baseline.
+- **The baseline is what the header shows:** `xp − heldXP` (XP still in the air is not seen yet, so a kill before it lands celebrates it next time — once), the flame's number, the rank unless a rank-up is still waiting to be shown, the newest history id. Written after every check and when the scene goes to the background.
+- **Where things play:** the XP flight is the queue's — it waits for a visible pill and a clear stage, carries its caption, and lands on the visible pill (phase 2 rules, unchanged). The flame grows and its number rolls on the visible header once nothing covers it, 0.45 s after it is on screen. The trophy card comes after any XP flight has landed, never under a sheet. Under Reduce Motion: no flight (the pill just changes — `heldXP` is 0), no flame growth (the number just changes), the card fades in with a still trophy and no star burst; VoiceOver hears all three.
+- **The trophy card is drawn, not a `.sheet`:** a third sheet would fight the router's one-sheet rule and the Me sheet's queue, and a celebration overlay must never become a presented controller. It is a chunky card over a dimmed backdrop at the root, above the tab bar; tapping outside, "Nice!" or "See the board" (→ the Rewards tab at its root, whose hero shows the new place) puts it away.
+
+Rules (repeat): celebrate only what the server confirmed, never a decrease, nothing on the first launch (Task 21's kit rules); a cancellation is never a failure — this check runs in an unstructured `Task`, so nothing cancels it; no `DispatchQueue.main.asyncAfter`; decorative overlays never take a touch (the card's overlay takes touches only while the card is up); guard no-op writes on `@Observable` state.
+
+- [ ] **Step 1: The store remembers the place and the newest earning**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Shell/RewardsStore.swift` — replace:
+
+```swift
+    private(set) var coins: Int?
+    @ObservationIgnored private var order = LatestOnly()
+```
+with:
+
+```swift
+    private(set) var coins: Int?
+    /// The place on the default board (global, all time, XP) last read — by the Rewards hero or
+    /// the welcome-back check. Bookkeeping for "while you were away"; nothing renders from it.
+    @ObservationIgnored private(set) var rank: Int?
+    /// The newest `/rewards/me/` history row last applied — where the next welcome-back caption
+    /// starts counting new earnings.
+    @ObservationIgnored private(set) var newestAwardID: Int?
+    @ObservationIgnored private var order = LatestOnly()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Shell/RewardsStore.swift` — replace:
+
+```swift
+        guard order.accept(ticket) else { return }
+        guard xp != me.xp || streak != me.currentStreak || coins != me.coins else { return }
+```
+with:
+
+```swift
+        guard order.accept(ticket) else { return }
+        if let newest = me.history.first?.id { newestAwardID = newest }
+        guard xp != me.xp || streak != me.currentStreak || coins != me.coins else { return }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Shell/RewardsStore.swift` — replace:
+
+```swift
+            if coins != me.coins { coins = me.coins }
+        }
+    }
+```
+with:
+
+```swift
+            if coins != me.coins { coins = me.coins }
+        }
+    }
+
+    /// The default board's standing was read. A student with no XP has none; the last known
+    /// place is kept then.
+    func noteRank(_ rank: Int?) {
+        if let rank { self.rank = rank }
+    }
+```
+
+- [ ] **Step 2: The center — away XP, the held flame, the waiting trophy**
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+            if reduceMotion, !oldValue, queue.held > 0 { queue.releaseHeld() }
+```
+with:
+
+```swift
+            if reduceMotion, !oldValue, queue.held > 0 { queue.releaseHeld() }
+            // Nor may the flame grow: show the real streak now.
+            if reduceMotion, !oldValue, streakHold != nil { streakHold = nil }
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    /// Bumps once per coin burst — its success haptic's trigger.
+    private(set) var coinCount = 0
+```
+with:
+
+```swift
+    /// Bumps once per coin burst — its success haptic's trigger.
+    private(set) var coinCount = 0
+    /// While a longer streak waits to be shown: the number last seen, which every flame shows
+    /// until the rise plays. Released inside an animation, so the number rolls.
+    private(set) var streakHold: Int?
+    /// Bumps when the flame grows.
+    private(set) var streakGrowth = 0
+    /// The trophy card on screen: the student moved up the board while away.
+    private(set) var rankUp: Rise?
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    @ObservationIgnored private var allDoneWaiting = false
+```
+with:
+
+```swift
+    @ObservationIgnored private var allDoneWaiting = false
+    @ObservationIgnored private var rankWaiting: Rise?
+    /// Header flames on screen now — the streak rise plays only where one can be seen.
+    @ObservationIgnored private var flamesShowing = 0
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+    // MARK: - What can be seen
+```
+with:
+
+```swift
+    // MARK: - While you were away
+
+    /// Before the welcome-back read goes out: the XP the header last showed (nil on the first
+    /// launch). A rise that lands meanwhile is held at once (`heldXP`). Returns the entry that
+    /// `resolveAway` settles.
+    func expectAway(xpSeen: Int?) -> Int {
+        queue.recordAway(xpSeen: xpSeen)
+    }
+
+    /// The read came back — `xpAfter` is nil when it failed, and nothing flies. A gain flies
+    /// with `label` as its caption once a pill can catch it, and VoiceOver hears it either way.
+    func resolveAway(_ id: Int, xpAfter: Int?, label: String?) {
+        let gained = queue.resolve(id, xpAfter: xpAfter, allowsFlights: budget.allowsFlights, label: label)
+        if gained > 0 { announce("\(gained) XP earned while you were away.") }
+        flyIfReady()
+    }
+
+    /// The streak grew while the student was away. Call BEFORE the store takes the new number:
+    /// every flame keeps showing what was last seen, then rolls up and grows once one is on
+    /// screen and nothing covers it. Under Reduce Motion the number simply changes.
+    func streakRose(_ rise: Rise) {
+        announce("\(rise.to) lessons in a row — your streak grew.")
+        guard !reduceMotion else { return }
+        streakHold = rise.from
+        playStreakIfReady()
+    }
+
+    /// What a flame shows: the held number while a rise waits, else the store's.
+    func streakShown(_ streak: Int?) -> Int? { streakHold ?? streak }
+
+    func flameAppeared() {
+        flamesShowing += 1
+        playStreakIfReady()
+    }
+
+    func flameDisappeared() {
+        flamesShowing = max(0, flamesShowing - 1)
+    }
+
+    /// The student moved up the board while away: the trophy card, once the stage is clear and
+    /// any XP flight has landed.
+    func rankRose(_ rise: Rise) {
+        rankWaiting = rise
+        playRankUpIfReady()
+    }
+
+    /// A rank-up not shown yet: the baseline keeps its old place until the card has been seen.
+    var rankNotShown: Rise? { rankWaiting }
+
+    func dismissRankUp() {
+        if rankUp != nil { rankUp = nil }
+    }
+
+    private func playStreakIfReady() {
+        guard streakHold != nil, flamesShowing > 0, !covered else { return }
+        Task { [weak self] in
+            // A beat, so the eye has reached the header before the number moves.
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self, self.streakHold != nil, self.flamesShowing > 0, !self.covered else { return }
+            withAnimation(Motion.pop) { self.streakHold = nil }
+            self.streakGrowth += 1
+        }
+    }
+
+    private func playRankUpIfReady() {
+        // A gain that can fly now goes first; the card follows once it has landed.
+        let gainCanFly = queue.hasConfirmedGain && target != nil
+        guard let rise = rankWaiting, rankUp == nil, !covered, flights.isEmpty, !gainCanFly else { return }
+        rankWaiting = nil
+        rankUp = rise
+        announce("You moved up to number \(rise.to) overall.")
+    }
+
+    // MARK: - What can be seen
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+        withAnimation(Motion.snappy) { queue.land(flight.id) }
+        landing = XPLanding(count: (landing?.count ?? 0) + 1, owner: flight.owner)
+    }
+```
+with:
+
+```swift
+        withAnimation(Motion.snappy) { queue.land(flight.id) }
+        landing = XPLanding(count: (landing?.count ?? 0) + 1, owner: flight.owner)
+        playRankUpIfReady()
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+        if allDoneWaiting {
+            allDoneWaiting = false
+            playAllDone()
+        }
+        flyIfReady()
+    }
+```
+with:
+
+```swift
+        if allDoneWaiting {
+            allDoneWaiting = false
+            playAllDone()
+        }
+        flyIfReady()
+        playStreakIfReady()
+        playRankUpIfReady()
+    }
+```
+
+**Edit** `ios/MasterSAT/Sources/Support/Motion/Celebrations.swift` — replace:
+
+```swift
+        if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
+    }
+```
+with:
+
+```swift
+        if queue.isFlying(id) { withAnimation(Motion.snappy) { queue.land(id) } }
+        playRankUpIfReady()
+    }
+```
+
+- [ ] **Step 3: The trophy card**
+
+**Create** `ios/MasterSAT/Sources/Support/Motion/RankUpCard.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+/// The trophy card: the student moved up the board while they were away.
+///
+/// Drawn by the root above the tabs and the tab bar — not a `.sheet`: a third sheet would fight
+/// the router's one-sheet rule and the Me sheet's queue. It appears only once the stage is clear
+/// and any XP flight has landed (`CelebrationCenter.rankUp`). A tap outside it, "Nice!" or "See
+/// the board" puts it away. Takes touches only while it is up.
+struct RankUpOverlay: View {
+    @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(AppRouter.self) private var router
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            if let rise = celebrations.rankUp {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { celebrations.dismissRankUp() }
+                    .accessibilityHidden(true)
+                    .transition(.opacity)
+                RankUpCard(
+                    rise: rise,
+                    reduceMotion: celebrations.reduceMotion,
+                    onBoard: {
+                        celebrations.dismissRankUp()
+                        router.show(.rewards)
+                    },
+                    onClose: { celebrations.dismissRankUp() }
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
+                .transition(celebrations.reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .animation(celebrations.reduceMotion ? Motion.focus : Motion.bouncy, value: celebrations.rankUp)
+        .sensoryFeedback(trigger: celebrations.rankUp) { _, new in new == nil ? nil : .success }
+        .allowsHitTesting(celebrations.rankUp != nil)
+    }
+}
+
+/// The card itself — look B, the trophy over a star burst. Under Reduce Motion a still trophy
+/// and no burst.
+struct RankUpCard: View {
+    let rise: Rise
+    let reduceMotion: Bool
+    let onBoard: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                if !reduceMotion {
+                    LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
+                }
+                LottieClip(.trophy, playback: reduceMotion ? .still : .once).frame(width: 130, height: 130)
+            }
+            .frame(height: 150)
+
+            VStack(spacing: 4) {
+                // A place is an identifier, not a quantity: never "#1,204".
+                Text(verbatim: "You moved up to #\(rise.to)")
+                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                Text(verbatim: "Overall · all time · up from #\(rise.from)")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .multilineTextAlignment(.center)
+
+            HStack(spacing: 10) {
+                Button("Nice!", action: onClose)
+                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                Button("See the board", action: onBoard)
+                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+        .chunky(Theme.amber)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+    }
+}
+```
+
+- [ ] **Step 4: The check itself**
+
+**Create** `ios/MasterSAT/Sources/Screens/Shell/AwayCheck.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+/// "While you were away": compares what the header last showed this student (`LastSeenBook`)
+/// with the server now, and hands what improved to the celebrations — XP through the queue like
+/// any confirmed gain (captioned from the newest history row), a longer streak to the flame, a
+/// better place to the trophy card. Nothing on the first launch on this phone; nothing that went
+/// down.
+///
+/// Runs on launch and each time the app comes back to the front: iOS keeps a backgrounded app
+/// alive for hours, so a student coming back after a lesson rarely LAUNCHES it — the return is
+/// the moment. A quick app switch costs the one `/rewards/me/` read the header refresh already
+/// made there, and celebrates nothing unless something changed.
+///
+/// The baseline is what the header SHOWS (XP still held for a flight is not seen yet), written
+/// after every check and when the app leaves the front.
+@MainActor
+final class AwayCheck {
+    private let book: LastSeenBook
+    private var running = false
+
+    init(book: LastSeenBook = LastSeenBook()) {
+        self.book = book
+    }
+
+    func run(userID: Int, session: Session, rewards: RewardsStore, celebrations: CelebrationCenter) async {
+        // Launch and the first scene-active can both ask: one check at a time.
+        guard !running else { return }
+        running = true
+        defer { running = false }
+
+        let seen = book.read(userID: userID)
+        // Before the read: a rise another refresh brings meanwhile is held, never shown early.
+        let away = celebrations.expectAway(xpSeen: seen?.xp)
+        let ticket = rewards.ticket()
+        guard let me = try? await session.rewards.me() else {
+            // Nothing measured, nothing flies, and the baseline stays as it was.
+            celebrations.resolveAway(away, xpAfter: nil, label: nil)
+            return
+        }
+        // Before the store takes the new streak, so no flame shows it early.
+        if let rise = WelcomeBack.streak(seen: seen, now: me.currentStreak) {
+            celebrations.streakRose(rise)
+        }
+        rewards.apply(me, ticket: ticket)
+        celebrations.resolveAway(
+            away,
+            xpAfter: rewards.xp,
+            label: WelcomeBack.label(history: me.history, since: seen?.newestAwardID)
+        )
+
+        // The owner's board for the hero: global, all time, XP — the server's default.
+        if WelcomeBack.readsRank(seen: seen, xpNow: me.xp),
+           let board = try? await LeaderboardAPI(client: session.client).board(LeaderboardQuery()) {
+            let now = board.standing?.rank
+            if let rise = WelcomeBack.rank(seen: seen?.rank, now: now) {
+                celebrations.rankRose(rise)
+            }
+            rewards.noteRank(now)
+        }
+        remember(userID: userID, rewards: rewards, celebrations: celebrations)
+    }
+
+    /// Writes the baseline as the header shows it now. Before anything has loaded the old one
+    /// stays; a number not read this time keeps its old value.
+    func remember(userID: Int, rewards: RewardsStore, celebrations: CelebrationCenter) {
+        guard let xp = rewards.xp else { return }
+        let old = book.read(userID: userID)
+        book.write(
+            LastSeen(
+                xp: max(0, xp - celebrations.heldXP),
+                streak: celebrations.streakShown(rewards.streak) ?? old?.streak ?? 0,
+                rank: celebrations.rankNotShown?.from ?? rewards.rank ?? old?.rank,
+                newestAwardID: rewards.newestAwardID ?? old?.newestAwardID
+            ),
+            userID: userID
+        )
+    }
+}
+```
+
+- [ ] **Step 5: The flame holds, rolls and grows**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Shell/AppHeader.swift` — replace:
+
+```swift
+struct StrikeChip: View {
+    @Environment(RewardsStore.self) private var rewards
+
+    var body: some View {
+        if let streak = rewards.streak {
+            HStack(spacing: 2) {
+                LottieClip(.strikeFlame).frame(width: 22, height: 22)
+                Text(String(streak))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.strike)
+                    .contentTransition(.numericText(value: Double(streak)))
+            }
+            .padding(.leading, 5)
+            .padding(.trailing, 10)
+            .padding(.vertical, 3)
+            .background(Theme.card, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
+        }
+    }
+}
+```
+with:
+
+```swift
+private struct FlameGrow { var scale = 1.0 }
+
+struct StrikeChip: View {
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
+    @State private var showing = false
+    /// This chip's own growth count: only a chip on screen grows and buzzes.
+    @State private var grows = 0
+
+    var body: some View {
+        // While a longer streak waits to be shown, the number last seen; it rolls up when the
+        // rise plays (`CelebrationCenter.streakRose`).
+        if let streak = celebrations.streakShown(rewards.streak) {
+            HStack(spacing: 2) {
+                LottieClip(.strikeFlame)
+                    .frame(width: 22, height: 22)
+                    .keyframeAnimator(initialValue: FlameGrow(), trigger: grows) { flame, grow in
+                        flame.scaleEffect(grow.scale, anchor: .bottom)
+                    } keyframes: { _ in
+                        KeyframeTrack(\.scale) {
+                            SpringKeyframe(1.7, duration: 0.22, spring: .snappy)
+                            SpringKeyframe(1.0, duration: 0.6, spring: .bouncy(duration: 0.6, extraBounce: 0.3))
+                        }
+                    }
+                Text(String(streak))
+                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .foregroundStyle(Theme.strike)
+                    .contentTransition(.numericText(value: Double(streak)))
+            }
+            .padding(.leading, 5)
+            .padding(.trailing, 10)
+            .padding(.vertical, 3)
+            .background(Theme.card, in: Capsule())
+            .sensoryFeedback(.impact(weight: .medium), trigger: grows)
+            .onAppear {
+                showing = true
+                celebrations.flameAppeared()
+            }
+            .onDisappear {
+                showing = false
+                celebrations.flameDisappeared()
+            }
+            .onChange(of: celebrations.streakGrowth) { _, _ in
+                if showing { grows += 1 }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
+        }
+    }
+}
+```
+
+- [ ] **Step 6: Wire it at the root**
+
+**Edit** `ios/MasterSAT/Sources/Screens/RootView.swift` — replace:
+
+```swift
+/// Keeps the header's XP and streak current after launch: a refresh each time the app comes back
+/// to the front, and one when the phone comes back online.
+///
+/// Its own view, so reading `scenePhase` and connectivity rebuilds this empty view and not
+/// `RootTabView` — whose body would rebuild the tab view and its navigation stacks with it.
+private struct RewardsRefresher: View {
+    @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: scenePhase) { old, new in
+                if new == .active, old != .active { refresh() }
+            }
+            .onChange(of: session.connectivity.isOnline) { old, new in
+                if new, !old { refresh() }
+            }
+    }
+
+    private func refresh() {
+        Task { await rewards.refresh(using: session.rewards) }
+    }
+}
+```
+with:
+
+```swift
+/// Keeps the header's XP and streak current after launch, and runs "while you were away": the
+/// check each time the app comes back to the front (launch runs it from `RootTabView`), the
+/// baseline written when it leaves, and a plain refresh when the phone comes back online.
+///
+/// Its own view, so reading `scenePhase` and connectivity rebuilds this empty view and not
+/// `RootTabView` — whose body would rebuild the tab view and its navigation stacks with it.
+private struct RewardsRefresher: View {
+    let userID: Int
+    let away: AwayCheck
+
+    @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(\.scenePhase) private var scenePhase
+
+    var body: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+            .onChange(of: scenePhase) { old, new in
+                if new == .active, old != .active {
+                    Task { await away.run(userID: userID, session: session, rewards: rewards, celebrations: celebrations) }
+                }
+                if new == .background {
+                    away.remember(userID: userID, rewards: rewards, celebrations: celebrations)
+                }
+            }
+            .onChange(of: session.connectivity.isOnline) { old, new in
+                if new, !old { Task { await rewards.refresh(using: session.rewards) } }
+            }
+    }
+}
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/RootView.swift` — replace:
+
+```swift
+    @State private var celebrations = CelebrationCenter()
+    /// The floating bar's measured height, so the room left for it is never a guess.
+```
+with:
+
+```swift
+    @State private var celebrations = CelebrationCenter()
+    @State private var away = AwayCheck()
+    /// The floating bar's measured height, so the room left for it is never a guess.
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/RootView.swift` — replace:
+
+```swift
+        .background {
+            RewardsRefresher()
+            CelebrationSheetWatcher()
+        }
+        .overlay { CelebrationLayer().ignoresSafeArea() }
+```
+with:
+
+```swift
+        .background {
+            RewardsRefresher(userID: user.id, away: away)
+            CelebrationSheetWatcher()
+        }
+        .overlay { CelebrationLayer().ignoresSafeArea() }
+        .overlay { RankUpOverlay() }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/RootView.swift` — replace:
+
+```swift
+            if let link = notifications.consume() { open(link) }
+            Task { await rewards.refresh(using: session.rewards) }
+        }
+```
+with:
+
+```swift
+            if let link = notifications.consume() { open(link) }
+            // The launch's header refresh IS the welcome-back check.
+            Task { await away.run(userID: user.id, session: session, rewards: rewards, celebrations: celebrations) }
+        }
+```
+
+- [ ] **Step 7: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 8: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Shell/RewardsStore.swift \
+        ios/MasterSAT/Sources/Support/Motion/Celebrations.swift \
+        ios/MasterSAT/Sources/Support/Motion/RankUpCard.swift \
+        ios/MasterSAT/Sources/Screens/Shell/AwayCheck.swift \
+        ios/MasterSAT/Sources/Screens/Shell/AppHeader.swift \
+        ios/MasterSAT/Sources/Screens/RootView.swift
+git commit -m "feat(ios): while you were away — XP flies in with what it was for, the flame grows, a new place gets its trophy
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 26: The Rewards tab — the trophy hero, streak and coins, the board, where XP came from, the shop
+
+**Files:**
+- Create: `ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift`
+- Modify (rewrite): `ios/MasterSAT/Sources/Screens/Rewards/RewardsHubView.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` (`RewardsAwardRow` loses `private`)
+
+**Interfaces:**
+- Consumes: `LeaderboardMetric`, `LeaderboardQuery(scope:window:metric:)`, `LeaderboardBoard.metric` / `.standing` / `.passTarget` / `.scopeNote`, `LeaderboardPass`, `LeaderboardRow.strikes`, `XPLedger.rows` (Task 20); `RewardsStore.noteRank` (Task 25); `CelebrationCenter.coinBurst(at:)` (Task 24), `.streakShown(_:)` (Task 25); `ChunkyButtonStyle`, `.chunky` (Task 23); `RewardsAPI.me()` / `.rules()` / `.convert(points:)`, `ConversionResult`, `MyRewards.applying`, `RewardsFormat`, `LeaderboardFilters.fallbackWindowLabel` (existing); `TabRootScroll`, `SegmentBar`, `HubCard`, `CardHeading`, `DashedEmpty`, `RewardsErrorState`, `RewardsCoinArt`, `LeaderboardRankBadge`, `LeaderboardAvatar`, `LeaderboardYouTag`, `RewardsPalette`, `AppLinkPage` (existing views).
+- Produces: `RankHeroContent { enum State { loading, unranked, ranked(rank:pass:) } }`, `StreakCard`, `CoinsCard`, `RewardsBoardSection`, `RewardsBoardRow`, `XPLedgerCard`, `@MainActor final class FrameBox`; `RewardsAwardRow` is now internal.
+
+What the tab shows, top to bottom (approved design §2, owner's decision of 2026-10-21 for the hero):
+1. **Trophy hero (look B, amber)** — the student's place on the **global, all-time XP board** (the server's default, `LeaderboardQuery()`): "#57 · overall · all time", then "121 XP to pass Malika" (`passTarget`). At #1: "You're top of the whole board". When the row above is not in the response (the student is past the page with a gap): "Keep earning XP to climb" — never a guessed number. No XP yet: "Not on the board yet". Failed: an error card with Try again — never "not on the board". Tap → the full leaderboard. The trophy plays once per appearance (still under Reduce Motion); the place it shows is noted for "while you were away" (`noteRank`).
+2. **Streak + coins (look B)** — the run of lessons with its best, and the coins to spend. The coins card converts: one confirmed tap spends **Max** (`convert(points: nil)` — every point that buys a whole coin; choosing an amount stays on the Points page). Not idempotent: confirmed first, off while in flight, never retried; the truth is read back either way; a confirmed conversion bursts a coin from the card.
+3. **Leaderboard (look A; the student's own row look B)** — XP | Strikes; window chips All time · This month on XP only (the strike board is a run, now: the server forces all time); the top five, then the student's own row if it is not among them; the server's `scope_note` under it; "See the full board" on XP (the full page is XP-only in this phase). Strikes rows read "9 in a row". Reuses the hero's board when it asks the same thing (no second request); a `.task(id:)` loads any other, and a cancelled load stores nothing.
+4. **Where your XP came from (look A)** — the five newest earnings that added XP (`XPLedger`), then "All your points" → Points. Shown once `/rewards/me/` has loaded; a failure is said by the error card instead.
+5. **Shop (look A)** — a card that opens the shop. (The purchase's coin burst is Task 27.)
+
+Rules (repeat): error ≠ empty, and a cancellation is never a failure (`APIClient` wraps one as `APIError.transport`; guard with `Task.isCancelled`); the root reloads in `.onAppear` and refreshes through `TabRootScroll(onRefresh:)`; value routes only (`NavigationLink(value: AppLink…)`); guard no-op writes on state the root reads; look B only on the hero, the two cards and the student's own row; ≤ 2 looping Lottie on screen (the header flame and the streak card's flame — the trophy plays once); copy is growth-oriented ("to pass", "to your next coin", never "behind").
+
+- [ ] **Step 1: Make the earnings row reusable**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+/// One line of the points history.
+private struct RewardsAwardRow: View {
+```
+with:
+
+```swift
+/// One line of the points history — here and in the Rewards tab's "Where your XP came from".
+struct RewardsAwardRow: View {
+```
+
+- [ ] **Step 2: The tab's cards**
+
+**Create** `ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+// MARK: - The trophy hero
+
+/// The student's place on the whole learning center's board, all time — the owner's choice for
+/// this card (2026-10-21) — and the one student to pass next. Drawn inside a link to the full
+/// board, on look B: the one card on the tab that is all about the student.
+struct RankHeroContent: View {
+    enum State: Equatable {
+        case loading
+        /// No XP yet, so no place on the board (the server's `my` is null).
+        case unranked
+        case ranked(rank: Int, pass: LeaderboardPass?)
+    }
+
+    let state: State
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 12) {
+            LottieClip(.trophy, playback: reduceMotion ? .still : .once)
+                .frame(width: 88, height: 88)
+            VStack(alignment: .leading, spacing: 4) {
+                switch state {
+                case .loading:
+                    Text(verbatim: "#00")
+                        .font(.system(size: 40, weight: .black, design: .rounded))
+                        .redacted(reason: .placeholder)
+                    Text("overall · all time")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.textSecondary)
+                case .unranked:
+                    Text("Not on the board yet")
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    Text("Your first XP puts you on it — come to a lesson or hand in homework.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                case .ranked(let rank, let pass):
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        // A place is an identifier: never "#1,204".
+                        Text(verbatim: "#\(rank)")
+                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .contentTransition(.numericText(value: Double(rank)))
+                        Text("overall · all time")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                    Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
+                        .font(.system(size: 13, weight: .heavy))
+                        .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
+                }
+            }
+            Spacer(minLength: 0)
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Theme.textLabel)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+        .accessibilityHint("Opens the leaderboard")
+    }
+
+    /// The next step, never the distance from the top. Without the row above in the response
+    /// there is no honest number, so none is given.
+    private func line(rank: Int, pass: LeaderboardPass?) -> String {
+        if rank == 1 { return "You're top of the whole board" }
+        return pass?.text ?? "Keep earning XP to climb"
+    }
+
+    private var spoken: String {
+        switch state {
+        case .loading: return "Loading your place on the board"
+        case .unranked: return "Not on the board yet. Your first XP puts you on it."
+        case .ranked(let rank, let pass): return "Number \(rank) overall, all time. \(line(rank: rank, pass: pass))."
+        }
+    }
+}
+
+// MARK: - Streak and coins
+
+/// The run of lessons attended, with the best one. Look B.
+struct StreakCard: View {
+    let streak: Int?
+    let best: Int?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                LottieClip(.strikeFlame).frame(width: 34, height: 34)
+                Text(ScoreText.string(streak))
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .foregroundStyle(Theme.strike)
+                    .contentTransition(.numericText(value: Double(streak ?? 0)))
+            }
+            Text(streak == 1 ? "lesson in a row" : "lessons in a row")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+            if let best, best > 0 {
+                Text(verbatim: "Best: \(best)")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.textLabel)
+            } else if streak == 0 {
+                Text("Your next lesson starts one")
+                    .font(.system(size: 11, weight: .heavy))
+                    .foregroundStyle(Theme.textLabel)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .chunky(Theme.strike)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(streak.map { "\($0) \($0 == 1 ? "lesson" : "lessons") in a row" + ((best ?? 0) > 0 ? ", best \(best ?? 0)" : "") } ?? "Lessons in a row: not loaded")
+    }
+}
+
+/// Coins to spend, and the one-tap convert. Look B.
+struct CoinsCard: View {
+    let rewards: MyRewards?
+    let converting: Bool
+    /// What the last conversion did — or that it did not go through.
+    let note: String?
+    let onConvert: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                RewardsCoinArt(kind: .coin, size: 30)
+                Text(ScoreText.string(rewards?.coins))
+                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .contentTransition(.numericText(value: Double(rewards?.coins ?? 0)))
+            }
+            Text(rewards?.coins == 1 ? "coin to spend" : "coins to spend")
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(Theme.textSecondary)
+            Spacer(minLength: 0)
+            if let rewards {
+                if rewards.convertibleCoins > 0 {
+                    Button(action: onConvert) {
+                        HStack(spacing: 5) {
+                            if converting {
+                                ProgressView().controlSize(.mini).tint(.white)
+                            } else {
+                                Image(systemName: "arrow.left.arrow.right").font(.system(size: 11, weight: .bold))
+                            }
+                            Text(converting ? "Converting…" : "Convert points")
+                        }
+                        .font(.system(size: 12, weight: .heavy))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Theme.accent))
+                    }
+                    .buttonStyle(PressBounce())
+                    .disabled(converting)
+                    .accessibilityLabel("Convert points into \(RewardsFormat.count(rewards.convertibleCoins, "coin"))")
+                } else {
+                    Text(verbatim: "\(RewardsFormat.count(rewards.pointsToNextCoin, "point")) to your next coin")
+                        .font(.system(size: 11, weight: .heavy))
+                        .foregroundStyle(Theme.textLabel)
+                }
+            }
+            if let note {
+                Text(note)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .chunky(Theme.accent)
+        // Contain, not combine: the Convert button must stay its own VoiceOver target.
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// A measured frame kept out of SwiftUI state: written on every scroll frame, read only when a
+/// coin bursts — so measuring never re-renders the tab.
+@MainActor
+final class FrameBox {
+    var rect: CGRect = .zero
+}
+
+// MARK: - The board
+
+/// The global board on the tab: XP (all time or this month) or Strikes, the top five and the
+/// student's own row. The full page — scopes, filters, podium — is behind "See the full board".
+struct RewardsBoardSection: View {
+    @Binding var metric: LeaderboardMetric
+    @Binding var window: String
+    /// Only a board that answers the chosen metric and window; nil while it loads.
+    let board: LeaderboardBoard?
+    let failed: Bool
+    let retry: @MainActor () async -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let topCount = 5
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Leaderboard")
+                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .accessibilityAddTraits(.isHeader)
+            SegmentBar(
+                items: [.init(segment: LeaderboardMetric.xp, title: "XP"), .init(segment: LeaderboardMetric.strikes, title: "Strikes")],
+                selection: $metric
+            )
+            // The strike board is a run, now: the server ranks it over all time whatever is asked.
+            if metric == .xp { windowChips }
+            content
+            if metric == .xp {
+                NavigationLink(value: AppLink.leaderboard) {
+                    HStack(spacing: 4) {
+                        Text("See the full board").font(.system(size: 14, weight: .bold))
+                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundStyle(RewardsPalette.accentText)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var windowChips: some View {
+        HStack(spacing: 8) {
+            ForEach([LeaderboardQuery.allTime, LeaderboardQuery.thisMonth], id: \.self) { value in
+                let active = window == value
+                Button {
+                    guard !active else { return }
+                    withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { window = value }
+                } label: {
+                    Text(LeaderboardFilters.fallbackWindowLabel(value))
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundStyle(active ? Color.white : Theme.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(active ? Theme.accent : Theme.card))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(PressBounce())
+                .accessibilityAddTraits(active ? .isSelected : [])
+            }
+        }
+        .sensoryFeedback(.selection, trigger: window)
+    }
+
+    @ViewBuilder private var content: some View {
+        if let board {
+            let top = Array(board.rows.prefix(Self.topCount))
+            let me = board.standing
+            if top.isEmpty && me == nil {
+                DashedEmpty(
+                    title: metric == .strikes ? "No runs yet" : "Nobody on this board yet",
+                    hint: metric == .strikes ? "Come to your next lesson and you're on it." : "The first XP of the month puts you at the top."
+                )
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(top) { row in
+                        RewardsBoardRow(row: row, metric: metric, mine: row.studentId == me?.studentId)
+                    }
+                    if let me, !top.contains(where: { $0.studentId == me.studentId }) {
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(Theme.textLabel)
+                            .accessibilityHidden(true)
+                        RewardsBoardRow(row: me, metric: metric, mine: true)
+                    }
+                }
+            }
+            if !board.scopeNote.isEmpty {
+                Text(board.scopeNote)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } else if failed {
+            RewardsErrorState(
+                title: "The leaderboard isn't loading right now.",
+                message: "Your XP is safe — only this list failed to load.",
+                retry: retry
+            )
+            .cardStyle(padding: 8)
+        } else {
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 28)
+                .accessibilityLabel("Loading the leaderboard")
+        }
+    }
+}
+
+/// One place on the tab's board. The student's own row is look B.
+struct RewardsBoardRow: View {
+    let row: LeaderboardRow
+    let metric: LeaderboardMetric
+    let mine: Bool
+
+    private var value: String {
+        guard metric == .strikes else { return "\(ScoreText.string(row.xp)) XP" }
+        let run = row.strikes ?? 0
+        return "\(run) in a row"
+    }
+
+    var body: some View {
+        let line = HStack(spacing: 10) {
+            LeaderboardRankBadge(rank: row.rank, highlight: mine)
+            LeaderboardAvatar(row: row, size: 34)
+            Text(row.displayName)
+                .font(.system(size: 14, weight: mine ? .heavy : .semibold))
+                .lineLimit(1)
+            if mine { LeaderboardYouTag() }
+            Spacer(minLength: 6)
+            Text(value)
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(mine ? RewardsPalette.accentText : Theme.textSecondary)
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Rank \(row.rank), \(row.displayName)\(mine ? ", you" : ""), \(value)")
+
+        if mine {
+            line.chunky(Theme.accent, radius: 16)
+        } else {
+            line.background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+    }
+}
+
+// MARK: - Where your XP came from
+
+struct XPLedgerCard: View {
+    let rows: [PointAward]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            CardHeading(icon: "bolt.fill", title: "Where your XP came from", subtitle: "Your newest earnings that added XP")
+            if rows.isEmpty {
+                DashedEmpty(
+                    title: "Nothing yet — but everything counts",
+                    hint: "Come to a lesson or hand in homework, and it shows up here."
+                )
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, award in
+                        if index > 0 { Divider().padding(.leading, 52) }
+                        RewardsAwardRow(award: award)
+                    }
+                }
+            }
+            NavigationLink(value: AppLink.points) {
+                HStack(spacing: 4) {
+                    Text("All your points").font(.system(size: 14, weight: .bold))
+                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                }
+                .foregroundStyle(RewardsPalette.accentText)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .cardStyle(padding: 18)
+    }
+}
+```
+
+- [ ] **Step 3: Rebuild the tab root**
+
+**Rewrite** `ios/MasterSAT/Sources/Screens/Rewards/RewardsHubView.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+/// The Rewards tab: where the student stands, what they have, where it came from, and what to
+/// spend it on — the trophy hero, streak and coins, the board, the XP ledger and the shop.
+///
+/// A tab root, so it owns its `NavigationStack` and hides the bar; every push is an `AppLink`
+/// VALUE resolved at this root (the leaderboard, points and shop pages keep their own bars and
+/// Back buttons). It reloads every time the tab appears, so a conversion or a purchase made one
+/// level down is on the cards when the student comes back, and refreshes detached
+/// (`TabRootScroll(onRefresh:)`).
+///
+/// Four requests, four outcomes, each said where it lands: `/rewards/me/` (streak, coins, the
+/// ledger, the header), the default board (the hero — global, all time, XP), the rules (which
+/// earnings add XP) and, when the board section asks something else, its own board.
+struct RewardsHubView: View {
+    @Binding var path: NavigationPath
+
+    @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(CelebrationCenter.self) private var celebrations
+
+    @State private var mine: MyRewards?
+    @State private var meFailed = false
+    /// The default board — global, all time, XP: the hero's, and the section's when it asks the same.
+    @State private var hero: LeaderboardBoard?
+    @State private var heroFailed = false
+    /// Which earnings add XP. Without them the ledger keeps every earning (`XPLedger`).
+    @State private var rules: [RewardRule]?
+    @State private var metric: LeaderboardMetric = .xp
+    @State private var window = LeaderboardQuery.allTime
+    /// The section's own board, when it asks something the hero's does not answer.
+    @State private var other: LeaderboardBoard?
+    @State private var otherFailed = false
+    @State private var converting = false
+    @State private var confirmingConvert = false
+    @State private var convertNote: String?
+    @State private var coinsSpot = FrameBox()
+    @State private var shown = false
+
+    private var sectionQuery: LeaderboardQuery { LeaderboardQuery(scope: .global, window: window, metric: metric) }
+    private var sectionIsHero: Bool { sectionQuery == LeaderboardQuery() }
+
+    /// The board the section shows — only one that answers what is chosen, so a strike board
+    /// never shows under "XP" while the next one loads.
+    private var sectionBoard: LeaderboardBoard? {
+        guard let board = sectionIsHero ? hero : other, board.metric == metric else { return nil }
+        guard metric == .strikes || board.window == window else { return nil }
+        return board
+    }
+
+    private var sectionFailed: Bool { sectionIsHero ? heroFailed : otherFailed }
+
+    private var heroState: RankHeroContent.State {
+        guard let hero else { return .loading }
+        guard let standing = hero.standing else { return .unranked }
+        return .ranked(rank: standing.rank, pass: hero.passTarget)
+    }
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            TabRootScroll(tab: .rewards, onRefresh: { await load() }) {
+                VStack(alignment: .leading, spacing: 16) {
+                    AppHeader(title: "Rewards").stagger(0, shown: shown)
+
+                    heroCard.stagger(1, shown: shown)
+
+                    if meFailed && mine == nil {
+                        RewardsErrorState(
+                            title: "Points aren't loading right now.",
+                            message: "Nothing has been lost — the page just couldn't fetch your total."
+                        ) { await loadMe() }
+                        .cardStyle(padding: 8)
+                    }
+
+                    HStack(alignment: .top, spacing: 12) {
+                        StreakCard(
+                            streak: celebrations.streakShown(rewards.streak) ?? mine?.currentStreak,
+                            best: mine?.bestStreak
+                        )
+                        CoinsCard(rewards: mine, converting: converting, note: convertNote) {
+                            confirmingConvert = true
+                        }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { coinsSpot.rect = $0 }
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .stagger(2, shown: shown)
+
+                    RewardsBoardSection(
+                        metric: $metric,
+                        window: $window,
+                        board: sectionBoard,
+                        failed: sectionFailed && sectionBoard == nil
+                    ) { await loadSection() }
+                    .stagger(3, shown: shown)
+
+                    if let mine {
+                        XPLedgerCard(rows: XPLedger.rows(mine.history, rules: rules))
+                            .stagger(4, shown: shown)
+                    }
+
+                    HubCard(
+                        title: "Shop",
+                        subtitle: "Spend coins and strikes, then collect it from the desk",
+                        icon: "bag.fill",
+                        tone: Theme.success,
+                        route: AppLink.shop
+                    )
+                    .stagger(5, shown: shown)
+                }
+                .padding(16)
+            }
+            .background(Theme.background)
+            .navigationTitle("Rewards")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
+            .onAppear {
+                if !shown { shown = true }
+                Task { await load() }
+            }
+            // A chip or a segment asked a new board. Cancelled when it changes again, and a
+            // cancelled load stores nothing (`loadSection`).
+            .task(id: sectionQuery) {
+                if otherFailed { otherFailed = false }
+                await loadSection()
+            }
+            .alert(
+                Text(verbatim: "Convert \(mine?.maxConvertiblePoints ?? 0) points into \(RewardsFormat.count(mine?.convertibleCoins ?? 0, "coin"))?"),
+                isPresented: $confirmingConvert
+            ) {
+                Button("Convert") { Task { await convert() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Converted points don't come back, and your XP stays where it is. To choose an amount, open Points.")
+            }
+        }
+    }
+
+    // MARK: - The hero
+
+    @ViewBuilder private var heroCard: some View {
+        if hero == nil && heroFailed {
+            RewardsErrorState(
+                title: "Your place isn't loading right now.",
+                message: "Your XP is safe — only the board failed to load."
+            ) { await loadHero() }
+            .chunky(Theme.amber)
+        } else {
+            NavigationLink(value: AppLink.leaderboard) {
+                RankHeroContent(state: heroState)
+            }
+            .buttonStyle(ChunkyButtonStyle(tint: Theme.amber))
+        }
+    }
+
+    // MARK: - Loading
+
+    @MainActor
+    private func load() async {
+        async let me: Void = loadMe()
+        async let board: Void = loadHero()
+        async let earning: Void = loadRules()
+        async let section: Void = loadSection()
+        _ = await (me, board, earning, section)
+    }
+
+    @MainActor
+    private func loadMe() async {
+        // Taken before asking, so an answer older than the header's own refresh cannot wind it back.
+        let ticket = rewards.ticket()
+        do {
+            let me = try await session.rewards.me()
+            if mine != me { mine = me }
+            if meFailed { meFailed = false }
+            // The header reads the same answer, so the two never disagree.
+            rewards.apply(me, ticket: ticket)
+        } catch {
+            guard !Task.isCancelled else { return }
+            meFailed = true
+        }
+    }
+
+    @MainActor
+    private func loadHero() async {
+        do {
+            let board = try await LeaderboardAPI(client: session.client).board(LeaderboardQuery())
+            if hero != board { hero = board }
+            if heroFailed { heroFailed = false }
+            // What the student has now seen — "while you were away" measures from it.
+            rewards.noteRank(board.standing?.rank)
+        } catch {
+            guard !Task.isCancelled else { return }
+            heroFailed = true
+        }
+    }
+
+    @MainActor
+    private func loadRules() async {
+        guard let fresh = try? await session.rewards.rules() else { return }
+        if rules != fresh { rules = fresh }
+    }
+
+    /// The section's own board — nothing to do when it asks what the hero's already answers.
+    @MainActor
+    private func loadSection() async {
+        let asked = sectionQuery
+        guard asked != LeaderboardQuery() else { return }
+        do {
+            let fresh = try await LeaderboardAPI(client: session.client).board(asked)
+            guard !Task.isCancelled, asked == sectionQuery else { return }
+            if other != fresh { other = fresh }
+            if otherFailed { otherFailed = false }
+        } catch {
+            guard !Task.isCancelled, asked == sectionQuery else { return }
+            otherFailed = true
+        }
+    }
+
+    // MARK: - Converting
+
+    /// Spends Max — every point that buys a whole coin. Not idempotent (a second call is a second
+    /// conversion), so it runs once per confirmation, with the button off while it is in flight,
+    /// and is never retried. Either way the truth is read back.
+    @MainActor
+    private func convert() async {
+        guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
+        converting = true
+        convertNote = nil
+        do {
+            let result = try await session.rewards.convert(points: nil)
+            mine = before.applying(result.balances)
+            celebrations.coinBurst(at: coinsSpot.rect.celebrationPoint)
+            convertNote = result.detail.isEmpty
+                ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
+                : result.detail
+        } catch {
+            convertNote = "That didn't go through — your points are untouched. Try again."
+        }
+        converting = false
+        await loadMe()
+    }
+}
+```
+
+- [ ] **Step 4: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Rewards/RewardsTabCards.swift \
+        ios/MasterSAT/Sources/Screens/Rewards/RewardsHubView.swift \
+        ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift
+git commit -m "feat(ios): Rewards — your place and who to pass, streak and coins, the board, where XP came from
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 27: A coin burst on every purchase and conversion; the Rewards pages refresh detached
+
+**Files:**
+- Modify: `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Rewards/LeaderboardView.swift`
+
+**Interfaces:**
+- Consumes: `CelebrationCenter.coinBurst(at:)` (Task 24), `FrameBox` (Task 26), `CGRect.celebrationPoint`, `View.detachedRefresh(_:)` (phase 2, `Screens/Shell/TabRootScroll.swift`).
+- Produces: `ShopItemCard.onBuy: (CGPoint?) -> Void` (where its Buy button is); `ShopView.buy(_:at:)`. No new types.
+
+Why here: the approved design's "shop purchase (coin burst)" lives on the Shop page, and a conversion on the Points page is the same event as the coins card's (Task 26), so it bursts too. While these three Rewards pages are open, they take the phase-2 refresh fix that phase 2 deferred to phase 5 for every pushed page: `.refreshable { await load() }` cancelled its own requests on device, because the loads write state the page reads; `.detachedRefresh` runs the work on its own task. And their loaders no longer store a cancelled load as a failure (`APIClient` wraps a cancellation as `APIError.transport`).
+
+Rules (repeat): celebrate once, only after the server confirmed — the burst sits on the success path of `buy` / `convert`, which run once per confirmation and are never retried; error ≠ empty; a cancellation is never a failure.
+
+- [ ] **Step 1: The shop — the Buy button says where it is, a confirmed purchase bursts there**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+    @Environment(\.horizontalSizeClass) private var sizeClass
+```
+with:
+
+```swift
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(CelebrationCenter.self) private var celebrations
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+    @State private var confirming: ShopItem?
+```
+with:
+
+```swift
+    @State private var confirming: ShopItem?
+    /// Where the confirmed item's Buy button is — the coin bursts from there.
+    @State private var confirmingPoint: CGPoint?
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+        .task { await load() }
+        .refreshable { await load() }
+        .alert(
+            confirming.map { Text(verbatim: "Buy \($0.name)?") } ?? Text(verbatim: ""),
+            isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+            presenting: confirming
+        ) { item in
+            Button("Buy") { Task { await buy(item) } }
+```
+with:
+
+```swift
+        .task { await load() }
+        .detachedRefresh { await load() }
+        .alert(
+            confirming.map { Text(verbatim: "Buy \($0.name)?") } ?? Text(verbatim: ""),
+            isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
+            presenting: confirming
+        ) { item in
+            Button("Buy") { Task { await buy(item, at: confirmingPoint) } }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+                                buying: purchasingId == item.id
+                            ) {
+                                confirming = item
+                            }
+```
+with:
+
+```swift
+                                buying: purchasingId == item.id
+                            ) { point in
+                                confirmingPoint = point
+                                confirming = item
+                            }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+        } catch {
+            shopFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            shopFailed = true
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+        } catch {
+            ordersFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            ordersFailed = true
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+    @MainActor
+    private func buy(_ item: ShopItem) async {
+        guard purchasingId == nil else { return }
+        purchasingId = item.id
+        let api = ShopAPI(client: session.client)
+        do {
+            let result = try await api.purchase(itemId: item.id)
+            toast = RewardsToastMessage(
+```
+with:
+
+```swift
+    @MainActor
+    private func buy(_ item: ShopItem, at point: CGPoint?) async {
+        guard purchasingId == nil else { return }
+        purchasingId = item.id
+        let api = ShopAPI(client: session.client)
+        do {
+            let result = try await api.purchase(itemId: item.id)
+            // The server took the order: a coin bursts from the button that bought it.
+            celebrations.coinBurst(at: point)
+            toast = RewardsToastMessage(
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+    /// This one is the purchase in flight.
+    let buying: Bool
+    let onBuy: () -> Void
+```
+with:
+
+```swift
+    /// This one is the purchase in flight.
+    let buying: Bool
+    /// Asked to buy; hands over where the Buy button is, so a confirmed purchase bursts there.
+    let onBuy: (CGPoint?) -> Void
+
+    @State private var buySpot = FrameBox()
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+                    Button(action: onBuy) {
+```
+with:
+
+```swift
+                    Button { onBuy(buySpot.rect.celebrationPoint) } label: {
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift` — replace:
+
+```swift
+                    .buttonStyle(ShopBuyButtonStyle())
+                    .disabled(!item.canBuy || busy)
+```
+with:
+
+```swift
+                    .buttonStyle(ShopBuyButtonStyle())
+                    .disabled(!item.canBuy || busy)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { buySpot.rect = $0 }
+```
+
+- [ ] **Step 2: Points — a confirmed conversion bursts; refresh detached; no cancelled failure**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+struct PointsView: View {
+    @Environment(Session.self) private var session
+```
+with:
+
+```swift
+struct PointsView: View {
+    @Environment(Session.self) private var session
+    @Environment(CelebrationCenter.self) private var celebrations
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+        .task { await load() }
+        .refreshable { await load() }
+```
+with:
+
+```swift
+        .task { await load() }
+        .detachedRefresh { await load() }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+        } catch {
+            meFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            meFailed = true
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+        } catch {
+            rulesFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            rulesFailed = true
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+        } catch {
+            walletFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            walletFailed = true
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift` — replace:
+
+```swift
+            let result = try await api.convert(points: conversion.asked)
+            rewards = rewards?.applying(result.balances)
+```
+with:
+
+```swift
+            let result = try await api.convert(points: conversion.asked)
+            rewards = rewards?.applying(result.balances)
+            // Coins were minted — the server said so.
+            celebrations.coinBurst(at: nil)
+```
+
+- [ ] **Step 3: Leaderboard — refresh detached; no cancelled failure**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/LeaderboardView.swift` — replace:
+
+```swift
+        .refreshable {
+            async let board: Void = loadBoard()
+            async let extras: Void = loadExtras()
+            _ = await (board, extras)
+        }
+```
+with:
+
+```swift
+        .detachedRefresh {
+            async let board: Void = loadBoard()
+            async let extras: Void = loadExtras()
+            _ = await (board, extras)
+        }
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Rewards/LeaderboardView.swift` — replace:
+
+```swift
+        } catch {
+            filtersFailed = true
+        }
+```
+with:
+
+```swift
+        } catch {
+            guard !Task.isCancelled else { return }
+            filtersFailed = true
+        }
+```
+
+- [ ] **Step 4: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. Then `grep -n "\.refreshable" ios/MasterSAT/Sources/Screens/Rewards/*.swift` prints nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Rewards/ShopView.swift \
+        ios/MasterSAT/Sources/Screens/Rewards/PointsView.swift \
+        ios/MasterSAT/Sources/Screens/Rewards/LeaderboardView.swift
+git commit -m "feat(ios): a coin bursts on every purchase and conversion; the Rewards pages refresh without cancelling themselves
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 28: Words — "Review today", search, and the lists in look A
+
+**Files:**
+- Create: `ios/MasterSAT/Sources/Screens/Vocabulary/WordsTodayCards.swift`
+- Modify (rewrite): `ios/MasterSAT/Sources/Screens/Vocabulary/VocabularyView.swift`
+- Modify: `ios/MasterSAT/Sources/Screens/Vocabulary/VocabComponents.swift` (`VocabSetCard`, `VocabSectionCard`)
+
+**Interfaces:**
+- Consumes: `VocabReview`, `VocabReview.Next`, `VocabReview.HomeworkSet`, `VocabReview.bestSet(in:)` (Task 22); `StudentAPI.vocabularySections()`, `.myVocabularySets()`, `.vocabularyHomework()`, `.vocabularySection(id:)`, `.searchVocabularyWords(_:)`, `.deleteVocabularySet(id:)`; `VocabHomeworkGroup.outstanding(in:)`, `DueLabel`, `TabRootScroll`, `SegmentBar`, `IconTile`, `Overline`, `DashedEmpty`, `VocabErrorNotice`, `VocabEmptyState`, `VocabWordRow`, `VocabSetView`, `VocabSectionView`, `CustomSetBuilderView`, `VocabGameGuide`, `VocabDueChip`, `FlowLayout`, `PrimaryButtonStyle` (existing).
+- Produces: `ReviewTodayCard { enum State { loading, failed, ready(VocabReview) } }`, `WordSearchField`, `VocabSearchRow`; `VocabularyView.Segment` (`homework`, `bank`, `mine`) replaces `VocabularyView.Tab`; `VocabularyView.Route` is unchanged (the homework card and the set page use it).
+
+What changes for the student:
+- **"Review today" (look A, amber tile)** — the bank's words still to master (exact, per section — Task 22), "N mastered so far", and **Next up**: the word homework due soonest that is not mastered ("Unit 3 · Set 2 — English homework · Due Thu · 2 games to go"), or, with none, the section with the most words still to master. **Start** opens it: the homework set bound to its homework (`assignmentId`, so the run is credited to it); for a section, one read of the section, then its set with the most words still to master — and the section page if that read fails (it explains itself). All caught up / nothing yet are states, not errors. The hero needs BOTH the bank and the homework (it chooses between them), so if either has never loaded and failed, it says so with Try again — never "all caught up". A reload that fails keeps the last good answer.
+- **Search** the whole bank from the tab (two letters or more, after a 300 ms pause; a newer keystroke cancels the older search). A failed search says so — it is not "no matches". Results show which section a word comes from (the same word is a row in every section that teaches it).
+- **Homework · Word bank · My sets** in a `SegmentBar`; the tab opens on Homework when there is any, else on the bank — decided once, and never after the student picked. "New set" moves from the old gradient hero to the top of My sets.
+- **Look A:** the set card gets an amber word tile, one quiet meta line ("12 words · 2/4 games") and a compact action capsule; the section card and the homework card take the shared `cardStyle` (the old hairline and top-edge gradient go). The four games guide stays under the lists.
+
+Rules (repeat): tab roots push VALUES only (`path.append(Route…)` / `NavigationLink(value:)`), and a root push is guarded by `path.isEmpty` so a double tap stacks nothing; the root reloads in `.onAppear` and refreshes through `TabRootScroll(onRefresh:)`; error ≠ empty and a cancellation is never a failure (guard with `Task.isCancelled`); guard no-op writes on state the root reads; Words = `Theme.amber`, actions stay brand blue (white on amber fails contrast); English, growth-oriented copy ("still to master", "to go", "Catch up · Tue" via `DueLabel` — never "overdue").
+
+- [ ] **Step 1: The tab's new cards**
+
+**Create** `ios/MasterSAT/Sources/Screens/Vocabulary/WordsTodayCards.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+/// "Review today": the bank's words still to master, and the one set Start opens.
+///
+/// There is no spaced repetition on the server, so nothing here says "due": the number is the
+/// words not yet mastered, and Start opens the most useful set (`VocabReview`). All caught up and
+/// nothing yet are states to show, not failures; a failure says so and offers Try again.
+struct ReviewTodayCard: View {
+    enum State: Equatable {
+        case loading
+        case failed
+        case ready(VocabReview)
+    }
+
+    let state: State
+    /// Start is reading a section to pick its set.
+    let starting: Bool
+    let onStart: () -> Void
+    let retry: @MainActor () async -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                IconTile(systemName: "character.book.closed.fill", tone: Theme.amber, size: 40)
+                Overline("Review today")
+                Spacer(minLength: 0)
+            }
+            content
+        }
+        .cardStyle(padding: 18)
+    }
+
+    @ViewBuilder private var content: some View {
+        switch state {
+        case .loading:
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: "000 words still to master")
+                    .font(.system(size: 22, weight: .heavy, design: .rounded))
+                    .redacted(reason: .placeholder)
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .fill(Theme.surface2)
+                    .frame(height: 64)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Loading today's review")
+        case .failed:
+            VocabErrorNotice(
+                title: "Today's review couldn't load",
+                message: "Your words and progress are safe — this card just couldn't work out what's next.",
+                retry: retry
+            )
+        case .ready(let review):
+            ready(review)
+        }
+    }
+
+    @ViewBuilder private func ready(_ review: VocabReview) -> some View {
+        switch review.next {
+        case .homework(let set):
+            count(review)
+            nextUp(title: set.title, detail: homeworkDetail(set))
+            startButton
+        case .section(_, let title, let left):
+            count(review)
+            nextUp(title: title, detail: "\(left) words to master in this section — Start opens its fullest set")
+            startButton
+        case .caughtUp:
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 28))
+                    .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("All caught up")
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                    Text("Every word is mastered. Play any set to keep them fresh.")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        case .nothingYet:
+            VStack(alignment: .leading, spacing: 3) {
+                Text("No words to review yet")
+                    .font(.system(size: 18, weight: .heavy, design: .rounded))
+                Text("When a teacher sets word homework or publishes a list, it lands here.")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder private func count(_ review: VocabReview) -> some View {
+        if review.wordsToMaster > 0 {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(ScoreText.string(review.wordsToMaster))
+                        .font(.system(size: 34, weight: .black, design: .rounded))
+                        .contentTransition(.numericText(value: Double(review.wordsToMaster)))
+                    Text(review.wordsToMaster == 1 ? "word still to master" : "words still to master")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                if review.wordsMastered > 0 {
+                    Text(verbatim: "\(review.wordsMastered) mastered so far")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textLabel)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func nextUp(title: String, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Overline("Next up")
+            Text(title)
+                .font(.system(size: 16, weight: .heavy))
+                .lineLimit(2)
+            Text(detail)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.amberSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .accessibilityElement(children: .combine)
+    }
+
+    private func homeworkDetail(_ set: VocabReview.HomeworkSet) -> String {
+        let games = "\(set.gamesLeft) \(set.gamesLeft == 1 ? "game" : "games") to go"
+        return [set.assignmentTitle, DueLabel.text(set.dueAt)?.text, games]
+            .compactMap { $0 }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+
+    private var startButton: some View {
+        Button(action: onStart) {
+            HStack(spacing: 8) {
+                if starting {
+                    ProgressView().tint(.white)
+                } else {
+                    Image(systemName: "play.fill").font(.system(size: 13, weight: .bold))
+                }
+                Text(starting ? "Opening…" : "Start")
+            }
+        }
+        .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+        .disabled(starting)
+    }
+}
+
+/// The bank search on the tab — a field, not the navigation bar's: a tab root hides its bar.
+struct WordSearchField: View {
+    @Binding var query: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityHidden(true)
+            TextField("Search words or definitions", text: $query)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+            if !query.isEmpty {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").foregroundStyle(Theme.textLabel)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+            }
+        }
+        .font(.system(size: 15, weight: .medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .background(Theme.card, in: Capsule())
+    }
+}
+
+/// One search result: the word, and the section it comes from — the same word is a separate
+/// row in every section that teaches it, and they would otherwise look identical.
+struct VocabSearchRow: View {
+    let word: VocabWord
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let section = word.sectionTitle, !section.isEmpty {
+                Overline("From \(section)")
+            }
+            VocabWordRow(word: word)
+        }
+    }
+}
+```
+
+- [ ] **Step 2: Rebuild the tab root**
+
+**Rewrite** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabularyView.swift`:
+
+```swift
+import SwiftUI
+import MasterSATKit
+
+/// The Words tab: "Review today" — the words still to master and the one set Start opens — a
+/// search of the whole bank, then the three places a set lives: word homework, the bank, and
+/// the student's own sets. The four games sit under the lists, because they are how a set from
+/// any of the three is studied.
+///
+/// Each list loads, fails and retries on its own, as the web's do. The hero needs the bank AND
+/// the homework — it chooses between them — so it waits for both, and says so when either has
+/// never loaded, rather than calling a student "all caught up" on half the facts.
+struct VocabularyView: View {
+    enum Segment: Hashable { case homework, bank, mine }
+
+    /// Pages this root pushes. Each is a VALUE on `path` — a `NavigationLink { destination }`
+    /// never enters the path, so re-tapping the tab (or a link to it) could not pop it. The
+    /// title travels with the id: the page shows it while its own load is in flight.
+    enum Route: Hashable {
+        case section(id: Int, title: String)
+        case set(id: Int, title: String, assignmentId: Int? = nil)
+    }
+
+    private enum Phase: Equatable { case loading, loaded, failed }
+    private enum SearchPhase: Equatable { case idle, searching, done, failed }
+
+    @Binding var path: NavigationPath
+
+    @Environment(Session.self) private var session
+    @State private var sections: [VocabSection] = []
+    @State private var mySets: [VocabMySet] = []
+    @State private var groups: [VocabHomeworkGroup] = []
+    @State private var sectionsPhase: Phase = .loading
+    @State private var mySetsPhase: Phase = .loading
+    @State private var homeworkPhase: Phase = .loading
+    /// Loaded at least once in this view's life — a failed reload keeps the last good answer.
+    @State private var sectionsKnown = false
+    @State private var homeworkKnown = false
+    @State private var segment: Segment = .homework
+    /// The opening segment is chosen once, from the first homework answer — never after the
+    /// student has picked one.
+    @State private var segmentPicked = false
+    @State private var isBuilding = false
+    @State private var pendingDelete: VocabMySet?
+    @State private var isDeleting = false
+    @State private var deleteError: String?
+    @State private var startingReview = false
+    @State private var query = ""
+    @State private var results: [VocabWord] = []
+    @State private var searchPhase: SearchPhase = .idle
+    @State private var shown = false
+
+    /// Sets owed on homework: not yet MASTERED, not merely not started. Zero is not shown.
+    private var outstanding: Int { VocabHomeworkGroup.outstanding(in: groups) }
+
+    private var searchText: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isSearching: Bool { searchText.count >= 2 }
+
+    private var reviewState: ReviewTodayCard.State {
+        if sectionsKnown && homeworkKnown {
+            return .ready(VocabReview(sections: sections, homework: groups))
+        }
+        if sectionsPhase == .failed || homeworkPhase == .failed { return .failed }
+        return .loading
+    }
+
+    var body: some View {
+        NavigationStack(path: $path) {
+            TabRootScroll(tab: .words, onRefresh: { await load() }) {
+                VStack(alignment: .leading, spacing: 16) {
+                    AppHeader(title: "Words").stagger(0, shown: shown)
+
+                    ReviewTodayCard(state: reviewState, starting: startingReview, onStart: startReview) {
+                        await load()
+                    }
+                    .stagger(1, shown: shown)
+
+                    WordSearchField(query: $query).stagger(2, shown: shown)
+
+                    if isSearching {
+                        searchResults
+                    } else {
+                        SegmentBar(
+                            items: [
+                                .init(segment: Segment.homework, title: outstanding > 0 ? "Homework · \(outstanding)" : "Homework"),
+                                .init(segment: Segment.bank, title: "Word bank"),
+                                .init(segment: Segment.mine, title: "My sets"),
+                            ],
+                            selection: $segment
+                        )
+                        .stagger(3, shown: shown)
+
+                        Group {
+                            switch segment {
+                            case .homework: homeworkList
+                            case .bank: bankList
+                            case .mine: mineList
+                            }
+                        }
+                        .stagger(4, shown: shown)
+
+                        VocabGameGuide()
+                            .padding(.top, 4)
+                    }
+                }
+                .padding(16)
+            }
+            .background(Theme.background)
+            .navigationTitle("Words")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: Route.self) { route in
+                switch route {
+                case .section(let id, let title): VocabSectionView(sectionId: id, title: title)
+                case .set(let id, let title, let assignmentId):
+                    VocabSetView(setId: id, title: title, assignmentId: assignmentId)
+                }
+            }
+            .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
+            .onAppear {
+                if !shown { shown = true }
+                Task { await load() }
+            }
+            // A newer keystroke cancels the older search; a cancelled search stores nothing.
+            .task(id: searchText) { await search(searchText) }
+            .onChange(of: segment) { _, _ in
+                if !segmentPicked { segmentPicked = true }
+            }
+            .sheet(isPresented: $isBuilding) {
+                CustomSetBuilderView { saved in
+                    isBuilding = false
+                    if saved { Task { await load() } }
+                }
+            }
+            .alert(
+                "Delete this set?",
+                isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
+                presenting: pendingDelete
+            ) { set in
+                Button("Keep it", role: .cancel) { pendingDelete = nil }
+                Button("Delete set", role: .destructive) { Task { await delete(set) } }
+            } message: { set in
+                Text(verbatim: "“\(set.title)” and its word list will be removed. Your progress on the words themselves is kept.")
+            }
+            .alert(
+                "Couldn't delete that set",
+                isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })
+            ) {
+                Button("OK", role: .cancel) { deleteError = nil }
+            } message: {
+                Text(verbatim: deleteError ?? "")
+            }
+        }
+    }
+
+    // MARK: - Review today
+
+    /// Start: the homework set bound to its homework, or — for a section — one read of it, then
+    /// its set with the most words still to master (the section page if the read fails). A root
+    /// push: a second tap while the first is in flight stacks nothing.
+    private func startReview() {
+        guard case .ready(let review) = reviewState, !startingReview, path.isEmpty else { return }
+        switch review.next {
+        case .homework(let set):
+            path.append(Route.set(id: set.setId, title: set.title, assignmentId: set.assignmentId))
+        case .section(let id, let title, _):
+            startingReview = true
+            Task {
+                let detail = try? await session.student.vocabularySection(id: id)
+                startingReview = false
+                // The student went somewhere else meanwhile: leave them there.
+                guard path.isEmpty else { return }
+                if let detail, let best = VocabReview.bestSet(in: detail) {
+                    path.append(Route.set(id: best.id, title: best.title))
+                } else {
+                    path.append(Route.section(id: id, title: title))
+                }
+            }
+        case .caughtUp, .nothingYet:
+            break
+        }
+    }
+
+    // MARK: - Search
+
+    @ViewBuilder private var searchResults: some View {
+        switch searchPhase {
+        case .idle, .searching:
+            ProgressView()
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 40)
+                .accessibilityLabel("Searching")
+        case .failed:
+            VocabErrorNotice(
+                title: "Search didn't go through",
+                message: "Check your connection and try again."
+            ) { await search(searchText) }
+        case .done:
+            if results.isEmpty {
+                DashedEmpty(title: "No matches for “\(searchText)”", hint: "Try a shorter word, or part of a definition.")
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(results) { VocabSearchRow(word: $0) }
+                }
+            }
+        }
+    }
+
+    @MainActor
+    private func search(_ text: String) async {
+        guard text.count >= 2 else {
+            if !results.isEmpty { results = [] }
+            if searchPhase != .idle { searchPhase = .idle }
+            return
+        }
+        if searchPhase != .searching { searchPhase = .searching }
+        // Wait for a pause in the typing; a newer keystroke cancels this one here.
+        do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+        do {
+            let found = try await session.student.searchVocabularyWords(text)
+            guard !Task.isCancelled, text == searchText else { return }
+            results = found
+            searchPhase = .done
+        } catch {
+            guard !Task.isCancelled, text == searchText else { return }
+            searchPhase = .failed
+        }
+    }
+
+    // MARK: - Homework
+
+    @ViewBuilder
+    private var homeworkList: some View {
+        switch homeworkPhase {
+        case .loading where groups.isEmpty:
+            loadingSlot
+        case .failed where groups.isEmpty:
+            VocabErrorNotice(title: "Couldn't load your homework") { await loadHomework() }
+        default:
+            if groups.isEmpty {
+                VocabEmptyState(
+                    icon: "graduationcap",
+                    title: "No vocabulary homework right now",
+                    message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the word bank."
+                )
+            } else {
+                VStack(spacing: 18) {
+                    ForEach(groups) { VocabHomeworkGroupCard(group: $0) }
+                }
+            }
+        }
+    }
+
+    // MARK: - Word bank
+
+    @ViewBuilder
+    private var bankList: some View {
+        switch sectionsPhase {
+        case .loading where sections.isEmpty:
+            loadingSlot
+        case .failed where sections.isEmpty:
+            VocabErrorNotice(title: "Couldn't load the word bank") { await loadSections() }
+        default:
+            if sections.isEmpty {
+                VocabEmptyState(
+                    icon: "books.vertical",
+                    title: "No word lists published yet",
+                    message: "Your teachers publish vocabulary sections here. In the meantime you can build a set of your own.",
+                    actionTitle: "Build my own set",
+                    action: { isBuilding = true }
+                )
+            } else {
+                VStack(spacing: 14) {
+                    ForEach(sections) { section in
+                        NavigationLink(value: Route.section(id: section.id, title: section.title)) {
+                            VocabSectionCard(section: section)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - My sets
+
+    @ViewBuilder
+    private var mineList: some View {
+        switch mySetsPhase {
+        case .loading where mySets.isEmpty:
+            loadingSlot
+        case .failed where mySets.isEmpty:
+            VocabErrorNotice(title: "Couldn't load your sets") { await loadMySets() }
+        default:
+            if mySets.isEmpty {
+                VocabEmptyState(
+                    icon: "sparkles",
+                    title: "Make a set of the words you keep missing",
+                    message: "Pull any words from the word bank into a set of your own, then study it with all four games.",
+                    actionTitle: "New set",
+                    action: { isBuilding = true }
+                )
+            } else {
+                VStack(spacing: 14) {
+                    HStack {
+                        Text("Sets you built")
+                            .font(.system(size: 15, weight: .heavy))
+                        Spacer()
+                        Button { isBuilding = true } label: {
+                            Label("New set", systemImage: "plus")
+                                .font(.system(size: 13, weight: .heavy))
+                        }
+                        .buttonStyle(PressBounce())
+                        .foregroundStyle(Theme.accent)
+                    }
+                    ForEach(mySets) { set in
+                        NavigationLink(value: Route.set(id: set.id, title: set.title)) {
+                            VocabSetCard(
+                                title: set.title,
+                                wordCount: set.wordCount,
+                                completed: set.completed,
+                                mastery: set.mastery,
+                                subtitle: createdLabel(set.createdAt),
+                                reservesTrailingControl: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        // Laid over the link, not inside it: a button inside a link's label
+                        // competes with the link for the same tap.
+                        .overlay(alignment: .topTrailing) {
+                            Button { pendingDelete = set } label: {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(Theme.textSecondary)
+                                    .frame(width: 36, height: 36)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(isDeleting)
+                            .accessibilityLabel("Delete \(set.title)")
+                            .padding(.top, 10)
+                            .padding(.trailing, 8)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private var loadingSlot: some View {
+        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+    }
+
+    private func createdLabel(_ iso: String?) -> String? {
+        guard let iso, let date = JSONCoding.parseServerDate(iso) else { return nil }
+        let f = DateFormatter()
+        f.locale = .autoupdatingCurrent
+        f.setLocalizedDateFormatFromTemplate("MMMdyyyy")
+        return "Created \(f.string(from: date))"
+    }
+
+    // MARK: - Loading
+
+    @MainActor
+    private func load() async {
+        async let bank: Void = loadSections()
+        async let mine: Void = loadMySets()
+        async let assigned: Void = loadHomework()
+        _ = await (bank, mine, assigned)
+    }
+
+    @MainActor
+    private func loadSections() async {
+        if sections.isEmpty, sectionsPhase != .loading { sectionsPhase = .loading }
+        do {
+            let fresh = try await session.student.vocabularySections()
+            if sections != fresh { sections = fresh }
+            if sectionsPhase != .loaded { sectionsPhase = .loaded }
+            if !sectionsKnown { sectionsKnown = true }
+        } catch {
+            guard !Task.isCancelled else { return }
+            sectionsPhase = .failed
+        }
+    }
+
+    @MainActor
+    private func loadMySets() async {
+        if mySets.isEmpty, mySetsPhase != .loading { mySetsPhase = .loading }
+        do {
+            let fresh = try await session.student.myVocabularySets()
+            if mySets != fresh { mySets = fresh }
+            if mySetsPhase != .loaded { mySetsPhase = .loaded }
+        } catch {
+            guard !Task.isCancelled else { return }
+            mySetsPhase = .failed
+        }
+    }
+
+    @MainActor
+    private func loadHomework() async {
+        if groups.isEmpty, homeworkPhase != .loading { homeworkPhase = .loading }
+        do {
+            let fresh = try await session.student.vocabularyHomework()
+            if groups != fresh { groups = fresh }
+            if homeworkPhase != .loaded { homeworkPhase = .loaded }
+            if !homeworkKnown { homeworkKnown = true }
+            if !segmentPicked {
+                segmentPicked = true
+                let opening: Segment = fresh.isEmpty ? .bank : .homework
+                if segment != opening { segment = opening }
+            }
+        } catch {
+            guard !Task.isCancelled else { return }
+            homeworkPhase = .failed
+        }
+    }
+
+    @MainActor
+    private func delete(_ set: VocabMySet) async {
+        pendingDelete = nil
+        isDeleting = true
+        defer { isDeleting = false }
+        do {
+            try await session.student.deleteVocabularySet(id: set.id)
+            mySets.removeAll { $0.id == set.id }
+        } catch let error as APIError {
+            deleteError = error.errorDescription
+        } catch {
+            deleteError = error.localizedDescription
+        }
+    }
+}
+
+/// One homework that carries word sets: its title, the class, the deadline, how many of its
+/// sets have been started — and the sets themselves, each opened bound to THIS homework.
+///
+/// The binding is the point. The same set can sit under two homeworks here (two classrooms,
+/// or re-assigned for revision), and the two cards then differ only by the assignment they
+/// carry; without it the server binds every run to whichever is newest.
+struct VocabHomeworkGroupCard: View {
+    let group: VocabHomeworkGroup
+
+    private var allDone: Bool { group.isComplete }
+    private var late: Bool { DueLabel.text(group.dueAt)?.late ?? false }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .top, spacing: 12) {
+                IconTile(
+                    systemName: "graduationcap.fill",
+                    tone: allDone ? Theme.success : Theme.amber,
+                    size: 40
+                )
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(group.assignmentTitle)
+                        .font(.system(size: 17, weight: .heavy))
+                        .lineLimit(2)
+                    FlowLayout(spacing: 6) {
+                        if let name = group.classroomName, !name.isEmpty {
+                            if let classroomId = group.classroomId {
+                                NavigationLink(value: AppLink.classroom(id: classroomId)) {
+                                    classroomChip(name)
+                                }
+                                .buttonStyle(.plain)
+                            } else {
+                                classroomChip(name)
+                            }
+                        }
+                        VocabDueChip(dueAt: group.dueAt)
+                    }
+                }
+                Spacer(minLength: 0)
+                // "Done" is any game finished on the set; the segment's count is mastery.
+                if allDone {
+                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.sets.count)) complete",
+                         icon: "checkmark.circle.fill", tone: .success)
+                } else {
+                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.sets.count)) done",
+                         tone: late ? .warning : .neutral)
+                }
+            }
+
+            ForEach(group.sets) { set in
+                NavigationLink(value: VocabularyView.Route.set(id: set.id, title: set.title, assignmentId: group.assignmentId)) {
+                    VocabSetCard(
+                        title: set.title,
+                        wordCount: set.wordCount,
+                        completed: set.completed,
+                        mastery: set.mastery,
+                        subtitle: set.sectionTitle,
+                        actionLabel: "Start"
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .cardStyle(padding: 16)
+        .overlay {
+            if allDone {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
+    }
+
+    private func classroomChip(_ name: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "person.2.fill").font(.system(size: 10, weight: .bold))
+            Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+        }
+        .foregroundStyle(Theme.textSecondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Theme.surface2))
+    }
+}
+```
+
+- [ ] **Step 3: The set card and the section card in look A**
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabComponents.swift` — replace:
+
+```swift
+struct VocabSetCard: View {
+    let title: String
+    let wordCount: Int
+    /// Any one game finished — only ever "Keep going", never the badge.
+    let completed: Bool
+    let mastery: VocabSetMastery
+    var subtitle: String?
+    var actionLabel = "Practice"
+    /// Room on the right for a control laid over the card (My sets' delete).
+    var reservesTrailingControl = false
+
+    private var mastered: Bool { mastery.isMastered }
+    private var chipInk: Color { mastered ? VocabPalette.mastered.ink : Theme.accent }
+    private var chipFill: Color { mastered ? VocabPalette.mastered.solid.opacity(0.12) : Theme.accent.opacity(0.10) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(mastered ? Theme.successSoft : Theme.accentSoft)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: mastered ? "checkmark.circle.fill" : "book")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(mastered ? Theme.success : Theme.accent)
+                    )
+
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    FlowLayout(spacing: 6) {
+                        VocabMetaChip(
+                            icon: "textformat",
+                            text: "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")",
+                            ink: chipInk,
+                            fill: chipFill
+                        )
+                        VocabMetaChip(
+                            icon: "gamecontroller.fill",
+                            text: "\(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games",
+                            ink: chipInk,
+                            fill: chipFill
+                        )
+                        if let subtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(Theme.textSecondary)
+                                .lineLimit(1)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Theme.surface2))
+                        }
+                    }
+                }
+                Spacer(minLength: 0)
+                if mastered {
+                    Chip(text: "Mastered", icon: "checkmark.circle.fill", tone: .success)
+                }
+                if reservesTrailingControl {
+                    Color.clear.frame(width: 30, height: 30)
+                }
+            }
+
+            VocabMasteryBar(mastery: mastery)
+
+            HStack(spacing: 7) {
+                Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
+                Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
+                    .font(.system(size: 14, weight: .bold))
+            }
+            .foregroundStyle(mastered ? Theme.accent : Color.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
+                    .fill(mastered ? Theme.surface2 : Theme.accent)
+            )
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .stroke(mastered ? Theme.success.opacity(0.4) : Theme.separator.opacity(0.5),
+                        lineWidth: mastered ? 1 : 0.5)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .contentShape(Rectangle())
+    }
+}
+```
+with:
+
+```swift
+struct VocabSetCard: View {
+    let title: String
+    let wordCount: Int
+    /// Any one game finished — only ever "Keep going", never the badge.
+    let completed: Bool
+    let mastery: VocabSetMastery
+    var subtitle: String?
+    var actionLabel = "Practice"
+    /// Room on the right for a control laid over the card (My sets' delete).
+    var reservesTrailingControl = false
+
+    private var mastered: Bool { mastery.isMastered }
+
+    /// The two numbers a student acts on, in one quiet line.
+    private var meta: String {
+        let words = "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")"
+        return "\(words) · \(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                // Words wear amber; a mastered set wears success.
+                IconTile(
+                    systemName: mastered ? "checkmark.circle.fill" : "character.book.closed.fill",
+                    tone: mastered ? Theme.success : Theme.amber,
+                    size: 40
+                )
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 16, weight: .heavy))
+                        .foregroundStyle(.primary)
+                        .multilineTextAlignment(.leading)
+                        .lineLimit(2)
+                    Text(meta)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.textLabel)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 0)
+                if mastered {
+                    Chip(text: "Mastered", icon: "checkmark.circle.fill", tone: .success)
+                }
+                if reservesTrailingControl {
+                    Color.clear.frame(width: 30, height: 30)
+                }
+            }
+
+            HStack(spacing: 12) {
+                VocabMasteryBar(mastery: mastery, height: 8)
+                // What the link does, drawn as a capsule — the card is the one target.
+                HStack(spacing: 5) {
+                    Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
+                    Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(mastered ? Theme.accent : Color.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(mastered ? Theme.surface2 : Theme.accent))
+                .fixedSize()
+            }
+        }
+        .cardStyle(padding: 16)
+        .contentShape(Rectangle())
+    }
+}
+```
+
+**Edit** `ios/MasterSAT/Sources/Screens/Vocabulary/VocabComponents.swift` — replace:
+
+```swift
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.card)
+        .overlay(alignment: .top) { VocabTopEdge(colour: tone.solid) }
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .stroke(done ? Theme.success.opacity(0.4) : Theme.separator.opacity(0.5), lineWidth: done ? 1 : 0.5)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .contentShape(Rectangle())
+    }
+}
+```
+with:
+
+```swift
+        // Look A: the shared card. The section's colour stays in its marks — tile, chips, ring,
+        // bar — and a finished section keeps its success edge.
+        .cardStyle(padding: 18)
+        .overlay {
+            if done {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
+        .contentShape(Rectangle())
+    }
+}
+```
+
+- [ ] **Step 4: Build**
+
+Run the build check. Expected: `exit=0`, `** BUILD SUCCEEDED **`. `grep -rn "VocabularyView.Tab" ios/MasterSAT/Sources` prints nothing.
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git add ios/MasterSAT/Sources/Screens/Vocabulary/WordsTodayCards.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/VocabularyView.swift \
+        ios/MasterSAT/Sources/Screens/Vocabulary/VocabComponents.swift
+git commit -m "feat(ios): Words — review today with one Start, search the bank, and the lists in the new look
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 29: Run it, prove it, open the PR
+
+**Files:** none (verification). Run by the controller, not a subagent.
+
+- [ ] **Step 1: Kit green**
+
+Run: `cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSATKit && swift test 2>&1 | tail -2`
+Expected: `✔ Test run with 721 tests … passed` (694 + 11 + 10 + 6). Only a literal pass counts.
+
+- [ ] **Step 2: A local backend with phase-3 facts on it**
+
+Migrate and seed exactly as Task 9 Step 2, run Task 19's `/tmp/seed_phase2.py` (the word homework and the "Phase 2" section are Words' fixtures; it is idempotent), and start the `ios-redesign-backend` preview. Then save as `/tmp/seed_phase3.py`:
+
+```python
+from django.contrib.auth import get_user_model
+from rewards import services
+from rewards.models import StudentStrike
+from shop.models import ShopItem
+
+U = get_user_model()
+owner = U.objects.get(email="uat_owner@mastersat.test")
+s1 = U.objects.get(email="uat_s1@mastersat.test")
+
+# Three students well ahead of s1 on the all-time board, named, so the hero has someone to pass
+# and the strike board has runs.
+for first, last, xp, run in (("Malika", "Karimova", 400, 8), ("Jasur", "Toirov", 300, 6), ("Dilnoza", "Rahimova", 250, 5)):
+    u, _ = U.objects.get_or_create(
+        email=f"uat_p3_{first.lower()}@mastersat.test",
+        defaults={"username": f"uat_p3_{first.lower()}", "first_name": first, "last_name": last})
+    services.award(u, "MANUAL", idempotency_key=f"p3-seed-{u.pk}", points=xp, actor=owner, reason="phase 3 demo")
+    StudentStrike.objects.update_or_create(student=u, defaults={"current_streak": run, "best_streak": run + 2})
+
+# s1: XP below Dilnoza, a four-lesson run (best nine), points for a few coins.
+services.award(s1, "MANUAL", idempotency_key="p3-seed-s1", points=120, actor=owner, reason="phase 3 demo")
+StudentStrike.objects.update_or_create(student=s1, defaults={"current_streak": 4, "best_streak": 9, "spent_in_streak": 0})
+
+ShopItem.objects.get_or_create(name="MasterSAT notebook", defaults={
+    "description": "Squared paper, 80 pages.", "currency": ShopItem.CURRENCY_COIN, "price": 2,
+    "stock": 10, "is_active": True, "created_by": owner})
+ShopItem.objects.get_or_create(name="Sticker pack", defaults={
+    "currency": ShopItem.CURRENCY_STRIKE, "price": 2, "stock": 10, "is_active": True, "created_by": owner})
+print("phase 3 fixtures ready")
+```
+
+And `/tmp/seed_phase3_away.py` — what happens "while the student is away" (run it in Step 3, item 7):
+
+```python
+from django.contrib.auth import get_user_model
+from rewards import services
+from rewards.models import StudentStrike
+
+U = get_user_model()
+owner = U.objects.get(email="uat_owner@mastersat.test")
+s1 = U.objects.get(email="uat_s1@mastersat.test")
+services.award(s1, "ATTENDANCE_PRESENT", idempotency_key="p3-away-attendance", actor=owner)
+services.award(s1, "CLASSWORK_MANUAL", idempotency_key="p3-away-classwork", points=140, actor=owner, reason="phase 3 demo")
+record = StudentStrike.objects.get(student=s1)
+record.current_streak += 1
+record.best_streak = max(record.best_streak, record.current_streak)
+record.save()
+print("away changes ready")
+```
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/backend
+SECRET_KEY=dev-secret DEBUG=True ~/.pyenv/versions/3.12.2/bin/python3 manage.py shell -c "exec(open('/tmp/seed_phase3.py').read())"
+git -C .. status --short   # nothing new under backend/ (db.sqlite3 is gitignored)
+```
+Expected: `phase 3 fixtures ready`.
+
+- [ ] **Step 3: Run on the simulator against it**
+
+Build (the build check), then:
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign/ios/MasterSAT
+xcrun simctl boot "iPhone 17 Pro" 2>/dev/null
+xcrun simctl install booted build/dd/Build/Products/Debug-iphonesimulator/MasterSAT.app
+xcrun simctl launch booted uz.mastersat.app -apiBaseURL "http://localhost:8000"
+```
+Sign in as `uat_s1@mastersat.test` (password in `seed_classroom_uat.py`). Screenshot each item (`sleep 2; xcrun simctl io booted screenshot <name>.png`):
+
+1. **First launch celebrates nothing:** right after sign-in no XP flies, the flame does not grow, no trophy card (there was no baseline on this phone).
+2. **Trophy hero:** Rewards → a chunky amber card: the trophy plays once, "#N" with "overall · all time", and "M XP to pass Dilnoza" where N and M match the seeded board (Dilnoza 250 XP sits directly above s1 unless other local students have more XP than s1 — then it names whoever is directly above). Tap → the full leaderboard opens; Back.
+3. **Streak and coins:** "4 lessons in a row", "Best: 9" (flame looping); the coins card shows coins to spend and "Convert points". Convert → the alert names the points and the coins → Convert → a coin bursts from the card, success haptic, the note says what was converted, the coin count rolls; the header's XP does not move.
+4. **The board:** XP · All time lists Malika, Jasur, Dilnoza… and s1's own row in the chunky blue style (after "…" if below the top five); This month re-asks (a spinner, then the month's board); Strikes: the window chips disappear, rows read "8 in a row", "6 in a row"…, the server's sentence about runs shows under them; back to XP. Selection haptic on each chip and segment.
+5. **Where your XP came from:** the newest earnings, green "+N"; a survey row (points only) is NOT listed; "All your points" opens Points.
+6. **Shop:** the Shop card → Buy "MasterSAT notebook" → confirm → a coin bursts from that Buy button, the toast confirms; pull to refresh (a long swipe) → no "isn't loading" error appears.
+7. **While you were away:** send the app to the background (`xcrun simctl launch booted com.apple.Preferences`), run `/tmp/seed_phase3_away.py` the same way as the seed, then bring the app back (`xcrun simctl launch booted uz.mastersat.app -apiBaseURL "http://localhost:8000"`). Expected, on whichever tab is open: the header pill keeps the OLD number (never shows the new total first), "+145 XP" (140 for the classwork + the attendance rule's 5) rises mid-screen with the caption "Classwork awarded by a teacher + 1 more" (or the server's label for those events), lands on the pill, which rolls up and pulses once; the flame grows and its number rolls 4 → 5; after the landing the trophy card slides up — "You moved up to #N" over a star burst, "Overall · all time · up from #N+1" (s1's 120 + 145 = 265 passes Dilnoza's 250). "See the board" → Rewards at its root, the hero shows the new place.
+8. **Relaunch celebrates nothing:** kill the app (`xcrun simctl terminate booted uz.mastersat.app`) and launch it → nothing flies or grows (the baseline was written).
+9. **Words:** the hero reads "N words still to master", "Next up: Phase 2 set — Phase 2 · five words · Due … · N games to go" (or "Catch up · …" if the seed is older than its deadline); Start → the set page opens bound to that homework; Back. Segments Homework · Word bank · My sets, opening on Homework. Type "bri" → "brisk", captioned "From Phase 2"; stop the backend preview and search "can" → "Search didn't go through" (not "No matches"); start it again.
+10. **Reduce Motion** (`xcrun simctl spawn booted defaults write com.apple.Accessibility ReduceMotionEnabled -bool true`, relaunch): background the app, award once more (`services.award(s1, "MANUAL", idempotency_key="p3-away-rm", points=10, actor=owner)` and `current_streak += 1` in a shell), bring it back → no flight, the pill's number just changes, the flame does not grow; VoiceOver (if on) hears "10 XP earned while you were away."; a conversion shows a still coin that fades; the trophy card (if a place was gained) fades in with a still trophy and no star burst. Turn it off (`-bool false`), relaunch.
+11. **Under the Me sheet:** avatar → Overview → Shop → buy → no coin burst under the sheet (by design), the toast says it went through.
+12. **Dark mode** (`xcrun simctl ui booted appearance dark`): Rewards and Words readable, the chunky edges visible; back to light.
+13. **Bottom clearance:** the shop card on Rewards and the four-games guide on Words scroll fully above the floating bar.
+
+Not reproducible locally (say so in the PR): "Keep earning XP to climb" needs a student past the 50-row page with a gap (covered by `LeaderboardPassTests.belowThePage`); "All caught up" needs every bank word mastered (covered by `VocabReviewTests.endStates`).
+
+Record a 45-second walk-through of items 2, 3, 4 and 7 in the background: `xcrun simctl io booted recordVideo --codec h264 /tmp/phase3.mp4` (Ctrl-C to stop).
+
+- [ ] **Step 4: Nothing unexpected in the tree, every commit by Viltrumlik**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git status --short                                   # empty
+git log --format='%an <%ae> %s' origin/main..HEAD | grep -v "Viltrumlik <viltrumlik@gmail.com>" || echo "all Viltrumlik"
+```
+
+- [ ] **Step 5: Push and open the PR (merge after #305)**
+
+```bash
+cd /Users/macbook/Projects/dsat-wt-ios-redesign
+git push origin HEAD:refs/heads/feat/ios-redesign-phase3
+gh pr create --base main --head feat/ios-redesign-phase3 \
+  --title "iOS redesign — phase 3: Rewards and Words, while you were away (merge after #305)" --body-file /tmp/pr-phase3.md
+```
+`/tmp/pr-phase3.md` says: **stacked on #305 (itself on #304) — merge those first; until then this diff includes phases 1–2**; what changed (Rewards: trophy hero on the global all-time board with the student to pass, streak and coins cards with convert, the board XP | Strikes, where XP came from, the shop; "while you were away": the XP flight with its caption, the flame, the trophy card; a coin burst on purchases and conversions; Words: Review today with one Start, search, the lists in look A; the phase-2 dip / backstop / all-done fixes); what did not (no backend change; the full leaderboard page is still XP-only; focus zones are phase 4); the Step 3 checklist with results, including what could not be seen locally; and ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
+
+- [ ] **Step 6: iOS 17 / 18**
+
+Run `xcrun simctl list runtimes | grep -E "iOS 1[78]"`. If a runtime is there, create a device on it, install, and repeat items 2, 3, 7 and 9; note the results in the PR. If none is installed, write under "Not verified" that the iOS 17/18 paths are unchecked and leave the ~8 GB runtime download to the owner.
+
+- [ ] **Step 7: Send the owner the demo**
+
+Send the screenshots and `/tmp/phase3.mp4` (SendUserFile), one line per item to look at. Merge only after the owner's "ha", and after #304 and #305.
 
 ## Phase 4 — Focus zones (outline)
 
@@ -6216,3 +10853,30 @@ Carried into later phases (found in phase 2 reviews, deliberately deferred):
   - `RoadmapView:136` pushes `ClassesListView` ("Go to Classes") — switch it to `router.show(.classes)`.
 - **Later / perf:** `TodayPlan` rebuilt several times per render and ~7 requests per return to Today; 2N sequential People requests under All; the three identical `load*` methods in `ClassSectionsModel`; its refresh stamp is set at load start; the Schedule segment's state resets per switch and a cancel without a restart would leave its spinner; same-name class tie-break, `isMath` trim, `LatestOnly` never-issued tickets, `ClassSourceState` has no test (move it to the kit).
 - **Owner:** check phases 1–2 once on an iOS 18 (zoom transition) and ideally iOS 17 simulator runtime — only iOS 26.3 is installed (~8 GB download). TestFlight needs a paid Apple Developer account.
+
+## Phase 3 outcome (2026-10-21) and what it hands to later phases
+
+Done on `feat/ios-redesign-phase3` (PR "merge after #305"): Tasks 20–28 with their fix rounds, one final-review fix wave (5 commits). Kit 740 tests. Every task was reviewed; the whole branch (opus) said "with fixes" → fixed and re-reviewed clean. Device-checked on the iOS 26.3 simulator against a local backend with synthetic data, including Reduce Motion and a purchase inside the Me sheet.
+
+Decisions taken during phase 3 that later phases build on (rulings P3-R1..R14 in the PR):
+- **The Rewards hero is the global, all-time rank** (owner, 2026-10-21) from `LeaderboardQuery.heroBoard` (`limit=200`); "N XP to pass <name>" only when every student ahead is in the response; the welcome-back check reads the same board.
+- **Points ≠ XP.** `XPLedger` decides per event like the server's `_rule_grants_xp` (a rule's flag when one exists, else XP unless SURVEY); the welcome-back caption uses the same rule and the loaded rules.
+- **Every recorded celebration entry is resolved** (`record`/`recordAway` are not discardable); a pending entry holds the pill (`held(xpNow:)`), so the header never shows a total before its flight.
+- **A return plays flight → flame → card, and only then does the Rewards hub read again** (`AwayCheck.run` → `.read`, `CelebrationCenter.whenQuiet`); a failed or skipped check never reloads it. A rank-up that could not be read or shown stays `rankUnread` across launches.
+- **Lottie bursts end blank**: `.still` and Reduce Motion use each asset's `restProgress`; bursts never loop by default.
+- **Look B is `ChunkySurface`** (no clip, no full width) — motivation surfaces only.
+- **Words counts words still to master across the bank** (no "due" exists server-side); zero-word sets are never owed, never Start's target, never a Start card; `VocabReview` is built only from two successful loads.
+- **A strike-shop purchase gets no coin burst** (toast + haptic) — spending strikes isn't a coin moment (owner may revisit).
+- **The DEBUG simulator build must be pinned to the local backend** (`simctl spawn booted defaults write uz.mastersat.app apiBaseURL http://localhost:8000`): a relaunch without the launch argument reaches production with whatever session the keychain holds.
+
+Carried into later phases (found in phase 3 reviews, deliberately deferred):
+- **Phase 4:** a refresh mid-session (xpBefore captured at session start) can still drop the pill un-animated at hand-in.
+- **Phase 5:**
+  - The hub's own `load()` (tab open, pull, "See the board") is not gated by `whenQuiet` — opening Rewards mid-flight can still show the new place early; `whenQuiet` is not re-asked from `celebrate`'s resolve, the Low-Power release or a Reduce-Motion toggle (the hub then waits for the next open); `dismissRankUp` may replay an identical rise from an overlapping check.
+  - A hub read that finds an XP rise with no check pending rolls the pill without a flight (phase-1 behaviour).
+  - VoiceOver: no focus move to the rank-up card; dimmed search results announce nothing; the coins card's focus after a convert; `.low` priority of the rank line unverified on device; `VocabEmptySetRow` contrast.
+  - Rewards: duplicate `loadSection` on re-appear; `loadHero` has no ordering guard; XP-MONTH and Strikes share one slot (spinner on every toggle); Points unreachable from the tab while `/rewards/me/` fails; no own-row line on Strikes; the hero grows ~12 pt when the pass line wraps; "N XP to pass Student" for a nameless row; a failed same-query leaderboard pull is silent; Points' "couldn't confirm" line outlives a successful pull; move `heroBoard` to the kit with a test.
+  - Words: the hero stays above search results (small phones with the keyboard up); Today's `HomeworkProgress.isDone` still treats an empty word set as unfinished (goes with the Me-sheet `isDone` item).
+  - Celebrations: a replayed all-done has no hero bounce; burst rest frames are hand-synced to the generator keyframes.
+  - Tests/docs: `historyWindow` (50) mirrors the backend without a drift test; `AwayCheck.remember()`'s decision table lives in the app target (move to the kit); missing kit tests listed in the phase 3 reviews (decrease-before-resolve, LastSeen nil round-trip, merged away+task label); the AwayCheck header and `Outcome.read` doc nits.
+- **Owner:** check phases 1–3 once on an iOS 18 and ideally iOS 17 simulator runtime (only iOS 26.3 is installed, ~8 GB); TestFlight needs a paid Apple Developer account.

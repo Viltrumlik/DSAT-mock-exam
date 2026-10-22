@@ -26,15 +26,19 @@ public struct CelebrationQueue: Sendable, Equatable {
     public struct Flight: Sendable, Equatable, Identifiable {
         public let id: Int
         public let amount: Int
+        /// A caption under "+N XP" — set by a "while you were away" gain, nil for a task's.
+        public let label: String?
     }
 
     struct Entry: Sendable, Equatable {
         let id: Int
-        let work: FinishedWork
+        /// Nil for a "while you were away" gain: nothing was handed in, so there is no check.
+        let work: FinishedWork?
         let xpBefore: Int?
         var effortShown: Bool
         /// Nil while the refresh is out; 0 once it said nothing was earned, or nothing may fly.
         var gain: Int?
+        var label: String?
     }
 
     private(set) var entries: [Entry] = []
@@ -51,6 +55,30 @@ public struct CelebrationQueue: Sendable, Equatable {
         entries.reduce(0) { $0 + ($1.gain ?? 0) } + flying.reduce(0) { $0 + $1.amount }
     }
 
+    /// XP the header holds back, given the total `/rewards/me/` last said (`xpNow`).
+    ///
+    /// `held` is the confirmed gains whose flight has not landed. This adds the gains that are
+    /// not confirmed yet: while an entry still waits for its refresh, every XP above the lowest
+    /// total a pending entry will measure from is a gain a flight is about to bring, so it is
+    /// held too. A refresh that lands before its entry resolves then shows the old total
+    /// instead of the new one, and nothing dips back when the entry resolves (phase 2 hand-off).
+    ///
+    /// So every entry that is recorded MUST be resolved: an entry left pending holds the header
+    /// back for good. `resolve(id, xpAfter: nil, ...)` abandons one (a failed read) — it
+    /// measures nothing and stops holding.
+    public func held(xpNow: Int?) -> Int {
+        guard let xpNow, let floor = pendingFloor else { return held }
+        return held + max(0, xpNow - floor)
+    }
+
+    /// The lowest total a pending entry will measure its gain from (`resolve`'s floor).
+    private var pendingFloor: Int? {
+        entries
+            .filter { $0.gain == nil }
+            .compactMap { entry in entry.xpBefore.map { max($0, measuredUpTo ?? $0) } }
+            .min()
+    }
+
     public var isEmpty: Bool { entries.isEmpty && flying.isEmpty }
 
     /// A check and confetti still waiting for the stage.
@@ -62,13 +90,31 @@ public struct CelebrationQueue: Sendable, Equatable {
     public func isFlying(_ id: Int) -> Bool { flying.contains { $0.id == id } }
 
     /// A task was finished. Its check plays now only when the stage can be seen; otherwise
-    /// `takeEfforts` hands it out later.
-    @discardableResult
+    /// `takeEfforts` hands it out later. The id MUST be resolved (see `held(xpNow:)`), so the
+    /// result is not discardable.
     public mutating func record(_ work: FinishedWork, xpBefore: Int?, stageVisible: Bool) -> (id: Int, playNow: Bool) {
         let id = nextID
         nextID += 1
-        entries.append(Entry(id: id, work: work, xpBefore: xpBefore, effortShown: stageVisible, gain: nil))
+        entries.append(Entry(id: id, work: work, xpBefore: xpBefore, effortShown: stageVisible, gain: nil, label: nil))
         return (id, stageVisible)
+    }
+
+    /// "While you were away": XP the student has not seen, measured from what the header last
+    /// showed them (`xpSeen`, nil on the first launch) by the read that is about to go out.
+    /// Recorded BEFORE that read, so a rise landing meanwhile is held at once. No check, no
+    /// confetti — only a flight, once `resolve` says what was gained.
+    ///
+    /// The id MUST be resolved (see `held(xpNow:)`), so the result is not discardable.
+    ///
+    /// A task that resolves before this entry absorbs the away gain: its read raises
+    /// `measuredUpTo` past this entry's floor, so the gain is counted once, never twice. The part
+    /// of the rise the task did not measure (below its own start) is then not flown — it lands
+    /// silently when the pill catches up.
+    public mutating func recordAway(xpSeen: Int?) -> Int {
+        let id = nextID
+        nextID += 1
+        entries.append(Entry(id: id, work: nil, xpBefore: xpSeen, effortShown: true, gain: nil, label: nil))
+        return id
     }
 
     /// The checks still to show, now that the stage can be seen. Each is handed out once.
@@ -77,20 +123,26 @@ public struct CelebrationQueue: Sendable, Equatable {
         var shown: [FinishedWork] = []
         for index in entries.indices where !entries[index].effortShown {
             entries[index].effortShown = true
-            shown.append(entries[index].work)
+            if let work = entries[index].work { shown.append(work) }
         }
         dropSettled()
         return shown
     }
 
     /// The refresh after a task came back. Nothing earned — or no flights allowed — holds nothing.
-    public mutating func resolve(_ id: Int, xpAfter: Int?, allowsFlights: Bool) {
-        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+    /// `label` captions the flight (a "while you were away" gain names what was earned). Returns
+    /// the gain it measured — also under Reduce Motion, where nothing is held, so the app can
+    /// still say it to VoiceOver.
+    @discardableResult
+    public mutating func resolve(_ id: Int, xpAfter: Int?, allowsFlights: Bool, label: String? = nil) -> Int {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return 0 }
         let floor = entries[index].xpBefore.map { max($0, measuredUpTo ?? $0) }
         let gain = XPDelta.gain(before: floor, after: xpAfter)
         if let xpAfter { measuredUpTo = max(measuredUpTo ?? xpAfter, xpAfter) }
         entries[index].gain = allowsFlights ? gain : 0
+        if let label { entries[index].label = label }
         dropSettled()
+        return gain
     }
 
     /// One flight carrying every confirmed gain whose check has played — when the stage can be
@@ -105,7 +157,11 @@ public struct CelebrationQueue: Sendable, Equatable {
         guard !ready.isEmpty else { return nil }
         let readyIDs = Set(ready.map(\.id))
         entries.removeAll { readyIDs.contains($0.id) }
-        let flight = Flight(id: nextID, amount: ready.reduce(0) { $0 + ($1.gain ?? 0) })
+        let flight = Flight(
+            id: nextID,
+            amount: ready.reduce(0) { $0 + ($1.gain ?? 0) },
+            label: ready.last(where: { $0.label != nil })?.label
+        )
         nextID += 1
         flying.append(flight)
         return flight

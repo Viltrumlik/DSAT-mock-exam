@@ -5,19 +5,23 @@ import MasterSATKit
 ///
 /// Three rules this screen keeps that are easy to break:
 ///
-/// - **Ranks are the server's.** On main today the table's ranks are unique (ties broken by
-///   earning count) while `my` shares a tied rank. The app shows what it is sent and never
-///   renumbers; where the two could disagree on one screen, the visible row wins (`standing`).
+/// - **Ranks are the server's.** On main today the table and `my` number ties the same way
+///   (competition ranks: tied students share a place). The app shows what it is sent and never
+///   renumbers; where the two could still disagree on one screen, the visible row wins (`standing`).
 /// - **The goal is only ever the next place.** "N XP to reach #k", measured against the row
 ///   directly above — never the distance from the top.
 /// - **No email is ever a name.** A student with no name set comes back as their full address;
 ///   `LeaderboardRow.displayName` shows the part before the @.
 struct LeaderboardView: View {
     @Environment(Session.self) private var session
+    @Environment(RewardsStore.self) private var rewards
 
     /// Global and all-time by default — the web's defaults.
     @State private var query = LeaderboardQuery()
     @State private var board: LeaderboardBoard?
+    /// The query `board` answers. A board is only kept through a failed read of the same
+    /// query: it is the last good answer to what is being asked, not to a chip since changed.
+    @State private var boardQuery: LeaderboardQuery?
     @State private var boardFailed = false
     @State private var isLoading = true
     @State private var filters: LeaderboardFilters?
@@ -44,7 +48,7 @@ struct LeaderboardView: View {
         // can never overwrite a newer board.
         .task(id: query) { await loadBoard() }
         .task { await loadExtras() }
-        .refreshable {
+        .detachedRefresh {
             async let board: Void = loadBoard()
             async let extras: Void = loadExtras()
             _ = await (board, extras)
@@ -384,10 +388,17 @@ struct LeaderboardView: View {
             let fresh = try await api.board(asked)
             guard !Task.isCancelled, asked == query else { return }
             board = fresh
+            boardQuery = asked
             boardFailed = false
+            // The default slice is the one the "while you were away" baseline follows; what the
+            // student has seen here is not news the next time they come back.
+            if asked == LeaderboardQuery() { rewards.noteRank(fresh.standing?.rank) }
         } catch {
             guard !Task.isCancelled, asked == query else { return }
-            boardFailed = true
+            // A pull that fails on a flaky connection leaves the working board where it is;
+            // only a board that answers something else (or none yet) gives way to the error.
+            let unanswered = board == nil || boardQuery != asked
+            if boardFailed != unanswered { boardFailed = unanswered }
         }
         isLoading = false
     }
@@ -411,6 +422,7 @@ struct LeaderboardView: View {
                 query.scope = .global
             }
         } catch {
+            guard !Task.isCancelled else { return }
             filtersFailed = true
         }
     }

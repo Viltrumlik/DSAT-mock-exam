@@ -7,8 +7,17 @@ public enum LeaderboardScope: String, Sendable, Hashable, CaseIterable {
     case global = "GLOBAL"
 }
 
-/// What a board is being asked for. Everything the web sends, and nothing it does not: `limit`
-/// and `level` go out only as their server defaults, so they are not sent at all.
+/// What a board ranks: XP earned, or the run of lessons attended right now (`?metric=STRIKES`,
+/// the server's #302). The strike board ranks the RUN, never the spendable balance.
+public enum LeaderboardMetric: String, Sendable, Hashable, CaseIterable {
+    case xp = "XP"
+    case strikes = "STRIKES"
+}
+
+/// What a board is being asked for. Everything the web sends, and nothing it does not: `level`
+/// goes out only as its server default, so it is not sent at all. `limit` is sent only when a
+/// caller asks for a page size (the Rewards hero asks for the server's maximum, so its "to pass"
+/// line reaches past the default top 50); with none, the server's default page is what comes back.
 public struct LeaderboardQuery: Sendable, Hashable {
     public static let allTime = "ALL"
     public static let thisMonth = "MONTH"
@@ -23,30 +32,52 @@ public struct LeaderboardQuery: Sendable, Hashable {
     /// Only means anything on the global board. Kept while another tab is open — the web keeps
     /// it too — but never sent there: inside "My Branch" the scope has already decided it.
     public var branchId: Int?
+    /// XP by default — the server's default, so it is only ever sent as `STRIKES`.
+    public var metric: LeaderboardMetric
+    /// How many rows to ask for; nil asks for the server's default page (50) and sends nothing.
+    /// Not a filter: it does not count toward `activeFilterCount`, appears in no `summary`, and
+    /// `resetFilters` leaves it alone. Sent as given — the server clamps it to 1…200.
+    public var limit: Int?
 
-    public init(scope: LeaderboardScope = .global, window: String = LeaderboardQuery.allTime, subject: String? = nil, branchId: Int? = nil) {
+    public init(
+        scope: LeaderboardScope = .global,
+        window: String = LeaderboardQuery.allTime,
+        subject: String? = nil,
+        branchId: Int? = nil,
+        metric: LeaderboardMetric = .xp,
+        limit: Int? = nil
+    ) {
         self.scope = scope
         self.window = window
         self.subject = subject
         self.branchId = branchId
+        self.metric = metric
+        self.limit = limit
     }
 
     /// Whether the branch filter applies to the board being asked for.
     public var branchApplies: Bool { scope == .global && branchId != nil }
 
     public var queryItems: [URLQueryItem] {
-        var items = [
-            URLQueryItem(name: "scope", value: scope.rawValue),
-            URLQueryItem(name: "window", value: window),
-        ]
-        if let subject, !subject.isEmpty { items.append(URLQueryItem(name: "subject", value: subject)) }
+        var items = [URLQueryItem(name: "scope", value: scope.rawValue)]
+        if metric == .strikes {
+            // A run is now, and it belongs to the student rather than to a subject: the server
+            // forces all time and ignores the subject on this board, so neither is sent.
+            items.append(URLQueryItem(name: "metric", value: metric.rawValue))
+        } else {
+            items.append(URLQueryItem(name: "window", value: window))
+            if let subject, !subject.isEmpty { items.append(URLQueryItem(name: "subject", value: subject)) }
+        }
         if branchApplies, let branchId { items.append(URLQueryItem(name: "branch", value: String(branchId))) }
+        if let limit { items.append(URLQueryItem(name: "limit", value: String(limit))) }
         return items
     }
 
-    /// How many filters are narrowing the board — the badge on the Filters button.
+    /// How many filters are narrowing the board — the badge on the Filters button. On the strike
+    /// board only the branch narrows anything.
     public var activeFilterCount: Int {
-        (window != Self.allTime ? 1 : 0) + (subject != nil ? 1 : 0) + (branchApplies ? 1 : 0)
+        if metric == .strikes { return branchApplies ? 1 : 0 }
+        return (window != Self.allTime ? 1 : 0) + (subject != nil ? 1 : 0) + (branchApplies ? 1 : 0)
     }
 
     /// Back to all time, all subjects, all branches. The scope tab is not a filter.
@@ -84,9 +115,9 @@ public struct LeaderboardSummaryPart: Sendable, Equatable, Hashable {
 
 /// One student on a board.
 public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hashable {
-    /// The SERVER's rank, shown as-is. The app never ranks anybody: on main today the table's
-    /// ranks are unique (ties broken by earning count) while `my` shares a tied rank, and a
-    /// client that "fixed" either would disagree with the site.
+    /// The SERVER's rank, shown as-is. The app never ranks anybody: on main today the table and
+    /// `my` number ties the same way (competition ranks — tied students share a place, and the
+    /// next is skipped), and a client that renumbered either would disagree with the site.
     public let rank: Int
     public let studentId: Int
     /// As the server wrote it — which, for a student with no name set, can be a full email
@@ -100,6 +131,8 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
     public let branch: String?
     public let region: String?
     public let isMe: Bool
+    /// The run of lessons attended — filled on the strike board only (`xp` is 0 there).
+    public let strikes: Int?
 
     public var id: Int { studentId }
 
@@ -112,7 +145,8 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
         awards: Int = 0,
         branch: String? = nil,
         region: String? = nil,
-        isMe: Bool = false
+        isMe: Bool = false,
+        strikes: Int? = nil
     ) {
         self.rank = rank
         self.studentId = studentId
@@ -123,10 +157,11 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
         self.branch = branch
         self.region = region
         self.isMe = isMe
+        self.strikes = strikes
     }
 
     enum CodingKeys: String, CodingKey {
-        case rank, name, xp, awards, branch, region
+        case rank, name, xp, awards, branch, region, strikes
         case studentId = "student_id"
         case profileImageURL = "profile_image_url"
         case isMe = "is_me"
@@ -143,6 +178,7 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
         branch = c.rewardsString(.branch).flatMap { $0.isEmpty ? nil : $0 }
         region = c.rewardsString(.region).flatMap { $0.isEmpty ? nil : $0 }
         isMe = c.rewardsBool(.isMe) ?? false
+        strikes = c.rewardsInt(.strikes)
     }
 
     /// The name to put on screen. See `LeaderboardName.display`.
@@ -188,6 +224,12 @@ public enum LeaderboardName {
         return !domain.isEmpty && domain.contains(".") && !domain.hasPrefix(".") && !domain.hasSuffix(".")
     }
 
+    /// The first word of a shown name — "Malika" for "Malika Karimova" — for a line that names
+    /// somebody in passing. "Student" when there is nothing to show.
+    public static func firstName(_ name: String) -> String {
+        name.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? "Student"
+    }
+
     /// First letters of the first two words, upper-cased; "?" when there are none.
     public static func initials(_ name: String) -> String {
         let letters = name
@@ -209,8 +251,27 @@ public struct LeaderboardGoal: Sendable, Equatable {
     public var text: String { "\(xp) XP to reach #\(rank)" }
 }
 
+/// "120 XP to pass Malika" — the next student up, by name. Growth-oriented by construction: it
+/// names the one place to take next, never the distance from the top.
+public struct LeaderboardPass: Sendable, Equatable {
+    public let name: String
+    public let xp: Int
+    public let rank: Int
+
+    public init(name: String, xp: Int, rank: Int) {
+        self.name = name
+        self.xp = xp
+        self.rank = rank
+    }
+
+    public var text: String { "\(xp) XP to pass \(name)" }
+}
+
 /// `GET /api/rewards/leaderboard/`.
 public struct LeaderboardBoard: Decodable, Sendable, Equatable {
+    /// What this board ranks — the meta the server sends back. An older server that never sent
+    /// it only ever had the XP board.
+    public let metric: LeaderboardMetric
     public let scope: String
     public let window: String
     public let branchId: Int?
@@ -227,6 +288,7 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
     public let my: LeaderboardRow?
 
     public init(
+        metric: LeaderboardMetric = .xp,
         scope: String = LeaderboardScope.global.rawValue,
         window: String = LeaderboardQuery.allTime,
         branchId: Int? = nil,
@@ -238,6 +300,7 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         rows: [LeaderboardRow],
         my: LeaderboardRow?
     ) {
+        self.metric = metric
         self.scope = scope
         self.window = window
         self.branchId = branchId
@@ -251,7 +314,7 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case scope, window, subject, level, count, rows, my
+        case metric, scope, window, subject, level, count, rows, my
         case branchId = "branch_id"
         case classroomId = "classroom_id"
         case scopeNote = "scope_note"
@@ -263,6 +326,7 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         // standings, and one that dropped all of them would read as "nobody here yet".
         let rows = try c.decodeIfPresent([LeaderboardRow].self, forKey: .rows) ?? []
         self.init(
+            metric: c.rewardsString(.metric).flatMap { LeaderboardMetric(rawValue: $0.uppercased()) } ?? .xp,
             scope: c.rewardsString(.scope) ?? LeaderboardScope.global.rawValue,
             window: c.rewardsString(.window) ?? LeaderboardQuery.allTime,
             branchId: c.rewardsInt(.branchId),
@@ -290,8 +354,9 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         return rows.first { $0.studentId == my.studentId }
     }
 
-    /// The standing the hero shows. The visible row beats `my`: on main `my` shares a tied rank
-    /// while the table breaks the tie, and the two must not disagree on one screen.
+    /// The standing the hero shows. The visible row beats `my`: it is the row the table shows, so
+    /// the hero and the table can never name two places on one screen (on main both number ties
+    /// the same way, but `my` is a separate read).
     public var standing: LeaderboardRow? { myVisibleRow ?? my }
 
     /// "Your position" is shown on its own only when the viewer is not already in the table —
@@ -305,7 +370,8 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
     /// the last visible row is the very next rank up; anything else would be a number to take on
     /// trust. Nil at #1, and when the row above shares their rank.
     public var goal: LeaderboardGoal? {
-        guard let my else { return nil }
+        // An XP gap means nothing on the strike board.
+        guard metric == .xp, let my else { return nil }
         if let index = rows.firstIndex(where: { $0.studentId == my.studentId }) {
             let me = rows[index]
             guard index > 0 else { return nil }
@@ -315,6 +381,33 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         }
         guard let last = rows.last, last.rank == my.rank - 1 else { return nil }
         return LeaderboardGoal(xp: max(1, last.xp - my.xp + 1), rank: last.rank)
+    }
+
+    /// The student to pass next, by name — the Rewards hero's line.
+    ///
+    /// Offered only when EVERY student ranked ahead of the viewer is in this response. Ranks are
+    /// competition ranks, so exactly `rank − 1` students are ahead; when all of them are here,
+    /// the nearest is the one directly above. A viewer past the page with a gap the response
+    /// does not show gets no line rather than a guess. A tie-mate printed above is not "above" —
+    /// passing them changes no number — so the line names the nearest better rank. Nil at #1,
+    /// without a standing, and on the strike board.
+    ///
+    /// Only meaningful on the global, all-time XP board — the one the Rewards hero asks for. On a
+    /// filtered board (one subject, this month, one branch) the row above is the next student
+    /// within that slice, not the student to pass overall.
+    public var passTarget: LeaderboardPass? {
+        guard metric == .xp, let me = standing, me.rank > 1 else { return nil }
+        let ahead = rows.filter { $0.rank < me.rank && $0.studentId != me.studentId }
+        // By rank, not by position: the nearest better rank is the largest one still ahead. Of a
+        // tie at that rank the one printed last is named — the row directly above the viewer.
+        guard ahead.count == me.rank - 1,
+              let above = ahead.enumerated().max(by: { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) })?.element
+        else { return nil }
+        return LeaderboardPass(
+            name: LeaderboardName.firstName(above.displayName),
+            xp: max(1, above.xp - me.xp + 1),
+            rank: above.rank
+        )
     }
 
     /// The goal, when the viewer is standing on the podium — it is shown under the podium then.

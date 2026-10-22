@@ -145,39 +145,20 @@ public enum VocabSectionTone: String, CaseIterable, Sendable {
     }
 }
 
-// MARK: - Hub arithmetic
-
-/// The four totals on the vocabulary hub's hero, summed across every published section.
-public struct VocabHubTotals: Equatable, Sendable {
-    public let words: Int
-    public let wordsMastered: Int
-    public let sets: Int
-    public let setsMastered: Int
-
-    public init(sections: [VocabSection]) {
-        var words = 0, wordsMastered = 0, sets = 0, setsMastered = 0
-        for section in sections {
-            words += section.wordCount
-            wordsMastered += section.progress.mastered
-            sets += section.setCount
-            setsMastered += section.mastery.masteredSets
-        }
-        self.words = words
-        self.wordsMastered = wordsMastered
-        self.sets = sets
-        self.setsMastered = setsMastered
-    }
-}
-
 extension VocabHomeworkGroup {
-    /// Sets in this homework with at least one game finished — the "{done} / {n}" pill.
+    /// Sets in this homework with words to play. A set with no words has nothing to learn and the
+    /// server never calls one mastered, so it is never owed — here, in `outstandingCount`, in
+    /// `isComplete`, and in the Words tab's "Review today" (`VocabReview`) alike.
+    public var playableCount: Int { sets.filter { $0.wordCount > 0 }.count }
+
+    /// Playable sets with at least one game finished — the "{done} / {playable}" pill.
     /// Weaker than mastery on purpose: it tells a student they have started.
-    public var doneCount: Int { sets.filter(\.completed).count }
+    public var doneCount: Int { sets.filter { $0.wordCount > 0 && $0.completed }.count }
 
     /// Sets still owed: a homework set is owed until all four games are clean, so counting
     /// the ones merely started would tell a student they were finished when the homework
-    /// still scores three quarters.
-    public var outstandingCount: Int { sets.filter { !$0.mastery.isMastered }.count }
+    /// still scores three quarters. A set with no words is never owed.
+    public var outstandingCount: Int { sets.filter { $0.wordCount > 0 && !$0.mastery.isMastered }.count }
 
     /// What the Homework tab badges. Zero is not shown.
     public static func outstanding(in groups: [VocabHomeworkGroup]) -> Int {

@@ -218,10 +218,10 @@ struct VocabWordStatusPill: View {
 
 /// One study set, wherever it appears — a section's list, My sets, a homework group.
 ///
-/// A mastered set says so three ways, so it reads at a glance: a success tile, the "Mastered"
-/// pill and a success ring on the card. Short of that the card shows how many games are left,
-/// which is the number a student can act on. It is the label of a link; the button inside is
-/// what the link looks like, not a second target.
+/// A mastered set says so two ways, so it reads at a glance: a success tile and the "Mastered"
+/// pill. Short of that the card shows how many games are left, which is the number a student
+/// can act on, in one quiet line under the title. It is the label of a link; the capsule inside
+/// is what the link looks like, not a second target.
 struct VocabSetCard: View {
     let title: String
     let wordCount: Int
@@ -234,49 +234,45 @@ struct VocabSetCard: View {
     var reservesTrailingControl = false
 
     private var mastered: Bool { mastery.isMastered }
-    private var chipInk: Color { mastered ? VocabPalette.mastered.ink : Theme.accent }
-    private var chipFill: Color { mastered ? VocabPalette.mastered.solid.opacity(0.12) : Theme.accent.opacity(0.10) }
+
+    private var words: String { "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")" }
+
+    /// The two numbers a student acts on, in one quiet line.
+    private var meta: String {
+        "\(words) · \(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games"
+    }
+
+    /// The same two numbers, said once: the line is the card's only statement of them, so the
+    /// bar beside the capsule stays silent rather than read "2 of 4" a second time.
+    private var spokenMeta: String {
+        "\(words), \(ScoreText.string(mastery.masteredModes)) of \(ScoreText.string(mastery.totalModes)) games mastered"
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(mastered ? Theme.successSoft : Theme.accentSoft)
-                    .frame(width: 40, height: 40)
-                    .overlay(
-                        Image(systemName: mastered ? "checkmark.circle.fill" : "book")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(mastered ? Theme.success : Theme.accent)
-                    )
-
-                VStack(alignment: .leading, spacing: 7) {
+                // Words wear amber; a mastered set wears success.
+                IconTile(
+                    systemName: mastered ? "checkmark.circle.fill" : "character.book.closed.fill",
+                    tone: mastered ? Theme.success : Theme.amber,
+                    size: 40
+                )
+                VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.system(size: 16, weight: .heavy))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
-                    FlowLayout(spacing: 6) {
-                        VocabMetaChip(
-                            icon: "textformat",
-                            text: "\(ScoreText.string(wordCount)) \(wordCount == 1 ? "word" : "words")",
-                            ink: chipInk,
-                            fill: chipFill
-                        )
-                        VocabMetaChip(
-                            icon: "gamecontroller.fill",
-                            text: "\(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes)) games",
-                            ink: chipInk,
-                            fill: chipFill
-                        )
-                        if let subtitle, !subtitle.isEmpty {
-                            Text(subtitle)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Capsule().fill(Theme.surface2))
-                        }
+                    Text(meta)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityLabel(spokenMeta)
+                    if let subtitle, !subtitle.isEmpty {
+                        Text(subtitle)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.textLabel)
+                            .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -288,40 +284,60 @@ struct VocabSetCard: View {
                 }
             }
 
-            VocabMasteryBar(mastery: mastery)
-
-            HStack(spacing: 7) {
-                Image(systemName: "play.fill").font(.system(size: 11, weight: .bold))
-                Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
-                    .font(.system(size: 14, weight: .bold))
+            HStack(spacing: 12) {
+                VocabMasteryBar(mastery: mastery, height: 8)
+                    .accessibilityHidden(true)
+                // What the link does, drawn as a capsule — the card is the one target.
+                HStack(spacing: 5) {
+                    Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
+                    Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(mastered ? Theme.accent : Color.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(Capsule().fill(mastered ? Theme.surface2 : Theme.accent))
+                .fixedSize()
             }
-            .foregroundStyle(mastered ? Theme.accent : Color.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(mastered ? Theme.surface2 : Theme.accent)
-            )
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .stroke(mastered ? Theme.success.opacity(0.4) : Theme.separator.opacity(0.5),
-                        lineWidth: mastered ? 1 : 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .cardStyle(padding: 16)
         .contentShape(Rectangle())
+    }
+}
+
+/// A set a homework carries that has no words yet: listed, so the homework says what it holds,
+/// but not a link — there is nothing to play, and a Start card would open an empty page.
+struct VocabEmptySetRow: View {
+    let title: String
+    var subtitle: String?
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            IconTile(systemName: "character.book.closed.fill", tone: Theme.textSecondary, size: 40)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.system(size: 16, weight: .heavy))
+                    .foregroundStyle(.primary)
+                    .multilineTextAlignment(.leading)
+                    .lineLimit(2)
+                Text(subtitle.flatMap { $0.isEmpty ? nil : "No words yet · \($0)" } ?? "No words yet")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .cardStyle(padding: 16)
+        .opacity(0.75)
+        .accessibilityElement(children: .combine)
     }
 }
 
 /// One published bank section on the hub.
 ///
-/// The card stays white; the section's colour lives in its small marks only — the top edge,
-/// the glyph, the chips, the ring, the bar and "Open section" — which is enough to tell four
-/// cards apart at a glance. The ring and the bar answer different questions: the ring counts
+/// The card is the shared white card; the section's colour lives in its small marks only — the
+/// glyph, the chips, the ring, the bar and "Open section" — which is enough to tell four cards
+/// apart at a glance. The ring and the bar answer different questions: the ring counts
 /// WORDS mastered, the bar counts SETS mastered.
 struct VocabSectionCard: View {
     let section: VocabSection
@@ -392,16 +408,16 @@ struct VocabSectionCard: View {
             }
             .foregroundStyle(tone.ink)
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .overlay(alignment: .top) { VocabTopEdge(colour: tone.solid) }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .stroke(done ? Theme.success.opacity(0.4) : Theme.separator.opacity(0.5), lineWidth: done ? 1 : 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        // Look A: the shared card. The section's colour stays in its marks — tile, chips, ring,
+        // bar — and a finished section keeps its success edge.
+        .cardStyle(padding: 18)
+        .overlay {
+            if done {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                    .allowsHitTesting(false)
+            }
+        }
         .contentShape(Rectangle())
     }
 }

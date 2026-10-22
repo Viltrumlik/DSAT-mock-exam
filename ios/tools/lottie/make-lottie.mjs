@@ -103,9 +103,62 @@ const TROPHY = anim('trophy', 150, [
     { p: S([100, 112, 0]), r: A([[0, 0], [150, 30]], LIN), s: A([[0, [0, 0, 100], POP], [26, [100, 100, 100]]]) }),
 ]);
 
-mkdirSync(OUT, { recursive: true });
-for (const data of [FLAME, CHECK, TROPHY]) {
+// Coin burst — plays once, then fades. A coin pops in, flips once, and small coins and sparks
+// fly out. Played where a purchase or a conversion was confirmed.
+const coin = s => [
+  gr([el(s * .5, s * .12), fl('#fff7d6', 70)], tr({ p: S([-s * .12, -s * .26]), r: S(-24) })),
+  gr([star(5, s * .1, s * .22), fl('#fff7d6')]),
+  gr([el(s * .72, s * .72), st('#f59e0b', s * .07)]),
+  gr([el(s, s), fl('#fbbf24')]),
+  gr([el(s, s), fl('#d97706')], tr({ p: S([0, s * .07]) })),
+];
+const flyer = (hex, size, from, to, rot, d) => gr([
+  gr([el(size, size), fl(hex)], tr({
+    p: A([[d, [0, -from]], [d + 30, [0, -to]]], OUTE),
+    s: A([[d, [0, 0]], [d + 6, [100, 100]], [d + 22, [100, 100]], [d + 34, [0, 0]]]),
+  })),
+  rp(8, 45),
+], tr({ r: S(rot) }));
+const COIN = anim('coin-burst', 84, [
+  L(1, 'coin', coin(84), {
+    s: A([[0, [0, 0, 100], POP], [14, [116, 116, 100]], [22, [100, 100, 100]], [34, [100, 100, 100]], [42, [12, 100, 100]], [50, [100, 100, 100]]]),
+    o: A([[60, 100], [82, 0]]),
+  }),
+  L(2, 'coins', [flyer('#fbbf24', 15, 38, 92, 0, 6), flyer('#f59e0b', 9, 32, 70, 22.5, 12)]),
+  L(3, 'sparks', [gr([sh(S(P([[0, -48], [0, -66]], [[0, 0], [0, 0]], [[0, 0], [0, 0]], false))),
+    tm(A([[10, 0], [26, 100]], OUTE), A([[4, 0], [18, 100]], OUTE)), st('#fde68a', 5), rp(8, 45)])], { r: S(22.5) }),
+]);
+
+// Star burst — plays once, then fades. A glow swells, rays turn, a ring of stars flies out and
+// a few twinkle. Played behind the trophy when the student moves up a place.
+const STARS = anim('star-burst', 100, [
+  L(1, 'twinkles', [twinkle(-70, -60, 30, '#fbbf24', 11), twinkle(72, -48, 44, '#2a68c0', 9),
+    twinkle(60, 66, 58, '#fbbf24', 10), twinkle(-62, 58, 70, '#2a68c0', 8)]),
+  L(2, 'stars', [gr([
+    gr([star(5, 4, 10), fl('#fbbf24')], tr({
+      p: A([[6, [0, -26]], [42, [0, -90]]], OUTE),
+      s: A([[6, [0, 0]], [16, [110, 110]], [56, [100, 100]], [78, [0, 0]]]),
+      r: A([[6, 0], [70, 120]]),
+    })),
+    rp(8, 45),
+  ])]),
+  L(3, 'rays', [gr([sh(S(P([[-7, -34], [7, -34], [0, -98]], [[0, 0], [0, 0], [0, 0]], [[0, 0], [0, 0], [0, 0]]))), fl('#fbbf24', 34), rp(12, 30)])],
+    { r: A([[0, 0], [100, 40]], LIN), s: A([[0, [0, 0, 100], POP], [24, [100, 100, 100]]]), o: A([[70, 100], [98, 0]]) }),
+  L(4, 'glow', [gr([el(120, 120), fl('#fde68a', 40)])],
+    { s: A([[0, [0, 0, 100], POP], [18, [130, 130, 100]], [40, [100, 100, 100]]]), o: A([[0, 0], [6, 100], [74, 100], [98, 0]]) }),
+]);
+
+// Every file is decoded on the main thread when its view appears: keep each one small.
+const BUDGET = 15000;
+// Measure first, write second: an over-budget file must not leave the folder half-updated.
+const FILES = [FLAME, CHECK, TROPHY, COIN, STARS].map(data => {
   const json = JSON.stringify(data);
-  writeFileSync(join(OUT, data.nm + '.json'), json);
-  console.log(data.nm, json.length, 'bytes');
+  return { nm: data.nm, json, bytes: Buffer.byteLength(json) };
+});
+const over = FILES.filter(f => f.bytes > BUDGET);
+if (over.length) throw new Error(over.map(f => `${f.nm} is ${f.bytes} bytes — over the ${BUDGET}-byte budget`).join('; '));
+mkdirSync(OUT, { recursive: true });
+for (const { nm, json, bytes } of FILES) {
+  writeFileSync(join(OUT, nm + '.json'), json);
+  console.log(nm, bytes, 'bytes');
 }

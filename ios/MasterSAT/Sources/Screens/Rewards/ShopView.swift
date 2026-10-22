@@ -12,6 +12,7 @@ import MasterSATKit
 struct ShopView: View {
     @Environment(Session.self) private var session
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(CelebrationCenter.self) private var celebrations
 
     @State private var shop: Storefront?
     @State private var shopFailed = false
@@ -20,8 +21,16 @@ struct ShopView: View {
     /// Nil until the student picks a tab; until then the page opens on a stocked shelf.
     @State private var picked: ShopShelf?
     @State private var confirming: ShopItem?
+    /// Where the confirmed item's Buy button is — the coin bursts from there.
+    @State private var confirmingPoint: CGPoint?
     @State private var purchasingId: Int?
     @State private var toast: RewardsToastMessage?
+    /// Bumped when a confirmed purchase has no burst of its own — a strike purchase (spending
+    /// strikes is not a coin moment), or a coin one under a sheet or a cover: the success haptic.
+    @State private var buyBuzz = 0
+    /// Set when a CONFIRMED purchase's read-back failed: the page still shows what it showed
+    /// before the purchase, and says so rather than letting that pass for the new truth.
+    @State private var refreshNote: String?
 
     private var shelf: ShopShelf { picked ?? shop?.openingShelf ?? .coin }
 
@@ -29,6 +38,8 @@ struct ShopView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 ShopHero(shop: shop, failed: shopFailed && shop == nil, wide: sizeClass == .regular)
+
+                if let refreshNote { ShopNotice(text: refreshNote) }
 
                 if shopFailed && shop == nil {
                     RewardsErrorState(
@@ -48,18 +59,19 @@ struct ShopView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .alert(
             confirming.map { Text(verbatim: "Buy \($0.name)?") } ?? Text(verbatim: ""),
             isPresented: Binding(get: { confirming != nil }, set: { if !$0 { confirming = nil } }),
             presenting: confirming
         ) { item in
-            Button("Buy") { Task { await buy(item) } }
+            Button("Buy") { Task { await buy(item, at: confirmingPoint) } }
             Button("Cancel", role: .cancel) {}
         } message: { item in
             Text(verbatim: "This spends \(item.priceText). You'll collect it from the desk.")
         }
         .rewardsToast($toast)
+        .sensoryFeedback(.success, trigger: buyBuzz)
     }
 
     // MARK: - Shelves
@@ -104,7 +116,8 @@ struct ShopView: View {
                                 item: item,
                                 busy: purchasingId != nil,
                                 buying: purchasingId == item.id
-                            ) {
+                            ) { point in
+                                confirmingPoint = point
                                 confirming = item
                             }
                         }
@@ -146,15 +159,16 @@ struct ShopView: View {
                 }
                 .cardStyle(padding: 0)
             }
-        } else if ordersFailed && orders == nil {
+        } else if ordersFailed && (orders?.isEmpty ?? true) {
             // The web hides the list when it fails. Said here instead: a student who just
             // bought something and sees no orders would read that as the purchase vanishing.
+            // An empty list that failed to refresh is not "no orders" either — it is unknown.
             VStack(alignment: .leading, spacing: 12) {
                 ordersHeader
                 RewardsErrorState(
                     title: "Your orders aren't loading right now.",
                     message: "Anything you've bought is safe — only this list failed to load."
-                ) { await loadOrders() }
+                ) { await retryOrders() }
                 .cardStyle(padding: 8)
             }
         }
@@ -167,6 +181,20 @@ struct ShopView: View {
         async let storefront: Void = loadShop()
         async let mine: Void = loadOrders()
         _ = await (storefront, mine)
+        clearRefreshNoteIfFresh()
+    }
+
+    /// "Try again" under the orders: the orders read alone. When it brings the page level with the
+    /// server (the storefront was fine too), the notice that the page was stale goes.
+    @MainActor
+    private func retryOrders() async {
+        await loadOrders()
+        clearRefreshNoteIfFresh()
+    }
+
+    /// A cancelled read leaves both flags as they were, so only a full success clears the notice.
+    private func clearRefreshNoteIfFresh() {
+        if refreshNote != nil, !shopFailed, !ordersFailed { refreshNote = nil }
     }
 
     @MainActor
@@ -176,6 +204,7 @@ struct ShopView: View {
             shop = try await api.storefront()
             shopFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             shopFailed = true
         }
     }
@@ -187,6 +216,7 @@ struct ShopView: View {
             orders = try await api.orders()
             ordersFailed = false
         } catch {
+            guard !Task.isCancelled else { return }
             ordersFailed = true
         }
     }
@@ -196,36 +226,83 @@ struct ShopView: View {
     /// One purchase per confirmation. Every Buy stays off until the storefront has been read
     /// back, so a second press can only ever be a second, deliberate, confirmed order.
     @MainActor
-    private func buy(_ item: ShopItem) async {
+    private func buy(_ item: ShopItem, at point: CGPoint?) async {
         guard purchasingId == nil else { return }
         purchasingId = item.id
         let api = ShopAPI(client: session.client)
+        var confirmed = false
+        // No word from the server at all (a dropped answer): the order may or may not stand.
+        var unconfirmed = false
         do {
             let result = try await api.purchase(itemId: item.id)
+            confirmed = true
+            // The server took the order. A coin-shop purchase bursts a coin from the button that
+            // bought it; a strike purchase is not a coin moment. Where there is no burst — a
+            // strike purchase, or a sheet or a cover (the Me sheet pushes the shop) skipped it —
+            // the toast below is the only word, and the success haptic comes from here.
+            let bursts = celebrations.coinCount
+            if item.isCoin { celebrations.coinBurst(at: point) }
+            if celebrations.coinCount == bursts { buyBuzz += 1 }
             toast = RewardsToastMessage(
                 tone: .success,
                 text: result.detail.isEmpty ? "Ordered. Collect your \(item.name) from the desk." : result.detail
             )
         } catch {
+            unconfirmed = Self.serverSentence(error) == nil
             toast = RewardsToastMessage(tone: .notice, text: Self.refusal(error))
         }
         await load()
+        // A confirmed order stands whatever the read-back says, and an unconfirmed one may: either
+        // way a read-back that failed leaves the page showing what it showed before, and must not
+        // look like news. (A refusal in the server's own words changed nothing — nothing to flag.)
+        if confirmed || unconfirmed, shopFailed || ordersFailed {
+            refreshNote = shopFailed
+                ? "Your balance didn't refresh — pull to update."
+                : "Your orders didn't refresh — pull to update."
+        }
         purchasingId = nil
     }
 
     /// The server's own sentence where it sent one — "Not enough coins: 3 available, 5
-    /// needed." says what is missing — and the web's fallback otherwise.
+    /// needed." says what is missing. Otherwise the answer never came, and a dropped answer to
+    /// a purchase may still have landed, so the fallback sends the student to check.
     private static func refusal(_ error: Error) -> String {
-        if let error = error as? APIError {
-            switch error {
-            case .http(_, let detail) where !detail.isEmpty: return detail
-            case .forbidden(let detail, _) where !detail.isEmpty: return detail
-            case .validation(let detail, _, _) where !detail.isEmpty: return detail
-            case .conflict(let detail) where !detail.isEmpty: return detail
-            default: break
-            }
+        serverSentence(error) ?? "That didn't go through. Check your coins and orders, then try again."
+    }
+
+    /// The server's own words for a refusal; nil when none came (the answer never arrived).
+    private static func serverSentence(_ error: Error) -> String? {
+        guard let error = error as? APIError else { return nil }
+        switch error {
+        case .http(_, let detail) where !detail.isEmpty: return detail
+        case .forbidden(let detail, _) where !detail.isEmpty: return detail
+        case .validation(let detail, _, _) where !detail.isEmpty: return detail
+        case .conflict(let detail) where !detail.isEmpty: return detail
+        default: return nil
         }
-        return "That didn't go through. Nothing was taken."
+    }
+}
+
+/// A one-line notice under the hero — the page is showing what it last read, not the truth.
+private struct ShopNotice: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.clockwise.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+                .accessibilityHidden(true)
+            Text(text)
+                .font(.system(size: 13, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.amberSoft))
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -377,7 +454,10 @@ private struct ShopItemCard: View {
     let busy: Bool
     /// This one is the purchase in flight.
     let buying: Bool
-    let onBuy: () -> Void
+    /// Asked to buy; hands over where the Buy button is, so a confirmed purchase bursts there.
+    let onBuy: (CGPoint?) -> Void
+
+    @State private var buySpot = FrameBox()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -413,7 +493,7 @@ private struct ShopItemCard: View {
 
                     Spacer(minLength: 8)
 
-                    Button(action: onBuy) {
+                    Button { onBuy(buySpot.rect.celebrationPoint) } label: {
                         ZStack {
                             // Keeps the pill the width of its title while the spinner shows.
                             Text(item.buttonTitle).opacity(buying ? 0 : 1)
@@ -422,6 +502,7 @@ private struct ShopItemCard: View {
                     }
                     .buttonStyle(ShopBuyButtonStyle())
                     .disabled(!item.canBuy || busy)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { buySpot.rect = $0 }
                     .accessibilityLabel(item.inStock ? "Buy \(item.name) for \(item.priceText)" : "\(item.name), sold out")
                 }
                 .padding(.top, 16)

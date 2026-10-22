@@ -4,6 +4,9 @@ import MasterSATKit
 /// A tab root's scroll view. Tapping the open tab again with nothing pushed brings it back to
 /// the top, as every iOS tab does (`AppRouter.reselect`).
 ///
+/// A tab that is already open at its root can be asked to read again (`AppRouter.showFresh`,
+/// `reloadIfShowing`): it runs the same detached `onRefresh` as a pull, once per ask.
+///
 /// Pull-to-refresh lives here, not on the roots: `onRefresh` runs DETACHED from the refresh's
 /// own task. SwiftUI cancels that task whenever the root re-renders and re-installs the action
 /// — and a refresh writes state all the way through — so a refresh that ran inside it cancelled
@@ -38,6 +41,10 @@ struct TabRootScroll<Content: View>: View {
                 }
             }
             .detachedRefresh(onRefresh)
+            .onChange(of: router.reloadRequest) { _, request in
+                guard request?.tab == tab, let onRefresh else { return }
+                Task { @MainActor in await onRefresh() }
+            }
             .onChange(of: router.scrollToTop) { _, request in
                 guard request?.tab == tab else { return }
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) {
