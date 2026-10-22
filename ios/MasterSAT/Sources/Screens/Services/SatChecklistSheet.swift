@@ -156,6 +156,7 @@ struct SatChecklistSheet: View {
                         .overlay(
                             Image(systemName: "play.fill")
                                 .appFont(21)
+                                .capDynamicType()
                                 .foregroundStyle(.black)
                                 .offset(x: 2)
                                 .accessibilityHidden(true)
@@ -257,6 +258,7 @@ private struct ChecklistStep<Content: View>: View {
             Text(verbatim: String(number))
                 .appFont(13, weight: .heavy)
                 .foregroundStyle(Theme.accent)
+                .capDynamicType()
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.accent.opacity(0.1))

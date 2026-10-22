@@ -180,6 +180,7 @@ private struct SurveyScaleControl: View {
                             .appFont(15, weight: .bold)
                             .monospacedDigit()
                             .foregroundStyle(on ? Color.white : Color.primary)
+                            .capDynamicType()
                             .frame(width: 44, height: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
@@ -291,6 +292,7 @@ private struct SurveyRatingControl: View {
                     .appFont(13, weight: .bold)
                     .monospacedDigit()
                     .foregroundStyle(picked == step ? Theme.accent : Theme.textSecondary)
+                    .capDynamicType()
                     .frame(width: 26, height: 22)
                     .contentShape(Rectangle())
                     .onTapGesture { onChange(.number(step)) }

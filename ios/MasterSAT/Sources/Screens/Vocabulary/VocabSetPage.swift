@@ -99,6 +99,7 @@ struct VocabSetView: View {
                     .overlay(
                         Image(systemName: glyph)
                             .appFont(25, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
@@ -285,6 +286,7 @@ struct VocabModeCard: View {
                     .overlay(
                         Image(systemName: VocabPalette.gameGlyph(mode.kitMode))
                             .appFont(21, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
@@ -374,6 +376,7 @@ struct VocabWordList: View {
                     .overlay(
                         Image(systemName: "textformat")
                             .appFont(18, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )

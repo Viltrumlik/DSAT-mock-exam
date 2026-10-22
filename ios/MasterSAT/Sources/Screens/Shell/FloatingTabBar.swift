@@ -59,6 +59,10 @@ struct FloatingTabBar: View {
                             .accessibilityHidden(true)
                         Text(tab.title)
                             .appFont(10, weight: .bold, design: .rounded)
+                            // Five names share a 375-pt phone: at the cap "Rewards" is wider than
+                            // its fifth of the bar, and shrinks a little rather than reading "Rewa…".
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
                     }
                     .foregroundStyle(selection == tab ? Theme.accent : Theme.textSecondary)
                     .frame(maxWidth: .infinity)

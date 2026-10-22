@@ -397,6 +397,7 @@ private struct EventWhenWhere: View {
         HStack(spacing: 5) {
             Image(systemName: icon)
                 .appFont(11, weight: .semibold)
+                .capDynamicType()
                 .frame(width: 14)
                 .accessibilityHidden(true)
             Text(text)

@@ -135,6 +135,8 @@ private struct StoryCircle: View {
                 }
             Text(story.title)
                 .appFont(11, weight: .bold)
+                // A rail of 78-pt cells: the caption cannot outgrow its cell.
+                .capDynamicType()
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)

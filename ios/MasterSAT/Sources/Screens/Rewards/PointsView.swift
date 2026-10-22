@@ -128,6 +128,7 @@ struct PointsView: View {
                 Image(systemName: "bolt.fill")
                     .appFont(17, weight: .bold)
                     .foregroundStyle(.white)
+                    .capDynamicType()
                     .frame(width: 36, height: 36)
                     .background(Circle().fill(.white.opacity(0.2)))
                     .accessibilityHidden(true)
@@ -180,7 +181,7 @@ struct PointsView: View {
                     .tint(Theme.accent)
                     .padding(.horizontal, 12)
                     .frame(minWidth: 70, maxWidth: .infinity)
-                    .frame(height: 42)
+                    .frame(minHeight: 42)
                     .background(
                         RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                             .fill(Color.white.opacity(boxLocked ? 0.6 : 0.95))
@@ -593,7 +594,7 @@ struct RewardsHeroButtonStyle: ButtonStyle {
                 .lineLimit(1)
                 .fixedSize()
                 .padding(.horizontal, 12)
-                .frame(height: 42)
+                .frame(minHeight: 42)
                 .background(
                     RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
                         .fill(prominent ? Color.white : Color.white.opacity(0.18))

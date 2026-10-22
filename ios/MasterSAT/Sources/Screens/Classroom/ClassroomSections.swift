@@ -156,6 +156,7 @@ private struct ClassroomPodium: View {
                         Text(ScoreText.string(row.rank))
                             .appFont(11, weight: .heavy)
                             .foregroundStyle(.white)
+                            .capDynamicType()
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(medal(row.rank)))
                             .overlay(Circle().stroke(Theme.card, lineWidth: 2))
@@ -196,6 +197,7 @@ private struct ClassroomRankingRow: View {
         HStack(spacing: 12) {
             Text(ScoreText.string(row.rank))
                 .appFont(14, weight: .heavy).monospacedDigit()
+                .capDynamicType()
                 .frame(width: 26)
                 .foregroundStyle(Theme.textSecondary)
             Avatar(url: row.photoURL, name: row.name, size: 36)

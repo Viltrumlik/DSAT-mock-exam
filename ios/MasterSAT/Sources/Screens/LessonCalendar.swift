@@ -208,6 +208,7 @@ struct LessonCalendarCard: View {
             Image(systemName: icon)
                 .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
+                .capDynamicType()
                 .frame(width: 38, height: 38)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.background))
                 .overlay(
@@ -281,6 +282,7 @@ private struct DayCell: View {
                 }
                 Text(ScoreText.string(model.day))
                     .appFont(14, weight: .bold)
+                    .capDynamicType()
                     .monospacedDigit()
                     .foregroundStyle(foreground)
             }

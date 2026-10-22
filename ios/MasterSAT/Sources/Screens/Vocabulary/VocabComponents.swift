@@ -24,6 +24,7 @@ struct VocabExplainButton: View {
             Text(verbatim: "!")
                 .appFont(12, weight: .black)
                 .foregroundStyle(shown ? Color.white : Theme.accent)
+                .capDynamicType()
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(shown ? Theme.accent : Theme.accent.opacity(0.10)))
                 .overlay(Circle().stroke(shown ? Color.clear : Theme.accent.opacity(0.35), lineWidth: 1))
@@ -44,6 +45,7 @@ struct VocabExplainButton: View {
                         Image(systemName: "xmark")
                             .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
+                            .capDynamicType()
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
@@ -359,6 +361,7 @@ struct VocabSectionCard: View {
                     .overlay(
                         Image(systemName: VocabPalette.glyph(sectionId: section.id))
                             .appFont(21, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(shown.solid)
                             .accessibilityHidden(true)
                     )
@@ -464,6 +467,7 @@ struct VocabGameGuide: View {
                             .overlay(
                                 Image(systemName: VocabPalette.gameGlyph(mode))
                                     .appFont(19, weight: .semibold)
+                                    .capDynamicType()
                                     .foregroundStyle(tone.solid)
                                     .accessibilityHidden(true)
                             )

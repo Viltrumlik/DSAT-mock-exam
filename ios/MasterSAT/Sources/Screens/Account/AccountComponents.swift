@@ -190,6 +190,7 @@ struct AccountSecureField<Focus: Hashable>: View {
                     Image(systemName: revealed ? "eye.slash" : "eye")
                         .appFont(15, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
+                        .capDynamicType()
                         .frame(width: 30, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -214,6 +215,7 @@ struct AccountFieldBox<Content: View>: View {
                 Image(systemName: icon)
                     .appFont(14, weight: .semibold)
                     .foregroundStyle(invalid ? Theme.danger : Theme.textLabel)
+                    .capDynamicType()
                     .frame(width: 16)
                     .accessibilityHidden(true)
             }

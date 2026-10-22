@@ -687,6 +687,7 @@ struct AssessmentCard: View {
                 Image(systemName: "hourglass")
                     .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.amber)
+                    .capDynamicType()
                     .frame(width: 30, height: 30)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.amberSoft))
                     .accessibilityHidden(true)

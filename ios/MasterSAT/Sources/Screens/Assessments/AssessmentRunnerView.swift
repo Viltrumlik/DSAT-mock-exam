@@ -279,11 +279,11 @@ struct AssessmentRunnerView: View {
                         .appFont(11, weight: .heavy)
                         .tracking(1.8)
                         .foregroundStyle(Theme.accent)
-                        .lineLimit(1)
+                        .titleLineLimit(1)
                 }
                 Text(runner.bundle?.set?.title ?? "Assessment")
                     .appFont(16, weight: .heavy)
-                    .lineLimit(2)
+                    .titleLineLimit(2)
             }
             AdaptiveSpacer()
             VStack(alignment: .trailing, spacing: 3) {
@@ -517,6 +517,7 @@ struct AssessmentRunnerView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .appFont(15, weight: .bold)
+                    .capDynamicType()
                     .frame(width: 46, height: 44)
             }
             .buttonStyle(SecondaryButtonStyle())

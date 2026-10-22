@@ -119,6 +119,7 @@ struct ClassroomTelegramSheet: View {
                 HStack(alignment: .top, spacing: 12) {
                     Text(ScoreText.string(index + 1))
                         .appFont(11, weight: .heavy)
+                        .capDynamicType()
                         .frame(width: 22, height: 22)
                         .background(Circle().fill(Theme.surface2))
                     Text(rule)

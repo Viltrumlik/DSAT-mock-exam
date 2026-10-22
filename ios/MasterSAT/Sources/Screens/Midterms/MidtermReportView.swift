@@ -498,6 +498,7 @@ private struct CoveredRow: View {
             Image(systemName: full ? "checkmark.circle.fill" : "circle.fill")
                 .appFont(full ? 15 : 7)
                 .foregroundStyle(full ? Theme.success : Theme.warning)
+                .capDynamicType()
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(skill.skill)

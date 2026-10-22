@@ -91,6 +91,7 @@ struct LiveQuizChoiceRow: View {
             HStack(alignment: .center, spacing: 14) {
                 Text(choice.id)
                     .appFont(16, weight: .heavy)
+                    .capDynamicType()
                     .frame(width: 38, height: 38)
                     .background(Circle().fill(isSelected ? Theme.accent : Theme.card))
                     .overlay(Circle().stroke(isSelected ? Theme.accent : Theme.separator, lineWidth: 2))
@@ -152,6 +153,7 @@ struct LiveQuizStandingsList: View {
             Text(ScoreText.string(place))
                 .appFont(15, weight: .heavy).monospacedDigit()
                 .foregroundStyle(LiveQuizMedal.colour(forPlace: place) ?? Theme.textSecondary)
+                .capDynamicType()
                 .frame(width: 30)
             HStack(spacing: 6) {
                 Text(row.displayName.isEmpty ? "Student" : row.displayName)

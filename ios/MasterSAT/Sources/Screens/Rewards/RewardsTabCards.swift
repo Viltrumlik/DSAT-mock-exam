@@ -407,7 +407,7 @@ struct RewardsBoardRow: View {
             LeaderboardAvatar(row: row, size: 34)
             Text(row.displayName)
                 .appFont(14, weight: mine ? .heavy : .semibold)
-                .lineLimit(1)
+                .titleLineLimit(1)
             if mine { LeaderboardYouTag() }
             Spacer(minLength: 6)
             Text(value)

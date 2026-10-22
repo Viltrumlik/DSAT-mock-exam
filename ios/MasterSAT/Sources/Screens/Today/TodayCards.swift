@@ -45,10 +45,12 @@ struct TodayHero: View {
                 if progress.isComplete {
                     Image(systemName: "checkmark")
                         .appFont(26, weight: .heavy)
+                        .capDynamicType()
                         .foregroundStyle(tone)
                 } else {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
                         .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
+                        .capDynamicType()
                         .contentTransition(.numericText())
                         // A fixed ring: "12/12" at a large text size shrinks to fit inside the
                         // stroke rather than run over it.

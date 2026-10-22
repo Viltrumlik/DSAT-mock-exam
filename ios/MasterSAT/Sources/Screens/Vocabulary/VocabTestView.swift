@@ -111,6 +111,7 @@ struct VocabTestView: View {
                         HStack(spacing: 12) {
                             Text(Self.letters[min(position, Self.letters.count - 1)])
                                 .appFont(13, weight: .heavy)
+                                .capDynamicType()
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.background)
@@ -578,6 +579,7 @@ struct QuestionShell<Content: View>: View {
                     Image(systemName: icon)
                         .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.success)
+                        .capDynamicType()
                         .frame(width: 26, height: 26)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
                         .accessibilityHidden(true)

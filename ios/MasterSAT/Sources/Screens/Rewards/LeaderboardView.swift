@@ -273,6 +273,7 @@ struct LeaderboardView: View {
                     Image(systemName: "bolt.fill")
                         .appFont(14, weight: .bold)
                         .foregroundStyle(.white)
+                        .capDynamicType()
                         .frame(width: 32, height: 32)
                         .background(
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -298,6 +299,7 @@ struct LeaderboardView: View {
                 Image(systemName: "trophy.fill")
                     .appFont(14, weight: .bold)
                     .foregroundStyle(.white)
+                    .capDynamicType()
                     .frame(width: 32, height: 32)
                     .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(RewardsPalette.gold.fill))
                     .shadow(color: RewardsPalette.gold.solid.opacity(0.45), radius: 6, x: 0, y: 3)

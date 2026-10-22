@@ -145,7 +145,7 @@ struct ReviewTodayCard: View {
             Overline("Next up")
             Text(title)
                 .appFont(16, weight: .heavy)
-                .lineLimit(2)
+                .titleLineLimit(2)
             Text(detail)
                 .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)

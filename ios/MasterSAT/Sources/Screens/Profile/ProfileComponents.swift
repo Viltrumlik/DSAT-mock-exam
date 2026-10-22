@@ -237,7 +237,7 @@ struct ProfileScoreRow: View {
                 Text(verbatim: title)
                     .appFont(13.5, weight: .bold)
                     .foregroundStyle(.primary)
-                    .lineLimit(titleLines)
+                    .titleLineLimit(titleLines)
                     .multilineTextAlignment(.leading)
                     // Its own height: in the row's stacks a second line is otherwise cut.
                     .fixedSize(horizontal: false, vertical: true)
@@ -279,7 +279,7 @@ struct ProfileScoreRow: View {
             Text(verbatim: detail)
                 .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
+                .titleLineLimit(1)
         }
     }
 

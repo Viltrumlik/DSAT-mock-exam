@@ -244,6 +244,7 @@ private struct ServiceFact: View {
             Image(systemName: icon)
                 .appFont(17, weight: .semibold)
                 .foregroundStyle(tone)
+                .capDynamicType()
                 .frame(width: 22)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {

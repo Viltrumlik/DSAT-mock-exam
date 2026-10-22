@@ -275,13 +275,13 @@ private struct ProfileHeroCard: View {
                         .appFont(25, weight: .heavy)
                         .tracking(-0.6)
                         .foregroundStyle(.primary)
-                        .lineLimit(2)
+                        .titleLineLimit(2)
                         .minimumScaleFactor(0.8)
                     if !identity.username.isEmpty {
                         Text(verbatim: "@\(identity.username)")
                             .appFont(14.5, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
-                            .lineLimit(1)
+                            .titleLineLimit(1)
                     }
                 }
             }
@@ -347,6 +347,7 @@ private struct ProfileHeroCard: View {
             Image(systemName: "xmark")
                 .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
+                .capDynamicType()
                 .frame(width: 32, height: 32)
                 .background(Theme.surface2, in: Circle())
                 .frame(width: 44, height: 44)

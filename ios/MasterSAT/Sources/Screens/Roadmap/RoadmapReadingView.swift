@@ -420,6 +420,7 @@ struct RoadmapSectionVideo: View {
                         .overlay(
                             Image(systemName: "play.fill")
                                 .appFont(20)
+                                .capDynamicType()
                                 .foregroundStyle(Theme.danger)
                                 .accessibilityHidden(true)
                         )

@@ -277,6 +277,7 @@ struct ModeOutcomeView: View {
                 .overlay(
                     Image(systemName: "trophy.fill")
                         .appFont(28)
+                        .capDynamicType()
                         .foregroundStyle(.white)
                         .scaleEffect(trophyPopped ? 1.12 : 1)
                         .rotationEffect(.degrees(trophyPopped ? -8 : 0))

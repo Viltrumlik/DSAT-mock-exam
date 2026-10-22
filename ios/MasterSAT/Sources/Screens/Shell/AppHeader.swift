@@ -29,41 +29,49 @@ struct AppHeader: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        if typeSize.isAccessibilitySize {
+            stacked
+        } else {
+            // The row it has always been when it fits; when the line of context cannot share it
+            // with the pills (a phone as narrow as an SE, text set a size or two up) the stacked
+            // header, not a line cut to "…".
+            ViewThatFits(in: .horizontal) {
+                row(subtitle)
+                if let shortSubtitle { row(shortSubtitle) }
+                stacked
+            }
+        }
+    }
+
+    /// A line of context, the pills, then the title. The pills never give way: when the row is
+    /// tight it is the line that does.
+    private func row(_ text: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            if typeSize.isAccessibilitySize {
-                // The pills keep their size (they are capped) but the row they shared with the
-                // line of context is gone: the title leads, the line wraps under it, the pills sit
-                // on a row of their own. Only a change of the setting flips this, so the pills
-                // are rebuilt once, never mid-flight.
-                PageTitle(title)
-                if let subtitle { line(subtitle) }
-                HStack(spacing: 8) {
-                    StrikeChip().fixedSize()
-                    XPPill().fixedSize()
-                    Spacer(minLength: 0)
-                    if showsBell { bell }
-                    AvatarButton()
-                }
-            } else {
-                HStack(spacing: 8) {
-                    if let subtitle {
-                        if let shortSubtitle {
-                            ViewThatFits(in: .horizontal) {
-                                line(subtitle)
-                                line(shortSubtitle)
-                            }
-                        } else {
-                            line(subtitle)
-                        }
-                    }
-                    Spacer(minLength: 0)
-                    // Fixed: when the row is tight it is the line of context that gives way.
-                    StrikeChip().fixedSize()
-                    XPPill().fixedSize()
-                    if showsBell { bell }
-                    AvatarButton()
-                }
-                PageTitle(title)
+            HStack(spacing: 8) {
+                if let text { line(text, wraps: false) }
+                Spacer(minLength: 0)
+                // Fixed: the line of context gives way, not these.
+                StrikeChip().fixedSize()
+                XPPill().fixedSize()
+                if showsBell { bell }
+                AvatarButton()
+            }
+            PageTitle(title)
+        }
+    }
+
+    /// The title leads, the line wraps under it, the pills sit on a row of their own. The pills
+    /// keep their size (they are capped); what is gone is the row they shared with the line.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            PageTitle(title)
+            if let subtitle { line(subtitle, wraps: true) }
+            HStack(spacing: 8) {
+                StrikeChip().fixedSize()
+                XPPill().fixedSize()
+                Spacer(minLength: 0)
+                if showsBell { bell }
+                AvatarButton()
             }
         }
     }
@@ -73,14 +81,14 @@ struct AppHeader: View {
         NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
     }
 
-    private func line(_ text: String) -> some View {
+    private func line(_ text: String, wraps: Bool) -> some View {
         Text(text)
             .appFont(13, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
-            // One line while it shares a row; once it has the row to itself it wraps rather than
+            // One line while it shares a row; once it has a row to itself it wraps rather than
             // cut a date or a lesson to "…".
-            .lineLimit(typeSize.isAccessibilitySize ? nil : 1)
-            .fixedSize(horizontal: false, vertical: typeSize.isAccessibilitySize)
+            .lineLimit(wraps ? nil : 1)
+            .fixedSize(horizontal: false, vertical: wraps)
             .accessibilityLabel(subtitleLabel ?? text)
     }
 }

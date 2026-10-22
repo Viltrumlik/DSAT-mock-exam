@@ -266,6 +266,7 @@ struct AuthField<Accessory: View>: View {
                     Image(systemName: icon)
                         .appFont(14, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
+                        .capDynamicType()
                         .frame(width: 16)
                         .accessibilityHidden(true)
                 }
@@ -374,6 +375,7 @@ struct PasswordField: View {
                     .appFont(15, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
                     // A full 44 pt square to hit.
+                    .capDynamicType()
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }

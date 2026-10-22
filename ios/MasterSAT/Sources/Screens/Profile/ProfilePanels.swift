@@ -350,6 +350,7 @@ struct ProfilePaymentsPanel: View {
                         Image(systemName: row.icon)
                             .appFont(14, weight: .semibold)
                             .foregroundStyle(ProfileTone.violet)
+                            .capDynamicType()
                             .frame(width: 18)
                             .accessibilityHidden(true)
                         Text(verbatim: row.label)

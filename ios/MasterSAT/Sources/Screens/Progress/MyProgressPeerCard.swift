@@ -185,6 +185,7 @@ struct MyProgressInsightRow: View {
             Image(systemName: icon)
                 .appFont(13, weight: .semibold)
                 .foregroundStyle(tint)
+                .capDynamicType()
                 .frame(width: 16)
                 .accessibilityHidden(true)
             Text(insight.text)
@@ -375,6 +376,7 @@ struct MyProgressLessonStrip: View {
                             .overlay(
                                 Image(systemName: icon(lesson.status))
                                     .appFont(14, weight: .bold)
+                                    .capDynamicType()
                                     .foregroundStyle(ink(lesson.status))
                             )
                         Text(day)
@@ -444,6 +446,7 @@ struct MyProgressAttendanceChart: View {
                             .frame(height: Self.barArea + 18, alignment: .bottom)
                             Text(LearnMoreDateText.shortMonth(month.month))
                                 .appFont(11, weight: .bold)
+                                .capDynamicType()
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         .frame(maxWidth: .infinity)
@@ -464,6 +467,7 @@ struct MyProgressAttendanceChart: View {
             if let value, value.isFinite {
                 Text(ProgressFormat.count(value))
                     .appFont(10, weight: .bold)
+                    .capDynamicType()
                     .monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize()
@@ -473,6 +477,7 @@ struct MyProgressAttendanceChart: View {
             } else {
                 Text("—")
                     .appFont(10, weight: .bold)
+                    .capDynamicType()
                     .foregroundStyle(Theme.textSecondary)
             }
         }

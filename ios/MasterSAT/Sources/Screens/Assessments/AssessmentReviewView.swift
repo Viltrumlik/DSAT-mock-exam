@@ -655,6 +655,7 @@ struct ReviewChoiceRow: View {
         HStack(alignment: .center, spacing: 14) {
             Text(choice.id)
                 .appFont(12, weight: .heavy)
+                .capDynamicType()
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)

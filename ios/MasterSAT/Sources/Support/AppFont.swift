@@ -15,6 +15,34 @@ extension View {
     }
 }
 
+extension View {
+    /// For a glyph or numeral inside a frame of a fixed size — a 30-pt badge, a 32-pt close disc,
+    /// a 22-pt rank column. The frame cannot grow with its text, and a symbol at three times its
+    /// size spills out of one at one. So type stops growing at `xxxLarge`, where it still fits,
+    /// the way the system's own navigation and tab bars hold still; put it after `appFont`.
+    nonisolated func capDynamicType() -> some View {
+        dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+    }
+}
+
+extension View {
+    /// A title cut to `lines` lines to keep a row tidy — until the student's text is set at an
+    /// accessibility size. Then room matters more than tidiness: the cut lifts, so nothing is
+    /// ever shortened to "…" because a student asked for larger words.
+    nonisolated func titleLineLimit(_ lines: Int) -> some View {
+        modifier(TitleLineLimit(lines: lines))
+    }
+}
+
+private struct TitleLineLimit: ViewModifier {
+    let lines: Int
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func body(content: Content) -> some View {
+        content.lineLimit(typeSize.isAccessibilitySize ? nil : lines)
+    }
+}
+
 struct ScaledFont: ViewModifier {
     /// Initialised from the base size and scaled for `relativeTo`, so at the default setting it
     /// is the base size and not a point off. The environment it reads includes a

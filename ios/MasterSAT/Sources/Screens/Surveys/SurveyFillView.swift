@@ -332,6 +332,7 @@ private struct SurveyQuestionCard: View {
                 Text(verbatim: String(number))
                     .appFont(14, weight: .heavy)
                     .foregroundStyle(gap == nil ? Theme.accent : Theme.danger)
+                    .capDynamicType()
                     .frame(width: 30, height: 30)
                     .background(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
@@ -442,6 +443,7 @@ private struct SurveyAnonymityChoice: View {
                 Image(systemName: icon)
                     .appFont(16, weight: .semibold)
                     .foregroundStyle(selected ? Theme.accent : Theme.textSecondary)
+                    .capDynamicType()
                     .frame(width: 20)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {

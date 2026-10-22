@@ -123,6 +123,7 @@ struct VocabStudyView: View {
                     Image(systemName: "exclamationmark.triangle")
                         .appFont(26)
                         .foregroundStyle(Theme.warning)
+                        .capDynamicType()
                         .frame(width: 56, height: 56)
                         .background(Circle().fill(Theme.warningSoft))
                         .accessibilityHidden(true)
@@ -544,6 +545,7 @@ private struct FlashcardHoldStrip: View {
                 .overlay(
                     Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
                         .appFont(15, weight: .bold)
+                        .capDynamicType()
                         .foregroundStyle(correct ? Theme.success : Theme.warning)
                         .accessibilityHidden(true)
                 )

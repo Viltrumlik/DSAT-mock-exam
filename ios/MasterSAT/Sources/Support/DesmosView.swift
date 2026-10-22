@@ -150,6 +150,7 @@ struct CalculatorPanel: View {
                     Image(systemName: "xmark")
                         .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
+                        .capDynamicType()
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(Theme.surface2))
                         // Drawn 30, tappable 44; the header is the height it was.

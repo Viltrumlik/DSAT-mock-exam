@@ -62,6 +62,7 @@ struct VocabSectionView: View {
                     .overlay(
                         Image(systemName: VocabPalette.glyph(sectionId: sectionId))
                             .appFont(18, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )

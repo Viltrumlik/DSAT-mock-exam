@@ -423,6 +423,7 @@ struct SupportRateSheet: View {
                                 Image(systemName: n <= (stars ?? 0) ? "star.fill" : "star")
                                     .appFont(30)
                                     .foregroundStyle(Theme.amber.opacity(n <= (stars ?? 0) ? 1 : 0.45))
+                                    .capDynamicType()
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }

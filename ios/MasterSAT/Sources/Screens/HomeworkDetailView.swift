@@ -357,6 +357,7 @@ struct HomeworkDetailView: View {
                             .overlay(
                                 Image(systemName: "play.fill")
                                     .appFont(20)
+                                    .capDynamicType()
                                     .foregroundStyle(Theme.danger)
                                     .accessibilityHidden(true)
                             )
@@ -367,7 +368,7 @@ struct HomeworkDetailView: View {
                             Text(url.host ?? raw)
                                 .appFont(12)
                                 .foregroundStyle(Theme.textSecondary)
-                                .lineLimit(1)
+                                .titleLineLimit(1)
                         }
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right.square")
@@ -489,12 +490,12 @@ struct HomeworkDetailView: View {
                                     Text(link.label.isEmpty ? (url.host ?? link.url) : link.label)
                                         .appFont(14, weight: .semibold)
                                         .foregroundStyle(.primary)
-                                        .lineLimit(1)
+                                        .titleLineLimit(1)
                                     if !link.label.isEmpty {
                                         Text(url.host ?? link.url)
                                             .appFont(11)
                                             .foregroundStyle(Theme.textSecondary)
-                                            .lineLimit(1)
+                                            .titleLineLimit(1)
                                     }
                                 }
                                 Spacer()
@@ -1016,6 +1017,7 @@ struct TaskRowLabel: View {
                 .overlay(
                     Image(systemName: isDone ? "checkmark" : icon)
                         .appFont(17, weight: .semibold)
+                        .capDynamicType()
                         .foregroundStyle(isDone ? Theme.success : tone)
                         .accessibilityHidden(true)
                 )
@@ -1108,7 +1110,7 @@ private struct AttachmentRow: View {
                 Text(file.fileName)
                     .appFont(14, weight: .semibold)
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .titleLineLimit(1)
                 Text([kind.label, file.size.map(SubmissionLimits.megabytes)].compactMap { $0 }.joined(separator: " · "))
                     .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
@@ -1214,7 +1216,7 @@ struct StagedFileRow: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(file.filename)
                         .appFont(14, weight: .medium)
-                        .lineLimit(1)
+                        .titleLineLimit(1)
                         .truncationMode(.middle)
                     Text(SubmissionLimits.megabytes(file.data.count))
                         .appFont(11).foregroundStyle(Theme.textSecondary)
@@ -1379,6 +1381,7 @@ struct UploadRing: View {
             if done {
                 Image(systemName: "checkmark")
                     .appFont(11, weight: .heavy)
+                    .capDynamicType()
                     .foregroundStyle(Theme.accent)
                     .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             }

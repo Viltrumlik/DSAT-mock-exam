@@ -150,6 +150,7 @@ struct SpeedView: View {
                             HStack(alignment: .top, spacing: 12) {
                                 Text("\(position + 1)")
                                     .appFont(15, weight: .bold)
+                                    .capDynamicType()
                                     .frame(width: 32, height: 32)
                                     .background(Circle().fill(Theme.surface2))
                                     .foregroundStyle(Theme.textSecondary)

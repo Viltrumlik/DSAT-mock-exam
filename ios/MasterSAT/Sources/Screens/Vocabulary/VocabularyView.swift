@@ -427,6 +427,7 @@ struct VocabularyView: View {
                             Image(systemName: "trash")
                                 .appFont(14, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
+                                .capDynamicType()
                                 .frame(width: 36, height: 36)
                                 .contentShape(Rectangle())
                         }
@@ -558,7 +559,7 @@ struct VocabHomeworkGroupCard: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.assignmentTitle)
                         .appFont(17, weight: .heavy)
-                        .lineLimit(2)
+                        .titleLineLimit(2)
                     FlowLayout(spacing: 6) {
                         if let name = group.classroomName, !name.isEmpty {
                             if let classroomId = group.classroomId {
