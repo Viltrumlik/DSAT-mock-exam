@@ -183,12 +183,15 @@ struct Chip: View {
 /// The web's primary button, at the size a thumb wants.
 struct PrimaryButtonStyle: ButtonStyle {
     var tone: Color = Theme.accent
+    /// The label's colour. White on every coloured tone; a tone that turns light in dark mode
+    /// brings its own (`Theme.ink` takes `Theme.onInk`).
+    var text: Color = .white
     var fullWidth = false
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 15, weight: .bold))
-            .foregroundStyle(.white)
+            .foregroundStyle(text)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
             .frame(maxWidth: fullWidth ? .infinity : nil)

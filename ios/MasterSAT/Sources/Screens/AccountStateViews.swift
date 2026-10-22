@@ -35,7 +35,9 @@ struct FrozenAccountView: View {
             } label: {
                 Text("Sign out").frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(tone: Color(.label), fullWidth: true))
+            // The ink pair: black with white text in light mode, white with black text in dark —
+            // the label colour alone left white text on a white button there.
+            .buttonStyle(PrimaryButtonStyle(tone: Theme.ink, text: Theme.onInk, fullWidth: true))
         }
     }
 }
