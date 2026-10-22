@@ -28,6 +28,31 @@ import Testing
         #expect(ranges[1].upperBound < body.count, "the closing boundary comes after the last file")
     }
 
+    @Test("The wire format, byte for byte: the field, then the file, then the closing boundary")
+    func encodedBytesArePinned() {
+        let bytes: [UInt8] = [0xFF, 0xD8, 0x00, 0x0D, 0x0A]
+        var form = MultipartForm(boundary: "b0undary")
+        // Added before the field on purpose: fields always go out first.
+        form.add(file: MultipartForm.File(filename: "page \"1\".jpg", mimeType: "image/jpeg", data: Data(bytes), token: "t1"))
+        form.add("submit", "true")
+
+        // Written out by hand, not with the form's own helpers: a refactor that changes a byte fails here.
+        let head = Array((
+            "--b0undary\r\n"
+            + "Content-Disposition: form-data; name=\"submit\"\r\n"
+            + "\r\n"
+            + "true\r\n"
+            + "--b0undary\r\n"
+            + "Content-Disposition: form-data; name=\"files\"; filename=\"page 1.jpg\"\r\n"
+            + "Content-Type: image/jpeg\r\n"
+            + "\r\n"
+        ).utf8)
+        let tail = Array("\r\n--b0undary--\r\n".utf8)
+
+        #expect([UInt8](form.encoded()) == head + bytes + tail)
+        #expect(form.fileRanges() == [head.count..<(head.count + bytes.count)])
+    }
+
     @Test("Per file: nothing of it sent, part of it, all of it — in order")
     func perFile() {
         let ranges = [100..<200, 250..<450]
@@ -75,7 +100,7 @@ import Testing
     }
 
     @Test("A progress-reporting hand-in still refreshes an expired token and retries once")
-    func progressSurvivesTheRefreshRetry() async throws {
+    func progressHandInRefreshesAndRetriesOnce() async throws {
         server.handler = { request in
             if request.url?.absoluteString.contains("/auth/refresh/") == true {
                 return .json(["access": "access-2", "refresh": "refresh-2"])

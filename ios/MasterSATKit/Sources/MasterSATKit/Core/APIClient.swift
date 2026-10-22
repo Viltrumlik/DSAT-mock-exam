@@ -1,10 +1,12 @@
 import Foundation
 
-/// Hands a request's sent-body count to a closure, as URLSession reports it (on its own queue).
+/// Hands a request's sent-body count to a closure, as URLSession reports it (off the main thread).
 ///
 /// One instance serves a send and its single retry, so it remembers the most it has reported
 /// and says nothing until the count passes that — a retry restarting from byte zero must not
-/// make a ring run backwards, nor count the same bytes twice.
+/// make a ring run backwards, nor count the same bytes twice. It reports under its lock, so two
+/// deliveries can never cross and tell a smaller count after a larger one: URLSession delivers
+/// serially today, and this does not depend on it. The closure must not call back into it.
 // @unchecked: the closure is immutable and @Sendable; the high-water mark is only touched under `lock`.
 final class BodyProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
     private let report: @Sendable (Int64) -> Void
@@ -23,10 +25,10 @@ final class BodyProgress: NSObject, URLSessionTaskDelegate, @unchecked Sendable 
         totalBytesExpectedToSend: Int64
     ) {
         lock.lock()
-        let advanced = totalBytesSent > highest
-        if advanced { highest = totalBytesSent }
-        lock.unlock()
-        if advanced { report(totalBytesSent) }
+        defer { lock.unlock() }
+        guard totalBytesSent > highest else { return }
+        highest = totalBytesSent
+        report(totalBytesSent)
     }
 }
 
@@ -101,7 +103,7 @@ public actor APIClient {
     }
 
     /// Send and decode, telling `onBodySent` how many bytes of the request body have gone out —
-    /// for an upload a student watches. Called on URLSession's own queue, never the main actor.
+    /// for an upload a student watches. Called off the main thread, never on the main actor.
     /// Everything else is `send`'s: one refresh and one retry. The retry sends the body again
     /// from its first byte, but the count reported never runs backwards: it holds at the most
     /// it has reached until the second send passes that.

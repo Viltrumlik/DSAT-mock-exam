@@ -199,6 +199,12 @@ public struct StudentAPI: Sendable {
     /// stale one, which is what stops a phone that was offline from overwriting a
     /// teacher's return. Each file carries its own token so a retry after a timeout
     /// re-uploads nothing.
+    ///
+    /// `onFileProgress`, when given, is told how far each file has gone — 0…1 per file, in
+    /// `files` order — as the one request's body goes out (`UploadProgress.perFile` over the
+    /// form's `fileRanges()`). Called off the main thread, and never backwards: a token
+    /// refresh re-sends the body from its first byte, and the numbers hold until the retry
+    /// passes them. Without it, the hand-in is the plain `send`.
     @discardableResult
     public func submitHomework(
         classroomId: Int,
