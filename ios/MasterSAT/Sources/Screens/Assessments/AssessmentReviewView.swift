@@ -102,8 +102,6 @@ struct AssessmentReviewView: View {
                             teacherNote(feedback)
                         }
 
-                        PillTabs(items: tabs, selection: filterSelection, focusZone: true)
-
                         if let current {
                             // A ZStack, so the card leaving and the one arriving overlap for their
                             // 200 ms. Keyed by the filter too: the same question under another
@@ -128,11 +126,19 @@ struct AssessmentReviewView: View {
                     .padding(16)
                 }
                 .background(Theme.background)
+                // Pinned under the navigation bar, inside the safe area: scrolled with the page, the
+                // chips slid under the back button. The material is what the content passes behind.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    PillTabs(items: tabs, selection: filterSelection, focusZone: true)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.bar)
+                }
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
-                // The score card, then the question under it.
-                LoadingSkeleton(rows: 2, height: 160, style: .cards).skeletonPage()
+                // The score card, then the question under it. A focus zone: the blocks hold still.
+                LoadingSkeleton(rows: 2, height: 160, style: .cards, pulse: false).skeletonPage()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
