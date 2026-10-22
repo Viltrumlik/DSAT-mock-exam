@@ -811,6 +811,9 @@ struct HomeworkDetailView: View {
         }
         detailError = nil
         submissionError = nil
+        // Whose page this is, taken before anything is asked for: a quick sign-in as someone else
+        // while it loads must not teach the new student's memory the old one's attempts.
+        let userID: Int? = if case .signedIn(let user) = session.phase { user.id } else { nil }
         // The detail enriches a list row; with no row (a deep link) it IS the page, and its
         // failure is the page's failure.
         async let fullAssignment = session.student.assignment(classroomId: classroomId, id: assignmentId)
@@ -826,7 +829,11 @@ struct HomeworkDetailView: View {
             submissionError = error.localizedDescription
         }
         do {
-            detail = try await fullAssignment
+            let full = try await fullAssignment
+            detail = full
+            // It carries this student's attempt at each set, as a list row does: noted, an
+            // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
+            if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
         } catch let error as APIError {
             detailError = error.errorDescription ?? "Assignment not available"
         } catch {

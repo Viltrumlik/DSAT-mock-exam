@@ -4,19 +4,6 @@ import MasterSATKit
 /// Which list the Tasks segment shows.
 enum ClassTaskFilter: Hashable { case toDo, done, results }
 
-/// Where one source of the Tasks lists stands — homework, or midterms. Only `loaded` may say
-/// "nothing here": a list that has not arrived, or could not, is a spinner or a retry, never an
-/// empty state.
-enum ClassSourceState: Equatable {
-    case pending, loaded, failed
-
-    /// A fetch ended. A failure keeps what was already loaded (the last good data stays on
-    /// screen) and, with nothing to keep, becomes `failed`.
-    mutating func finish(succeeded: Bool) {
-        if succeeded { self = .loaded } else if self != .loaded { self = .failed }
-    }
-}
-
 /// To do · Done · Results for the classes under the chip. Every row pushes a value resolved at
 /// the Class root.
 struct ClassTasksSegment: View {

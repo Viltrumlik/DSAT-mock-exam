@@ -141,6 +141,47 @@ import Testing
         #expect(second?.amount == 5)
     }
 
+    @Test("A total that falls before the entry resolves holds nothing: the pill never shows less than the task started at")
+    func decreaseBeforeResolve() {
+        var queue = CelebrationQueue()
+        let entry = queue.record(.homework, xpBefore: 100, stageVisible: true)
+        #expect(queue.held(xpNow: 100) == 0)
+        #expect(queue.held(xpNow: 90) == 0, "an adjustment took XP back: nothing is owed, and nothing negative is held")
+        #expect(queue.held(xpNow: 0) == 0)
+        let gained = queue.resolve(entry.id, xpAfter: 90, allowsFlights: true)
+        #expect(gained == 0)
+        #expect(queue.held == 0)
+        #expect(queue.held(xpNow: 90) == 0)
+        #expect(queue.isEmpty, "a task that earned nothing leaves nothing behind")
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight == nil)
+    }
+
+    @Test("A rise, then a fall, before the entry resolves: the hold follows the total, never below the start")
+    func riseThenDecreaseBeforeResolve() {
+        var queue = CelebrationQueue()
+        let entry = queue.record(.assessment, xpBefore: 100, stageVisible: true)
+        #expect(queue.held(xpNow: 130) == 30, "a refresh beat the task's own: held at once")
+        #expect(queue.held(xpNow: 110) == 10, "then a correction landed: only what is still above the start is held")
+        #expect(queue.held(xpNow: 95) == 0)
+        let gained = queue.resolve(entry.id, xpAfter: 110, allowsFlights: true)
+        #expect(gained == 10)
+        #expect(queue.held == 10)
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 10)
+    }
+
+    @Test("A fall before the next task starts does not take its gain away")
+    func decreaseThenNextTask() {
+        var queue = CelebrationQueue()
+        let first = queue.record(.homework, xpBefore: 100, stageVisible: true)
+        queue.resolve(first.id, xpAfter: 90, allowsFlights: true)
+        let next = queue.record(.survey, xpBefore: 90, stageVisible: true)
+        let gained = queue.resolve(next.id, xpAfter: 105, allowsFlights: true)
+        #expect(gained == 15, "measured from where the pill stood, not from the 100 it had been")
+        #expect(queue.held == 15)
+    }
+
     @Test("Landing twice is harmless, and a landed flight is no longer flying")
     func landing() throws {
         var queue = CelebrationQueue()
@@ -153,5 +194,77 @@ import Testing
         queue.land(flight.id)
         #expect(!queue.isFlying(flight.id))
         #expect(queue.held == 0)
+    }
+}
+
+/// A flight carries every confirmed gain whose check has played — an away gain with its caption
+/// and a task's gain without one fly together, and the caption belongs to the one that has it.
+/// Every mutating call is made on its own line, never inside `#expect`.
+@Suite struct MergedFlightTests {
+
+    @Test("An away gain and a task's gain fly as one, captioned by the away gain, in either order of resolve")
+    func mergedLabel() {
+        // The task is measured past what the away read already counted, so nothing is flown twice.
+        var awayFirst = CelebrationQueue()
+        let away = awayFirst.recordAway(xpSeen: 100)
+        let task = awayFirst.record(.homework, xpBefore: 100, stageVisible: true).id
+        awayFirst.resolve(away, xpAfter: 130, allowsFlights: true, label: "Attendance")
+        awayFirst.resolve(task, xpAfter: 145, allowsFlights: true)
+        let first = awayFirst.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(first?.amount == 45)
+        #expect(first?.label == "Attendance")
+
+        var taskFirst = CelebrationQueue()
+        let sameAway = taskFirst.recordAway(xpSeen: 100)
+        let sameTask = taskFirst.record(.homework, xpBefore: 100, stageVisible: true).id
+        taskFirst.resolve(sameTask, xpAfter: 115, allowsFlights: true)
+        taskFirst.resolve(sameAway, xpAfter: 145, allowsFlights: true, label: "Attendance")
+        let second = taskFirst.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(second?.amount == 45)
+        #expect(second?.label == "Attendance")
+    }
+
+    @Test("The caption does not depend on which gain was recorded first")
+    func labelAnyOrder() {
+        var queue = CelebrationQueue()
+        let task = queue.record(.vocabSession, xpBefore: 100, stageVisible: true).id
+        let away = queue.recordAway(xpSeen: 100)
+        queue.resolve(task, xpAfter: 110, allowsFlights: true)
+        queue.resolve(away, xpAfter: 140, allowsFlights: true, label: "Homework + 2 more")
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 40)
+        #expect(flight?.label == "Homework + 2 more")
+    }
+
+    @Test("Gains with no caption between them fly uncaptioned")
+    func noLabel() {
+        var queue = CelebrationQueue()
+        let a = queue.record(.homework, xpBefore: 100, stageVisible: true).id
+        let b = queue.record(.survey, xpBefore: 110, stageVisible: true).id
+        queue.resolve(a, xpAfter: 110, allowsFlights: true)
+        queue.resolve(b, xpAfter: 120, allowsFlights: true)
+        let flight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(flight?.amount == 20)
+        #expect(flight?.label == nil)
+    }
+
+    @Test("A task whose check has not played waits for its own flight; it does not borrow the away caption")
+    func hiddenTaskStaysOut() {
+        var queue = CelebrationQueue()
+        let task = queue.record(.assessment, xpBefore: 100, stageVisible: false).id
+        let away = queue.recordAway(xpSeen: 100)
+        queue.resolve(away, xpAfter: 130, allowsFlights: true, label: "Attendance")
+        queue.resolve(task, xpAfter: 145, allowsFlights: true)
+
+        let awayFlight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(awayFlight?.amount == 30)
+        #expect(awayFlight?.label == "Attendance")
+        if let awayFlight { queue.land(awayFlight.id) }
+
+        let shown = queue.takeEfforts(stageVisible: true)
+        #expect(shown == [.assessment])
+        let taskFlight = queue.takeFlight(stageVisible: true, pillVisible: true, allowsFlights: true)
+        #expect(taskFlight?.amount == 15)
+        #expect(taskFlight?.label == nil, "the caption was said once, with the gain it named")
     }
 }

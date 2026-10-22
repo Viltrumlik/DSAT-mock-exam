@@ -55,6 +55,13 @@ public struct LeaderboardQuery: Sendable, Hashable {
         self.limit = limit
     }
 
+    /// The one question the app asks to learn the student's place: the default board — global, all
+    /// time, XP — at the server's largest page, so "N XP to pass <name>" reaches the row above a
+    /// student who is deep in the board (Ruling P3-R3). The Rewards hero and the welcome-back check
+    /// both ask exactly this, so a place noted by either is the same number. The full leaderboard
+    /// page keeps the default page.
+    public static let heroBoard = LeaderboardQuery(limit: 200)
+
     /// Whether the branch filter applies to the board being asked for.
     public var branchApplies: Bool { scope == .global && branchId != nil }
 

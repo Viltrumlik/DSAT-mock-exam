@@ -364,7 +364,8 @@ struct ScoreHero: View {
                 .multilineTextAlignment(.center)
 
             if let result = review.result {
-                RollingNumber(value: result.percent, suffix: "%")
+                // The whole percent "Up from X%" below is weighed in, so the two never disagree at x.5.
+                RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)), suffix: "%")
                     .font(.system(size: 56, weight: .black).monospacedDigit())
                     .tracking(-2)
                     .foregroundStyle(.white)
@@ -683,39 +684,7 @@ extension String {
 // MARK: - What the phone knows of the student's scores
 
 extension ScoreText {
-    /// A percent in the whole percents the outcome rule compares in — rounded half to even, like
-    /// `CelebrationRule.assessment`. `string(_:)` rounds half away from zero, and "Up from X%" must
-    /// name the very number the rule weighed: 12.5 is 12 to the rule, and "13%" would claim a
-    /// lower mark was beaten than the one that was.
-    static func wholePercent(_ value: Double) -> String {
-        String(Int(value.rounded(.toNearestOrEven)))
-    }
-}
-
-extension OutcomeBook {
-    /// Every completed, graded assessment attempt a my-assignments list carries becomes known to
-    /// this phone (`OutcomeMemory.noteSeen`), so that an attempt taken on the web — or finished
-    /// before its review was ever opened — is the attempt before the next one. Read per
-    /// `AssessmentHomeworkLink`: the list's top-level `assessment_progress` covers only the first
-    /// bundled set. The key is built as the review builds it. Never celebrates anything.
-    ///
-    /// Run when a list arrives, before any review decides "improved". Synchronous, so it cannot
-    /// interleave with a review's own read-and-write of the same memory on the main actor.
-    func noteSeen(in assignments: [AssignmentListing], userID: Int) {
-        var memory = read(userID: userID)
-        let before = memory
-        for assignment in assignments {
-            for link in assignment.assessmentHomeworks {
-                // `percent` is only sent with a mark; a submission still waiting for one has none.
-                guard let progress = link.progress, progress.isCompleted, progress.graded != false,
-                      let attemptId = progress.attemptId, let percent = progress.percent else { continue }
-                memory.noteSeen(
-                    setKey: OutcomeMemory.setKey(assignmentId: assignment.id, setTitle: link.assessmentSet?.title),
-                    attemptId: attemptId,
-                    percent: Double(percent)
-                )
-            }
-        }
-        if memory != before { write(memory, userID: userID) }
-    }
+    /// A percent written as the whole number the outcome rule weighed (`CelebrationRule.wholePercent`).
+    /// `string(_:)` rounds half away from zero, so it must not name a percent the rule compared.
+    static func wholePercent(_ value: Double) -> String { String(CelebrationRule.wholePercent(value)) }
 }

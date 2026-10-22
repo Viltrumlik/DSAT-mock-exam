@@ -25,7 +25,19 @@ public enum CelebrationRule {
     /// than either, so two scores that are the same whole percent are never an improvement.
     public static func assessment(percent: Double, previous: Double?) -> Bool {
         guard let previous else { return false }
-        return percent.rounded(.toNearestOrEven) > previous.rounded(.toNearestOrEven)
+        return whole(percent) > whole(previous)
+    }
+
+    /// A percent as the whole number the rule weighed. A page that says "Up from X%", or shows the
+    /// score itself, writes this rather than a plain rounding, which goes half away from zero: at
+    /// x.5 it would name a number the rule never compared (12.5 is 12 to the rule, and "13%"
+    /// would claim a lower mark was beaten than the one that was).
+    public static func wholePercent(_ value: Double) -> Int {
+        Int(whole(value))
+    }
+
+    private static func whole(_ value: Double) -> Double {
+        value.rounded(.toNearestOrEven)
     }
 
     /// A word-game round the server says mastered its game. The server recomputes
@@ -120,6 +132,26 @@ public struct OutcomeMemory: Codable, Sendable, Equatable {
         newestSeen[setKey] = Attempt(attemptId: attemptId, percent: percent)
     }
 
+    /// Every completed, graded assessment attempt a my-assignments list carries becomes known
+    /// (`noteSeen(setKey:attemptId:percent:)`), so that an attempt taken on the web — or finished
+    /// before its review was ever opened — is the attempt before the next one. Read per
+    /// `AssessmentHomeworkLink`: the list's top-level `assessment_progress` covers only the first
+    /// bundled set. The key is built as the review builds it. Never celebrates anything.
+    public mutating func noteSeen(in assignments: [AssignmentListing]) {
+        for assignment in assignments {
+            for link in assignment.assessmentHomeworks {
+                // `percent` is only sent with a mark; a submission still waiting for one has none.
+                guard let progress = link.progress, progress.isCompleted, progress.graded != false,
+                      let attemptId = progress.attemptId, let percent = progress.percent else { continue }
+                noteSeen(
+                    setKey: Self.setKey(assignmentId: assignment.id, setTitle: link.assessmentSet?.title),
+                    attemptId: attemptId,
+                    percent: Double(percent)
+                )
+            }
+        }
+    }
+
     /// A marked attempt is on screen. Returns the score it improved on — when it beat the newest
     /// earlier attempt of the same set this phone knew — on every showing, so the page can say
     /// so each time it opens; nil otherwise. It is returned only while the score on screen still
@@ -183,5 +215,18 @@ public struct OutcomeBook: @unchecked Sendable {
     public func write(_ memory: OutcomeMemory, userID: Int) {
         guard let data = try? JSONEncoder().encode(memory) else { return }
         defaults.set(data, forKey: Self.key(userID: userID))
+    }
+
+    /// A my-assignments list has arrived (`OutcomeMemory.noteSeen(in:)`): what it carries becomes
+    /// known to this phone before any review decides "improved". Called wherever the app loads
+    /// the student's assignments to show them, so an attempt counts as "the attempt before" on
+    /// whichever page first met it. Synchronous, so it cannot interleave with a review's own
+    /// read-and-write of the same memory on the main actor; and written only when it learned
+    /// something, since most loads carry nothing new.
+    public func noteSeen(in assignments: [AssignmentListing], userID: Int) {
+        var memory = read(userID: userID)
+        let before = memory
+        memory.noteSeen(in: assignments)
+        if memory != before { write(memory, userID: userID) }
     }
 }

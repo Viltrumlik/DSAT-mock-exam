@@ -41,7 +41,9 @@ public struct ConfettiBurst: Sendable, Identifiable {
     public static let lifetime: TimeInterval = 2.3
     static let fadeStart: TimeInterval = 1.5
     static let drag = 2.4
-    static let gravity = 520.0
+    /// The t² coefficient of the fall — g/2, not g: a piece that falls for `t` seconds has dropped
+    /// `halfGravity · t²`, so the pull itself is twice this, 1,040 pt/s² (`position`).
+    static let halfGravity = 520.0
 
     public static func make(
         x: Double, y: Double, count: Int, power: Double = 1, start: Date = .now,
@@ -67,7 +69,7 @@ public struct ConfettiBurst: Sendable, Identifiable {
     public func position(of particle: ConfettiParticle, at t: TimeInterval) -> (x: Double, y: Double) {
         let travel = (1 - exp(-Self.drag * t)) / Self.drag
         return (originX + particle.vx * travel,
-                originY + particle.vy * travel + Self.gravity * t * t)
+                originY + particle.vy * travel + Self.halfGravity * t * t)
     }
 
     /// 1 until `fadeStart`, then down to 0 at `lifetime`.

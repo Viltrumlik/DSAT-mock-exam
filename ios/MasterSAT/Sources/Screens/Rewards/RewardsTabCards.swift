@@ -3,15 +3,6 @@ import MasterSATKit
 
 // MARK: - The trophy hero
 
-extension LeaderboardQuery {
-    /// The one question the app asks to learn the student's place: the default board — global, all
-    /// time, XP — at the server's largest page, so "N XP to pass <name>" reaches the row above a
-    /// student who is deep in the board (Ruling P3-R3). The Rewards hero and the welcome-back check
-    /// both ask exactly this, so a place noted by either is the same number. The full leaderboard
-    /// page keeps the default page.
-    static let heroBoard = LeaderboardQuery(limit: 200)
-}
-
 /// The student's place on the whole learning center's board, all time — the owner's choice for
 /// this card (2026-10-21) — and the one student to pass next. Drawn inside a link to the full
 /// board, on look B: the one card on the tab that is all about the student.

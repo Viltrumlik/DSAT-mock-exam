@@ -27,10 +27,16 @@ final class AssessmentBoardModel {
     /// The card whose Start is in flight. One at a time: a second tap waits for nothing.
     private(set) var startingId: Int?
 
-    func load(_ student: StudentAPI) async {
+    func load(_ session: Session) async {
         if assignments.isEmpty { phase = .loading }
+        // Whose list this is, taken before it is asked for: a quick sign-in as someone else while
+        // it is in flight must not teach the new student's memory the old one's attempts.
+        let userID: Int? = if case .signedIn(let user) = session.phase { user.id } else { nil }
         do {
-            let fresh = try await student.assignments()
+            let fresh = try await session.student.assignments()
+            // The board carries the attempts a review will be weighed against, so it teaches the
+            // memory what it carries like every other list (`OutcomeMemory`).
+            if let userID { OutcomeBook().noteSeen(in: fresh, userID: userID) }
             assignments = fresh
             board = AssessmentBoard(assignments: fresh)
             phase = .loaded
@@ -129,16 +135,16 @@ struct AssessmentBoardScaffold<Content: View>: View {
             .padding(16)
         }
         .background(Theme.background)
-        .refreshable { await model.load(session.student) }
+        .refreshable { await model.load(session) }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if loadsOnAppear { await model.load(session.student) } }
+        .task { if loadsOnAppear { await model.load(session) } }
         .fullScreenCover(item: $runnerAttemptId) { id in
             AssessmentRunnerView(attemptId: id, onSubmitted: {
                 celebrations.celebrate(.assessment, xpBefore: xpAtStart)
             }) {
                 runnerAttemptId = nil
-                Task { await model.load(session.student) }
+                Task { await model.load(session) }
             }
             .coversCelebrations(celebrations)
             .noBarClearance()
@@ -151,7 +157,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
             Button("OK", role: .cancel) {
                 refusal = nil
                 // Withdrawn since the board loaded: reload, and the card goes with it.
-                if refused.stale { Task { await model.load(session.student) } }
+                if refused.stale { Task { await model.load(session) } }
             }
         } message: { refused in
             Text(verbatim: refused.message)
@@ -162,7 +168,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
     private var main: some View {
         switch model.phase {
         case .failed:
-            AssessmentLoadError { await model.load(session.student) }
+            AssessmentLoadError { await model.load(session) }
         case .loading where model.assignments.isEmpty:
             ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
         default:
@@ -190,7 +196,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
         AssessmentCardActions(
             startingId: model.startingId,
             open: { entry in open(entry) },
-            reload: { Task { await model.load(session.student) } }
+            reload: { Task { await model.load(session) } }
         )
     }
 
