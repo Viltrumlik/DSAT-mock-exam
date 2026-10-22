@@ -240,8 +240,8 @@ struct ModeOutcomeView: View {
             if partying { VocabCelebration() }
         }
         .onAppear {
-            // The trophy is chrome on the hero, never over the stats: its spring is allowed —
-            // not under Reduce Motion.
+            // The trophy is chrome on the hero and never covers the stats, so it may spring.
+            // Under Reduce Motion it stays at rest.
             guard partying, !reduceMotion else { return }
             withAnimation(.spring(response: 0.45, dampingFraction: 0.5).delay(0.15)) { trophyPopped = true }
         }

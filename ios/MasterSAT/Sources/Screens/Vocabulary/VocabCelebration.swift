@@ -1,8 +1,9 @@
 import SwiftUI
 import MasterSATKit
 
-/// The confetti the end-of-round screen fires when a game or a whole set is mastered — the
-/// web's `CelebrationLayer`: three popper cannons from the bottom, then a short rain.
+/// The confetti the end-of-round screen fires when this round mastered its game, as the server
+/// says (`CelebrationRule.vocabRound`) — the web's `CelebrationLayer`: three popper cannons from
+/// the bottom, then a short rain.
 ///
 /// Generated from a fixed seed so a re-render never reshuffles it mid-flight, drawn in one
 /// `Canvas` so sixty-odd flecks cost one view, and gone entirely under Reduce Motion rather

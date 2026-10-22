@@ -147,21 +147,20 @@ final class CelebrationCenter {
 
     /// A piece of work is in. `xpBefore` is `xpNow` read when the work started; `point` is where
     /// the confetti leaves from when it plays at once (the button), else the screen's centre.
-    /// `xpAtHandIn` is `xpNow` read the instant the server confirmed the work — pass it when the
-    /// caller awaits anything between that and this call (a re-read of what it handed in): a
-    /// refresh that lands meanwhile already holds the payout, and reading the total only now would
-    /// count it as not this work's. Omitted, the total is read now.
     ///
     /// Contract: call once per piece of work; never on a failed submit. Every call plays its own
     /// check and queues its own XP gain, so the caller calls it only after the server confirmed
     /// the work, from a one-shot point (a flag, or the not-done to done transition) that a
-    /// re-render, a double tap or a retried callback cannot fire twice.
-    func celebrate(_ work: FinishedWork, xpBefore: Int?, xpAtHandIn: Int? = nil, at point: CGPoint? = nil) {
+    /// re-render, a double tap or a retried callback cannot fire twice. Call it the moment the
+    /// work is confirmed, before awaiting anything else (a re-read of what was handed in): the
+    /// total read here is the hand-in's, and a refresh landing in between would already hold the
+    /// payout and count it as not this work's.
+    func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
         // Measured from hand-in at the latest: a rise the header took since the work started (a
         // return to the app, a reconnect) is not this work's, and holding it back now would drop
         // the pill to the old total, un-animated (`XPDelta.baseline`). Read here, before the
         // refresh below is awaited, so the payout that refresh brings is still this work's gain.
-        let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpAtHandIn ?? xpNow)
+        let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpNow)
         let entry = queue.record(work, xpBefore: baseline, stageVisible: !covered)
         if entry.playNow { playEffort(work, at: point) }
         Task { [weak self] in
