@@ -327,6 +327,33 @@ enum WorkFixtures {
         #expect(mixed.week == TodayPlan.Progress(done: 1, total: 2))
     }
 
+    @Test("A homework of only empty word sets is neither done nor counted in the week's ring")
+    func emptyWordSetsOutOfTheRing() throws {
+        let empty: [String: Any] = ["vocab_homeworks": [W.words(5, "not_started", count: 0)]]
+        // A week whose only due homework has nothing in it yet: nothing due, never "1 of 1".
+        let onlyEmpty = TodayPlan(assignments: [try W.homework(1, due: F.at(2), extra: empty)],
+                                  events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(onlyEmpty.week == TodayPlan.Progress(done: 0, total: 0))
+        #expect(!onlyEmpty.week.isComplete)
+        // So the all-done moment can never fire for it.
+        #expect(!TodayPlan.justFinished(previous: TodayPlan.Progress(done: 0, total: 0), current: onlyEmpty.week))
+
+        // A filled set beside it still counts, and finishing it completes the week.
+        let filled: [String: Any] = ["vocab_homeworks": [W.words(6, "not_started")]]
+        let played: [String: Any] = ["vocab_homeworks": [W.words(6, "completed")]]
+        let before = TodayPlan(assignments: [
+            try W.homework(1, due: F.at(2), extra: empty),
+            try W.homework(2, due: F.at(3), extra: filled),
+        ], events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(before.week == TodayPlan.Progress(done: 0, total: 1))
+        let after = TodayPlan(assignments: [
+            try W.homework(1, due: F.at(2), extra: empty),
+            try W.homework(2, due: F.at(3), extra: played),
+        ], events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(after.week == TodayPlan.Progress(done: 1, total: 1))
+        #expect(TodayPlan.justFinished(previous: before.week, current: after.week))
+    }
+
     @Test("Up to +N comes from the live HOMEWORK rule, and only when it pays XP")
     func homeworkXP() {
         #expect(TodayPlan.homeworkXP([RewardRule(event: "HOMEWORK", label: "Homework", points: 15)]) == 15)

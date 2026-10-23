@@ -121,7 +121,10 @@ public struct TodayPlan: Sendable, Equatable {
     }
 
     /// Monday to Sunday — the learning center's week (ODD classes meet Mon, Wed, Fri). The
-    /// caller passes homework only; classwork has no place in the ring.
+    /// caller passes homework only; classwork has no place in the ring. Nor has a homework of
+    /// only empty word sets (`HomeworkProgress.asksNothingYet`): `isDone` lets it through, and
+    /// counted, a week holding nothing else would read "1 of 1" — all done, and celebrated — for
+    /// work nobody did. The Me sheet's Homework figure leaves it out the same way.
     static func week(_ assignments: [AssignmentListing], now: Date, calendar: Calendar) -> Progress {
         var weekCalendar = calendar
         weekCalendar.firstWeekday = 2
@@ -129,6 +132,7 @@ public struct TodayPlan: Sendable, Equatable {
             return Progress(done: 0, total: 0)
         }
         let due = assignments.filter { homework in
+            guard !HomeworkProgress.asksNothingYet(homework) else { return false }
             guard let date = homework.dueAt.flatMap(JSONCoding.parseServerDate) else { return false }
             return date >= week.start && date < week.end
         }
