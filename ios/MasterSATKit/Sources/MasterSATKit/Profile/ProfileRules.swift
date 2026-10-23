@@ -43,12 +43,14 @@ public enum ProfileHomework {
     /// Done is `HomeworkProgress.isDone` — Today's and the Class tab's answer — so a homework
     /// finished there leaves this list too: a played word set is never handed in, and a quiz
     /// homework's status is only its first quiz's. Classwork is done in class and is never
-    /// owed, so it is neither counted nor to do.
+    /// owed, so it is neither counted nor to do. Nor is a homework of only empty word sets
+    /// (`HomeworkProgress.asksNothingYet`): nothing has been set in it yet, and counting it as
+    /// turned in would raise the figure for work nobody did.
     public static func summarise(_ rows: [AssignmentListing], now: Date = Date()) -> Summary {
         func due(_ row: AssignmentListing) -> Date {
             row.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
         }
-        let homework = rows.filter { !$0.isClasswork }
+        let homework = rows.filter { !$0.isClasswork && !HomeworkProgress.asksNothingYet($0) }
         let toDo = homework
             .filter { !HomeworkProgress.isDone($0) }
             .sorted { lhs, rhs in

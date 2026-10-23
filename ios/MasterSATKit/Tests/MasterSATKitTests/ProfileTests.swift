@@ -157,6 +157,31 @@ enum ProfileFixtures {
         #expect(summary.catchUp == 0)
     }
 
+    @Test("A homework of nothing but empty word sets is not counted: nothing has been set in it yet")
+    func emptyWordSetsNotCounted() throws {
+        let empty = [W.words(5, "not_started", count: 0), W.words(6, "not_started", count: 0)]
+        let onlyEmpty = try W.homework(1, due: F.at(-1), extra: ["vocab_homeworks": empty])
+        let real = try W.homework(2, due: F.at(2))
+        let summary = ProfileHomework.summarise([onlyEmpty, real], now: F.now)
+        #expect(summary.total == 1)
+        #expect(summary.turnedIn == 0)
+        #expect(ProfileWording.homeworkValue(summary) == "0%")
+        let alone = ProfileHomework.summarise([onlyEmpty], now: F.now)
+        #expect(alone.total == 0)
+        #expect(ProfileWording.homeworkValue(alone) == "—")
+        #expect(ProfileWording.homeworkEmpty(alone) == "No homework has been set for your classes yet.")
+        // Still asked for a file: owed, and counted.
+        let fileToo = try W.homework(3, due: nil, extra: ["vocab_homeworks": empty, "allow_file_upload": true])
+        let owed = ProfileHomework.summarise([fileToo], now: F.now)
+        #expect(owed.total == 1)
+        #expect(owed.toDo.map(\.id) == [3])
+        // Filled in beside an empty one: a real set, counted once played.
+        let played = try W.homework(4, due: nil, extra: [
+            "vocab_homeworks": [W.words(7, "completed"), W.words(8, "not_started", count: 0)],
+        ])
+        #expect(ProfileHomework.summarise([played], now: F.now).turnedIn == 1)
+    }
+
     @Test("A row's size is its question count, only for work made of questions")
     func rowDetail() throws {
         let quiz = try F.homework(1, "Q", due: nil, status: "not_started", extra: [

@@ -30,9 +30,22 @@ public enum HomeworkProgress {
         }
         if ProfileHomework.isTurnedIn(homework.workflowStatus) { return true }
         let played = !homework.assessmentHomeworks.isEmpty || !homework.vocabHomeworks.isEmpty
-        let leavesNoTrace = homework.offersFileUpload
-            || homework.contents.contains { paperKinds.contains($0.kind) }
-        return played && !leavesNoTrace
+        return played && !leavesNoTrace(homework)
+    }
+
+    /// Done only because there is nothing in it yet: every piece is a word set with no words, with
+    /// no quiz, no file and no paper beside them. Never owed, and never finished either — the Me
+    /// sheet leaves it out of the homework it counts, and its status is `HomeworkStatus.nothingYet`.
+    public static func asksNothingYet(_ homework: AssignmentListing) -> Bool {
+        !homework.vocabHomeworks.isEmpty
+            && homework.vocabHomeworks.allSatisfy { $0.wordCount == 0 }
+            && homework.assessmentHomeworks.isEmpty
+            && !leavesNoTrace(homework)
+    }
+
+    /// A file to hand in or a paper sat on a computer: work the list row cannot see finished.
+    private static func leavesNoTrace(_ homework: AssignmentListing) -> Bool {
+        homework.offersFileUpload || homework.contents.contains { paperKinds.contains($0.kind) }
     }
 }
 

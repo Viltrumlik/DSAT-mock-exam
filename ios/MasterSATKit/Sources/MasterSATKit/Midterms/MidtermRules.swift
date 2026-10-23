@@ -84,8 +84,9 @@ public enum MidtermResults {
     ///
     /// Every handed-in sitting, a granted re-sit included: the midterm page files that one under
     /// Available so it can be started again, but until it is, its released score and certificate
-    /// are still the student's own (the controller's ruling, 2026-10-23). A begun re-sit is a
-    /// new, unsubmitted sitting, and drops out until its score is released.
+    /// are still the student's own — a certificate earned does not vanish because a second try
+    /// was offered. A begun re-sit is a new, unsubmitted sitting, and drops out until its score
+    /// is released.
     public static func latest(_ midterms: [MidtermListing], limit: Int = 3) -> [MidtermListing] {
         Array(
             midterms

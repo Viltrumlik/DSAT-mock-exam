@@ -12,6 +12,12 @@ public enum HomeworkStatus {
     /// "submitted" — nothing was handed in.
     public static let completed = "completed"
 
+    /// The other status the client names: a homework whose only pieces are word sets with no words
+    /// yet — nothing to play, nothing to hand in, no paper. The lists file it under Done (it is never
+    /// owed, `HomeworkProgress.isDone`), but "Completed" would be untrue (nothing was done) and "Not
+    /// started" would contradict Done. Neutral: once the teacher fills a set, it is owed again.
+    public static let nothingYet = "nothing_yet"
+
     /// What a quiz the server has just accepted raises its homework to, before any read says so.
     /// "Submitted" is the least that is true: a graded attempt is past it, and the server's own
     /// word replaces it the moment a read brings one.
@@ -19,7 +25,7 @@ public enum HomeworkStatus {
 
     /// What to read the chip from: the submission's status, else the row's — except that a word
     /// homework the server still calls "not started" reads "in progress" once any set has been
-    /// played, and "completed" once every set has.
+    /// played, "completed" once every set has, and "nothing yet" while its only sets are empty.
     ///
     /// Only words speak for themselves. A quiz homework's status is its first quiz's, kept by the
     /// server and refreshed with the row; a hand-in's is the submission's. And a homework that also
@@ -55,7 +61,9 @@ public enum HomeworkStatus {
         guard isNotStarted(reported), homework.assessmentHomeworks.isEmpty else { return reported }
         // A set with no words has nothing to play: it is never owed, and playing it proves nothing.
         let sets = homework.vocabHomeworks.filter { $0.wordCount > 0 }
-        guard !sets.isEmpty else { return reported }
+        guard !sets.isEmpty else {
+            return HomeworkProgress.asksNothingYet(homework) ? nothingYet : reported
+        }
         if HomeworkProgress.isDone(homework) { return completed }
         if sets.contains(where: { $0.state.lowercased() != "not_started" }) { return "in_progress" }
         return reported
@@ -77,6 +85,12 @@ public enum HomeworkStatus {
     public static func isWithTheTeacher(_ status: String?) -> Bool {
         let key = (status ?? "").lowercased()
         return key == completed || ProfileHomework.isTurnedIn(key)
+    }
+
+    /// Nothing is owed on it, so its deadline is a date, never "Catch up": work with the teacher, or
+    /// a homework with nothing to do yet — which is not with the teacher, since nothing was handed in.
+    public static func owesNothing(_ status: String?) -> Bool {
+        isWithTheTeacher(status) || (status ?? "").lowercased() == nothingYet
     }
 
     private static func isNotStarted(_ status: String?) -> Bool {

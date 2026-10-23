@@ -53,10 +53,36 @@ import Testing
     func emptySetsAreIgnored() throws {
         let finished = try words([set(1, state: "completed"), set(2, words: 0, state: "not_started")])
         #expect(HomeworkStatus.shown(for: finished, submission: nil) == HomeworkStatus.completed)
+        // Only empty sets: not "completed" (nothing was played) and not "not started" either.
         let onlyEmpty = try words([set(1, words: 0, state: "not_started")])
-        #expect(HomeworkStatus.shown(for: onlyEmpty, submission: nil) == "NOT_STARTED")
+        #expect(HomeworkStatus.shown(for: onlyEmpty, submission: nil) == HomeworkStatus.nothingYet)
         let emptyAndPlayed = try words([set(1, words: 0, state: "completed")])
-        #expect(HomeworkStatus.shown(for: emptyAndPlayed, submission: nil) == "NOT_STARTED")
+        #expect(HomeworkStatus.shown(for: emptyAndPlayed, submission: nil) == HomeworkStatus.nothingYet)
+    }
+
+    @Test("A homework of only empty word sets has nothing to do yet — the status Done lists it under")
+    func onlyEmptySetsAskNothingYet() throws {
+        let empty = [set(1, words: 0, state: "not_started"), set(2, words: 0, state: "not_started")]
+        let homework = try words(empty)
+        let status = HomeworkStatus.shown(for: homework, submission: nil)
+        #expect(status == HomeworkStatus.nothingYet)
+        // The same answer as the lists, which file it under Done.
+        #expect(HomeworkProgress.isDone(homework))
+        // Not with the teacher — nothing was handed in — yet its date is only a date: there is
+        // nothing to catch up on.
+        #expect(!HomeworkStatus.isWithTheTeacher(status))
+        #expect(HomeworkStatus.owesNothing(status))
+        #expect(!HomeworkStatus.owesNothing("not_started"))
+        #expect(!HomeworkStatus.owesNothing("in_progress"))
+        #expect(HomeworkStatus.owesNothing(HomeworkStatus.completed))
+        #expect(HomeworkStatus.owesNothing("SUBMITTED"))
+        // Still asked for a file or a paper: owed, and the server's word stands.
+        let withUpload = try words(empty, extra: ["allow_file_upload": true])
+        #expect(HomeworkStatus.shown(for: withUpload, submission: nil) == "NOT_STARTED")
+        let withPaper = try words(empty, extra: ["contents": [["kind": "MOCK", "title": "Mock"]]])
+        #expect(HomeworkStatus.shown(for: withPaper, submission: nil) == "NOT_STARTED")
+        // Anything the server has said past "not started" is kept.
+        #expect(HomeworkStatus.shown(for: try words(empty, status: "GRADED"), submission: nil) == "GRADED")
     }
 
     @Test("Words beside a file to hand in or a paper to sit are not complete until the server says so")
