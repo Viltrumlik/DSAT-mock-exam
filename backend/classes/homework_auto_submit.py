@@ -126,11 +126,44 @@ def homework_auto_grade(attempts: list[TestAttempt]):
     return (Decimal(sum(scores)) / len(scores)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
 
 
-def homework_score_parts_for(student_id: int, assignment: Assignment) -> list[tuple] | None:
-    """``homework_score_parts`` for the sitting that counts for ``assignment``; None until all of it is finished."""
-    attempts = _collect_completed_attempts_for_targets(
-        student_id, assignment_target_practice_test_ids(assignment), since=homework_set_at(assignment)
+def completed_attempts_pool(student_ids, test_ids) -> dict[tuple[int, int], list[TestAttempt]]:
+    """Every finished attempt of these students on these tests in ONE query, keyed by
+    ``(student_id, practice_test_id)``, newest first in the database's own order — the order
+    ``_latest_completed_attempt`` picks from, so a pick from the pool is the same attempt."""
+    pool: dict[tuple[int, int], list[TestAttempt]] = {}
+    qs = (
+        TestAttempt.objects.filter(student_id__in=student_ids, practice_test_id__in=test_ids, is_completed=True)
+        .annotate(_finished_at=finished_at_expr())
+        .select_related("practice_test")
+        .order_by("-submitted_at", "-id")
     )
+    for a in qs:
+        pool.setdefault((a.student_id, a.practice_test_id), []).append(a)
+    return pool
+
+
+def homework_score_parts_for(
+    student_id: int, assignment: Assignment, *, targets: list[int] | None = None, pool=None
+) -> list[tuple] | None:
+    """``homework_score_parts`` for the sitting that counts for ``assignment``; None until all of it is finished.
+
+    ``pool`` (from ``completed_attempts_pool``) answers from attempts already loaded, so a page of
+    many students and homework does not ask the database once per student, homework and test.
+    """
+    if targets is None:
+        targets = assignment_target_practice_test_ids(assignment)
+    since = homework_set_at(assignment)
+    if pool is None:
+        attempts = _collect_completed_attempts_for_targets(student_id, targets, since=since)
+    else:
+        attempts = []
+        for pt_id in targets:
+            ta = next(
+                (a for a in pool.get((student_id, pt_id), ()) if since is None or a._finished_at >= since), None
+            )
+            if ta is None:
+                return None
+            attempts.append(ta)
     return homework_score_parts(attempts) if attempts else None
 
 

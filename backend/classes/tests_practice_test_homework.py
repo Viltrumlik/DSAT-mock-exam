@@ -411,6 +411,36 @@ class PracticeTestHomeworkScaleTests(TestCase):
         self.assertEqual(row["content_name"], "CHUNG PRACTISE")
         self.assertEqual(row["score"], 1350.0)
 
+    def test_results_split_rows_cost_the_same_queries_for_any_class_size(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        pt1, pt3 = self._practice(1), self._practice(3)
+        self._homework(pt1, pt3)
+        self._homework(pt1, pt3)
+
+        def finish_both(student):
+            self.student = student
+            self._finish(pt1, 640)
+            self._finish(pt3, 400)
+
+        def count():
+            self.client.force_authenticate(self.teacher)
+            with CaptureQueriesContext(connection) as ctx:
+                r = self.client.get(RESULTS_URL.format(id=self.room.id), {"type": "practice test"})
+            self.assertEqual(r.status_code, 200, r.content)
+            return len(ctx.captured_queries), len(r.json()["rows"])
+
+        finish_both(self.student)
+        one, rows_one = count()
+        for n in range(3):
+            other = User.objects.create_user(email=f"pts_more{n}@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+            ClassroomMembership.objects.create(classroom=self.room, user=other, role=ClassroomMembership.ROLE_STUDENT)
+            finish_both(other)
+        four, rows_four = count()
+        self.assertEqual((rows_one, rows_four), (4, 16))  # 2 homework x 2 tests per student
+        self.assertEqual(four, one)
+
     def test_a_teachers_own_mark_stays_one_row(self):
         pt1, pt3 = self._practice(1), self._practice(3)
         a = self._homework(pt1, pt3)

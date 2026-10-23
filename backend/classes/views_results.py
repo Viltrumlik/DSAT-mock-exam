@@ -23,7 +23,7 @@ from users.photos import profile_image_url
 from exams.practice_tests import practice_display_title
 
 from .capabilities import classroom_capabilities
-from .homework_auto_submit import homework_score_parts_for, part_score
+from .homework_auto_submit import completed_attempts_pool, homework_score_parts_for, part_score
 from .models import Assignment, ClassroomMembership, Submission, assignment_target_practice_test_ids
 from .pastpaper_retake import finished_at
 from .views_rankings import _ClassroomScopedView, _display_name
@@ -174,10 +174,18 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
 
         # --- Past papers / practice homework (classes.Submission with practice/pastpaper target) ---
         if f_type in ("all", "past paper", "pastpaper", "past_paper", "practice test", "practice_test"):
-            subs = (Submission.objects
+            subs = [s for s in (Submission.objects
                     .filter(assignment__classroom=classroom, student_id__in=student_ids)
                     .exclude(assignment__assessment_homeworks__isnull=False)
                     .select_related("assignment", "review", "attempt__practice_test"))
+                    if (s.assignment.practice_test_id or s.assignment.practice_test_ids or s.assignment.practice_test_pack_id)]
+            targets_by_assignment: dict[int, list[int]] = {}
+            for s in subs:
+                if s.assignment_id not in targets_by_assignment:
+                    targets_by_assignment[s.assignment_id] = assignment_target_practice_test_ids(s.assignment)
+            # Homework of several tests is split by test below; one query brings every attempt it reads.
+            split_tests = {t for ts in targets_by_assignment.values() if len(ts) > 1 for t in ts}
+            pool = completed_attempts_pool(student_ids, split_tests) if split_tests else {}
 
             def _wanted(row_type):
                 # One query feeds both kinds; the type filter keeps each to its own rows.
@@ -187,23 +195,19 @@ class ClassroomUnifiedResultsView(_ClassroomScopedView):
                     return row_type == "Past Paper"
                 return True
 
-            targets_by_assignment: dict[int, list[int]] = {}
             for s in subs:
                 a = s.assignment
-                if not (a.practice_test_id or a.practice_test_ids or a.practice_test_pack_id):
-                    continue
                 review = getattr(s, "review", None)
                 base = {
                     "student_id": s.student_id, "student": name_by_id.get(s.student_id, str(s.student_id)), "student_profile_image_url": photo_by_id.get(s.student_id),
                     "status": s.status,
                 }
-                if a.pk not in targets_by_assignment:
-                    targets_by_assignment[a.pk] = assignment_target_practice_test_ids(a)
+                targets = targets_by_assignment[a.pk]
                 # Homework of several practice tests: one row per test, on that test's own scale.
                 # A teacher's own mark is for the whole homework, so it stays one row.
                 parts = None
-                if len(targets_by_assignment[a.pk]) > 1 and (review is None or review.is_auto):
-                    parts = homework_score_parts_for(s.student_id, a)
+                if len(targets) > 1 and (review is None or review.is_auto):
+                    parts = homework_score_parts_for(s.student_id, a, targets=targets, pool=pool)
                 if parts and len(parts) > 1:
                     for section, atts in parts:
                         row_type = "Practice Test" if section is not None else "Past Paper"
