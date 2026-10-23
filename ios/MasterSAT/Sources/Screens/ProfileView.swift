@@ -2,15 +2,28 @@ import SwiftUI
 import UIKit
 import MasterSATKit
 
-/// The Me sheet, opened from the avatar in every tab's header — one page, top to bottom: who
-/// you are (the hero, with the sheet's close button), Your goal, My progress, Midterms &
-/// certificates, the settings rows, Finish your profile while a step is still missing,
-/// Payments (coming soon), and Sign out.
+/// The Me sheet, opened from the avatar in every tab's header — the web's `/profile`, in its
+/// order and its words: who you are (the hero, with the sheet's close button), then three tabs.
+///
+/// - **Overview** does things: its four figures open their pages, Your goal sets the target and
+///   the test day, Homework to do opens the homework, Midterms & certificates opens each result,
+///   the checklist opens the step it names (or says the profile is all set), and Payments holds
+///   its place, coming soon.
+/// - **Classes** shows each class's next lesson, teacher and way in, then its classmates.
+/// - **Settings** is the web's section menu.
+///
+/// Under the tabs, on every tab: My progress, then Sign out.
+///
+/// The tabs stay pinned under the sheet's top edge while the page scrolls, so another tab is
+/// always one tap away. Which tab is open lives in `AppRouter` (`meTab`): the sheet reopens on
+/// the tab last open in this launch, and a link into Me picks its own.
 ///
 /// The sheet's root is a stack root, so everything it opens is pushed as a value it declares
-/// here — `Route` for the account pages, `AppLink` for the rest — which a link into the Me
-/// sheet can pop, and which SwiftUI never drops the way it can a closure destination pushed
-/// from a root. Only the goal, the email check and a certificate open as sheets over it.
+/// here — `Route` for the account pages and the class page, `AssignmentListing` for a homework,
+/// `AppLink` for the rest — which a link into the Me sheet can pop, and which SwiftUI never
+/// drops the way it can a closure destination pushed from a root. Back lands on the tab and
+/// the place the student left: the root stays put under what it pushed. Only the goal, the
+/// email check, a class's Telegram group and a certificate open as sheets over it.
 ///
 /// Every panel loads and fails on its own (`ProfileModel`), and a failure is never drawn as
 /// "nothing here". The hero draws from the session's copy of the account at once, so the page
@@ -18,59 +31,80 @@ import MasterSATKit
 struct ProfileView: View {
     let user: CurrentUser
     @Binding var path: NavigationPath
+    @Binding var tab: MeTab
     let onClose: () -> Void
 
-    /// The account pages, which no `AppLink` names.
-    enum Route: Hashable { case accountDetails, notifications, signIn, devices, about }
+    /// Pages no `AppLink` names.
+    enum Route: Hashable {
+        case accountDetails, notifications, signIn, devices, about
+        /// One of the student's classes, opened on the copy the Classes tab already holds.
+        case classroom(id: Int)
+    }
 
     @Environment(Session.self) private var session
+    @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var model = ProfileModel()
     @State private var shown = false
     @State private var showingGoal = false
     @State private var verifyingEmail = false
     @State private var confirmingSignOut = false
     @State private var certificate: MeCertificate?
+    @State private var telegramClass: Classroom?
+    /// The class whose Telegram sheet was last open — re-read when it closes, because the
+    /// join itself happens in Telegram and the site only hears of it afterwards.
+    @State private var telegramClassId: Int?
     @State private var toast: RewardsToastMessage?
+    /// The hero has scrolled away and the tabs are pinned under the top edge.
+    @State private var tabsPinned = false
+    /// The pinned tabs' height, which a scroll to a panel must clear.
+    @State private var tabBarHeight: CGFloat = 0
+
+    /// Where the tabs rest when the hero is in view.
+    private static let tabsAnchor = "me.tabs"
 
     /// The session's account, or what was just saved here while the session catches up.
     private var current: CurrentUser { model.savedUser ?? user }
 
     var body: some View {
         NavigationStack(path: $path) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    hero.stagger(0, shown: shown)
-                    ProfileGoalPanel(
-                        user: current,
-                        model: model,
-                        onSetGoal: { showingGoal = true },
-                        onPickExamDate: pickExamDate,
-                        onRetry: { await retry($0) }
-                    )
-                    .stagger(1, shown: shown)
-                    AccountMenuRow(
-                        icon: "chart.line.uptrend.xyaxis", tone: Theme.accent,
-                        title: "My progress", hint: "How you're doing, beside your group",
-                        route: AppLink.progress
-                    )
-                    .stagger(2, shown: shown)
-                    MeMidtermsPanel(
-                        model: model,
-                        onRetry: { await retry(.midterms) },
-                        onCertificate: { certificate = $0 }
-                    )
-                    .stagger(3, shown: shown)
-                    ProfileSettingsRows(emailNeedsConfirming: !identity.emailConfirmed)
-                        .stagger(4, shown: shown)
-                    checklist
-                    ProfilePaymentsPanel()
-                        .stagger(6, shown: shown)
-                    Button("Sign out") { confirmingSignOut = true }
-                        .buttonStyle(PrimaryButtonStyle(tone: Theme.danger, fullWidth: true))
-                        .padding(.top, 6)
-                        .stagger(7, shown: shown)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        hero
+                            .stagger(0, shown: shown)
+                            .padding(.bottom, 2)
+                        Color.clear
+                            .frame(height: 0)
+                            .id(Self.tabsAnchor)
+                            .onGeometryChange(for: Bool.self) { $0.frame(in: .scrollView).minY < 0 } action: { pinned in
+                                if tabsPinned != pinned { tabsPinned = pinned }
+                            }
+                        Section {
+                            // A stable container: the tab's branch flips under it, the entrance
+                            // does not.
+                            VStack(alignment: .leading, spacing: 16) {
+                                tabContent(proxy)
+                                underTheTabs
+                            }
+                            .padding(.top, 8)
+                            .stagger(2, shown: shown)
+                        } header: {
+                            tabBar.stagger(1, shown: shown)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
                 }
-                .padding(16)
+                .onChange(of: tab) { _, now in
+                    if now == .classes { Task { await model.openClasses(session) } }
+                    // With the tabs pinned, the new tab starts at its own top, just under them —
+                    // not part-way down, wherever the old tab had been scrolled to.
+                    guard tabsPinned else { return }
+                    var instant = Transaction()
+                    instant.disablesAnimations = true
+                    withTransaction(instant) { proxy.scrollTo(Self.tabsAnchor, anchor: .top) }
+                }
             }
             .background(Theme.background)
             .navigationTitle("Profile")
@@ -83,15 +117,25 @@ struct ProfileView: View {
                 case .signIn: AccountSignInView()
                 case .devices: AccountDevicesView()
                 case .about: AccountAboutView()
+                case .classroom(let id):
+                    if let room = model.memberClass(id) {
+                        ClassroomDetailView(classroom: room)
+                    } else {
+                        LearnMoreClassroomView(classroomId: id)
+                    }
                 }
             }
+            .navigationDestination(for: AssignmentListing.self) { HomeworkDetailView(assignment: $0) }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            // Detached: six requests run under it, and the page re-renders as each lands.
+            // Detached: a dozen requests run under it, and the page re-renders as each lands.
             .detachedRefresh { await model.refreshAll(session) }
             // Not `.task`: a push cancels a task, and a cancelled load would read as a failed one.
             .onAppear {
                 if !shown { shown = true }
                 Task { await model.appeared(session) }
+                // The sheet can open straight onto Classes, the tab last left open. Beside the
+                // first load, not after it: a class list on its way brings the tab's pieces.
+                if tab == .classes { Task { await model.openClasses(session) } }
             }
             .onChange(of: user) { model.sessionCaughtUp() }
             .sheet(isPresented: $showingGoal) {
@@ -111,6 +155,15 @@ struct ProfileView: View {
                     await session.refreshUser()
                     await model.loadAccount(session)
                 }
+                .noBarClearance()
+            }
+            .sheet(item: $telegramClass, onDismiss: {
+                if let id = telegramClassId { Task { await model.loadGroup(id, session: session) } }
+            }) { room in
+                ClassroomTelegramSheet(classroomId: room.id, className: room.name, initialState: model.groups[room.id]) { state in
+                    model.setGroup(state, for: room.id)
+                }
+                .noBarClearance()
             }
             // Over the Me sheet, not through `AppRouter`: its certificate sheet would close Me.
             .sheet(item: $certificate) { MidtermCertificateSheet(code: $0.code, title: $0.title) }
@@ -146,35 +199,84 @@ struct ProfileView: View {
         toast = .accountSuccess(ProfileWording.copied(username: username))
     }
 
-    // MARK: - Finish your profile
+    // MARK: - Tabs
 
-    /// Only while a step is missing — a finished checklist need not take space — or when the
-    /// account it is worked out from failed to load, which must not read as "all done".
-    /// Nothing while that account is on its way: the panel may not be wanted at all.
-    @ViewBuilder private var checklist: some View {
-        if let content = checklistContent {
-            // Staggered inside the branch: the panel can arrive after the entrance has run.
-            ProfileChecklistPanel(
-                content: content,
+    private var tabs: [PillTabs<MeTab>.Item] {
+        [
+            .init(tab: .overview, title: "Overview", icon: "person.crop.circle"),
+            .init(tab: .classes, title: "Classes", icon: "graduationcap", count: model.memberClasses?.count),
+            .init(tab: .settings, title: "Settings", icon: "gearshape"),
+        ]
+    }
+
+    /// On the page's own ground, reaching past the page's margins: pinned, the cards scroll
+    /// under it and must not show at its sides. The room above the pills clears the sheet's
+    /// grabber once they are pinned to the top edge.
+    private var tabBar: some View {
+        PillTabs(items: tabs, selection: $tab)
+            .padding(.top, 14)
+            .padding(.bottom, 8)
+            .background(Theme.background.padding(.horizontal, -16))
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                if tabBarHeight != height { tabBarHeight = height }
+            }
+    }
+
+    @ViewBuilder private func tabContent(_ proxy: ScrollViewProxy) -> some View {
+        switch tab {
+        case .overview:
+            ProfileOverviewTab(
                 user: current,
+                identity: identity,
                 model: model,
                 onSetGoal: { showingGoal = true },
                 onConfirmEmail: { verifyingEmail = true },
                 onPickExamDate: pickExamDate,
+                onCertificate: { certificate = $0 },
                 onRetry: { await retry($0) }
             )
-            .stagger(5, shown: shown)
+        case .classes:
+            ProfileClassesTab(
+                model: model,
+                selfId: current.id,
+                onRetry: { await retry($0) },
+                onClassmates: { room in
+                    Task { await model.select(room.id, session: session) }
+                    withAnimation(reduceMotion ? Motion.focus : Motion.snappy) {
+                        proxy.scrollTo(ProfileClassesTab.classmatesAnchor, anchor: .top)
+                    }
+                },
+                onTelegram: { room, button in
+                    switch button {
+                    case .join:
+                        telegramClassId = room.id
+                        telegramClass = room
+                    case .link(let raw): if let url = URL(string: raw) { openURL(url) }
+                    case .none: break
+                    }
+                },
+                classmatesLift: tabBarHeight + 8
+            )
+        case .settings:
+            ProfileSettingsTab(emailNeedsConfirming: !identity.emailConfirmed)
         }
     }
 
-    private var checklistContent: ProfileChecklistPanel.Content? {
-        if let account = model.account.value {
-            let items = ProfileChecklistPanel.items(
-                user: current, identity: identity, account: account, telegram: model.telegramSignIn
+    // MARK: - Under the tabs
+
+    /// My progress, then Sign out — on every tab. Surveys and Events moved to the Explore tab.
+    private var underTheTabs: some View {
+        VStack(spacing: 10) {
+            AccountMenuRow(
+                icon: "chart.line.uptrend.xyaxis", tone: Theme.accent,
+                title: "My progress", hint: "How you're doing, beside your group",
+                route: AppLink.progress
             )
-            return items.contains { !$0.done } ? .missing(items) : nil
+            Button("Sign out") { confirmingSignOut = true }
+                .buttonStyle(PrimaryButtonStyle(tone: Theme.danger, fullWidth: true))
+                .padding(.top, 6)
         }
-        return model.account.isFailed ? .failed : nil
+        .padding(.top, 8)
     }
 
     // MARK: - Actions
@@ -190,9 +292,14 @@ struct ProfileView: View {
     private func retry(_ load: ProfileRetry) async {
         switch load {
         case .account: await model.loadAccount(session)
+        case .rewards: await model.loadRewards(session)
+        case .homework: await model.loadHomework(session)
         case .attempts: await model.loadAttempts(session)
         case .examDates: await model.loadExamDates(session)
         case .midterms: await model.loadMidterms(session)
+        case .classes: await model.retryClasses(session)
+        case .schedule: await model.loadSchedule(session)
+        case .people: await model.loadSelectedPeople(session, force: true)
         }
     }
 }
@@ -245,15 +352,29 @@ struct ProfileIdentity {
 ///
 /// The sheet's close button sits in its top-trailing corner. It is part of the root page, not
 /// laid over the sheet, so a pushed page keeps its own back button and nothing covers a toolbar.
+///
+/// At the accessibility sizes it is a column: the photo above the name, the close button on a
+/// row of its own above both, the buttons wrapping. Nothing in it may be wider than the phone:
+/// one fixed-width piece once widened the page's whole column, and the ScrollView centred it,
+/// cutting the photo off at the left and the close button off at the right.
 private struct ProfileHeroCard: View {
     let identity: ProfileIdentity
     let onConfirmEmail: () -> Void
     let onCopyUsername: () -> Void
     let onClose: () -> Void
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var stacked: Bool { typeSize.isAccessibilitySize }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .center, spacing: 14) {
+            if stacked {
+                // Its own row: in the corner it would sit on the name. The circle lines up with
+                // the content's edge; the target reaches into the card's padding.
+                closeButton.padding(-6)
+            }
+            AdaptiveStack(spacing: 14, columnSpacing: 12) {
                 AccountAvatar(url: identity.photoURL, name: identity.name, size: 72)
                     .padding(4)
                     .background(
@@ -277,6 +398,7 @@ private struct ProfileHeroCard: View {
                         .foregroundStyle(.primary)
                         .titleLineLimit(2)
                         .minimumScaleFactor(0.8)
+                        .accessibilityAddTraits(.isHeader)
                     if !identity.username.isEmpty {
                         Text(verbatim: "@\(identity.username)")
                             .appFont(14.5, weight: .medium)
@@ -285,8 +407,9 @@ private struct ProfileHeroCard: View {
                     }
                 }
             }
-            // The close button's corner: a long name wraps before it reaches it.
-            .padding(.trailing, 30)
+            // The close button's corner: a long name wraps before it reaches it. Stacked, the
+            // button has its own row and the name the whole width.
+            .padding(.trailing, stacked ? 0 : 30)
 
             ProfileFlowLayout(spacing: 8) {
                 if identity.emailConfirmed {
@@ -308,7 +431,9 @@ private struct ProfileHeroCard: View {
                 }
             }
 
-            HStack(spacing: 8) {
+            // Wrapping, not squeezed: side by side they cut "Copy username" mid-word at the
+            // largest sizes.
+            ProfileFlowLayout(spacing: 8) {
                 NavigationLink(value: ProfileView.Route.accountDetails) {
                     Label("Edit profile", systemImage: "pencil")
                 }
@@ -320,23 +445,22 @@ private struct ProfileHeroCard: View {
                     }
                     .buttonStyle(AccountPillButtonStyle(kind: .soft, tone: Theme.accent))
                 }
-                Spacer(minLength: 0)
             }
         }
         .cardStyle(padding: 20)
         // The page's colours as one thin edge: the student's own blue, what is coming, what
         // is done.
-        .overlay(alignment: .top) {
+        .cardToneBar(
             LinearGradient(
                 colors: [ProfileTone.primary, ProfileTone.violet, ProfileTone.emerald],
                 startPoint: .leading,
                 endPoint: .trailing
-            )
-            .frame(height: 4)
-            .allowsHitTesting(false)
+            ),
+            height: 4
+        )
+        .overlay(alignment: .topTrailing) {
+            if !stacked { closeButton.padding(6) }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(alignment: .topTrailing) { closeButton }
         // A container, so the close button's sort priority orders it among the hero's own parts.
         .accessibilityElement(children: .contain)
     }
@@ -353,7 +477,6 @@ private struct ProfileHeroCard: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressBounce())
-        .padding(6)
         .accessibilityLabel("Close")
         .capDynamicType(label: "Close", systemImage: "xmark")
         // Laid over the hero, it would come after the hero's chips and buttons: the way out of the

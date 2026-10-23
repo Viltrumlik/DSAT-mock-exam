@@ -1,16 +1,18 @@
 import SwiftUI
 import MasterSATKit
 
-/// The Me sheet's settings rows — the web's section menu (`SettingsTab.tsx`), each row pushing
+/// The profile's Settings tab — the web's section menu (`SettingsTab.tsx`), each row pushing
 /// its page (`Screens/Account/`) as a `ProfileView.Route` the sheet's root declares. It is the
 /// one way into them; an earlier standalone Settings page with the same rows was removed so the
 /// two could not drift apart.
 ///
-/// Two of the web's six sections are not rows here, on purpose: **Study goal** is set from
-/// "Your goal" on this same page (the same sheet and date list Today uses), and **Appearance**
-/// follows the phone's own light/dark setting. About is the app's own addition: a phone has a
+/// **Study goal**, one of the web's sections, is not a row here: it is set from Overview's
+/// "Your goal" (the same sheet and date list Today uses). **Appearance** is not a row yet
+/// either — the app follows the phone's own light/dark until it has a theme setting of its own;
+/// it comes in as one more `ProfileView.Route` case, its row at the end of this list and its
+/// page in the root's destination switch. About is the app's own addition: a phone has a
 /// version worth knowing.
-struct ProfileSettingsRows: View {
+struct ProfileSettingsTab: View {
     /// No address yet, or one not confirmed: Sign-in & password carries a "Confirm email" badge.
     let emailNeedsConfirming: Bool
 

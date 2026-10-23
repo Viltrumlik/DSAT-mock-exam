@@ -18,6 +18,11 @@ struct ReloadRequest: Equatable {
     let nonce: Int
 }
 
+/// The Me sheet's three tabs — the web profile's.
+enum MeTab: Hashable {
+    case overview, classes, settings
+}
+
 /// Which tab is open, each tab's stack, and the two sheets.
 ///
 /// One `NavigationPath` per tab, as separate properties: an `@Observable` notifies per
@@ -28,6 +33,9 @@ struct ReloadRequest: Equatable {
 /// One sheet at a time: the Me sheet and the certificate sheet never stand together. Asking
 /// for one while the other is up closes the other and holds the request until the root calls
 /// `sheetDismissed`. Every write is guarded so a no-op never notifies the root.
+///
+/// The Me sheet's tab lives here too (`meTab`), not in the page: the sheet's page is built
+/// afresh every time it opens, and it reopens on the tab the student last had open.
 @MainActor
 @Observable
 final class AppRouter {
@@ -39,6 +47,8 @@ final class AppRouter {
     var explore = NavigationPath()
     var me = NavigationPath()
     var showingMe = false
+    /// The tab the Me sheet shows — and reopens on, for the rest of this launch.
+    var meTab: MeTab = .overview
     var certificate: CertificateCode?
     private(set) var scrollToTop: ScrollRequest?
     private(set) var reloadRequest: ReloadRequest?

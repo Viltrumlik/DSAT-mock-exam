@@ -10,6 +10,8 @@ struct MeCertificate: Identifiable {
 
 /// Midterms & certificates: the three newest sittings whose score is out, each opening its
 /// result, with "Passed" where the centre marked it and the certificate where one was issued.
+/// A sitting with a granted re-sit keeps its score and certificate here until the re-sit is
+/// begun (`MidtermResults.latest`).
 ///
 /// It reads the list `MidtermsView` reads (`ProfileModel.midterms`). Every push is a value the
 /// sheet's root declares. The certificate opens over the Me sheet itself (`onCertificate`), not
@@ -18,6 +20,8 @@ struct MeMidtermsPanel: View {
     let model: ProfileModel
     let onRetry: @MainActor () async -> Void
     let onCertificate: (MeCertificate) -> Void
+
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ProfilePanel(
@@ -39,12 +43,14 @@ struct MeMidtermsPanel: View {
         }
     }
 
+    /// The skeleton holds until the first round of "Passed" reads has answered (at most three,
+    /// side by side): rows drawn before them would grow a tag a moment later and shift.
     @ViewBuilder private var content: some View {
         let load = model.midterms
-        if load.isPending {
-            LoadingSkeleton(rows: 2)
-        } else if load.isFailed {
+        if load.isFailed {
             ErrorState(title: "Your midterms didn't load.", style: .inline, retry: onRetry)
+        } else if load.isPending || !model.verdictsSettled {
+            LoadingSkeleton(rows: 2)
         } else {
             let rows = model.shownMidterms
             if rows.isEmpty {
@@ -72,7 +78,7 @@ struct MeMidtermsPanel: View {
         return VStack(alignment: .leading, spacing: 10) {
             NavigationLink(value: AppLink.midtermResult(attemptId: attemptId)) {
                 ProfileScoreRow(
-                    math: subject == MidtermWording.subjectLabel("MATH"),
+                    math: midterm.isMath,
                     title: title,
                     detail: subject,
                     score: ScoreText.string(midterm.releasedScore),
@@ -94,8 +100,9 @@ struct MeMidtermsPanel: View {
                     Label("Certificate", systemImage: "rosette")
                 }
                 .buttonStyle(AccountPillButtonStyle(kind: .soft, tone: ProfileTone.emerald))
-                // Under the paper's name, past the tile.
-                .padding(.leading, 46)
+                // Under the paper's name, past the tile — at the left edge once the row is a
+                // column, where the tile has a line of its own.
+                .padding(.leading, typeSize.isAccessibilitySize ? 0 : 46)
                 .accessibilityLabel("Certificate for \(title)")
             }
         }

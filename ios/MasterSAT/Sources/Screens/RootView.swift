@@ -259,8 +259,9 @@ struct RootTabView: View {
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
             // The close button lives in the page's hero, on its root only: laid over the sheet,
-            // it sat on every pushed page's toolbar too.
-            ProfileView(user: user, path: $router.me) {
+            // it sat on every pushed page's toolbar too. The tab is the router's, so the sheet
+            // reopens where it was left.
+            ProfileView(user: user, path: $router.me, tab: $router.meTab) {
                 if router.showingMe { router.showingMe = false }
             }
             .presentationDragIndicator(.visible)

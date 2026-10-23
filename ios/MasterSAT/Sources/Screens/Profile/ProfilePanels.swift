@@ -1,13 +1,13 @@
 import SwiftUI
 import MasterSATKit
 
-// The Me sheet's own panels — the web's `OverviewTab.tsx` pieces the one page keeps: Your goal
-// (with Latest results), Finish your profile, and Payments, coming soon. Each reads its own load
-// from `ProfileModel` and fails on its own.
+// Overview's panels — the web's `OverviewTab.tsx` pieces: Your goal (with Latest results),
+// Finish your profile (or "all set"), and Payments, coming soon. Each reads its own load from
+// `ProfileModel` and fails on its own.
 
 /// Which panel's "Try again" was pressed.
 enum ProfileRetry {
-    case account, attempts, examDates, midterms
+    case account, rewards, homework, attempts, examDates, midterms, classes, schedule, people
 }
 
 // MARK: - Your goal
@@ -52,8 +52,7 @@ struct ProfileGoalPanel: View {
             ProfileEyebrow("Target score", tone: ProfileTone.primary)
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Text(verbatim: ScoreText.string(user.targetScore))
-                    .appFont(28, weight: .heavy)
-                    .monospacedDigit()
+                    .appFont(28, weight: .heavy, monospacedDigits: true)
                     .tracking(-0.8)
                 if user.targetScore != nil {
                     Text(verbatim: "/ 1600")
@@ -101,8 +100,7 @@ struct ProfileGoalPanel: View {
                 }
                 HStack(alignment: .firstTextBaseline, spacing: 5) {
                     Text(verbatim: day.value)
-                        .appFont(28, weight: .heavy)
-                        .monospacedDigit()
+                        .appFont(28, weight: .heavy, monospacedDigits: true)
                         .tracking(-0.8)
                         .foregroundStyle(.primary)
                     if let unit = day.unit {
@@ -173,11 +171,13 @@ struct ProfileGoalPanel: View {
 
 // MARK: - Finish your profile
 
-/// What is still missing from the account, each step with the way to do it — shown only while
-/// a step is missing (`items`), and as a failure when the account it needs did not load.
+/// What is still missing from the account, each step with the way to do it; once nothing is,
+/// the "all set" panel. A failure when the account it needs did not load — never "all set".
 struct ProfileChecklistPanel: View {
     enum Content {
+        case loading
         case missing([ProfileChecklist.Item])
+        case allSet([ProfileChecklist.Item])
         case failed
     }
 
@@ -207,14 +207,35 @@ struct ProfileChecklistPanel: View {
 
     var body: some View {
         switch content {
+        case .loading:
+            ProfilePanel(icon: "person.crop.circle.badge.checkmark", tone: ProfileTone.violet, title: "Finish your profile") {
+                LoadingSkeleton(rows: 3, height: 52)
+            }
         case .missing(let items):
             missingPanel(items)
+        case .allSet(let items):
+            allSetPanel(items)
         case .failed:
             ProfilePanel(icon: "person.crop.circle.badge.checkmark", tone: ProfileTone.violet, title: "Finish your profile") {
                 ClassroomErrorState(
                     title: "Your profile isn't loading right now.",
                     message: "Nothing has changed on your account — try again in a moment."
                 ) { await onRetry(.account) }
+            }
+        }
+    }
+
+    private func allSetPanel(_ items: [ProfileChecklist.Item]) -> some View {
+        ProfilePanel(
+            icon: "party.popper",
+            tone: ProfileTone.emerald,
+            title: "Your profile is all set",
+            description: "Everything that makes it useful is filled in."
+        ) {
+            ProfileFlowLayout(spacing: 8) {
+                ForEach(items) { item in
+                    ProfileChip(text: item.doneLabel, icon: "checkmark", tone: ProfileTone.emerald)
+                }
             }
         }
     }
@@ -250,21 +271,26 @@ struct ProfileChecklistPanel: View {
         }
     }
 
+    /// The step's way in sits beside its words, and under them at the accessibility sizes, where
+    /// a pill beside the words would leave them a word to a line.
     private func checklistRow(_ item: ProfileChecklist.Item) -> some View {
-        HStack(spacing: 12) {
-            Circle()
-                .strokeBorder(ProfileTone.violet.opacity(0.45), lineWidth: 2)
-                .frame(width: 20, height: 20)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: item.label)
-                    .appFont(13.5, weight: .bold)
-                Text(verbatim: item.hint)
-                    .appFont(12, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        AdaptiveStack(spacing: 12, columnSpacing: 10) {
+            HStack(spacing: 12) {
+                Circle()
+                    .strokeBorder(ProfileTone.violet.opacity(0.45), lineWidth: 2)
+                    .frame(width: 20, height: 20)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: item.label)
+                        .appFont(13.5, weight: .bold)
+                    Text(verbatim: item.hint)
+                        .appFont(12, weight: .medium)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer(minLength: 8)
+            .accessibilityElement(children: .combine)
+            AdaptiveSpacer()
             checklistAction(item)
         }
         .padding(.horizontal, 13)
@@ -371,12 +397,10 @@ struct ProfilePaymentsPanel: View {
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .overlay(alignment: .top) {
-            LinearGradient(colors: [ProfileTone.violet, ProfileTone.violet.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(height: 4)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+        .cardToneBar(
+            LinearGradient(colors: [ProfileTone.violet, ProfileTone.violet.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing),
+            height: 4
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Payments — coming soon")
     }
