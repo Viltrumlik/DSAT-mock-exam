@@ -208,7 +208,6 @@ struct LessonCalendarCard: View {
             Image(systemName: icon)
                 .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
-                .capDynamicType()
                 .frame(width: 38, height: 38)
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.background))
                 .overlay(
@@ -220,6 +219,7 @@ struct LessonCalendarCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
+        .capDynamicType(label: label, systemImage: icon)
     }
 
     private func step(_ delta: Int) {

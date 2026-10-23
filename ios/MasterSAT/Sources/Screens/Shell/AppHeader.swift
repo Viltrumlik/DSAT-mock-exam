@@ -28,57 +28,43 @@ struct AppHeader: View {
 
     @Environment(\.dynamicTypeSize) private var typeSize
 
+    /// One instance of each part, whatever the arrangement (`HeaderLayout`): the pills and the bell
+    /// keep their state — a flight's landing, a rolling count, an open inbox — when a digit or the
+    /// text size moves the header between its row and its stacked form. Only the line of context
+    /// ever swaps, and it holds nothing.
     var body: some View {
+        HeaderLayout(stacked: typeSize.isAccessibilitySize) {
+            if let subtitle { contextLine(subtitle) }
+            // Fixed: when the row is tight it is the line of context that gives way, not these.
+            HStack(spacing: 8) {
+                StrikeChip().fixedSize()
+                XPPill().fixedSize()
+            }
+            .headerPart(.pills)
+            HStack(spacing: 8) {
+                // RootTabView routes what the inbox opens, the same way it routes a push.
+                if showsBell { NotificationBell(onOpen: { NotificationRouter.shared.open($0) }) }
+                AvatarButton()
+            }
+            .headerPart(.actions)
+            PageTitle(title).headerPart(.title)
+        }
+    }
+
+    /// The line of context: wide if it fits beside the pills, else the short one, else nothing —
+    /// the empty last alternative is how the layout learns there is no room and stacks. At the
+    /// accessibility sizes it has a row of its own and wraps instead.
+    @ViewBuilder private func contextLine(_ subtitle: String) -> some View {
         if typeSize.isAccessibilitySize {
-            stacked
+            line(subtitle, wraps: true).headerPart(.line)
         } else {
-            // The row it has always been when it fits; when the line of context cannot share it
-            // with the pills (a phone as narrow as an SE, text set a size or two up) the stacked
-            // header, not a line cut to "…".
             ViewThatFits(in: .horizontal) {
-                row(subtitle)
-                if let shortSubtitle { row(shortSubtitle) }
-                stacked
+                line(subtitle, wraps: false)
+                if let shortSubtitle { line(shortSubtitle, wraps: false) }
+                Color.clear.frame(width: 0, height: 0)
             }
+            .headerPart(.line)
         }
-    }
-
-    /// A line of context, the pills, then the title. The pills never give way: when the row is
-    /// tight it is the line that does.
-    private func row(_ text: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                if let text { line(text, wraps: false) }
-                Spacer(minLength: 0)
-                // Fixed: the line of context gives way, not these.
-                StrikeChip().fixedSize()
-                XPPill().fixedSize()
-                if showsBell { bell }
-                AvatarButton()
-            }
-            PageTitle(title)
-        }
-    }
-
-    /// The title leads, the line wraps under it, the pills sit on a row of their own. The pills
-    /// keep their size (they are capped); what is gone is the row they shared with the line.
-    private var stacked: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            PageTitle(title)
-            if let subtitle { line(subtitle, wraps: true) }
-            HStack(spacing: 8) {
-                StrikeChip().fixedSize()
-                XPPill().fixedSize()
-                Spacer(minLength: 0)
-                if showsBell { bell }
-                AvatarButton()
-            }
-        }
-    }
-
-    /// RootTabView routes what the inbox opens, the same way it routes a push.
-    private var bell: some View {
-        NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
     }
 
     private func line(_ text: String, wraps: Bool) -> some View {

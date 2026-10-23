@@ -23,6 +23,22 @@ extension View {
     nonisolated func capDynamicType() -> some View {
         dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
+
+    /// The same cap for an icon-only control, and the system's answer for a control that holds
+    /// still while the text around it grows: a press-and-hold shows it large (the large content
+    /// viewer), with this `label`. Put it on the `Button` itself, after its accessibility label,
+    /// not on the glyph: the viewer is then offered over the whole tap target, and a sheet or a
+    /// popover hung off the button stays uncapped.
+    nonisolated func capDynamicType(label: String, systemImage: String? = nil) -> some View {
+        dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .accessibilityShowsLargeContentViewer {
+                if let systemImage {
+                    Label(label, systemImage: systemImage)
+                } else {
+                    Text(label)
+                }
+            }
+    }
 }
 
 extension View {

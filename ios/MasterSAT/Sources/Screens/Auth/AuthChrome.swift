@@ -375,12 +375,12 @@ struct PasswordField: View {
                     .appFont(15, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
                     // A full 44 pt square to hit.
-                    .capDynamicType()
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(revealed ? "Hide password" : "Show password")
+            .capDynamicType(label: revealed ? "Hide password" : "Show password", systemImage: revealed ? "eye.slash" : "eye")
         }
     }
 }

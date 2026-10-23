@@ -610,6 +610,8 @@ struct TaskCompleteBadge: View {
         if reduceMotion {
             Image(systemName: "checkmark.circle.fill")
                 .appFont(64, weight: .bold)
+                // The still stands in for a Lottie clip of a fixed size.
+                .capDynamicType()
                 .foregroundStyle(Theme.success)
                 .background(Circle().fill(Theme.card).padding(6))
         } else {
@@ -675,6 +677,9 @@ struct XPFlightView: View {
     var body: some View {
         Text("+\(flight.amount) XP")
             .appFont(22, weight: .black, design: .rounded)
+            // It lands on a pill that stops growing at xxxLarge (`XPPill`): the number that flies
+            // there stops with it, or it would arrive twice the size of its target.
+            .capDynamicType()
             // The deeper amber: the bright one is under 3:1 on a white card.
             .foregroundStyle(Theme.warning)
             // A card behind the number while it hangs — it crosses headings and cards on the way
@@ -696,6 +701,7 @@ struct XPFlightView: View {
                 if let label = flight.label {
                     Text(label)
                         .appFont(11, weight: .heavy, design: .rounded)
+                        .capDynamicType()
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)

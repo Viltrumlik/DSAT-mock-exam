@@ -190,12 +190,12 @@ struct AccountSecureField<Focus: Hashable>: View {
                     Image(systemName: revealed ? "eye.slash" : "eye")
                         .appFont(15, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
-                        .capDynamicType()
                         .frame(width: 30, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(revealed ? "Hide passwords" : "Show passwords")
+                .capDynamicType(label: revealed ? "Hide passwords" : "Show passwords", systemImage: revealed ? "eye.slash" : "eye")
             }
             .focusShake(shakes, cornerRadius: Theme.Radius.control)
             AccountFieldNote(hint: hint, error: error)

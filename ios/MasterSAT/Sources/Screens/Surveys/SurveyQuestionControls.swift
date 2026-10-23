@@ -180,7 +180,6 @@ private struct SurveyScaleControl: View {
                             .appFont(15, weight: .bold)
                             .monospacedDigit()
                             .foregroundStyle(on ? Color.white : Color.primary)
-                            .capDynamicType()
                             .frame(width: 44, height: 44)
                             .background(
                                 RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
@@ -193,6 +192,7 @@ private struct SurveyScaleControl: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(on ? .isSelected : [])
+                    .capDynamicType(label: String(step))
                 }
             }
             // The same way out the slider and the radio group have: an optional question

@@ -347,7 +347,6 @@ private struct ProfileHeroCard: View {
             Image(systemName: "xmark")
                 .appFont(14, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
-                .capDynamicType()
                 .frame(width: 32, height: 32)
                 .background(Theme.surface2, in: Circle())
                 .frame(width: 44, height: 44)
@@ -356,6 +355,7 @@ private struct ProfileHeroCard: View {
         .buttonStyle(PressBounce())
         .padding(6)
         .accessibilityLabel("Close")
+        .capDynamicType(label: "Close", systemImage: "xmark")
         // Laid over the hero, it would come after the hero's chips and buttons: the way out of the
         // sheet is the first thing VoiceOver finds, not the last of the hero.
         .accessibilitySortPriority(1)

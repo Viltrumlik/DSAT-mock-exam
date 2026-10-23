@@ -423,12 +423,12 @@ struct SupportRateSheet: View {
                                 Image(systemName: n <= (stars ?? 0) ? "star.fill" : "star")
                                     .appFont(30)
                                     .foregroundStyle(Theme.amber.opacity(n <= (stars ?? 0) ? 1 : 0.45))
-                                    .capDynamicType()
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("\(n) out of 5 — \(SupportSchedule.ratingMeaning(n) ?? "")")
+                            .capDynamicType(label: "\(n) out of 5", systemImage: "star.fill")
                             .accessibilityAddTraits(stars == n ? .isSelected : [])
                         }
                     }

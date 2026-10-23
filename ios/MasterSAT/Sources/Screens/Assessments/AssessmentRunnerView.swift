@@ -517,11 +517,11 @@ struct AssessmentRunnerView: View {
             } label: {
                 Image(systemName: "chevron.left")
                     .appFont(15, weight: .bold)
-                    .capDynamicType()
                     .frame(width: 46, height: 44)
             }
             .buttonStyle(SecondaryButtonStyle())
             .accessibilityLabel("Previous question")
+            .capDynamicType(label: "Previous question", systemImage: "chevron.left")
             .disabled(runner.currentIndex == 0)
             .opacity(runner.currentIndex == 0 ? 0.4 : 1)
 

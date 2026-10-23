@@ -24,7 +24,6 @@ struct VocabExplainButton: View {
             Text(verbatim: "!")
                 .appFont(12, weight: .black)
                 .foregroundStyle(shown ? Color.white : Theme.accent)
-                .capDynamicType()
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(shown ? Theme.accent : Theme.accent.opacity(0.10)))
                 .overlay(Circle().stroke(shown ? Color.clear : Theme.accent.opacity(0.35), lineWidth: 1))
@@ -34,6 +33,7 @@ struct VocabExplainButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("What is \(title)?")
+        .capDynamicType(label: "What is \(title)?", systemImage: "info.circle")
         .popover(isPresented: $shown) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
@@ -45,12 +45,12 @@ struct VocabExplainButton: View {
                         Image(systemName: "xmark")
                             .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
-                            .capDynamicType()
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
+                    .capDynamicType(label: "Close", systemImage: "xmark")
                 }
                 Text(LocalizedStringKey(text))
                     .appFont(13, weight: .medium)

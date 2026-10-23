@@ -150,7 +150,6 @@ struct CalculatorPanel: View {
                     Image(systemName: "xmark")
                         .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
-                        .capDynamicType()
                         .frame(width: 30, height: 30)
                         .background(Circle().fill(Theme.surface2))
                         // Drawn 30, tappable 44; the header is the height it was.
@@ -158,6 +157,7 @@ struct CalculatorPanel: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close calculator")
+                .capDynamicType(label: "Close calculator", systemImage: "xmark")
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)

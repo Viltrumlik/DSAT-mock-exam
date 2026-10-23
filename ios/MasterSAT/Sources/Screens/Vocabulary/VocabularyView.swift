@@ -427,13 +427,13 @@ struct VocabularyView: View {
                             Image(systemName: "trash")
                                 .appFont(14, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
-                                .capDynamicType()
                                 .frame(width: 36, height: 36)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .disabled(isDeleting)
                         .accessibilityLabel("Delete \(set.title)")
+                        .capDynamicType(label: "Delete \(set.title)", systemImage: "trash")
                         .padding(.top, 10)
                         .padding(.trailing, 8)
                     }
