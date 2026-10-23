@@ -49,7 +49,10 @@ final class Connectivity {
 ///
 /// VoiceOver hears it as two announcements, "You're offline" when it arrives and "Back online" when
 /// it goes: a student who cannot see the strip would otherwise meet every screen failing on its
-/// own. The ink pair keeps it the strongest thing at the top of the screen in dark mode too.
+/// own. They are posted by its overlay (`OfflineOverlay`), from the connection itself: the strip's
+/// own appearing and disappearing also happen when the screen under it is rebuilt — a sign-out
+/// while offline said "Back online" when it never was. The ink pair keeps it the strongest thing
+/// at the top of the screen in dark mode too.
 struct OfflineBanner: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -70,7 +73,5 @@ struct OfflineBanner: View {
         // Reduce Motion picks the transition's value: it fades in place instead of sliding in.
         .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
         .accessibilityElement(children: .combine)
-        .onAppear { AccessibilityNotification.Announcement("You're offline").post() }
-        .onDisappear { AccessibilityNotification.Announcement("Back online").post() }
     }
 }

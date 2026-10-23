@@ -58,6 +58,15 @@ private struct OfflineOverlay: View {
         .frame(maxWidth: .infinity)
         .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+        // Said on a change of the connection only (and once at launch if it starts offline), never
+        // on the banner's own appearing: that also follows the screen below being rebuilt.
+        .onChange(of: session.connectivity.isOnline, initial: true) { wasOnline, isOnline in
+            if !isOnline {
+                AccessibilityNotification.Announcement("You're offline").post()
+            } else if !wasOnline {
+                AccessibilityNotification.Announcement("Back online").post()
+            }
+        }
     }
 }
 
