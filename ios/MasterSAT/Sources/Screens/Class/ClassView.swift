@@ -140,12 +140,10 @@ struct ClassView: View {
             // A class card or two, then the segment under them.
             LoadingSkeleton(rows: 2, height: 100, style: .cards)
         } else if let classesError, classrooms.isEmpty {
-            // A failed load is never "no classes yet".
-            ClassroomErrorState(
-                title: "Couldn't load your classes",
-                message: ErrorState.nothingLost
-            ) { await load() }
-            .accessibilityHint(classesError)
+            // A failed load is never "no classes yet". The whole tab, so the page form — its art
+            // and its "You're offline" — as on Today.
+            ErrorState(title: "Couldn't load your classes", style: .page) { await load() }
+                .accessibilityHint(classesError)
         } else if classrooms.isEmpty {
             EmptyState(
                 art: .noTasks,
