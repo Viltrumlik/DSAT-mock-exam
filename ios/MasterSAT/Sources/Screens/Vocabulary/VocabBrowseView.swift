@@ -41,13 +41,14 @@ struct VocabSectionView: View {
                 }
                 .background(Theme.background)
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity).background(Theme.background)
+                // The header, then the set cards.
+                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(Theme.background)
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if detail == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
     }
 
     private func header(_ detail: VocabSectionDetail) -> some View {
@@ -60,8 +61,10 @@ struct VocabSectionView: View {
                     .frame(width: 40, height: 40)
                     .overlay(
                         Image(systemName: VocabPalette.glyph(sectionId: sectionId))
-                            .font(.system(size: 18, weight: .semibold))
+                            .appFont(18, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(tone.solid)
+                            .accessibilityHidden(true)
                     )
                 VStack(alignment: .leading, spacing: 8) {
                     FlowLayout(spacing: 6) {
@@ -72,7 +75,7 @@ struct VocabSectionView: View {
                     }
                     HStack(alignment: .center, spacing: 2) {
                         Text(detail.title)
-                            .font(.system(size: 26, weight: .heavy))
+                            .appFont(26, weight: .heavy)
                             .tracking(-0.6)
                             .fixedSize(horizontal: false, vertical: true)
                         VocabExplainButton(
@@ -82,7 +85,7 @@ struct VocabSectionView: View {
                     }
                     if let description = detail.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 13))
+                            .appFont(13)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -141,17 +144,17 @@ struct VocabSectionView: View {
         HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 5) {
                 Text(label.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .tracking(1.0)
                     .foregroundStyle(Theme.textSecondary)
                 Text(ScoreText.string(value))
-                    .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                    .appFont(26, weight: .heavy, monospacedDigits: true)
                     .tracking(-0.5)
                     .foregroundStyle(ink)
             }
             Spacer(minLength: 0)
             Text(detail)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.trailing)
         }
@@ -160,10 +163,11 @@ struct VocabSectionView: View {
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.background))
         .overlay(alignment: .bottomTrailing) {
             Image(systemName: icon)
-                .font(.system(size: 52, weight: .light))
+                .appFont(52, weight: .light)
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 8, y: 10)
                 .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
@@ -176,7 +180,6 @@ struct VocabSectionView: View {
     private func setList(_ detail: VocabSectionDetail) -> some View {
         if detail.sets.isEmpty {
             VocabEmptyState(
-                icon: "books.vertical",
                 title: "This section has no sets yet",
                 message: "Sets show up as soon as the words are published. Try another section in the meantime."
             )
@@ -299,10 +302,12 @@ struct CustomSetBuilderView: View {
                                     Image(systemName: picked.contains { $0.id == word.id }
                                           ? "checkmark.circle.fill" : "plus.circle")
                                         .foregroundStyle(Theme.accent)
+                                        .accessibilityHidden(true)
                                 }
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityValue(picked.contains { $0.id == word.id } ? "Added" : "")
                         }
                     }
                 } header: {
@@ -332,6 +337,7 @@ struct CustomSetBuilderView: View {
                         if isSaving { ProgressView() } else { Text(editing == nil ? "Create" : "Save").bold() }
                     }
                     .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty || picked.isEmpty || isSaving)
+                    .accessibilityLabel(isSaving ? "Saving" : (editing == nil ? "Create" : "Save"))
                 }
             }
             .onAppear(perform: seed)

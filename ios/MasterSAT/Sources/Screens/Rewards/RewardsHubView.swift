@@ -14,6 +14,10 @@ import MasterSATKit
 /// ledger, the header), the default board (the hero — global, all time, XP), the rules (which
 /// earnings add XP) and, when the board section asks something else, its own board. A failed
 /// reload keeps what was last read; only a card with nothing to show says it failed.
+///
+/// The hero's place is read only while the celebrations are quiet (`CelebrationCenter.whenQuiet`)
+/// — however the read was asked: the tab opening, a pull, "See the board", a return to the app —
+/// so the hub never shows a place before the header has rolled to it and its card has played.
 struct RewardsHubView: View {
     @Binding var path: NavigationPath
 
@@ -31,9 +35,12 @@ struct RewardsHubView: View {
     @State private var rules: [RewardRule]?
     @State private var metric: LeaderboardMetric = .xp
     @State private var window = LeaderboardQuery.allTime
-    /// The section's own board, when it asks something the hero's does not answer.
-    @State private var other: LeaderboardBoard?
-    @State private var otherFailed = false
+    /// The section's own boards — XP this month, Strikes — each kept under its question, so a
+    /// toggle shows the last one at once while it reads again.
+    @State private var boards: [LeaderboardQuery: LeaderboardBoard] = [:]
+    /// The questions whose last read failed: an error with nothing kept, a stale line over a board.
+    @State private var boardsFailed: Set<LeaderboardQuery> = []
+    @State private var reads = HubReads()
     @State private var converting = false
     @State private var confirmingConvert = false
     @State private var convertNote: String?
@@ -41,6 +48,8 @@ struct RewardsHubView: View {
     /// the burst would have given is still given — once, by the card.
     @State private var convertBuzz = 0
     @State private var coinsSpot = FrameBox()
+    /// VoiceOver's cursor, sent to the coins card when a conversion is over (`convert`).
+    @AccessibilityFocusState private var coinsFocused: Bool
     @State private var shown = false
     /// Each return to the tab: a new trophy (`RankHeroContent.plays`).
     @State private var trophyPlays = 0
@@ -58,12 +67,12 @@ struct RewardsHubView: View {
     /// The board the section shows — only one that answers what is chosen, so a strike board
     /// never shows under "XP" while the next one loads.
     private var sectionBoard: LeaderboardBoard? {
-        guard let board = sectionIsHero ? hero : other, board.metric == metric else { return nil }
+        guard let board = sectionIsHero ? hero : boards[sectionQuery], board.metric == metric else { return nil }
         guard metric == .strikes || board.window == window else { return nil }
         return board
     }
 
-    private var sectionFailed: Bool { sectionIsHero ? heroFailed : otherFailed }
+    private var sectionFailed: Bool { sectionIsHero ? heroFailed : boardsFailed.contains(sectionQuery) }
 
     private var heroState: RankHeroContent.State {
         guard let hero else { return .loading }
@@ -87,12 +96,17 @@ struct RewardsHubView: View {
                         .cardStyle(padding: 8)
                     }
 
-                    HStack(alignment: .top, spacing: 12) {
+                    // Side by side; one above the other at the accessibility sizes, where half the
+                    // phone cannot hold a number set that large.
+                    AdaptiveStack(rowAlignment: .top, spacing: 12) {
                         StreakCard(
                             streak: celebrations.streakShown(rewards.streak) ?? mine?.currentStreak,
                             best: mine?.bestStreak
                         )
-                        CoinsCard(rewards: mine, converting: converting, note: convertNote) {
+                        CoinsCard(
+                            rewards: mine, failed: meFailed, converting: converting, note: convertNote,
+                            focus: $coinsFocused
+                        ) {
                             confirmingConvert = true
                         }
                         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { coinsSpot.rect = $0 }
@@ -104,7 +118,8 @@ struct RewardsHubView: View {
                         metric: $metric,
                         window: $window,
                         board: sectionBoard,
-                        failed: sectionFailed && sectionBoard == nil
+                        failed: sectionFailed && sectionBoard == nil,
+                        stale: sectionFailed && sectionBoard != nil
                     ) { await retrySection() }
                     .stagger(3, shown: shown)
 
@@ -131,19 +146,25 @@ struct RewardsHubView: View {
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             // Not `.task`: a TabView never tears its tabs down.
             .onAppear {
-                if !shown {
+                let first = !shown
+                if first {
                     shown = true
                 } else {
                     trophyPlays += 1
                 }
                 // Yesterday's "Converted 30 points…" is not news on a later visit.
                 if convertNote != nil, !converting { convertNote = nil }
-                Task { await load() }
+                // The first appearance's section board is the `.task(id:)` below's to read — it
+                // runs then too — so it is read once, not twice.
+                Task { await load(includingSection: !first) }
             }
-            // A chip or a segment asked a new board. Cancelled when it changes again, and a
-            // cancelled load stores nothing (`loadSection`).
+            // A chip or a segment asked a new board — the first appearance too. Cancelled when it
+            // changes again, and a cancelled load stores nothing (`loadSection`). A board kept for
+            // the question stays on screen while it reads again; one with nothing kept gives its
+            // failure back to the skeleton.
             .task(id: sectionQuery) {
-                if otherFailed { otherFailed = false }
+                let asked = sectionQuery
+                if boards[asked] == nil, boardsFailed.contains(asked) { boardsFailed.remove(asked) }
                 await loadSection()
             }
             .sensoryFeedback(.success, trigger: convertBuzz)
@@ -180,12 +201,12 @@ struct RewardsHubView: View {
     // MARK: - Loading
 
     @MainActor
-    private func load() async {
+    private func load(includingSection: Bool = true) async {
         async let me: MyRewards? = loadMe()
         async let board: Void = loadHero()
         async let earning: Void = loadRules()
-        async let section: Void = loadSection()
-        _ = await (me, board, earning, section)
+        if includingSection { await loadSection() }
+        _ = await (me, board, earning)
     }
 
     /// A number that changes rolls (Reduce Motion: a quick fade); nothing is written when it
@@ -213,6 +234,9 @@ struct RewardsHubView: View {
         do {
             let me = try await session.rewards.me()
             if meFailed { meFailed = false }
+            // A read went through, so "pull down to check" has been done: the coins now say it.
+            // Not the conversion's own read-back, which decides its note itself.
+            if !converting, convertNote == Self.unconfirmedNote { convertNote = nil }
             // The header reads the same answer, so the two never disagree.
             if rewards.apply(me, ticket: ticket) {
                 setMine(me)
@@ -228,20 +252,56 @@ struct RewardsHubView: View {
         }
     }
 
+    /// The key the hero's read and its answer wait under — its own, so the welcome-back reload
+    /// waiting beside it is never replaced by it.
+    private static let heroQuietKey = "rewards.hero"
+
+    /// The hero's board, read once the celebrations are quiet: a flight still in the air, a read
+    /// still out, a welcome-back check or a trophy card still to play could each be about to
+    /// bring the place this read would show. Awaited when the stage is quiet already (a pull's
+    /// spinner waits for it); otherwise it waits under its key, the newest ask replacing an older.
     @MainActor
     private func loadHero() async {
+        guard celebrations.isQuiet else {
+            celebrations.whenQuiet(Self.heroQuietKey) { Task { await readHero() } }
+            return
+        }
+        await readHero()
+    }
+
+    /// Only the newest read asked is shown (`LatestOnly.isNewestAsked`), and only onto a quiet
+    /// stage: an answer that lands on a busy one is never held, since it may be older than the
+    /// place the stage is about to bring.
+    @MainActor
+    private func readHero() async {
+        let ticket = reads.hero.issue()
         do {
             let board = try await LeaderboardAPI(client: session.client).board(.heroBoard)
-            if hero != board {
-                withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { hero = board }
+            guard reads.hero.isNewestAsked(ticket) else { return }
+            guard celebrations.isQuiet else {
+                // The stage turned busy while the read was out — a return to the app, a task's own
+                // read — and what made it busy can move the place: held for it, this answer would
+                // be shown (and noted) after a trophy card announcing a better one. Asked again
+                // once it is quiet instead.
+                celebrations.whenQuiet(Self.heroQuietKey) { Task { await readHero() } }
+                return
             }
-            if heroFailed { heroFailed = false }
-            // What the student has now seen — "while you were away" measures from it.
-            rewards.noteRank(board.standing?.rank)
+            showHero(board, ticket: ticket)
         } catch {
-            guard !Task.isCancelled else { return }
-            heroFailed = true
+            guard !Task.isCancelled, reads.hero.isNewestAsked(ticket) else { return }
+            if !heroFailed { heroFailed = true }
         }
+    }
+
+    @MainActor
+    private func showHero(_ board: LeaderboardBoard, ticket: UInt64) {
+        guard reads.hero.isNewestAsked(ticket) else { return }
+        if hero != board {
+            withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { hero = board }
+        }
+        if heroFailed { heroFailed = false }
+        // What the student has now seen — "while you were away" measures from it.
+        rewards.noteRank(board.standing?.rank)
     }
 
     @MainActor
@@ -251,18 +311,21 @@ struct RewardsHubView: View {
     }
 
     /// The section's own board — nothing to do when it asks what the hero's already answers.
+    /// Kept under its question, so an answer that lands after a toggle still fills its own slot;
+    /// of two reads of one question only the newer is kept.
     @MainActor
     private func loadSection() async {
         let asked = sectionQuery
         guard asked != LeaderboardQuery() else { return }
+        let ticket = reads.issue(asked)
         do {
             let fresh = try await LeaderboardAPI(client: session.client).board(asked)
-            guard !Task.isCancelled, asked == sectionQuery else { return }
-            if other != fresh { other = fresh }
-            if otherFailed { otherFailed = false }
+            guard !Task.isCancelled, reads.isNewestAsked(ticket, asked) else { return }
+            if boards[asked] != fresh { boards[asked] = fresh }
+            if boardsFailed.contains(asked) { boardsFailed.remove(asked) }
         } catch {
-            guard !Task.isCancelled, asked == sectionQuery else { return }
-            otherFailed = true
+            guard !Task.isCancelled, reads.isNewestAsked(ticket, asked) else { return }
+            if !boardsFailed.contains(asked) { boardsFailed.insert(asked) }
         }
     }
 
@@ -274,6 +337,10 @@ struct RewardsHubView: View {
     }
 
     // MARK: - Converting
+
+    /// Nothing is known — the answer was lost and so was the read-back — so the note sends the
+    /// student to look; the next read that goes through takes it away (`loadMe`).
+    private static let unconfirmedNote = "We couldn't confirm that went through. Pull down to check your coins."
 
     /// Spends Max — every point that buys a whole coin. Not idempotent (a second call is a second
     /// conversion), so it runs once per confirmation, with the button off from the press until
@@ -293,9 +360,13 @@ struct RewardsHubView: View {
         converting = true
         convertNote = nil
         var answered = false
+        // Coins were minted. Only that note is news the screen already shows; every other note
+        // is the only spoken signal that the conversion did not happen.
+        var minted = false
         do {
             let result = try await session.rewards.convert(points: nil)
             answered = true
+            minted = result.minted > 0
             let after = before.applying(result.balances)
             setMine(after)
             if result.minted > 0 { celebrateMint() }
@@ -311,16 +382,26 @@ struct RewardsHubView: View {
         if !answered {
             if let fresh, fresh.coins > before.coins {
                 // The answer was lost but the conversion was not.
+                minted = true
                 celebrateMint()
                 convertNote = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
             } else if fresh != nil {
                 convertNote = "That didn't go through — your coins are as they were. Try again."
             } else {
-                convertNote = "We couldn't confirm that went through. Pull down to check your coins."
+                convertNote = Self.unconfirmedNote
             }
         }
         converting = false
-        if let convertNote { AccessibilityNotification.Announcement(convertNote).post() }
+        // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
+        // cursor goes with it: the coins card is where the result shows, so the cursor goes there.
+        coinsFocused = true
+        if let convertNote {
+            // After the card has been read, not over it: speech started by the cursor's move is
+            // not cut off. A success waits its turn behind that read; a conversion that did not
+            // go through is said at normal priority, so it cannot be dropped.
+            do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
+            celebrations.announce(convertNote, queued: minted)
+        }
     }
 
     /// A coin bursts where the card is; when the burst is skipped (a sheet or a cover is up) the
@@ -330,5 +411,21 @@ struct RewardsHubView: View {
         let bursts = celebrations.coinCount
         celebrations.coinBurst(at: coinsSpot.rect.celebrationPoint)
         if celebrations.coinCount == bursts { convertBuzz += 1 }
+    }
+}
+
+/// The hub's request order, nothing renders from — a reference, so taking a ticket never
+/// re-renders the tab. One ticket line for the hero, one per section question.
+@MainActor
+private final class HubReads {
+    var hero = LatestOnly()
+    private var sections: [LeaderboardQuery: LatestOnly] = [:]
+
+    func issue(_ query: LeaderboardQuery) -> UInt64 {
+        sections[query, default: LatestOnly()].issue()
+    }
+
+    func isNewestAsked(_ ticket: UInt64, _ query: LeaderboardQuery) -> Bool {
+        sections[query]?.isNewestAsked(ticket) ?? false
     }
 }

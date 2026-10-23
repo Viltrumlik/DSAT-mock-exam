@@ -23,6 +23,7 @@ struct RankUpOverlay: View {
                 RankUpCard(
                     rise: rise,
                     reduceMotion: celebrations.reduceMotion,
+                    speechRemaining: { celebrations.speechRemaining() },
                     onBoard: {
                         celebrations.dismissRankUp()
                         // Fresh: a Rewards root already open would not reload, and the hero must
@@ -48,27 +49,37 @@ struct RankUpOverlay: View {
 struct RankUpCard: View {
     let rise: Rise
     let reduceMotion: Bool
+    /// How much longer VoiceOver is expected to be speaking an earlier line (the XP line of the
+    /// same return, which no flight delays under Reduce Motion).
+    let speechRemaining: @MainActor () -> Duration
     let onBoard: () -> Void
     let onClose: () -> Void
+
+    /// VoiceOver's cursor, on the line that says the news.
+    @AccessibilityFocusState private var newsFocused: Bool
 
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
-                if !reduceMotion {
-                    LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
-                }
+                // Always there: a one-shot burst is blank under Reduce Motion (`LottieClip`), so the
+                // setting picks its playback and the tree stays the same.
+                LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
                 LottieClip(.trophy, playback: reduceMotion ? .still : .once).frame(width: 130, height: 130)
             }
             .frame(height: 150)
             .accessibilityHidden(true)
 
             VStack(spacing: 4) {
-                // A place is an identifier, not a quantity: never "#1,204".
+                // A place is an identifier, not a quantity: never "#1,204". Its own words are the
+                // announcement — the cursor lands here and reads them (see the task below).
                 Text(verbatim: "You moved up to #\(rise.to)")
-                    .font(.system(size: 24, weight: .heavy, design: .rounded))
+                    .appFont(24, weight: .heavy, design: .rounded)
+                    .accessibilityFocused($newsFocused)
                 Text(verbatim: "Overall · all time · up from #\(rise.from)")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
+                    // The dots are pauses, not words.
+                    .accessibilityLabel("Overall, all time, up from #\(rise.from)")
             }
             .multilineTextAlignment(.center)
 
@@ -86,5 +97,16 @@ struct RankUpCard: View {
         .accessibilityAddTraits(.isModal)
         // VoiceOver's two-finger scrub puts it away, as it does a sheet.
         .accessibilityAction(.escape, onClose)
+        // The card does not wait to be found: the cursor comes to it, and its title is the whole
+        // announcement. Lowered first so a second rise, which swaps `rise` under this same view,
+        // moves it again. After a beat, because a cursor set in the frame the card is inserted in
+        // finds nothing there yet — and longer while an earlier line is still being spoken (the
+        // XP of this return), since a cursor move cuts speech off rather than queueing behind it.
+        .task(id: rise) {
+            newsFocused = false
+            let wait = max(.milliseconds(150), min(speechRemaining(), .seconds(8)))
+            try? await Task.sleep(for: wait)
+            if !Task.isCancelled { newsFocused = true }
+        }
     }
 }

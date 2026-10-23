@@ -46,21 +46,32 @@ final class Connectivity {
 }
 
 /// A thin strip at the top of the screen while offline.
+///
+/// VoiceOver hears it as two announcements, "You're offline" when it arrives and "Back online" when
+/// it goes: a student who cannot see the strip would otherwise meet every screen failing on its
+/// own. They are posted by its overlay (`OfflineOverlay`), from the connection itself: the strip's
+/// own appearing and disappearing also happen when the screen under it is rebuilt — a sign-out
+/// while offline said "Back online" when it never was. The ink pair keeps it the strongest thing
+/// at the top of the screen in dark mode too.
 struct OfflineBanner: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "wifi.slash").font(.system(size: 12, weight: .bold))
+            Image(systemName: "wifi.slash").appFont(12, weight: .bold)
+                .accessibilityHidden(true)
             Text("You're offline — what's on screen may be out of date.")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
-        .foregroundStyle(.white)
+        .foregroundStyle(Theme.onInk)
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(Capsule().fill(Color.black.opacity(0.78)))
+        .background(Capsule().fill(Theme.ink))
         .padding(.top, 4)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        // Reduce Motion picks the transition's value: it fades in place instead of sliding in.
+        .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
         .accessibilityElement(children: .combine)
     }
 }

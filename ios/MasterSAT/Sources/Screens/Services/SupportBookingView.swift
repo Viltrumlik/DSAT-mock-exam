@@ -49,7 +49,7 @@ struct SupportBookingView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await model.refreshAll() }
+        .detachedRefresh { await model.refreshAll() }
         // Keyed on the foreground: going to the background cancels the poll, and coming back
         // restarts it with an immediate re-read of both lists — the student is about to act on
         // what the page says. Leaving the page cancels it too.
@@ -74,11 +74,13 @@ struct SupportBookingView: View {
             SupportConfirmSheet(pick: pick) { topic in
                 await model.book(teacherId: pick.teacherId, startsAt: pick.hour.startsAt, topic: topic)
             }
+            .noBarClearance()
         }
         .sheet(item: $cancelling) { booking in
             SupportCancelSheet(booking: booking) { reason in
                 await model.cancel(booking, reason: reason)
             }
+            .noBarClearance()
         }
         .sheet(item: $inviting) { booking in
             SupportAddMemberSheet(
@@ -86,11 +88,13 @@ struct SupportBookingView: View {
                 load: { try await model.classmates(for: booking) },
                 invite: { student in await model.invite(student, to: booking) }
             )
+            .noBarClearance()
         }
         .sheet(item: $rating) { booking in
             SupportRateSheet(booking: booking) { stars, comment in
                 await model.rate(booking, stars: stars, comment: comment)
             }
+            .noBarClearance()
         }
     }
 
@@ -126,13 +130,14 @@ struct SupportBookingView: View {
     private func allowanceBanner(icon: String, title: String, message: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
+                .appFont(18, weight: .semibold)
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                 Text(message)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -150,10 +155,8 @@ struct SupportBookingView: View {
     @ViewBuilder private var calendarSection: some View {
         switch model.calendar {
         case .loading:
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 36)
-                .cardStyle()
+            // A teacher's card with her free hours.
+            LoadingSkeleton(rows: 2, height: 120, style: .cards, label: "Loading the calendar")
         case .failed(let reason):
             ServicesNotice(
                 title: "The calendar isn't loading right now.",
@@ -189,15 +192,16 @@ struct SupportBookingView: View {
     private var staleNotice: some View {
         HStack(spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.warning)
+                .accessibilityHidden(true)
             Text("The calendar couldn't refresh — what you see may be out of date.")
-                .font(.system(size: 12.5, weight: .semibold))
+                .appFont(12.5, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 4)
             Button("Try again") { Task { await model.refreshCalendar() } }
-                .font(.system(size: 12.5, weight: .bold))
+                .appFont(12.5, weight: .bold)
                 .foregroundStyle(Theme.accent)
         }
         .padding(.horizontal, 14)
@@ -213,17 +217,17 @@ struct SupportBookingView: View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Your sessions")
-                    .font(.system(size: 20, weight: .heavy))
+                    .appFont(20, weight: .heavy)
                     .tracking(-0.3)
                     .accessibilityAddTraits(.isHeader)
                 Text("Points arrive once your teacher confirms you attended")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
 
             if let notice = model.notice {
                 Label {
-                    Text(notice).font(.system(size: 13, weight: .semibold))
+                    Text(notice).appFont(13, weight: .semibold)
                 } icon: {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(Theme.success)
                 }
@@ -238,10 +242,7 @@ struct SupportBookingView: View {
 
             switch model.bookings {
             case .loading:
-                ProgressView()
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 20)
-                    .cardStyle()
+                LoadingSkeleton(rows: 2, height: 64, label: "Loading your sessions")
             case .failed(let reason):
                 // Not an empty state: "no sessions yet" would be a lie, and the calendar above
                 // would seem to offer hours this student has already taken.
@@ -293,8 +294,9 @@ private struct SupportHeroHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
-                Text(eyebrow).font(.system(size: 12, weight: .heavy))
+                Image(systemName: eyebrowIcon).appFont(11, weight: .bold)
+                    .accessibilityHidden(true)
+                Text(eyebrow).appFont(12, weight: .heavy)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 13)
@@ -302,7 +304,7 @@ private struct SupportHeroHeader: View {
             .background(Capsule().fill(.white.opacity(0.2)))
 
             Text(title)
-                .font(.system(size: 28, weight: .heavy))
+                .appFont(28, weight: .heavy)
                 .tracking(-0.7)
                 .foregroundStyle(.white)
                 .padding(.top, 14)
@@ -310,7 +312,7 @@ private struct SupportHeroHeader: View {
                 .accessibilityAddTraits(.isHeader)
 
             Text(blurb)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(.white.opacity(0.78))
                 .padding(.top, 10)
                 .fixedSize(horizontal: false, vertical: true)
@@ -319,18 +321,18 @@ private struct SupportHeroHeader: View {
                 ForEach(tiles) { tile in
                     HStack(spacing: 10) {
                         Text(tile.label.uppercased())
-                            .font(.system(size: 11, weight: .heavy))
+                            .appFont(11, weight: .heavy)
                             .tracking(0.7)
                             .foregroundStyle(.white.opacity(0.72))
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         HStack(spacing: 6) {
                             Image(systemName: tile.icon)
-                                .font(.system(size: 12, weight: .semibold))
+                                .appFont(12, weight: .semibold)
                                 .foregroundStyle(.white.opacity(0.8))
+                                .accessibilityHidden(true)
                             Text(tile.value)
-                                .font(.system(size: 16, weight: .heavy))
-                                .monospacedDigit()
+                                .appFont(16, weight: .heavy, monospacedDigits: true)
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
@@ -397,11 +399,11 @@ private struct SupportTeacherCard: View {
             ServicesAvatar(url: teacher.photoURL, name: teacher.name, size: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text(displayName)
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                     .tracking(-0.2)
                     .lineLimit(1)
                 Text(SupportSchedule.teacherSubtitle(teacher))
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }
@@ -423,6 +425,7 @@ private struct SupportTeacherCard: View {
                 }
                 .padding(.vertical, 2)
             }
+            .noBarClearanceInRow()
             .onAppear {
                 // The first day with something left may be the third; bring it into view.
                 if teacher.days.indices.contains(selectedIndex) {
@@ -440,12 +443,12 @@ private struct SupportTeacherCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label.title)
-                    .font(.system(size: 14, weight: .heavy))
+                    .appFont(14, weight: .heavy)
                 Text(label.sub)
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .opacity(0.7)
                 Text(summary.label)
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .foregroundStyle(
                         active ? Color.white : (summary.freeCount > 0 ? Theme.success : Theme.textSecondary)
                     )
@@ -538,24 +541,23 @@ private struct SupportHourCellView: View {
     private func content(timeColour: Color, captionColour: Color, struck: Bool) -> some View {
         VStack(spacing: 3) {
             Text(cell.time)
-                .font(.system(size: 14, weight: struck ? .bold : .heavy))
-                .monospacedDigit()
+                .appFont(14, weight: struck ? .bold : .heavy, monospacedDigits: true)
                 .strikethrough(struck)
                 .opacity(struck ? 0.75 : 1)
                 .foregroundStyle(timeColour)
             HStack(spacing: 4) {
                 if cell.isGroup {
-                    Image(systemName: "person.2.fill").font(.system(size: 9, weight: .bold))
+                    Image(systemName: "person.2.fill").appFont(9, weight: .bold)
                 }
                 Text(cell.caption)
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
                     .minimumScaleFactor(0.85)
                 if cell.hasNote {
-                    Image(systemName: "info.circle").font(.system(size: 10, weight: .bold))
+                    Image(systemName: "info.circle").appFont(10, weight: .bold)
                 }
             }
-            .font(.system(size: 11, weight: struck ? .semibold : .bold))
+            .appFont(11, weight: struck ? .semibold : .bold)
             .foregroundStyle(captionColour)
         }
         .frame(maxWidth: .infinity, minHeight: 50)
@@ -593,14 +595,14 @@ private struct SupportSessionRow: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(booking.slot.supportTeacher.isEmpty ? "Support teacher" : booking.slot.supportTeacher)
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                         .lineLimit(1)
                     Text(SupportSchedule.sessionLine(booking))
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .appFont(12.5, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                     if !booking.topic.isEmpty {
                         Text(booking.topic)
-                            .font(.system(size: 12, weight: .medium))
+                            .appFont(12, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(2)
                     }
@@ -613,11 +615,12 @@ private struct SupportSessionRow: View {
             if !booking.teacherNote.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "info.circle.fill")
-                        .font(.system(size: 11))
+                        .appFont(11)
                         .foregroundStyle(Theme.success)
                         .padding(.top, 1)
+                        .accessibilityHidden(true)
                     Text(booking.teacherNote)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .appFont(12.5, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 11)
@@ -630,7 +633,7 @@ private struct SupportSessionRow: View {
 
             if let inviter = booking.invitedBy {
                 Text("\(inviter) added you to this one")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
 
@@ -639,12 +642,12 @@ private struct SupportSessionRow: View {
             if booking.status == .late {
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "clock")
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(11, weight: .semibold)
                         .foregroundStyle(Theme.warning)
                         .padding(.top, 1)
                         .accessibilityHidden(true)
                     Text(SupportSchedule.lateNote)
-                        .font(.system(size: 12.5, weight: .semibold))
+                        .appFont(12.5, weight: .semibold)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 11)
@@ -657,7 +660,7 @@ private struct SupportSessionRow: View {
 
             if booking.status == .cancelled, !booking.cancelReason.isEmpty {
                 Text("Cancelled — \(booking.cancelReason)")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
 
@@ -669,7 +672,7 @@ private struct SupportSessionRow: View {
                         if canInvite {
                             Button(action: onInvite) {
                                 Label("Add a member", systemImage: "person.badge.plus")
-                                    .font(.system(size: 12.5, weight: .bold))
+                                    .appFont(12.5, weight: .bold)
                                     .foregroundStyle(Theme.accent)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
@@ -681,7 +684,7 @@ private struct SupportSessionRow: View {
                         if canCancel {
                             Button(action: onCancel) {
                                 Label("Cancel", systemImage: "xmark")
-                                    .font(.system(size: 12.5, weight: .bold))
+                                    .appFont(12.5, weight: .bold)
                                     .foregroundStyle(Theme.textSecondary)
                                     .padding(.horizontal, 12)
                                     .padding(.vertical, 7)
@@ -702,7 +705,7 @@ private struct SupportSessionRow: View {
             if SupportSchedule.canRate(booking) {
                 HStack(spacing: 8) {
                     Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 16))
+                        .appFont(16)
                         .foregroundStyle(booking.status == .late ? Theme.warning : Theme.success)
                         .accessibilityHidden(true)
                     ratingControl
@@ -733,7 +736,7 @@ private struct SupportSessionRow: View {
                 HStack(spacing: 2) {
                     ForEach(1...5, id: \.self) { n in
                         Image(systemName: n <= stars ? "star.fill" : "star")
-                            .font(.system(size: 13))
+                            .appFont(13)
                             .foregroundStyle(Theme.amber.opacity(n <= stars ? 1 : 0.4))
                     }
                 }
@@ -748,7 +751,7 @@ private struct SupportSessionRow: View {
         } else {
             Button(action: onRate) {
                 Label("Rate this session", systemImage: "star")
-                    .font(.system(size: 12.5, weight: .bold))
+                    .appFont(12.5, weight: .bold)
                     .foregroundStyle(Theme.warning)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)

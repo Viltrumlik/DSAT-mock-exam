@@ -47,12 +47,26 @@ private struct OfflineOverlay: View {
     @Environment(Session.self) private var session
 
     var body: some View {
-        Group {
+        // A stable container that stays, with the banner coming and going inside it: an animation
+        // keyed to a value, set on a `Group` whose branch flips in that same update, is applied to
+        // the view being inserted or removed and can miss it.
+        ZStack(alignment: .top) {
             if !session.connectivity.isOnline {
-                OfflineBanner().allowsHitTesting(false)
+                OfflineBanner()
             }
         }
+        .frame(maxWidth: .infinity)
+        .allowsHitTesting(false)
         .animation(.easeInOut(duration: 0.25), value: session.connectivity.isOnline)
+        // Said on a change of the connection only (and once at launch if it starts offline), never
+        // on the banner's own appearing: that also follows the screen below being rebuilt.
+        .onChange(of: session.connectivity.isOnline, initial: true) { wasOnline, isOnline in
+            if !isOnline {
+                AccessibilityNotification.Announcement("You're offline").post()
+            } else if !wasOnline {
+                AccessibilityNotification.Announcement("Back online").post()
+            }
+        }
     }
 }
 
@@ -133,7 +147,7 @@ private struct RewardsRefresher: View {
             // or a place the header has not rolled to. A check that was skipped or failed read
             // nothing new. Any other tab reloads as it is opened.
             guard outcome == .read else { return }
-            celebrations.whenQuiet { router.reloadIfShowing(.rewards) }
+            celebrations.whenQuiet("welcome-back.reload") { router.reloadIfShowing(.rewards) }
         }
     }
 
@@ -244,23 +258,16 @@ struct RootTabView: View {
         .environment(celebrations)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
-            ProfileView(user: user, path: $router.me)
-                .overlay(alignment: .topTrailing) {
-                    Button { router.showingMe = false } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundStyle(Theme.textSecondary)
-                            .frame(width: 32, height: 32)
-                            .background(Theme.surface2, in: Circle())
-                    }
-                    .buttonStyle(PressBounce())
-                    .padding(16)
-                    .accessibilityLabel("Close")
-                }
-                .presentationDragIndicator(.visible)
-                .environment(router)
-                .environment(rewards)
-                .environment(celebrations)
+            // The close button lives in the page's hero, on its root only: laid over the sheet,
+            // it sat on every pushed page's toolbar too. The tab is the router's, so the sheet
+            // reopens where it was left.
+            ProfileView(user: user, path: $router.me, tab: $router.meTab) {
+                if router.showingMe { router.showingMe = false }
+            }
+            .presentationDragIndicator(.visible)
+            .environment(router)
+            .environment(rewards)
+            .environment(celebrations)
         }
         .sheet(item: $router.certificate, onDismiss: { sheetDismissed() }) {
             MidtermCertificateSheet(code: $0.code)
@@ -299,5 +306,11 @@ extension View {
     /// An inner margin replaces the inherited one (checked on the simulator, 2026-10-21).
     func noBarClearance() -> some View {
         contentMargins(.bottom, 0)
+    }
+
+    /// Put on a horizontal scroller — a row of pills, the stories. The tab's bottom margin reaches
+    /// it too, and in a row it is not room for the bar but extra height under the content.
+    func noBarClearanceInRow() -> some View {
+        contentMargins(.bottom, 0, for: .scrollContent)
     }
 }

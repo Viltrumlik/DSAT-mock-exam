@@ -30,11 +30,11 @@ struct SupportConfirmSheet: View {
                     VStack(alignment: .leading, spacing: 3) {
                         // Named off the picked hour itself, never off whichever day is on screen.
                         Text(SupportSchedule.confirmTitle(startsAt: pick.hour.startsAt, teacher: pick.teacherName))
-                            .font(.system(size: 17, weight: .heavy))
+                            .appFont(17, weight: .heavy)
                             .fixedSize(horizontal: false, vertical: true)
                         if pick.hour.capacity > 1 {
                             Label("\(pick.hour.seatsLeft) left", systemImage: "person.2.fill")
-                                .font(.system(size: 12.5, weight: .bold))
+                                .appFont(12.5, weight: .bold)
                                 .foregroundStyle(Theme.success)
                         }
                     }
@@ -46,11 +46,12 @@ struct SupportConfirmSheet: View {
                 if !note.isEmpty {
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: "info.circle.fill")
-                            .font(.system(size: 13))
+                            .appFont(13)
                             .foregroundStyle(Theme.info)
                             .padding(.top, 1)
+                            .accessibilityHidden(true)
                         Text(note)
-                            .font(.system(size: 13.5, weight: .semibold))
+                            .appFont(13.5, weight: .semibold)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(12)
@@ -62,7 +63,7 @@ struct SupportConfirmSheet: View {
 
                 VStack(alignment: .leading, spacing: 7) {
                     Text("What do you need help with?")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                     TextField(
                         "",
                         text: $topic,
@@ -78,7 +79,7 @@ struct SupportConfirmSheet: View {
                         }
                     }
                     Text("Optional — it helps your teacher prepare.")
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
 
@@ -148,10 +149,10 @@ struct SupportCancelSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Cancel this session?")
-                        .font(.system(size: 20, weight: .heavy))
+                        .appFont(20, weight: .heavy)
                         .tracking(-0.3)
                     Text("\(ServicesTime.sessionWhen(booking.slot.startsAt)) with \(teacher). Let them know why so they can offer the hour to someone else.")
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -164,7 +165,7 @@ struct SupportCancelSheet: View {
                             if option == SupportSchedule.cancelOther { detailFocused = true }
                         } label: {
                             Text(option)
-                                .font(.system(size: 14, weight: .semibold))
+                                .appFont(14, weight: .semibold)
                                 .foregroundStyle(chosen ? Color.white : Color.primary)
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 8)
@@ -179,7 +180,7 @@ struct SupportCancelSheet: View {
                 if picked == SupportSchedule.cancelOther {
                     VStack(alignment: .leading, spacing: 7) {
                         Text("Tell them what happened")
-                            .font(.system(size: 14, weight: .bold))
+                            .appFont(14, weight: .bold)
                         TextField("", text: $detail, prompt: Text(verbatim: "A short line is plenty"), axis: .vertical)
                             .lineLimit(1...4)
                             .focused($detailFocused)
@@ -252,14 +253,14 @@ struct SupportAddMemberSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Add someone to this session")
-                    .font(.system(size: 20, weight: .heavy))
+                    .appFont(20, weight: .heavy)
                     .tracking(-0.3)
                 Text("\(ServicesTime.sessionWhen(booking.slot.startsAt)) with \(teacher). Whoever you pick gets their own seat, and we'll tell them — in the app and by email.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You'll both earn more points for the session than either of you would sitting it alone.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -269,21 +270,19 @@ struct SupportAddMemberSheet: View {
                 // that would send a student to a teacher about a problem that does not exist.
                 switch classmates {
                 case .loading:
-                    ProgressView()
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 24)
+                    LoadingSkeleton(rows: 3, height: 48, label: "Loading your classmates")
                 case .failed(let reason):
                     VStack(alignment: .leading, spacing: 8) {
                         SupportSheetError(message: "Couldn't load your classmates.")
                         Text(reason)
-                            .font(.system(size: 11, weight: .medium))
+                            .appFont(11, weight: .medium)
                             .foregroundStyle(Theme.textLabel)
                         Button("Try again") { Task { await loadClassmates() } }
                             .buttonStyle(SecondaryButtonStyle())
                     }
                 case .loaded(let list) where list.isEmpty:
                     Text("There's nobody left to add — everyone in your class who could join this session is already in it.")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(14, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 4)
@@ -322,14 +321,15 @@ struct SupportAddMemberSheet: View {
             HStack(spacing: 12) {
                 ServicesAvatar(url: nil, name: student.name, size: 30)
                 Text(student.name.isEmpty ? "Classmate" : student.name)
-                    .font(.system(size: 14.5, weight: .bold))
+                    .appFont(14.5, weight: .bold)
                     .foregroundStyle(chosen ? Theme.accent : Color.primary)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if chosen {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.accent)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 12)
@@ -405,35 +405,36 @@ struct SupportRateSheet: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Rate this session")
-                        .font(.system(size: 20, weight: .heavy))
+                        .appFont(20, weight: .heavy)
                         .tracking(-0.3)
                     Text(SupportSchedule.sessionLine(booking) + (booking.slot.supportTeacher.isEmpty ? "" : " · \(booking.slot.supportTeacher)"))
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("How was this session?")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                     HStack(spacing: 6) {
                         ForEach(1...5, id: \.self) { n in
                             Button {
                                 stars = n
                             } label: {
                                 Image(systemName: n <= (stars ?? 0) ? "star.fill" : "star")
-                                    .font(.system(size: 30))
+                                    .appFont(30)
                                     .foregroundStyle(Theme.amber.opacity(n <= (stars ?? 0) ? 1 : 0.45))
                                     .frame(width: 44, height: 44)
                                     .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("\(n) out of 5 — \(SupportSchedule.ratingMeaning(n) ?? "")")
+                            .capDynamicType(label: "\(n) out of 5", systemImage: "star.fill")
                             .accessibilityAddTraits(stars == n ? .isSelected : [])
                         }
                     }
                     // Five unlabelled stars are a Rorschach test; each one says what it means.
                     Text(stars.flatMap(SupportSchedule.ratingMeaning) ?? "Pick a star")
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityHidden(true)
                 }
@@ -497,11 +498,12 @@ private struct SupportSheetError: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 14))
+                .appFont(14)
                 .foregroundStyle(Theme.danger)
                 .padding(.top, 1)
+                .accessibilityHidden(true)
             Text(message)
-                .font(.system(size: 13.5, weight: .semibold))
+                .appFont(13.5, weight: .semibold)
                 .foregroundStyle(Theme.danger)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -518,7 +520,7 @@ private extension View {
     /// The site's input: a white field with a hairline that turns blue while typing.
     func supportFieldStyle(focused: Bool) -> some View {
         self
-            .font(.system(size: 15))
+            .appFont(15)
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
             .background(

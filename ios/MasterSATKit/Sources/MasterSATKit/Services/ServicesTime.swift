@@ -171,6 +171,18 @@ public enum ServicesExamDates {
         let label = option.label.trimmingCharacters(in: .whitespacesAndNewlines)
         if !label.isEmpty { return label }
         guard let date = ServicesTime.date(fromDay: option.examDate) else { return option.examDate }
+        return longDay(date, now: now)
+    }
+
+    /// The same words with the date first: "December 20", the admin's label only when the
+    /// date cannot be read. For a line that already says what the sitting is ("Next SAT: …"),
+    /// where the admin's label — often just "SAT" — would repeat it and hide the date.
+    public static func dateFirst(for option: ExamDateOption, now: Date = Date()) -> String {
+        guard let date = ServicesTime.date(fromDay: option.examDate) else { return label(for: option, now: now) }
+        return longDay(date, now: now)
+    }
+
+    private static func longDay(_ date: Date, now: Date) -> String {
         let year = ServicesTime.calendar.component(.year, from: date)
         let thisYear = ServicesTime.calendar.component(.year, from: now)
         return year == thisYear

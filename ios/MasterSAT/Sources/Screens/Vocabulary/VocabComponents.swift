@@ -22,7 +22,7 @@ struct VocabExplainButton: View {
     var body: some View {
         Button { shown.toggle() } label: {
             Text(verbatim: "!")
-                .font(.system(size: 12, weight: .black))
+                .appFont(12, weight: .black)
                 .foregroundStyle(shown ? Color.white : Theme.accent)
                 .frame(width: 20, height: 20)
                 .background(Circle().fill(shown ? Theme.accent : Theme.accent.opacity(0.10)))
@@ -33,25 +33,27 @@ struct VocabExplainButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("What is \(title)?")
+        .capDynamicType(label: "What is \(title)?", systemImage: "info.circle")
         .popover(isPresented: $shown) {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(alignment: .top, spacing: 8) {
                     Text(title)
-                        .font(.system(size: 14, weight: .heavy))
+                        .appFont(14, weight: .heavy)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button { shown = false } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
+                            .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Close")
+                    .capDynamicType(label: "Close", systemImage: "xmark")
                 }
                 Text(LocalizedStringKey(text))
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -96,7 +98,7 @@ struct VocabMasteryBar: View {
                         HStack(spacing: 6) {
                             Circle().fill(done ? tone.solid : tone.track).frame(width: 8, height: 8)
                             Text(VocabPalette.gameName(mode))
-                                .font(.system(size: 12, weight: .semibold))
+                                .appFont(12, weight: .semibold)
                                 .foregroundStyle(done ? tone.ink : Theme.textSecondary)
                         }
                     }
@@ -129,7 +131,7 @@ struct VocabSectionMasteryBar: View {
                 .fontWeight(.bold)
                 .foregroundStyle(Color.primary)
             Text("\(done) of \(ScoreText.string(mastery.totalSets)) \(mastery.totalSets == 1 ? "set" : "sets") mastered")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
         }
     }
@@ -190,8 +192,9 @@ struct VocabMetaChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10, weight: .bold))
-            Text(text).font(.system(size: 12, weight: .bold)).monospacedDigit()
+            Image(systemName: icon).appFont(10, weight: .bold)
+                .accessibilityHidden(true)
+            Text(text).appFont(12, weight: .bold, monospacedDigits: true)
         }
         .foregroundStyle(ink)
         .lineLimit(1)
@@ -259,18 +262,18 @@ struct VocabSetCard: View {
                 )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 16, weight: .heavy))
+                        .appFont(16, weight: .heavy)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                     Text(meta)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .accessibilityLabel(spokenMeta)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: 12, weight: .medium))
+                            .appFont(12, weight: .medium)
                             .foregroundStyle(Theme.textLabel)
                             .lineLimit(1)
                     }
@@ -289,9 +292,10 @@ struct VocabSetCard: View {
                     .accessibilityHidden(true)
                 // What the link does, drawn as a capsule — the card is the one target.
                 HStack(spacing: 5) {
-                    Image(systemName: "play.fill").font(.system(size: 10, weight: .bold))
+                    Image(systemName: "play.fill").appFont(10, weight: .bold)
+                        .accessibilityHidden(true)
                     Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                 }
                 .foregroundStyle(mastered ? Theme.accent : Color.white)
                 .padding(.horizontal, 12)
@@ -313,22 +317,24 @@ struct VocabEmptySetRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
+            // Only the tile is dimmed: this row's words must stay at the contrast the secondary
+            // text style gives them, and the whole row at 75% took them below it.
             IconTile(systemName: "character.book.closed.fill", tone: Theme.textSecondary, size: 40)
+                .opacity(0.75)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                 Text(subtitle.flatMap { $0.isEmpty ? nil : "No words yet · \($0)" } ?? "No words yet")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
         .cardStyle(padding: 16)
-        .opacity(0.75)
         .accessibilityElement(children: .combine)
     }
 }
@@ -354,19 +360,21 @@ struct VocabSectionCard: View {
                     .frame(width: 48, height: 48)
                     .overlay(
                         Image(systemName: VocabPalette.glyph(sectionId: section.id))
-                            .font(.system(size: 21, weight: .semibold))
+                            .appFont(21, weight: .semibold)
+                            .capDynamicType()
                             .foregroundStyle(shown.solid)
+                            .accessibilityHidden(true)
                     )
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(section.title)
-                        .font(.system(size: 17, weight: .heavy))
+                        .appFont(17, weight: .heavy)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                     if let description = section.description, !description.isEmpty {
                         Text(description)
-                            .font(.system(size: 13))
+                            .appFont(13)
                             .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.leading)
                             .lineLimit(2)
@@ -392,7 +400,7 @@ struct VocabSectionCard: View {
                 VStack(spacing: 4) {
                     VocabProgressRing(percent: section.progress.percentMastered, solid: shown.solid, track: shown.track)
                     Text("WORDS")
-                        .font(.system(size: 9.5, weight: .heavy))
+                        .appFont(9.5, weight: .heavy)
                         .tracking(0.7)
                         .foregroundStyle(Theme.textSecondary)
                 }
@@ -403,8 +411,9 @@ struct VocabSectionCard: View {
             VocabSectionMasteryBar(mastery: section.mastery, tone: shown)
 
             HStack(spacing: 4) {
-                Text("Open section").font(.system(size: 13, weight: .bold))
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold))
+                Text("Open section").appFont(13, weight: .bold)
+                Image(systemName: "chevron.right").appFont(11, weight: .bold)
+                    .accessibilityHidden(true)
             }
             .foregroundStyle(tone.ink)
         }
@@ -434,10 +443,10 @@ struct VocabGameGuide: View {
                 IconTile(systemName: "gamecontroller.fill", tone: Theme.accent, size: 40)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Four ways to play every set")
-                        .font(.system(size: 17, weight: .heavy))
+                        .appFont(17, weight: .heavy)
                         .tracking(-0.2)
                     Text("The coloured bar on every set card is these four — a quarter each.")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -457,15 +466,17 @@ struct VocabGameGuide: View {
                             .frame(width: 44, height: 44)
                             .overlay(
                                 Image(systemName: VocabPalette.gameGlyph(mode))
-                                    .font(.system(size: 19, weight: .semibold))
+                                    .appFont(19, weight: .semibold)
+                                    .capDynamicType()
                                     .foregroundStyle(tone.solid)
+                                    .accessibilityHidden(true)
                             )
                         Text(VocabPalette.gameName(mode))
-                            .font(.system(size: 14.5, weight: .heavy))
+                            .appFont(14.5, weight: .heavy)
                             .foregroundStyle(tone.ink)
                             .padding(.top, 12)
                         Text(VocabPalette.gameBlurb(mode))
-                            .font(.system(size: 12.5, weight: .medium))
+                            .appFont(12.5, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
@@ -491,72 +502,38 @@ struct VocabGameGuide: View {
 
 // MARK: - States
 
-/// A failed load, named as one — never an empty state. The web's `VocabErrorState`.
+/// A failed load, named as one — never an empty state. The web's `VocabErrorState`. The compact
+/// `ErrorState`: the Words page can show four of these at once, one per section.
 struct VocabErrorNotice: View {
     let title: String
-    var message = "Something went wrong on our end. Check your connection and try again."
+    var message = ErrorState.nothingLost
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 26))
-                .foregroundStyle(Theme.warning)
-            Text(title)
-                .font(.system(size: 16, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-        .padding(.horizontal, 16)
+        ErrorState(title: title, message: message, style: .inline, retry: retry)
     }
 }
 
 /// An empty answer with something to do about it: a dashed slot, and one way forward.
+///
+/// `EmptyState`'s compact form, without art: the Words page can show three at once.
 struct VocabEmptyState: View {
-    let icon: String
     let title: String
     let message: String
     var actionTitle: String?
     var action: (@MainActor () -> Void)?
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 22, weight: .semibold))
-                .foregroundStyle(Theme.accent)
-                .frame(width: 48, height: 48)
-                .background(Circle().fill(Theme.accentSoft))
-            Text(title)
-                .font(.system(size: 15, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if let actionTitle, let action {
-                Button(action: action) {
-                    Label(actionTitle, systemImage: "plus")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .padding(.top, 4)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 26)
-        .padding(.horizontal, 18)
-        .background(
-            RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-        )
+        EmptyState(title: title, message: message, action: way)
+            .background(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+            )
+    }
+
+    private var way: (title: String, run: @MainActor () -> Void)? {
+        guard let actionTitle, let action else { return nil }
+        return (actionTitle, action)
     }
 }
 

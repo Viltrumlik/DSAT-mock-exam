@@ -39,7 +39,10 @@ const star = (pt, inner, outer, p = [0, 0]) => ({ ty: 'sr', sy: 1, d: 1, pt: S(p
 const L = (ind, nm, shapes, ks = {}, extra = {}) => ({ ddd: 0, ind, ty: 4, nm, sr: 1,
   ks: { o: ks.o || S(100), r: ks.r || S(0), p: ks.p || S([100, 100, 0]), a: ks.a || S([0, 0, 0]), s: ks.s || S([100, 100, 100]) },
   ao: 0, shapes, ip: 0, op: 9999, st: 0, bm: 0, ...extra });
-const anim = (nm, op, layers) => ({ v: '5.7.4', fr: 60, ip: 0, op, w: 200, h: 200, nm, ddd: 0, assets: [], layers });
+// `rest`: the frame a still picture of the clip shows (`LottieClip` pauses on the marker) —
+// the last frame, unless the clip ends faded out.
+const anim = (nm, op, layers, rest = op) => ({ v: '5.7.4', fr: 60, ip: 0, op, w: 200, h: 200, nm, ddd: 0, assets: [], layers,
+  markers: [{ tm: rest, cm: 'rest', dr: 0 }] });
 
 // Strike flame — loops. Three nested flames morph between three silhouettes; sparks rise.
 function flame(tipX, tipY, w) {
@@ -119,25 +122,31 @@ const flyer = (hex, size, from, to, rot, d) => gr([
   })),
   rp(8, 45),
 ], tr({ r: S(rot) }));
+// The coin is whole and still from the end of its flip to the start of its fade, and by then the
+// small coins and sparks are gone: it rests inside that window, at frame 54.6.
+const COIN_FLIP_END = 50, COIN_FADE = 60;
+const COIN_REST = Math.round((COIN_FLIP_END + .46 * (COIN_FADE - COIN_FLIP_END)) * 10) / 10;
 const COIN = anim('coin-burst', 84, [
   L(1, 'coin', coin(84), {
-    s: A([[0, [0, 0, 100], POP], [14, [116, 116, 100]], [22, [100, 100, 100]], [34, [100, 100, 100]], [42, [12, 100, 100]], [50, [100, 100, 100]]]),
-    o: A([[60, 100], [82, 0]]),
+    s: A([[0, [0, 0, 100], POP], [14, [116, 116, 100]], [22, [100, 100, 100]], [34, [100, 100, 100]], [42, [12, 100, 100]], [COIN_FLIP_END, [100, 100, 100]]]),
+    o: A([[COIN_FADE, 100], [82, 0]]),
   }),
   L(2, 'coins', [flyer('#fbbf24', 15, 38, 92, 0, 6), flyer('#f59e0b', 9, 32, 70, 22.5, 12)]),
   L(3, 'sparks', [gr([sh(S(P([[0, -48], [0, -66]], [[0, 0], [0, 0]], [[0, 0], [0, 0]], false))),
     tm(A([[10, 0], [26, 100]], OUTE), A([[4, 0], [18, 100]], OUTE)), st('#fde68a', 5), rp(8, 45)])], { r: S(22.5) }),
-]);
+], COIN_REST);
 
 // Star burst — plays once, then fades. A glow swells, rays turn, a ring of stars flies out and
-// a few twinkle. Played behind the trophy when the student moves up a place.
+// a few twinkle. Played behind the trophy when the student moves up a place. It rests on the last
+// frame the flown-out stars are full size, with rays and glow still at full strength.
+const STARS_HELD = 56;
 const STARS = anim('star-burst', 100, [
   L(1, 'twinkles', [twinkle(-70, -60, 30, '#fbbf24', 11), twinkle(72, -48, 44, '#2a68c0', 9),
     twinkle(60, 66, 58, '#fbbf24', 10), twinkle(-62, 58, 70, '#2a68c0', 8)]),
   L(2, 'stars', [gr([
     gr([star(5, 4, 10), fl('#fbbf24')], tr({
       p: A([[6, [0, -26]], [42, [0, -90]]], OUTE),
-      s: A([[6, [0, 0]], [16, [110, 110]], [56, [100, 100]], [78, [0, 0]]]),
+      s: A([[6, [0, 0]], [16, [110, 110]], [STARS_HELD, [100, 100]], [78, [0, 0]]]),
       r: A([[6, 0], [70, 120]]),
     })),
     rp(8, 45),
@@ -146,12 +155,116 @@ const STARS = anim('star-burst', 100, [
     { r: A([[0, 0], [100, 40]], LIN), s: A([[0, [0, 0, 100], POP], [24, [100, 100, 100]]]), o: A([[70, 100], [98, 0]]) }),
   L(4, 'glow', [gr([el(120, 120), fl('#fde68a', 40)])],
     { s: A([[0, [0, 0, 100], POP], [18, [130, 130, 100]], [40, [100, 100, 100]]]), o: A([[0, 0], [6, 100], [74, 100], [98, 0]]) }),
+], STARS_HELD);
+
+// The empty and error states. Each plays once, about 1.2 s, and its last frame is its finished
+// picture: a page that is empty or failed should look settled, not busy. Brand colours only, and
+// nothing red — an error here is a request that did not land, not a danger.
+const GREEN = '#059669', BLUE = '#2a68c0', AMBER = '#f59e0b', WARN = '#d97706', GREY = '#94a3b8';
+const line = pts => sh(S(P(pts, pts.map(() => [0, 0]), pts.map(() => [0, 0]), false)));
+const draw = (from, to) => tm(S(0), A([[from, 0], [to, 100]], OUTE));
+const popIn = (from, to) => A([[from, [0, 0]], [to, [100, 100]]], POP);
+const sparkle = (x, y, size, d) => gr([star(4, size * .4, size), fl(GREEN)], tr({ p: S([x, y]), s: popIn(d, d + 16) }));
+
+// All done — calmer than task-complete, which is the celebration: a ring draws round, the tick
+// strokes in, three small sparkles pop and stay.
+const ALL_DONE = anim('all-done', 78, [
+  L(1, 'sparkles', [sparkle(62, -60, 13, 36), sparkle(84, -26, 8, 42), sparkle(-70, -52, 9, 48)]),
+  L(2, 'tick', [gr([line([[-24, 2], [-7, 19], [25, -15]]), draw(24, 44), st(GREEN, 9)])]),
+  L(3, 'ring', [gr([el(116, 116), draw(0, 34), st(GREEN, 8)])]),
+  L(4, 'disc', [gr([el(116, 116), fl(GREEN, 10)])], { s: A([[0, [80, 80, 100]], [30, [100, 100, 100]]], OUTE), o: A([[0, 0], [12, 100]]) }),
+]);
+
+// Nothing to do — an empty tray drops in and lands softly (a 3 % squash, no bounce), then two
+// sheets settle into it as lines.
+const trayBody = P([[-42, -36], [42, -36], [58, 0], [58, 32], [50, 40], [-50, 40], [-58, 32], [-58, 0]],
+  [[0, 0], [0, 0], [0, 0], [0, 0], [4.4, 0], [0, 0], [0, 4.4], [0, 0]],
+  [[0, 0], [0, 0], [0, 0], [0, 4.4], [0, 0], [-4.4, 0], [0, 0], [0, 0]]);
+const NO_TASKS = anim('no-tasks', 80, [
+  L(1, 'tray', [
+    gr([line([[-30, -24], [30, -24]]), draw(30, 48), st(GREY, 6)]),
+    gr([line([[-22, -12], [22, -12]]), draw(40, 58), st(BLUE, 6)]),
+    gr([line([[-58, 0], [-24, 0], [-18, 12], [18, 12], [24, 0], [58, 0]]), st(GREY, 7)]),
+    gr([sh(S(trayBody)), st(GREY, 7), fl(GREY, 10)]),
+  ], {
+    a: S([0, 40, 0]),
+    p: A([[0, [100, 70, 0]], [24, [100, 140, 0]]], OUTE),
+    s: A([[24, [100, 100, 100]], [30, [103, 97, 100]], [40, [100, 100, 100]]]),
+    o: A([[0, 0], [8, 100]]),
+  }),
+  L(2, 'shadow', [gr([el(104, 10), fl(GREY, 22)])],
+    { p: S([100, 148, 0]), s: A([[0, [40, 100, 100]], [24, [100, 100, 100]]], OUTE), o: A([[0, 0], [24, 100]]) }),
+]);
+
+// No words yet — a word card turns from its back to its face (ease-in to edge-on, then the face's
+// quarter turn eases out), and "Aa" is written on it in strokes.
+const NO_WORDS = anim('no-words', 82, [
+  L(1, 'letters', [
+    gr([line([[-38, 22], [-20, -22], [-2, 22]]), draw(40, 56), st(AMBER, 7)]),
+    gr([line([[-30, 7], [-10, 7]]), draw(50, 58), st(AMBER, 7)]),
+    gr([el(24, 26), draw(54, 68), st(AMBER, 7)], tr({ p: S([22, 9]), r: S(90) })),
+    gr([line([[34, -5], [34, 22]]), draw(60, 70), st(AMBER, 7)]),
+  ], { p: S([102, 100, 0]) }),
+  L(2, 'face', [gr([rc(128, 92, [0, 0], 16), st(AMBER, 6), fl(AMBER, 12)])],
+    { s: A([[22, [0, 100, 100]], [42, [100, 100, 100]]], OUTE) }),
+  L(3, 'back', [gr([rc(98, 62, [0, 0], 9), st(WARN, 4)]), gr([rc(128, 92, [0, 0], 16), fl(AMBER)])], {
+    s: A([[8, [100, 100, 100]], [22, [0, 100, 100]]], IN),
+    o: A([[0, 0], [8, 100]]),
+  }),
+]);
+
+// Offline — a cloud outline draws (left lobe, top, right lobe, then the flat bottom), and a short
+// slash strokes across it. The outline is three circles' arcs meeting at the cloud's dips.
+function arc(c, r, a0, a1, n) {
+  const step = (a1 - a0) / n, k = 4 / 3 * Math.tan(step * Math.PI / 720) * r;
+  return Array.from({ length: n + 1 }, (_, j) => {
+    const a = (a0 + step * j) * Math.PI / 180, tx = -Math.sin(a) * k, ty = Math.cos(a) * k;
+    return [[c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)], [-tx, -ty], [tx, ty]];
+  });
+}
+// Where circle a crosses circle b on top, as an angle on each (degrees, clockwise from the right).
+function meets(a, ra, b, rb) {
+  const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy);
+  const along = (ra * ra - rb * rb + d * d) / (2 * d), h = Math.sqrt(ra * ra - along * along);
+  const m = [a[0] + along * dx / d, a[1] + along * dy / d];
+  const p = [-1, 1].map(s => [m[0] + s * h * dy / d, m[1] - s * h * dx / d]).sort((u, v) => u[1] - v[1])[0];
+  const deg = c => (Math.atan2(p[1] - c[1], p[0] - c[0]) * 180 / Math.PI + 360) % 360;
+  return [deg(a), deg(b)];
+}
+const LOBES = [[[-38, 14], 20], [[-2, -8], 32], [[36, 10], 24]];
+function cloud() {
+  const [[c1, r1], [c2, r2], [c3, r3]] = LOBES;
+  const [a12, b12] = meets(c1, r1, c2, r2), [a23, b23] = meets(c2, r2, c3, r3);
+  const parts = [arc(c1, r1, 90, a12, 3), arc(c2, r2, b12, a23, 3), arc(c3, r3, b23, 450, 3)];
+  // Where two arcs meet, one vertex: in from the first arc, out along the next — the dip.
+  const pts = parts.flatMap((part, n) => n === 0 ? part.slice(0, -1) : part.slice(0, -1).map((q, j) =>
+    j === 0 ? [q[0], parts[n - 1].at(-1)[1], q[2]] : q)).concat([parts[2].at(-1)]);
+  pts[0][1] = [0, 0];
+  pts.at(-1)[2] = [0, 0];
+  const r = v => v.map(x => Math.round(x * 100) / 100);
+  return P(pts.map(q => r(q[0])), pts.map(q => r(q[1])), pts.map(q => r(q[2])));
+}
+const OFFLINE = anim('offline', 72, [
+  L(1, 'slash', [gr([line([[-34, -40], [40, 46]]), draw(40, 56), st(WARN, 9)])]),
+  L(2, 'cloud', [gr([sh(S(cloud())), draw(0, 38), st(GREY, 8)]), gr([sh(S(cloud())), fl(GREY, 12)], tr({ o: A([[26, 0], [42, 100]]) }))],
+    { p: S([99, 103, 0]) }),
+]);
+
+// Didn't load — a rounded square draws, then the exclamation's bar and dot pop in.
+const ERROR = anim('error', 74, [
+  L(1, 'mark', [
+    gr([rc(13, 42, [0, 0], 6.5), fl(WARN)], tr({ p: S([0, -10]), s: popIn(30, 44) })),
+    gr([el(14, 14), fl(WARN)], tr({ p: S([0, 26]), s: popIn(38, 52) })),
+  ]),
+  // Turned a quarter back, so the outline starts at the top-left and draws clockwise, as a pen would.
+  L(2, 'square', [gr([rc(104, 104, [0, 0], 28), draw(0, 32), st(WARN, 8)], tr({ r: S(-90) })),
+    gr([rc(104, 104, [0, 0], 28), fl(WARN, 12)], tr({ o: A([[18, 0], [34, 100]]) }))]),
 ]);
 
 // Every file is decoded on the main thread when its view appears: keep each one small.
 const BUDGET = 15000;
 // Measure first, write second: an over-budget file must not leave the folder half-updated.
-const FILES = [FLAME, CHECK, TROPHY, COIN, STARS].map(data => {
+const FILES = [FLAME, CHECK, TROPHY, COIN, STARS, ALL_DONE, NO_TASKS, NO_WORDS, OFFLINE, ERROR].map(data => {
   const json = JSON.stringify(data);
   return { nm: data.nm, json, bytes: Buffer.byteLength(json) };
 });

@@ -89,7 +89,7 @@ struct MidtermsView: View {
                 )
 
                 if isLoading && !hasLoaded {
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                    LoadingSkeleton(rows: 3, height: 84, style: .cards)
                 } else if let loadError, midterms.isEmpty {
                     // A failed load is never "no midterms yet".
                     RetryNotice(message: loadError) { await load() }
@@ -101,7 +101,7 @@ struct MidtermsView: View {
                 } else {
                     if let loadError {
                         Label("Could not refresh just now — this is the last list we had. \(loadError)", systemImage: "exclamationmark.triangle")
-                            .font(.system(size: 12, weight: .semibold))
+                            .appFont(12, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                     }
 
@@ -125,7 +125,7 @@ struct MidtermsView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .task { await load() }
     }
 
@@ -208,13 +208,14 @@ struct MidtermCountdownCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.clock").font(.system(size: 12, weight: .bold))
-                Text("NEXT MIDTERM").font(.system(size: 12, weight: .heavy)).tracking(1.1)
+                Image(systemName: "calendar.badge.clock").appFont(12, weight: .bold)
+                    .accessibilityHidden(true)
+                Text("NEXT MIDTERM").appFont(12, weight: .heavy).tracking(1.1)
             }
             .foregroundStyle(.white.opacity(0.85))
 
             Text(midterm.title)
-                .font(.system(size: 20, weight: .heavy))
+                .appFont(20, weight: .heavy)
                 .tracking(-0.4)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -230,9 +231,10 @@ struct MidtermCountdownCard: View {
             }
 
             HStack(spacing: 6) {
-                Image(systemName: "clock").font(.system(size: 11, weight: .bold))
+                Image(systemName: "clock").appFont(11, weight: .bold)
+                    .accessibilityHidden(true)
                 Text(Countdown.fullDate(opensAt))
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
             }
             .foregroundStyle(.white.opacity(0.9))
             .padding(.horizontal, 12)
@@ -260,12 +262,12 @@ private struct CountdownCell: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(ScoreText.string(value))
-                .font(.system(size: 25, weight: .heavy).monospacedDigit())
+                .appFont(25, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .font(.system(size: 9, weight: .heavy))
+                .appFont(9, weight: .heavy)
                 .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.72))
         }
@@ -324,13 +326,13 @@ private struct MidtermRow: View {
                 IconTile(systemName: "doc.text", tone: bucket == .past ? Theme.success : Theme.accent, size: 40)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(midterm.title)
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                     Chip(text: midterm.badge, tone: badgeTone)
                     if !midterm.metaLine.isEmpty {
                         Text(midterm.metaLine)
-                            .font(.system(size: 12, weight: .semibold))
+                            .appFont(12, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -350,20 +352,21 @@ private struct MidtermRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .font(.system(size: 22, weight: .heavy).monospacedDigit())
+                        .appFont(22, weight: .heavy, monospacedDigits: true)
                         .tracking(-0.5)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("/\(ScoreText.string(ceiling))")
-                            .font(.system(size: 11, weight: .semibold))
+                            .appFont(11, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
             }
             if midterm.attemptId != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -427,11 +430,12 @@ private struct StatusLine: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
-            Text(text).font(.system(size: 13, weight: .bold))
+            Image(systemName: icon).appFont(11, weight: .bold)
+                .accessibilityHidden(true)
+            Text(text).appFont(13, weight: .bold)
             if let detail {
                 Text("· \(detail)")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)

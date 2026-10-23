@@ -1,7 +1,7 @@
 import SwiftUI
 import MasterSATKit
 
-// Small reward pieces for other screens to carry.
+// Small reward pieces for other screens to carry — the Me sheet's four figures use these.
 
 // MARK: - What the numbers are
 
@@ -49,24 +49,34 @@ struct RewardsExplainButton: View {
             shown = true
         } label: {
             Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(width: 28, height: 28)
-                .contentShape(Rectangle())
+                // Drawn small in its tile's corner; reached like any other button.
+                .hitTarget(44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(explainer.title)
+        // The glyph sits in a fixed 28-pt square; held still, it is shown large on a long press.
+        .capDynamicType(label: explainer.title, systemImage: "exclamationmark.circle")
+        // After the cap, so the explainer's own words still grow with the phone's setting —
+        // and scroll, at the largest sizes, rather than run off the popover.
         .popover(isPresented: $shown) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(explainer.title)
-                    .font(.system(size: 15, weight: .heavy))
-                Text(LocalizedStringKey(explainer.text))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(explainer.title)
+                        .appFont(15, weight: .heavy)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(LocalizedStringKey(explainer.text))
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(16)
-            .frame(width: 300, alignment: .leading)
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(width: 300)
             .presentationCompactAdaptation(.popover)
         }
     }

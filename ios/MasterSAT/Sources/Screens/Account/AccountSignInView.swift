@@ -32,7 +32,8 @@ struct AccountSignInView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    // The email, Telegram and password rows.
+                    LoadingSkeleton(rows: 3, height: 76, style: .cards)
                 case .failed(let message):
                     RetryNotice(message: message) { await reload() }
                         .cardStyle()
@@ -41,7 +42,7 @@ struct AccountSignInView: View {
                     telegramRow(profile)
                     passwordRow(profile)
                     Text("Forgot your password? Your learning center can set a new one for you.")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -199,23 +200,89 @@ struct AccountMethodRow<Status: View, Action: View, Expanded: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 12) {
                 IconTile(systemName: icon, tone: tone, size: 38)
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 7) {
-                        Text(title).font(.system(size: 15, weight: .heavy))
-                        status()
-                    }
+                BadgedHeading {
+                    // Never wrapped: a name that is squeezed to make room for its badge reads "Emai" / "l".
+                    Text(title).appFont(15, weight: .heavy).fixedSize()
+                    // One view even for a row with no badge, so the layout can count on three.
+                    ZStack { status() }
                     Text(verbatim: detail)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                         .truncationMode(.middle)
                 }
-                Spacer(minLength: 8)
+                // Takes everything the action does not: left as one of two flexible neighbours (with
+                // a Spacer) it was offered half of it, and a badge that would fit was sent below.
+                .frame(maxWidth: .infinity, alignment: .leading)
                 action()
             }
             expanded()
         }
         .cardStyle(padding: 14)
+    }
+}
+
+/// A method's title, its badge, and its detail line: the badge beside the title when the two fit on
+/// one line, and under the detail line — the address — when they do not.
+///
+/// Plain stacks cannot say "if it fits". An HStack of title and badge squeezes the title to make
+/// room, and a long address beside an action button leaves little: "Email" wrapped to "Emai" / "l".
+/// A `ViewThatFits` would judge the detail's width too and push the badge down for any long
+/// address. Here only the title and the badge are weighed against each other.
+///
+/// Subviews, in order: the title, the badge (zero-sized when the row has none), the detail.
+private struct BadgedHeading: Layout {
+    private let gap: CGFloat = 7
+    private let lineGap: CGFloat = 3
+
+    private struct Plan {
+        var size: CGSize
+        var frames: [CGRect]
+    }
+
+    private func plan(width: CGFloat, _ subviews: Subviews) -> Plan {
+        let title = subviews[0].sizeThatFits(.unspecified)
+        let badge = subviews[1].sizeThatFits(.unspecified)
+        let hasBadge = badge.width > 0
+        let beside = !hasBadge || title.width + gap + badge.width <= width
+        let detail = subviews[2].sizeThatFits(ProposedViewSize(width: width.isFinite ? width : nil, height: nil))
+
+        var frames: [CGRect]
+        if beside {
+            let row = max(title.height, hasBadge ? badge.height : 0)
+            frames = [
+                CGRect(x: 0, y: (row - title.height) / 2, width: title.width, height: title.height),
+                // A row with no badge reserves nothing for it, not even the gap.
+                hasBadge
+                    ? CGRect(x: title.width + gap, y: (row - badge.height) / 2, width: badge.width, height: badge.height)
+                    : .zero,
+                CGRect(x: 0, y: row + lineGap, width: detail.width, height: detail.height),
+            ]
+        } else {
+            let detailTop = title.height + lineGap
+            frames = [
+                CGRect(x: 0, y: 0, width: title.width, height: title.height),
+                CGRect(x: 0, y: detailTop + detail.height + lineGap, width: badge.width, height: badge.height),
+                CGRect(x: 0, y: detailTop, width: detail.width, height: detail.height),
+            ]
+        }
+        let union = frames.reduce(CGRect.null) { $0.union($1) }
+        return Plan(size: CGSize(width: union.maxX, height: union.maxY), frames: frames)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        plan(width: proposal.width ?? .infinity, subviews).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let plan = plan(width: bounds.width, subviews)
+        for (subview, frame) in zip(subviews, plan.frames) {
+            subview.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(frame.size)
+            )
+        }
     }
 }
 
@@ -275,7 +342,7 @@ struct AccountPasswordForm: View {
 
             if let detail = errors["detail"] {
                 Text(detail)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -283,7 +350,7 @@ struct AccountPasswordForm: View {
             // Not the web's "You stay signed in here": for the app the server cannot tell this
             // phone from the others, so it is signed out with them.
             Text("Changing it signs you out on every device, this phone too. You'll sign in again with the new password.")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -373,6 +440,7 @@ struct AccountPasswordChangedView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(leaving)
+            .accessibilityLabel(leaving ? "Signing you out" : "Sign in again")
         }
     }
 }

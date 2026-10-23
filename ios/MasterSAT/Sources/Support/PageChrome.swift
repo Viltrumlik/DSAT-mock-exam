@@ -29,6 +29,8 @@ struct PageTitle: View {
             .tracking(-0.5)
             .foregroundStyle(.primary)
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The page's name: the first stop on the rotor's Headings.
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -48,6 +50,9 @@ struct IconTile: View {
                     .font(.system(size: size * 0.46, weight: .semibold))
                     .foregroundStyle(tone)
             )
+            // Always beside the words it illustrates, so VoiceOver would only read a symbol's name
+            // ("calendar") ahead of them.
+            .accessibilityHidden(true)
     }
 }
 
@@ -63,11 +68,11 @@ struct CardHeading: View {
             IconTile(systemName: icon, tone: tone)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .tracking(-0.2)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -85,11 +90,18 @@ struct DotHeading: View {
     var body: some View {
         HStack(spacing: 9) {
             Circle().fill(tone).frame(width: 10, height: 10)
-            Text(title).font(.system(size: 15, weight: .heavy))
+            // The words keep their line before the count pill does: at the accessibility sizes
+            // a squeezed row broke "Up next" over two lines to fit a "12".
+            Text(title).appFont(15, weight: .heavy)
+                .layoutPriority(1)
             if let count {
                 Text(ScoreText.string(count))
-                    .font(.system(size: 12, weight: .heavy))
+                    .appFont(12, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
+                    // The title above has the row's priority, so the pill is held whole: a count
+                    // is one short line at any size, never squeezed to a sliver or cut.
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
@@ -110,11 +122,11 @@ struct DashedEmpty: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(title)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             if let hint {
                 Text(hint)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textLabel)
                     .multilineTextAlignment(.center)
             }
@@ -141,12 +153,11 @@ struct ScoreBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .heavy))
+                .appFont(11, weight: .heavy)
                 .tracking(1.3)
                 .foregroundStyle(emphasised ? Theme.accent.opacity(0.85) : Theme.textLabel)
             Text(ScoreText.string(value))
-                .font(.system(size: 30, weight: .heavy))
-                .monospacedDigit()
+                .appFont(30, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.9)
                 .foregroundStyle(emphasised ? Theme.accent : .primary)
                 // Three boxes across a phone leaves ~80pt each, and a four-digit total in
@@ -177,11 +188,11 @@ struct InfoBox: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(1.1)
                 .foregroundStyle(Theme.textLabel)
             Text(value)
-                .font(.system(size: 14, weight: .bold))
+                .appFont(14, weight: .bold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
         }
@@ -232,11 +243,12 @@ struct HeroHeader<Trailing: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 12) {
+            AdaptiveStack(rowAlignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
-                        Text(eyebrow).font(.system(size: 12, weight: .heavy))
+                        Image(systemName: eyebrowIcon).appFont(11, weight: .bold)
+                            .accessibilityHidden(true)
+                        Text(eyebrow).appFont(12, weight: .heavy)
                     }
                     .foregroundStyle(.white)
                     .padding(.horizontal, 13)
@@ -244,7 +256,7 @@ struct HeroHeader<Trailing: View>: View {
                     .background(Capsule().fill(.white.opacity(0.2)))
 
                     Text(title)
-                        .font(.system(size: 28, weight: .heavy))
+                        .appFont(28, weight: .heavy)
                         .tracking(-0.7)
                         .foregroundStyle(.white)
                         .padding(.top, 14)
@@ -252,13 +264,13 @@ struct HeroHeader<Trailing: View>: View {
 
                     if let blurb {
                         Text(blurb)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(.white.opacity(0.78))
                             .padding(.top, 10)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer(minLength: 0)
+                AdaptiveSpacer()
                 trailing()
             }
 
@@ -313,25 +325,27 @@ extension HeroHeader where Trailing == EmptyView {
 /// gradient's own sizing, and every hero on the site carries two or four of these.
 private struct HeroTileFlow: View {
     let tiles: [HeroTile]
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let rows = stride(from: 0, to: tiles.count, by: 2).map { Array(tiles[$0..<min($0 + 2, tiles.count)]) }
         VStack(alignment: .leading, spacing: 14) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                HStack(spacing: 28) {
+                // Two to a row; one to a row at the accessibility sizes, where half the hero is too
+                // narrow for a label and its number.
+                AdaptiveStack(spacing: 28, columnSpacing: 14) {
                     ForEach(row) { tile in
                         VStack(alignment: .leading, spacing: 5) {
                             Text(tile.label.uppercased())
-                                .font(.system(size: 11, weight: .heavy))
+                                .appFont(11, weight: .heavy)
                                 .tracking(0.7)
                                 .foregroundStyle(.white.opacity(0.72))
                             HStack(spacing: 6) {
                                 Image(systemName: tile.icon)
-                                    .font(.system(size: 12, weight: .semibold))
+                                    .appFont(12, weight: .semibold)
                                     .foregroundStyle(.white.opacity(0.8))
                                 Text(tile.value)
-                                    .font(.system(size: 17, weight: .heavy))
-                                    .monospacedDigit()
+                                    .appFont(17, weight: .heavy, monospacedDigits: true)
                                     .foregroundStyle(.white)
                             }
                             .padding(.horizontal, 11)
@@ -339,8 +353,11 @@ private struct HeroTileFlow: View {
                             .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.white.opacity(0.16)))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        // The label and its number are one fact, without the glyph's name between.
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(tile.label), \(tile.value)")
                     }
-                    if row.count == 1 { Spacer(minLength: 0).frame(maxWidth: .infinity) }
+                    if row.count == 1, !typeSize.isAccessibilitySize { Spacer(minLength: 0).frame(maxWidth: .infinity) }
                 }
             }
         }
@@ -364,11 +381,15 @@ struct PillTabs<Tab: Hashable>: View {
 
     let items: [Item]
     @Binding var selection: Tab
-    /// How the selected pill slides: the playful spring by default, `Motion.focus` in a focus
-    /// zone. A fade under Reduce Motion either way.
-    var motion: Animation = Motion.snappy
+    /// A tab bar inside a focus zone (the review's filters): the selected pill slides in one
+    /// `Motion.focus` beat and a press dips like any answer there (`FocusPress`), where elsewhere
+    /// both are the playful springs. A fade under Reduce Motion either way.
+    var focusZone = false
     @Namespace private var pill
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Taps that changed the tab — the haptic's trigger, never `selection` itself: a link into a
+    /// page or a "See all" moves the binding without a thumb, and the phone must stay silent.
+    @State private var tapped = 0
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -376,15 +397,20 @@ struct PillTabs<Tab: Hashable>: View {
                 ForEach(items) { item in
                     let active = item.tab == selection
                     Button {
-                        withAnimation(reduceMotion ? Motion.focus : motion) { selection = item.tab }
+                        if !active { tapped += 1 }
+                        withAnimation(reduceMotion || focusZone ? Motion.focus : Motion.snappy) { selection = item.tab }
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: item.icon).font(.system(size: 12, weight: .bold))
-                            Text(item.title).font(.system(size: 14, weight: .bold))
+                            Image(systemName: item.icon).appFont(12, weight: .bold)
+                                .accessibilityHidden(true)
+                            Text(item.title).appFont(14, weight: .bold)
                             if let count = item.count {
+                                // Never cut: "All 12" came out "1:" at the default size. A
+                                // count is the reason the pill has a badge at all.
                                 Text(ScoreText.string(count))
-                                    .font(.system(size: 11, weight: .heavy))
-                                    .monospacedDigit()
+                                    .appFont(11, weight: .heavy, monospacedDigits: true)
+                                    .lineLimit(1)
+                                    .fixedSize()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 1)
                                     .background(
@@ -413,7 +439,10 @@ struct PillTabs<Tab: Hashable>: View {
                         // between the glyph and the text would otherwise miss.
                         .contentShape(Capsule())
                     }
-                    .buttonStyle(PressBounce())
+                    .buttonStyle(PillPress(focusZone: focusZone))
+                    // The count is part of the name — "Done, 3" — and the chosen pill says so.
+                    .accessibilityLabel(item.count.map { "\(item.title), \(ScoreText.string($0))" } ?? item.title)
+                    .accessibilityAddTraits(active ? .isSelected : [])
                 }
             }
             // A couple of points of vertical room so the selected pill's shadow is not
@@ -423,26 +452,55 @@ struct PillTabs<Tab: Hashable>: View {
         // No negative padding to "bleed" the row to the screen edge: it made the first pill
         // start off-screen. The row lines up with the cards under it instead.
         .scrollIndicators(.hidden)
-        .sensoryFeedback(.selection, trigger: selection)
+        .noBarClearanceInRow()
+        .sensoryFeedback(.selection, trigger: tapped)
+    }
+}
+
+/// How a pill answers a press: the playful squash, or `FocusPress` inside a focus zone. Chosen
+/// by a flag that is fixed for the life of the bar, never by a setting that can change under it.
+private struct PillPress: ButtonStyle {
+    let focusZone: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        if focusZone {
+            FocusPress().makeBody(configuration: configuration)
+        } else {
+            PressBounce().makeBody(configuration: configuration)
+        }
     }
 }
 
 // MARK: - Wording
+
+extension String {
+    /// A line written for the eye, said for the ear: the " · " between its parts (the roadmap's
+    /// "  ·  " too) is a pause. Left in, VoiceOver reads it as a word of its own, or drops the
+    /// pause altogether.
+    var spokenSeparators: String {
+        replacingOccurrences(of: "  ·  ", with: ", ").replacingOccurrences(of: " · ", with: ", ")
+    }
+}
 
 /// Deadlines, in the words the site uses.
 ///
 /// A passed deadline reads "Catch up · Tue", never "Overdue" and never "Late". The student
 /// already knows they are behind; the app's job is to make the next step obvious, not to
 /// score the last one.
+///
+/// The day is Tashkent's, like every other date in the app: a deadline written for the learning
+/// center's evening must name the same weekday on a phone set to another zone.
 enum DueLabel {
     /// `handedIn`: work that is already with the teacher is never "catch up" — the student is
     /// not behind on it, and the deadline is just a date.
     static func text(_ iso: String?, handedIn: Bool = false) -> (text: String, late: Bool)? {
         guard let iso, let date = JSONCoding.parseServerDate(iso) else { return nil }
         let late = date < Date() && !handedIn
-        let days = abs(Calendar.current.dateComponents([.day], from: Date(), to: date).day ?? 0)
+        let days = abs(ServicesTime.calendar.dateComponents([.day], from: Date(), to: date).day ?? 0)
         let f = DateFormatter()
         f.locale = .autoupdatingCurrent
+        f.calendar = ServicesTime.calendar
+        f.timeZone = ServicesTime.tashkent
         f.setLocalizedDateFormatFromTemplate(days <= 6 ? "EEE" : "MMMd")
         let label = f.string(from: date)
         return (late ? "Catch up · \(label)" : "Due \(label)", late)
@@ -469,24 +527,14 @@ enum RelativeTime {
 
 // MARK: - Retry
 
+/// A load that failed, with the retry. The compact `ErrorState`: it stands inside sections as often
+/// as for whole pages (Today shows two at once), and the art is kept to one per screen.
 struct RetryNotice: View {
     let message: String
     /// Main-actor on purpose: every caller passes a closure that touches view state.
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 26))
-                .foregroundStyle(Theme.warning)
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
+        ErrorState(title: message, style: .inline, retry: retry)
     }
 }

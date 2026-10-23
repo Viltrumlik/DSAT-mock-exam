@@ -3,15 +3,6 @@ import MasterSATKit
 
 // MARK: - The trophy hero
 
-extension LeaderboardQuery {
-    /// The one question the app asks to learn the student's place: the default board — global, all
-    /// time, XP — at the server's largest page, so "N XP to pass <name>" reaches the row above a
-    /// student who is deep in the board (Ruling P3-R3). The Rewards hero and the welcome-back check
-    /// both ask exactly this, so a place noted by either is the same number. The full leaderboard
-    /// page keeps the default page.
-    static let heroBoard = LeaderboardQuery(limit: 200)
-}
-
 /// The student's place on the whole learning center's board, all time — the owner's choice for
 /// this card (2026-10-21) — and the one student to pass next. Drawn inside a link to the full
 /// board, on look B: the one card on the tab that is all about the student.
@@ -32,7 +23,9 @@ struct RankHeroContent: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        HStack(spacing: 12) {
+        // The trophy beside the place; above it at the accessibility sizes, where a place set
+        // that large would otherwise shrink to a fraction beside an 88-pt trophy.
+        AdaptiveStack(spacing: 12) {
             LottieClip(.trophy, playback: reduceMotion ? .still : .once)
                 .id(plays)
                 .frame(width: 88, height: 88)
@@ -41,17 +34,17 @@ struct RankHeroContent: View {
                 case .loading:
                     VStack(alignment: .leading, spacing: 0) {
                         Text(verbatim: "#00")
-                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .appFont(40, weight: .black, design: .rounded)
                             .redacted(reason: .placeholder)
                         Text("overall · all time")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 case .unranked:
                     Text("Not on the board yet")
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .appFont(20, weight: .heavy, design: .rounded)
                     Text("Your first XP puts you on it — come to a lesson or hand in homework.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 case .ranked(let rank, let pass):
@@ -60,23 +53,32 @@ struct RankHeroContent: View {
                     VStack(alignment: .leading, spacing: 0) {
                         // A place is an identifier: never "#1,204".
                         Text(verbatim: "#\(rank)")
-                            .font(.system(size: 40, weight: .black, design: .rounded))
+                            .appFont(40, weight: .black, design: .rounded)
                             .contentTransition(.numericText(value: Double(rank)))
                             .lineLimit(1)
                             .minimumScaleFactor(0.6)
                         Text("overall · all time")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
                     }
-                    Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
-                        .font(.system(size: 13, weight: .heavy))
-                        .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    // Two lines held whether or not "N XP to pass Malika" wraps, so a new name or
+                    // a longer number never grows the card by a line under the student's thumb.
+                    // A hidden two-line twin holds them rather than a line limit, so a larger
+                    // text size still grows the line instead of cutting it off.
+                    ZStack(alignment: .topLeading) {
+                        Text(verbatim: " \n ")
+                            .appFont(13, weight: .heavy)
+                            .hidden()
+                        Label(line(rank: rank, pass: pass), systemImage: rank == 1 ? "crown.fill" : "arrow.up.forward")
+                            .appFont(13, weight: .heavy)
+                            .foregroundStyle(rank == 1 ? RewardsPalette.gold.solid : RewardsPalette.accentText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
-            Spacer(minLength: 0)
+            AdaptiveSpacer()
             Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textLabel)
         }
         .padding(16)
@@ -115,21 +117,21 @@ struct StreakCard: View {
             HStack(spacing: 4) {
                 LottieClip(.strikeFlame).frame(width: 34, height: 34)
                 Text(ScoreText.string(streak))
-                    .font(.system(size: 28, weight: .black, design: .rounded))
+                    .appFont(28, weight: .black, design: .rounded)
                     .foregroundStyle(Theme.strike)
                     .contentTransition(.numericText(value: Double(streak ?? 0)))
             }
             Text(streak == 1 ? "lesson in a row" : "lessons in a row")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             if let best, best > 0 {
                 Text(verbatim: "Best: \(best)")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
             } else if streak == 0 {
                 Text("Your next lesson starts one")
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
             }
         }
@@ -151,9 +153,16 @@ struct StreakCard: View {
 /// Coins to spend, and the one-tap convert. Look B.
 struct CoinsCard: View {
     let rewards: MyRewards?
+    /// `/rewards/me/` failed with nothing kept. The card still leads to Points — the ledger's
+    /// own "All your points" link waits for the same read — so the page that can say more is
+    /// never out of reach.
+    var failed = false
     let converting: Bool
     /// What the last conversion did — or that it did not go through.
     let note: String?
+    /// VoiceOver's cursor on the coin count: a conversion usually leaves no Convert button for it
+    /// to rest on, so the hub puts it here when the conversion is over.
+    var focus: AccessibilityFocusState<Bool>.Binding
     let onConvert: () -> Void
 
     var body: some View {
@@ -163,15 +172,16 @@ struct CoinsCard: View {
                 HStack(spacing: 6) {
                     RewardsCoinArt(kind: .coin, size: 30)
                     Text(ScoreText.string(rewards?.coins))
-                        .font(.system(size: 28, weight: .black, design: .rounded))
+                        .appFont(28, weight: .black, design: .rounded)
                         .contentTransition(.numericText(value: Double(rewards?.coins ?? 0)))
                 }
                 Text(rewards?.coins == 1 ? "coin to spend" : "coins to spend")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textSecondary)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(spokenCoins)
+            .accessibilityFocused(focus)
             Spacer(minLength: 0)
             if let rewards {
                 if rewards.convertibleCoins > 0 {
@@ -180,33 +190,47 @@ struct CoinsCard: View {
                             if converting {
                                 ProgressView().controlSize(.mini).tint(.white)
                             } else {
-                                Image(systemName: "arrow.left.arrow.right").font(.system(size: 11, weight: .bold))
+                                Image(systemName: "arrow.left.arrow.right").appFont(11, weight: .bold)
                             }
                             Text(converting ? "Converting…" : "Convert points")
                         }
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(Capsule().fill(Theme.accent))
-                        // Drawn ~27 pt, tappable 44: the extra reach is handed back to layout, so
-                        // the card does not grow (hit testing is not clipped to the layout frame).
-                        .padding(.vertical, 9)
-                        .contentShape(Rectangle())
-                        .padding(.vertical, -9)
+                        // Drawn ~27 pt, tappable 44; the card does not grow.
+                        .hitTarget()
                     }
                     .buttonStyle(PressBounce())
                     .disabled(converting)
-                    .accessibilityLabel("Convert points into \(RewardsFormat.count(rewards.convertibleCoins, "coin"))")
+                    // The spinner has no words of its own.
+                    .accessibilityLabel(
+                        converting ? "Converting points"
+                            : "Convert points into \(RewardsFormat.count(rewards.convertibleCoins, "coin"))"
+                    )
                 } else {
                     Text(verbatim: "\(RewardsFormat.count(rewards.pointsToNextCoin, "point")) to your next coin")
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
                         .foregroundStyle(Theme.textLabel)
                 }
+            } else if failed {
+                NavigationLink(value: AppLink.points) {
+                    HStack(spacing: 3) {
+                        Text("Points & coins")
+                        Image(systemName: "chevron.right").appFont(10, weight: .bold)
+                            .accessibilityHidden(true)
+                    }
+                    .appFont(12, weight: .heavy)
+                    .foregroundStyle(RewardsPalette.accentText)
+                    // Drawn ~15 pt, tappable 44, as the Convert button is.
+                    .hitTarget()
+                }
+                .buttonStyle(.plain)
             }
             if let note {
                 Text(note)
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -234,16 +258,20 @@ struct RewardsBoardSection: View {
     /// Only a board that answers the chosen metric and window; nil while it loads.
     let board: LeaderboardBoard?
     let failed: Bool
+    /// The board's latest read failed while this one stays on screen (`StaleNote`).
+    var stale = false
     let retry: @MainActor () async -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Taps on a window chip — the haptic's trigger, not `window`, which the hub also writes.
+    @State private var chipTaps = 0
 
     private static let topCount = 5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Leaderboard")
-                .font(.system(size: 20, weight: .heavy, design: .rounded))
+                .appFont(20, weight: .heavy, design: .rounded)
                 .accessibilityAddTraits(.isHeader)
             SegmentBar(
                 items: [.init(segment: LeaderboardMetric.xp, title: "XP"), .init(segment: LeaderboardMetric.strikes, title: "Strikes")],
@@ -256,8 +284,9 @@ struct RewardsBoardSection: View {
             if metric == .xp {
                 NavigationLink(value: AppLink.leaderboard) {
                     HStack(spacing: 4) {
-                        Text("See the full board").font(.system(size: 14, weight: .bold))
-                        Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                        Text("See the full board").appFont(14, weight: .bold)
+                        Image(systemName: "chevron.right").appFont(12, weight: .bold)
+                            .accessibilityHidden(true)
                     }
                     .foregroundStyle(RewardsPalette.accentText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -274,10 +303,11 @@ struct RewardsBoardSection: View {
                 let active = window == value
                 Button {
                     guard !active else { return }
+                    chipTaps += 1
                     withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { window = value }
                 } label: {
                     Text(LeaderboardFilters.fallbackWindowLabel(value))
-                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .appFont(13, weight: .bold, design: .rounded)
                         .foregroundStyle(active ? Color.white : Theme.textSecondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -288,7 +318,7 @@ struct RewardsBoardSection: View {
                 .accessibilityAddTraits(active ? .isSelected : [])
             }
         }
-        .sensoryFeedback(.selection, trigger: window)
+        .sensoryFeedback(.selection, trigger: chipTaps)
     }
 
     private var emptyHint: String {
@@ -314,16 +344,30 @@ struct RewardsBoardSection: View {
                     }
                     if let me, !top.contains(where: { $0.studentId == me.studentId }) {
                         Image(systemName: "ellipsis")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                             .foregroundStyle(Theme.textLabel)
                             .accessibilityHidden(true)
                         RewardsBoardRow(row: me, metric: metric, mine: true)
                     }
                 }
+                // Where the student's own row would be. XP says it in the hero above ("Your
+                // first XP puts you on it"); a student with no run would otherwise find nothing
+                // about themselves on the strike board.
+                if metric == .strikes, me == nil {
+                    Label("Come to your next lesson to start a run, and you'll appear here.", systemImage: "flame.fill")
+                        .appFont(13, weight: .semibold)
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(Theme.strike.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
             }
+            if stale { StaleNote() }
             if !board.scopeNote.isEmpty {
                 Text(board.scopeNote)
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -335,10 +379,7 @@ struct RewardsBoardSection: View {
             )
             .cardStyle(padding: 8)
         } else {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 28)
-                .accessibilityLabel("Loading the leaderboard")
+            LoadingSkeleton(rows: 5, height: 48, label: "Loading the leaderboard")
         }
     }
 }
@@ -365,13 +406,12 @@ struct RewardsBoardRow: View {
             LeaderboardRankBadge(rank: row.rank, highlight: mine)
             LeaderboardAvatar(row: row, size: 34)
             Text(row.displayName)
-                .font(.system(size: 14, weight: mine ? .heavy : .semibold))
-                .lineLimit(1)
+                .appFont(14, weight: mine ? .heavy : .semibold)
+                .titleLineLimit(1)
             if mine { LeaderboardYouTag() }
             Spacer(minLength: 6)
             Text(value)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
-                .monospacedDigit()
+                .appFont(13, weight: .heavy, design: .rounded, monospacedDigits: true)
                 .foregroundStyle(mine ? RewardsPalette.accentText : Theme.textSecondary)
                 .fixedSize()
         }
@@ -381,9 +421,9 @@ struct RewardsBoardRow: View {
         .accessibilityLabel("Rank \(row.rank), \(row.displayName)\(mine ? ", you" : ""), \(spokenValue)")
 
         if mine {
-            line.frame(maxWidth: .infinity).chunky(Theme.accent, radius: 16)
+            line.frame(maxWidth: .infinity).chunky(Theme.accent)
         } else {
-            line.background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            line.cardStyle(padding: 0)
         }
     }
 }
@@ -411,8 +451,9 @@ struct XPLedgerCard: View {
             }
             NavigationLink(value: AppLink.points) {
                 HStack(spacing: 4) {
-                    Text("All your points").font(.system(size: 14, weight: .bold))
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .bold))
+                    Text("All your points").appFont(14, weight: .bold)
+                    Image(systemName: "chevron.right").appFont(12, weight: .bold)
+                        .accessibilityHidden(true)
                 }
                 .foregroundStyle(RewardsPalette.accentText)
                 .frame(maxWidth: .infinity, alignment: .trailing)

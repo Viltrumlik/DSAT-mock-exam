@@ -7,10 +7,15 @@ import MasterSATKit
 @MainActor
 @Observable
 final class ClassSectionsModel {
+    /// One kind of per-class data.
+    enum Part: Sendable { case board, members, files }
+
     private(set) var boards: [Int: ClassroomLoad<RankingBoard>] = [:]
     private(set) var people: [Int: ClassroomLoad<[ClassroomMember]>] = [:]
     private(set) var materials: [Int: ClassroomLoad<[ClassroomMaterial]>] = [:]
-    /// The pull-to-refresh each segment last loaded for; a newer one reloads it.
+    /// The pull-to-refresh each segment last loaded for; a newer one reloads it. Written only once
+    /// a run has gone through (`loadPeople`), so a run that was cancelled half way, or that failed,
+    /// leaves the next one to do it again.
     @ObservationIgnored private var peopleRefresh = 0
     @ObservationIgnored private var filesRefresh = 0
 
@@ -20,50 +25,54 @@ final class ClassSectionsModel {
 
     func loadPeople(for ids: [Int], api: ClassroomAPI, refreshID: Int) async {
         let force = refreshID != peopleRefresh
-        peopleRefresh = refreshID
+        var succeeded = true
         for id in ids {
             // The chip or the pull-to-refresh moved on: the task that replaced this one loads
             // what is on screen now.
             if Task.isCancelled { return }
-            await loadBoard(id, api: api, force: force)
-            await loadMembers(id, api: api, force: force)
+            let board = await load(.board, id, api: api, force: force)
+            let members = await load(.members, id, api: api, force: force)
+            succeeded = succeeded && board && members
         }
+        if succeeded, !Task.isCancelled { peopleRefresh = refreshID }
     }
 
     func loadFiles(for ids: [Int], api: ClassroomAPI, refreshID: Int) async {
         let force = refreshID != filesRefresh
-        filesRefresh = refreshID
+        var succeeded = true
         for id in ids {
             if Task.isCancelled { return }
-            await loadMaterials(id, api: api, force: force)
+            let files = await load(.files, id, api: api, force: force)
+            succeeded = succeeded && files
+        }
+        if succeeded, !Task.isCancelled { filesRefresh = refreshID }
+    }
+
+    /// One part of one class. Skipped when it has loaded and `force` is off, or when it is
+    /// already on its way. True unless the request itself failed.
+    @discardableResult
+    func load(_ part: Part, _ id: Int, api: ClassroomAPI, force: Bool) async -> Bool {
+        switch part {
+        case .board: await load(\.boards, id, force: force) { try await api.rankings(classroomId: id) }
+        case .members: await load(\.people, id, force: force) { try await api.people(classroomId: id) }
+        case .files: await load(\.materials, id, force: force) { try await api.materials(classroomId: id) }
         }
     }
 
-    func loadBoard(_ id: Int, api: ClassroomAPI, force: Bool) async {
-        let current = board(id)
-        guard force || !current.hasLoaded, !current.isLoading else { return }
+    private func load<Value: Sendable>(
+        _ slot: ReferenceWritableKeyPath<ClassSectionsModel, [Int: ClassroomLoad<Value>]>,
+        _ id: Int,
+        force: Bool,
+        _ fetch: @escaping @MainActor () async throws -> Value
+    ) async -> Bool {
+        let current = self[keyPath: slot][id] ?? ClassroomLoad()
+        guard force || !current.hasLoaded, !current.isLoading else { return true }
         var start = current
         start.isLoading = true
-        boards[id] = start
-        boards[id] = await Self.fetched(start) { try await api.rankings(classroomId: id) }
-    }
-
-    func loadMembers(_ id: Int, api: ClassroomAPI, force: Bool) async {
-        let current = members(id)
-        guard force || !current.hasLoaded, !current.isLoading else { return }
-        var start = current
-        start.isLoading = true
-        people[id] = start
-        people[id] = await Self.fetched(start) { try await api.people(classroomId: id) }
-    }
-
-    func loadMaterials(_ id: Int, api: ClassroomAPI, force: Bool) async {
-        let current = files(id)
-        guard force || !current.hasLoaded, !current.isLoading else { return }
-        var start = current
-        start.isLoading = true
-        materials[id] = start
-        materials[id] = await Self.fetched(start) { try await api.materials(classroomId: id) }
+        self[keyPath: slot][id] = start
+        let done = await Self.fetched(start, fetch)
+        self[keyPath: slot][id] = done
+        return done.error == nil
     }
 
     /// One request, finished whatever happens to the view task that asked. A chip change or a

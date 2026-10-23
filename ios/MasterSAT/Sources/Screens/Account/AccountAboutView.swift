@@ -22,10 +22,10 @@ struct AccountAboutView: View {
                         BrandMark(height: 44, tint: Theme.accent)
                         VStack(alignment: .leading, spacing: 2) {
                             Text("MasterSAT")
-                                .font(.system(size: 20, weight: .heavy))
+                                .appFont(20, weight: .heavy)
                                 .tracking(-0.4)
                             Text(verbatim: "Version \(AppInfo.version)")
-                                .font(.system(size: 13, weight: .medium))
+                                .appFont(13, weight: .medium)
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         Spacer(minLength: 0)
@@ -42,15 +42,16 @@ struct AccountAboutView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Text("Website")
-                                .font(.system(size: 14, weight: .semibold))
+                                .appFont(14, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                             Spacer(minLength: 0)
                             Text(verbatim: site.host() ?? site.absoluteString)
-                                .font(.system(size: 14, weight: .bold))
+                                .appFont(14, weight: .bold)
                                 .foregroundStyle(Theme.accent)
                             Image(systemName: "arrow.up.right")
-                                .font(.system(size: 12, weight: .bold))
+                                .appFont(12, weight: .bold)
                                 .foregroundStyle(Theme.accent)
+                                .accessibilityHidden(true)
                         }
                         .padding(.vertical, 11)
                         .contentShape(Rectangle())
@@ -71,7 +72,7 @@ struct AccountAboutView: View {
                 .cardStyle(padding: 16)
 
                 Text("Your learning center may ask for these if something isn't working.")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -90,7 +91,7 @@ struct AccountAboutView: View {
             switch gate.requirement {
             case .none:
                 Label("You're on the latest version.", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.success)
             case .available, .required:
                 HStack(spacing: 10) {
@@ -98,7 +99,7 @@ struct AccountAboutView: View {
                         config.latestVersion.map { "Version \($0) is available." } ?? "A newer version is available.",
                         systemImage: "arrow.down.circle.fill"
                     )
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.accent)
                     Spacer(minLength: 0)
                     if let url = config.storeURL {

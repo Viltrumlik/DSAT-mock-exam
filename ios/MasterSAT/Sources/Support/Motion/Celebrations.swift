@@ -68,13 +68,14 @@ final class CelebrationCenter {
 
     var reduceMotion = false {
         didSet {
+            guard reduceMotion != oldValue else { return }
             // Nothing may fly any more: give the header back what it was holding.
-            if reduceMotion, !oldValue, queue.held > 0 {
-                queue.releaseHeld()
-                runWhenQuiet()
-            }
+            if reduceMotion, queue.held > 0 { queue.releaseHeld() }
             // Nor may the flame grow: show the real streak now.
-            if reduceMotion, !oldValue, streakHold != nil { streakHold = nil }
+            if reduceMotion, streakHold != nil { streakHold = nil }
+            // Even with nothing released the hold can end: under Reduce Motion a rise a refresh
+            // brought ahead of a pending read is no longer held (`heldXP`).
+            runWhenQuiet()
         }
     }
     private(set) var bursts: [ConfettiBurst] = []
@@ -93,8 +94,12 @@ final class CelebrationCenter {
     private(set) var streakHold: Int?
     /// Bumps when the flame grows.
     private(set) var streakGrowth = 0
-    /// The trophy card on screen: the student moved up the board while away.
+    /// The trophy card on screen: the student moved up the board while away. Mirrors
+    /// `rankCards.showing`, so the overlay re-renders only when the card itself changes.
     private(set) var rankUp: Rise?
+    /// Bumps each time the double confetti of a finished week plays — at once, or when the sheet
+    /// or cover it waited under has gone — so Today bounces its hero WITH it, never unseen.
+    private(set) var allDonePlays = 0
     private var queue = CelebrationQueue()
 
     // Bookkeeping nothing renders from.
@@ -102,12 +107,17 @@ final class CelebrationCenter {
     /// Everything due this week went in while a sheet or a cover was up: the double confetti
     /// waits for the stage instead of being lost.
     @ObservationIgnored private var allDoneWaiting = false
-    @ObservationIgnored private var rankWaiting: Rise?
+    /// The trophy card's turn — what waits, what is up, and which rise was already shown.
+    @ObservationIgnored private var rankCards = RankUpQueue()
     /// The streak half of the "while you were away" line VoiceOver hears, kept until the XP half
     /// is known (`resolveAway`): two announcements in a row cut each other off.
     @ObservationIgnored private var streakSentence: String?
-    /// What waits for the stage to be quiet (`whenQuiet`) — one, the newest.
-    @ObservationIgnored private var quietAction: (@MainActor () -> Void)?
+    /// What waits for the stage to be quiet (`whenQuiet`) — one per key, the newest.
+    @ObservationIgnored private var quietWaits = QuietWaits<@MainActor () -> Void>()
+    /// Welcome-back checks still running (`expectAway` … `awayCheckEnded`). The board read that
+    /// may find a better place comes AFTER the XP is resolved, so until the check is over the
+    /// place a hub read would show could be the one a card is about to announce.
+    @ObservationIgnored private var awayChecks = 0
     /// Header flames on screen now — the streak rise plays only where one can be seen.
     @ObservationIgnored private var flamesShowing = 0
     @ObservationIgnored private var sheetUp = false
@@ -156,10 +166,11 @@ final class CelebrationCenter {
     /// total read here is the hand-in's, and a refresh landing in between would already hold the
     /// payout and count it as not this work's.
     func celebrate(_ work: FinishedWork, xpBefore: Int?, at point: CGPoint? = nil) {
-        // Measured from hand-in at the latest: a rise the header took since the work started (a
-        // return to the app, a reconnect) is not this work's, and holding it back now would drop
-        // the pill to the old total, un-animated (`XPDelta.baseline`). Read here, before the
-        // refresh below is awaited, so the payout that refresh brings is still this work's gain.
+        // Measured from hand-in: a rise the header took since the work started (a return to the
+        // app, a reconnect) is not this work's, and holding it back now would drop the pill to the
+        // old total, un-animated; a take-back read meanwhile is a real fall, and measuring past it
+        // would shrink this work's gain (`XPDelta.baseline`). Read here, before the refresh below
+        // is awaited, so the payout that refresh brings is still this work's gain.
         let baseline = XPDelta.baseline(atStart: xpBefore, atHandIn: xpNow)
         let entry = queue.record(work, xpBefore: baseline, stageVisible: !covered)
         if entry.playNow { playEffort(work, at: point) }
@@ -175,11 +186,14 @@ final class CelebrationCenter {
                 _ = self.queue.resolve(entry.id, xpAfter: after, allowsFlights: self.budget.allowsFlights)
             }
             self.flyIfReady()
+            // Nothing earned, or a failed read: no flight will land to say the stage is quiet.
+            self.runWhenQuiet()
         }
     }
 
-    /// Everything due this week is in: double confetti. The hero bounces on its own. Under a
-    /// sheet or a cover it waits, and plays the moment the stage is clear.
+    /// Everything due this week is in: double confetti. Under a sheet or a cover it waits, and
+    /// plays the moment the stage is clear; either way `allDonePlays` says when, and Today's
+    /// hero bounces then.
     func allDone() {
         guard !covered else {
             allDoneWaiting = true
@@ -192,6 +206,7 @@ final class CelebrationCenter {
         confetti(at: CGPoint(x: stage.width * 0.3, y: stage.height * 0.4), size: .everything)
         confetti(at: CGPoint(x: stage.width * 0.7, y: stage.height * 0.4), size: .everything)
         effortCount += 1
+        allDonePlays += 1
         announce("Everything due this week is done.")
     }
 
@@ -225,6 +240,7 @@ final class CelebrationCenter {
     /// behind speech already under way (low priority) instead of cutting it off — for a line that
     /// follows another one.
     func announce(_ text: String, queued: Bool = false) {
+        noteSpeech(text, after: queued)
         guard queued else {
             AccessibilityNotification.Announcement(text).post()
             return
@@ -234,25 +250,50 @@ final class CelebrationCenter {
         AccessibilityNotification.Announcement(spoken).post()
     }
 
+    /// When the last line announced is expected to have been spoken. An estimate, since VoiceOver
+    /// does not say; kept only while VoiceOver is running, as nothing is spoken otherwise.
+    @ObservationIgnored private var speechEnds = ContinuousClock.now
+
+    private func noteSpeech(_ text: String, after queued: Bool) {
+        guard UIAccessibility.isVoiceOverRunning else { return }
+        // A line that cuts in starts now; a queued one starts when the speech under way ends.
+        let start = queued ? max(speechEnds, .now) : .now
+        speechEnds = start + .milliseconds(text.count * 70)
+    }
+
+    /// How much longer VoiceOver is expected to be speaking what was announced. A cursor move cuts
+    /// speech off, so whatever moves it for a student waits for this (the rank-up card).
+    func speechRemaining() -> Duration {
+        max(.zero, speechEnds - .now)
+    }
+
     // MARK: - A quiet stage
 
-    /// Runs `action` once the stage is quiet — no flight in the air, no gain still held for the
-    /// header, no trophy card waiting or up — straight away if it already is. The newest ask
-    /// replaces an older one that has not run. For work that would otherwise show the student a
-    /// number the header has not rolled to yet (the Rewards hub reading again after a return).
-    func whenQuiet(_ action: @escaping @MainActor () -> Void) {
-        quietAction = action
+    /// Runs `action` once the stage is quiet (`isQuiet`) — straight away if it already is. The
+    /// newest ask under `key` replaces an older one under it that has not run; asks under other
+    /// keys are kept (`QuietWaits`), so the welcome-back reload and the hub's own hero read never
+    /// cancel each other. For work that would otherwise show the student a number or a place the
+    /// header has not rolled to yet.
+    ///
+    /// Asked again whenever the stage can turn quiet: a flight lands or is settled, a task's or a
+    /// return's read resolves, a welcome-back check ends, Reduce Motion changes (the only thing
+    /// that stops flights — Low Power halves confetti but never holds XP back), the trophy card
+    /// is put away.
+    func whenQuiet(_ key: String, _ action: @escaping @MainActor () -> Void) {
+        quietWaits.put(key, action)
         runWhenQuiet()
     }
 
-    private var isQuiet: Bool {
-        flights.isEmpty && heldXP == 0 && rankWaiting == nil && rankUp == nil
+    /// No flight in the air, no gain held for the header, no read still out that could bring
+    /// one, no welcome-back check still running, no trophy card waiting or up.
+    var isQuiet: Bool {
+        awayChecks == 0 && !queue.awaitsRead && flights.isEmpty && heldXP == 0 && rankCards.isIdle
     }
 
     private func runWhenQuiet() {
-        guard isQuiet, let action = quietAction else { return }
-        quietAction = nil
-        action()
+        guard isQuiet, !quietWaits.isEmpty else { return }
+        // Taken first: an action that asks again waits anew rather than running twice here.
+        for action in quietWaits.takeAll() { action() }
     }
 
     // MARK: - While you were away
@@ -260,10 +301,20 @@ final class CelebrationCenter {
     /// Before the welcome-back read goes out: the XP the header last showed (nil on the first
     /// launch). A rise that lands meanwhile is held at once (`heldXP`). Returns the entry that
     /// `resolveAway` settles — every call to this MUST be followed by one, on every path (a
-    /// failed read resolves with a nil `xpAfter`), or the pill stays held for good.
+    /// failed read resolves with a nil `xpAfter`), or the pill stays held for good — and, once
+    /// the whole check is over, by `awayCheckEnded`, or the stage never turns quiet.
     func expectAway(xpSeen: Int?) -> Int {
         streakSentence = nil
+        awayChecks += 1
         return queue.recordAway(xpSeen: xpSeen)
+    }
+
+    /// The welcome-back check is over, its board read included: any better place it found is
+    /// already queued for its card (`rankRose`), so a place read from now on cannot beat it.
+    func awayCheckEnded() {
+        guard awayChecks > 0 else { return }
+        awayChecks -= 1
+        runWhenQuiet()
     }
 
     /// The read came back — `xpAfter` is nil when it failed, and nothing flies. A gain flies
@@ -281,6 +332,8 @@ final class CelebrationCenter {
         let line = [xp, streak].compactMap { $0 }.joined(separator: " ")
         if !line.isEmpty { announce(line) }
         flyIfReady()
+        // Still loud while its check runs on to the board; the end of the check asks again too.
+        runWhenQuiet()
     }
 
     /// The streak grew while the student was away. Call BEFORE the store takes the new number:
@@ -308,19 +361,22 @@ final class CelebrationCenter {
     }
 
     /// The student moved up the board while away: the trophy card, once the stage is clear and
-    /// any XP flight has landed.
+    /// any XP flight has landed. Call BEFORE the store notes the new place: the place it noted
+    /// before is what tells a replay of the card already shown — a check that read the old
+    /// baseline — from a new climb with the same from and to (`RankUpQueue`).
     func rankRose(_ rise: Rise) {
-        rankWaiting = rise
+        guard rankCards.rose(rise, placeBefore: rewards?.rank) else { return }
         playRankUpIfReady()
     }
 
     /// A rank-up not shown yet: the baseline keeps its old place until the card has been seen.
-    var rankNotShown: Rise? { rankWaiting }
+    var rankNotShown: Rise? { rankCards.waiting }
 
     /// Puts the card away; a flight that waited behind it takes off now, and then a second
-    /// rank-up that waited behind the card (flights stay before cards).
+    /// rank-up that waited behind the card (flights stay before cards). The same rise waiting
+    /// behind it is the card just read, and is never played again (`RankUpQueue.dismiss`).
     func dismissRankUp() {
-        guard rankUp != nil else { return }
+        guard rankCards.dismiss() != nil else { return }
         rankUp = nil
         flyIfReady()
         playRankUpIfReady()
@@ -341,11 +397,10 @@ final class CelebrationCenter {
     private func playRankUpIfReady() {
         // A gain that can fly now goes first; the card follows once it has landed.
         let gainCanFly = queue.hasConfirmedGain && target != nil
-        guard let rise = rankWaiting, rankUp == nil, !covered, flights.isEmpty, !gainCanFly else { return }
-        rankWaiting = nil
+        guard !covered, flights.isEmpty, !gainCanFly, let rise = rankCards.show() else { return }
         rankUp = rise
-        // After the XP line it follows, not over it.
-        announce("You moved up to number \(rise.to) overall.", queued: true)
+        // Not announced here: the card's cursor lands on "You moved up to #N" and reads it
+        // (`RankUpCard`), after whatever is still being said — the XP line of this same return.
     }
 
     // MARK: - What can be seen
@@ -554,7 +609,9 @@ struct TaskCompleteBadge: View {
     var body: some View {
         if reduceMotion {
             Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 64, weight: .bold))
+                .appFont(64, weight: .bold)
+                // The still stands in for a Lottie clip of a fixed size.
+                .capDynamicType()
                 .foregroundStyle(Theme.success)
                 .background(Circle().fill(Theme.card).padding(6))
         } else {
@@ -619,7 +676,10 @@ struct XPFlightView: View {
 
     var body: some View {
         Text("+\(flight.amount) XP")
-            .font(.system(size: 22, weight: .black, design: .rounded))
+            .appFont(22, weight: .black, design: .rounded)
+            // It lands on a pill that stops growing at xxxLarge (`XPPill`): the number that flies
+            // there stops with it, or it would arrive twice the size of its target.
+            .capDynamicType()
             // The deeper amber: the bright one is under 3:1 on a white card.
             .foregroundStyle(Theme.warning)
             // A card behind the number while it hangs — it crosses headings and cards on the way
@@ -640,7 +700,8 @@ struct XPFlightView: View {
             .overlay(alignment: .bottom) {
                 if let label = flight.label {
                     Text(label)
-                        .font(.system(size: 11, weight: .heavy, design: .rounded))
+                        .appFont(11, weight: .heavy, design: .rounded)
+                        .capDynamicType()
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)

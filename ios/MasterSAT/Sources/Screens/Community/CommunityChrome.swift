@@ -6,7 +6,8 @@ import MasterSATKit
 // cannot collide with anything another screen defines.
 
 /// A load that failed: it says so, and offers the retry. Never drawn as "nothing here" — a
-/// student told there are no surveys when the request merely failed has lost points.
+/// student told there are no surveys when the request merely failed has lost points. The compact
+/// `ErrorState`: every caller is one section of a page (Events has two).
 struct CommunityErrorNotice: View {
     let title: String
     var message: String?
@@ -14,25 +15,7 @@ struct CommunityErrorNotice: View {
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.warning)
-            VStack(spacing: 4) {
-                Text(title)
-                    .font(.system(size: 15, weight: .bold))
-                if let message {
-                    Text(message)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            }
-            .multilineTextAlignment(.center)
-            Button("Try again") { Task { await retry() } }
-                .buttonStyle(SecondaryButtonStyle())
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
+        ErrorState(title: title, message: message ?? ErrorState.nothingLost, style: .inline, retry: retry)
     }
 }
 
@@ -50,11 +33,11 @@ struct CommunityStateCard<Actions: View>: View {
             IconTile(systemName: icon, tone: tone, size: 60)
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 18, weight: .heavy))
+                    .appFont(18, weight: .heavy)
                     .tracking(-0.2)
                 if let message {
                     Text(message)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -68,20 +51,13 @@ struct CommunityStateCard<Actions: View>: View {
     }
 }
 
-/// Grey placeholder rows while a list loads — the site's skeletons.
+/// Grey placeholder rows while a list loads — the site's skeletons, as `LoadingSkeleton` rows.
 struct CommunitySkeletonRows: View {
     var count = 3
     var height: CGFloat = 56
 
     var body: some View {
-        VStack(spacing: 10) {
-            ForEach(0..<count, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .fill(Theme.surface2)
-                    .frame(height: height)
-            }
-        }
-        .accessibilityLabel("Loading")
+        LoadingSkeleton(rows: count, height: height)
     }
 }
 
@@ -117,8 +93,9 @@ struct CommunityRemoteImage: View {
             Rectangle().fill(Theme.surface2)
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 22))
+                    .appFont(22)
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             } else {
                 ProgressView()
             }
@@ -222,7 +199,7 @@ struct CommunityFieldChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .font(.system(size: 15))
+            .appFont(15)
             .padding(.horizontal, 12)
             .padding(.vertical, 11)
             .background(

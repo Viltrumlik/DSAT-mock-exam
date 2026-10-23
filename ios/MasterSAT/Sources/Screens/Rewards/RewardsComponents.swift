@@ -25,8 +25,9 @@ struct RewardsHero<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Image(systemName: eyebrowIcon).font(.system(size: 11, weight: .bold))
-                Text(eyebrow).font(.system(size: 12, weight: .heavy))
+                Image(systemName: eyebrowIcon).appFont(11, weight: .bold)
+                    .accessibilityHidden(true)
+                Text(eyebrow).appFont(12, weight: .heavy)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 13)
@@ -34,7 +35,7 @@ struct RewardsHero<Content: View>: View {
             .background(Capsule().fill(.white.opacity(0.2)))
 
             Text(title)
-                .font(.system(size: 28, weight: .heavy))
+                .appFont(28, weight: .heavy)
                 .tracking(-0.7)
                 .foregroundStyle(.white)
                 .padding(.top, 14)
@@ -43,7 +44,7 @@ struct RewardsHero<Content: View>: View {
 
             if let blurb {
                 Text(blurb)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(.white.opacity(0.78))
                     .padding(.top, 10)
                     .fixedSize(horizontal: false, vertical: true)
@@ -87,16 +88,16 @@ struct RewardsHeroStat: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label.uppercased())
-                .font(.system(size: 11, weight: .heavy))
+                .appFont(11, weight: .heavy)
                 .tracking(0.7)
                 .foregroundStyle(.white.opacity(0.72))
             HStack(spacing: 6) {
                 Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.8))
+                    .accessibilityHidden(true)
                 Text(value)
-                    .font(.system(size: 17, weight: .heavy))
-                    .monospacedDigit()
+                    .appFont(17, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(.white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -143,48 +144,17 @@ struct RewardsCoinArt: View {
 /// A failed load, said as a failure — the web's `ErrorState`: a title, what it means for the
 /// student, and a way to try again. Never an empty state: "nothing here" after a failure
 /// reads as a student having earned nothing.
+///
+/// The compact `ErrorState`: every one of these stands in a section or a card. The surface around
+/// it — the hero's chunky edge, a section's card — is its caller's, and stays.
 struct RewardsErrorState: View {
     let title: String
     let message: String
     /// Main-actor on purpose: every caller passes a closure that touches view state.
     let retry: @MainActor () async -> Void
 
-    @State private var retrying = false
-
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 24))
-                .foregroundStyle(Theme.warning)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.system(size: 15, weight: .bold))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button {
-                Task {
-                    retrying = true
-                    await retry()
-                    retrying = false
-                }
-            } label: {
-                if retrying {
-                    ProgressView().frame(minWidth: 80)
-                } else {
-                    Text("Try again")
-                }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(retrying)
-            .padding(.top, 4)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 22)
-        .padding(.horizontal, 12)
+        ErrorState(title: title, message: message, style: .inline, retry: retry)
     }
 }
 
@@ -205,11 +175,11 @@ struct RewardsToast: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: message.tone == .success ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .font(.system(size: 18, weight: .semibold))
+                .appFont(18, weight: .semibold)
                 .foregroundStyle(message.tone == .success ? Theme.success : Theme.warning)
                 .accessibilityHidden(true)
             Text(message.text)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -334,11 +304,9 @@ enum RewardsPalette {
     static let bronze = Medal(solid: Color(rewardsHex: 0xe0851a), top: Color(rewardsHex: 0xf4b15f), bottom: Color(rewardsHex: 0xe0851a))
     static let crown = Color(rewardsHex: 0xf5c542)
 
-    /// Brand-blue TEXT on a card — the web's `text-primary dark:text-primary-hover`. On the
-    /// near-black dark surface the brand blue falls under 4.5:1; its hover shade clears it.
-    static let accentText = Color(uiColor: UIColor { traits in
-        UIColor(rewardsHex: traits.userInterfaceStyle == .dark ? 0x5b8def : 0x2a68c0)
-    })
+    /// Brand-blue text on a card (`Theme.accentText`), kept under this name for the Rewards
+    /// screens that already say it.
+    static let accentText = Theme.accentText
 
     /// A medal follows the rank the server gave — never the row's position.
     static func medal(forRank rank: Int) -> Medal? {

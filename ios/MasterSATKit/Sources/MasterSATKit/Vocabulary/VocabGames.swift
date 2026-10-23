@@ -227,6 +227,70 @@ public enum VocabGames {
         }
     }
 
+    /// A space, quote, apostrophe or dash in a spelling answer: how it folds and what it is called.
+    ///
+    /// ONE list drives both sides of a student's typing. The grade folds a curly quote or an en
+    /// dash to its plain form (`foldTypography`), so the student is never refused for which look
+    /// the keyboard produced; the well is read aloud (`spoken`), so a mark that is graded must also
+    /// be heard — VoiceOver skips most bare punctuation. Two lists drifted apart once (the grade
+    /// folded marks the well never named), so there is no second list to keep in step.
+    public struct SpellingMark: Sendable, Equatable {
+        /// The mark as it may arrive: typed, or imported with the word.
+        public let character: Character
+        /// What the grade treats it as. A plain mark folds to itself.
+        public let plain: Character
+        /// What VoiceOver says.
+        public let name: String
+
+        init(_ character: Character, plain: Character? = nil, name: String) {
+            self.character = character
+            self.plain = plain ?? character
+            self.name = name
+        }
+    }
+
+    /// Every mark the grade folds, each plain form it folds to, and the space.
+    public static let spellingMarks: [SpellingMark] = [
+        SpellingMark(" ", name: "space"),
+        SpellingMark("-", name: "hyphen"),
+        SpellingMark("\u{2010}", plain: "-", name: "hyphen"),
+        SpellingMark("\u{2011}", plain: "-", name: "hyphen"),
+        SpellingMark("\u{2012}", plain: "-", name: "dash"),
+        SpellingMark("\u{2013}", plain: "-", name: "dash"),
+        SpellingMark("\u{2014}", plain: "-", name: "dash"),
+        SpellingMark("\u{2212}", plain: "-", name: "minus"),
+        SpellingMark("'", name: "apostrophe"),
+        SpellingMark("\u{2018}", plain: "'", name: "apostrophe"),
+        SpellingMark("\u{2019}", plain: "'", name: "apostrophe"),
+        SpellingMark("\u{02BC}", plain: "'", name: "apostrophe"),
+        SpellingMark("\"", name: "quote"),
+        SpellingMark("\u{201C}", plain: "\"", name: "quote"),
+        SpellingMark("\u{201D}", plain: "\"", name: "quote"),
+    ]
+
+    /// `spellingMarks` by character, built once: the fold runs on both sides of every graded
+    /// answer, and the well is read on every keystroke.
+    private static let spellingMarkTable: [Character: SpellingMark] =
+        Dictionary(uniqueKeysWithValues: spellingMarks.map { ($0.character, $0) })
+
+    /// The well as VoiceOver reads it, as one line: what is there so far, "blank" for what is
+    /// not. Every mark in `spellingMarks` is named, whether it is the placeholder, the hint or
+    /// was typed, and a typed letter is read as it is, right or wrong alike.
+    public static func spoken(_ tiles: [SpellingTile]) -> String {
+        tiles.map { tile in
+            switch tile.kind {
+            case .blank:
+                return "blank"
+            case .structure, .typed, .given:
+                if let character = tile.character.first, tile.character.count == 1,
+                   let mark = spellingMarkTable[character] {
+                    return mark.name
+                }
+                return tile.character.lowercased()
+            }
+        }.joined(separator: ", ")
+    }
+
     /// Trimmed and case-insensitive — the platform's comparison rule, in one place.
     public static func spellingIsCorrect(_ input: String, _ word: String) -> Bool {
         let target = normalise(word)
@@ -239,14 +303,7 @@ public enum VocabGames {
     /// refused for which of the two looks they typed. Used only when an answer is graded — the
     /// grade the phone sends — never in the well.
     public static func foldTypography(_ text: String) -> String {
-        String(text.map { character -> Character in
-            switch character {
-            case "\u{2018}", "\u{2019}", "\u{02BC}": return "'"
-            case "\u{201C}", "\u{201D}": return "\""
-            case "\u{2010}", "\u{2011}", "\u{2012}", "\u{2013}", "\u{2014}", "\u{2212}": return "-"
-            default: return character
-            }
-        })
+        String(text.map { spellingMarkTable[$0]?.plain ?? $0 })
     }
 
     // MARK: - Test

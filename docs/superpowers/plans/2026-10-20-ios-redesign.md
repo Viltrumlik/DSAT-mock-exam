@@ -15624,14 +15624,720 @@ Run `xcrun simctl list runtimes | grep -E "iOS 1[78]"`. If a runtime is there, c
 
 Send the screenshots and `/tmp/phase4.mp4` (SendUserFile), one line per item to look at. Merge only after the owner's "ha", and after #304, #305 and #308.
 
-## Phase 5 — Explore + Me + polish (outline)
+## Phase 5 — Explore + Me + polish
 
-- Left by phase 2: the Me sheet's "Homework to do" still counts with `ProfileHomework.isTurnedIn` — switch it to `HomeworkProgress.isDone` so a finished word-set homework leaves it as it leaves Today; `ClassesListView` is now reached only through `AppLinkPage`'s `.classes` case, which no link pushes (`.classes` is a tab placement) — fold that case into the "Nothing to open" case and delete the view, keeping `JoinClassSheet`, `Avatar`, `ClassroomErrorState` and `ClassroomCard`, which share its file.
-- Explore live cards: Roadmap current level + next lesson; Services next free support slot + checklist progress; Events next event + ticket; Surveys open count + coins.
-- Me sheet: profile hero, target scores + exam date (moved from Today), My progress, midterm history + certificates, notification settings, account, sign out.
-- Lottie empty/error states: all-done, no-tasks, no-words, offline, error; `LoadingSkeleton` replaces spinners; `ErrorState` stays distinct from empty.
-- Audit: Dynamic Type (largest sizes), VoiceOver labels and announcements, Reduce Motion everywhere, dark mode, iPhone SE (3rd gen) layout, ≤2 looping Lottie per screen.
-- Verify, PR, demo. Open item for the owner: a paid Apple Developer account (TestFlight) to put the app on students' phones.
+Branch `feat/ios-redesign-phase5` in the worktree `/Users/macbook/Projects/DSAT-mock-exam/.claude/worktrees/cranky-tesla-4352b7`, cut from `main` at `95fc244e` (phases 1–4 merged on 2026-10-22). One PR into `main`. This is the last phase of the redesign.
+
+**What the student gets:** Explore stops being four signposts. The Roadmap card names the student's level and the next lesson, Services names their next support hour or the next free one, Events names their ticket or the next event they can join, and Surveys says how many are waiting and what finishing them earns. The Me sheet becomes one short page, as the approved design lists it: who they are, their goal and SAT date, My progress, midterms and certificates, notifications, account and sign out. An empty list now looks empty, and a failure looks like a failure. "All caught up", "Nothing to do", "No words yet", "You're offline" and "Didn't load" each get their own small animation, which plays once and settles. Pages that are loading show the shape of what is coming instead of a spinner. Last comes the audit, which the student never sees as a feature, only as an app that works for them: text grows with the phone's text size, VoiceOver names and announces everything, Reduce Motion is respected everywhere, dark mode has no white-on-white, an iPhone SE fits, and no screen loops more than two animations. Every finding phases 1–4 deliberately carried here is either fixed or listed under "Not done, and why" in the outcome.
+
+**Checked while this plan was written (2026-10-22).** At `95fc244e` the kit passes 786 tests and the app builds (`** BUILD SUCCEEDED **`, 134 warnings, all existing). Three read-only sweeps of the tree produced the facts the tasks below lean on: which data each Explore card can truthfully show, every loading/empty/error state and spinner, and where every carried finding now sits in the code (file:line in the tasks, valid at `95fc244e`).
+
+**How the steps are written — different from phases 1–4.** Phases 1–4 wrote every line of code into the plan. Most of phase 5 is an audit across about 90 files, where the right edit is found by reading the file, so the code is not written here. Each task gives the files, the interfaces, the rules, the kit test cases by name and behaviour, and a checklist of observable results; the implementer writes the code and the reviewer checks the result against the list. Kit tasks are written test-first. Every app task ends with the build check of phase 2, with this worktree's path:
+
+```bash
+cd /Users/macbook/Projects/DSAT-mock-exam/.claude/worktrees/cranky-tesla-4352b7/ios/MasterSAT && xcodegen generate
+xcodebuild -project MasterSAT.xcodeproj -scheme MasterSAT \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
+  -derivedDataPath build/dd build > /tmp/ms-build.log 2>&1; echo "exit=$?"
+grep -E "error:|BUILD (SUCCEEDED|FAILED)" /tmp/ms-build.log | sort -u | head -20
+```
+
+It passes only with `exit=0` and `** BUILD SUCCEEDED **`, and no new warnings in the files the task touched. The kit check is `cd …/ios/MasterSATKit && swift test 2>&1 | tail -3`; it passes only on "Test run with N tests … passed", where N never drops.
+
+### Decisions taken where the design left room
+
+- **The Me sheet is one page, as the approved design lists it** (owner's question 1, see "Owner answers" below). Out: the four figures (XP, strikes, points, homework — the Rewards tab and Today), Homework to do (Today), and the Classes tab (Class tab: chips, People, Telegram). Kept: the hero, Your goal (target, test day, latest results), My progress, a new Midterms & certificates panel, Notifications, the account rows, Finish your profile (only while something is missing), Payments "coming soon" (the owner asked for it), and Sign out. The Me-sheet homework card's wrong count (`ProfileHomework.isTurnedIn` vs `HomeworkProgress.isDone`, phase 2 carry) goes with the card.
+- **Surveys pay points, not coins.** The outline said "coins". The server's survey reward is `points_award` (`SurveyBrief.pointsAward`), and coins are bought with points, so the card says "points".
+- **Services shows the student's next booked hour, otherwise the next free one, and the next SAT date.** The SAT checklist (`SatChecklistSheet`) keeps no record of progress — its one tick resets every time the sheet opens — so any "3 of 6" would be invented (owner's question 2, see "Owner answers").
+- **The Explore cards read on every visit, side by side, detached** (Roadmap 1 request, Services 3, Events 1, Surveys 1). Each card fails on its own. Until a card's first answer arrives, and whenever its read fails with nothing earlier to show, it keeps its fixed one-line description. That line describes the card and never says "nothing", so a failure is never drawn as empty. The page each card opens says what failed. Badges: Events counts what can be signed up for now; Surveys counts what is waiting. Zero shows no badge, as before.
+- **Empty and error art are five new one-shot Lottie files** (`all-done`, `no-tasks`, `no-words`, `offline`, `error`). Each plays about 1.2 s and settles on its finished picture, and none loops, so no screen gains a looping animation. Under Reduce Motion the finished picture is shown, still. **At most one state animation per screen**: page-level states get the art, and section-level states inside a page use the compact form without art.
+- **Error stays distinct from empty.** An `ErrorState` always says what did not load, that nothing is lost, and offers "Try again". An `EmptyState` never offers a retry. While the phone is offline, a failure shows the offline art and "You're offline" instead of the generic error (the banner at the top already says so). A refresh that fails over good data keeps the data and says so in one line ("Couldn't refresh — showing what last loaded"), as Roadmap and the class page already do.
+- **`LoadingSkeleton` breathes, but only outside the focus zones.** It shows grey blocks shaped like what is coming, with opacity easing 1 → 0.55 over 1.1 s, repeating. That is level-3 motion, a pulse with no movement, and static under Reduce Motion. The focus zones (runner, word games) keep their quiet spinner, which never moves anything. One component replaces the five existing skeletons.
+- **Text size: every fixed `.font(.system(size:))` scales.** There are 1,074 of them in 94 files, and no scaled font exists in the app today. `appFont(_:weight:design:)` keeps today's size at the default text size, so nothing changes for a student who never touched the setting, and it grows with Dynamic Type. Chrome that cannot grow without covering content — the floating tab bar, the header's chips and pill, the bell — is capped at `.xxxLarge` and shows the Large Content Viewer on a long press, as the system tab bar does. Pages grow to the largest accessibility size, and rows that cannot fit side by side stack.
+- **Haptics follow the student's hand, not the code.** A chip, tab or segment buzzes when the student picks it, never when the app sets it (Today's "See all", a reload re-resolving a chip, a deep link).
+- **The things that are not phase-5 work stay out**, listed in the outcome: performance items from phase 2, the matching game's accuracy figure, and the strike-shop coin burst (owner's call), plus anything that needs a server change.
+
+### Owner answers
+
+1. **Me sheet — B, plus navigation and a theme** (owner, 2026-10-23, verbatim: "B qiling. ammo navigationni yaxshilang. shuningdek theme yo'q ekan shuni ham hal qiling" — "Do B. But improve the navigation. Also, there is no theme — fix that too.").
+   - The answer came after Task 48 had been built as A on a ledgered ruling (the question was open for a day).
+   - **Task 57** rebuilds the sheet as B: the website's three tabs and their content, plus Midterms & certificates, the Notifications row, the 44-pt close button, value routes, and a homework count on `HomeworkProgress.isDone`. It also improves the sheet's navigation: pinned tabs, the last tab remembered, back to the same tab and scroll position.
+   - **Task 58** adds the theme as an Appearance setting (System / Light / Dark), applied app-wide and remembered per device.
+   - The Decisions bullet above that describes the one-page sheet is superseded by these two tasks.
+2. Services card: *(not asked — one question at a time while question 1 was open; the recommended "next SAT date" is built, and the PR puts the question to the owner with the tickable-checklist alternative)*.
+
+### Earlier phases' hand-off → tasks
+
+| Carried into phase 5 | Where |
+|---|---|
+| P1: inherited `contentMargins` in nested horizontal scrollers and sheets | Task 55 |
+| P1: tab-bar VoiceOver semantics + Dynamic Type | Task 53 (VoiceOver), Task 54 (text size) |
+| P1: Me close button 32 pt; Me panels push with `NavigationLink { }` | Task 48 |
+| P1: Explore lost the Events/Surveys badges; `ProfileModel` still fetches the counts; dead `EventsOpenCard` | Task 47 |
+| P1: hand-rolled cards with the old hairline / radius 16 | Task 55 |
+| P1: `PillTabs` haptic fires on programmatic changes | Task 53 |
+| P1: `RewardsPointsPill.swift` holds only the explainers | Task 48 (the explainers' only users, the four figures, leave the Me sheet; the file is deleted) |
+| P1 kit polish: `AppTab.allCases` order, confetti tests, every Lottie file loads, the 15 000-byte budget, rename `gravity` | Task 44 (the budget is already enforced by the generator, lines 152–159) |
+| P2: ~15 pages on a plain `.refreshable` | Task 49 (16 found) |
+| P2: `HomeworkDetailView:105` and `ClassView.load()` read a cancelled first load as a failure | Task 49 |
+| P2: the Me sheet's homework card ignores `isClasswork` and `isDone` | Task 48 (the card leaves) |
+| P2: Today's fixed 2-h lesson window on Tashkent time vs Class on `room.lessonHours` and the phone calendar; `DueLabel` on the phone calendar | Task 43 |
+| P2: accessibility pass (`PillTabs` trait, `LessonsUnavailableRow` icon, 12-pt "Try again", the ring while loading, result rows, Class segment titles and the header at large sizes) | Task 53, Task 54 |
+| P2: polish ("on our end" copy, `dismissNudge` and Reduce Motion, stale rows after a failed refresh, the first-run fresh result, the rankings subtitle under All, "In class" drops the date) | Task 46 (copy), Task 49 (stale notice, rankings, "In class"), Task 55 (`dismissNudge`); the first-run fresh result → Task 43 |
+| P2: `RoadmapView:136` pushes `ClassesListView`; fold `.classes` and delete `ClassesListView` | Task 49 |
+| P2 later/perf: `ClassSourceState` has no test; the three identical `load*` in `ClassSectionsModel`; its refresh stamp set at load start | Task 44 (`ClassSourceState` to the kit), Task 49 (the loads, the stamp); the rest → outcome "Not done" |
+| P3: the hub's own load not gated by `whenQuiet`; `whenQuiet` not re-asked; `dismissRankUp` replay | Task 50 |
+| P3: VoiceOver (rank-up focus, dimmed search results, coins card focus, `.low` rank line, `VocabEmptySetRow` contrast) | Task 53 |
+| P3: Rewards list (duplicate `loadSection`, `loadHero` ordering, shared XP-MONTH/Strikes slot, Points unreachable on failure, own row on Strikes, hero height, nameless "pass Student", silent failed pull, stale "couldn't confirm"), `heroBoard` to the kit | Task 50; `heroBoard` → Task 44 |
+| P3: Words hero above search results; `isDone` and an empty word set | Task 50; Task 43 |
+| P3: replayed all-done has no hero bounce; burst rest frames hand-synced | Task 50; Task 45 (a `rest` marker written by the generator) |
+| P3 tests/docs: `historyWindow` drift, `AwayCheck.remember()` table to the kit, three missing tests, doc nits | Task 44 |
+| P4 runner/test, flashcards, spelling, games | Task 51 |
+| P4 upload, outcomes, sign-in; P4 device observations | Task 52 (homework page, review, sign-in), Task 43 (the retry rows' data), Task 55 (status-bar material) |
+| P4 motion: `Stagger` / `ZoomDestination` branch on Reduce Motion; sheets inherit the bar margin; `OfflineOverlay`'s dead `Group` | Task 55; `OfflineOverlay` → Task 46 |
+| P4 `noteSeen` / `wholePercent` to the kit, called from the board and homework loads | Task 44 |
+| Owner: iOS 17/18 runtimes, paid Apple account | Task 56 Step 7 (still the owner's) |
+
+### File structure (phase 5)
+
+Kit (`ios/MasterSATKit/Sources/MasterSATKit/`):
+- `Explore/ExploreDigest.swift` — **new.** `ExploreLine`, `ExploreDigest.roadmap/services/events/surveys`.
+- `Learn/RoadmapRules.swift` — `nextLesson(in:)`.
+- `Today/WorkItem.swift`, `Today/TodayPlan.swift` — empty word sets; per-class lesson length.
+- `Profile/ProfileRules.swift` — `ProfileHomework.summarise` and its wording deleted with the Me card (and their tests).
+- `Rewards/` — `LeaderboardQuery.heroBoard`; `Motion/CelebrationRule.swift` — `OutcomeMemory.noteSeen(in:)`, `ScoreText.wholePercent` → kit; `Rewards/LastSeenRule.swift` — **new**, `AwayCheck.remember()`'s table; `Classroom/ClassSourceState.swift` — **new** (moved).
+- `Motion/Confetti.swift` — `gravity` renamed.
+
+Kit tests: `ExploreDigestTests.swift`, `LottieFilesTests.swift`, `LastSeenRuleTests.swift`, `ClassSourceStateTests.swift` — **new**; additions to `TodayPlanTests`, `LinkPlacementTests`, `ConfettiTests`, `CelebrationQueueTests`, `CelebrationRuleTests`, `LeaderboardTests`.
+
+App (`ios/MasterSAT/`):
+- `Resources/Lottie/{all-done,no-tasks,no-words,offline,error}.json` — **new**, generated; `ios/tools/lottie/make-lottie.mjs` — the five, `rest` markers.
+- `Sources/Support/StateViews.swift` — **new.** `StateArt`, `EmptyState`, `ErrorState`, `LoadingSkeleton`.
+- `Sources/Support/AppFont.swift` — **new.** `appFont`.
+- `Sources/Support/Motion/LottieClip.swift` — `.settle`, the `rest` marker, the Low Power loop rule.
+- `Sources/Screens/Shell/ExploreView.swift`, `ExploreModel.swift` (**new**), `HubCard.swift`.
+- `Sources/Screens/ProfileView.swift`, `Screens/Profile/*` — the one-page Me sheet; `ProfileClassesTab.swift`, `Rewards/RewardsPointsPill.swift` — **deleted**; `Profile/MeMidtermsPanel.swift` — **new**.
+- `Sources/Screens/Classroom/ClassesListView.swift` — **deleted**; `ClassroomShared.swift` — **new** (`JoinClassSheet`, `Avatar`, `ClassroomErrorState`).
+- `Sources/Screens/Community/CommunityHome.swift` — `CommunityCounts`, `EventsOpenCard` deleted.
+- Audit edits across `Sources/Screens/**` and `Sources/Support/**`.
+
+---
+
+### Task 42: Explore's live lines in the kit (`ExploreLine`, `ExploreDigest`, `RoadmapRules.nextLesson`)
+
+**Files:**
+- Create: `ios/MasterSATKit/Sources/MasterSATKit/Explore/ExploreDigest.swift`
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Learn/RoadmapRules.swift`
+- Test: `ios/MasterSATKit/Tests/MasterSATKitTests/ExploreDigestTests.swift`
+
+**Interfaces:**
+- Consumes (all existing): `RoadmapResponse`/`RoadmapTrack`/`RoadmapLesson`/`RoadmapLessonState` (`Learn/Roadmap.swift`), `SupportCalendar`/`SupportHour.State`/`SupportAllowance`/`SupportBooking` (`Services/SupportModels.swift`), `SupportSchedule.nextHourSummary(in:now:)`, `ServicesTime.hourLabel(_:now:)`, `ServicesExamDates.earliest(_:)`/`label(for:now:)`, `LearningEvent` (`holdsSeat`, `myRegistration?.ticketCode`, `canSignUp`, `seatsLeft`, `startDate`, `isCancelled`), `EventRules.openForSignUp(_:)`, `SurveyBrief.pointsAward`.
+- Produces:
+  - `public struct ExploreLine: Equatable, Sendable { public let text: String; public let detail: String?; public let badge: Int? }`. `badge` is nil or > 0; `detail` is a second line or nil.
+  - `public enum RoadmapNextLesson: Equatable, Sendable { case open(RoadmapLesson); case upcoming(RoadmapLesson); case levelDone(nextLevel: String?) }` and `RoadmapRules.nextLesson(in track: RoadmapTrack) -> RoadmapNextLesson?` (nil when the track has no own level).
+  - `public enum ExploreDigest` with:
+    - `static func roadmap(_: RoadmapResponse, when: (Date) -> String) -> ExploreLine`
+    - `static func services(bookings: [SupportBooking]?, calendar: SupportCalendar?, examDates: [ExamDateOption]?, now: Date) -> ExploreLine?` (nil only when all three are nil)
+    - `static func events(_: [LearningEvent], now: Date, when: (Date) -> String) -> ExploreLine`
+    - `static func surveys(_: [SurveyBrief]) -> ExploreLine`
+
+Dates that the app formats on the phone's clock (an event's time, a lesson's day) come in through `when`, so the wording is tested here and the formatting stays in the app's `CommunityFormat`. Support hours are on Tashkent's clock (`ServicesTime`), as the booking page shows them.
+
+**Rules (copy is final; tests pin it):**
+- **Roadmap.** Take the tracks that have an own level, at most two, in server order (Math first).
+  - No tracks: `"Join a class to start your roadmap"`, with no detail.
+  - Tracks exist but none has an own level: `"Your level opens when your class starts"`.
+  - Otherwise `text` is the tracks joined by `"  ·  "`, each written `"<Subject> · <ownLevelLabel> · <completed> of <total>"`. Use `"<Subject> · <ownLevelLabel>"` when `totalLessons` is 0 or nil.
+  - `detail` comes from the first track's `nextLesson`:
+    - `.open` → `"Open now: <title>"`
+    - `.upcoming` with a scheduled date → `"Next: <title> · <when(date)>"`, without one → `"Next: <title>"`
+    - `.levelDone(next)` → `"Level done — next: <next>"`, or `"Top level — every lesson done"` when `next` is nil.
+- **`nextLesson(in:)`.** On the own level: the first lesson whose `state == .available`, otherwise the first `.upcoming`, otherwise `.levelDone(nextLevelLabel)`. A midterm lesson counts like any lesson. (`RoadmapView.currentNodeID` keeps its own scroll logic — not touched here.)
+- **Services.** The parts are tried in this order:
+  1. The student's own next booked hour (`SupportSchedule.nextHourSummary`): `"Your next hour: <when> with <teacher>"`.
+  2. Otherwise, the calendar:
+     - `allowance?.isPaused == true` → `"Booking is paused until <pausedUntil as d MMM>"`, or `"Booking is paused for now"` when there is no date.
+     - `allowance?.canBook == false` → `"You've booked all the hours you can for now"`.
+     - No teachers → `"No support teacher on your classes yet"`.
+     - Otherwise the earliest `.open` hour across every teacher and day → `"Next free hour: <ServicesTime.hourLabel>"`.
+     - No open hour → `"No free hours in the next few days"`.
+  3. `detail` is the earliest exam date → `"Next SAT: <ServicesExamDates.label>"`, or nil.
+  - When bookings failed but the calendar answered, step 2 still runs. When only the exam dates answered, `text` falls back to `"Book an hour with a teacher"` and the date is the detail.
+- **Events.** Cancelled events are ignored.
+  - The first event the student holds a seat on: `text` = `"Your ticket: <title>"`, `detail` = `"<when(start)> · Ticket <code>"`, or `"<when(start)>"` when the code is empty.
+  - Else the first event with `canSignUp`: `text` = `"<title>"`, `detail` = `"<when(start)> · <n> seats left"`, or just `"<when(start)>"` when `seatsLeft` is nil.
+  - Else the first event: `"<title>"`, with `detail` `"<when(start)>"`.
+  - None: `"Nothing coming up right now"`, with no detail.
+  - `badge` = `EventRules.openForSignUp`, or nil when it is 0.
+  - Server order is soonest first and is kept.
+- **Surveys.**
+  - None: `"Nothing waiting for you"`, with no badge.
+  - n waiting: `"1 survey waiting"` / `"<n> surveys waiting"`.
+  - `detail`: `"Finishing it earns you <p> points"` (n = 1) or `"Finishing them earns you <p> points"`, where p is the sum of `pointsAward`; nil when p is 0.
+  - `badge` = n.
+
+- [ ] **Step 1: Write the failing tests.** Create `ExploreDigestTests.swift`. Build models by decoding minimal JSON through `JSONCoding.decoder`, copying the shapes the existing tests already use (`RoadmapTests.swift`, `SupportScheduleTests.swift` / `SupportModelsTests.swift`, `EventsTests.swift`, `SurveysTests.swift` — read them first). Tests, one `@Test` each:
+  - `roadmapNoTracks`, `roadmapNoOwnLevel`, `roadmapOneTrackOpenLesson`, `roadmapUpcomingWithDate`, `roadmapUpcomingNoDate`, `roadmapLevelDoneNext`, `roadmapTopLevel`, `roadmapTwoTracksJoined`, `roadmapZeroTotalOmitsCount`.
+  - `nextLessonPrefersAvailableOverUpcoming`, `nextLessonNilWithoutOwnLevel`.
+  - `servicesBookedHourWins`, `servicesPaused`, `servicesPausedNoDate`, `servicesAtLimit`, `servicesNoTeachers`, `servicesEarliestOpenAcrossTeachers`, `servicesNoOpenHours`, `servicesExamDateDetail`, `servicesOnlyExamDates`, `servicesAllNilIsNil`, `servicesBookingsFailedCalendarAnswers`.
+  - `eventsTicketWithCode`, `eventsTicketWithoutCode`, `eventsOpenWithSeats`, `eventsOpenNoSeatCount`, `eventsOnlyFull`, `eventsCancelledIgnored`, `eventsNone`, `eventsBadgeZeroIsNil`.
+  - `surveysNone`, `surveysOneWithPoints`, `surveysManySummed`, `surveysZeroPointsNoDetail`.
+  - Inject a fixed `now` and a `when` closure that returns e.g. `"WHEN"`. Pin Tashkent where a support hour is formatted.
+- [ ] **Step 2: Run** `swift test --filter ExploreDigestTests` and confirm it fails to compile (the types do not exist).
+- [ ] **Step 3: Implement** `ExploreDigest.swift` and `RoadmapRules.nextLesson(in:)` to the rules above, with doc comments in the kit's style: why, not what.
+- [ ] **Step 4: Run the whole kit**; it must pass with 786 + the new tests.
+- [ ] **Step 5: Commit** `feat(ios-kit): Explore's live lines — roadmap, services, events, surveys`.
+
+---
+
+### Task 43: Homework truth and one clock in the kit (empty word sets, the retry row, per-class lesson length, Tashkent everywhere)
+
+**Files:**
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Today/WorkItem.swift` (`HomeworkProgress.isDone`)
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Today/TodayPlan.swift` (`todaysLessons` takes each class's lesson length; the first-run fresh result)
+- Modify: `ios/MasterSATKit/Sources/MasterSATKit/Profile/ProfileRules.swift` (only if Task 48 removes the homework card: delete `ProfileHomework.summarise`, `Summary`, `rowDetail`, `ProfileWording.homeworkValue/Detail/Empty`, and their tests; keep `isTurnedIn` and `dueLabel`, which other code uses)
+- Modify: app `Screens/Today/TodayView.swift` (pass the lesson lengths), `Screens/Class/ClassView.swift` (`ProfileLessons.next/label` on `ServicesTime.calendar`), `Support/PageChrome.swift` (`DueLabel` on `ServicesTime.calendar`)
+- Test: `TodayPlanTests.swift` (additions), `ProfileRulesTests` (deletions, if the card goes)
+
+**Rules:**
+- **Empty word sets are never owed** (the phase-3 rule for Words, now on Today and Class too):
+  - `isDone` ignores a `vocabHomeworks` entry whose `wordCount == 0`, exactly as `VocabHomeworkGroup.isComplete` does.
+  - A homework whose ONLY pieces are empty word sets, with nothing to upload and no paper content, is done: nothing is there to do. If the teacher later fills a set, its `wordCount` is no longer 0 and the homework is owed again.
+- **The retry row.** Investigate first. Read `AssessmentHomeworkLink.progress` (`AssessmentProgress`), `AssignmentListing.workflowStatus` and `backend/classes/` `my-assignments` serialisation (read only) for any sign that an earlier attempt was already graded while a newer one is in progress.
+  - **If the payload carries such a sign:** the row is not owed for XP. No "up to +N XP" on it, because the server pays from the first graded attempt; the row reads "Retry · <n> answered" instead of "Continue"; Class → Results shows "Retry in progress" instead of "No results yet".
+  - **If it carries none:** change nothing, and write one paragraph in the commit body and in the outcome's "Not done" list ("needs a server field"). No backend change in this phase.
+- **One lesson length.**
+  - `TodayPlan.todaysLessons` takes `lessonHours: [Int: Int]` (classroom id → hours) and uses `ProfileLessons.next`'s rule: `max(0.5, hours) ?? 2`. A lesson of a class with no length still gets 2 h.
+  - `TodayView` builds the map from the classes it already loads, or loads `/classes/` once if it has none.
+  - Test: a 3-h class's lesson started 2.5 h ago is still on Today.
+- **One clock.**
+  - Class cards' next lesson (`ProfileLessons.next/label`) and `DueLabel` use `ServicesTime.calendar` (Tashkent), as Today does. A student whose phone is set to another time zone then sees one time for the same lesson everywhere.
+  - Test: `ProfileLessons.label` with a Tashkent calendar and a phone-zone date crossing midnight.
+- **The first-run fresh result.** The first time Today ever loads for a student (no `today.seenResults.<id>` key yet), every result released before that load is marked seen without a card. Only results released later surface as "fresh". Put the rule in `TodayPlan.freshResult(_:seen:firstRun:)` with a test.
+
+- [ ] Write the failing tests:
+  - `emptyWordSetNeverOwed`, `onlyEmptyWordSetsIsDone`, `filledSetOwedAgain`
+  - `lessonLengthPerClass`, `classWithoutLengthGetsTwoHours`
+  - `labelOnTashkentClock`
+  - `firstRunMarksEverythingSeen`
+  - the retry tests, only if the investigation found a signal.
+- [ ] Implement them; the kit passes.
+- [ ] Make the app call sites pass the map and the calendar; run the build check.
+- [ ] Commit `fix(ios): empty word sets are never owed; one lesson length and one clock everywhere`.
+
+---
+
+### Task 44: Logic moved into the kit, and the test debt paid
+
+**Files:** kit `Rewards/Leaderboard*.swift` (`LeaderboardQuery.heroBoard`), `Motion/CelebrationRule.swift` (`OutcomeMemory.noteSeen(in:userID:)` moved from `AssessmentReviewView.swift:704`; `ScoreText.wholePercent` moved from `AssessmentReviewView.swift:690` — find where `ScoreText` lives in the kit and add it there), `Rewards/LastSeenRule.swift` (**new**), `Classroom/ClassSourceState.swift` (**new**, moved from app `Screens/Class/ClassTasksSegment.swift:10`), `Motion/Confetti.swift`; app callers (`RewardsTabCards.swift:12`, `AwayCheck.swift`, `AssessmentReviewView.swift`, `ClassView.swift`, `ClassTasksSegment.swift`, the board and homework loads). Tests: `LeaderboardTests`, `CelebrationRuleTests`, `LastSeenRuleTests` (**new**), `ClassSourceStateTests` (**new**), `LinkPlacementTests`, `ConfettiTests`, `CelebrationQueueTests`, `LottieFilesTests` (**new**).
+
+**Rules:**
+- **Moves keep behaviour exactly.** Each move is: a test pinning today's behaviour first, then the move, then the app calling the kit.
+  - `heroBoard` stays `LeaderboardQuery(limit: 200)`.
+  - `wholePercent` rounds half to even, as today.
+- **`noteSeen` is called from the board and homework loads too** (the phase-4 note: "lists note what they carry"). Today it runs from one place. After the move, `AssessmentsListView`'s board load and `HomeworkDetailView`'s load call it with what they fetched, so an attempt first seen on those pages still counts as "the attempt before".
+- **The hero's percent uses `wholePercent`.** Phase 4 noted that the review hero rounds half away from zero while "Up from" rounds half to even, so they disagree at x.5. After this change both say the same.
+- **`LastSeenRule`** is the decision table `AwayCheck.remember()` applies today (read `AwayCheck.swift:117`), as a pure function of what the header shows, what is held and what is in flight. `AwayCheck.remember` calls it. Fix the AwayCheck header comment and `Outcome.read`'s doc nits while there.
+- **Missing tests** (phase 3/1 lists):
+  - `CelebrationQueue`: a decrease that arrives before the resolve.
+  - `LastSeen`: a nil round-trip.
+  - The merged away + task label.
+  - `historyWindow` drift: the kit's 50 against the backend's constant. Read the backend file through `#filePath`; skip with a clear message if the file is not there.
+  - `AppTab.allCases` order: `[.today, .classes, .words, .rewards, .explore]`.
+  - Confetti: a different seed gives a different burst; combined budgets (Low Power and Reduce Motion together); counts of 0 and 1.
+- **Rename** `ConfettiBurst.gravity` to `halfGravity`, because it is the t² coefficient (g/2). Update its doc comment.
+- **`LottieFilesTests`.** Through `#filePath`, read every `ios/MasterSAT/Resources/Lottie/*.json`. Each must:
+  - parse as JSON with `v`, `fr`, `ip`, `op`, `w`, `h` and a non-empty `layers`;
+  - be at most 15 000 bytes;
+  - after Task 45, carry a `markers` entry named `rest` (write this assertion now, as `withKnownIssue` until Task 45 lands — or land this test in Task 45; the implementer picks one and says so).
+- [ ] Tests first, then the moves; kit and app both pass. Commit `refactor(ios): logic the app owned moves into the kit, with the tests phases 1–3 owed`.
+
+---
+
+### Task 45: Five empty/error animations, a `rest` marker, and the state components
+
+**Files:**
+- Modify: `ios/tools/lottie/make-lottie.mjs`; generated `ios/MasterSAT/Resources/Lottie/{all-done,no-tasks,no-words,offline,error}.json` (**new**) plus the five existing files regenerated (markers only)
+- Modify: `ios/MasterSAT/Sources/Support/Motion/LottieClip.swift`
+- Create: `ios/MasterSAT/Sources/Support/StateViews.swift`
+- Modify (thin wrappers, call sites unchanged): `Support/PageChrome.swift` (`RetryNotice`, `DashedEmpty` untouched), `Screens/Classroom/ClassesListView.swift` (`ClassroomErrorState`), `Screens/Rewards/RewardsComponents.swift` (`RewardsErrorState`), `Screens/Vocabulary/VocabComponents.swift` (`VocabErrorNotice`, `VocabEmptyState`), `Screens/Roadmap/LearnMoreSupport.swift` (`LearnMoreErrorCard`, `LearnMoreEmptyCard`, `LearnMoreSkeleton`), `Screens/Community/CommunityChrome.swift` (`CommunityErrorNotice`, `CommunitySkeletonRows`), `Screens/Assessments/AssessmentBoardViews.swift` (`AssessmentLoadError`), `Screens/Services/ServicesComponents.swift` (`ServicesNotice`), `Screens/Profile/ProfileComponents.swift` (`ProfilePlaceholderRows`)
+
+**The animations.** All five use the generator's helpers (`anim`, `L`, `gr`, `el`, `rc`, `P`, `st`, `fl`, `tm`, `A`, the easings), at 200×200 and 60 fps. Each is one-shot, 70–90 frames, and settles: its last frame is its finished picture, and nothing loops. Each stays under 15 000 bytes and uses brand colours only: `#2a68c0` accent, `#f59e0b` amber for words, `#059669` success, `#d97706` warning; neutral grey `#94a3b8` for outlines. Nothing is red; an error is not a danger.
+- `all-done`: a ring draws round (trim 0→100), a check strokes in, and three small sparkles pop and settle, in success green. It is calmer than `task-complete`, which is a celebration.
+- `no-tasks`: a tray drops in with a soft landing (no overshoot past 4 %), and two paper lines draw inside it in grey and accent.
+- `no-words`: a word card turns from the back to the face, a quarter-turn ease-out, with "Aa"-like strokes drawn in amber. Draw the strokes; there are no font glyphs.
+- `offline`: a cloud outline draws, then a short slash strokes across it, in grey and warning amber.
+- `error`: a rounded square draws, then an exclamation's bar and dot pop in, in warning amber.
+- **`rest` markers.** Every asset, old and new, gets `markers: [{ tm: <frame>, cm: "rest", dr: 0 }]`.
+  - The five new ones and flame/check/trophy: the last frame.
+  - `coin-burst`: frame 54.6. `star-burst`: frame 56 — the frames `restProgress` hard-codes today.
+  - The generator computes each burst's rest frame from the same constants its keyframes use, so a changed keyframe moves its marker with it.
+  - The generator's budget check stays and covers the new files.
+
+**`LottieClip`.**
+- `LottieAsset` gains `.allDone`, `.noTasks`, `.noWords`, `.offline`, `.error`, none of which loops by default.
+- The paused picture comes from the `rest` marker (`.paused(at: .marker("rest"))`), and `restProgress` is deleted.
+- A new `Playback.settle` plays once and holds the last frame. Under Reduce Motion it shows the `rest` picture, still. This differs from `.once`, which shows nothing under Reduce Motion because bursts end blank.
+- In Low Power Mode a `.loop` rests on its `rest` picture, through `MotionBudget.allowsLoopingLottie`, which exists in the kit and is unused today. This keeps the "≤ 2 looping per screen" rule cheap.
+
+**`StateViews.swift`.**
+- **`StateArt(_ asset: LottieAsset, size: CGFloat = 96)`**: `LottieClip(asset, playback: .settle)`, framed and hidden from VoiceOver.
+- **`EmptyState`**
+  - Signature: `EmptyState(art: LottieAsset? = nil, title: String, message: String? = nil, action: (title: String, run: @MainActor () -> Void)? = nil)`.
+  - Layout: centred, art on top when given, the title in 16-pt heavy, the message in 13-pt secondary, and a soft accent button.
+  - VoiceOver reads the title and message as one element, with the button separate.
+  - It never offers a retry.
+- **`ErrorState`**
+  - Signature: `ErrorState(title: String, message: String = "Nothing is lost — try again in a moment.", style: .page | .inline = .page, retry: @MainActor () async -> Void)`.
+  - `.page` shows the `.error` art. While `session.connectivity.isOnline == false` it shows the `.offline` art and the title "You're offline", with the message "This loads again once you're back online." and the retry still offered.
+  - `.inline` has no art: a small warning glyph, the text, and a "Try again" button with a 44-pt target.
+  - While the retry runs, the button shows a small spinner and is disabled.
+  - On appear it posts no announcement; the page's own state change is enough. It reads as one element plus the button.
+- **`LoadingSkeleton`**
+  - Signature: `LoadingSkeleton(rows: Int = 3, height: CGFloat = 56, style: .rows | .cards = .rows, pulse: Bool = true)`.
+  - Blocks are rounded `Theme.surface2` rectangles: rows are full-width bars, cards are card-sized blocks.
+  - The breathing is described under Decisions; it is static under Reduce Motion or when `pulse` is false.
+  - VoiceOver hears one "Loading" element, and the blocks are hidden.
+- **The existing components keep their names and init signatures** and render through these:
+  - `RetryNotice`, `ClassroomErrorState`, `RewardsErrorState`, `VocabErrorNotice`, `LearnMoreErrorCard`, `CommunityErrorNotice`, `AssessmentLoadError`, `ServicesNotice` → `ErrorState`.
+    - A component used for a whole page gets `.page`, one used inside a section `.inline`; decide per component from its call sites (listed in this plan's research notes in the PR).
+    - `RewardsErrorState` keeps its chunky surface around the content.
+  - `VocabEmptyState`, `LearnMoreEmptyCard` → `EmptyState`.
+  - `ProfilePlaceholderRows`, `LearnMoreSkeleton`, `CommunitySkeletonRows` → `LoadingSkeleton`.
+  - `DashedEmpty` stays as it is: the inline "nothing here" slot.
+- [ ] Generate (`node ios/tools/lottie/make-lottie.mjs` from the repo root), check the sizes, and make sure the new `LottieFilesTests` (Task 44) passes in the kit.
+- [ ] Look at each animation's first, middle and last frames. Render them to PNG with a 20-line Swift script using Lottie's `LottieAnimationView` + `UIGraphicsImageRenderer`, or by a temporary preview in the simulator. Put the three frames of each in the task report.
+- [ ] Build check. Commit `feat(ios): five settling state animations, rest markers, and one Empty/Error/Loading vocabulary`.
+
+---
+
+### Task 46: The states, applied — art where a page is empty or failed, skeletons where it loads, offline said once
+
+**Files:** `Screens/Today/TodayView.swift`, `TodayCards.swift` (`AllDoneCard`), `Screens/Class/ClassView.swift`, `ClassTasksSegment.swift`, `Screens/Vocabulary/VocabularyView.swift`, `WordsTodayCards.swift`, `Screens/AccountStateViews.swift` (`UnreachableView`), `Screens/RootView.swift` (`OfflineOverlay`), `Support/Connectivity.swift` (`OfflineBanner`), `Screens/Notifications/NotificationsInboxView.swift`, and every file in the "A" spinner list below.
+
+**Art (page-level, at most one per screen):**
+- Today:
+  - `AllDoneCard` shows `StateArt(.allDone)` in place of the still check, and keeps its copy.
+  - The homework-failed state (`TodayView:196`) becomes `ErrorState(.page)` with the title "Today's work didn't load".
+- Class:
+  - The "No classes yet" card (`ClassView:146`) → `EmptyState(art: .noTasks, …, action: "Join with a code")`.
+  - Tasks → To do empty (`ClassTasksSegment:95`) → `EmptyState(art: .noTasks, title: "Nothing to do here", message: "New work from your teachers shows up here.")`.
+  - Done and Results stay `DashedEmpty`: they are second segments, not the page's state.
+- Words:
+  - `WordsTodayCards` `.nothingYet` → `EmptyState(art: .noWords, …)`, and `.caughtUp` → art `.allDone`. Keep the copy.
+  - `VocabularyView:325` ("No vocabulary homework right now") stays the compact form (a second empty on the same screen).
+- Offline:
+  - `UnreachableView` shows `StateArt(.offline)` above its title.
+  - `OfflineBanner`:
+    - The black 0.78 fill becomes the `Theme.ink` / `Theme.onInk` pair, so it stands out in dark mode too.
+    - It moves in from the top as before, and fades in place under Reduce Motion.
+    - It posts one VoiceOver announcement ("You're offline") when it appears, and "Back online" when it goes.
+  - `OfflineOverlay`'s `Group { if }` + `.animation(value:)` becomes a stable `ZStack(alignment: .top)` with a full-width frame and the banner's transition inside it (the phase-4 `Group` rule).
+- Errors: `NotificationsInboxView:159`'s failure `ContentUnavailableView` → `ErrorState(.page)`.
+- Copy: every "on our end" goes (`VocabErrorNotice`'s default message and any other `grep -rn "on our end"`). A failure says what did not load, never whose fault it is.
+
+**Skeletons — the "A" spinners from the research sweep → `LoadingSkeleton`** (rows/cards shaped like the content that replaces them):
+- `AccountDetailsView:34`, `AccountDevicesView:49`, `AccountSignInView:35`
+- `AssessmentBoardViews:167`, `AssessmentReviewView:124`
+- `ClassTasksSegment:83`, `ClassView:136`
+- `ClassroomDetailView:56`, `ClassroomSections:52`, `ClassroomTelegramSheet:82`
+- `HomeworkDetailView:106`, `:478`
+- `MidtermReportView:50`, `MidtermsView:92`
+- `LeaderboardView:485`, `PointsView:275`, `:309`, `RewardsTabCards:338`
+- `LearnMoreSupport:226`
+- `SupportBookingView:153`, `:241`, `SupportSheets:272`
+- `TodayView:193`
+- `VocabBrowseView:44`, `VocabSetPage:41`, `VocabularyView:435`
+- Not `ClassesListView:52` (deleted in Task 49).
+- **Kept as spinners:** the focus zones (`AssessmentRunnerView:61`, `:78`; `VocabStudyView:72`, `:109`; `MatchingView:64`; `SpeedView:175`), every "B" button or saving spinner, and the "C" cases (image placeholders, the app's launch, the live quiz's connect step, the certificate PDF).
+- [ ] Build check.
+- [ ] Simulator screenshots of Today all-done, Class To do empty, Words nothing-yet, `UnreachableView`, and one skeleton (local backend, pinned — see Task 56 Step 1). Put them in the report.
+- [ ] Commit `feat(ios): empty, error and offline states with their art; skeletons instead of page spinners`.
+
+---
+
+### Task 47: Explore — four live cards
+
+**Files:** Create `ios/MasterSAT/Sources/Screens/Shell/ExploreModel.swift`; modify `Screens/Shell/ExploreView.swift`, `Screens/Shell/HubCard.swift`, `Screens/Profile/ProfileModel.swift` (drop `openSurveys`, `openEvents`, `loadCounts`), `Screens/Community/CommunityHome.swift` (delete `CommunityCounts` and the dead `EventsOpenCard`; correct the file's header comment — `SurveysWaitingCard` is wired into Today).
+
+**Rules:**
+- `ExploreModel` (`@MainActor @Observable`) holds one `ProfileLoad`-style slot per source (roadmap, bookings, support calendar, exam dates, events, surveys) and four computed `ExploreLine?` from `ExploreDigest`.
+  - `load(_ session:)` runs all six reads side by side, as unstructured per-request `Task`s (the phase-2 rule P2-R8), so a cancelled view task never stores a failure.
+  - A failed read keeps the last good value, and a cancelled one stores nothing.
+- `ExploreView`:
+  - `.onAppear { Task { await model.load(session) } }`, every return to the tab (a TabView root's `.task` runs once).
+  - `TabRootScroll(tab: .explore, onRefresh: { await model.load(session) })`, so a pull and `reloadIfShowing` work.
+  - Event dates are formatted with `CommunityFormat.when`, and roadmap dates with `CommunityFormat.dayMonth`.
+- `HubCard` gains `detail: String?`, a second line in 13-pt semibold accent-tinted text, beneath the subtitle.
+  - `subtitle` becomes the live `text` when a line exists, and stays the fixed description when not.
+  - The swap fades with `.contentTransition(.opacity)` and `.animation(Motion.snappy / Motion.focus under Reduce Motion, value:)` on a stable container.
+  - The badge keeps its `numericText` roll.
+  - VoiceOver reads the card as one button: "Events. Your ticket: Open day. Tue, 28 Oct · Ticket 4K29. 2 open for sign-up." — with the badge spoken as "<n> open for sign-up" for Events and "<n> waiting" for Surveys.
+- The card a line came from opens the same page as before (`AppLink.roadmap/services/events/surveys`).
+- `ProfileModel` stops fetching the counts (two requests per Me visit, read by nothing).
+- [ ] Build check.
+- [ ] Simulator screenshot of Explore with live lines, against seeded local data: the roadmap, a free support hour, an event with a ticket, an open survey. Seed with existing management commands only; list them in the report.
+- [ ] Commit `feat(ios): Explore's cards say what is behind them — level and next lesson, next hour, ticket, surveys waiting`.
+
+---
+
+### Task 48: The Me sheet — one page, as designed
+
+*(Written for owner answer 1 = A. On B: keep the three tabs, and do only the Midterms & certificates panel, the Notifications row on Overview, the 44-pt close button, value routes for every push from the sheet's root, and the homework card counting with `HomeworkProgress.isDone` and leaving classwork out.)*
+
+**Files:** `Screens/ProfileView.swift` (rewritten body), `Screens/Profile/ProfileOverviewTab.swift` (split: the goal panel and the checklist panel stay as views; the four figures, the homework panel and `ProfileStatTile` go), `Screens/Profile/ProfileModel.swift` (loads only what the page shows), `Screens/Profile/MeMidtermsPanel.swift` (**new**), `Screens/Profile/ProfileSettingsTab.swift` (becomes the account rows, value routes), `Screens/Account/AccountComponents.swift` (`AccountMenuRow` takes a route value), `Screens/RootView.swift` (the close button moves into the page). **Delete:** `Screens/Profile/ProfileClassesTab.swift`, `Screens/Rewards/RewardsPointsPill.swift` (its explainers' only users were the four figures), and the kit's `ProfileHomework.summarise` family with its tests (Task 43).
+
+**The page, top to bottom:**
+1. **The hero.** As today: photo, "Profile · Student", name, handle, email/Telegram/phone chips, Edit profile, Copy username. The close button sits at its top-trailing corner: a 32-pt circle inside a 44×44 hit area, labelled "Close". It lives on the root only, so pushed pages keep their own back button and nothing overlaps a toolbar.
+2. **Your goal.** Target score + test day (the exam-date menu) + Latest results, unchanged.
+3. **My progress.** A row → `AppLink.progress`.
+4. **Midterms & certificates** (`MeMidtermsPanel`, new). It reads the midterm list `MidtermsView` reads (same API).
+   - It shows up to three newest midterms with a released score: title, score, "Passed" when the centre marked it, and a "Certificate" button where the listing carries a certificate code.
+   - "All midterms" pushes `AppLink.midterms` on the Me stack.
+   - A row opens `AppLink.midtermResult(attemptId)` on the Me stack.
+   - The certificate opens `MidtermCertificateSheet` as a sheet from the Me sheet itself. A nested sheet is fine; this avoids `AppRouter`'s close-Me-then-open, which would drop the student out of Me.
+   - States: `LoadingSkeleton(rows: 2)`; `ErrorState(.inline)`; empty → `DashedEmpty("No midterm results yet", hint: "Your scores and certificates show up here once they're released.")`.
+5. **Settings rows:** Account (photo, name and phone), Notifications (what reaches you), Sign-in & password (with the "Confirm email" badge), Devices, About. These are value routes: `ProfileView.Route` grows `.notifications`, `.signIn`, `.devices`, `.about` beside `.accountDetails`, all declared at the sheet's root. **No `NavigationLink { }` remains in the Me sheet** — the checklist's actions push `.accountDetails` and `.signIn` too.
+6. **Finish your profile.** Only while a step is missing; the "all set" panel is gone, since a finished checklist need not take space.
+7. **Payments — coming soon.** As today.
+8. **Sign out.** As today, with the confirmation dialog.
+
+**`ProfileModel` after:**
+- It loads `account`, `telegramSignIn`, `attempts`, `examDates`, the session's `refreshUser`, and the midterms.
+- Gone: `rewards`, `homework`, `classes`, `schedule`, `people`, `groups`, `selectedClassId`, `openSurveys`, `openEvents` and every method that served them, plus `ProfileRetry`'s dead cases.
+- Its load rules stay: every panel fails on its own, a refresh is detached, and a load starts on appear.
+
+**Also:**
+- The sheet's stagger entrance uses the shared `stagger`.
+- The midterm rows reuse the results' row look (combined for VoiceOver).
+- [ ] Build check.
+- [ ] Simulator screenshots of the Me sheet top and bottom, and of a certificate opening over it.
+- [ ] Commit `feat(ios): the Me sheet is one page — who you are, your goal, progress, midterms and certificates, settings`.
+
+---
+
+### Task 49: Navigation and refresh hygiene
+
+**Files:** `Screens/Classroom/ClassesListView.swift` (**delete**; move `JoinClassSheet`, `Avatar`, `ClassroomErrorState` into **new** `Screens/Classroom/ClassroomShared.swift`; `ClassroomCard` goes with the list, its only user), `Screens/Shell/AppLinkPage.swift`, `Screens/Roadmap/RoadmapView.swift`, the 16 plain `.refreshable` pages, `Screens/HomeworkDetailView.swift`, `Screens/Class/ClassView.swift`, `Screens/Class/ClassSectionsModel.swift`, `Screens/Class/ClassPeopleFilesSegments.swift` / `ClassroomSections.swift` (rankings subtitle), `Screens/Shell/WorkRow.swift`.
+
+**Rules:**
+- **`AppLinkPage`'s `.classes` case** joins the "Nothing to open" case: `.classes` is a tab placement and no link pushes it.
+- **Roadmap's "Go to Classes"** (`RoadmapView:136`) becomes a button calling `router.show(.classes)`. It switches to the Class tab, and Explore's stack stays where it was.
+- **The 16 plain `.refreshable`s become `.detachedRefresh { … }`**:
+  - `MyProgressView:47`, `RoadmapView:66`, `RoadmapReadingView:51`, `ClassroomDetailView:80`
+  - `AssessmentBoardViews:132`, `SurveysListView:34`, `LiveQuizJoinView:143`, `AccountDevicesView:79`
+  - `EventsView:52`, `NotificationsInboxView:91`, `MidtermsView:128`
+  - `SupportBookingView:52`, `ServicesView:79`, `VocabSetPage:47`, `VocabBrowseView:50`
+  - `ClassesListView:93` goes with its file.
+  - Afterwards `grep -rn "\.refreshable" ios/MasterSAT/Sources` shows only `TabRootScroll.swift`'s definition.
+- **A cancellation is not a failure:**
+  - `HomeworkDetailView`'s first load (`:105` area) and `ClassView.load()` check `Task.isCancelled` in their `catch` and store nothing (`APIClient` wraps a cancellation as `.transport`).
+  - `ClassView` reads the user id when results are read, not when the load starts (phase-4 outcomes note).
+- **Stale rows say they are stale.** When Today's or Class's refresh fails over rows already shown, one line under the list reads "Couldn't refresh — showing what last loaded" in `Theme.textSecondary`. It goes on the next success.
+- **`ClassSectionsModel`'s three identical `load*` methods become one**, and its refresh stamp is written on success, not at load start.
+- **The rankings subtitle under All** is said once above the per-class groups, not once per class.
+- **`WorkRow`'s "In class"** shows the assigned date the class page shows ("In class · Tue 21 Oct").
+- [ ] Build check. Commit `fix(ios): one way to the Class tab, refreshes that never cancel themselves, and stale lists that say so`.
+
+---
+
+### Task 50: Rewards, Words and the celebrations — the phase-3 list
+
+**Files:** `Screens/Rewards/RewardsHubView.swift`, `RewardsTabCards.swift`, `PointsView.swift`, `LeaderboardView.swift`, `Support/Motion/Celebrations.swift`, `Support/Motion/RankUpCard.swift`, `Screens/Vocabulary/VocabularyView.swift`, `Screens/Today/TodayView.swift` (hero bounce on a replayed all-done).
+
+**Rules (each from the Phase 3 outcome; read it):**
+- **The hub never shows a place before the header has rolled to it.**
+  - The hub's own `load()` (tab open, pull, "See the board") reads the hero through `CelebrationCenter.whenQuiet`.
+  - `whenQuiet` keeps one action per key (`whenQuiet(_ key: String, _:)`), so the refresher's `reloadIfShowing` and the hub's own read do not replace each other.
+  - It is re-asked whenever the stage can become quiet: a resolve in `celebrate`, the Low Power release, a Reduce Motion toggle, a rank-up dismissal.
+  - `dismissRankUp` never replays a rise it has already shown: compare the rise's from/to ranks.
+- **Rewards hub:**
+  - On the first appear `loadSection` runs once: `onAppear` and `.task(id:)` must not both read the section board.
+  - `loadHero` drops an answer older than the newest one asked (a ticket, like `LatestOnly`).
+  - XP-MONTH and Strikes each keep their own last board, so toggling shows the last one at once, with no spinner, while it reads again.
+  - The Points link stays reachable while `/rewards/me/` fails: the coins card's failure state keeps "Points & coins".
+  - Strikes gets the own-row line XP has.
+  - The hero reserves the pass line's two lines, so it does not grow 12 pt when the line wraps.
+  - A nameless row reads "N XP to pass the next student".
+  - A failed same-query leaderboard pull shows the inline "Couldn't refresh" line.
+  - Points' "couldn't confirm" line clears on the next successful read.
+- **Words:** while a search query is non-empty, the "Review today" hero hides (fades, Reduce Motion: instantly), so results start at the top on a small phone with the keyboard up.
+- **Today:** a replayed all-done (the double confetti held under a sheet or cover) bounces the hero too.
+- [ ] Build check. Commit `fix(ios): the Rewards hub waits for the header, keeps each board, and fails visibly; Words search starts at the top`.
+
+---
+
+### Task 51: The focus zones — runner and word games (the phase-4 list)
+
+**Files:** `Screens/Assessments/AssessmentRunnerView.swift`, `Screens/Vocabulary/VocabStudyView.swift`, `VocabTestView.swift`, `MatchingView.swift`, `SpeedView.swift`, `StudyShell.swift`, and the kit's spelling code (`Vocabulary/VocabGames.swift`) where `spoken()` and `fold` live.
+
+**Rules:**
+- **Runner:**
+  - A tap during the question turn (≈200 ms) never lands on the arriving question: hit testing is off while the turn runs.
+  - The last answer's selection tick is seen before the end screen replaces the view: the end screen waits one `Motion.focusTap` beat.
+  - `flagRowHeight` is measured (`onGeometryChange`), not estimated at 24.
+  - Toolbar targets are 44×44.
+  - Turning Reduce Motion off after a flag gives no stray bounce: the bounce's trigger is the flag change alone.
+  - The five icon-only buttons get labels (Task 53 also checks).
+- **Flashcards:**
+  - The 45° flicker in the flip is found and removed (likely the face switch at the wrong angle, or two faces drawn at once).
+  - The drag is bounded: it follows the finger to 160 pt, then rubber-bands.
+  - After a verdict, VoiceOver focus moves to the new card (`AccessibilityFocusState`), and a flip announces the side now shown.
+- **Spelling:**
+  - An IME's marked text never pushes the typed letters past the cap; clamp after the composition commits.
+  - `spoken()` names every mark `fold` folds (one list shared by both).
+  - `PlainTyping`'s lookup is cached, not rebuilt per keystroke.
+- **Games:**
+  - `ModeStat.value` is derived from `percent` when one exists (no duplicate).
+  - Matching's "Mistakes" tile becomes "Misses" in the neutral tone (growth language — a miss is not a danger).
+  - Matching's accuracy figure stays out: owner's call, in the outcome.
+- **The review's filter chips** press with `FocusPress`, not the playful spring (focus zone). The turn's direction comes from an explicit order, not `Filter.allCases`' declaration order.
+- [ ] Kit tests for the `spoken()`/`fold` agreement first. Build check. Commit `fix(ios): focus zones — no tap lands on the next question, a calmer flip, spelling that counts every mark`.
+
+---
+
+### Task 52: The homework page, the review and sign-in (the phase-4 list and device observations)
+
+**Files:** `Screens/HomeworkDetailView.swift`, `Screens/Assessments/AssessmentReviewView.swift`, `Screens/Auth/AuthView.swift`, `AuthChrome.swift`, `Screens/Account/AccountSignInView.swift`, `Session` code (`App/MasterSATApp.swift` or wherever sign-in's `/me` follows the token).
+
+**Rules:**
+- **Upload:**
+  - Delete the unreachable cancellation `catch`, and the stale hand-in rect when leaving mid-upload.
+  - A 0 % ring draws no cap dot.
+  - Trash is disabled while an upload runs.
+  - Thumbnail decoding runs at most 3 at a time and is cancelled when its file is removed.
+  - The three copies of the empty/decode block become one helper.
+- **After a hand-in:**
+  - The page re-reads the homework when the cover closes, so "What to do" stops saying "Continue · 1 answered" for a graded attempt.
+  - The status keeps its last known value until that read lands (no 0.3-s "Not started").
+  - A word homework's status comes from its word sets' state, so after three games it is not "Not started".
+- **The review's pinned filter chips** stay below the navigation bar when scrolled: pin them inside the safe area, with a `.bar` material behind them.
+- **Sign-in:**
+  - A `/me` that answers 401 right after a successful token exchange says "You're signed in, but your account didn't load — try again", not "wrong password".
+  - Switching to Register clears any pending announcement.
+  - Register's alert is announced.
+  - The password eye button is 44×44.
+- **Me → Sign-in & password:** the email row never wraps "Emai / l" beside the "Confirmed" badge. The label keeps `fixedSize`, and the badge moves under the address when it does not fit.
+- [ ] Build check. Commit `fix(ios): homework page tells the truth after a hand-in; review chips stay put; sign-in failures say what failed`.
+
+---
+
+### Task 53: VoiceOver — labels, traits, focus and announcements; haptics only for the student's hand
+
+**Files:** `Support/PageChrome.swift` (`PillTabs`), `Screens/Shell/FloatingTabBar.swift`, `AppHeader.swift`, `Screens/Shell/SegmentBar.swift`, `Screens/LessonCalendar.swift`, `Screens/Assessments/AssessmentRunnerView.swift`, `Support/DesmosView.swift`, `Screens/Today/TodayCards.swift`, `Screens/Rewards/RewardsTabCards.swift`, `Support/Motion/RankUpCard.swift`, `Screens/Vocabulary/VocabularyView.swift`, `VocabComponents.swift`, `Screens/Services/ServicesComponents.swift`, `Screens/Class/ClassTasksSegment.swift`, and any row found by the sweep below.
+
+**Rules:**
+- **`PillTabs`:**
+  - Each tab carries `.isSelected` when chosen, and a label that includes its count ("Done, 3").
+  - The selection haptic fires only from the tap: a local `tapped` counter is the `sensoryFeedback` trigger, never the binding.
+- **`FloatingTabBar`:**
+  - The bar is one container with `.accessibilityAddTraits(.isTabBar)` (`.accessibilityElement(children: .contain)`).
+  - The selected tab's hint is "Double-tap to go back to the top".
+  - The haptic comes from the tap only, the same way: deep links, "See all" and `showFresh` stay silent.
+- **`SegmentBar`:** the same tap-only haptic.
+- **Icon-only buttons get labels:**
+  - `LessonCalendar:163/167` ("Previous month" / "Next month")
+  - `AssessmentRunnerView:196` ("Calculator"), `:207/:213` ("Smaller text" / "Larger text"), `:476` ("Previous question")
+  - `DesmosView:149` ("Close calculator").
+- **Today:**
+  - `LessonsUnavailableRow`'s icon is hidden from VoiceOver.
+  - Its "Try again" has a 44-pt target.
+  - While loading, the ring is labelled "This week's homework, loading".
+- **Class:** result rows read as one element: "Linear equations, 80 percent, Tue 21 Oct".
+- **Rewards:**
+  - The rank-up card takes VoiceOver focus when it appears and announces "You moved up to #N". The card's own text is the announcement.
+  - After a convert, focus returns to the coins card.
+  - The rank line's `.low` announcement priority is checked in the Accessibility Inspector, or left with a note if the simulator cannot show it.
+- **Words:**
+  - Dimmed search results announce "Not a match" as their value.
+  - `VocabEmptySetRow`'s subtitle uses `Theme.textSecondary`, not `textLabel`, to meet the 4.5:1 contrast ratio.
+- **Services:** the checklist's checkbox style exposes its state (`.isSelected` / value "ticked").
+- **Sweep:**
+  - `grep -n "Button {" -A3` for icon-only labels across `Screens/`, and a pass for decorative images that VoiceOver reads (an `Image(systemName:)` beside text in the same row → `.accessibilityHidden(true)`, or the row combined).
+  - Fix what is found; list it in the report.
+- [ ] Build check. Commit `fix(ios): VoiceOver names, selects and announces; haptics answer taps, not code`.
+
+---
+
+### Task 54: Dynamic Type at the largest sizes, and the iPhone SE
+
+**Files:** Create `ios/MasterSAT/Sources/Support/AppFont.swift`; mechanical edits across `ios/MasterSAT/Sources/**`; layout edits where the device check finds breakage.
+
+**Rules:**
+- **`appFont`.** `struct ScaledFont: ViewModifier` holds `@ScaledMetric(relativeTo:) var size` (initialised from the base size) and applies `.font(.system(size: size, weight:, design:))`. `View.appFont(_ size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default)` picks the text style from the size:
+  - ≥ 28 → `.title`
+  - ≥ 22 → `.title2`
+  - ≥ 20 → `.title3`
+  - ≥ 17 → `.body`
+  - ≥ 15 → `.subheadline`
+  - ≥ 13 → `.footnote`
+  - ≥ 12 → `.caption`
+  - else `.caption2`
+  At the default text size it returns exactly `size`.
+- **The conversion is mechanical**, by a script kept in the PR description, not committed:
+  - `.font(.system(size: N))`, `.font(.system(size: N, weight: .W))`, `.font(.system(size: N, design: .D))` and `.font(.system(size: N, weight: .W, design: .D))` → `.appFont(N, …)`.
+  - The same with a trailing `.monospacedDigit()` inside the `.font(…)` → `.appFont(N, …).monospacedDigit()` (the View modifier).
+  - A line the compiler rejects (a `Text + Text` concatenation needs a `Font`) is put back by hand, and those lines are listed in the report.
+  - After it, `grep -c "\.font(\.system(size:" -r ios/MasterSAT/Sources` drops from 1,074 to the hand-kept few.
+- **Caps on the chrome only:** `FloatingTabBar`, `AppHeader`'s `StrikeChip`, `XPPill`, the avatar initials and `NotificationBell` get `.dynamicTypeSize(...DynamicTypeSize.xxxLarge)` and `.accessibilityShowsLargeContentViewer()` with their label. Pages are not capped.
+- **Rows that stack at accessibility sizes** (`dynamicTypeSize.isAccessibilitySize`, or `ViewThatFits`):
+  - `HubCard` (badge and chevron under the text)
+  - `WorkRow` (due chip under the title)
+  - the Class cards
+  - the Rewards streak/coins pair (one above the other)
+  - the Me goal panel's two wells
+  - `PillTabs` (scrolls already; check the pill height grows)
+  - the header (title above the chips)
+  - the runner's toolbar (wraps to two rows)
+  Extend this list from the device check; nothing is clipped or truncated to "…" in a title at AX5 on the tab roots, the Me sheet, the homework page and the runner chrome.
+- **iPhone SE (3rd generation), 375×667.** Create the simulator (`xcrun simctl create "iPhone SE (3rd generation)" com.apple.CoreSimulator.SimDeviceType.iPhone-SE-3rd-generation com.apple.CoreSimulator.SimRuntime.iOS-26-3`; if the runtime refuses the device type, use the smallest one it accepts and say so).
+  - Check the five tab roots, the Me sheet, the homework page, the runner and a word game at the default size and at `xxxLarge`.
+  - Fix truncation and overlap: the floating bar's labels, the header's chips, Today's hero, the Rewards hero.
+- **How to check text size in the simulator:** `xcrun simctl ui booted content_size accessibility-extra-extra-extra-large` (and `large` to reset). Screenshots at AX5 of each tab root and the Me sheet go in the report.
+- [ ] Build check. Commit `feat(ios): text grows with the phone's setting, chrome stays put, and the iPhone SE fits`.
+
+---
+
+### Task 55: Reduce Motion everywhere, dark mode, the looping budget, one card look, and the bar's margin
+
+**Files:** `Support/Motion/Motion.swift` (`Stagger`, `ZoomDestination`), `Screens/Today/TodayView.swift` (`dismissNudge`), the hand-rolled cards (`AssessmentBoardViews.swift:413`, `:660`; `AssessmentReviewView.swift:531`; `RewardsTabCards.swift:386`; `VocabStudyView.swift:551`; the runner's `:266`/`:322` only if they are cards, not the question surface), the sheets and horizontal scrollers listed below, `Screens/Shell/TabRootScroll.swift` (status-bar material), the dark-mode fills.
+
+**Rules:**
+- **Reduce Motion never restructures the tree** (P4-R7):
+  - `Stagger` keeps one modifier chain and picks the values (offset 0, scale 1, a 0.2-s fade under Reduce Motion).
+  - `ZoomDestination` applies `.navigationTransition(.zoom)` without an `if reduceMotion`. The system turns the zoom into a cross-fade under Reduce Motion; check that on the simulator with Reduce Motion on (`xcrun simctl spawn booted defaults write com.apple.Accessibility ReduceMotionEnabled -bool true`, then relaunch). If it does not, keep one tree by choosing the source id instead (nil source → automatic).
+  - `dismissNudge` animates with `Motion.focus` under Reduce Motion.
+  - Sweep: `grep -rn "if reduceMotion" ios/MasterSAT/Sources` — every hit that swaps views (not values) is converted or justified in the report.
+- **Dark mode:**
+  - Every fill of `Color.primary` / `.black` / `.white` that carries text becomes the `Theme.ink` / `Theme.onInk` pair (the offline banner already, in Task 46).
+  - The coloured heroes keep their white-on-colour.
+  - Check every tab root, the Me sheet, Explore's cards, the state art (the grey `#94a3b8` must read on dark — lighten it in the generator if not) and the runner with `xcrun simctl ui booted appearance dark`. Screenshots go in the report.
+- **≤ 2 looping Lottie per screen:**
+  - Today: the header flame.
+  - Rewards: the header flame and `StreakCard`.
+  - Nothing else loops: the state art settles, and bursts are one-shot.
+  - Write the rule in `LottieClip`'s doc comment, with the per-screen count.
+  - Low Power rests the loops (Task 45).
+- **One card look.** Hand-rolled cards use `cardStyle()` (radius 18, `cardEdge` hairline only in dark, the soft shadow), or `cardStyle(padding:)` with the tone bar overlaid and clipped, as `ProfileHeroCard` does. Inner tiles and chips keep their own radii. Focus-zone surfaces (the question card) stay plain.
+- **The bar's room never reaches what has no bar under it:**
+  - The sheets presented from inside a tab with scrolling content get `.noBarClearance()` on their content:
+    - `LeaderboardFiltersSheet`, `ClassroomTelegramSheet` (both presenters), `NotificationsInboxSheet`, `SatChecklistSheet`
+    - the four support sheets (`SupportSheets`)
+    - `CustomSetBuilderView` (both presenters)
+  - Horizontal scrollers (`PillTabs`, `StoriesRail`, the support day strip, the leaderboard scope tabs) get `.contentMargins(.bottom, 0, for: .scrollContent)` — harmless if it was adding nothing, correct if it was.
+- **The status bar on tab roots.** Content scrolled under the status bar gets a `.bar` material strip the height of the top safe area. It fades in once the content has scrolled 8 pt, and is instant under Reduce Motion. Measure with a top-anchor geometry preference, since iOS 17 has no `onScrollGeometryChange`.
+- [ ] Build check.
+- [ ] Simulator checks: Reduce Motion on; dark mode on each tab root and the Me sheet.
+- [ ] Commit `fix(ios): Reduce Motion never rebuilds a screen; dark mode, one card look, and the bar's margin only where the bar is`.
+
+---
+
+### Task 57: The Me sheet as B — the website's three tabs, with midterms, notifications and clearer navigation
+
+*(Owner answer 1, 2026-10-23. Supersedes Task 48's one-page sheet, commits 5f31d2a7 and 489a4d71; the kit's midterm rules from 305c9884 stay.)*
+
+**Files:**
+- `Screens/ProfileView.swift`, `Screens/Profile/*`, `Screens/Account/AccountComponents.swift`, `Screens/RootView.swift`.
+- Kit: `Profile/ProfileRules.swift` (restore `ProfileHomework.summarise` and its wording, on `isDone`) and its tests.
+- Recover the deleted code from git (`git show 489a4d71^:<path>`, `git show 5f31d2a7^:<path>`) rather than rewriting it; then apply this task's changes on top.
+
+**The sheet, as the website's profile (B):**
+- **Hero**: as before Task 48, with the close button moved into it as Task 48 did — a 32-pt circle in a 44×44 hit area, root only.
+- **Pinned tabs**: Overview · Classes · Settings (`PillTabs`) directly under the hero. They stay pinned under the top edge while the page scrolls, so switching is always one tap away.
+- **Overview**:
+  - the four figures (XP, Strikes, Points, Homework);
+  - Your goal (target, test day, latest results);
+  - Homework to do;
+  - Midterms & certificates (Task 48's `MeMidtermsPanel`, kept);
+  - Finish your profile, or the "all set" panel;
+  - Payments "coming soon".
+- **Classes**: as before Task 48 (each class's next lesson, teacher and Telegram group, then classmates), on the Tashkent calendar (Task 43).
+- **Settings**: Account, Notifications, Sign-in & password, Devices, About, Appearance (Task 58).
+- **Under the tabs, on every tab**: My progress, then Sign out.
+- **The homework count** (the phase-2 carry): `ProfileHomework.summarise` counts with `HomeworkProgress.isDone` and leaves classwork out, so a finished word-set homework leaves it as it leaves Today. Kit tests, test-first:
+  - a played word-set homework is not to do;
+  - classwork is never counted;
+  - a quiz homework with a second open quiz is to do;
+  - an empty word set is never owed.
+
+**Navigation (owner: "improve the navigation"):**
+- Every push from the sheet is a value declared at its root (`ProfileView.Route` + `AppLink`): the four figures' pages, Homework to do rows, "All homework", the checklist's actions, the Classes rows (the class page), and the settings rows. No `NavigationLink { destination }` remains in the sheet.
+- Back returns to the tab and scroll position the student left.
+- The sheet reopens on the tab last open in this launch: the tab lives in `AppRouter` (`meTab`), not in the view's `@State`.
+- A link into Me selects its tab: `AppLink.profile` → Overview, `.progress` → pushed over the current tab.
+
+**States:** every panel keeps its own load and failure; use the phase's `ErrorState` / `LoadingSkeleton` / `DashedEmpty`. Error ≠ empty.
+
+- [ ] Kit tests first, then restore and adapt; build check; commit `feat(ios): the Me sheet keeps the website's three tabs — with midterms, notifications and navigation that holds its place`.
+
+---
+
+### Task 58: Appearance — System, Light or Dark, for the whole app
+
+*(Owner answer 1, 2026-10-23: "theme yo'q ekan shuni ham hal qiling" — the app has no theme setting.)*
+
+**Files:**
+- Create: `ios/MasterSAT/Sources/Support/Appearance.swift`, `ios/MasterSAT/Sources/Screens/Account/AppearanceView.swift`.
+- Modify: `App/MasterSATApp.swift` or `Screens/RootView.swift`, and the Settings rows (Task 57).
+
+**Rules:**
+- `enum AppAppearance: String, CaseIterable { case system, light, dark }`, stored per device in `UserDefaults` (`@AppStorage("appearance")`), default `.system`.
+- Applied once at the root with `.preferredColorScheme(nil / .light / .dark)`. It reaches every tab, sheet and cover; check the Me sheet, the certificate sheet and a full-screen cover.
+  - *(As built, 2026-10-23: `preferredColorScheme(nil)` left an open sheet dark after switching back to System (device finding D10). The setting now writes the scene windows' `overrideUserInterfaceStyle` (`.unspecified` / `.light` / `.dark`) at launch and on change, with one writer; `preferredColorScheme` is not used. Built second, right after Task 57's Account rows, not last.)*
+- Settings → **Appearance** row (tile `circle.lefthalf.filled`, hint "System, light or dark") pushes `AppearanceView`. That page offers three choices with a preview swatch each, the current one ticked.
+  - The change applies at once, with no animation of the colour swap under Reduce Motion.
+  - VoiceOver: each choice is selected or not, and named "Use the phone's setting" / "Light" / "Dark".
+- The theme is a device setting, not an account setting: no server call, no backend change.
+- [ ] Build check; commit `feat(ios): Appearance — follow the phone, or always light, or always dark`.
+
+---
+
+### Task 56: Run it, prove it, open the PR
+
+**Files:** the plan's "Phase 5 outcome" section; the PR body (scratchpad); screenshots on the orphan branch `pr-assets/ios-redesign-phase5`.
+
+- [ ] **Step 1: The local rig — before any launch.**
+  - Start the preview config `ios-redesign-backend` (SQLite in `dsat-wt-ios-redesign/backend`, `seed_classroom_uat`; test login `uat_s1@mastersat.test`).
+  - Then run `xcrun simctl spawn booted defaults write uz.mastersat.app apiBaseURL http://localhost:8000` on EVERY simulator used (iPhone 17 Pro and the SE).
+  - Before tapping any sign-in form, take a screenshot and confirm in `preview_logs` that the request reached localhost.
+  - Never `simctl terminate` with the panel attached and assume the next launch has its arguments.
+- [ ] **Step 2: Seed** with existing management commands only, and list them:
+  - a roadmap level with lessons
+  - a support teacher with a free hour, and one booking
+  - an event with a ticket
+  - an open survey with points
+  - a released midterm with a certificate
+  - a student with nothing to do (for the empty states)
+  - one word set with no words.
+- [ ] **Step 3: Device checks** (iPhone 17 Pro, iOS 26.3), each with a screenshot:
+  1. Explore's four live lines and badges.
+  2. A pull on Explore re-reads.
+  3. The Me sheet top to bottom; Midterms & certificates; a certificate over the sheet; the close button; each settings row pushes and pops.
+  4. Today all-done art; Class To do empty art; Words nothing-yet art.
+  5. Offline: airplane mode via the Network Link Conditioner, or stop the backend → the banner, then a page's offline `ErrorState`; back online → the banner goes.
+  6. A skeleton on a slow page.
+  7. A refresh that fails over good data → the stale line.
+  8. Roadmap "Go to Classes" → the Class tab.
+  9. Haptics/selection: "See all" from Today buzzes once (the tap), not three times.
+  10. Text size AX5 on each tab root and the Me sheet.
+  11. Reduce Motion: stagger, zoom, state art still, loops resting.
+  12. Dark mode on each tab root, the Me sheet and the state art.
+  13. The iPhone SE: each tab root at default and `xxxLarge`.
+  14. The homework page after a hand-in (status, "What to do").
+  15. The review's chips pinned under the bar.
+- [ ] **Step 4: The demo video.** Run `xcrun simctl io booted recordVideo --codec h264 /tmp/phase5.mp4`, covering items 1, 3, 4, 5 and 11. Check its frames with an `AVAssetImageGenerator` script (the display can freeze in recordings — re-record if so).
+- [ ] **Step 5: The outcome.** Write "Phase 5 outcome (date) and what it leaves" in this plan:
+  - decisions taken (P5-R…)
+  - what was verified on device and what was not
+  - "Not done, and why" — every carried item not fixed, with its reason
+  - the owner's list: iOS 17/18 runtimes, the paid Apple account for TestFlight, matching accuracy, the strike-shop burst.
+  Commit it.
+- [ ] **Step 6: Screenshots** go on the orphan branch `pr-assets/ios-redesign-phase5` (`git worktree add --orphan`, push the branch only). The PR body links them by raw URL.
+- [ ] **Step 7: The PR** into `main`:
+  - title `iOS redesign phase 5 — Explore + Me + polish`
+  - body: the summary, owner answers, rulings, device checks with screenshots, not verified, not done, the font-conversion script, test counts.
+  Ends with the attribution line. Bind it with the `ccd_pr` tools. **No merge without the owner's "ha".**
+- [ ] **Step 8:** Send the owner the screenshots and the video (SendUserFile), one line per thing to look at.
 
 ---
 
@@ -15736,3 +16442,96 @@ Carried into later phases (found in phase 4 reviews and on device, deliberately 
 - **Phase 5 (device observations, pre-existing):** right after a hand-in the homework page's "What to do" row can still read "Continue · 1 answered" though the attempt is graded (the row comes from the list payload, re-read later); the review's pinned filter chips slide under the back button when scrolled; HomeworkDetail shows a stale "Not started" for ~0.3 s after a cover closes and still says "Not started" for a word homework after three games; tab roots scroll content under the status bar with no material; a reviewed quiz homework still offers "Start"/"Continue" and "up to +15 XP" during a retry (pay comes from the first attempt); Results reads "No results yet" while a retry is in progress (lists carry the newest started attempt); Today once came up scrolled ~55 pt after a hand-in (not reproduced); Me → Sign-in & password wraps "Emai / l" beside the Confirmed badge.
 - **Not verified on device:** the sign-in and change-password shakes (Task 41 items 14–15; the simulator panel stopped focusing text fields mid-check) and VoiceOver (item 17; the simulator has no VoiceOver). Both read correct in the final review.
 - **Owner:** iOS 17/18 are unchecked (only the iOS 26.3 runtime is installed, ~8 GB); TestFlight needs a paid Apple Developer account. `seed_phase4`'s "Phase 4 · photos" needs `allow_file_upload=True` to pay XP locally.
+
+## Phase 5 outcome (2026-10-23) and what it leaves
+
+Done on `feat/ios-redesign-phase5`, cut from `main` at `95fc244e`. The work:
+- Tasks 42–55, each with its own fix rounds.
+- A device check (Task 56) on the iOS 26.3 simulator, pinned to the local backend, with seeded data. Four passes found D1–D13; every one is fixed and re-checked on the device.
+- One opus whole-branch review ("with fixes", 0 Critical / 10 Important / 15 Minor), then one fix wave of 22 items, re-reviewed clean.
+- The owner's answer to question 1 added two tasks:
+  - Task 57, the Me sheet as B: four fix rounds, the last two for D12 and D13.
+  - Task 58, Appearance: one fix round, for D10.
+  - Each task was re-reviewed clean after its last round.
+- Order: Appearance was built second, right after the Account rows it hangs from. The plan lists it last.
+
+The kit went from 786 to 953 tests (all green; the last two commits touch only the app). The app clean-builds under Swift 6; all 130 distinct warnings are in the kit, none in the app's own sources.
+
+Decisions taken during phase 5 that later work builds on (the full list of rulings, each with its cost if wrong, is in the PR):
+- **P5-R1 Explore reads its four lines live on every visit.**
+  - The requests run side by side and detached (6 requests).
+  - Each card fails on its own and keeps its fixed one-line description. A card never says "nothing" for a failure.
+  - Surveys pay **points**, not coins.
+  - Services shows the next booked hour, otherwise the next free one (always after now), and the next SAT **date** ("Next SAT: December 20").
+- **P5-R2 The Me sheet is the website's three tabs (owner, B).**
+  - Overview · Classes · Settings sit under a hero that carries the 44-pt close button.
+  - While scrolled, an overlay copy of the tabs stays pinned. Each tab's page is at least one screen tall, so a switch while pinned always lands on content (D12). While pinned, the page swap is not animated (`.transaction(value:)` on the scroll view), so the switch lands on the tabs from any tab (D13); unpinned, the pill still slides.
+  - The tab lives in `AppRouter.meTab`: the avatar reopens the last tab, `/profile` opens Overview.
+  - Every push from the sheet is a value route.
+  - Overview adds Midterms & certificates:
+    - a "Passed" tag only when the centre marked it;
+    - a certificate opens as a nested sheet;
+    - re-sits keep their result.
+  - The homework figure uses `HomeworkProgress.isDone` and leaves out classwork and empty-set homework. "Nothing set" is a dashed empty slot, never an achievement.
+- **P5-R3 Appearance is a device setting** (System / Light / Dark, default System).
+  - It sets the scene windows' `overrideUserInterfaceStyle`, with one writer.
+  - `preferredColorScheme` is gone: going back to System left an open sheet dark (D10).
+- **P5-R4 One state vocabulary.**
+  - `StateArt`: five one-shot Lotties that settle, with `rest` markers written by the generator.
+  - `EmptyState`.
+  - `ErrorState`: `.page` with art and offline wording, or `.inline`.
+  - `LoadingSkeleton`: breathes outside the focus zones, static under Reduce Motion.
+  - `StaleNote`.
+  - At most one state animation per screen. Error ≠ empty everywhere.
+- **P5-R5 Text follows the phone's text size.**
+  - `appFont` uses `@ScaledMetric`, is exact at the default size, and takes `monospacedDigits:`. 1,013 fixed fonts were converted.
+  - Chrome is capped at xxxLarge, with the Large Content Viewer.
+  - Rows stack through `AdaptiveStack`/`AnyLayout`, which keeps their identity. The segment bar stands in a column at the accessibility sizes (D11).
+  - `HeaderLayout` is one instance of the header's pills and bell in every arrangement.
+  - `SlotStack` drops the spacing of empty slots (D6).
+- **P5-R6 Haptics answer taps, not code.** The tab bar, pills and segments are driven by a tap counter. VoiceOver gets:
+  - labels and `.isSelected`;
+  - the tab-bar trait;
+  - the title read first;
+  - the rank-up card read once, after the XP line;
+  - Appearance announcing its choice.
+- **P5-R7 A homework of only empty word sets has nothing to do yet.**
+  - It is never owed and is not counted (Today's ring included).
+  - It reads "Nothing to do yet", in neutral, and is never "Catch up".
+- **P5-R8 Implementers never launch the app**: an unpinned launch once reached production. The controller runs one pinned rig.
+
+Verified on the device (build `2c4bdcb2` and earlier, iPhone 17 Pro, iOS 26.3): see the PR's checklist. It covers:
+- Explore, Me B with all three tabs, the certificate over Me, and Appearance Light / Dark / System with the sheet open;
+- the empty states, the error art, the stale line, and Go to Classes;
+- the tab roots at AX5, xxxLarge, dark mode, and the Reduce Motion skeleton and push;
+- D1–D13, each re-checked after its fix.
+
+A drag down on the pinned tab strip neither scrolls the page nor closes the sheet; that is accepted.
+
+Not verified on a device:
+- the iPhone SE tab roots: the simulator panel's access request went unanswered, so only the SE sign-in screen was checked;
+- VoiceOver (the simulator has none), including whether focus survives the pin releasing after a tab switch;
+- the pill row's scroll position at AX3+ when the pin releases;
+- haptics;
+- true offline (NWPathMonitor);
+- the zoom fallback under Reduce Motion on iOS 18;
+- iOS 17/18 runtimes.
+
+Not done, and why:
+- the retry row ("Retry · n answered", no XP on a retry): it needs a server field;
+- whole-page failures on pushed pages are still the inline form (no art);
+- ~35 hand-rolled hairline cards outside the plan's list;
+- the sub-44-pt clear, info, trash and remove buttons, and the leftover " · " readings (listed in the Task 53 report);
+- `ServicesExamDates.earliest` keeps a past date if the admin list is stale;
+- empty-set-only homework is still listed under Class → Done (it reads "Nothing to do yet");
+- phase-2 performance items (TodayPlan rebuilds, sequential People requests);
+- the kit's now-unused `ClassroomSubjectFilter` / `cardScheduleLine`;
+- the deferred minors listed in the PR.
+
+Owner's list:
+- question 2: the Services card's second line, either the next SAT date ★ (built) or a checklist ticked on this phone;
+- the sign-in copy "You're signed in, but your account didn't load". Proposed: "Your password is right, but your account didn't load — try again";
+- Matching's accuracy figure;
+- the strike-shop coin burst;
+- iOS 17/18 runtimes (~8 GB);
+- a paid Apple Developer account for TestFlight.

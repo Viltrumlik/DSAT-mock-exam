@@ -61,6 +61,8 @@ struct BrandLockup: View {
         HStack(spacing: 11) {
             BrandMark(height: height)
                 .modifier(LogoArrival())
+                // The word beside it names the brand; the mark would read it a second time.
+                .accessibilityHidden(true)
             Text("MasterSAT")
                 .font(.system(size: fontSize, weight: .heavy))
                 .tracking(-0.4)
@@ -106,7 +108,7 @@ struct BrandPanel: View {
             BrandLockup(height: compact ? 38 : 48, fontSize: compact ? 19 : 21)
 
             Text(headline)
-                .font(.system(size: compact ? 27 : 40, weight: .heavy))
+                .appFont(compact ? 27 : 40, weight: .heavy)
                 .tracking(compact ? -0.7 : -1.1)
                 .lineSpacing(compact ? 0 : 2)
                 .foregroundStyle(.white)
@@ -115,7 +117,7 @@ struct BrandPanel: View {
 
             if let blurb {
                 Text(blurb)
-                    .font(.system(size: compact ? 14 : 16, weight: .medium))
+                    .appFont(compact ? 14 : 16, weight: .medium)
                     .foregroundStyle(.white.opacity(0.82))
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, compact ? 10 : 18)
@@ -133,7 +135,7 @@ struct BrandPanel: View {
             if !compact {
                 Spacer(minLength: 24)
                 Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(.white.opacity(0.7))
             }
         }
@@ -159,11 +161,12 @@ private struct PromiseRow: View {
                 .frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
                 .overlay(
                     Image(systemName: icon)
-                        .font(.system(size: compact ? 13 : 15, weight: .semibold))
+                        .appFont(compact ? 13 : 15, weight: .semibold)
                         .foregroundStyle(.white)
+                        .accessibilityHidden(true)
                 )
             Text(text)
-                .font(.system(size: compact ? 14 : 15, weight: .medium))
+                .appFont(compact ? 14 : 15, weight: .medium)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -256,14 +259,16 @@ struct AuthField<Accessory: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             HStack(spacing: 10) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(14, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
+                        .capDynamicType()
                         .frame(width: 16)
+                        .accessibilityHidden(true)
                 }
                 content()
             }
@@ -300,11 +305,12 @@ struct AuthAlert<Action: View>: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: tone == .danger ? "exclamationmark.circle.fill" : "info.circle.fill")
-                .font(.system(size: 15, weight: .bold))
+                .appFont(15, weight: .bold)
                 .foregroundStyle(colour)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 6) {
                 Text(message)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 action()
@@ -366,13 +372,15 @@ struct PasswordField: View {
                 focus = field
             } label: {
                 Image(systemName: revealed ? "eye.slash" : "eye")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
-                    .frame(width: 30, height: 44)
+                    // A full 44 pt square to hit.
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(revealed ? "Hide password" : "Show password")
+            .capDynamicType(label: revealed ? "Hide password" : "Show password", systemImage: revealed ? "eye.slash" : "eye")
         }
     }
 }
@@ -381,45 +389,4 @@ struct PasswordField: View {
 /// on either of them.
 enum AuthFocus: Hashable {
     case email, password, firstName, lastName, username
-}
-
-/// The sentence to show when a sign-in or a sign-up fails, and whether trying the same
-/// thing again could work. A port of the web's `classifyLoginError`.
-enum AuthErrorCopy {
-    static func classify(_ error: Error) -> (message: String, retryable: Bool) {
-        guard let api = error as? APIError else {
-            return (error.localizedDescription, false)
-        }
-        switch api {
-        case .transport:
-            return ("Cannot connect to the server. Check your internet connection and try again.", true)
-        case .unauthorized:
-            // On this screen a 401 is a wrong password, not an expired session — the
-            // student has no session yet. `APIError`'s own wording is written for the
-            // other case and would send them looking for a problem they do not have.
-            return ("The email or password you entered is incorrect.", false)
-        case .forbidden(let detail, _):
-            // The server's own words: a teacher signing in here is told to use the teacher
-            // portal, and a frozen account is told it is frozen.
-            return (detail.isEmpty ? "Your account has been restricted. Contact support." : detail, false)
-        case .validation(let detail, _, _):
-            return (detail.isEmpty ? "Please check the details you entered." : detail, false)
-        case .http(let status, let detail) where status == 429:
-            return (detail.isEmpty ? "Too many attempts. Please wait a minute before trying again." : detail, false)
-        case .http(let status, let detail) where status >= 500:
-            return (detail.isEmpty ? "Server error. Please try again in a moment." : detail, true)
-        case .http(_, let detail):
-            return (detail.isEmpty ? "Something went wrong. Please try again." : detail, true)
-        case .conflict(let detail):
-            return (detail.isEmpty ? "Something went wrong. Please try again." : detail, false)
-        case .unavailable:
-            // A release in progress. The words say "wait", because that is all it takes.
-            return (api.errorDescription ?? "MasterSAT is updating right now. Please try again in a minute.", true)
-        case .upgradeRequired:
-            // The update screen is already covering this one; this is only its caption.
-            return (api.errorDescription ?? "Please update the app to sign in.", false)
-        case .decoding, .notAuthenticated:
-            return (api.errorDescription ?? "Something went wrong. Please try again.", false)
-        }
-    }
 }

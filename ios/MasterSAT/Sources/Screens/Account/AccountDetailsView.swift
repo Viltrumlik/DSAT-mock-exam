@@ -31,7 +31,8 @@ struct AccountDetailsView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    // The photo card, then the fields.
+                    LoadingSkeleton(rows: 2, height: 130, style: .cards)
                 case .failed(let message):
                     RetryNotice(message: message) { await reload() }
                         .cardStyle()
@@ -79,9 +80,9 @@ struct AccountDetailsView: View {
                     }
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Profile photo")
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                     Text("A clear photo of your face. JPG or PNG, up to 5 MB.")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -161,7 +162,7 @@ struct AccountDetailsView: View {
 
             if let generalError {
                 Text(generalError)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -187,7 +188,7 @@ struct AccountDetailsView: View {
                     .disabled(isSaving)
                 } else {
                     Text("Everything here is saved.")
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)

@@ -27,10 +27,16 @@ final class AssessmentBoardModel {
     /// The card whose Start is in flight. One at a time: a second tap waits for nothing.
     private(set) var startingId: Int?
 
-    func load(_ student: StudentAPI) async {
+    func load(_ session: Session) async {
         if assignments.isEmpty { phase = .loading }
+        // Whose list this is, taken before it is asked for: a quick sign-in as someone else while
+        // it is in flight must not teach the new student's memory the old one's attempts.
+        let userID: Int? = if case .signedIn(let user) = session.phase { user.id } else { nil }
         do {
-            let fresh = try await student.assignments()
+            let fresh = try await session.student.assignments()
+            // The board carries the attempts a review will be weighed against, so it teaches the
+            // memory what it carries like every other list (`OutcomeMemory`).
+            if let userID { OutcomeBook().noteSeen(in: fresh, userID: userID) }
             assignments = fresh
             board = AssessmentBoard(assignments: fresh)
             phase = .loaded
@@ -129,16 +135,16 @@ struct AssessmentBoardScaffold<Content: View>: View {
             .padding(16)
         }
         .background(Theme.background)
-        .refreshable { await model.load(session.student) }
+        .detachedRefresh { await model.load(session) }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
-        .task { if loadsOnAppear { await model.load(session.student) } }
+        .task { if loadsOnAppear { await model.load(session) } }
         .fullScreenCover(item: $runnerAttemptId) { id in
             AssessmentRunnerView(attemptId: id, onSubmitted: {
                 celebrations.celebrate(.assessment, xpBefore: xpAtStart)
             }) {
                 runnerAttemptId = nil
-                Task { await model.load(session.student) }
+                Task { await model.load(session) }
             }
             .coversCelebrations(celebrations)
             .noBarClearance()
@@ -151,7 +157,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
             Button("OK", role: .cancel) {
                 refusal = nil
                 // Withdrawn since the board loaded: reload, and the card goes with it.
-                if refused.stale { Task { await model.load(session.student) } }
+                if refused.stale { Task { await model.load(session) } }
             }
         } message: { refused in
             Text(verbatim: refused.message)
@@ -162,9 +168,9 @@ struct AssessmentBoardScaffold<Content: View>: View {
     private var main: some View {
         switch model.phase {
         case .failed:
-            AssessmentLoadError { await model.load(session.student) }
+            AssessmentLoadError { await model.load(session) }
         case .loading where model.assignments.isEmpty:
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+            LoadingSkeleton(rows: 3, height: 96, style: .cards)
         default:
             if !trimmedQuery.isEmpty {
                 // Search is the other way to locate something, so it looks across every
@@ -190,7 +196,7 @@ struct AssessmentBoardScaffold<Content: View>: View {
         AssessmentCardActions(
             startingId: model.startingId,
             open: { entry in open(entry) },
-            reload: { Task { await model.load(session.student) } }
+            reload: { Task { await model.load(session) } }
         )
     }
 
@@ -300,7 +306,7 @@ struct AssessmentTodoSection: View {
                         withAnimation(.easeInOut(duration: 0.2)) { showAll.toggle() }
                     } label: {
                         Text(showAll ? "Show fewer" : "Show all \(ScoreText.string(entries.count))")
-                            .font(.system(size: 13, weight: .heavy))
+                            .appFont(13, weight: .heavy)
                             .foregroundStyle(Theme.accent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 9)
@@ -384,20 +390,22 @@ struct AssessmentNavCard: View {
                         .frame(width: big ? 48 : 40, height: big ? 48 : 40)
                         .overlay(
                             Image(systemName: icon)
-                                .font(.system(size: big ? 22 : 18, weight: .semibold))
+                                .appFont(big ? 22 : 18, weight: .semibold)
                                 .foregroundStyle(tone)
+                                .accessibilityHidden(true)
                         )
                     Text(title)
-                        .font(.system(size: big ? 21 : 16, weight: .heavy))
+                        .appFont(big ? 21 : 16, weight: .heavy)
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .bold))
+                        .appFont(14, weight: .bold)
                         .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
                 }
                 Text(line)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                 if todo > 0 || done > 0 {
                     HStack(spacing: 7) {
@@ -410,16 +418,8 @@ struct AssessmentNavCard: View {
                     }
                 }
             }
-            .padding(big ? 20 : 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card)
-            .overlay(alignment: .top) { Rectangle().fill(tone).frame(height: 3) }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .cardStyle(padding: big ? 20 : 16)
+            .cardToneBar(tone)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -427,7 +427,7 @@ struct AssessmentNavCard: View {
 
     private func countChip(_ text: String, ink: Color, fill: Color) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .heavy).monospacedDigit())
+            .appFont(12, weight: .heavy, monospacedDigits: true)
             .foregroundStyle(ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -445,14 +445,15 @@ struct AssessmentSectionHead: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .appFont(16, weight: .semibold)
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
                 Text(title)
-                    .font(.system(size: 19, weight: .heavy))
+                    .appFont(19, weight: .heavy)
                     .tracking(-0.2)
                 if let count {
                     Text(ScoreText.string(count))
-                        .font(.system(size: 12, weight: .heavy).monospacedDigit())
+                        .appFont(12, weight: .heavy, monospacedDigits: true)
                         .foregroundStyle(Theme.textLabel)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 2)
@@ -466,7 +467,7 @@ struct AssessmentSectionHead: View {
             }
             if let hint {
                 Text(hint)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -483,13 +484,14 @@ struct AssessmentCrumbs: View {
                 HStack(spacing: 4) {
                     if index > 0 {
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .bold))
+                            .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textLabel)
+                            .accessibilityHidden(true)
                     }
                     if let action = crumb.action {
                         Button(action: action) {
                             Text(crumb.label)
-                                .font(.system(size: 14, weight: .bold))
+                                .appFont(14, weight: .bold)
                                 .foregroundStyle(Theme.accent)
                                 .padding(.vertical, 4)
                                 .padding(.horizontal, 4)
@@ -498,7 +500,7 @@ struct AssessmentCrumbs: View {
                         .buttonStyle(.plain)
                     } else {
                         Text(crumb.label)
-                            .font(.system(size: 14, weight: .heavy))
+                            .appFont(14, weight: .heavy)
                             .padding(.vertical, 4)
                             .padding(.horizontal, 4)
                             .accessibilityAddTraits(.isHeader)
@@ -517,10 +519,10 @@ struct AssessmentNotice: View {
     var body: some View {
         VStack(spacing: 6) {
             if let title {
-                Text(title).font(.system(size: 16, weight: .heavy))
+                Text(title).appFont(16, weight: .heavy)
             }
             Text(text)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -534,33 +536,14 @@ struct AssessmentNotice: View {
     }
 }
 
-/// The board failed to load — said as a failure, with a way to try again.
+/// The board failed to load — said as a failure, with a way to try again. Its one caller is the
+/// whole board, so it is the page form of `ErrorState`, with the art (amber, never red: nothing
+/// the student did went wrong).
 struct AssessmentLoadError: View {
     let retry: @MainActor () async -> Void
 
     var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 30))
-                .foregroundStyle(Theme.danger)
-                .frame(width: 72, height: 72)
-                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.dangerSoft))
-            Text("Couldn't load your assessments")
-                .font(.system(size: 20, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text("Something went wrong on our end. Check your connection and try again.")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-            Button { Task { await retry() } } label: {
-                Label("Try again", systemImage: "arrow.clockwise")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .padding(.top, 6)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
-        .padding(.horizontal, 20)
+        ErrorState(title: "Couldn't load your assessments", style: .page, retry: retry)
     }
 }
 
@@ -638,14 +621,15 @@ struct AssessmentCard: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Text(entry.title)
-                .font(.system(size: 16, weight: .heavy))
+                .appFont(16, weight: .heavy)
                 .foregroundStyle(.primary)
                 .multilineTextAlignment(.leading)
                 .padding(.top, 12)
             HStack(spacing: 6) {
-                Image(systemName: "book").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "book").appFont(11, weight: .semibold)
+                    .accessibilityHidden(true)
                 Text([entry.classroomName, style.label].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.top, 6)
@@ -658,43 +642,39 @@ struct AssessmentCard: View {
 
             action.padding(.top, 14)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
+        .cardStyle(padding: 16)
         // The 3pt subject-coloured edge is the card's whole identity on the board — it is
         // what makes a wall of cards scannable without reading a word.
-        .overlay(alignment: .top) { Rectangle().fill(style.tone).frame(height: 3) }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .cardToneBar(style.tone)
     }
 
     private var header: some View {
         HStack(spacing: 9) {
             IconTile(systemName: style.icon, tone: style.tone, size: 36)
             HStack(spacing: 5) {
-                Image(systemName: style.icon).font(.system(size: 10, weight: .bold))
-                Text(style.label).font(.system(size: 11, weight: .heavy))
+                Image(systemName: style.icon).appFont(10, weight: .bold)
+                    .accessibilityHidden(true)
+                Text(style.label).appFont(11, weight: .heavy)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(style.tone))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(style.badgeFill))
             Spacer(minLength: 0)
             switch state.column {
             case .done:
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 19))
+                    .appFont(19)
                     .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
             case .inProgress:
                 Image(systemName: "hourglass")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.amber)
+                    .capDynamicType()
                     .frame(width: 30, height: 30)
                     .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.amberSoft))
+                    .accessibilityHidden(true)
             case .todo:
                 EmptyView()
             }
@@ -706,9 +686,10 @@ struct AssessmentCard: View {
         let count = entry.questionCount
         if count > 0 {
             HStack(spacing: 6) {
-                Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "clock").appFont(11, weight: .semibold)
+                    .accessibilityHidden(true)
                 Text("\(ScoreText.string(count)) question\(count == 1 ? "" : "s") · ~\(ScoreText.string(entry.estimatedMinutes)) min")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.top, 12)
@@ -721,7 +702,7 @@ struct AssessmentCard: View {
             FlowLayout(spacing: 7) {
                 ForEach(entry.tags, id: \.self) { tag in
                     Text(tag)
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
@@ -738,16 +719,17 @@ struct AssessmentCard: View {
         let answered = progress?.answeredCount ?? 0
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("Progress").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.textSecondary)
+                Text("Progress").appFont(12, weight: .bold).foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Text("\(ScoreText.string(answered)) / \(ScoreText.string(total))")
-                    .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                    .appFont(13, weight: .heavy, monospacedDigits: true)
             }
             Bar(fraction: total > 0 ? Double(answered) / Double(total) : 0, tone: Theme.amber, height: 8)
             HStack(spacing: 6) {
-                Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "clock").appFont(11, weight: .semibold)
+                    .accessibilityHidden(true)
                 Text("Last opened \(RelativeTime.short(progress?.lastActivityAt))")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
             }
             .foregroundStyle(Theme.textSecondary)
         }
@@ -764,10 +746,10 @@ struct AssessmentCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(ScoreText.string(percent))%")
-                        .font(.system(size: 32, weight: .heavy).monospacedDigit())
+                        .appFont(32, weight: .heavy, monospacedDigits: true)
                         .tracking(-1)
                     Text("\(ScoreText.string(correct)) / \(ScoreText.string(total)) correct")
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Bar(fraction: Double(percent) / 100, tone: Theme.success, height: 8)
@@ -775,9 +757,10 @@ struct AssessmentCard: View {
                 // and it is the filter the review opens on.
                 HStack(spacing: 6) {
                     Image(systemName: toImprove > 0 ? "flag.fill" : "checkmark.circle.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .appFont(11, weight: .bold)
+                        .accessibilityHidden(true)
                     Text(toImprove > 0 ? "\(ScoreText.string(toImprove)) to improve" : "Perfect score")
-                        .font(.system(size: 13, weight: .heavy))
+                        .appFont(13, weight: .heavy)
                 }
                 .foregroundStyle(toImprove > 0 ? Theme.accent : Theme.success)
             }
@@ -786,8 +769,9 @@ struct AssessmentCard: View {
             // Handed in but not yet marked. Naming that beats an absent score, which reads
             // as a zero.
             HStack(spacing: 6) {
-                Image(systemName: "clock").font(.system(size: 11, weight: .semibold))
-                Text("Submitted — grading in progress").font(.system(size: 12, weight: .bold))
+                Image(systemName: "clock").appFont(11, weight: .semibold)
+                    .accessibilityHidden(true)
+                Text("Submitted — grading in progress").appFont(12, weight: .bold)
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.top, 12)
@@ -824,6 +808,7 @@ struct AssessmentCard: View {
                         Text("Starting…")
                     } else {
                         Image(systemName: "play.circle")
+                            .accessibilityHidden(true)
                         Text("Start")
                     }
                 }
@@ -843,8 +828,9 @@ struct AssessmentDueChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "calendar").font(.system(size: 11, weight: .semibold))
-            Text(text).font(.system(size: 12, weight: catchUp ? .heavy : .bold))
+            Image(systemName: "calendar").appFont(11, weight: .semibold)
+                .accessibilityHidden(true)
+            Text(text).appFont(12, weight: catchUp ? .heavy : .bold)
         }
         .foregroundStyle(catchUp ? Theme.amber : Theme.textSecondary)
         .padding(.horizontal, 10)

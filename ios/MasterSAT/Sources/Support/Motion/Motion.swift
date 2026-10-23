@@ -13,10 +13,18 @@ enum Motion {
     static let snappy = Animation.spring(response: 0.38, dampingFraction: 0.62)
     /// Whole blocks entering a screen.
     static let bouncy = Animation.spring(response: 0.55, dampingFraction: 0.56)
+    /// How long `focus` runs. Named so a screen that must wait out a turn (hit testing off while
+    /// a question arrives) waits for the length the animation really has.
+    static let focusSeconds = 0.2
+    /// How long `focusTap` runs — the beat a last tick is given before its screen is replaced.
+    static let focusTapSeconds = 0.12
+    /// How long a question turning in is in flight: `focus` and a frame of slack. Until it has
+    /// passed, a tap must not reach the question that is arriving.
+    static let focusTurnSeconds = focusSeconds + 0.03
     /// Focus zones: short and without overshoot, so nothing moves over the content.
-    static let focus = Animation.easeOut(duration: 0.2)
+    static let focus = Animation.easeOut(duration: focusSeconds)
     /// Focus zones, the shortest beat: a press, a tick, a pulse.
-    static let focusTap = Animation.easeOut(duration: 0.12)
+    static let focusTap = Animation.easeOut(duration: focusTapSeconds)
     /// The beat between blocks of a focus-zone entrance (`focusReveal`) — at most three of them,
     /// so the whole entrance is over within 250 ms.
     static let focusStep = 0.03
@@ -59,18 +67,20 @@ private struct Stagger: ViewModifier {
     let shown: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// One modifier chain whatever the setting — a live Reduce Motion toggle must not rebuild the
+    /// block (descendant state, a scroll position, the first responder). Reduce Motion picks the
+    /// values: no offset, no scale, no beat, and a 0.2-s fade.
     func body(content: Content) -> some View {
-        if reduceMotion {
-            content
-                .opacity(shown ? 1 : 0)
-                .animation(.easeOut(duration: 0.2), value: shown)
-        } else {
-            content
-                .opacity(shown ? 1 : 0)
-                .offset(y: shown ? 0 : 44)
-                .scaleEffect(shown ? 1 : 0.86, anchor: .top)
-                .animation(Motion.bouncy.delay(Double(index) * Motion.staggerStep), value: shown)
-        }
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: reduceMotion || shown ? 0 : 44)
+            .scaleEffect(reduceMotion || shown ? 1 : 0.86, anchor: .top)
+            .animation(
+                reduceMotion
+                    ? .easeOut(duration: 0.2)
+                    : Motion.bouncy.delay(Double(index) * Motion.staggerStep),
+                value: shown
+            )
     }
 }
 
@@ -89,25 +99,31 @@ private struct ZoomSource<ID: Hashable>: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
-            content.matchedTransitionSource(id: id, in: namespace)
+            // Erased on both sides (see `ZoomDestination`), so the two ids always compare alike.
+            content.matchedTransitionSource(id: AnyHashable(id), in: namespace)
         } else {
             content
         }
     }
 }
 
+/// A source id nothing registers: what a zoom is handed under Reduce Motion, in place of its card's.
+private struct ZoomNoSource: Hashable {}
+
 private struct ZoomDestination<ID: Hashable>: ViewModifier {
     let id: ID
     let namespace: Namespace.ID
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// One tree whatever the setting: the `if reduceMotion` this replaces swapped the branch under
+    /// an open page on a live toggle. Reduce Motion picks the source id instead and names a card
+    /// nothing has registered, so the zoom has nothing to grow out of. The system turning a real
+    /// zoom into a fade under Reduce Motion is not relied on — nothing documents that it does.
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
-            if reduceMotion {
-                content
-            } else {
-                content.navigationTransition(.zoom(sourceID: id, in: namespace))
-            }
+            content.navigationTransition(
+                .zoom(sourceID: reduceMotion ? AnyHashable(ZoomNoSource()) : AnyHashable(id), in: namespace)
+            )
         } else {
             content
         }
@@ -120,7 +136,8 @@ extension View {
         modifier(ZoomSource(id: id, namespace: namespace))
     }
 
-    /// The page that zooms out of its card. A plain push before iOS 18 and under Reduce Motion.
+    /// The page that zooms out of its card. A plain push before iOS 18; under Reduce Motion it
+    /// names no card (`ZoomDestination`).
     func zoomDestination(id: some Hashable, in namespace: Namespace.ID) -> some View {
         modifier(ZoomDestination(id: id, namespace: namespace))
     }

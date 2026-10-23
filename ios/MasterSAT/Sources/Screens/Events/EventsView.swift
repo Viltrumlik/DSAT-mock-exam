@@ -49,7 +49,7 @@ private struct EventsScreen: View {
             }
             .padding(16)
         }
-        .refreshable { await model.load() }
+        .detachedRefresh { await model.load() }
         .task { await model.load() }
         // Seats fill and the two-hour window closes while the app is away.
         .onChange(of: scenePhase) { _, phase in
@@ -198,7 +198,7 @@ private struct EventRowView: View {
                 IconTile(systemName: "calendar", size: 40)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(event.title)
-                        .font(.system(size: 16, weight: .heavy))
+                        .appFont(16, weight: .heavy)
                         .fixedSize(horizontal: false, vertical: true)
                     EventWhenWhere(event: event)
                 }
@@ -214,7 +214,7 @@ private struct EventRowView: View {
             // Its own line, so a sign-up refusal never hides a failed ticket, or the reverse.
             if let error = model.rowErrors[event.id] {
                 Text(error)
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -227,7 +227,7 @@ private struct EventRowView: View {
             || event.description.filter { $0 == "\n" }.count >= 3
         return VStack(alignment: .leading, spacing: 4) {
             Text(event.description)
-                .font(.system(size: 14))
+                .appFont(14)
                 .foregroundStyle(Theme.textSecondary)
                 .lineLimit(expanded || !isLong ? nil : 3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -235,7 +235,7 @@ private struct EventRowView: View {
                 Button(expanded ? "Show less" : "Show more") {
                     withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                 }
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.accent)
                 .buttonStyle(.plain)
             }
@@ -247,7 +247,7 @@ private struct EventRowView: View {
         case .open(let seatsLeft):
             HStack(spacing: 12) {
                 Text(CommunityFormat.count(seatsLeft, "seat left", "seats left"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                 Spacer(minLength: 8)
                 Button(action: onSignUp) {
@@ -262,7 +262,7 @@ private struct EventRowView: View {
         case .signedUp(let canCancel) where canCancel:
             HStack(spacing: 12) {
                 Label("You're signed up", systemImage: "ticket")
-                    .font(.system(size: 13, weight: .heavy))
+                    .appFont(13, weight: .heavy)
                     .foregroundStyle(Theme.success)
                 Spacer(minLength: 8)
                 Button(action: onCancel) {
@@ -276,7 +276,7 @@ private struct EventRowView: View {
             }
         case .signedUp:
             Label("You're signed up · can't cancel within 2 hours", systemImage: "ticket")
-                .font(.system(size: 13, weight: .heavy))
+                .appFont(13, weight: .heavy)
                 .foregroundStyle(Theme.textSecondary)
         case .full:
             Chip(text: "Full")
@@ -300,6 +300,7 @@ private struct EventRowView: View {
                             ProgressView()
                         } else {
                             Image(systemName: "ticket")
+                                .accessibilityHidden(true)
                         }
                         // Rendering takes the server a few seconds; say what the wait is for.
                         Text(loading ? "Preparing your ticket…" : "Download ticket")
@@ -310,7 +311,7 @@ private struct EventRowView: View {
 
                 if !code.isEmpty {
                     Text("Ticket \(code)")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(12, weight: .bold)
                         .tracking(1.5)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
@@ -319,7 +320,7 @@ private struct EventRowView: View {
             }
             if model.ticketFailed.contains(event.id) {
                 Text("Couldn't download the ticket. Try again.")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.danger)
             }
         }
@@ -335,7 +336,7 @@ private struct PastEventRow: View {
             IconTile(systemName: "calendar", size: 40)
             VStack(alignment: .leading, spacing: 5) {
                 Text(event.title)
-                    .font(.system(size: 15, weight: .heavy))
+                    .appFont(15, weight: .heavy)
                     .fixedSize(horizontal: false, vertical: true)
                 EventWhenWhere(event: event)
                 outcome
@@ -352,14 +353,15 @@ private struct PastEventRow: View {
             // it is points, which the web mislabels as XP.
             HStack(spacing: 5) {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 11))
+                    .appFont(11)
                     .foregroundStyle(Theme.amber)
+                    .accessibilityHidden(true)
                 Text("Attended · +\(CommunityFormat.count(points, "point", "points"))")
             }
-            .font(.system(size: 12, weight: .heavy))
+            .appFont(12, weight: .heavy)
         case .attended:
             Text("Attended")
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
         case .missed:
             outcomeText("Missed")
         case .notMarked:
@@ -371,7 +373,7 @@ private struct PastEventRow: View {
 
     private func outcomeText(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12, weight: .heavy))
+            .appFont(12, weight: .heavy)
             .foregroundStyle(Theme.textSecondary)
     }
 }
@@ -394,12 +396,14 @@ private struct EventWhenWhere: View {
     private func line(icon: String, text: String) -> some View {
         HStack(spacing: 5) {
             Image(systemName: icon)
-                .font(.system(size: 11, weight: .semibold))
+                .appFont(11, weight: .semibold)
+                .capDynamicType()
                 .frame(width: 14)
+                .accessibilityHidden(true)
             Text(text)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12, weight: .semibold))
+        .appFont(12, weight: .semibold)
         .foregroundStyle(Theme.textSecondary)
     }
 }

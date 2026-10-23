@@ -3,7 +3,7 @@ import MasterSATKit
 
 // The profile's pieces of the house design — the web's `features/profile/profileUi.tsx`:
 // white panels, a tint of each thing's own colour behind its icon, and one palette for the
-// three tabs so a colour means the same thing wherever it shows up.
+// whole page so a colour means the same thing wherever it shows up.
 
 /// The web's profile palette: primary for the student's own figures, emerald for what is
 /// done, amber for strikes and what is due, sky for classes, violet for what is coming, rose
@@ -38,7 +38,7 @@ struct ProfileEyebrow: View {
 
     var body: some View {
         Text(verbatim: text.uppercased())
-            .font(.system(size: 10.5, weight: .heavy))
+            .appFont(10.5, weight: .heavy)
             .tracking(0.95)
             .foregroundStyle(tone)
     }
@@ -78,17 +78,19 @@ struct ProfilePanel<Actions: View, Content: View>: View {
         .cardStyle(padding: 18)
     }
 
+    /// The tile beside the name; above it at the accessibility sizes, so the name has the
+    /// panel's whole width rather than breaking "certificates" mid-word beside the tile.
     private var heading: some View {
-        HStack(spacing: 12) {
+        AdaptiveStack(spacing: 12, columnSpacing: 10) {
             IconTile(systemName: icon, tone: tone, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .tracking(-0.2)
                     .foregroundStyle(.primary)
                 if let description {
                     Text(verbatim: description)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -174,9 +176,9 @@ struct ProfileChip: View {
 
     var body: some View {
         if let action {
-            Button(action: action) { chip }
+            // The chip is 27 pt tall; its reach is a thumb's.
+            Button(action: action) { chip.hitTarget(44) }
                 .buttonStyle(.plain)
-                .contentShape(Capsule())
         } else {
             chip
         }
@@ -184,11 +186,14 @@ struct ProfileChip: View {
 
     private var chip: some View {
         HStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 11, weight: .bold))
+            Image(systemName: icon).appFont(11, weight: .bold)
+                .accessibilityHidden(true)
             // Verbatim: an address or a phone number is not markdown, and must not become a link.
+            // One line, shortened in the middle, until the accessibility sizes — there an address
+            // wraps rather than lose its middle.
             Text(verbatim: text)
-                .font(.system(size: 12.5, weight: .bold))
-                .lineLimit(1)
+                .appFont(12.5, weight: .bold)
+                .titleLineLimit(1)
                 .truncationMode(.middle)
         }
         .foregroundStyle(tone)
@@ -198,21 +203,109 @@ struct ProfileChip: View {
     }
 }
 
-/// Grey blocks where rows are about to be. A placeholder, never a zero.
+/// Grey blocks where rows are about to be. A placeholder, never a zero: `LoadingSkeleton` rows.
 struct ProfilePlaceholderRows: View {
     var count = 2
     var height: CGFloat = 56
 
     var body: some View {
-        VStack(spacing: 8) {
-            ForEach(0..<count, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(Theme.surface2)
-                    .frame(height: height)
+        LoadingSkeleton(rows: count, height: height)
+    }
+}
+
+/// One scored sitting on a panel: the subject's tile, the paper and a line under it, the score.
+/// Latest results and the midterm rows share it, so a score reads the same in both; the caller
+/// puts it on `profileRow()` and combines it for VoiceOver.
+struct ProfileScoreRow: View {
+    let math: Bool
+    let title: String
+    let detail: String
+    let score: String
+    /// The scale under the score — a midterm's 100 or 800; an SAT score needs none.
+    var ceiling: String?
+    /// The centre marked the sitting passed. Only ever said when true: there is no "not passed".
+    var passed = false
+    /// The row opens a page, and the chevron says so.
+    var opens = false
+    /// A midterm's name runs long ("Midterm 2 · Algebra and functions"); a test's does not.
+    var titleLines = 1
+
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// One row while it fits; at the accessibility sizes the tile, the words and the score each
+    /// take a line, or the words would be squeezed to a word per line between the two.
+    var body: some View {
+        AdaptiveStack(spacing: 12, columnSpacing: 8) {
+            IconTile(
+                systemName: math ? "function" : "book.closed.fill",
+                tone: math ? ProfileTone.sky : ProfileTone.emerald,
+                size: 34
+            )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: title)
+                    .appFont(13.5, weight: .bold)
+                    .foregroundStyle(.primary)
+                    .titleLineLimit(titleLines)
+                    .multilineTextAlignment(.leading)
+                    // Its own height: in the row's stacks a second line is otherwise cut.
+                    .fixedSize(horizontal: false, vertical: true)
+                if passed {
+                    // Beside the subject while both fit whole, under it when they do not:
+                    // "Reading & Writing" must not be cut short to make room.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) { detailText; passedTag }
+                        VStack(alignment: .leading, spacing: 4) { detailText; passedTag }
+                    }
+                } else {
+                    detailText
+                }
             }
+            AdaptiveSpacer()
+            HStack(spacing: 12) {
+                VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 0) {
+                    Text(verbatim: score)
+                        .appFont(20, weight: .heavy, monospacedDigits: true)
+                        .foregroundStyle(.primary)
+                    if let ceiling {
+                        Text(verbatim: "/ \(ceiling)")
+                            .appFont(11, weight: .semibold)
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityLabel("out of \(ceiling)")
+                    }
+                }
+                if opens {
+                    Image(systemName: "chevron.right")
+                        .appFont(12, weight: .bold)
+                        .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.leading, typeSize.isAccessibilitySize ? 0 : 8)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Loading")
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder private var detailText: some View {
+        if !detail.isEmpty {
+            Text(verbatim: detail)
+                .appFont(12, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+                .titleLineLimit(1)
+                // As the title: uncut at the accessibility sizes, it still needs its own height.
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Whole on one line, except at the accessibility sizes: held to its one-line width there,
+    /// it was wider than the row and pushed the whole page past the screen's edge.
+    private var passedTag: some View {
+        Label("Passed", systemImage: "checkmark.seal.fill")
+            .appFont(11, weight: .heavy)
+            .foregroundStyle(ProfileTone.emerald)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 2)
+            .background(Capsule().fill(ProfileTone.emerald.opacity(0.13)))
+            .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
     }
 }
 

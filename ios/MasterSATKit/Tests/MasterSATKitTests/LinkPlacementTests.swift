@@ -3,6 +3,12 @@ import Testing
 
 @Suite struct LinkPlacementTests {
 
+    @Test("The tabs are Today · Class · Words · Rewards · Explore, in that order")
+    func tabOrder() {
+        // The floating tab bar draws `allCases` left to right, so this order IS the bar's.
+        #expect(AppTab.allCases == [.today, .classes, .words, .rewards, .explore])
+    }
+
     @Test("A link that IS a tab switches to it")
     func tabs() {
         #expect(AppLink.home.placement == .tab(.today))

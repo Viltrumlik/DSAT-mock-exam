@@ -91,6 +91,80 @@ import Testing
         #expect(MidtermWording.startsIn(now.addingTimeInterval(-1), now: now) == nil)
     }
 
+    // MARK: - The Me sheet's results
+
+    @Test("The Me sheet lists the newest sittings whose score is out, three at most")
+    func latestResults() throws {
+        func sat(_ midterm: Int, attempt: Int, released: Bool = true, resit: Bool = false) throws -> MidtermListing {
+            try row([
+                "midterm_id": midterm, "attempt_id": attempt, "state": "COMPLETED", "submitted": true,
+                "results_visible": released, "score": 640, "resit_open": resit,
+            ])
+        }
+        let list = [
+            try sat(1, attempt: 5),
+            try sat(2, attempt: 12),
+            try sat(3, attempt: 20, released: false),
+            try row(["midterm_id": 4, "is_open": true]),
+            try sat(5, attempt: 30, resit: true),
+            try sat(6, attempt: 8),
+            try sat(7, attempt: 3),
+        ]
+        #expect(MidtermResults.latest(list).map(\.attemptId) == [30, 12, 8])
+        #expect(MidtermResults.latest(list, limit: 1).map(\.attemptId) == [30])
+        #expect(MidtermResults.latest([try sat(3, attempt: 20, released: false)]).isEmpty)
+    }
+
+    @Test("A sitting with a granted re-sit keeps its released score and certificate on the Me sheet")
+    func resitKeepsItsResult() throws {
+        let resit = try row([
+            "midterm_id": 5, "attempt_id": 30, "state": "COMPLETED", "submitted": true,
+            "results_visible": true, "score": 520, "resit_open": true,
+            "certificate": ["available": true, "code": "MS-7Q1"],
+        ])
+        #expect(resit.bucket == .available)
+        #expect(MidtermResults.latest([resit]).map(\.attemptId) == [30])
+        #expect(MidtermResults.latest([resit]).first?.certificateCode == "MS-7Q1")
+        // Once the re-sit is begun, the row is the new sitting: nothing released to show yet.
+        let begun = try row([
+            "midterm_id": 5, "attempt_id": 31, "state": "IN_PROGRESS", "submitted": false,
+            "results_visible": false, "resit_open": false,
+        ])
+        #expect(MidtermResults.latest([begun]).isEmpty)
+    }
+
+    @Test("A midterm is Math by its raw subject, whatever its case or spacing")
+    func listingIsMath() throws {
+        #expect(try row(["subject": "MATH"]).isMath)
+        #expect(try row(["subject": " math "]).isMath)
+        #expect(try !row(["subject": "ENGLISH"]).isMath)
+        #expect(try !row(["subject": ""]).isMath)
+    }
+
+    @Test("A certificate opens only when the listing says it is ready and gives its code")
+    func certificateCode() throws {
+        let ready = try row(["certificate": ["available": true, "code": " MS-4K29 "]])
+        #expect(ready.certificateCode == "MS-4K29")
+        let notYet = try row(["certificate": ["available": false, "code": "MS-4K29"]])
+        #expect(notYet.certificateCode == nil)
+        let noCode = try row(["certificate": ["available": true, "code": ""]])
+        #expect(noCode.certificateCode == nil)
+        #expect(try row([:]).certificateCode == nil)
+    }
+
+    @Test("Passed is the centre's mark, and a pre-midterm never carries one")
+    func markedPassed() throws {
+        func report(passed: Any, graded: Bool) throws -> MidtermErrorReport {
+            try JSONCoding.decoder.decode(MidtermErrorReport.self, from: JSONSerialization.data(withJSONObject: [
+                "midterm": ["id": 1, "title": "M"], "passed": passed, "is_graded": graded,
+            ]))
+        }
+        #expect(try report(passed: true, graded: true).markedPassed)
+        #expect(try !report(passed: false, graded: true).markedPassed)
+        #expect(try !report(passed: NSNull(), graded: true).markedPassed)
+        #expect(try !report(passed: true, graded: false).markedPassed)
+    }
+
     // MARK: - Error report
 
     @Test("The report lists every topic the paper tested, and speaks of topics on a junior paper")

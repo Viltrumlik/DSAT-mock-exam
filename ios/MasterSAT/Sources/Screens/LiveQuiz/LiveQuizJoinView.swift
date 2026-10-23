@@ -123,7 +123,7 @@ private struct LiveQuizJoinScreen: View {
                 VStack(alignment: .leading, spacing: 6) {
                     PageTitle("Live quiz")
                     Text("Enter the code your teacher is showing.")
-                        .font(.system(size: 15, weight: .medium))
+                        .appFont(15, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .padding(.bottom, 4)
@@ -140,7 +140,7 @@ private struct LiveQuizJoinScreen: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.background)
-        .refreshable { await model.loadRunning() }
+        .detachedRefresh { await model.loadRunning() }
         // The web re-reads the list every 15 s; so does this, while the screen is up and no
         // game is open over it.
         .task {
@@ -172,7 +172,7 @@ private struct LiveQuizJoinScreen: View {
                 text: Binding(get: { model.code }, set: { model.setCode($0) }),
                 prompt: Text(verbatim: "ABC234").foregroundStyle(Theme.textLabel)
             )
-            .font(.system(size: 30, weight: .heavy, design: .monospaced))
+            .appFont(30, weight: .heavy, design: .monospaced)
             .tracking(8)
             .multilineTextAlignment(.center)
             .keyboardType(.asciiCapable)
@@ -191,7 +191,7 @@ private struct LiveQuizJoinScreen: View {
 
             if let error = model.joinError {
                 Text(error)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -257,20 +257,21 @@ private struct LiveQuizJoinScreen: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(room.title.isEmpty ? "Live quiz" : room.title)
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .foregroundStyle(Color.primary)
                         .lineLimit(1)
                     if !room.classroomName.isEmpty {
                         Text(room.classroomName)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
                 Image(systemName: "dot.radiowaves.left.and.right")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, weight: .semibold)
                     .foregroundStyle(Theme.accent)
+                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)

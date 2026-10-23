@@ -46,7 +46,7 @@ struct AccountDevicesView: View {
 
                 switch load {
                 case .loading:
-                    ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+                    LoadingSkeleton(rows: 3, height: 78, style: .cards)
                 case .failed(let message):
                     // "No devices" here would tell a student nobody is signed in as them — the
                     // one thing this page exists to let them check.
@@ -76,7 +76,7 @@ struct AccountDevicesView: View {
         .task {
             if load.isLoading { await reload() }
         }
-        .refreshable { await reload() }
+        .detachedRefresh { await reload() }
         .confirmationDialog(
             "Sign out everywhere?",
             isPresented: $confirmingEverywhere,
@@ -105,12 +105,12 @@ struct AccountDevicesView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 7) {
                         Text(verbatim: device.label)
-                            .font(.system(size: 15, weight: .heavy))
+                            .appFont(15, weight: .heavy)
                             .lineLimit(1)
                         if isThis { AccountStatusPill(text: "This device", tone: Theme.success) }
                     }
                     Text(verbatim: detail)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
@@ -142,7 +142,7 @@ struct AccountDevicesView: View {
     private var actions: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Don't recognise a device? Sign it out and change your password. A device you sign out stops within a few hours, the next time it renews its sign-in.")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
 

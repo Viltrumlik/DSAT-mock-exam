@@ -63,10 +63,11 @@ struct CompleteProfileView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(alignment: .top, spacing: 7) {
                         Image(systemName: "checkmark.shield")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .padding(.top, 1)
+                            .accessibilityHidden(true)
                         Text("You can't use the rest of the app until this is done.")
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     .foregroundStyle(Theme.textSecondary)
@@ -77,7 +78,7 @@ struct CompleteProfileView: View {
                         Task { await session.signOut() }
                     } label: {
                         Label("Not now — log out", systemImage: "rectangle.portrait.and.arrow.right")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                     }
                     .foregroundStyle(Theme.textSecondary)
                     .disabled(busy || emailBusy || finishing)
@@ -97,10 +98,10 @@ struct CompleteProfileView: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("Complete your profile")
-                    .font(.system(size: 26, weight: .heavy))
+                    .appFont(26, weight: .heavy)
                     .tracking(-0.6)
                 Text("Check these are right — they name you on results and certificates. You can change them.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -149,10 +150,11 @@ struct CompleteProfileView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy)
+            .accessibilityLabel(busy ? "Saving" : (emailMissing ? "Save and continue" : "Save"))
 
             if emailMissing {
                 Text("Next, confirm your email address with a code.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -173,7 +175,7 @@ struct CompleteProfileView: View {
                 error = nil
             } label: {
                 Label("Edit your name", systemImage: "arrow.left")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
             }
             .foregroundStyle(Theme.textSecondary)
             .disabled(emailBusy)
@@ -186,7 +188,7 @@ struct CompleteProfileView: View {
         VStack(alignment: .leading, spacing: 16) {
             IconTile(systemName: "checkmark.seal.fill", tone: Theme.success, size: 56)
             Text("Your profile is all set")
-                .font(.system(size: 26, weight: .heavy))
+                .appFont(26, weight: .heavy)
                 .tracking(-0.6)
             Button {
                 Task { await finish() }
@@ -198,6 +200,7 @@ struct CompleteProfileView: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(finishing)
+            .accessibilityLabel(finishing ? "Continuing" : "Continue")
         }
     }
 

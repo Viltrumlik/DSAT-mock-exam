@@ -97,15 +97,15 @@ struct MyProgressPeerCard: View {
             IconTile(systemName: group.subject == "math" ? "function" : "book.closed", size: 48)
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(group.subjectLabel) · \(group.levelLabel)".uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .tracking(1)
                     .foregroundStyle(Theme.textSecondary)
                 Text(group.classroomName)
-                    .font(.system(size: 18, weight: .heavy))
+                    .appFont(18, weight: .heavy)
                     .tracking(-0.2)
                     .lineLimit(2)
                 Label(PeerMetricText.groupSize(group.groupSize), systemImage: "person.2")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -119,8 +119,9 @@ struct MyProgressPeerCard: View {
             HStack(spacing: 6) {
                 Text("Open class")
                 Image(systemName: "arrow.right")
+                    .accessibilityHidden(true)
             }
-            .font(.system(size: 13, weight: .bold))
+            .appFont(13, weight: .bold)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -182,11 +183,13 @@ struct MyProgressInsightRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 9) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(tint)
+                .capDynamicType()
                 .frame(width: 16)
+                .accessibilityHidden(true)
             Text(insight.text)
-                .font(.system(size: 13.5, weight: .semibold))
+                .appFont(13.5, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -224,7 +227,7 @@ struct MyProgressMetricTile: View {
             HStack(spacing: 8) {
                 IconTile(systemName: icon, tone: tone, size: 28)
                 Text(label.uppercased())
-                    .font(.system(size: 11.5, weight: .bold))
+                    .appFont(11.5, weight: .bold)
                     .tracking(0.9)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
@@ -254,17 +257,17 @@ struct MyProgressMetricTile: View {
                     }
                     Text(PeerMetricText.groupAverage(metric, unit: unit))
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
 
                 Text(detail)
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let band = PeerMetricText.band(metric, unit: unit) {
                     Text(band)
-                        .font(.system(size: 12.5, weight: .bold))
+                        .appFont(12.5, weight: .bold)
                         .foregroundStyle(metric.standing == .lowerHalf ? Color.primary : Theme.success)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -282,12 +285,11 @@ struct MyProgressMetricTile: View {
     private var figure: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(PeerMetricText.value(metric, unit: unit))
-                .font(.system(size: 30, weight: .heavy))
-                .monospacedDigit()
+                .appFont(30, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.8)
             if unit == .words, metric.you != nil {
                 Text("words")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -360,7 +362,7 @@ struct MyProgressLessonStrip: View {
     var body: some View {
         if lessons.isEmpty {
             Text("No lessons marked for you yet.")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
         } else {
             HStack(alignment: .top, spacing: 6) {
@@ -372,11 +374,12 @@ struct MyProgressLessonStrip: View {
                             .frame(width: 32, height: 32)
                             .overlay(
                                 Image(systemName: icon(lesson.status))
-                                    .font(.system(size: 14, weight: .bold))
+                                    .appFont(14, weight: .bold)
+                                    .capDynamicType()
                                     .foregroundStyle(ink(lesson.status))
                             )
                         Text(day)
-                            .font(.system(size: 10.5, weight: .semibold))
+                            .appFont(10.5, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.75)
@@ -428,7 +431,7 @@ struct MyProgressAttendanceChart: View {
     var body: some View {
         if trend.isEmpty {
             Text("Nothing marked yet.")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
         } else {
             VStack(alignment: .leading, spacing: 12) {
@@ -441,7 +444,8 @@ struct MyProgressAttendanceChart: View {
                             }
                             .frame(height: Self.barArea + 18, alignment: .bottom)
                             Text(LearnMoreDateText.shortMonth(month.month))
-                                .font(.system(size: 11, weight: .bold))
+                                .appFont(11, weight: .bold)
+                                .capDynamicType()
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         .frame(maxWidth: .infinity)
@@ -451,7 +455,7 @@ struct MyProgressAttendanceChart: View {
                     legend("You", fill: Theme.success)
                     legend("Group average", fill: Theme.success.opacity(0.35))
                 }
-                .font(.system(size: 11.5, weight: .semibold))
+                .appFont(11.5, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             }
         }
@@ -461,8 +465,8 @@ struct MyProgressAttendanceChart: View {
         VStack(spacing: 4) {
             if let value, value.isFinite {
                 Text(ProgressFormat.count(value))
-                    .font(.system(size: 10, weight: .bold))
-                    .monospacedDigit()
+                    .appFont(10, weight: .bold, monospacedDigits: true)
+                    .capDynamicType()
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize()
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -470,7 +474,8 @@ struct MyProgressAttendanceChart: View {
                     .frame(width: 22, height: max(4, Self.barArea * min(max(value, 0), 100) / 100))
             } else {
                 Text("—")
-                    .font(.system(size: 10, weight: .bold))
+                    .appFont(10, weight: .bold)
+                    .capDynamicType()
                     .foregroundStyle(Theme.textSecondary)
             }
         }

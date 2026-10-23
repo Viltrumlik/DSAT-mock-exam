@@ -44,7 +44,7 @@ struct MyProgressView: View {
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { if report == nil || peers == nil { await load() } }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
     }
 
     /// "Overall" only once there is an overall to show — a tile reading "—" while the page is
@@ -105,7 +105,6 @@ struct MyProgressView: View {
         if let report {
             if report.tracks.isEmpty {
                 LearnMoreEmptyCard(
-                    icon: "chart.line.uptrend.xyaxis",
                     title: "Nothing to show yet",
                     message: "Once you are enrolled in a class with a level, your attendance and homework for it appear here."
                 )
@@ -119,7 +118,7 @@ struct MyProgressView: View {
                         MyProgressTrackCard(track: track, columns: columns)
                     }
                     Text(MyProgressText.footnote)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(16)
@@ -193,10 +192,10 @@ struct MyProgressTrackCard: View {
                 IconTile(systemName: track.subject == "math" ? "function" : "book.closed", size: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.subjectLabel)
-                        .font(.system(size: 18, weight: .heavy))
+                        .appFont(18, weight: .heavy)
                         .tracking(-0.2)
                     Text(MyProgressText.trackLine(track))
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 0)
@@ -235,10 +234,10 @@ struct MyProgressLevelCard: View {
             HStack(alignment: .top, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(level.levelLabel)
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                     if let name = level.classroomName, !name.isEmpty {
                         Text(name)
-                            .font(.system(size: 12, weight: .medium))
+                            .appFont(12, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .lineLimit(1)
                     }
@@ -246,8 +245,7 @@ struct MyProgressLevelCard: View {
                 Spacer(minLength: 8)
                 Chip(text: MyProgressText.pill(level.state), tone: pillTone)
                 Text(ProgressFormat.percent(level.overall))
-                    .font(.system(size: 24, weight: .heavy))
-                    .monospacedDigit()
+                    .appFont(24, weight: .heavy, monospacedDigits: true)
                     .tracking(-0.5)
                     .lineLimit(1)
                     .fixedSize()
@@ -270,13 +268,13 @@ struct MyProgressLevelCard: View {
                 }
                 if let note = MyProgressText.basisNote(level.basis) {
                     Text(note)
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 Text(MyProgressText.emptyNote(level.state))
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -331,23 +329,22 @@ struct MyProgressHalfRow: View {
         Label {
             Text(label)
         } icon: {
-            Image(systemName: icon).font(.system(size: 12, weight: .semibold))
+            Image(systemName: icon).appFont(12, weight: .semibold)
         }
-        .font(.system(size: 13, weight: .semibold))
+        .appFont(13, weight: .semibold)
         .foregroundStyle(Theme.textSecondary)
         .lineLimit(1)
     }
 
     private var figure: some View {
         Text(ProgressFormat.percent(value))
-            .font(.system(size: 14, weight: .heavy))
-            .monospacedDigit()
+            .appFont(14, weight: .heavy, monospacedDigits: true)
             .fixedSize()
     }
 
     private var detailText: some View {
         Text(detail)
-            .font(.system(size: 12, weight: .medium))
+            .appFont(12, weight: .medium)
             .foregroundStyle(Theme.textSecondary)
             .fixedSize(horizontal: false, vertical: true)
     }

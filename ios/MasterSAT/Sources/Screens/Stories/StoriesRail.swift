@@ -70,18 +70,19 @@ struct StoriesRail: View {
             .padding(.vertical, 2)
         }
         .scrollIndicators(.hidden)
+        .noBarClearanceInRow()
     }
 
     private var failure: some View {
         HStack(spacing: 5) {
             Text("Stories didn't load.")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Button {
                 Task { await load() }
             } label: {
                 Text("Try again")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .underline()
                     .foregroundStyle(Theme.accent)
             }
@@ -134,7 +135,9 @@ private struct StoryCircle: View {
                         .padding(3)
                 }
             Text(story.title)
-                .font(.system(size: 11, weight: .bold))
+                .appFont(11, weight: .bold)
+                // A rail of 78-pt cells: the caption cannot outgrow its cell.
+                .capDynamicType()
                 .foregroundStyle(Color.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)

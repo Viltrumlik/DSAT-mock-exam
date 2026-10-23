@@ -35,6 +35,11 @@ struct VocabularyView: View {
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// "Review today" steps aside while the search field holds text, so the results start at the
+    /// top of a small phone with the keyboard up. Its own state, written in an animation as the
+    /// field empties or fills, rather than an animation keyed on the whole page.
+    @State private var reviewHidden = false
     @State private var sections: [VocabSection] = []
     @State private var mySets: [VocabMySet] = []
     @State private var groups: [VocabHomeworkGroup] = []
@@ -99,7 +104,11 @@ struct VocabularyView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     AppHeader(title: "Words").stagger(0, shown: shown)
 
-                    reviewCard.stagger(1, shown: shown)
+                    if !reviewHidden {
+                        reviewCard
+                            .stagger(1, shown: shown)
+                            .transition(.opacity)
+                    }
 
                     WordSearchField(query: $query).stagger(2, shown: shown)
 
@@ -146,6 +155,11 @@ struct VocabularyView: View {
             }
             // A newer keystroke cancels the older search; a cancelled search stores nothing.
             .onChange(of: searchText) { _, text in runSearch(text, pause: true) }
+            // Fades out with the first letter and back when the field is cleared; under Reduce
+            // Motion it simply goes and comes back (the animation is the only thing it picks).
+            .onChange(of: searchText.isEmpty) { _, empty in
+                withAnimation(reduceMotion ? nil : Motion.focus) { reviewHidden = !empty }
+            }
             .onChange(of: segment) { _, _ in
                 if !segmentPicked { segmentPicked = true }
             }
@@ -154,6 +168,7 @@ struct VocabularyView: View {
                     isBuilding = false
                     if saved { Task { await load() } }
                 }
+                .noBarClearance()
             }
             .alert(
                 "Delete this set?",
@@ -259,11 +274,10 @@ struct VocabularyView: View {
             // Not yet answered for this text: the last answer stays, dimmed, rather than
             // collapsing into a spinner on every keystroke.
             VStack(spacing: 12) {
-                ForEach(results) { VocabSearchRow(word: $0) }
+                ForEach(results) { VocabSearchRow(word: $0, stale: !fresh) }
             }
             .opacity(fresh ? 1 : 0.45)
             .animation(.easeOut(duration: 0.15), value: fresh)
-            .accessibilityHidden(!fresh)
         } else {
             ProgressView()
                 .frame(maxWidth: .infinity)
@@ -323,7 +337,6 @@ struct VocabularyView: View {
             }
         } else if groups.isEmpty {
             VocabEmptyState(
-                icon: "graduationcap",
                 title: "No vocabulary homework right now",
                 message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the word bank."
             )
@@ -346,7 +359,6 @@ struct VocabularyView: View {
             }
         } else if sections.isEmpty {
             VocabEmptyState(
-                icon: "books.vertical",
                 title: "No word lists published yet",
                 message: "Your teachers publish vocabulary sections here. In the meantime you can build a set of your own.",
                 actionTitle: "Build my own set",
@@ -376,7 +388,6 @@ struct VocabularyView: View {
             }
         } else if mySets.isEmpty {
             VocabEmptyState(
-                icon: "sparkles",
                 title: "Make a set of the words you keep missing",
                 message: "Pull any words from the word bank into a set of your own, then study it with all four games.",
                 actionTitle: "New set",
@@ -386,11 +397,11 @@ struct VocabularyView: View {
             VStack(spacing: 14) {
                 HStack {
                     Text("Sets you built")
-                        .font(.system(size: 15, weight: .heavy))
+                        .appFont(15, weight: .heavy)
                     Spacer()
                     Button { isBuilding = true } label: {
                         Label("New set", systemImage: "plus")
-                            .font(.system(size: 13, weight: .heavy))
+                            .appFont(13, weight: .heavy)
                             .padding(.vertical, 8)
                             .padding(.leading, 12)
                             .contentShape(Rectangle())
@@ -415,7 +426,7 @@ struct VocabularyView: View {
                     .overlay(alignment: .topTrailing) {
                         Button { pendingDelete = set } label: {
                             Image(systemName: "trash")
-                                .font(.system(size: 14, weight: .semibold))
+                                .appFont(14, weight: .semibold)
                                 .foregroundStyle(Theme.textSecondary)
                                 .frame(width: 36, height: 36)
                                 .contentShape(Rectangle())
@@ -423,6 +434,7 @@ struct VocabularyView: View {
                         .buttonStyle(.plain)
                         .disabled(isDeleting)
                         .accessibilityLabel("Delete \(set.title)")
+                        .capDynamicType(label: "Delete \(set.title)", systemImage: "trash")
                         .padding(.top, 10)
                         .padding(.trailing, 8)
                     }
@@ -432,7 +444,9 @@ struct VocabularyView: View {
     }
 
     private var loadingSlot: some View {
-        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 50)
+        // Only the selected segment's list is drawn, so one of these shows at a time, in the shape
+        // of that list's cards.
+        LoadingSkeleton(rows: 2, height: 84, style: .cards)
     }
 
     private func createdLabel(_ iso: String?) -> String? {
@@ -545,8 +559,8 @@ struct VocabHomeworkGroupCard: View {
                 )
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.assignmentTitle)
-                        .font(.system(size: 17, weight: .heavy))
-                        .lineLimit(2)
+                        .appFont(17, weight: .heavy)
+                        .titleLineLimit(2)
                     FlowLayout(spacing: 6) {
                         if let name = group.classroomName, !name.isEmpty {
                             if let classroomId = group.classroomId {
@@ -607,8 +621,9 @@ struct VocabHomeworkGroupCard: View {
 
     private func classroomChip(_ name: String) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: "person.2.fill").font(.system(size: 10, weight: .bold))
-            Text(name).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            Image(systemName: "person.2.fill").appFont(10, weight: .bold)
+                .accessibilityHidden(true)
+            Text(name).appFont(12, weight: .semibold).lineLimit(1)
         }
         .foregroundStyle(Theme.textSecondary)
         .padding(.horizontal, 10)

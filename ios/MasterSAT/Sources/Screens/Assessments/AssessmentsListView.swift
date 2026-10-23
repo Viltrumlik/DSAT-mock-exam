@@ -78,20 +78,27 @@ enum SubjectStyle {
         let label: String
         let icon: String
         let tone: Color
+        /// The tone as a fill under white type — the board's subject badge. English keeps
+        /// its light shade in dark mode (`Theme.subjectEnglishFill`); the brand blue holds.
+        let badgeFill: Color
     }
 
     static func of(_ subject: String?) -> Style {
         switch AssessmentSubjectKey.of(subject) {
         case .math:
-            return Style(label: "Math", icon: "function", tone: Theme.accent)
+            return Style(label: "Math", icon: "function", tone: Theme.accent, badgeFill: Theme.accent)
         case .english:
-            return Style(label: "English", icon: "text.book.closed.fill", tone: Theme.subjectEnglish)
+            return Style(
+                label: "English", icon: "text.book.closed.fill",
+                tone: Theme.subjectEnglish, badgeFill: Theme.subjectEnglishFill
+            )
         case nil:
             let raw = subject ?? ""
             return Style(
                 label: raw.isEmpty ? "General" : raw.humanisedSubject,
                 icon: "square.and.pencil",
-                tone: Theme.accent
+                tone: Theme.accent,
+                badgeFill: Theme.accent
             )
         }
     }
@@ -107,16 +114,17 @@ struct SearchField: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
             TextField(placeholder, text: $text, prompt: Text(verbatim: placeholder))
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .appFont(15)
                         .foregroundStyle(Theme.textLabel)
                 }
                 .buttonStyle(.plain)
@@ -138,7 +146,7 @@ struct SearchField: View {
 struct OutlineButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 14, weight: .heavy))
+            .appFont(14, weight: .heavy)
             .foregroundStyle(Theme.accent)
             .padding(.vertical, 11)
             .frame(maxWidth: .infinity)

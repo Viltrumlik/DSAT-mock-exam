@@ -108,7 +108,7 @@ private struct SurveyDateControl: View {
                         .foregroundStyle(chosen == nil ? Theme.textSecondary : Color.primary)
                     Spacer(minLength: 0)
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                 }
                 .communityField()
@@ -177,8 +177,7 @@ private struct SurveyScaleControl: View {
                     let on = picked == step
                     Button { onChange(.number(step)) } label: {
                         Text(verbatim: String(step))
-                            .font(.system(size: 15, weight: .bold))
-                            .monospacedDigit()
+                            .appFont(15, weight: .bold, monospacedDigits: true)
                             .foregroundStyle(on ? Color.white : Color.primary)
                             .frame(width: 44, height: 44)
                             .background(
@@ -192,6 +191,7 @@ private struct SurveyScaleControl: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(on ? .isSelected : [])
+                    .capDynamicType(label: String(step))
                 }
             }
             // The same way out the slider and the radio group have: an optional question
@@ -264,13 +264,13 @@ private struct SurveyRatingControl: View {
                         .multilineTextAlignment(.trailing)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
             }
 
             if picked == nil {
                 Text("Drag the slider to choose a number.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             } else if !question.isRequired {
                 // A slider is the easiest control in the form to nudge while scrolling.
@@ -288,9 +288,9 @@ private struct SurveyRatingControl: View {
             let gaps = CGFloat(max(steps.count - 1, 1))
             ForEach(Array(steps.enumerated()), id: \.element) { index, step in
                 Text(verbatim: String(step))
-                    .font(.system(size: 13, weight: .bold))
-                    .monospacedDigit()
+                    .appFont(13, weight: .bold, monospacedDigits: true)
                     .foregroundStyle(picked == step ? Theme.accent : Theme.textSecondary)
+                    .capDynamicType()
                     .frame(width: 26, height: 22)
                     .contentShape(Rectangle())
                     .onTapGesture { onChange(.number(step)) }
@@ -365,7 +365,7 @@ private struct SurveyMultiChoiceControl: View {
                     + (atCap
                         ? Text(" — that's \(ScoreText.string(cap)), unpick one to change").foregroundStyle(Theme.accent)
                         : Text("")))
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             ForEach(Array(question.options.enumerated()), id: \.offset) { _, option in
@@ -395,10 +395,11 @@ private struct SurveyChoiceRow: View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: glyph)
-                    .font(.system(size: 19))
+                    .appFont(19)
                     .foregroundStyle(selected ? Theme.accent : Theme.textLabel)
+                    .accessibilityHidden(true)
                 Text(text)
-                    .font(.system(size: 15, weight: .medium))
+                    .appFont(15, weight: .medium)
                     .foregroundStyle(Color.primary)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
@@ -429,7 +430,7 @@ struct SurveyClearButton: View {
     var body: some View {
         Button(action: action) {
             Text("Clear my answer")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .underline()
                 .foregroundStyle(Theme.textSecondary)
         }

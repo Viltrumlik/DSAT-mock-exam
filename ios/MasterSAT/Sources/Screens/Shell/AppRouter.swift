@@ -18,6 +18,11 @@ struct ReloadRequest: Equatable {
     let nonce: Int
 }
 
+/// The Me sheet's three tabs — the web profile's.
+enum MeTab: Hashable {
+    case overview, classes, settings
+}
+
 /// Which tab is open, each tab's stack, and the two sheets.
 ///
 /// One `NavigationPath` per tab, as separate properties: an `@Observable` notifies per
@@ -28,6 +33,9 @@ struct ReloadRequest: Equatable {
 /// One sheet at a time: the Me sheet and the certificate sheet never stand together. Asking
 /// for one while the other is up closes the other and holds the request until the root calls
 /// `sheetDismissed`. Every write is guarded so a no-op never notifies the root.
+///
+/// The Me sheet's tab lives here too (`meTab`), not in the page: the sheet's page is built
+/// afresh every time it opens, and it reopens on the tab the student last had open.
 @MainActor
 @Observable
 final class AppRouter {
@@ -39,6 +47,8 @@ final class AppRouter {
     var explore = NavigationPath()
     var me = NavigationPath()
     var showingMe = false
+    /// The tab the Me sheet shows — and reopens on, for the rest of this launch.
+    var meTab: MeTab = .overview
     var certificate: CertificateCode?
     private(set) var scrollToTop: ScrollRequest?
     private(set) var reloadRequest: ReloadRequest?
@@ -47,9 +57,16 @@ final class AppRouter {
     /// or is built by this very tap, and applies exactly once.
     private(set) var wantsClassToDo = false
 
+    /// What was asked for while the other sheet was up: a link, or the Me sheet itself (on a
+    /// given tab, or the last one).
+    private enum Queued {
+        case link(AppLink)
+        case me(MeTab?)
+    }
+
     /// A sheet asked for while the other sheet was up; opened once that one has gone.
     /// Nothing renders from it, so it stays out of observation.
-    @ObservationIgnored private var queued: AppLink?
+    @ObservationIgnored private var queued: Queued?
 
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
         switch link.placement {
@@ -64,16 +81,19 @@ final class AppRouter {
         case .me(let page):
             if certificate != nil {
                 certificate = nil
-                queued = link
+                queued = .link(link)
                 return
             }
             if !me.isEmpty { me = NavigationPath() }
+            // `/profile` is the profile's front page, Overview. A page that lives inside Me (My
+            // progress) is pushed over whichever tab was open, and Back lands on that tab.
+            if page == nil { selectMeTab(.overview) }
             if let page { me.append(page) }
             if !showingMe { showingMe = true }
         case .certificate(let code):
             if showingMe {
                 showingMe = false
-                queued = link
+                queued = .link(link)
                 return
             }
             if certificate?.code != code { certificate = CertificateCode(code: code) }
@@ -82,12 +102,15 @@ final class AppRouter {
         }
     }
 
-    func openMe() {
+    /// The avatar opens Me where the student left it; `tab` is for a caller that needs one in
+    /// particular — Today's SAT countdown wants Overview, where the date is set.
+    func openMe(on tab: MeTab? = nil) {
         if certificate != nil {
             certificate = nil
-            queued = .profile
+            queued = .me(tab)
             return
         }
+        if let tab { selectMeTab(tab) }
         if !me.isEmpty { me = NavigationPath() }
         if !showingMe { showingMe = true }
     }
@@ -98,7 +121,10 @@ final class AppRouter {
     func sheetDismissed(baseURL: URL, openURL: (URL) -> Void) {
         guard let next = queued else { return }
         queued = nil
-        open(next, baseURL: baseURL, openURL: openURL)
+        switch next {
+        case .link(let link): open(link, baseURL: baseURL, openURL: openURL)
+        case .me(let tab): openMe(on: tab)
+        }
     }
 
     /// Switch to a tab at its root, closing any sheet — a link to the tab itself, or "See all".
@@ -164,6 +190,10 @@ final class AppRouter {
 
     private func select(_ tab: AppTab) {
         if selection != tab { selection = tab }
+    }
+
+    private func selectMeTab(_ tab: MeTab) {
+        if meTab != tab { meTab = tab }
     }
 
     private func isAtRoot(_ tab: AppTab) -> Bool {

@@ -54,11 +54,11 @@ struct ClassroomTelegramSheet: View {
                         } icon: {
                             Image(systemName: "paperplane.fill").foregroundStyle(Theme.info)
                         }
-                            .font(.system(size: 20, weight: .heavy))
+                            .appFont(20, weight: .heavy)
                             .foregroundStyle(.primary)
                             .fixedSize(horizontal: false, vertical: true)
                         Text("Read this first — the invite you get is yours alone.")
-                            .font(.system(size: 14, weight: .medium))
+                            .appFont(14, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                     }
 
@@ -68,7 +68,7 @@ struct ClassroomTelegramSheet: View {
                     if let state {
                         if loadFailed {
                             Text("Could not refresh just now — this is the last state we know of.")
-                                .font(.system(size: 12, weight: .medium))
+                                .appFont(12, weight: .medium)
                                 .foregroundStyle(Theme.textSecondary)
                         }
                         rules(state.rules)
@@ -79,7 +79,7 @@ struct ClassroomTelegramSheet: View {
                             message: "Something went wrong reading this class's Telegram group."
                         ) { await load() }
                     } else {
-                        ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+                        LoadingSkeleton(rows: 3, height: 64)
                     }
                 }
                 .padding(20)
@@ -118,11 +118,12 @@ struct ClassroomTelegramSheet: View {
             ForEach(Array(rules.enumerated()), id: \.offset) { index, rule in
                 HStack(alignment: .top, spacing: 12) {
                     Text(ScoreText.string(index + 1))
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
+                        .capDynamicType()
                         .frame(width: 22, height: 22)
                         .background(Circle().fill(Theme.surface2))
                     Text(rule)
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -136,7 +137,7 @@ struct ClassroomTelegramSheet: View {
         case .notEligible(let message):
             // Frozen, or no longer in the class: say why, offer nothing.
             Text(message)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -150,9 +151,9 @@ struct ClassroomTelegramSheet: View {
             EmptyView()
         case .openBot:
             box {
-                Text("Step 1 — open the MasterSAT bot").font(.system(size: 14, weight: .bold))
+                Text("Step 1 — open the MasterSAT bot").appFont(14, weight: .bold)
                 Text("Press **Start** there once. The bot learns which Telegram account is yours, and your invite arrives in that chat — you do not need to come back here.")
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if isMintingBotLink {
@@ -165,7 +166,7 @@ struct ClassroomTelegramSheet: View {
                     .padding(.top, 4)
                 } else if botLinkFailed {
                     Text("The Telegram bot cannot be reached right now. Please try again shortly.")
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                     Button("Try again") { Task { await mintBotLink() } }
                         .buttonStyle(SecondaryButtonStyle())
@@ -173,9 +174,9 @@ struct ClassroomTelegramSheet: View {
             }
         case .inviteReady(let link):
             box {
-                Text("Your invite is ready").font(.system(size: 14, weight: .bold))
+                Text("Your invite is ready").appFont(14, weight: .bold)
                 Text("It works once, for your Telegram account only, and expires in about \(state.inviteTTLMinutes) minutes.")
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
@@ -202,11 +203,11 @@ struct ClassroomTelegramSheet: View {
         case .getLink:
             box {
                 Label("Telegram connected", systemImage: "checkmark.shield.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                 Text(state.isJoined
                      ? "You are already in the group. Get a new link only if you have left it."
                      : "Press below and the bot will cut you a single-use invite, here and in your Telegram chat with it.")
-                    .font(.system(size: 13))
+                    .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button(action: join) {
@@ -221,13 +222,13 @@ struct ClassroomTelegramSheet: View {
                 .padding(.top, 4)
                 if let joinError {
                     Text(joinError)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.danger)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if joinReply?.alreadyMember == true, (joinReply?.inviteLink ?? "").isEmpty {
                     Text("You are already in the group — no new link was needed.")
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }

@@ -85,8 +85,9 @@ struct StudyShell<Content: View>: View {
         HStack(spacing: 10) {
             Button(action: onExit) {
                 HStack(spacing: 5) {
-                    Image(systemName: "chevron.left").font(.system(size: 12, weight: .bold))
-                    Text("Back").font(.system(size: 13, weight: .bold))
+                    Image(systemName: "chevron.left").appFont(12, weight: .bold)
+                        .accessibilityHidden(true)
+                    Text("Back").appFont(13, weight: .bold)
                 }
                 .foregroundStyle(Theme.textSecondary)
                 .padding(.horizontal, 12)
@@ -98,10 +99,10 @@ struct StudyShell<Content: View>: View {
 
             VStack(spacing: 1) {
                 Text(title)
-                    .font(.system(size: 13, weight: .heavy))
+                    .appFont(13, weight: .heavy)
                     .lineLimit(1)
                 Text(subtitle)
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(1)
             }
@@ -128,8 +129,8 @@ struct StudyPill: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).font(.system(size: 11, weight: .bold)) }
-            Text(text).font(.system(size: 13, weight: .heavy).monospacedDigit())
+            if let icon { Image(systemName: icon).appFont(11, weight: .bold).accessibilityHidden(true) }
+            Text(text).appFont(13, weight: .heavy, monospacedDigits: true)
         }
         .foregroundStyle(tone)
         .lineLimit(1)
@@ -155,16 +156,34 @@ struct ModeStat: Identifiable {
     enum Tone { case neutral, success, danger }
 
     let label: String
-    let value: String
-    var tone: Tone = .neutral
-    /// A percentage that rolls up from 0 when the end screen appears; `value` is its text.
-    var percent: Int? = nil
+    var tone: Tone
+    /// A percentage that rolls up from 0 when the end screen appears. When there is one, `value`
+    /// is derived from it, so the figure that rolls and the text that is spoken cannot disagree.
+    let percent: Int?
+    private let text: String
+
+    /// What the stat reads: the percentage's own text when there is one, otherwise the text given.
+    var value: String { percent.map { "\(ScoreText.string($0))%" } ?? text }
 
     var id: String { label }
 
+    init(label: String, value: String, tone: Tone = .neutral) {
+        self.label = label
+        self.text = value
+        self.tone = tone
+        self.percent = nil
+    }
+
+    private init(label: String, percent: Int, tone: Tone) {
+        self.label = label
+        self.text = ""
+        self.tone = tone
+        self.percent = percent
+    }
+
     /// The round's accuracy — the number that rolls up.
     static func accuracy(_ percent: Int, tone: Tone = .neutral) -> ModeStat {
-        ModeStat(label: "Accuracy", value: "\(ScoreText.string(percent))%", tone: tone, percent: percent)
+        ModeStat(label: "Accuracy", percent: percent, tone: tone)
     }
 }
 
@@ -257,20 +276,22 @@ struct ModeOutcomeView: View {
                 .frame(width: 64, height: 64)
                 .overlay(
                     Image(systemName: "trophy.fill")
-                        .font(.system(size: 28))
+                        .appFont(28)
+                        .capDynamicType()
                         .foregroundStyle(.white)
                         .scaleEffect(trophyPopped ? 1.12 : 1)
                         .rotationEffect(.degrees(trophyPopped ? -8 : 0))
+                        .accessibilityHidden(true)
                 )
             Text(title)
-                .font(.system(size: 27, weight: .heavy))
+                .appFont(27, weight: .heavy)
                 .tracking(-0.7)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .padding(.top, 16)
             if let description {
                 Text(description)
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(.white.opacity(0.82))
                     .multilineTextAlignment(.center)
                     .padding(.top, 10)
@@ -300,13 +321,13 @@ struct ModeOutcomeView: View {
             ForEach(stats) { stat in
                 VStack(spacing: 6) {
                     ModeStatValue(stat: stat)
-                        .font(.system(size: 25, weight: .heavy).monospacedDigit())
+                        .appFont(25, weight: .heavy, monospacedDigits: true)
                         .tracking(-0.6)
                         .foregroundStyle(colour(stat.tone))
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
                     Text(stat.label.uppercased())
-                        .font(.system(size: 10, weight: .heavy))
+                        .appFont(10, weight: .heavy)
                         .tracking(0.6)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
@@ -333,7 +354,7 @@ struct ModeOutcomeView: View {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text("Saving your progress…")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
         } else if let errorText {
@@ -341,7 +362,7 @@ struct ModeOutcomeView: View {
             // will otherwise think they banked.
             VStack(spacing: 8) {
                 Text(errorText)
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.danger)
                     .multilineTextAlignment(.center)
                 if let onRetrySave {
@@ -362,7 +383,7 @@ struct ModeOutcomeView: View {
                 // should leave knowing exactly what the clean run they need looks like.
                 let so = Text(verbatim: tally).fontWeight(.bold).foregroundStyle(Color.primary)
                 Text("Every word right in one round masters this game — \(so) so far.")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .multilineTextAlignment(.center)
             }

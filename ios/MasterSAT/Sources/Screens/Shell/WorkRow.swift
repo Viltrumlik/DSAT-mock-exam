@@ -24,7 +24,11 @@ struct WorkRow: View {
         case .homework:
             // Classwork is done in class and never owed: whatever date it carries is not a
             // deadline, so it is never "Due" or "Catch up" (the detail page says "In class" too).
-            if item.isClasswork { return ("In class", false) }
+            // The day it was held, as the class page's classwork rows write it.
+            if item.isClasswork {
+                guard let assigned = item.assignment?.assignedAt else { return ("In class", false) }
+                return ("In class · \(HomeworkWording.shortDate(assigned))", false)
+            }
             // `catchUp` is the kit's call, not the label's: a homework that is not behind has a
             // date and nothing else to say, so `DueLabel` is told not to decide "late" itself.
             return DueLabel.text(item.dueAt, handedIn: !item.catchUp)
@@ -39,21 +43,23 @@ struct WorkRow: View {
             IconTile(systemName: visual.icon, tone: visual.tone, size: 42)
             VStack(alignment: .leading, spacing: 4) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 if !item.detail.isEmpty {
                     Text(item.detail)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.leading)
                 }
                 if when != nil || item.xpCap != nil {
-                    HStack(spacing: 8) {
+                    // The due line and the XP chip share a line; at the accessibility sizes the
+                    // chip drops under the date instead of pushing it off the row.
+                    AdaptiveStack(spacing: 8, columnSpacing: 4) {
                         if let when {
                             // A passed deadline is information, never an accusation.
                             Text(when.text)
-                                .font(.system(size: 12, weight: when.late ? .heavy : .semibold))
+                                .appFont(12, weight: when.late ? .heavy : .semibold)
                                 .foregroundStyle(when.late ? Theme.warning : Theme.textSecondary)
                         }
                         if let cap = item.xpCap { XPCapChip(amount: cap) }
@@ -63,8 +69,9 @@ struct WorkRow: View {
             Spacer(minLength: 0)
             if item.assignment != nil {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
         }
         .cardStyle(padding: 14)
@@ -79,8 +86,8 @@ struct XPCapChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: "bolt.fill").font(.system(size: 9, weight: .black))
-            Text("up to +\(amount) XP").font(.system(size: 11, weight: .heavy, design: .rounded))
+            Image(systemName: "bolt.fill").appFont(9, weight: .black)
+            Text("up to +\(amount) XP").appFont(11, weight: .heavy, design: .rounded)
         }
         .foregroundStyle(Theme.amber)
         .padding(.horizontal, 8)

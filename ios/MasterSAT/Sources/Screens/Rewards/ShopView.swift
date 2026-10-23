@@ -101,7 +101,7 @@ struct ShopView: View {
             )
 
             Text(Self.blurb(shelf))
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
 
             if let shop {
@@ -138,11 +138,11 @@ struct ShopView: View {
     private var ordersHeader: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Your orders")
-                .font(.system(size: 20, weight: .heavy))
+                .appFont(20, weight: .heavy)
                 .tracking(-0.3)
                 .accessibilityAddTraits(.isHeader)
             Text("Collect them from the desk")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
         }
     }
@@ -290,11 +290,11 @@ private struct ShopNotice: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.clockwise.circle.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Theme.amber)
                 .accessibilityHidden(true)
             Text(text)
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -321,11 +321,11 @@ private struct ShopHero: View {
                 IconTile(systemName: "bag.fill", tone: Theme.accent, size: 56)
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Shop")
-                        .font(.system(size: 28, weight: .heavy))
+                        .appFont(28, weight: .heavy)
                         .tracking(-0.7)
                         .accessibilityAddTraits(.isHeader)
                     Text("Spend what you've earned. Coins keep; strikes don't — miss a lesson and they're gone.")
-                        .font(.system(size: 14.5, weight: .medium))
+                        .appFont(14.5, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -391,15 +391,14 @@ private struct ShopBalance<Media: View>: View {
             media()
             VStack(alignment: .leading, spacing: 4) {
                 Text(label.uppercased())
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .tracking(1)
                     .foregroundStyle(Theme.textSecondary)
                 Text(ScoreText.string(value))
-                    .font(.system(size: 26, weight: .heavy))
-                    .monospacedDigit()
+                    .appFont(26, weight: .heavy, monospacedDigits: true)
                 if let sub {
                     Text(sub)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
@@ -413,7 +412,7 @@ private struct ShopBalance<Media: View>: View {
         .background(Theme.background)
         .overlay(alignment: .bottomTrailing) {
             Image(systemName: watermark)
-                .font(.system(size: 60, weight: .light))
+                .appFont(60, weight: .light)
                 .foregroundStyle(Color.primary.opacity(0.05))
                 .offset(x: 8, y: 14)
                 .allowsHitTesting(false)
@@ -465,11 +464,11 @@ private struct ShopItemCard: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 Text(item.name)
-                    .font(.system(size: 15.5, weight: .heavy))
+                    .appFont(15.5, weight: .heavy)
                     .fixedSize(horizontal: false, vertical: true)
                 if !item.description.isEmpty {
                     Text(item.description)
-                        .font(.system(size: 13, weight: .regular))
+                        .appFont(13, weight: .regular)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                         .padding(.top, 4)
@@ -481,12 +480,11 @@ private struct ShopItemCard: View {
                             RewardsCoinArt(kind: .coin, size: 22)
                         } else {
                             Image(systemName: "flame.fill")
-                                .font(.system(size: 17, weight: .semibold))
+                                .appFont(17, weight: .semibold)
                                 .foregroundStyle(Color.orange)
                         }
                         Text(ScoreText.string(item.price))
-                            .font(.system(size: 18, weight: .heavy))
-                            .monospacedDigit()
+                            .appFont(18, weight: .heavy, monospacedDigits: true)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(item.priceText)
@@ -526,7 +524,7 @@ private struct ShopItemCard: View {
                 Text(item.status.text)
             }
         }
-        .font(.system(size: 12, weight: .semibold))
+        .appFont(12, weight: .semibold)
         .foregroundStyle(Theme.textSecondary)
     }
 }
@@ -573,6 +571,7 @@ private struct ShopBagTile: View {
                 .font(.system(size: glyph, weight: .medium))
                 .foregroundStyle(shelf == .coin ? RewardsPalette.accentText : Theme.amber)
                 .opacity(0.85)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -589,7 +588,7 @@ private struct ShopBuyButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 13, weight: .heavy))
+                .appFont(13, weight: .heavy)
                 .foregroundStyle(isEnabled ? Color.white : Theme.textSecondary)
                 .padding(.horizontal, 20)
                 .frame(minHeight: 36)
@@ -639,10 +638,10 @@ private struct ShopOrderRow: View {
             thumbnail
             VStack(alignment: .leading, spacing: 3) {
                 Text(order.itemName)
-                    .font(.system(size: 14.5, weight: .heavy))
+                    .appFont(14.5, weight: .heavy)
                     .lineLimit(1)
                 Text(order.detailLine(date: RewardsDate.short(order.createdAt)))
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .appFont(12.5, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .lineLimit(2)
             }

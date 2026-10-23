@@ -161,7 +161,7 @@ private struct LiveQuizGameScreen: View {
         VStack(spacing: 14) {
             ProgressView()
             Text("Joining the quiz…")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
         }
         .frame(maxWidth: .infinity)
@@ -175,7 +175,7 @@ private struct LiveQuizGameScreen: View {
             message: "Waiting for your teacher to start — keep this page open."
         ) {
             Text("\(Text(ScoreText.string(game.participants.count)).fontWeight(.heavy)) in the room")
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .padding(.top, 2)
         }
     }
@@ -189,7 +189,7 @@ private struct LiveQuizGameScreen: View {
         if game.config.showLeaderboardBetween, !game.standings.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Standings")
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                 LiveQuizStandingsList(rows: game.standings, isMe: game.isMe, limit: 10)
             }
             .cardStyle(padding: 16)
@@ -231,7 +231,7 @@ private struct LiveQuizGameScreen: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("Final standings")
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                 LiveQuizStandingsList(rows: game.standings, isMe: game.isMe)
             }
             .cardStyle(padding: 16)
@@ -313,6 +313,9 @@ private struct LiveQuizGameScreen: View {
 /// locked for a moment would come back from believing it had time it does not have.
 private struct LiveQuizQuestionPanel: View {
     let model: LiveQuizModel
+    /// Picks that changed the choice — the haptic's trigger. `model.draft` also clears when the
+    /// next question opens and when an answer is sent, and a buzz at those is not the student's hand.
+    @State private var picks = 0
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.25)) { context in
@@ -336,10 +339,15 @@ private struct LiveQuizQuestionPanel: View {
                             choice: choice,
                             isSelected: model.shownChoice == choice.id,
                             isDisabled: !canSubmit
-                        ) { model.pick(choice.id) }
+                        ) {
+                            // A buzz is for a different choice taking: not the one already chosen,
+                            // and not a tap the deadline refused.
+                            let changes = model.shownChoice != choice.id
+                            if model.pick(choice.id), changes { picks += 1 }
+                        }
                     }
                 }
-                .sensoryFeedback(.selection, trigger: model.draft)
+                .sensoryFeedback(.selection, trigger: picks)
                 footer(game: game, canSubmit: canSubmit, outOfTime: outOfTime)
             }
         }
@@ -351,11 +359,11 @@ private struct LiveQuizQuestionPanel: View {
         let seconds = Int(left.rounded(.up))
         return HStack(alignment: .firstTextBaseline) {
             Text("Time left")
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer()
             Text(ScoreText.string(seconds) + "s")
-                .font(.system(size: 32, weight: .heavy).monospacedDigit())
+                .appFont(32, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(warning ? Theme.danger : Color.primary)
                 .contentTransition(.numericText(countsDown: true))
                 .animation(.default, value: seconds)
@@ -370,17 +378,16 @@ private struct LiveQuizQuestionPanel: View {
             Overline("Question \(ScoreText.string(question.number)) of \(ScoreText.string(total))")
             if !question.questionPrompt.isEmpty {
                 Text(question.questionPrompt)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
             }
             // A single word is the thing to read at arm's length; a definition is a sentence.
+            let isWord = question.form == "word_to_definition"
             Text(question.prompt)
-                .font(question.form == "word_to_definition"
-                      ? .system(size: 30, weight: .heavy)
-                      : .system(size: 20, weight: .bold))
+                .appFont(isWord ? 30 : 20, weight: isWord ? .heavy : .bold)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .cardStyle(padding: 18)
@@ -411,18 +418,18 @@ private struct LiveQuizQuestionPanel: View {
             // The clock is the server's, but the timer that closes the question runs in the
             // teacher's connection: if that has dropped, the question waits for them.
             Text("Waiting for your teacher…")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
         } else if counted {
             Text("Answer locked in. Waiting for the others…")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
         }
 
         if let notice = game.notice {
             Text(notice.detail)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(Theme.danger)
                 .multilineTextAlignment(.center)
         }
@@ -442,31 +449,31 @@ private struct LiveQuizOutcomeCard: View {
             case .correct(let points):
                 symbol("checkmark.circle.fill", Theme.success)
                 Text("Correct")
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
                     .foregroundStyle(Theme.success)
                 if let points {
                     Text("+" + ScoreText.string(points))
-                        .font(.system(size: 30, weight: .heavy).monospacedDigit())
+                        .appFont(30, weight: .heavy, monospacedDigits: true)
                 }
             case .notThisTime(let answer):
                 symbol("xmark.circle", Theme.textSecondary)
                 Text("Not this time")
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
                 answerLine(answer)
             case .timeRanOut(let answer):
                 symbol("clock", Theme.textSecondary)
                 Text("Time ran out")
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
                 answerLine(answer)
             case .answerIn:
                 symbol("checkmark.seal", Theme.accent)
                 Text("Answer locked in")
-                    .font(.system(size: 21, weight: .heavy))
+                    .appFont(21, weight: .heavy)
             }
 
             if !reveal.explanation.isEmpty {
                 Text(reveal.explanation)
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(12)
@@ -480,7 +487,7 @@ private struct LiveQuizOutcomeCard: View {
 
     private func symbol(_ name: String, _ tone: Color) -> some View {
         Image(systemName: name)
-            .font(.system(size: 42, weight: .semibold))
+            .appFont(42, weight: .semibold)
             .foregroundStyle(tone)
             .accessibilityHidden(true)
     }
@@ -490,11 +497,11 @@ private struct LiveQuizOutcomeCard: View {
     private func answerLine(_ answer: String) -> some View {
         VStack(spacing: 4) {
             Text("The answer was \(Text(answer).fontWeight(.heavy).foregroundStyle(Color.primary))")
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
             if let text = reveal.correctChoiceText, !text.isEmpty {
                 Text(text)
-                    .font(.system(size: 16, weight: .bold))
+                    .appFont(16, weight: .bold)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }

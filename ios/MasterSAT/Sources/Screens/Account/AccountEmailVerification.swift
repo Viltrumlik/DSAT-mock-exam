@@ -50,12 +50,12 @@ struct AccountEmailCodeFlow: View {
         VStack(alignment: .leading, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: title)
-                    .font(.system(size: 24, weight: .heavy))
+                    .appFont(24, weight: .heavy)
                     .tracking(-0.5)
                 // Verbatim: the sentence carries an email address, which a LocalizedStringKey
                 // would turn into a link.
                 Text(verbatim: description)
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -71,10 +71,11 @@ struct AccountEmailCodeFlow: View {
 
             HStack(alignment: .top, spacing: 7) {
                 Image(systemName: "checkmark.shield")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .padding(.top, 1)
+                    .accessibilityHidden(true)
                 Text("Confirming sets this as the address for your account.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(Theme.textSecondary)
@@ -114,6 +115,7 @@ struct AccountEmailCodeFlow: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy)
+            .accessibilityLabel(busy ? "Sending the code" : "Send code")
         }
     }
 
@@ -129,7 +131,7 @@ struct AccountEmailCodeFlow: View {
             .textContentType(.oneTimeCode)
             .focused($focus, equals: .code)
             .multilineTextAlignment(.center)
-            .font(.system(size: 30, weight: .bold, design: .rounded).monospacedDigit())
+            .appFont(30, weight: .bold, design: .rounded, monospacedDigits: true)
             .tracking(10)
             .padding(.vertical, 14)
             .background(Theme.card)
@@ -150,6 +152,7 @@ struct AccountEmailCodeFlow: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(busy || !EmailCodeEntry.isComplete(code))
+            .accessibilityLabel(busy ? "Confirming" : "Confirm")
 
             HStack {
                 Button("Use a different address") {
@@ -157,7 +160,7 @@ struct AccountEmailCodeFlow: View {
                     error = nil
                     focus = .email
                 }
-                .font(.system(size: 13, weight: .semibold))
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .disabled(busy)
 
@@ -169,7 +172,7 @@ struct AccountEmailCodeFlow: View {
                     Button(left > 0 ? "Resend in \(left)s" : "Resend code") {
                         Task { await send(resending: true) }
                     }
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                    .appFont(13, weight: .semibold, monospacedDigits: true)
                     .foregroundStyle(left > 0 || busy ? Theme.textLabel : Theme.accent)
                     .disabled(busy || left > 0)
                 }

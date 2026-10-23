@@ -28,7 +28,7 @@ struct EventTicketView: View {
             VStack(spacing: 18) {
                 HStack {
                     Button("Done") { dismiss() }
-                        .font(.system(size: 17, weight: .semibold))
+                        .appFont(17, weight: .semibold)
                         .foregroundStyle(.white)
                     Spacer()
                 }
@@ -50,7 +50,7 @@ struct EventTicketView: View {
 
                 if case .failed(let message) = saveState {
                     Text(message)
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -65,6 +65,7 @@ struct EventTicketView: View {
                                 ProgressView().tint(.white)
                             } else {
                                 Image(systemName: saveState == .saved ? "checkmark" : "square.and.arrow.down")
+                                    .accessibilityHidden(true)
                             }
                             Text(saveTitle)
                         }
@@ -79,6 +80,7 @@ struct EventTicketView: View {
                         ) {
                             HStack(spacing: 7) {
                                 Image(systemName: "square.and.arrow.up")
+                                    .accessibilityHidden(true)
                                 Text("Share")
                             }
                         }

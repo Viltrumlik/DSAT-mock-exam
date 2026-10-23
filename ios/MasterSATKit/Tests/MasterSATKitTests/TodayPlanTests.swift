@@ -15,8 +15,23 @@ enum WorkFixtures {
         ]
     }
 
-    static func words(_ id: Int, _ state: String) -> [String: Any] {
-        ["id": id, "set_id": id, "set_title": "Set \(id)", "section_title": "", "word_count": 10, "state": state]
+    static func words(_ id: Int, _ state: String, count: Int = 10) -> [String: Any] {
+        ["id": id, "set_id": id, "set_title": "Set \(id)", "section_title": "", "word_count": count, "state": state]
+    }
+
+    static func midterm(_ attempt: Int, released: Bool = true) throws -> MidtermListing {
+        try F.decode(MidtermListing.self, [
+            "midterm_id": attempt, "title": "Midterm \(attempt)", "subject": "MATH", "attempt_id": attempt,
+            "submitted": true, "results_visible": released, "score": 640,
+        ])
+    }
+
+    /// The classroom each lesson row belongs to, in the order the plan lists them.
+    static func lessonRooms(_ plan: TodayPlan) -> [Int?] {
+        plan.lessons.map { item in
+            if case .lesson(let event) = item.source { return event.classroomId }
+            return nil
+        }
     }
 
     /// A homework in a class. `status` is the row's `workflow_status`.
@@ -73,6 +88,48 @@ enum WorkFixtures {
         let paper: [String: Any] = ["contents": [["kind": "PASTPAPER", "title": "Paper"]]]
         #expect(!HomeworkProgress.isDone(try W.homework(1, due: nil, extra: paper)))
         #expect(HomeworkProgress.isDone(try W.homework(2, due: nil, status: "SUBMITTED", extra: paper)))
+    }
+
+    @Test("A word set with no words is never owed, whatever its state says")
+    func emptyWordSetNeverOwed() throws {
+        let quizDone: [[String: Any]] = [W.quiz(11, "graded")]
+        // The quiz is graded; the teacher has not filled the set yet.
+        let withEmpty = try W.homework(1, due: nil, status: "graded", extra: [
+            "assessment_homeworks": quizDone, "vocab_homeworks": [W.words(5, "not_started", count: 0)],
+        ])
+        // A played set beside an empty one: the empty one holds nothing back.
+        let playedBesideEmpty = try W.homework(2, due: nil, extra: [
+            "vocab_homeworks": [W.words(5, "completed"), W.words(6, "not_started", count: 0)],
+        ])
+        // A set that can be played and is not finished still is owed, empty neighbour or not.
+        let stillOwed = try W.homework(3, due: nil, extra: [
+            "vocab_homeworks": [W.words(5, "not_started"), W.words(6, "not_started", count: 0)],
+        ])
+        #expect(HomeworkProgress.isDone(withEmpty))
+        #expect(HomeworkProgress.isDone(playedBesideEmpty))
+        #expect(!HomeworkProgress.isDone(stillOwed))
+    }
+
+    @Test("A homework of nothing but empty word sets is done: there is nothing to do")
+    func onlyEmptyWordSetsIsDone() throws {
+        let empty = [W.words(5, "not_started", count: 0), W.words(6, "not_started", count: 0)]
+        #expect(HomeworkProgress.isDone(try W.homework(1, due: nil, extra: ["vocab_homeworks": empty])))
+        // Not when the student is still asked for a file, or to sit a paper: the server's word is the only word.
+        #expect(!HomeworkProgress.isDone(try W.homework(2, due: nil, extra: [
+            "vocab_homeworks": empty, "allow_file_upload": true,
+        ])))
+        #expect(!HomeworkProgress.isDone(try W.homework(3, due: nil, extra: [
+            "vocab_homeworks": empty, "contents": [["kind": "MOCK", "title": "Mock"]],
+        ])))
+    }
+
+    @Test("Once the teacher fills the set, the homework is owed again")
+    func filledSetOwedAgain() throws {
+        func homework(words: Int) throws -> AssignmentListing {
+            try W.homework(1, due: nil, extra: ["vocab_homeworks": [W.words(5, "not_started", count: words)]])
+        }
+        #expect(HomeworkProgress.isDone(try homework(words: 0)))
+        #expect(!HomeworkProgress.isDone(try homework(words: 12)))
     }
 }
 
@@ -171,6 +228,46 @@ enum WorkFixtures {
         #expect(WorkItem.homework(try W.homework(1, due: nil), homeworkXP: nil, now: F.now).clockText == nil)
     }
 
+    @Test("A class's own lesson length decides when its lesson is over: three hours, started 2.5 hours ago, is still on")
+    func lessonLengthPerClass() throws {
+        // Both began at 13:00; it is 15:30. Class 1 meets for three hours, class 2 for two.
+        let events = [
+            try F.lesson("2026-09-14", "13:00", classroom: 1),
+            try F.lesson("2026-09-14", "13:00", classroom: 2),
+        ]
+        let plan = TodayPlan(
+            assignments: [], events: events, homeworkXP: nil, lessonHours: [1: 3, 2: 2],
+            now: F.now, calendar: F.calendar
+        )
+        #expect(W.lessonRooms(plan) == [1])
+    }
+
+    @Test("A class with no lesson length gets two hours, as its next-lesson card does")
+    func classWithoutLengthGetsTwoHours() throws {
+        let events = [
+            try F.lesson("2026-09-14", "14:00", classroom: 1),   // 14:00-16:00 by default: still on
+            try F.lesson("2026-09-14", "13:00", classroom: 2),   // 13:00-15:00: over
+            try F.lesson("2026-09-14", "13:00", classroom: 3),   // a length of 0 is no length
+            try F.lesson("2026-09-14", "13:00", classroom: nil, type: "mock"),
+        ]
+        let plan = TodayPlan(
+            assignments: [], events: events, homeworkXP: nil, lessonHours: [3: 0, 9: 4],
+            now: F.now, calendar: F.calendar
+        )
+        #expect(W.lessonRooms(plan) == [1])
+    }
+
+    @Test("The lesson lengths come off the classes: one entry per class that states a length")
+    func lessonHoursByClass() throws {
+        let rooms = [
+            try F.room(["id": 1, "lesson_hours": 3]),
+            try F.room(["id": 2]),
+            try F.room(["id": 3, "lesson_hours": 2]),
+        ]
+        #expect(TodayPlan.lessonHours(of: rooms) == [1: 3, 3: 2])
+        #expect(TodayPlan.lessonHours(of: []).isEmpty)
+    }
+
     @Test("Lessons follow the homework, and only the homework is cut to the limit")
     func upNextLimit() throws {
         let homework = try (1...8).map { try W.homework($0, due: F.at(Double($0))) }
@@ -230,6 +327,33 @@ enum WorkFixtures {
         #expect(mixed.week == TodayPlan.Progress(done: 1, total: 2))
     }
 
+    @Test("A homework of only empty word sets is neither done nor counted in the week's ring")
+    func emptyWordSetsOutOfTheRing() throws {
+        let empty: [String: Any] = ["vocab_homeworks": [W.words(5, "not_started", count: 0)]]
+        // A week whose only due homework has nothing in it yet: nothing due, never "1 of 1".
+        let onlyEmpty = TodayPlan(assignments: [try W.homework(1, due: F.at(2), extra: empty)],
+                                  events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(onlyEmpty.week == TodayPlan.Progress(done: 0, total: 0))
+        #expect(!onlyEmpty.week.isComplete)
+        // So the all-done moment can never fire for it.
+        #expect(!TodayPlan.justFinished(previous: TodayPlan.Progress(done: 0, total: 0), current: onlyEmpty.week))
+
+        // A filled set beside it still counts, and finishing it completes the week.
+        let filled: [String: Any] = ["vocab_homeworks": [W.words(6, "not_started")]]
+        let played: [String: Any] = ["vocab_homeworks": [W.words(6, "completed")]]
+        let before = TodayPlan(assignments: [
+            try W.homework(1, due: F.at(2), extra: empty),
+            try W.homework(2, due: F.at(3), extra: filled),
+        ], events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(before.week == TodayPlan.Progress(done: 0, total: 1))
+        let after = TodayPlan(assignments: [
+            try W.homework(1, due: F.at(2), extra: empty),
+            try W.homework(2, due: F.at(3), extra: played),
+        ], events: [], homeworkXP: nil, now: F.now, calendar: F.calendar)
+        #expect(after.week == TodayPlan.Progress(done: 1, total: 1))
+        #expect(TodayPlan.justFinished(previous: before.week, current: after.week))
+    }
+
     @Test("Up to +N comes from the live HOMEWORK rule, and only when it pays XP")
     func homeworkXP() {
         #expect(TodayPlan.homeworkXP([RewardRule(event: "HOMEWORK", label: "Homework", points: 15)]) == 15)
@@ -240,16 +364,23 @@ enum WorkFixtures {
 
     @Test("The fresh result is the newest released score not yet looked at")
     func freshResult() throws {
-        func midterm(_ attempt: Int, released: Bool = true) throws -> MidtermListing {
-            try F.decode(MidtermListing.self, [
-                "midterm_id": attempt, "title": "Midterm \(attempt)", "subject": "MATH", "attempt_id": attempt,
-                "submitted": true, "results_visible": released, "score": 640,
-            ])
-        }
-        let list = [try midterm(3), try midterm(7), try midterm(9, released: false)]
-        #expect(TodayPlan.freshResult(list, seen: [])?.attemptId == 7)
-        #expect(TodayPlan.freshResult(list, seen: [7])?.attemptId == 3)
-        #expect(TodayPlan.freshResult(list, seen: [3, 7]) == nil)
+        let list = [try W.midterm(3), try W.midterm(7), try W.midterm(9, released: false)]
+        #expect(TodayPlan.freshResult(list, seen: [], firstRun: false)?.attemptId == 7)
+        #expect(TodayPlan.freshResult(list, seen: [7], firstRun: false)?.attemptId == 3)
+        #expect(TodayPlan.freshResult(list, seen: [3, 7], firstRun: false) == nil)
+    }
+
+    @Test("The first time Today ever loads, results already out are old news: no card, all marked seen")
+    func firstRunMarksEverythingSeen() throws {
+        let list = [try W.midterm(3), try W.midterm(7), try W.midterm(9, released: false)]
+        #expect(TodayPlan.freshResult(list, seen: [], firstRun: true) == nil)
+        let seen = TodayPlan.releasedAttempts(list)
+        #expect(seen == [3, 7])
+        // A result released afterwards is the one that surfaces, the unreleased one included.
+        let later = list + [try W.midterm(11)]
+        #expect(TodayPlan.freshResult(later, seen: seen, firstRun: false)?.attemptId == 11)
+        let nowReleased = [try W.midterm(3), try W.midterm(7), try W.midterm(9)]
+        #expect(TodayPlan.freshResult(nowReleased, seen: seen, firstRun: false)?.attemptId == 9)
     }
 
     @Test("The week counts as just finished only on the step from not done to done")

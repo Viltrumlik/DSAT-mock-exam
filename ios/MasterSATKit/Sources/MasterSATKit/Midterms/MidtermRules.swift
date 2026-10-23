@@ -62,6 +62,39 @@ extension MidtermListing {
 
     /// The score to show: only once the teacher has released it.
     public var releasedScore: Double? { resultsVisible ? score : nil }
+
+    /// Read off the raw subject, as `Classroom.isMath` is — not off the display label, whose
+    /// wording may change.
+    public var isMath: Bool { subject.trimmingCharacters(in: .whitespaces).uppercased() == "MATH" }
+
+    /// The code to open this row's certificate by — only for one the listing says is ready.
+    public var certificateCode: String? {
+        guard let certificate, certificate.available else { return nil }
+        let code = certificate.code.trimmingCharacters(in: .whitespaces)
+        return code.isEmpty ? nil : code
+    }
+}
+
+/// The Me sheet's "Midterms & certificates" list.
+public enum MidtermResults {
+    /// Up to `limit` sittings whose score is out, the newest sitting first.
+    ///
+    /// Newest by attempt: a finished row carries no date, and the server numbers sittings as
+    /// they begin — Class → Results orders them the same way.
+    ///
+    /// Every handed-in sitting, a granted re-sit included: the midterm page files that one under
+    /// Available so it can be started again, but until it is, its released score and certificate
+    /// are still the student's own — a certificate earned does not vanish because a second try
+    /// was offered. A begun re-sit is a new, unsubmitted sitting, and drops out until its score
+    /// is released.
+    public static func latest(_ midterms: [MidtermListing], limit: Int = 3) -> [MidtermListing] {
+        Array(
+            midterms
+                .filter { $0.submitted && $0.releasedScore != nil && $0.attemptId != nil }
+                .sorted { ($0.attemptId ?? 0) > ($1.attemptId ?? 0) }
+                .prefix(max(0, limit))
+        )
+    }
 }
 
 public enum MidtermWording {
@@ -94,6 +127,10 @@ extension MidtermErrorReport {
 
     /// "Topics" / "Skills".
     public var nounPluralTitle: String { noun == "topic" ? "Topics" : "Skills" }
+
+    /// The centre marked this sitting passed. Only the report says so — the midterm list
+    /// carries no pass mark — and a pre-midterm, scored but never judged, never is.
+    public var markedPassed: Bool { isGraded && passed == true }
 
     /// Round((total − wrong) / total × 100), the web's accuracy; 0 for an empty paper.
     public var accuracyPercent: Int {

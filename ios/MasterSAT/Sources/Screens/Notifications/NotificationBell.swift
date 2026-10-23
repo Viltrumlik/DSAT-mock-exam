@@ -34,7 +34,7 @@ struct NotificationBell: View {
             showingInbox = true
         } label: {
             Image(systemName: "bell")
-                .font(.system(size: 17, weight: .semibold))
+                .appFont(17, weight: .semibold)
                 .foregroundStyle(.primary)
                 .frame(width: 42, height: 42)
                 .background(Circle().fill(Theme.card))
@@ -42,12 +42,11 @@ struct NotificationBell: View {
                 .overlay(alignment: .topTrailing) {
                     if let text = NotificationBadge.text(for: count) {
                         Text(text)
-                            .font(.system(size: 10, weight: .heavy))
-                            .monospacedDigit()
+                            .appFont(10, weight: .heavy, monospacedDigits: true)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .frame(minWidth: 17, minHeight: 17)
-                            .background(Capsule().fill(Theme.danger))
+                            .background(Capsule().fill(Theme.dangerFill))
                             // A ring in the page colour keeps the badge off the bell's outline.
                             .overlay(Capsule().stroke(Theme.background, lineWidth: 2))
                             .offset(x: 4, y: -3)
@@ -55,9 +54,14 @@ struct NotificationBell: View {
                     }
                 }
                 .contentShape(Circle())
+                // Header chrome: the bell is a fixed 42-pt disc, so its glyph and badge stop at
+                // `xxxLarge` (the large content viewer shows it bigger while it is pressed). Set
+                // on the label, not the button: the inbox sheet below is a page and keeps growing.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(NotificationBadge.accessibilityLabel(for: count))
+        .accessibilityShowsLargeContentViewer { Label(NotificationBadge.accessibilityLabel(for: count), systemImage: "bell") }
         .sheet(isPresented: $showingInbox, onDismiss: {
             if let link = chosenLink {
                 chosenLink = nil
@@ -65,6 +69,7 @@ struct NotificationBell: View {
             }
         }) {
             NotificationsInboxSheet { link in chosenLink = link }
+                .noBarClearance()
         }
         // Restarted on every change of phase: polling runs only while the app is in front,
         // and a return to the foreground refreshes at once.

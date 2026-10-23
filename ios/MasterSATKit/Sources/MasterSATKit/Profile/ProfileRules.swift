@@ -21,45 +21,10 @@ public enum ProfileHomework {
         return key == "submitted" || key == "graded" || key == "reviewed"
     }
 
-    /// The colour a due date is drawn in.
-    public enum DueTone: Sendable, Equatable {
-        /// Past its date — "Catch up", never "Overdue".
-        case catchUp
-        /// Today, tomorrow, or within three days.
-        case soon
-        case later
-        case none
-    }
-
-    public struct Due: Sendable, Equatable {
-        public let text: String
-        public let tone: DueTone
-
-        public init(text: String, tone: DueTone) {
-            self.text = text
-            self.tone = tone
-        }
-    }
-
-    /// "Catch up", "Due today", "Due tomorrow", "Due in 6 days", "No due date".
-    ///
-    /// Days are calendar days, so work due at nine tonight is "Due today" and work due at nine
-    /// tomorrow morning is "Due tomorrow" even late this evening.
-    public static func dueLabel(_ dueAt: String?, now: Date = Date(), calendar: Calendar = .current) -> Due {
-        guard let dueAt, let due = JSONCoding.parseServerDate(dueAt) else {
-            return Due(text: "No due date", tone: .none)
-        }
-        if due < now { return Due(text: "Catch up", tone: .catchUp) }
-        let days = ProfileCalendar.days(from: now, to: due, calendar: calendar)
-        switch days {
-        case ...0: return Due(text: "Due today", tone: .soon)
-        case 1: return Due(text: "Due tomorrow", tone: .soon)
-        default: return Due(text: "Due in \(days) days", tone: days <= 3 ? .soon : .later)
-        }
-    }
-
     public struct Summary: Sendable, Equatable {
+        /// Homework set, classwork left out.
         public let total: Int
+        /// Of `total`, how many are finished — handed in, or played to the end.
         public let turnedIn: Int
         /// Still to do, the one to start next first: work to catch up on, then by due date,
         /// undated last.
@@ -75,19 +40,26 @@ public enum ProfileHomework {
         }
     }
 
+    /// Done is `HomeworkProgress.isDone` — Today's and the Class tab's answer — so a homework
+    /// finished there leaves this list too: a played word set is never handed in, and a quiz
+    /// homework's status is only its first quiz's. Classwork is done in class and is never
+    /// owed, so it is neither counted nor to do. Nor is a homework of only empty word sets
+    /// (`HomeworkProgress.asksNothingYet`): nothing has been set in it yet, and counting it as
+    /// turned in would raise the figure for work nobody did.
     public static func summarise(_ rows: [AssignmentListing], now: Date = Date()) -> Summary {
         func due(_ row: AssignmentListing) -> Date {
             row.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
         }
-        let toDo = rows
-            .filter { !isTurnedIn($0.workflowStatus) }
+        let homework = rows.filter { !$0.isClasswork && !HomeworkProgress.asksNothingYet($0) }
+        let toDo = homework
+            .filter { !HomeworkProgress.isDone($0) }
             .sorted { lhs, rhs in
                 let l = due(lhs), r = due(rhs)
                 return l != r ? l < r : lhs.id < rhs.id
             }
         return Summary(
-            total: rows.count,
-            turnedIn: rows.count - toDo.count,
+            total: homework.count,
+            turnedIn: homework.count - toDo.count,
             toDo: toDo,
             catchUp: toDo.filter { due($0) < now }.count
         )
@@ -148,8 +120,7 @@ public enum ProfileLessons {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> Next? {
-        // The web's `Math.max(0.5, Number(hours) || 2)`: no length (or zero) means two hours.
-        let length = max(0.5, (hours ?? 0) > 0 ? Double(hours ?? 0) : 2)
+        let length = lessonLength(hours: hours)
         var best: Next?
         for event in events where event.type == .classMeeting && event.classroomId == classroomId {
             guard let window = window(of: event, hours: length, calendar: calendar), window.end > now else { continue }
@@ -172,6 +143,13 @@ public enum ProfileLessons {
         guard lesson.hasTime else { return day }
         let clock = calendar.dateComponents([.hour, .minute], from: lesson.start)
         return "\(day) at \(String(format: "%02d:%02d", clock.hour ?? 0, clock.minute ?? 0))"
+    }
+
+    /// How long a class's lesson lasts, in hours — the web's `Math.max(0.5, Number(hours) || 2)`:
+    /// no length (or zero) means two hours. One rule for the class card and for Today, so the
+    /// same lesson is "on now" in both or in neither.
+    static func lessonLength(hours: Int?) -> Double {
+        max(0.5, (hours ?? 0) > 0 ? Double(hours ?? 0) : 2)
     }
 
     /// A lesson's start and end. `time` is a start ("14:00") or a range ("08:00-10:00"); with

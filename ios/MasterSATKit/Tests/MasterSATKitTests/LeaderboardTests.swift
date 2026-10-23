@@ -143,6 +143,33 @@ import Testing
     }
 }
 
+/// The one question the app asks to learn the student's place. The Rewards hero and the
+/// welcome-back check both ask it, so a place noted by either is the same number.
+@Suite struct LeaderboardHeroQueryTests {
+
+    @Test("The hero board is the default board — global, all time, XP — at the server's largest page")
+    func heroBoard() {
+        let hero = LeaderboardQuery.heroBoard
+        #expect(hero == LeaderboardQuery(limit: 200))
+        #expect(hero.scope == .global)
+        #expect(hero.window == LeaderboardQuery.allTime)
+        #expect(hero.metric == .xp)
+        #expect(hero.subject == nil)
+        #expect(hero.branchId == nil)
+        #expect(hero.limit == 200)
+
+        let sent = Dictionary(uniqueKeysWithValues: hero.queryItems.map { ($0.name, $0.value ?? "") })
+        #expect(sent == ["scope": "GLOBAL", "window": "ALL", "limit": "200"])
+        #expect(hero.activeFilterCount == 0, "a page size is not a filter")
+    }
+
+    @Test("The full leaderboard keeps the default page")
+    func defaultPage() {
+        #expect(LeaderboardQuery().limit == nil)
+        #expect(LeaderboardQuery() != LeaderboardQuery.heroBoard)
+    }
+}
+
 @Suite struct LeaderboardLayoutTests {
 
     private func row(_ rank: Int, _ id: Int, _ xp: Int, me: Bool = false) -> LeaderboardRow {
@@ -229,6 +256,12 @@ import Testing
         #expect(LeaderboardName.display("madina_2009") == "madina_2009")
         #expect(LeaderboardName.display("Ali @ Home") == "Ali @ Home")
         #expect(LeaderboardName.display("") == "Student")
+        // `shown` says when there is nothing to show, so a sentence can name nobody instead.
+        #expect(LeaderboardName.shown("") == nil)
+        #expect(LeaderboardName.shown("  ") == nil)
+        #expect(LeaderboardName.shown("@gmail.com") == nil)
+        #expect(LeaderboardName.shown("aziz.karimov@gmail.com") == "aziz.karimov")
+        #expect(LeaderboardName.shown(" Aziz Karimov ") == "Aziz Karimov")
 
         let row = LeaderboardRow(rank: 1, studentId: 1, name: "karim.aliyev@mail.ru", xp: 10)
         #expect(row.displayName == "karim.aliyev")

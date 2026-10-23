@@ -10,103 +10,54 @@ import MasterSATKit
 ///
 /// Never used for "nothing here". A failed request shown as an empty state tells a student
 /// their classes or their term did not happen, when all that failed was the network.
+///
+/// The compact `ErrorState`, on a card. Most of its callers stand for a whole page, but My
+/// Progress shows two at once (the comparison and the ladder fail together when the phone is
+/// offline), and a page never shows two animations.
 struct LearnMoreErrorCard: View {
     let title: String
     var message: String?
     /// Main-actor on purpose: every caller passes a closure that touches view state.
     let retry: @MainActor () async -> Void
 
-    @State private var isRetrying = false
-
     var body: some View {
-        VStack(spacing: 10) {
-            IconTile(systemName: "exclamationmark.triangle.fill", tone: Theme.warning, size: 52)
-                .padding(.bottom, 6)
-            Text(title)
-                .font(.system(size: 17, weight: .heavy))
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            if let message {
-                Text(message)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button {
-                Task {
-                    isRetrying = true
-                    await retry()
-                    isRetrying = false
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if isRetrying {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    Text("Try again")
-                }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(isRetrying)
-            .padding(.top, 8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .cardStyle(padding: 20)
+        ErrorState(title: title, message: message ?? ErrorState.nothingLost, style: .inline, retry: retry)
+            .cardStyle(padding: 8)
     }
 }
 
-/// A successful answer with nothing in it: the house's dashed "nothing yet" material, with a
-/// glyph, a sentence of why, and — where there is one — the way forward.
+/// A successful answer with nothing in it: the house's dashed "nothing yet" material, a sentence
+/// of why, and — where there is one — the way forward.
+///
+/// `EmptyState`'s compact form, without art: it also stands inside loaded pages (a lesson with no
+/// reading yet).
 struct LearnMoreEmptyCard<Action: View>: View {
-    let icon: String
     let title: String
     let message: String
     @ViewBuilder var action: () -> Action
 
     var body: some View {
-        VStack(spacing: 10) {
-            IconTile(systemName: icon, tone: Theme.accent, size: 52)
-                .padding(.bottom, 6)
-            Text(title)
-                .font(.system(size: 17, weight: .heavy))
-                .multilineTextAlignment(.center)
-            Text(message)
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            action()
-                .padding(.top, 8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 32)
-        .padding(.horizontal, 20)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-        )
+        EmptyState(title: title, message: message, accessory: action)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+            )
     }
 }
 
 extension LearnMoreEmptyCard where Action == EmptyView {
-    init(icon: String, title: String, message: String) {
-        self.init(icon: icon, title: title, message: message) { EmptyView() }
+    init(title: String, message: String) {
+        self.init(title: title, message: message) { EmptyView() }
     }
 }
 
-/// A grey block standing where a card will be. Static — a shimmer is motion for its own sake.
+/// A grey block standing where a card will be: one card-shaped `LoadingSkeleton`.
 struct LearnMoreSkeleton: View {
     var height: CGFloat
 
     var body: some View {
-        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-            .fill(Theme.surface2)
-            .frame(height: height)
-            .accessibilityHidden(true)
+        LoadingSkeleton(rows: 1, height: height, style: .cards)
     }
 }
 
@@ -118,10 +69,10 @@ struct LearnMoreSectionHeading: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(size: 20, weight: .heavy))
+                .appFont(20, weight: .heavy)
                 .tracking(-0.3)
             Text(description)
-                .font(.system(size: 13.5, weight: .medium))
+                .appFont(13.5, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -223,7 +174,7 @@ struct LearnMoreClassroomView: View {
                         .padding(16)
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                LoadingSkeleton(rows: 2, height: 130, style: .cards, label: "Opening class").skeletonPage()
             }
         }
         .background(Theme.background)

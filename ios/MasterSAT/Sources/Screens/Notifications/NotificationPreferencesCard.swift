@@ -44,7 +44,7 @@ struct NotificationPreferencesCard: View {
 
             if saveFailed {
                 Text("That didn't save. Your settings are unchanged — try again.")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.danger)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -72,9 +72,9 @@ struct NotificationPreferencesCard: View {
         } else if failed {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Couldn't load your notification settings.")
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                 Text("Nothing has changed — only this panel failed to load.")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Button("Try again") { Task { await load() } }
@@ -107,10 +107,10 @@ struct NotificationPreferencesCard: View {
                 .opacity(on ? 1 : 0.6)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(section.label)
-                        .font(.system(size: 14, weight: .heavy))
+                        .appFont(14, weight: .heavy)
                     if let hint {
                         Text(hint)
-                            .font(.system(size: 12, weight: .semibold))
+                            .appFont(12, weight: .semibold)
                             .foregroundStyle(Theme.textSecondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -141,16 +141,16 @@ struct NotificationPreferencesCard: View {
                 IconTile(systemName: "iphone", tone: Theme.accent, size: 36)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Push to my phone")
-                        .font(.system(size: 14, weight: .heavy))
+                        .appFont(14, weight: .heavy)
                     Text(serverCannotPush
                          ? "Push isn't switched on for the app yet — the bell still works."
                          : "Only the important ones: marks, homework and support sessions.")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                     if !serverCannotPush, buildCannotPush {
                         Text("This version of the app can't receive push — the bell still works.")
-                            .font(.system(size: 12, weight: .semibold))
+                            .appFont(12, weight: .semibold)
                             .foregroundStyle(Theme.textLabel)
                             .fixedSize(horizontal: false, vertical: true)
                     }

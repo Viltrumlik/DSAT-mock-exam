@@ -16,6 +16,7 @@ import MasterSATKit
 /// path is drawn natively through the circles' centres.
 struct RoadmapView: View {
     @Environment(Session.self) private var session
+    @Environment(AppRouter.self) private var router
 
     @State private var roadmap: RoadmapResponse?
     @State private var loadError: String?
@@ -63,7 +64,7 @@ struct RoadmapView: View {
         // Runs again whenever the page comes back into view — after the reading or the
         // homework — so a lesson just read or finished shows it without a pull.
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .sheet(item: $sheet, onDismiss: performPendingPush) { item in
             RoadmapLessonSheet(item: item, student: session.student) { push in
                 // A lookup that lands after the student closed this sheet goes nowhere —
@@ -87,7 +88,7 @@ struct RoadmapView: View {
         VStack(alignment: .leading, spacing: 6) {
             PageTitle("Roadmap")
             Text("Your path, step by step. Finish a level to open the next one.")
-                .font(.system(size: 14.5, weight: .semibold))
+                .appFont(14.5, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -112,15 +113,12 @@ struct RoadmapView: View {
             if loadError != nil {
                 // A refresh that failed over a page already loaded: keep what loaded, and say so.
                 Label("Couldn’t refresh — this is the roadmap as it last loaded.", systemImage: "wifi.exclamationmark")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .appFont(12.5, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             levels(of: track)
         } else if loadError != nil, roadmap == nil {
-            LearnMoreErrorCard(
-                title: "Couldn't load your roadmap",
-                message: "Something went wrong on our end. Check your connection and try again."
-            ) { await load() }
+            LearnMoreErrorCard(title: "Couldn't load your roadmap") { await load() }
         } else if roadmap == nil {
             VStack(spacing: 14) {
                 ForEach(0..<4, id: \.self) { _ in LearnMoreSkeleton(height: 76) }
@@ -129,16 +127,16 @@ struct RoadmapView: View {
             .accessibilityLabel("Loading your roadmap")
         } else {
             LearnMoreEmptyCard(
-                icon: "graduationcap.fill",
                 title: "No roadmap yet",
                 message: "Join a class to see your learning path across every level."
             ) {
-                NavigationLink {
-                    ClassesListView()
-                } label: {
+                // The Class tab is a tab, not a page to push: this switches to it and leaves
+                // Explore's stack where it was.
+                Button { router.show(.classes) } label: {
                     HStack(spacing: 8) {
                         Text("Go to Classes")
                         Image(systemName: "arrow.right")
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -320,18 +318,19 @@ struct RoadmapLevelBanner: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(level.levelLabel)
-                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                    .appFont(21, weight: .heavy, design: .rounded)
                     .foregroundStyle(fill == nil ? Color.primary : .white)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
                 Text(subtitle)
-                    .font(.system(size: 13.5, weight: .bold))
+                    .appFont(13.5, weight: .bold)
                     .foregroundStyle(fill == nil ? Theme.textSecondary : .white.opacity(0.92))
             }
             Spacer(minLength: 8)
             HStack(spacing: 5) {
-                Image(systemName: pillIcon).font(.system(size: 11, weight: .heavy))
-                Text(state.pillText).font(.system(size: 12, weight: .heavy))
+                Image(systemName: pillIcon).appFont(11, weight: .heavy)
+                    .accessibilityHidden(true)
+                Text(state.pillText).appFont(12, weight: .heavy)
             }
             .foregroundStyle(fill ?? Theme.textSecondary)
             .padding(.horizontal, 11)
@@ -339,9 +338,10 @@ struct RoadmapLevelBanner: View {
             .background(Capsule().fill(fill == nil ? Theme.surface2 : Color.white.opacity(0.94)))
             .fixedSize()
             Image(systemName: "chevron.down")
-                .font(.system(size: 15, weight: .heavy))
+                .appFont(15, weight: .heavy)
                 .foregroundStyle(fill == nil ? Theme.textSecondary : .white.opacity(0.9))
                 .rotationEffect(.degrees(isOpen ? 0 : -90))
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 15)

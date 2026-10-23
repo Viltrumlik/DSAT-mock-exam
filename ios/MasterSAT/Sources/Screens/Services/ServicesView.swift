@@ -76,9 +76,10 @@ struct ServicesView: View {
         // Runs again whenever the page comes back into view — coming back from the calendar
         // with a new booking is exactly when "Your next hour" has changed.
         .task { await load() }
-        .refreshable { await load() }
+        .detachedRefresh { await load() }
         .sheet(isPresented: $showingChecklist) {
             SatChecklistSheet(dates: examDates) { await loadExamDates() }
+                .noBarClearance()
         }
     }
 
@@ -86,7 +87,7 @@ struct ServicesView: View {
         VStack(alignment: .leading, spacing: 8) {
             PageTitle("Services")
             Text("Booking a teacher, registering for the exam, and getting into university.")
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -200,11 +201,11 @@ private struct ServiceCard<Fact: View, Action: View>: View {
             IconTile(systemName: icon, tone: tone, size: 46)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 17, weight: .heavy))
+                    .appFont(17, weight: .heavy)
                     .tracking(-0.2)
                     .foregroundStyle(Color.primary)
                 Text(description)
-                    .font(.system(size: 13.5, weight: .medium))
+                    .appFont(13.5, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -242,21 +243,23 @@ private struct ServiceFact: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.system(size: 17, weight: .semibold))
+                .appFont(17, weight: .semibold)
                 .foregroundStyle(tone)
+                .capDynamicType()
                 .frame(width: 22)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.system(size: 10.5, weight: .heavy))
+                    .appFont(10.5, weight: .heavy)
                     .tracking(0.9)
                     .foregroundStyle(tone)
                 Text(value)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Color.primary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let sub {
                     Text(sub)
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
@@ -279,8 +282,9 @@ private struct ServiceAction: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Text(title).font(.system(size: 13.5, weight: .bold))
-            Image(systemName: "arrow.right").font(.system(size: 12, weight: .bold))
+            Text(title).appFont(13.5, weight: .bold)
+            Image(systemName: "arrow.right").appFont(12, weight: .bold)
+                .accessibilityHidden(true)
         }
         .foregroundStyle(tone)
         .padding(.horizontal, 14)

@@ -30,11 +30,11 @@ struct LiveQuizStateCard<Extra: View>: View {
             IconTile(systemName: icon, tone: tone, size: 60)
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 19, weight: .heavy))
+                    .appFont(19, weight: .heavy)
                     .tracking(-0.2)
                 if let message {
                     Text(message)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -61,9 +61,10 @@ struct LiveQuizConnectionBanner: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "wifi.slash")
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
+                .accessibilityHidden(true)
             Text(text)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             ProgressView().controlSize(.small)
@@ -89,13 +90,14 @@ struct LiveQuizChoiceRow: View {
         Button(action: onTap) {
             HStack(alignment: .center, spacing: 14) {
                 Text(choice.id)
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
+                    .capDynamicType()
                     .frame(width: 38, height: 38)
                     .background(Circle().fill(isSelected ? Theme.accent : Theme.card))
                     .overlay(Circle().stroke(isSelected ? Theme.accent : Theme.separator, lineWidth: 2))
                     .foregroundStyle(isSelected ? .white : Color.primary)
                 Text(choice.text)
-                    .font(.system(size: 17, weight: .semibold))
+                    .appFont(17, weight: .semibold)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -133,7 +135,7 @@ struct LiveQuizStandingsList: View {
         let shown = Array(rows.enumerated().prefix(limit ?? rows.count))
         if shown.isEmpty {
             Text("Nobody has scored yet.")
-                .font(.system(size: 14, weight: .medium))
+                .appFont(14, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
@@ -149,22 +151,23 @@ struct LiveQuizStandingsList: View {
     private func standingRow(_ row: LiveQuizParticipant, place: Int, mine: Bool) -> some View {
         HStack(spacing: 12) {
             Text(ScoreText.string(place))
-                .font(.system(size: 15, weight: .heavy).monospacedDigit())
+                .appFont(15, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(LiveQuizMedal.colour(forPlace: place) ?? Theme.textSecondary)
+                .capDynamicType()
                 .frame(width: 30)
             HStack(spacing: 6) {
                 Text(row.displayName.isEmpty ? "Student" : row.displayName)
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, weight: .semibold)
                     .lineLimit(1)
                 if mine {
                     Text("you")
-                        .font(.system(size: 12, weight: .bold))
+                        .appFont(12, weight: .bold)
                         .foregroundStyle(Theme.accent)
                 }
             }
             Spacer(minLength: 8)
             Text(ScoreText.string(row.score))
-                .font(.system(size: 15, weight: .heavy).monospacedDigit())
+                .appFont(15, weight: .heavy, monospacedDigits: true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
@@ -188,10 +191,10 @@ struct LiveQuizStatBox: View {
     var body: some View {
         VStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .font(.system(size: 24, weight: .heavy).monospacedDigit())
+                .appFont(24, weight: .heavy, monospacedDigits: true)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }

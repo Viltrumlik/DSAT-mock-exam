@@ -55,6 +55,13 @@ public struct LeaderboardQuery: Sendable, Hashable {
         self.limit = limit
     }
 
+    /// The one question the app asks to learn the student's place: the default board — global, all
+    /// time, XP — at the server's largest page, so "N XP to pass <name>" reaches the row above a
+    /// student who is deep in the board (Ruling P3-R3). The Rewards hero and the welcome-back check
+    /// both ask exactly this, so a place noted by either is the same number. The full leaderboard
+    /// page keeps the default page.
+    public static let heroBoard = LeaderboardQuery(limit: 200)
+
     /// Whether the branch filter applies to the board being asked for.
     public var branchApplies: Bool { scope == .global && branchId != nil }
 
@@ -208,11 +215,17 @@ public enum LeaderboardName {
     /// looks like an address is cut to the part before the `@`, so a student's inbox is never
     /// published. The real fix is server-side; until then the app does not repeat it.
     public static func display(_ raw: String) -> String {
+        shown(raw) ?? "Student"
+    }
+
+    /// `display` without its stand-in: nil when there is no name to show at all. For a sentence
+    /// that names somebody in passing, where "pass Student" would read as a name.
+    public static func shown(_ raw: String) -> String? {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { return "Student" }
+        guard !name.isEmpty else { return nil }
         guard looksLikeEmail(name) else { return name }
         let local = name.split(separator: "@", maxSplits: 1, omittingEmptySubsequences: false).first.map(String.init) ?? ""
-        return local.isEmpty ? "Student" : local
+        return local.isEmpty ? nil : local
     }
 
     /// `something@something.tld`, with no spaces — a name with an "@" in a sentence is left alone.
@@ -254,17 +267,18 @@ public struct LeaderboardGoal: Sendable, Equatable {
 /// "120 XP to pass Malika" — the next student up, by name. Growth-oriented by construction: it
 /// names the one place to take next, never the distance from the top.
 public struct LeaderboardPass: Sendable, Equatable {
-    public let name: String
+    /// The first name, or nil for a student with no name to show — passed as "the next student".
+    public let name: String?
     public let xp: Int
     public let rank: Int
 
-    public init(name: String, xp: Int, rank: Int) {
+    public init(name: String?, xp: Int, rank: Int) {
         self.name = name
         self.xp = xp
         self.rank = rank
     }
 
-    public var text: String { "\(xp) XP to pass \(name)" }
+    public var text: String { "\(xp) XP to pass \(name ?? "the next student")" }
 }
 
 /// `GET /api/rewards/leaderboard/`.
@@ -404,7 +418,7 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
               let above = ahead.enumerated().max(by: { ($0.element.rank, $0.offset) < ($1.element.rank, $1.offset) })?.element
         else { return nil }
         return LeaderboardPass(
-            name: LeaderboardName.firstName(above.displayName),
+            name: LeaderboardName.shown(above.name).map(LeaderboardName.firstName),
             xp: max(1, above.xp - me.xp + 1),
             rank: above.rank
         )

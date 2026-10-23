@@ -26,6 +26,11 @@ struct AssessmentReviewView: View {
         case skipped = "Skipped"
 
         var id: String { rawValue }
+
+        /// The chips, left to right — the one order the bar is drawn in and the card turns by. Spelt
+        /// out rather than read from the declaration order above, which is free to change for any
+        /// other reason without moving the chips.
+        static let chipOrder: [Filter] = [.all, .toImprove, .correct, .skipped]
     }
 
     @Environment(Session.self) private var session
@@ -64,13 +69,18 @@ struct AssessmentReviewView: View {
         return shown[min(index, shown.count - 1)]
     }
 
+    /// In `Filter.chipOrder`: the chips are built from it, so the order the student sees and the
+    /// order the card turns by cannot differ.
     private var tabs: [PillTabs<Filter>.Item] {
-        [
-            .init(tab: .all, title: "All", icon: "square.stack", count: questions.count),
-            .init(tab: .toImprove, title: "To improve", icon: "arrow.up.forward", count: matching(.toImprove).count),
-            .init(tab: .correct, title: "Correct", icon: "checkmark.circle", count: matching(.correct).count),
-            .init(tab: .skipped, title: "Skipped", icon: "circle.dashed", count: matching(.skipped).count),
-        ]
+        Filter.chipOrder.map { filter in
+            let count = matching(filter).count
+            switch filter {
+            case .all: return .init(tab: filter, title: "All", icon: "square.stack", count: count)
+            case .toImprove: return .init(tab: filter, title: "To improve", icon: "arrow.up.forward", count: count)
+            case .correct: return .init(tab: filter, title: "Correct", icon: "checkmark.circle", count: count)
+            case .skipped: return .init(tab: filter, title: "Skipped", icon: "circle.dashed", count: count)
+            }
+        }
     }
 
     var body: some View {
@@ -91,8 +101,6 @@ struct AssessmentReviewView: View {
                         if let feedback = review.teacherFeedback, !feedback.body.isEmpty {
                             teacherNote(feedback)
                         }
-
-                        PillTabs(items: tabs, selection: filterSelection, motion: Motion.focus)
 
                         if let current {
                             // A ZStack, so the card leaving and the one arriving overlap for their
@@ -118,10 +126,19 @@ struct AssessmentReviewView: View {
                     .padding(16)
                 }
                 .background(Theme.background)
+                // Pinned under the navigation bar, inside the safe area: scrolled with the page, the
+                // chips slid under the back button. The material is what the content passes behind.
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    PillTabs(items: tabs, selection: filterSelection, focusZone: true)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(.bar)
+                }
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
-                ProgressView()
+                // The score card, then the question under it. A focus zone: the blocks hold still.
+                LoadingSkeleton(rows: 2, height: 160, style: .cards, pulse: false).skeletonPage()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -160,6 +177,7 @@ struct AssessmentReviewView: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "arrow.counterclockwise")
+                        .accessibilityHidden(true)
                 }
                 Text(isRetrying ? "Starting…" : "Retry assessment")
             }
@@ -197,11 +215,11 @@ struct AssessmentReviewView: View {
     private func teacherNote(_ feedback: TeacherFeedback) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Label("From your teacher", systemImage: "text.bubble.fill")
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
                 .foregroundStyle(Theme.warning)
-            Text(feedback.body).font(.system(size: 15))
+            Text(feedback.body).appFont(15)
             if let name = feedback.teacherName, !name.isEmpty {
-                Text(name).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.textSecondary)
+                Text(name).appFont(12, weight: .semibold).foregroundStyle(Theme.textSecondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -219,7 +237,7 @@ struct AssessmentReviewView: View {
             get: { filter },
             set: { next in
                 guard next != filter else { return }
-                let order = Filter.allCases
+                let order = Filter.chipOrder
                 turn = FocusTurn.from(order.firstIndex(of: filter) ?? 0, to: order.firstIndex(of: next) ?? 0)
                 index = 0
                 filter = next
@@ -352,31 +370,32 @@ struct ScoreHero: View {
         VStack(spacing: 0) {
             if let classroom = review.meta?.classroomName?.nilIfBlank {
                 Text(classroom.uppercased())
-                    .font(.system(size: 11, weight: .heavy))
+                    .appFont(11, weight: .heavy)
                     .tracking(1.6)
                     .foregroundStyle(.white.opacity(0.7))
                     .padding(.bottom, 6)
             }
             Text(title.uppercased())
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .tracking(1.2)
                 .foregroundStyle(.white.opacity(0.9))
                 .multilineTextAlignment(.center)
 
             if let result = review.result {
-                RollingNumber(value: result.percent, suffix: "%")
-                    .font(.system(size: 56, weight: .black).monospacedDigit())
+                // The whole percent "Up from X%" below is weighed in, so the two never disagree at x.5.
+                RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)), suffix: "%")
+                    .appFont(56, weight: .black, monospacedDigits: true)
                     .tracking(-2)
                     .foregroundStyle(.white)
                     .padding(.top, 12)
                 Text("\(ScoreText.string(result.correctCount)) of \(ScoreText.string(result.totalQuestions)) correct · \(ScoreText.string(result.scorePoints)) of \(ScoreText.string(result.maxPoints)) pts")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .padding(.top, 4)
                 if let improvedFrom {
                     Label("Up from \(ScoreText.wholePercent(improvedFrom))%", systemImage: "arrow.up.right")
-                        .font(.system(size: 12, weight: .heavy))
+                        .appFont(12, weight: .heavy)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 11)
                         .padding(.vertical, 5)
@@ -387,7 +406,7 @@ struct ScoreHero: View {
                 // Submitted but not yet marked. Naming that beats an absent score, which
                 // reads as a zero.
                 Text("Grading in progress — check back shortly.")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.white.opacity(0.9))
                     .multilineTextAlignment(.center)
                     .padding(.top, 14)
@@ -426,10 +445,10 @@ struct ScoreHero: View {
     private func stat(_ value: Int, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(ScoreText.string(value))
-                .font(.system(size: 26, weight: .heavy).monospacedDigit())
+                .appFont(26, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(.white)
             Text(label)
-                .font(.system(size: 11, weight: .bold))
+                .appFont(11, weight: .bold)
                 .foregroundStyle(.white.opacity(0.75))
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
@@ -506,7 +525,7 @@ struct ReviewQuestionCard: View {
                 if let explanation = question.explanation, !explanation.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         Label("Why this answer works", systemImage: "lightbulb.fill")
-                            .font(.system(size: 11, weight: .heavy))
+                            .appFont(11, weight: .heavy)
                             .tracking(1.2)
                             .foregroundStyle(Theme.accent)
                         RichText(text: explanation, serif: true)
@@ -527,29 +546,24 @@ struct ReviewQuestionCard: View {
             }
             .padding(18)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        // Plain, as a focus zone's card is: the header and the body keep their own padding.
+        .cardStyle(padding: 0)
     }
 
     private var header: some View {
         HStack(spacing: 10) {
             Image(systemName: outcome.icon)
-                .font(.system(size: 18))
+                .appFont(18)
                 .foregroundStyle(outcome.tone)
+                .accessibilityHidden(true)
             Text("Question \(ScoreText.string(index + 1))")
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
             Text("of \(ScoreText.string(total))")
-                .font(.system(size: 12, weight: .semibold))
+                .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
             Text(outcome.label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(0.8)
                 .foregroundStyle(outcome.tone)
                 .padding(.horizontal, 10)
@@ -567,14 +581,14 @@ struct ReviewQuestionCard: View {
         HStack(alignment: .top, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 Text("YOUR ANSWER")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.9)
+                    .appFont(10, weight: .heavy).tracking(0.9)
                     .foregroundStyle(Theme.textSecondary)
                 if question.wasAnswered {
                     Text(question.studentAnswer.displayText)
-                        .font(.system(size: 18, weight: .bold))
+                        .appFont(18, weight: .bold)
                         .foregroundStyle(outcome == .correct ? Theme.success : Theme.danger)
                 } else {
-                    Text("Omitted").font(.system(size: 18, weight: .bold).italic())
+                    Text("Omitted").appFont(18, weight: .bold).italic()
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -593,10 +607,10 @@ struct ReviewQuestionCard: View {
             // with dark text in dark mode — never white on white.
             VStack(alignment: .leading, spacing: 6) {
                 Text("CORRECT ANSWER")
-                    .font(.system(size: 10, weight: .heavy)).tracking(0.9)
+                    .appFont(10, weight: .heavy).tracking(0.9)
                     .foregroundStyle(Theme.onInk.opacity(0.7))
                 Text(question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
-                    .font(.system(size: 18, weight: .bold))
+                    .appFont(18, weight: .bold)
                     .foregroundStyle(Theme.onInk)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -634,7 +648,8 @@ struct ReviewChoiceRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: 14) {
             Text(choice.id)
-                .font(.system(size: 12, weight: .heavy))
+                .appFont(12, weight: .heavy)
+                .capDynamicType()
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -650,12 +665,16 @@ struct ReviewChoiceRow: View {
 
             Spacer(minLength: 0)
 
+            // The mark is the only thing that tells these two rows from the others, so VoiceOver
+            // gets it in words — "Your answer", never a verdict on the student.
             if isCorrectAnswer {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16)).foregroundStyle(Theme.success)
+                    .appFont(16).foregroundStyle(Theme.success)
+                    .accessibilityLabel("Correct answer")
             } else if isStudentAnswer {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 16)).foregroundStyle(Theme.danger)
+                    .appFont(16).foregroundStyle(Theme.danger)
+                    .accessibilityLabel("Your answer")
             }
         }
         .padding(14)
@@ -683,39 +702,7 @@ extension String {
 // MARK: - What the phone knows of the student's scores
 
 extension ScoreText {
-    /// A percent in the whole percents the outcome rule compares in — rounded half to even, like
-    /// `CelebrationRule.assessment`. `string(_:)` rounds half away from zero, and "Up from X%" must
-    /// name the very number the rule weighed: 12.5 is 12 to the rule, and "13%" would claim a
-    /// lower mark was beaten than the one that was.
-    static func wholePercent(_ value: Double) -> String {
-        String(Int(value.rounded(.toNearestOrEven)))
-    }
-}
-
-extension OutcomeBook {
-    /// Every completed, graded assessment attempt a my-assignments list carries becomes known to
-    /// this phone (`OutcomeMemory.noteSeen`), so that an attempt taken on the web — or finished
-    /// before its review was ever opened — is the attempt before the next one. Read per
-    /// `AssessmentHomeworkLink`: the list's top-level `assessment_progress` covers only the first
-    /// bundled set. The key is built as the review builds it. Never celebrates anything.
-    ///
-    /// Run when a list arrives, before any review decides "improved". Synchronous, so it cannot
-    /// interleave with a review's own read-and-write of the same memory on the main actor.
-    func noteSeen(in assignments: [AssignmentListing], userID: Int) {
-        var memory = read(userID: userID)
-        let before = memory
-        for assignment in assignments {
-            for link in assignment.assessmentHomeworks {
-                // `percent` is only sent with a mark; a submission still waiting for one has none.
-                guard let progress = link.progress, progress.isCompleted, progress.graded != false,
-                      let attemptId = progress.attemptId, let percent = progress.percent else { continue }
-                memory.noteSeen(
-                    setKey: OutcomeMemory.setKey(assignmentId: assignment.id, setTitle: link.assessmentSet?.title),
-                    attemptId: attemptId,
-                    percent: Double(percent)
-                )
-            }
-        }
-        if memory != before { write(memory, userID: userID) }
-    }
+    /// A percent written as the whole number the outcome rule weighed (`CelebrationRule.wholePercent`).
+    /// `string(_:)` rounds half away from zero, so it must not name a percent the rule compared.
+    static func wholePercent(_ value: Double) -> String { String(CelebrationRule.wholePercent(value)) }
 }

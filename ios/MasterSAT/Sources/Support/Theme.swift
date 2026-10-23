@@ -1,4 +1,5 @@
 import SwiftUI
+import MasterSATKit
 
 /// The platform's design tokens, ported from the web's `globals.css`.
 ///
@@ -12,6 +13,9 @@ enum Theme {
     /// between the two at night should not see two brands.
     static let accent = dynamic(light: 0x2a68c0, dark: 0x3170d6)
     static let accentHover = dynamic(light: 0x21539e, dark: 0x5b8def)
+    /// Brand-blue TEXT on a card — the web's `text-primary dark:text-primary-hover`. On the
+    /// near-black dark surface the brand blue falls under 4.5:1; its hover shade clears it.
+    static let accentText = dynamic(light: 0x2a68c0, dark: 0x5b8def)
     static let accentSoft = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(red: 0.192, green: 0.439, blue: 0.839, alpha: 0.18)
         : UIColor(red: 0.165, green: 0.408, blue: 0.753, alpha: 0.10) })
@@ -25,6 +29,12 @@ enum Theme {
     static let warning = dynamic(light: 0xd97706, dark: 0xfbbf24)
     static let danger = dynamic(light: 0xdc2626, dark: 0xf87171)
     static let info = dynamic(light: 0x0284c7, dark: 0x38bdf8)
+
+    /// Fills under white type, the light-mode shade in both schemes. The semantic colours lift
+    /// in dark mode so they read as text on a dark card; under white a 10-pt badge on the lifted
+    /// red or purple falls to about 3:1, where the light shades hold 4.8:1 and 6.1:1.
+    static let dangerFill = dynamic(light: 0xdc2626, dark: 0xdc2626)
+    static let subjectEnglishFill = dynamic(light: 0x6d4ec7, dark: 0x6d4ec7)
 
     /// `--dz-amber`. A shade brighter than `warning`, and deliberately so: on the calendar
     /// and the assessments board it is a *category* (a test, work in flight), not a caution.
@@ -129,6 +139,20 @@ extension View {
             )
             .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 3)
     }
+
+    /// A bar of `tone` along a card's top edge — what the card is about, readable before a word of
+    /// it. Goes after `cardStyle`. It clips only itself to the card's corners, so the card's
+    /// shadow is not cut off the way clipping the whole card would cut it. Any fill will do: the
+    /// Me sheet's hero runs the page's three colours along its edge as a gradient.
+    func cardToneBar<Tone: ShapeStyle>(_ tone: Tone, height: CGFloat = 3) -> some View {
+        overlay(alignment: .top) {
+            Color.clear
+                .overlay(alignment: .top) { Rectangle().fill(tone).frame(height: height) }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
 }
 
 /// The web's `.ds-overline` — a small-caps section label with wide tracking.
@@ -139,7 +163,7 @@ struct Overline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 11, weight: .bold))
+            .appFont(11, weight: .bold)
             .tracking(1.2)
             .foregroundStyle(Theme.textLabel)
     }
@@ -170,8 +194,8 @@ struct Chip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let icon { Image(systemName: icon).font(.system(size: 10, weight: .bold)) }
-            Text(text).font(.system(size: 12, weight: .bold, design: .rounded))
+            if let icon { Image(systemName: icon).appFont(10, weight: .bold).accessibilityHidden(true) }
+            Text(text).appFont(12, weight: .bold, design: .rounded)
         }
         .foregroundStyle(colour)
         .padding(.horizontal, 10)
@@ -190,7 +214,7 @@ struct PrimaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .appFont(15, weight: .bold)
             .foregroundStyle(text)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
@@ -208,7 +232,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 15, weight: .bold))
+            .appFont(15, weight: .bold)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 18)
             .padding(.vertical, 12)
@@ -276,6 +300,10 @@ enum StatusLabel {
         switch (workflowStatus ?? "").lowercased() {
         case "graded", "reviewed": return "Reviewed"
         case "submitted": return "Submitted"
+        // Words only (`HomeworkStatus`): every set played, nothing handed in.
+        case HomeworkStatus.completed: return "Completed"
+        // Only empty word sets: nothing done, and nothing owed. Never "Completed".
+        case HomeworkStatus.nothingYet: return "Nothing to do yet"
         case "returned": return "Ready to revise"
         case "in_progress": return "In progress"
         default: return "Not started"
@@ -284,7 +312,7 @@ enum StatusLabel {
 
     static func tone(_ workflowStatus: String?) -> Chip.Tone {
         switch (workflowStatus ?? "").lowercased() {
-        case "graded", "reviewed": return .success
+        case "graded", "reviewed", HomeworkStatus.completed: return .success
         case "submitted": return .accent
         case "returned": return .warning
         default: return .neutral
@@ -293,7 +321,7 @@ enum StatusLabel {
 
     static func color(_ workflowStatus: String?) -> Color {
         switch (workflowStatus ?? "").lowercased() {
-        case "graded", "reviewed": return Theme.success
+        case "graded", "reviewed", HomeworkStatus.completed: return Theme.success
         case "submitted": return Theme.accent
         case "returned": return Theme.warning
         default: return Theme.textSecondary

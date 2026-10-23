@@ -104,9 +104,10 @@ struct StoryViewer: View {
                         case .failure:
                             VStack(spacing: 10) {
                                 Image(systemName: "photo")
-                                    .font(.system(size: 28))
+                                    .appFont(28)
+                                    .accessibilityHidden(true)
                                 Text(story.title)
-                                    .font(.system(size: 20, weight: .heavy))
+                                    .appFont(20, weight: .heavy)
                                     .multilineTextAlignment(.center)
                             }
                             .foregroundStyle(.white.opacity(0.75))
@@ -119,7 +120,7 @@ struct StoryViewer: View {
                     .id(story.id)
                 } else {
                     Text(story.title)
-                        .font(.system(size: 22, weight: .heavy))
+                        .appFont(22, weight: .heavy)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .padding(32)
@@ -196,7 +197,7 @@ struct StoryViewer: View {
                 dismiss()
             } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 22, weight: .semibold))
+                    .appFont(22, weight: .semibold)
                     .foregroundStyle(.white)
                     .padding(10)
                     .contentShape(Rectangle())
@@ -224,12 +225,12 @@ struct StoryViewer: View {
             VStack(spacing: 5) {
                 if !story.title.isEmpty {
                     Text(story.title)
-                        .font(.system(size: 17, weight: .heavy))
+                        .appFont(17, weight: .heavy)
                         .foregroundStyle(.white)
                 }
                 if !story.caption.isEmpty {
                     Text(story.caption)
-                        .font(.system(size: 14, weight: .medium))
+                        .appFont(14, weight: .medium)
                         .foregroundStyle(.white.opacity(0.85))
                         .lineLimit(8)
                 }
@@ -240,7 +241,7 @@ struct StoryViewer: View {
                         link = CommunityLink(url: url)
                     } label: {
                         Text("Open")
-                            .font(.system(size: 14, weight: .heavy))
+                            .appFont(14, weight: .heavy)
                             .foregroundStyle(Color(white: 0.07))
                             .padding(.horizontal, 20)
                             .padding(.vertical, 9)

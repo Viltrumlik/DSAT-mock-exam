@@ -12,9 +12,9 @@ private struct SectionHeading: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.system(size: 22, weight: .heavy)).tracking(-0.4)
+            Text(title).appFont(22, weight: .heavy).tracking(-0.4)
             Text(subtitle)
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -38,7 +38,7 @@ private struct SectionBody<Value, Loaded: View>: View {
         if let value = load.value {
             if load.error != nil {
                 Label("Could not refresh just now — this is the last we had.", systemImage: "exclamationmark.triangle")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             if isEmpty(value) {
@@ -49,30 +49,42 @@ private struct SectionBody<Value, Loaded: View>: View {
         } else if load.error != nil {
             ClassroomErrorState(title: failureTitle, message: failureMessage, retry: retry)
         } else {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 40)
+            LoadingSkeleton(rows: 3, height: 56)
         }
     }
 }
 
 // MARK: - Overview: the class board
 
+/// What the class ranking is made of. Naming the ways to earn is the point: a student who can see
+/// what moves the number can decide to move it. Said once per screen — under a class of its own
+/// inside that class's section, under All once above the class groups.
+struct ClassroomRankingsExplainer: View {
+    let forEachClass: Bool
+
+    var body: some View {
+        Text("XP earned in \(forEachClass ? "each class" : "this class") — attendance, homework and support sessions. It comes with you if you change group.")
+            .appFont(13, weight: .medium)
+            .foregroundStyle(Theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 struct ClassroomRankingsSection: View {
     let load: ClassroomLoad<RankingBoard>
     let isStudent: Bool
+    /// False under All, where the Class tab says it once above every group instead.
+    var showsExplainer = true
     let retry: @MainActor () async -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "trophy.fill").foregroundStyle(Theme.accent)
-                Text("Class rankings").font(.system(size: 22, weight: .heavy)).tracking(-0.4)
+                    .accessibilityHidden(true)
+                Text("Class rankings").appFont(22, weight: .heavy).tracking(-0.4)
             }
-            // Naming the ways to earn is the point: a student who can see what moves the
-            // number can decide to move it.
-            Text("XP earned in this class — attendance, homework and support sessions. It comes with you if you change group.")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if showsExplainer { ClassroomRankingsExplainer(forEachClass: false) }
 
             SectionBody(
                 load: load,
@@ -101,7 +113,7 @@ struct ClassroomRankingsSection: View {
         }
         if isStudent && board.isHidden {
             Text("Your teacher shows only your own position for this class.")
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .frame(maxWidth: .infinity)
         }
@@ -134,28 +146,30 @@ private struct ClassroomPodium: View {
                 VStack(spacing: 6) {
                     if first {
                         Image(systemName: "crown.fill")
-                            .font(.system(size: 18))
+                            .appFont(18)
                             .foregroundStyle(Theme.amber)
+                            .accessibilityHidden(true)
                     }
                     ZStack(alignment: .bottom) {
                         Avatar(url: row.photoURL, name: row.name, size: first ? 60 : 52)
                             .padding(.bottom, 10)
                         Text(ScoreText.string(row.rank))
-                            .font(.system(size: 11, weight: .heavy))
+                            .appFont(11, weight: .heavy)
                             .foregroundStyle(.white)
+                            .capDynamicType()
                             .frame(width: 22, height: 22)
                             .background(Circle().fill(medal(row.rank)))
                             .overlay(Circle().stroke(Theme.card, lineWidth: 2))
                     }
                     Text(row.name)
-                        .font(.system(size: 13, weight: .heavy))
+                        .appFont(13, weight: .heavy)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                     if row.isMe {
-                        Text("You").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.accent)
+                        Text("You").appFont(11, weight: .bold).foregroundStyle(Theme.accent)
                     }
                     Text(score(row).map { "\(ScoreText.string($0)) XP" } ?? "—")
-                        .font(.system(size: 12, weight: .bold).monospacedDigit())
+                        .appFont(12, weight: .bold, monospacedDigits: true)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -182,16 +196,17 @@ private struct ClassroomRankingRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(ScoreText.string(row.rank))
-                .font(.system(size: 14, weight: .heavy).monospacedDigit())
+                .appFont(14, weight: .heavy, monospacedDigits: true)
+                .capDynamicType()
                 .frame(width: 26)
                 .foregroundStyle(Theme.textSecondary)
             Avatar(url: row.photoURL, name: row.name, size: 36)
             HStack(spacing: 6) {
                 Text(row.name)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .lineLimit(1)
                 if row.isMe {
-                    Text("You").font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.accent)
+                    Text("You").appFont(11, weight: .bold).foregroundStyle(Theme.accent)
                 }
             }
             Spacer(minLength: 0)
@@ -199,12 +214,12 @@ private struct ClassroomRankingRow: View {
             // the teacher (the eye). They need different marks.
             if let score {
                 Text(ScoreText.string(score))
-                    .font(.system(size: 14, weight: .heavy).monospacedDigit())
+                    .appFont(14, weight: .heavy, monospacedDigits: true)
             } else if !row.hasResult {
-                Text("—").font(.system(size: 14)).foregroundStyle(Theme.textLabel)
+                Text("—").appFont(14).foregroundStyle(Theme.textLabel)
             } else {
                 Image(systemName: "eye.slash")
-                    .font(.system(size: 12))
+                    .appFont(12)
                     .foregroundStyle(Theme.textLabel)
                     .accessibilityLabel("Hidden by your teacher")
             }
@@ -266,7 +281,7 @@ private struct ClassworkRow: View {
             IconTile(systemName: "rectangle.inset.filled.and.person.filled", tone: Theme.accent, size: 42)
             VStack(alignment: .leading, spacing: 5) {
                 Text(item.title.isEmpty ? "Classwork" : item.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 HStack(spacing: 6) {
@@ -278,20 +293,21 @@ private struct ClassworkRow: View {
                         tone: award.isMarked ? .success : .neutral
                     )
                     Text(item.assignedAt.map { "In class \(HomeworkWording.shortDate($0))" } ?? "In class")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
                 if let activities = item.activityLabel {
                     Text(activities)
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(11, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                 }
             }
             Spacer(minLength: 0)
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
@@ -416,7 +432,7 @@ private struct ClassroomMaterialCard: View {
                 IconTile(systemName: icon, tone: tone, size: 42)
                 Spacer(minLength: 0)
                 Text(kind.label)
-                    .font(.system(size: 10, weight: .heavy))
+                    .appFont(10, weight: .heavy)
                     .tracking(0.6)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 8)
@@ -425,18 +441,18 @@ private struct ClassroomMaterialCard: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(material.title.isEmpty ? (material.fileName ?? "Material") : material.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .lineLimit(2)
                 if let description = material.description, !description.isEmpty {
                     Text(description)
-                        .font(.system(size: 13))
+                        .appFont(13)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(2)
                 }
                 let meta = material.metaLine()
                 if !meta.isEmpty {
                     Text(meta)
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textLabel)
                 }
             }
@@ -517,7 +533,7 @@ struct ClassroomPeopleSection: View {
                             HStack(spacing: 10) {
                                 Avatar(url: member.photoURL, name: member.name, size: 34)
                                 Text(member.name)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .appFont(13, weight: .semibold)
                                     .lineLimit(1)
                                     .minimumScaleFactor(0.85)
                                 Spacer(minLength: 0)
@@ -538,9 +554,10 @@ private struct PeopleHeading: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: icon).font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.accent)
-            Text(title).font(.system(size: 16, weight: .heavy))
-            Text(detail).font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.textSecondary)
+            Image(systemName: icon).appFont(14, weight: .bold).foregroundStyle(Theme.accent)
+                .accessibilityHidden(true)
+            Text(title).appFont(16, weight: .heavy)
+            Text(detail).appFont(13, weight: .medium).foregroundStyle(Theme.textSecondary)
             Spacer(minLength: 0)
         }
     }
@@ -555,10 +572,10 @@ private struct StaffRow: View {
         HStack(spacing: 12) {
             Avatar(url: member.photoURL, name: member.name, size: 40)
             VStack(alignment: .leading, spacing: 2) {
-                Text(member.name).font(.system(size: 14, weight: .bold)).lineLimit(1)
+                Text(member.name).appFont(14, weight: .bold).lineLimit(1)
                 if let email = member.email, !email.isEmpty {
                     Text(email)
-                        .font(.system(size: 12))
+                        .appFont(12)
                         .foregroundStyle(Theme.textSecondary)
                         .lineLimit(1)
                 }
@@ -580,16 +597,17 @@ private struct ClassroomSearchField: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Theme.textLabel)
+                .accessibilityHidden(true)
             TextField("", text: $text, prompt: Text(verbatim: placeholder))
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !text.isEmpty {
                 Button { text = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 15))
+                        .appFont(15)
                         .foregroundStyle(Theme.textLabel)
                 }
                 .buttonStyle(.plain)

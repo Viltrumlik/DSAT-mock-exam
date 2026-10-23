@@ -18,6 +18,13 @@ struct VocabTestView: View {
     @State private var index = 0
     @State private var answers: [TestAnswer] = []
     @State private var typed = ""
+    /// A question is arriving: until its turn (`Motion.focus`) is over, a tap lands on nothing —
+    /// the finger that answered the last question is still on its way down, and must not answer
+    /// this one.
+    @State private var turning = false
+    /// The last answer's outcome, held for one `focusTap` beat so its tick is felt before the end
+    /// screen replaces this view.
+    @State private var closing: StudyOutcome?
     @FocusState private var spellingFocused: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The spelling field's UIKit side, filled in by `PlainTyping` once it finds the field.
@@ -53,6 +60,7 @@ struct VocabTestView: View {
                         .transition(.focusTurn(.forward, reduceMotion: reduceMotion))
                     }
                 }
+                .allowsHitTesting(!turning)
             }
             // One tick per answer, the same for every answer: nothing is graded until the end.
             .sensoryFeedback(.selection, trigger: answers.count)
@@ -61,6 +69,22 @@ struct VocabTestView: View {
             if questions.isEmpty {
                 questions = VocabGames.buildTestQuestions(for: set.words, pool: set.words)
             }
+        }
+        // The turn is over once the new question is in: a new `index` restarts the wait, and
+        // leaving the screen cancels it. `turning` is raised where the answer is written, so there
+        // is no frame between the answer and the block.
+        .task(id: index) {
+            guard turning else { return }
+            try? await Task.sleep(for: .seconds(Motion.focusTurnSeconds))
+            if !Task.isCancelled { turning = false }
+        }
+        // Handing the outcome over a beat late keeps the last tick: the view that plays it is the
+        // one the end screen replaces. Leaving inside that beat cuts the wait short but still
+        // hands it over — the test is finished, and handing it over is what grades the run.
+        .task(id: closing != nil) {
+            guard let outcome = closing else { return }
+            try? await Task.sleep(for: .seconds(Motion.focusTapSeconds))
+            onFinish(outcome)
         }
     }
 
@@ -86,14 +110,15 @@ struct VocabTestView: View {
                     } label: {
                         HStack(spacing: 12) {
                             Text(Self.letters[min(position, Self.letters.count - 1)])
-                                .font(.system(size: 13, weight: .heavy))
+                                .appFont(13, weight: .heavy)
+                                .capDynamicType()
                                 .frame(width: 32, height: 32)
                                 .background(
                                     RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.background)
                                 )
                                 .foregroundStyle(Theme.textSecondary)
                             Text(option)
-                                .font(.system(size: 15, weight: .semibold))
+                                .appFont(15, weight: .semibold)
                                 .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                         }
@@ -149,8 +174,9 @@ struct VocabTestView: View {
     private func verdictButton(_ label: String, icon: String, tone: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: icon).font(.system(size: 22)).foregroundStyle(tone)
-                Text(label).font(.system(size: 15, weight: .heavy)).foregroundStyle(.primary)
+                Image(systemName: icon).appFont(22).foregroundStyle(tone)
+                    .accessibilityHidden(true)
+                Text(label).appFont(15, weight: .heavy).foregroundStyle(.primary)
             }
             .frame(maxWidth: .infinity, minHeight: 88)
             .background(
@@ -192,10 +218,10 @@ struct VocabTestView: View {
                 }
                 .animation(Motion.focusTap, value: typed)
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Self.spoken(tiles))
+                .accessibilityLabel(VocabGames.spoken(tiles))
 
                 TextField("Type the word", text: $typed)
-                    .font(.system(size: 20, weight: .bold))
+                    .appFont(20, weight: .bold)
                     .multilineTextAlignment(.center)
                     // The grader compares the text exactly, so the keyboard may change nothing
                     // of it: no capitals, no autocorrect, and (below) no smart quotes or dashes.
@@ -208,10 +234,22 @@ struct VocabTestView: View {
                     // what the well shows. Not written back while the keyboard is composing (an
                     // IME's marked text): replacing it would cut the composition off. The well and
                     // the answer apply the same cap themselves, so nothing waits on this.
-                    .onChange(of: typed) { _, new in
+                    .onChange(of: typed) { _, _ in
                         guard !field.isComposing else { return }
-                        let entry = Self.entry(new, for: question.word)
-                        if entry != new { typed = entry }
+                        clampTyped(to: question.word)
+                    }
+                    // The composition's commit is not always a change of the text: committing the
+                    // letters as they stand (a hardware return, say) leaves the string as it was,
+                    // so `onChange` never sees it and the tail would stay past the cap. While one
+                    // is open, look again until it closes. A keystroke restarts the look; leaving
+                    // the question cancels it.
+                    .task(id: typed) {
+                        guard field.isComposing else { return }
+                        while field.isComposing {
+                            try? await Task.sleep(for: .milliseconds(100))
+                            if Task.isCancelled { return }
+                        }
+                        clampTyped(to: question.word)
                     }
                     .background { PlainTyping(field: field) }
                     .padding(14)
@@ -273,29 +311,10 @@ struct VocabTestView: View {
     /// small scale-up that settles without overshoot, a plain fade under Reduce Motion.
     private func glyph(_ tile: VocabGames.SpellingTile, tone: Color) -> some View {
         Text(verbatim: tile.kind == .typed || tile.kind == .given ? tile.character.uppercased() : tile.character)
-            .font(.system(size: 17, weight: .heavy))
+            .appFont(17, weight: .heavy)
             .foregroundStyle(tone)
             .id("\(tile.kind)-\(tile.character)")
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-    }
-
-    /// The well as VoiceOver reads it, as one line: what is there so far, "blank" for what is
-    /// not. A space, a hyphen and an apostrophe are named whether they are the placeholder or
-    /// were typed, and a typed letter is read as it is, right or wrong alike.
-    private static func spoken(_ tiles: [VocabGames.SpellingTile]) -> String {
-        tiles.map { tile in
-            switch tile.kind {
-            case .blank: return "blank"
-            case .structure, .typed, .given:
-                switch tile.character {
-                case " ": return "space"
-                case "-", "\u{2010}", "\u{2011}": return "hyphen"
-                case "'", "\u{2019}", "\u{2018}": return "apostrophe"
-                case "\u{2013}", "\u{2014}": return "dash"
-                default: return tile.character.lowercased()
-                }
-            }
-        }.joined(separator: ", ")
     }
 
     /// What the student has entered, as the well shows it and the field holds it: exactly what
@@ -310,6 +329,13 @@ struct VocabTestView: View {
     /// both ends, so trailing spaces go too. Still what the student typed, character for character.
     private static func answer(_ raw: String, for word: String) -> String {
         entry(raw, for: word).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The field cut back to what the well shows, once the keyboard is no longer composing.
+    @MainActor
+    private func clampTyped(to word: String) {
+        let entry = Self.entry(typed, for: word)
+        if entry != typed { typed = entry }
     }
 
     // MARK: - Answering
@@ -338,19 +364,22 @@ struct VocabTestView: View {
         guard !answers.contains(where: { $0.id == question.id }) else { return }
         answers.append(TestAnswer(id: question.id, word: question.word, definition: question.definition,
                                   given: given, expected: expected, correct: correct))
-        typed = ""
         // The student sees nothing until the end, but the server hears every answer as it
         // lands — an abandoned test still records what was answered.
         runner.record(wordId: question.wordId, correct: correct)
 
         if index + 1 < questions.count {
+            // Emptied for the next word only. The last answer stays in the well through the
+            // closing beat, and the end screen replaces it: cleared, the word vanished first.
+            typed = ""
+            turning = true
             withAnimation(Motion.focus) { index += 1 }
             return
         }
 
         let right = answers.filter(\.correct).count
         let wrong = answers.filter { !$0.correct }
-        onFinish(StudyOutcome(
+        closing = StudyOutcome(
             title: wrong.isEmpty ? "Perfect test" : "Test complete",
             description: wrong.isEmpty
                 ? "All \(ScoreText.string(answers.count)) questions right."
@@ -358,12 +387,13 @@ struct VocabTestView: View {
             stats: [
                 ModeStat(label: "Correct", value: "\(ScoreText.string(right))/\(ScoreText.string(answers.count))", tone: .success),
                 .accuracy(VocabGames.accuracyPercent(correct: right, of: answers.count)),
-                // "To review", not "Missed": the count is the next thing to do, not a verdict.
-                ModeStat(label: "To review", value: ScoreText.string(wrong.count), tone: wrong.isEmpty ? .neutral : .danger),
+                // "To review", not "Missed": the count is the next thing to do, not a verdict —
+                // so the neutral tile whatever the count, as Matching's "Misses" is.
+                ModeStat(label: "To review", value: ScoreText.string(wrong.count)),
             ],
             restartLabel: "Take it again",
             extra: AnyView(TestReview(wrong: wrong))
-        ))
+        )
     }
 }
 
@@ -394,8 +424,13 @@ private final class SpellingField {
 
 private final class PlainTypingProbe: UIView {
     private let field: SpellingField
-    private var applied = false
-    /// Passes spent looking, so a field that never turns up is not searched for on every layout.
+    /// The lookup's cache. The probe lays out on every keystroke (the text moves the field's
+    /// layout), so while this field is held and on screen, all `apply` costs is that check. Its
+    /// own, not `field`'s: a question leaving still has its field on screen for a beat, and the
+    /// next question's probe must not take that one for its own.
+    private weak var found: UITextField?
+    /// Passes spent looking since the last find, so a field that never turns up is not searched
+    /// for on every layout. Starts afresh when a field is found, so a replaced one gets its turn.
     private var attempts = 0
 
     init(field: SpellingField) {
@@ -423,19 +458,27 @@ private final class PlainTypingProbe: UIView {
     }
 
     private func apply() {
-        guard !applied, attempts < 30, window != nil else { return }
+        // SwiftUI may swap the UIKit view under a `TextField`; a swapped-out one has left its
+        // window, and the traits must go on the new one.
+        guard found?.window == nil, attempts < 30, window != nil else { return }
         attempts += 1
         guard let textField = nearbyTextField() else { return }
-        textField.autocorrectionType = .no
-        textField.spellCheckingType = .no
-        textField.autocapitalizationType = .none
-        textField.smartQuotesType = .no
-        textField.smartDashesType = .no
-        textField.smartInsertDeleteType = .no
+        attempts = 0
+        // Set only what differs, so a field found again is not asked to reload its keyboard.
+        var changed = false
+        func set<T: Equatable>(_ keyPath: ReferenceWritableKeyPath<UITextField, T>, to value: T) {
+            if textField[keyPath: keyPath] != value { textField[keyPath: keyPath] = value; changed = true }
+        }
+        set(\.autocorrectionType, to: .no)
+        set(\.spellCheckingType, to: .no)
+        set(\.autocapitalizationType, to: .none)
+        set(\.smartQuotesType, to: .no)
+        set(\.smartDashesType, to: .no)
+        set(\.smartInsertDeleteType, to: .no)
         // A keyboard that is already up keeps the traits it was shown with until reloaded.
-        if textField.isFirstResponder { textField.reloadInputViews() }
+        if changed, textField.isFirstResponder { textField.reloadInputViews() }
+        found = textField
         field.textField = textField
-        applied = true
     }
 
     /// The text field this view is the background of: the one sharing its frame, found by
@@ -444,16 +487,22 @@ private final class PlainTypingProbe: UIView {
         var ancestor = superview
         for _ in 0..<6 {
             guard let current = ancestor else { return nil }
-            if let field = Self.textFields(in: current).first(where: { convert($0.bounds, from: $0).intersects(bounds) }) {
-                return field
-            }
+            if let field = Self.firstTextField(in: current, overlapping: self) { return field }
             ancestor = current.superview
         }
         return nil
     }
 
-    private static func textFields(in view: UIView) -> [UITextField] {
-        (view as? UITextField).map { [$0] } ?? view.subviews.flatMap { textFields(in: $0) }
+    /// The first text field under `view` that overlaps `probe`, stopping at it — no arrays built
+    /// for the whole hierarchy.
+    private static func firstTextField(in view: UIView, overlapping probe: UIView) -> UITextField? {
+        if let field = view as? UITextField, probe.convert(field.bounds, from: field).intersects(probe.bounds) {
+            return field
+        }
+        for subview in view.subviews {
+            if let found = firstTextField(in: subview, overlapping: probe) { return found }
+        }
+        return nil
     }
 }
 
@@ -479,9 +528,9 @@ struct TestReview: View {
                 DotHeading(title: "Look at these again", count: wrong.count, tone: Theme.danger)
                 ForEach(wrong) { answer in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(answer.word).font(.system(size: 16, weight: .heavy))
+                        Text(answer.word).appFont(16, weight: .heavy)
                         Text(answer.definition)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 10) {
@@ -499,11 +548,11 @@ struct TestReview: View {
     private func answerBox(_ label: String, _ value: String, tone: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
-                .font(.system(size: 10, weight: .heavy))
+                .appFont(10, weight: .heavy)
                 .tracking(0.8)
                 .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .font(.system(size: 15, weight: .bold))
+                .appFont(15, weight: .bold)
                 .foregroundStyle(tone)
                 .multilineTextAlignment(.leading)
         }
@@ -531,22 +580,24 @@ struct QuestionShell<Content: View>: View {
             VStack(spacing: 0) {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.success)
+                        .capDynamicType()
                         .frame(width: 26, height: 26)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
+                        .accessibilityHidden(true)
                     Text(kicker.uppercased())
-                        .font(.system(size: 11, weight: .heavy))
+                        .appFont(11, weight: .heavy)
                         .tracking(1.1)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 Text(prompt)
-                    .font(.system(size: 19, weight: .bold))
+                    .appFont(19, weight: .bold)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                 Text("QUESTION \(ScoreText.string(step)) OF \(ScoreText.string(total))")
-                    .font(.system(size: 10, weight: .heavy))
+                    .appFont(10, weight: .heavy)
                     .tracking(0.9)
                     .foregroundStyle(Theme.textLabel)
                     .padding(.top, 12)

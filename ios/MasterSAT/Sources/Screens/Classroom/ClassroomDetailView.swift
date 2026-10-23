@@ -52,13 +52,8 @@ struct ClassroomDetailView: View {
                     .padding(16)
                 }
             } else {
-                VStack(spacing: 12) {
-                    ProgressView()
-                    Text("Opening classroom…")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // The class's header, then its tabs.
+                LoadingSkeleton(rows: 2, height: 130, style: .cards, label: "Opening class").skeletonPage()
             }
         }
         .background(Theme.background)
@@ -77,13 +72,14 @@ struct ClassroomDetailView: View {
             }
             .padding(16)
         }
-        .refreshable { await refresh(classroom) }
+        .detachedRefresh { await refresh(classroom) }
         .task(id: tab) { await loadTab(tab, classroom: classroom, force: false) }
         .task { await loadHeader(classroom) }
         .sheet(isPresented: $showingTelegram, onDismiss: { Task { await loadTelegram() } }) {
             ClassroomTelegramSheet(classroomId: classroom.id, className: classroom.name, initialState: telegram) { state in
                 telegram = state
             }
+            .noBarClearance()
         }
     }
 

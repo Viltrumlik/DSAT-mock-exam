@@ -64,6 +64,7 @@ enum ProfileFixtures {
 
 @Suite struct ProfileHomeworkTests {
     typealias F = ProfileFixtures
+    typealias W = WorkFixtures
 
     @Test("Submitted and graded work is turned in, in either case; a returned piece is not")
     func turnedIn() {
@@ -112,23 +113,73 @@ enum ProfileFixtures {
         #expect(ProfileWording.homeworkEmpty(summary) == "You're all caught up — nothing to hand in right now.")
     }
 
-    @Test("Due dates are labelled without ever saying overdue")
-    func dueLabels() {
-        let label = { (due: String?) in ProfileHomework.dueLabel(due, now: F.now, calendar: F.calendar) }
-        #expect(label(F.at(-2)) == .init(text: "Catch up", tone: .catchUp))
-        #expect(label(F.iso(F.local(14, 23))) == .init(text: "Due today", tone: .soon))
-        #expect(label(F.at(1)) == .init(text: "Due tomorrow", tone: .soon))
-        #expect(label(F.at(3)) == .init(text: "Due in 3 days", tone: .soon))
-        #expect(label(F.at(6)) == .init(text: "Due in 6 days", tone: .later))
-        #expect(label(nil) == .init(text: "No due date", tone: .none))
-        #expect(label("not a date") == .init(text: "No due date", tone: .none))
+    // The same "done" as Today and the Class tab (`HomeworkProgress.isDone`), so a homework
+    // finished there leaves the Me sheet's list too.
+
+    @Test("A word-set homework that has been played is not to do — it is never handed in")
+    func playedWordSet() throws {
+        let played = try W.homework(1, due: F.at(1), extra: ["vocab_homeworks": [W.words(5, "completed")]])
+        let summary = ProfileHomework.summarise([played], now: F.now)
+        #expect(summary.toDo.isEmpty)
+        #expect(summary.turnedIn == 1)
+        #expect(ProfileWording.homeworkValue(summary) == "100%")
     }
 
-    @Test("Tomorrow morning is tomorrow even late tonight — calendar days, not 24-hour blocks")
-    func calendarDays() {
-        let lateTonight = F.local(14, 23, 50)
-        let label = ProfileHomework.dueLabel(F.iso(F.local(15, 9)), now: lateTonight, calendar: F.calendar)
-        #expect(label.text == "Due tomorrow")
+    @Test("Classwork is done in class: never counted, never to do")
+    func classwork() throws {
+        let classwork: [String: Any] = ["category": "CLASSWORK"]
+        let rows = [
+            try W.homework(1, due: F.at(-1), extra: classwork),
+            try W.homework(2, due: F.at(2)),
+        ]
+        let summary = ProfileHomework.summarise(rows, now: F.now)
+        #expect(summary.total == 1)
+        #expect(summary.toDo.map(\.id) == [2])
+        #expect(summary.catchUp == 0)
+        #expect(ProfileHomework.summarise([try W.homework(3, due: nil, extra: classwork)], now: F.now).total == 0)
+    }
+
+    @Test("A quiz homework with a second quiz still open is to do, whatever the first says")
+    func secondOpenQuiz() throws {
+        let row = try W.homework(1, due: F.at(1), status: "graded", extra: [
+            "assessment_homeworks": [W.quiz(21, "graded"), W.quiz(22, "not_started")],
+        ])
+        let summary = ProfileHomework.summarise([row], now: F.now)
+        #expect(summary.toDo.map(\.id) == [1])
+        #expect(summary.turnedIn == 0)
+    }
+
+    @Test("A word set with no words is never owed")
+    func emptyWordSet() throws {
+        let row = try W.homework(1, due: F.at(-1), extra: ["vocab_homeworks": [W.words(5, "not_started", count: 0)]])
+        let summary = ProfileHomework.summarise([row], now: F.now)
+        #expect(summary.toDo.isEmpty)
+        #expect(summary.catchUp == 0)
+    }
+
+    @Test("A homework of nothing but empty word sets is not counted: nothing has been set in it yet")
+    func emptyWordSetsNotCounted() throws {
+        let empty = [W.words(5, "not_started", count: 0), W.words(6, "not_started", count: 0)]
+        let onlyEmpty = try W.homework(1, due: F.at(-1), extra: ["vocab_homeworks": empty])
+        let real = try W.homework(2, due: F.at(2))
+        let summary = ProfileHomework.summarise([onlyEmpty, real], now: F.now)
+        #expect(summary.total == 1)
+        #expect(summary.turnedIn == 0)
+        #expect(ProfileWording.homeworkValue(summary) == "0%")
+        let alone = ProfileHomework.summarise([onlyEmpty], now: F.now)
+        #expect(alone.total == 0)
+        #expect(ProfileWording.homeworkValue(alone) == "—")
+        #expect(ProfileWording.homeworkEmpty(alone) == "No homework has been set for your classes yet.")
+        // Still asked for a file: owed, and counted.
+        let fileToo = try W.homework(3, due: nil, extra: ["vocab_homeworks": empty, "allow_file_upload": true])
+        let owed = ProfileHomework.summarise([fileToo], now: F.now)
+        #expect(owed.total == 1)
+        #expect(owed.toDo.map(\.id) == [3])
+        // Filled in beside an empty one: a real set, counted once played.
+        let played = try W.homework(4, due: nil, extra: [
+            "vocab_homeworks": [W.words(7, "completed"), W.words(8, "not_started", count: 0)],
+        ])
+        #expect(ProfileHomework.summarise([played], now: F.now).turnedIn == 1)
     }
 
     @Test("A row's size is its question count, only for work made of questions")
@@ -240,6 +291,26 @@ enum ProfileFixtures {
         // Ahead of it, it is not on.
         let later = next([try F.lesson("2026-09-14", "18:00", classroom: 3)], 3, hours: 2)
         #expect(later?.isOnNow == false)
+    }
+
+    @Test("One lesson reads the same on every phone: counted on Tashkent's clock, not the phone's")
+    func labelOnTashkentClock() throws {
+        // 00:30 on Tuesday 15 September in Tashkent is still Monday afternoon (15:30) in New York.
+        let now = F.local(15, 0, 30)
+        var abroad = Calendar(identifier: .gregorian)
+        abroad.timeZone = TimeZone(identifier: "America/New_York")!
+        let lessons = [try F.lesson("2026-09-15", "09:00", classroom: 1)]
+        func read(_ calendar: Calendar) -> (next: ProfileLessons.Next?, text: String?) {
+            let next = ProfileLessons.next(in: lessons, classroomId: 1, hours: 2, now: now, calendar: calendar)
+            return (next, next.map { ProfileLessons.label($0, now: now, calendar: calendar) })
+        }
+        // The lesson is at 09:00 Tashkent time, and it is already Tuesday there.
+        let tashkent = read(ServicesTime.calendar)
+        #expect(tashkent.text == "Today at 09:00")
+        // The phone's own zone would put the same lesson at another moment and call it tomorrow.
+        let phone = read(abroad)
+        #expect(phone.text == "Tomorrow at 09:00")
+        #expect(phone.next?.start != tashkent.next?.start)
     }
 
     @Test("Clock times are read out of free text")

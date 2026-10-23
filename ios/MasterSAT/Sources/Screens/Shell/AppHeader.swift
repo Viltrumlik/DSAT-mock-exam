@@ -26,38 +26,62 @@ struct AppHeader: View {
         self.showsBell = showsBell
     }
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// One instance of each part, whatever the arrangement (`HeaderLayout`): the pills and the bell
+    /// keep their state — a flight's landing, a rolling count, an open inbox — when a digit or the
+    /// text size moves the header between its row and its stacked form. Only the line of context
+    /// ever swaps, and it holds nothing.
+    ///
+    /// The title is laid out last, so VoiceOver read it last too: the header is its own container
+    /// and the title sorts first in it, so a tab announces which page it is before its pills.
+    /// Both are modifiers on the parts, never a wrapper, so the instances above stay put.
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HeaderLayout(stacked: typeSize.isAccessibilitySize) {
+            if let subtitle { contextLine(subtitle) }
+            // Fixed: when the row is tight it is the line of context that gives way, not these.
             HStack(spacing: 8) {
-                if let subtitle {
-                    if let shortSubtitle {
-                        ViewThatFits(in: .horizontal) {
-                            line(subtitle)
-                            line(shortSubtitle)
-                        }
-                    } else {
-                        line(subtitle)
-                    }
-                }
-                Spacer(minLength: 0)
-                // Fixed: when the row is tight it is the line of context that gives way.
                 StrikeChip().fixedSize()
                 XPPill().fixedSize()
-                if showsBell {
-                    // RootTabView routes what the inbox opens, the same way it routes a push.
-                    NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
-                }
+            }
+            .headerPart(.pills)
+            HStack(spacing: 8) {
+                // RootTabView routes what the inbox opens, the same way it routes a push.
+                if showsBell { NotificationBell(onOpen: { NotificationRouter.shared.open($0) }) }
                 AvatarButton()
             }
+            .headerPart(.actions)
             PageTitle(title)
+                .accessibilitySortPriority(1)
+                .headerPart(.title)
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The line of context: wide if it fits beside the pills, else the short one, else nothing —
+    /// the empty last alternative is how the layout learns there is no room and stacks. At the
+    /// accessibility sizes it has a row of its own and wraps instead.
+    @ViewBuilder private func contextLine(_ subtitle: String) -> some View {
+        if typeSize.isAccessibilitySize {
+            line(subtitle, wraps: true).headerPart(.line)
+        } else {
+            ViewThatFits(in: .horizontal) {
+                line(subtitle, wraps: false)
+                if let shortSubtitle { line(shortSubtitle, wraps: false) }
+                Color.clear.frame(width: 0, height: 0)
+            }
+            .headerPart(.line)
         }
     }
 
-    private func line(_ text: String) -> some View {
+    private func line(_ text: String, wraps: Bool) -> some View {
         Text(text)
-            .font(.system(size: 13, weight: .semibold))
+            .appFont(13, weight: .semibold)
             .foregroundStyle(Theme.textSecondary)
-            .lineLimit(1)
+            // One line while it shares a row; once it has a row to itself it wraps rather than
+            // cut a date or a lesson to "…".
+            .lineLimit(wraps ? nil : 1)
+            .fixedSize(horizontal: false, vertical: wraps)
             .accessibilityLabel(subtitleLabel ?? text)
     }
 }
@@ -92,7 +116,7 @@ struct StrikeChip: View {
                         }
                     }
                 Text(String(streak))
-                    .font(.system(size: 13, weight: .heavy, design: .rounded))
+                    .appFont(13, weight: .heavy, design: .rounded)
                     .foregroundStyle(Theme.strike)
                     .contentTransition(.numericText(value: Double(streak)))
             }
@@ -100,6 +124,9 @@ struct StrikeChip: View {
             .padding(.trailing, 10)
             .padding(.vertical, 3)
             .background(Theme.card, in: Capsule())
+            // Header chrome: the pills sit beside the avatar on every tab, so they stop growing at
+            // `xxxLarge`; the large content viewer shows them bigger while they are pressed.
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .sensoryFeedback(.impact(weight: .medium), trigger: grows)
             .onGeometryChange(for: Bool.self) { proxy in
                 let frame = proxy.frame(in: .global)
@@ -121,6 +148,9 @@ struct StrikeChip: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
+            .accessibilityShowsLargeContentViewer {
+                Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
+            }
         }
     }
 
@@ -151,14 +181,15 @@ struct XPPill: View {
             // XP still in the air is not on the pill yet: it rolls up when the flight lands.
             let shown = max(0, xp - celebrations.heldXP)
             HStack(spacing: 4) {
-                Image(systemName: "bolt.fill").font(.system(size: 11, weight: .black))
+                Image(systemName: "bolt.fill").appFont(11, weight: .black)
                 Text("\(shown) XP").contentTransition(.numericText(value: Double(shown)))
             }
-            .font(.system(size: 13, weight: .heavy, design: .rounded))
+            .appFont(13, weight: .heavy, design: .rounded)
             .foregroundStyle(Theme.accent)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Theme.card, in: Capsule())
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
             .keyframeAnimator(initialValue: PillPulse(), trigger: pulses) { content, pulse in
                 content.scaleEffect(pulse.scale)
             } keyframes: { _ in
@@ -186,6 +217,7 @@ struct XPPill: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(shown) XP")
+            .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
         }
     }
 
@@ -212,18 +244,17 @@ struct AvatarButton: View {
     var body: some View {
         Button { router.openMe() } label: {
             Text(initials)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .appFont(13, weight: .heavy, design: .rounded)
                 .foregroundStyle(.white)
                 .frame(width: 34, height: 34)
                 .background(Theme.accent, in: Circle())
-                // The only way into Me, so it gets the 44-pt minimum target — drawn 34, tappable
-                // 44. The negative padding hands the extra 5 pt back to layout, so the header
-                // does not shift; hit testing is not clipped to the layout frame.
-                .padding(5)
-                .contentShape(Rectangle())
-                .padding(-5)
+                // Initials in a fixed 34-pt disc: they stop growing at `xxxLarge` (the disc does not).
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                // The only way into Me, so it gets the 44-pt minimum target — drawn 34, tappable 44.
+                .hitTarget(44)
         }
         .buttonStyle(PressBounce())
         .accessibilityLabel("Your profile")
+        .accessibilityShowsLargeContentViewer { Label("Your profile", systemImage: "person.crop.circle") }
     }
 }

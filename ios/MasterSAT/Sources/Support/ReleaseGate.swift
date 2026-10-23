@@ -106,14 +106,16 @@ struct UpdateRequiredView: View {
                 .frame(width: 64, height: 64)
                 .foregroundStyle(Theme.accent)
                 .padding(.bottom, 24)
+                // The asset's own name would be read; the title below says what this is.
+                .accessibilityHidden(true)
 
             Text("Time to update")
-                .font(.system(size: 28, weight: .heavy))
+                .appFont(28, weight: .heavy)
                 .tracking(-0.7)
                 .multilineTextAlignment(.center)
 
             Text(message)
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .multilineTextAlignment(.center)
                 .padding(.top, 10)
@@ -121,7 +123,7 @@ struct UpdateRequiredView: View {
 
             if let minimum = config?.minimumVersion, !minimum.isEmpty {
                 Text("You have \(AppInfo.version). You need \(minimum) or newer.")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textLabel)
                     .padding(.top, 14)
             }
@@ -138,7 +140,7 @@ struct UpdateRequiredView: View {
                     .buttonStyle(PrimaryButtonStyle(fullWidth: true))
                 } else {
                     Text("Open the App Store and search for MasterSAT.")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(14, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                 }
@@ -157,6 +159,7 @@ struct UpdateRequiredView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle(fullWidth: true))
                 .disabled(checking)
+                .accessibilityLabel(checking ? "Checking again" : "Check again")
             }
             .padding(.bottom, 24)
         }
@@ -187,9 +190,9 @@ struct UpdateNudgeCard: View {
             IconTile(systemName: "sparkles", tone: Theme.accent)
             VStack(alignment: .leading, spacing: 6) {
                 Text("A new version is out")
-                    .font(.system(size: 16, weight: .heavy))
+                    .appFont(16, weight: .heavy)
                 Text(message)
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {

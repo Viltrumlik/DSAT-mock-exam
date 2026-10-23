@@ -36,7 +36,7 @@ struct AccountPageHeading<Accessory: View>: View {
                 accessory()
             }
             Text(description)
-                .font(.system(size: 14, weight: .medium))
+                .appFont(14, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -50,18 +50,24 @@ extension AccountPageHeading where Accessory == EmptyView {
 }
 
 /// "Confirmed", "Not confirmed", "Connected", "This device" — the web's small status pill.
+///
+/// Whole on one line while there is room; at the accessibility sizes it wraps instead. Held to
+/// its one-line width there, it was wider than the phone, and every card on the Me sheet
+/// stretched to it — the page ran off both edges.
 struct AccountStatusPill: View {
     let text: String
     var tone: Color = Theme.success
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         Text(text)
-            .font(.system(size: 11.5, weight: .heavy))
+            .appFont(11.5, weight: .heavy)
             .foregroundStyle(tone)
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
             .background(Capsule().fill(tone.opacity(0.13)))
-            .fixedSize()
+            .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
     }
 }
 
@@ -85,14 +91,16 @@ struct AccountPillButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: 13, weight: .bold))
+                .labelStyle(AccountPillLabelStyle())
+                .appFont(13, weight: .bold)
                 .foregroundStyle(kind == .solid ? Color.white : tone)
                 .padding(.horizontal, kind == .quiet ? 8 : 13)
                 .padding(.vertical, 8)
                 .background(
                     Capsule().fill(fill.opacity(configuration.isPressed ? 0.75 : 1))
                 )
-                .contentShape(Capsule())
+                // A pill is 32 pt tall at the default size; a thumb needs 44.
+                .hitTarget(44)
                 .opacity(isEnabled ? 1 : 0.5)
         }
 
@@ -101,6 +109,28 @@ struct AccountPillButtonStyle: ButtonStyle {
             case .solid: return tone
             case .soft: return tone.opacity(0.13)
             case .quiet: return Color.clear
+            }
+        }
+    }
+}
+
+/// A pill's icon and words — the words alone at the accessibility sizes, where a glyph as big
+/// as the text would break "Classmates" mid-word to fit beside it. VoiceOver reads the words
+/// either way.
+private struct AccountPillLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AccountPillLabel(configuration: configuration)
+    }
+
+    private struct AccountPillLabel: View {
+        let configuration: LabelStyleConfiguration
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        var body: some View {
+            if typeSize.isAccessibilitySize {
+                configuration.title
+            } else {
+                Label(configuration)
             }
         }
     }
@@ -126,7 +156,7 @@ struct AccountTextField<Focus: Hashable>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             AccountFieldBox(icon: icon, invalid: error != nil) {
                 // `Text(verbatim:)`: a plain-string prompt is a LocalizedStringKey, and SwiftUI
@@ -164,7 +194,7 @@ struct AccountSecureField<Focus: Hashable>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label)
-                .font(.system(size: 13, weight: .bold))
+                .appFont(13, weight: .bold)
                 .foregroundStyle(Theme.textSecondary)
             AccountFieldBox(icon: "lock", invalid: error != nil) {
                 Group {
@@ -188,13 +218,14 @@ struct AccountSecureField<Focus: Hashable>: View {
                     focus.wrappedValue = field
                 } label: {
                     Image(systemName: revealed ? "eye.slash" : "eye")
-                        .font(.system(size: 15, weight: .semibold))
+                        .appFont(15, weight: .semibold)
                         .foregroundStyle(Theme.textLabel)
                         .frame(width: 30, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(revealed ? "Hide passwords" : "Show passwords")
+                .capDynamicType(label: revealed ? "Hide passwords" : "Show passwords", systemImage: revealed ? "eye.slash" : "eye")
             }
             .focusShake(shakes, cornerRadius: Theme.Radius.control)
             AccountFieldNote(hint: hint, error: error)
@@ -212,9 +243,11 @@ struct AccountFieldBox<Content: View>: View {
         HStack(spacing: 10) {
             if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(invalid ? Theme.danger : Theme.textLabel)
+                    .capDynamicType()
                     .frame(width: 16)
+                    .accessibilityHidden(true)
             }
             content()
         }
@@ -237,12 +270,12 @@ struct AccountFieldNote: View {
     var body: some View {
         if let error {
             Text(error)
-                .font(.system(size: 12.5, weight: .semibold))
+                .appFont(12.5, weight: .semibold)
                 .foregroundStyle(Theme.danger)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let hint {
             Text(hint)
-                .font(.system(size: 12, weight: .medium))
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -294,40 +327,136 @@ struct AccountAvatar: View {
     }
 }
 
-/// A row that opens a settings page: the tile, the page's name, the web menu's hint.
-struct AccountMenuRow<Destination: View>: View {
+/// A row that opens a page: the tile, the page's name, the web menu's hint.
+///
+/// It pushes a value, and the stack root it sits on says where that value goes — the Me sheet's
+/// root declares every page its rows open. A closure destination pushed from a stack root is
+/// the push SwiftUI drops.
+struct AccountMenuRow<Route: Hashable>: View {
     let icon: String
     let tone: Color
     let title: String
     let hint: String
     var badge: String?
-    @ViewBuilder let destination: () -> Destination
+    let route: Route
+
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
-        NavigationLink {
-            destination()
-        } label: {
+        NavigationLink(value: route) {
             HStack(spacing: 13) {
                 IconTile(systemName: icon, tone: tone)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(.primary)
-                    Text(hint)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.leading)
+                Group {
+                    if let badge {
+                        AccountBadgeRow(isStacked: typeSize.isAccessibilitySize) {
+                            words
+                            AccountStatusPill(text: badge, tone: Theme.warning)
+                            // Never seen: the longest word of the title, measured.
+                            Text(verbatim: Self.longestWord(of: title))
+                                .appFont(16, weight: .bold)
+                                .hidden()
+                                .accessibilityHidden(true)
+                        }
+                    } else {
+                        words
+                    }
                 }
-                Spacer(minLength: 0)
-                if let badge { AccountStatusPill(text: badge, tone: Theme.warning) }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
+                    .accessibilityHidden(true)
             }
             .cardStyle()
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .appFont(16, weight: .bold)
+                .foregroundStyle(.primary)
+            Text(hint)
+                .appFont(12, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    static func longestWord(of title: String) -> String {
+        let words = title.split(separator: " ")
+        return words.max { $0.count < $1.count }.map(String.init) ?? title
+    }
+}
+
+/// A menu row's words with its badge: beside them while the title's longest word still fits in
+/// the room the badge leaves, under them once it would not — "Sign-in & passwo/rd", broken
+/// mid-word beside "Confirm email" at the larger sizes, read worse than a badge a line lower.
+/// Always under at the accessibility sizes, where the badge wraps too.
+///
+/// Its three children: the words, the badge, and a hidden copy of the title's longest word that
+/// is only measured. One container whichever way it lays out, so nothing in it is rebuilt.
+private struct AccountBadgeRow: Layout {
+    let isStacked: Bool
+    var spacing: CGFloat = 13
+    var stackedSpacing: CGFloat = 6
+
+    private struct Arrangement {
+        let besides: Bool
+        let words: CGSize
+        let badge: CGSize
+    }
+
+    private func arrange(_ width: CGFloat?, _ subviews: Subviews) -> Arrangement {
+        let badge = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let longest = subviews[2].sizeThatFits(.unspecified).width
+        if !isStacked, let width, width - badge.width - spacing >= longest {
+            let words = subviews[0].sizeThatFits(ProposedViewSize(width: width - badge.width - spacing, height: nil))
+            return Arrangement(besides: true, words: words, badge: badge)
+        }
+        if !isStacked, width == nil {
+            let words = subviews[0].sizeThatFits(.unspecified)
+            return Arrangement(besides: true, words: words, badge: badge)
+        }
+        let words = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return Arrangement(besides: false, words: words, badge: badge)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let a = arrange(proposal.width, subviews)
+        if a.besides {
+            return CGSize(
+                width: proposal.width ?? (a.words.width + spacing + a.badge.width),
+                height: max(a.words.height, a.badge.height)
+            )
+        }
+        return CGSize(
+            width: proposal.width ?? max(a.words.width, a.badge.width),
+            height: a.words.height + stackedSpacing + a.badge.height
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let a = arrange(bounds.width, subviews)
+        subviews[2].place(at: bounds.origin, proposal: .zero)
+        if a.besides {
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                proposal: ProposedViewSize(width: bounds.width - a.badge.width - spacing, height: a.words.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing,
+                proposal: ProposedViewSize(a.badge)
+            )
+        } else {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: a.words.height))
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + a.words.height + stackedSpacing),
+                proposal: ProposedViewSize(width: bounds.width, height: a.badge.height)
+            )
+        }
     }
 }
 

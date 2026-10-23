@@ -69,6 +69,10 @@ struct AuthView: View {
             .ignoresSafeArea(.container, edges: isWide ? .all : .top)
             .scrollDismissesKeyboard(.interactively)
             .animation(.easeInOut(duration: 0.22), value: mode)
+            // The form is a different one now. Said as a screen change, it cuts off an alert the
+            // other form announced and VoiceOver has not finished (or not yet begun) reading — a
+            // "wrong password" heard over the Register form is about a form that is gone.
+            .onChange(of: mode) { AccessibilityNotification.ScreenChanged(nil).post() }
         }
     }
 
@@ -97,7 +101,7 @@ struct AuthView: View {
 
     private var copyright: some View {
         Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-            .font(.system(size: 12, weight: .medium))
+            .appFont(12, weight: .medium)
             .foregroundStyle(Theme.textLabel)
     }
 
@@ -136,6 +140,9 @@ private struct SignInForm: View {
     /// Bumped when the server said the email or password is wrong: the password box shakes and
     /// a warning haptic plays. Other failures (offline, throttled) only say so.
     @State private var refusals = 0
+    /// The sign-in on its way. Leaving the form (Register now) cancels it, so its failure is never
+    /// announced over a form it does not belong to.
+    @State private var attempt: Task<Void, Never>?
 
     private var canSubmit: Bool {
         !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !session.isWorking
@@ -144,7 +151,7 @@ private struct SignInForm: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Welcome back")
-                .font(.system(size: 30, weight: .heavy))
+                .appFont(30, weight: .heavy)
                 .tracking(-0.8)
                 .padding(.bottom, 2)
 
@@ -156,7 +163,7 @@ private struct SignInForm: View {
                     if retryable {
                         Button(action: submit) {
                             Label("Retry", systemImage: "arrow.clockwise")
-                                .font(.system(size: 12, weight: .bold))
+                                .appFont(12, weight: .bold)
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(Theme.accent)
@@ -193,12 +200,12 @@ private struct SignInForm: View {
             HStack {
                 Spacer()
                 Button("Forgot password?") { forgotOpen.toggle() }
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             if forgotOpen {
                 Text("Ask your teacher or the MasterSAT center to reset your password.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -213,36 +220,47 @@ private struct SignInForm: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
+            // The spinner has no words of its own.
+            .accessibilityLabel(session.isWorking ? "Signing in" : "Sign in")
             .padding(.top, 2)
 
             HStack(spacing: 5) {
                 Text("Don't have an account?")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
-                Button("Register now", action: onRegister)
-                    .font(.system(size: 14, weight: .bold))
+                Button("Register now") {
+                    attempt?.cancel()
+                    onRegister()
+                }
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
         }
         .sensoryFeedback(.warning, trigger: refusals)
+        .onDisappear { attempt?.cancel() }
     }
 
     private func submit() {
         focus = nil
         error = nil
-        Task {
+        attempt?.cancel()
+        attempt = Task {
             do {
                 try await session.signIn(
                     email: email.trimmingCharacters(in: .whitespaces),
                     password: password
                 )
             } catch {
+                // Cancelled — the form was left — is not a failure, and `APIClient` reports it as
+                // a transport error: nothing to show, nothing to announce.
+                guard !Task.isCancelled else { return }
                 let copy = AuthErrorCopy.classify(error)
                 self.error = copy.message
                 retryable = copy.retryable
-                // On this screen a 401 is a wrong email or password (`AuthErrorCopy`).
+                // On this screen a 401 from the token exchange is a wrong email or password
+                // (`AuthErrorCopy`); one from /me after it (`AccountDidNotLoad`) is not.
                 if case .unauthorized? = error as? APIError { refusals += 1 }
                 // The alert appears where the eye is not; VoiceOver hears it once.
                 AccessibilityNotification.Announcement(copy.message).post()
@@ -266,6 +284,10 @@ private struct RegisterForm: View {
     /// The server refused because someone of this name is already enrolled. Only staff can
     /// add a second, so the way out is to sign in — not to try a different spelling.
     @State private var duplicateName = false
+    /// This form is the one on screen. A registration still on its way when the student goes back to
+    /// sign in finishes (the account may already exist), but its failure is not read out over the
+    /// other form.
+    @State private var onScreen = false
     @FocusState private var focus: AuthFocus?
 
     private var canSubmit: Bool {
@@ -277,10 +299,10 @@ private struct RegisterForm: View {
         VStack(alignment: .leading, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Create your account")
-                    .font(.system(size: 30, weight: .heavy))
+                    .appFont(30, weight: .heavy)
                     .tracking(-0.8)
                 Text("Join the MasterSAT program.")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
             }
             .padding(.bottom, 2)
@@ -289,7 +311,7 @@ private struct RegisterForm: View {
                 AuthAlert(tone: .danger, message: error) {
                     if duplicateName {
                         Button("Sign in instead", action: onSignIn)
-                            .font(.system(size: 12, weight: .bold))
+                            .appFont(12, weight: .bold)
                             .foregroundStyle(Theme.accent)
                     }
                 }
@@ -354,19 +376,28 @@ private struct RegisterForm: View {
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
+            .accessibilityLabel(session.isWorking ? "Creating your account" : "Create account")
             .padding(.top, 2)
 
             HStack(spacing: 5) {
                 Text("Already have an account?")
-                    .font(.system(size: 14, weight: .medium))
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(Theme.textSecondary)
                 Button("Sign in", action: onSignIn)
-                    .font(.system(size: 14, weight: .bold))
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(Theme.accent)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
         }
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
+    }
+
+    /// Shows the alert and says it: it appears where the eye is not, and VoiceOver hears it once.
+    private func fail(_ message: String) {
+        error = message
+        if onScreen { AccessibilityNotification.Announcement(message).post() }
     }
 
     private func submit() {
@@ -380,7 +411,7 @@ private struct RegisterForm: View {
         let last = lastName.trimmingCharacters(in: .whitespaces)
         let user = username.trimmingCharacters(in: .whitespaces)
         guard first.count >= 3, last.count >= 3, user.count >= 3 else {
-            error = "First name, last name, and username must be at least 3 characters."
+            fail("First name, last name, and username must be at least 3 characters.")
             return
         }
 
@@ -395,9 +426,9 @@ private struct RegisterForm: View {
                 )
             } catch APIError.validation(let detail, let code, _) {
                 duplicateName = code == "duplicate_full_name"
-                error = detail.isEmpty ? "Registration failed. Please check your details." : detail
+                fail(detail.isEmpty ? "Registration failed. Please check your details." : detail)
             } catch {
-                self.error = AuthErrorCopy.classify(error).message
+                fail(AuthErrorCopy.classify(error).message)
             }
         }
     }

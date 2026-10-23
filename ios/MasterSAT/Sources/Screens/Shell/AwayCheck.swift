@@ -10,24 +10,32 @@ import MasterSATKit
 /// Runs on launch and each time the app comes back to the front: iOS keeps a backgrounded app
 /// alive for hours, so a student coming back after a lesson rarely LAUNCHES it — the return is
 /// the moment. A quick app switch costs one `/rewards/me/` read — the rules a caption needs are
-/// kept ten minutes, and the board is read only when XP rose or a place is still unread — and
+/// kept ten minutes, and the board is read only when the place can have changed
+/// (`WelcomeBack.readsRank`: XP rose, a place is still unread, or none has been noted yet) — and
 /// celebrates nothing unless something changed.
 ///
-/// The baseline is what the header SHOWS (XP still held for a flight is not seen yet). It is
-/// written after every check, whenever what the header shows changes (`RewardsRefresher`) and
-/// when the app leaves the front, so it never lags the pill: a relaunch after a gain was
-/// celebrated finds nothing left to celebrate. Per student, and one `AwayCheck` per signed-in
-/// identity (`RootTabView` is rebuilt per user id), like the `CelebrationCenter` it feeds — and
-/// every answer is checked against the session still being that student's before it is used.
+/// The baseline is what the header SHOWS, not what the server said: XP still held for a flight,
+/// a streak waiting to roll and a place whose card has not been shown are not seen yet
+/// (`LastSeenRule`). It is written after every check that read, whenever what the header shows
+/// changes (`RewardsRefresher`) and when the app leaves the front, so it never lags the pill: a
+/// relaunch after a gain was celebrated finds nothing left to celebrate. Per student, and one
+/// `AwayCheck` per signed-in identity (`RootTabView` is rebuilt per user id), like the
+/// `CelebrationCenter` it feeds — and every answer is checked against the session still being
+/// that student's before it is used.
 @MainActor
 final class AwayCheck {
     /// What a check did, for the caller that shows the student the result.
     enum Outcome: Equatable {
-        /// `/rewards/me/` was read and the header store took it.
+        /// The check ran to its end: `/rewards/me/` answered for this student and what it showed
+        /// was handed on. The header store holds the answer unless a newer read had already
+        /// landed (`RewardsStore.apply` refuses a stale one), and the board may still have failed
+        /// — its place is then left unread for the next check.
         case read
         /// Another check was already running; this one did nothing.
         case skipped
-        /// Nothing was read — a failed or cancelled read, or the session is no longer this student's.
+        /// The check stopped early: the `/rewards/me/` read failed or was cancelled, or the
+        /// session stopped being this student's — before the answer was used or while the board
+        /// was read. It writes no baseline.
         case failed
     }
 
@@ -55,6 +63,9 @@ final class AwayCheck {
         // Before the read: a rise another refresh brings meanwhile is held, never shown early.
         // Every path below resolves it — an entry left pending would hold the pill for good.
         let away = celebrations.expectAway(xpSeen: seen?.xp)
+        // On every path, after the board too: until then the stage is not quiet, so the hub
+        // never reads a place this check is about to put on a card.
+        defer { celebrations.awayCheckEnded() }
         let ticket = rewards.ticket()
         // Out WITH the read, not after it: a caption's rules never add a second round trip to
         // the time the pill is held. Only a student with a baseline can have a gain to name.
@@ -112,31 +123,22 @@ final class AwayCheck {
         return .read
     }
 
-    /// Writes the baseline as the header shows it now. Before anything has loaded the old one
-    /// stays; a number not read this time keeps its old value.
+    /// Writes the baseline as the header shows it now (`LastSeenRule`). Before anything has
+    /// loaded the old one stays; a number not read this time keeps its old value.
     func remember(userID: Int, rewards: RewardsStore, celebrations: CelebrationCenter) {
-        guard let xp = rewards.xp else { return }
-        let old = book.read(userID: userID)
-        let held = celebrations.heldXP
-        // A place that may be news and has not been shown (a read that failed, or a card still
-        // waiting for the stage) keeps the baseline at the place the student last saw, so the
-        // next read measures from it — however the hub has noted the new one meanwhile.
-        let readFailed = rankReadFailed ?? old?.rankUnread ?? false
-        let waiting = celebrations.rankNotShown
-        book.write(
-            LastSeen(
-                xp: max(0, xp - held),
-                // Every change, drops included: a run that restarted and grows again is new
-                // growth from the restart, never from the old best.
-                streak: celebrations.streakShown(rewards.streak) ?? old?.streak ?? 0,
-                rank: waiting?.from ?? (readFailed ? old?.rank : (rewards.rank ?? old?.rank)),
-                // XP in the air keeps its caption's starting point too: a kill before it lands
-                // flies both again, once.
-                newestAwardID: held > 0 ? old?.newestAwardID : (rewards.newestAwardID ?? old?.newestAwardID),
-                rankUnread: waiting != nil || readFailed
-            ),
-            userID: userID
+        let shown = LastSeenRule.Shown(
+            xp: rewards.xp,
+            streak: celebrations.streakShown(rewards.streak),
+            rank: rewards.rank,
+            newestAwardID: rewards.newestAwardID
         )
+        let inFlight = LastSeenRule.InFlight(
+            heldXP: celebrations.heldXP,
+            rankNotShown: celebrations.rankNotShown,
+            rankReadFailed: rankReadFailed
+        )
+        guard let seen = LastSeenRule.baseline(old: book.read(userID: userID), shown: shown, inFlight: inFlight) else { return }
+        book.write(seen, userID: userID)
     }
 
     /// Whether the session is still this student's: sign-out followed by a quick sign-in as

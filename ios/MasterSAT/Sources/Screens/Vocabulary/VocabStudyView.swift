@@ -108,7 +108,7 @@ struct VocabStudyView: View {
             VStack(spacing: 12) {
                 ProgressView().controlSize(.large)
                 Text("Dealing your words…")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -121,14 +121,16 @@ struct VocabStudyView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 26))
+                        .appFont(26)
                         .foregroundStyle(Theme.warning)
+                        .capDynamicType()
                         .frame(width: 56, height: 56)
                         .background(Circle().fill(Theme.warningSoft))
+                        .accessibilityHidden(true)
                     Text("Couldn't start this round")
-                        .font(.system(size: 18, weight: .heavy))
-                    Text(error.errorDescription ?? "Something went wrong on our end.")
-                        .font(.system(size: 14))
+                        .appFont(18, weight: .heavy)
+                    Text(error.errorDescription ?? ErrorState.nothingLost)
+                        .appFont(14)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -258,6 +260,10 @@ struct FlashcardView: View {
     @State private var locked = false
     /// One tick per flip the student asked for — the selection haptic.
     @State private var flips = 0
+    /// Cards dealt after a verdict (and rounds started): each one moves VoiceOver to the card.
+    @State private var deals = 0
+    /// VoiceOver's cursor on the card.
+    @AccessibilityFocusState private var cardFocused: Bool
 
     /// The swipe gives a verdict exactly as the buttons do, and is off when they are.
     private var swipeVerdict: (@MainActor (Bool) -> Void)? {
@@ -284,6 +290,16 @@ struct FlashcardView: View {
             }
         }
         .task { if deck.isEmpty { deck = set.words } }
+        // The cursor stays where the student left it — on the verdict button they pressed, which
+        // sits disabled for the hold — while the card in front of it is replaced. After a deal,
+        // it moves to the new card. The wait lets the update that deals the card finish first
+        // (focus can only land on an element that exists), and leaving the screen cancels it.
+        .task(id: deals) {
+            guard deals > 0 else { return }
+            cardFocused = false
+            try? await Task.sleep(for: .milliseconds(150))
+            if !Task.isCancelled { cardFocused = true }
+        }
         // The mode is left by a button, not a navigation, so nothing else would stop the
         // hold: without this it keeps counting and deals a card in a screen that is gone.
         .onDisappear { holdTask?.cancel() }
@@ -307,6 +323,7 @@ struct FlashcardView: View {
                         withAnimation(Self.flipAnimation) { flipped.toggle() }
                         flips += 1
                     }
+                    .accessibilityFocused($cardFocused)
                     // A new card is a new view: a finger still down from the last one, or a
                     // definition scrolled halfway, never carries over to the next word.
                     .id(word.id)
@@ -318,7 +335,7 @@ struct FlashcardView: View {
                         .padding(.horizontal, 16)
                 } else {
                     Text("Tap to flip — swipe right if you knew it, left to see it again.")
-                        .font(.system(size: 12, weight: .medium))
+                        .appFont(12, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
@@ -343,8 +360,9 @@ struct FlashcardView: View {
         let held = hold != nil
         return Button { answer(isCorrect) } label: {
             HStack(spacing: 9) {
-                Image(systemName: icon).font(.system(size: 17, weight: .bold))
-                Text(label).font(.system(size: 16, weight: .heavy)).lineLimit(1).minimumScaleFactor(0.8)
+                Image(systemName: icon).appFont(17, weight: .bold)
+                    .accessibilityHidden(true)
+                Text(label).appFont(16, weight: .heavy).lineLimit(1).minimumScaleFactor(0.8)
             }
             .foregroundStyle(tone)
             .frame(maxWidth: .infinity, minHeight: 60)
@@ -389,7 +407,7 @@ struct FlashcardView: View {
                     .frame(height: 10)
                     .clipShape(Capsule())
                     Text("\(ScoreText.string(learned.count)) of \(ScoreText.string(deck.count)) cards cleared this round")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .cardStyle(padding: 18)
@@ -422,10 +440,10 @@ struct FlashcardView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
                 IconTile(systemName: icon, tone: tone, size: 34)
-                Text(title).font(.system(size: 15, weight: .heavy))
+                Text(title).appFont(15, weight: .heavy)
                 Spacer(minLength: 0)
                 Text(ScoreText.string(words.count))
-                    .font(.system(size: 13, weight: .heavy).monospacedDigit())
+                    .appFont(13, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
@@ -433,7 +451,7 @@ struct FlashcardView: View {
             }
             if words.isEmpty {
                 if let emptyText {
-                    Text(emptyText).font(.system(size: 13)).foregroundStyle(Theme.textSecondary)
+                    Text(emptyText).appFont(13).foregroundStyle(Theme.textSecondary)
                 }
             } else {
                 WrappingChips(words: words.map(\.word), tone: tone)
@@ -483,6 +501,7 @@ struct FlashcardView: View {
 
         if index + 1 < deck.count {
             index += 1
+            deals += 1
             return
         }
         if missed.isEmpty {
@@ -507,6 +526,7 @@ struct FlashcardView: View {
         flipped = false
         round += 1
         phase = .study
+        deals += 1
     }
 }
 
@@ -524,14 +544,16 @@ private struct FlashcardHoldStrip: View {
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
+                        .capDynamicType()
                         .foregroundStyle(correct ? Theme.success : Theme.warning)
+                        .accessibilityHidden(true)
                 )
             VStack(alignment: .leading, spacing: 8) {
                 Text(correct
                      ? "Nice — sit with the definition for a beat."
                      : "Read it through — you'll see this one again.")
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .fixedSize(horizontal: false, vertical: true)
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
@@ -547,13 +569,45 @@ private struct FlashcardHoldStrip: View {
             StudyPill(text: "\(secondsLeft)s", icon: "timer", tone: Theme.accent)
                 .accessibilityHidden(true)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Theme.separator.opacity(0.6), lineWidth: 0.5)
-        )
+        .cardStyle(padding: 12)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// The card's two faces and the turn between them.
+///
+/// Only one face is ever drawn. `turn` (0 word up, 1 definition up) is what animates, so this body
+/// runs for every frame of the turn and the faces change places at the half-way frame, where the
+/// card is edge-on and shows nothing: the change cannot be seen. The first build kept both faces
+/// drawn and cross-faded their opacity along the whole turn, so for 250 ms a mirrored ghost of the
+/// face turning away lay over the face turning in — plainest a little before 45° — and the card
+/// flickered. Under Reduce Motion the card does not turn and the faces cross-fade instead; the
+/// tree is the same either way, the setting only picks the values.
+private struct FlipFaces<Front: View, Back: View>: View, Animatable {
+    var turn: Double
+    let calm: Bool
+    let front: Front
+    let back: Back
+
+    // `nonisolated`: `Animatable` is, and a `View`'s members are main-actor otherwise.
+    nonisolated var animatableData: Double {
+        get { turn }
+        set { turn = newValue }
+    }
+
+    var body: some View {
+        let backUp = turn >= 0.5
+        ZStack {
+            front
+                .opacity(calm ? 1 - turn : (backUp ? 0 : 1))
+                .allowsHitTesting(!backUp)
+            back
+                .opacity(calm ? turn : (backUp ? 1 : 0))
+                .allowsHitTesting(backUp)
+                // Pre-turned, so that once the card has turned it reads the right way round.
+                .rotation3DEffect(.degrees(calm ? 0 : 180), axis: (x: 0, y: 1, z: 0))
+        }
+        .rotation3DEffect(.degrees(calm ? 0 : turn * 180), axis: (x: 0, y: 1, z: 0))
     }
 }
 
@@ -575,6 +629,21 @@ struct FlipCard: View {
 
     /// Past this far, letting go gives the verdict.
     private static let threshold: CGFloat = 110
+    /// The card follows the finger exactly this far…
+    private static let reach: CGFloat = 160
+    /// …then is held back like a rubber band: each point further moves it less, and it never
+    /// goes more than this much past `reach`.
+    private static let stretch: CGFloat = 40
+
+    /// Where the card is drawn for a drag of `translation`. The slope is 1 at `reach` and falls
+    /// away smoothly from there, so the card does not catch as it passes the point. The verdict
+    /// is decided on the finger, not on this: pulling harder gives no other answer.
+    static func follow(_ translation: CGFloat) -> CGFloat {
+        let distance = abs(translation)
+        guard distance > reach else { return translation }
+        let held = reach + stretch * (1 - exp(-(distance - reach) / stretch))
+        return translation < 0 ? -held : held
+    }
 
     /// How far a drag moves the card: only a mostly sideways one does, so a long definition
     /// being scrolled up and down never nudges it. The same rule draws the card and decides the
@@ -597,46 +666,45 @@ struct FlipCard: View {
         ? UIColor(red: 15 / 255, green: 23 / 255, blue: 42 / 255, alpha: 1) : .white })
 
     var body: some View {
-        ZStack {
-            face(back: false).opacity(flipped ? 0 : 1)
-            face(back: true)
-                .opacity(flipped ? 1 : 0)
-                // Under Reduce Motion the card does not turn, so its back is not mirrored either.
-                .rotation3DEffect(.degrees(reduceMotion ? 0 : 180), axis: (x: 0, y: 1, z: 0))
-        }
-        // Under Reduce Motion the faces crossfade instead.
-        .rotation3DEffect(.degrees(flipped && !reduceMotion ? 180 : 0), axis: (x: 0, y: 1, z: 0))
-        // The stamp's own beat (120 ms) is scoped to the stamp: the card's return and its
-        // 250 ms turn keep theirs.
-        .overlay(alignment: .top) { stamp.animation(Motion.focusTap, value: leaning) }
-        .offset(x: drag)
-        // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
-        .rotationEffect(.degrees(reduceMotion ? 0 : Double(drag) / 18), anchor: .bottom)
-        .frame(maxWidth: .infinity)
-        .frame(height: 360)
-        .contentShape(Rectangle())
-        .onTapGesture { onFlip() }
-        // Simultaneous, so the faces' own up-and-down scrolling still works.
-        .simultaneousGesture(swipe)
-        .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
-        // One element for VoiceOver: it reads the side that is up, a double-tap turns the card
-        // over (the other side is one turn away), and the two verdicts are actions on it — only
-        // while a verdict is allowed (`onSwipe` is nil during the hold), like the buttons below.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spokenSide)
-        .accessibilityHint(flipped ? "Double-tap to turn it back to the word." : "Double-tap to turn it over to the definition.")
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAction { onFlip() }
-        .accessibilityActions {
-            if let onSwipe {
-                Button("Correct") { onSwipe(true) }
-                Button("Still learning") { onSwipe(false) }
+        let shift = Self.follow(drag)
+        FlipFaces(turn: flipped ? 1 : 0, calm: reduceMotion, front: face(back: false), back: face(back: true))
+            // The stamp's own beat (120 ms) is scoped to the stamp: the card's return and its
+            // 250 ms turn keep theirs.
+            .overlay(alignment: .top) { stamp.animation(Motion.focusTap, value: leaning) }
+            .offset(x: shift)
+            // A tilt that follows the finger, about the bottom edge; none under Reduce Motion.
+            .rotationEffect(.degrees(reduceMotion ? 0 : Double(shift) / 18), anchor: .bottom)
+            .frame(maxWidth: .infinity)
+            .frame(height: 360)
+            .contentShape(Rectangle())
+            .onTapGesture { onFlip() }
+            // Simultaneous, so the faces' own up-and-down scrolling still works.
+            .simultaneousGesture(swipe)
+            .sensoryFeedback(trigger: leaning) { _, now in now == nil ? nil : .selection }
+            // One element for VoiceOver: it reads the side that is up, a double-tap turns the card
+            // over (the other side is one turn away), and the two verdicts are actions on it — only
+            // while a verdict is allowed (`onSwipe` is nil during the hold), like the buttons below.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.spokenSide(of: word, flipped: flipped))
+            .accessibilityHint(flipped ? "Double-tap to turn it back to the word." : "Double-tap to turn it over to the definition.")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { onFlip() }
+            .accessibilityActions {
+                if let onSwipe {
+                    Button("Correct") { onSwipe(true) }
+                    Button("Still learning") { onSwipe(false) }
+                }
             }
-        }
+            // VoiceOver does not read a label that changes under its cursor, so a turn would
+            // pass in silence. Say the side now up — whoever turned the card, the student or the
+            // verdict that holds the definition open.
+            .onChange(of: flipped) { _, now in
+                AccessibilityNotification.Announcement(Self.spokenSide(of: word, flipped: now)).post()
+            }
     }
 
-    /// The side that is up, in full — what the eye reads.
-    private var spokenSide: String {
+    /// A side in full — what the eye reads.
+    private static func spokenSide(of word: VocabWord, flipped: Bool) -> String {
         var parts: [String] = []
         if flipped {
             parts.append("Definition: \(word.definition)")
@@ -670,7 +738,7 @@ struct FlipCard: View {
     private var stamp: some View {
         if let leaning {
             Label(leaning ? "Correct" : "Still learning", systemImage: leaning ? "checkmark" : "arrow.counterclockwise")
-                .font(.system(size: 14, weight: .heavy))
+                .appFont(14, weight: .heavy)
                 .foregroundStyle(Self.stampInk)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -689,14 +757,14 @@ struct FlipCard: View {
                 Overline(back ? "Definition" : "Word")
                 if back {
                     Text(word.definition)
-                        .font(.system(size: 21, weight: .bold))
+                        .appFont(21, weight: .bold)
                         .multilineTextAlignment(.center)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
                     if let example = word.example, !example.isEmpty {
                         HStack(alignment: .top, spacing: 0) {
                             Rectangle().fill(Theme.accent.opacity(0.4)).frame(width: 3)
                             Text("“\(example)”")
-                                .font(.system(size: 13).italic())
+                                .appFont(13).italic()
                                 .foregroundStyle(Theme.textSecondary)
                                 .multilineTextAlignment(.leading)
                                 .padding(.horizontal, 12)
@@ -714,7 +782,7 @@ struct FlipCard: View {
                     Text(word.word)
                         // One word on an otherwise empty screen. It can afford to be big,
                         // and being big is the point.
-                        .font(.system(size: 42, weight: .heavy, design: .rounded))
+                        .appFont(42, weight: .heavy, design: .rounded)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.4)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
@@ -733,8 +801,9 @@ struct FlipCard: View {
         )
         .overlay(alignment: .bottomTrailing) {
             HStack(spacing: 5) {
-                Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 10, weight: .bold))
-                Text(back ? "Flip for word" : "Flip for definition").font(.system(size: 11, weight: .heavy))
+                Image(systemName: "arrow.triangle.2.circlepath").appFont(10, weight: .bold)
+                    .accessibilityHidden(true)
+                Text(back ? "Flip for word" : "Flip for definition").appFont(11, weight: .heavy)
             }
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 10)
@@ -748,7 +817,7 @@ struct FlipCard: View {
 
     private func partChip(_ part: String) -> some View {
         Text(part)
-            .font(.system(size: 12, weight: .bold).italic())
+            .appFont(12, weight: .bold).italic()
             .foregroundStyle(Theme.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
@@ -768,7 +837,7 @@ struct WrappingChips: View {
         FlowLayout(spacing: 6) {
             ForEach(Array(words.enumerated()), id: \.offset) { _, word in
                 Text(word)
-                    .font(.system(size: 13, weight: .bold))
+                    .appFont(13, weight: .bold)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 5)

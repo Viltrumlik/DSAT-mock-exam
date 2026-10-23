@@ -12,6 +12,8 @@ struct MasterSATApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
+                // Once, here: the stored look, written to the windows (not `preferredColorScheme`).
+                .appliesStoredAppearance()
                 .task { await session.launch() }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -233,7 +235,9 @@ final class Session {
             return user
         } catch {
             await client.signOutLocally()
-            throw error
+            // Reached only straight after a token exchange that worked, so a 401 here is not a
+            // wrong password (`AccountDidNotLoad`); the form must not say it is.
+            throw AccountDidNotLoad.after(error)
         }
     }
 

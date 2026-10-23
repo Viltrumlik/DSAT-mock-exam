@@ -4,19 +4,6 @@ import MasterSATKit
 /// Which list the Tasks segment shows.
 enum ClassTaskFilter: Hashable { case toDo, done, results }
 
-/// Where one source of the Tasks lists stands — homework, or midterms. Only `loaded` may say
-/// "nothing here": a list that has not arrived, or could not, is a spinner or a retry, never an
-/// empty state.
-enum ClassSourceState: Equatable {
-    case pending, loaded, failed
-
-    /// A fetch ended. A failure keeps what was already loaded (the last good data stays on
-    /// screen) and, with nothing to keep, becomes `failed`.
-    mutating func finish(succeeded: Bool) {
-        if succeeded { self = .loaded } else if self != .loaded { self = .failed }
-    }
-}
-
 /// To do · Done · Results for the classes under the chip. Every row pushes a value resolved at
 /// the Class root.
 struct ClassTasksSegment: View {
@@ -73,17 +60,14 @@ struct ClassTasksSegment: View {
         }
     }
 
-    /// What stands in for a list that has not arrived: a spinner while it is on its way, a retry
-    /// when it failed.
+    /// What stands in for a list that has not arrived: rows' worth of shape while it is on its way,
+    /// a retry when it failed.
     @ViewBuilder
-    private func unavailable(_ state: ClassSourceState, message: String) -> some View {
+    private func unavailable(_ state: ClassSourceState, message: String, rows: Int = 3) -> some View {
         if state == .failed {
             RetryNotice(message: message, retry: retry)
         } else {
-            ProgressView()
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
-                .accessibilityLabel("Loading")
+            LoadingSkeleton(rows: rows, height: 80, style: .cards)
         }
     }
 
@@ -92,7 +76,12 @@ struct ClassTasksSegment: View {
         if homework != .loaded {
             unavailable(homework, message: "Your homework didn't load. Check your connection and try again.")
         } else if tasks.toDo.isEmpty {
-            DashedEmpty(title: "Nothing to do here", hint: "New work from your teachers shows up here.")
+            // The tab's one piece of art: Done and Results are second lists, and keep their dashes.
+            EmptyState(
+                art: .noTasks,
+                title: "Nothing to do here",
+                message: "New work from your teachers shows up here."
+            )
         } else {
             VStack(spacing: 10) {
                 ForEach(tasks.toDo) { item in
@@ -128,7 +117,7 @@ struct ClassTasksSegment: View {
     }
 
     /// Quizzes follow the homework fetch, midterms their own. Each part shows once its source is
-    /// in; what is still on its way is a spinner and what failed is a retry, so "No results yet"
+    /// in; what is still on its way is a skeleton and what failed is a retry, so "No results yet"
     /// is said only when both sources have answered.
     @ViewBuilder
     private var results: some View {
@@ -172,7 +161,9 @@ struct ClassTasksSegment: View {
                     let failed = homework == .failed || midterms == .failed
                     unavailable(failed ? .failed : .pending, message: shownAny
                         ? "Some of your results didn't load. Check your connection and try again."
-                        : "Your results didn't load. Check your connection and try again.")
+                        : "Your results didn't load. Check your connection and try again.",
+                        // Under rows that are already in, one more is enough to say "still coming".
+                        rows: shownAny ? 1 : 3)
                 }
             }
         }
@@ -191,30 +182,59 @@ struct AssessmentResultRow: View {
             IconTile(systemName: style.icon, tone: style.tone, size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(entry.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 Text([entry.classroomName, style.label].filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Theme.textSecondary)
             }
             Spacer(minLength: 0)
             if entry.state == .completed, entry.progress?.graded == true, let percent = entry.progress?.percent {
                 Text("\(percent)%")
-                    .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
+                    .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
                     .foregroundStyle(Theme.success)
             } else {
                 Chip(text: "Being marked", icon: "clock", tone: .neutral)
             }
             if opens {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
             }
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
+        // One element: what it is, how it went, when — not the tile, the class line, the percent
+        // and the chevron as four stops.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
     }
+
+    /// "Linear equations, 80 percent, Tue 21 Oct" — the day is the last time anything happened on
+    /// the attempt, in the learning center's time, like every date in the app.
+    private var spoken: String {
+        var parts = [entry.title]
+        if entry.state == .completed, entry.progress?.graded == true, let percent = entry.progress?.percent {
+            parts.append("\(percent) percent")
+        } else {
+            parts.append("being marked")
+        }
+        if let iso = entry.progress?.lastActivityAt, let date = JSONCoding.parseServerDate(iso) {
+            parts.append(Self.spokenDay.string(from: date))
+        }
+        return parts.joined(separator: ", ")
+    }
+
+    /// Built once: every result row asks for its day on every render.
+    private static let spokenDay: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = ServicesTime.calendar
+        f.timeZone = ServicesTime.tashkent
+        f.dateFormat = "EEE d MMM"
+        return f
+    }()
 }
 
 /// A midterm sat: its score once the teacher has released it — named, never blank, until then.
@@ -227,13 +247,13 @@ struct MidtermResultRow: View {
             IconTile(systemName: "calendar.badge.clock", tone: Theme.amber, size: 40)
             VStack(alignment: .leading, spacing: 3) {
                 Text(midterm.title)
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                     .foregroundStyle(.primary)
                     .multilineTextAlignment(.leading)
                 let subject = MidtermWording.subjectLabel(midterm.subject)
                 if !subject.isEmpty {
                     Text(subject)
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -241,11 +261,11 @@ struct MidtermResultRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .font(.system(size: 20, weight: .heavy, design: .rounded).monospacedDigit())
+                        .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")
-                            .font(.system(size: 11, weight: .medium))
+                            .appFont(11, weight: .medium)
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -254,11 +274,20 @@ struct MidtermResultRow: View {
             }
             if opens {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
+                    .appFont(12, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
             }
         }
         .cardStyle(padding: 14)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken)
+    }
+
+    /// "Midterm 2, 640 of 800" — or that the score is not out, which is not a score of nothing.
+    private var spoken: String {
+        guard let score = midterm.releasedScore else { return "\(midterm.title), not released" }
+        guard let ceiling = midterm.scoreCeiling else { return "\(midterm.title), \(ScoreText.string(score))" }
+        return "\(midterm.title), \(ScoreText.string(score)) of \(ScoreText.string(ceiling))"
     }
 }

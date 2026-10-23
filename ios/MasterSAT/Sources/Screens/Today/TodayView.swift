@@ -36,6 +36,13 @@ struct TodayView: View {
     @State private var lessonsFailed = false
     @State private var hasLoaded = false
     @State private var seenResults: Set<Int> = []
+    /// Nothing is stored for this student yet, so Today has never loaded for them: the scores
+    /// already out are old news and are marked seen without a card (`TodayPlan.freshResult`).
+    @State private var isFirstRun = false
+    /// Each class's lesson length, so a three-hour lesson stays on Today for three hours.
+    @State private var lessonHours: [Int: Int] = [:]
+    /// The classes have answered at least once; until then the lengths are unknown, not absent.
+    @State private var classesKnown = false
     @State private var lastWeek: TodayPlan.Progress?
     @State private var heroBounce = 0
     @State private var promptDismissed = false
@@ -47,13 +54,21 @@ struct TodayView: View {
     /// Worked out on the learning center's calendar — Tashkent's Monday-to-Sunday week and
     /// Tashkent's "today" — whatever time zone the phone is in.
     private var plan: TodayPlan {
-        TodayPlan(assignments: assignments, events: todayEvents, homeworkXP: homeworkXP, calendar: ServicesTime.calendar)
+        TodayPlan(
+            assignments: assignments, events: todayEvents, homeworkXP: homeworkXP,
+            lessonHours: lessonHours, calendar: ServicesTime.calendar
+        )
     }
 
     /// The homework did not load and there is none from an earlier load to show instead.
     private var homeworkFailed: Bool { loadError != nil && assignments.isEmpty }
 
-    private var freshResult: MidtermListing? { TodayPlan.freshResult(midterms, seen: seenResults) }
+    /// The last refresh failed over homework an earlier load brought: the rows stay, and say so.
+    private var homeworkStale: Bool { loadError != nil && !assignments.isEmpty }
+
+    private var freshResult: MidtermListing? {
+        TodayPlan.freshResult(midterms, seen: seenResults, firstRun: isFirstRun)
+    }
 
     private var seenKey: String { "today.seenResults.\(user.id)" }
 
@@ -88,9 +103,11 @@ struct TodayView: View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .today, onRefresh: {
                 refreshTick += 1
+                // A class joined or re-timed since the last look: ask for the lengths again.
+                classesKnown = false
                 await load()
             }) {
-                VStack(alignment: .leading, spacing: 18) {
+                SlotStack(spacing: 18) {
                     AppHeader(
                         title: "Today",
                         subtitle: dateLine,
@@ -106,7 +123,7 @@ struct TodayView: View {
 
                     if session.releaseGate.showsNudge {
                         UpdateNudgeCard(config: session.releaseGate.config) {
-                            withAnimation { session.releaseGate.dismissNudge() }
+                            withAnimation(rowAnimation) { session.releaseGate.dismissNudge() }
                         }
                     }
 
@@ -131,7 +148,7 @@ struct TodayView: View {
 
                     SurveysWaitingCard(refreshID: refreshTick)
 
-                    SATCountdownRow(examDate: user.satExamDate) { router.openMe() }
+                    SATCountdownRow(examDate: user.satExamDate) { router.openMe(on: .overview) }
                         .stagger(3, shown: shown)
 
                     if showsReminderPrompt {
@@ -162,6 +179,11 @@ struct TodayView: View {
                 loadSeen()
                 Task { await load() }
             }
+            // The ring bounces WITH the double confetti, so a week finished under a sheet or a
+            // cover bounces when its confetti plays there, not unseen beneath it.
+            .onChange(of: celebrations.allDonePlays) { _, _ in
+                if !reduceMotion { heroBounce += 1 }
+            }
             .navigationDestination(for: AssignmentListing.self) { assignment in
                 HomeworkDetailView(assignment: assignment).zoomDestination(id: assignment.id, in: zoom)
             }
@@ -180,20 +202,27 @@ struct TodayView: View {
     @ViewBuilder
     private var upNext: some View {
         let next = plan.upNext(limit: Self.upNextLimit)
+        let owed = plan.homework.count + plan.lessons.count
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
-                DotHeading(title: "Up next", count: hasLoaded ? plan.homework.count + plan.lessons.count : nil)
+            // At the accessibility sizes "See all" drops under the heading rather than squeezing
+            // "Up next" onto two lines.
+            AdaptiveStack(spacing: 9, columnSpacing: 4) {
+                // No count over a failure: a zero beside "didn't load" would read as "nothing owed".
+                // And none at zero: the all-caught-up card below already says so.
+                DotHeading(title: "Up next", count: hasLoaded && !homeworkFailed && owed > 0 ? owed : nil)
                 if next.more > 0 {
                     Button("See all") { router.showClassToDo() }
-                        .font(.system(size: 13, weight: .bold))
+                        .appFont(13, weight: .bold)
                         .foregroundStyle(Theme.accent)
                 }
             }
             if !hasLoaded {
-                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 30)
-            } else if let loadError, assignments.isEmpty {
-                // A failed load is never "all caught up".
-                RetryNotice(message: loadError) { await load() }
+                // The rows' own shape, so the page does not jump when they arrive.
+                LoadingSkeleton(rows: 3, height: 80, style: .cards)
+            } else if homeworkFailed {
+                // A failed load is never "all caught up". The week card above says it too, in a
+                // line; this is the page's one piece of art.
+                ErrorState(title: "Today's work didn't load") { await load() }
             } else if plan.isAllClear && lessonsFailed {
                 // Nothing owed, but tonight's lessons are unknown: not "all caught up" either.
                 RetryNotice(message: "Couldn't load today's lessons.") { await load() }
@@ -203,10 +232,15 @@ struct TodayView: View {
                 ForEach(next.items) { item in
                     row(item).transition(rowTransition)
                 }
-                if lessonsFailed {
+                // Only when no lesson is listed: beside lessons kept from the last load, "didn't
+                // load" contradicts the rows — the note below says they may be out of date.
+                if lessonsFailed && plan.lessons.isEmpty {
                     LessonsUnavailableRow { await load() }
                 }
             }
+            // One note for whatever is shown from an earlier load, homework or lessons. Not under
+            // the failure above, which already says the work did not load.
+            if homeworkStale || (lessonsFailed && !plan.lessons.isEmpty && !homeworkFailed) { StaleNote() }
         }
         .animation(rowAnimation, value: next.items.map(\.id))
     }
@@ -226,8 +260,12 @@ struct TodayView: View {
     // MARK: - Fresh result
 
     private func loadSeen() {
-        let stored = Set(UserDefaults.standard.array(forKey: seenKey) as? [Int] ?? [])
+        let saved = UserDefaults.standard.array(forKey: seenKey) as? [Int]
+        let stored = Set(saved ?? [])
         if stored != seenResults { seenResults = stored }
+        // No key at all, not an empty one: written the first time a load marks what is out.
+        let first = saved == nil
+        if first != isFirstRun { isFirstRun = first }
     }
 
     private func markSeen(_ attemptId: Int) {
@@ -236,12 +274,22 @@ struct TodayView: View {
         UserDefaults.standard.set(Array(seenResults).sorted(), forKey: seenKey)
     }
 
+    /// The first load ever: every score already out is old news. Written even when there are
+    /// none, so the next load knows this was not the first.
+    private func markFirstRunSeen(_ midterms: [MidtermListing]) {
+        seenResults.formUnion(TodayPlan.releasedAttempts(midterms))
+        UserDefaults.standard.set(Array(seenResults).sorted(), forKey: seenKey)
+        isFirstRun = false
+    }
+
     // MARK: - Loading
 
     @MainActor
     private func load() async {
         let student = session.student
         let rewardsAPI = session.rewards
+        let classroomsAPI = session.classrooms
+        let needsClasses = !classesKnown
         let now = Date.now
         // The endpoint reads its dates on the phone's calendar and the plan reads Tashkent's;
         // a day either side covers both, and the plan keeps only the events of its own today.
@@ -250,9 +298,16 @@ struct TodayView: View {
         async let papers = student.midterms()
         async let rules = rewardsAPI.rules()
         async let events = student.schedule(from: now.addingTimeInterval(-day), to: now.addingTimeInterval(day))
+        // Only the lesson lengths come from the classes, so they are asked for once, not on every
+        // return to the tab (a pull to refresh asks again).
+        async let rooms = needsClasses ? (try? await classroomsAPI.classrooms()) : nil
         var freshHomework: [AssignmentListing]?
         do {
             freshHomework = try await homework
+        } catch where Task.isCancelled {
+            // Not a failure: `APIClient` wraps a cancellation as a transport error, and an error
+            // here would put "Couldn't refresh" under rows that are fine.
+            return
         } catch let error as APIError {
             loadError = error.errorDescription
         } catch {
@@ -269,6 +324,7 @@ struct TodayView: View {
             if let freshHomework { assignments = freshHomework }
             if let freshPapers { midterms = freshPapers }
         }
+        if isFirstRun, let freshPapers { markFirstRunSeen(freshPapers) }
         if let freshHomework {
             loadError = nil
             // Today is opened most, so it keeps the device's reminders in step with the work.
@@ -284,23 +340,68 @@ struct TodayView: View {
         // The XP labels and today's lessons are extras: losing either never takes the page down.
         // Losing the lessons is remembered, though: an empty list must not read as a free evening.
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
+        // A failed lookup leaves the lengths as they were (two hours, on a first look): losing
+        // them never takes the page down, and the next load asks again.
+        if let fresh = await rooms {
+            let hours = TodayPlan.lessonHours(of: ProfileClasses.memberships(fresh))
+            if hours != lessonHours { lessonHours = hours }
+            classesKnown = true
+        }
         do {
             todayEvents = try await events
             lessonsFailed = false
-        } catch {
+        } catch where !Task.isCancelled {
             lessonsFailed = true
+        } catch {
+            // Cancelled: no answer about tonight's lessons, so the last word on them stands.
         }
         hasLoaded = true
         celebrateIfWeekJustFinished()
     }
 
-    /// The week's last homework just went in: double confetti, and the ring bounces.
+    /// The week's last homework just went in: double confetti, and the ring bounces as it plays
+    /// (`allDonePlays`).
     private func celebrateIfWeekJustFinished() {
         let week = plan.week
         if TodayPlan.justFinished(previous: lastWeek, current: week) {
             celebrations.allDone()
-            if !reduceMotion { heroBounce += 1 }
         }
         lastWeek = week
+    }
+}
+
+/// `VStack(alignment: .leading, spacing:)` that puts no gap around a subview with no height.
+///
+/// Today's optional slots — the stories rail, the live-quiz banner, the survey card — load
+/// themselves, so they stay in the stack while they have nothing to show, as zero-height views.
+/// A `VStack` still spaced each of them, and the page opened on a 54-pt hole under the header.
+/// Everything with a height lays out as it did in that `VStack`: each child is offered the
+/// stack's width and its own height, and sits at the leading edge.
+private struct SlotStack: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) }
+        let shown = sizes.filter { $0.height > 0 }
+        let height = shown.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(shown.count - 1, 0))
+        return CGSize(width: sizes.map(\.width).max() ?? 0, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let width = proposal.width ?? bounds.width
+        var y = bounds.minY
+        var placedOne = false
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            if size.height > 0 {
+                if placedOne { y += spacing }
+                placedOne = true
+            }
+            subview.place(
+                at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
+                proposal: ProposedViewSize(width: width, height: size.height)
+            )
+            y += size.height
+        }
     }
 }

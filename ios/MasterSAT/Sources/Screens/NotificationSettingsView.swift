@@ -45,9 +45,9 @@ struct NotificationSettingsView: View {
                     ForEach(StudentReminder.Kind.allCases, id: \.self) { kind in
                         Toggle(isOn: binding(for: kind)) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(label(kind)).font(.system(size: 15, weight: .bold))
+                                Text(label(kind)).appFont(15, weight: .bold)
                                 Text(explanation(kind))
-                                    .font(.system(size: 12, weight: .medium))
+                                    .appFont(12, weight: .medium)
                                     .foregroundStyle(Theme.textSecondary)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -59,7 +59,7 @@ struct NotificationSettingsView: View {
                 }
 
                 Text("Reminders are set on this phone from your own homework and midterm dates — nothing is sent from a server, so they work offline. A score published while the app is closed is announced the next time you open it.")
-                    .font(.system(size: 12, weight: .medium))
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Theme.textLabel)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -105,10 +105,11 @@ struct NotificationSettingsView: View {
         case .granted:
             HStack(spacing: 10) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 18))
+                    .appFont(18)
                     .foregroundStyle(Theme.success)
+                    .accessibilityHidden(true)
                 Text("Notifications are on")
-                    .font(.system(size: 15, weight: .bold))
+                    .appFont(15, weight: .bold)
                 Spacer(minLength: 0)
                 Chip(text: "\(ScoreText.string(service.pendingCount)) set", tone: .success)
             }
@@ -150,9 +151,14 @@ struct NotificationSettingsView: View {
 
     /// Applying a switch means rebuilding the schedule, not waiting for the next visit to
     /// Home — a toggle that does nothing until tomorrow reads as a broken toggle.
+    ///
+    /// Only with both lists in hand: `reschedule` clears every pending reminder and rebuilds
+    /// from what it is given, so a failed read standing in as "none" wiped them all (offline,
+    /// say). Skipped, the switch is saved and Today's next load that has both applies it.
     private func rescheduleNow() async {
-        let assignments = (try? await session.student.assignments()) ?? []
-        let midterms = (try? await session.student.midterms()) ?? []
+        guard let assignments = try? await session.student.assignments(),
+              let midterms = try? await session.student.midterms()
+        else { return }
         await service.reschedule(assignments: assignments, midterms: midterms)
     }
 
@@ -188,9 +194,9 @@ struct ReminderPromptCard: View {
                 IconTile(systemName: "bell.badge", tone: Theme.accent, size: 42)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Never miss a deadline")
-                        .font(.system(size: 16, weight: .heavy))
+                        .appFont(16, weight: .heavy)
                     Text("Get a nudge before homework is due and before a midterm starts.")
-                        .font(.system(size: 13, weight: .medium))
+                        .appFont(13, weight: .medium)
                         .foregroundStyle(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
