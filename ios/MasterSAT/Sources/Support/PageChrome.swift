@@ -90,7 +90,10 @@ struct DotHeading: View {
     var body: some View {
         HStack(spacing: 9) {
             Circle().fill(tone).frame(width: 10, height: 10)
+            // The words keep their line before the count pill does: at the accessibility sizes
+            // a squeezed row broke "Up next" over two lines to fit a "12".
             Text(title).appFont(15, weight: .heavy)
+                .layoutPriority(1)
             if let count {
                 Text(ScoreText.string(count))
                     .appFont(12, weight: .heavy)
