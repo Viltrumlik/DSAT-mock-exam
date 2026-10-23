@@ -11,6 +11,7 @@ Also used when loading ``my-submission`` so late joins / missed signals still sy
 from __future__ import annotations
 
 import logging
+from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.utils import timezone
@@ -75,7 +76,7 @@ def _latest_completed_attempt(
         # A sitting from before the homework was set is history, not this homework: the same
         # paper is set again for revision (see classes.pastpaper_retake).
         qs = qs.annotate(_finished_at=finished_at_expr()).filter(_finished_at__gte=since)
-    return qs.order_by("-submitted_at", "-id").first()
+    return qs.select_related("practice_test").order_by("-submitted_at", "-id").first()
 
 
 def _collect_completed_attempts_for_targets(
@@ -92,6 +93,78 @@ def _collect_completed_attempts_for_targets(
 
 def _representative_attempt(attempts: list[TestAttempt]) -> TestAttempt:
     return max(attempts, key=lambda a: (a.submitted_at or timezone.now(), a.pk))
+
+
+def homework_score_parts(attempts: list[TestAttempt]) -> list[tuple]:
+    """The scored parts of a practice homework: ``[(section or None, attempts), …]``.
+
+    A past paper's sections are one sitting of one paper, so they make ONE part and add up to its
+    SAT total (R&W + Math = 1600). A practice test is a single section that stands alone
+    ("Practice Test N", 200–800), so each is its own part: a homework of two practice tests is
+    two tests, and adding them showed a 640 and a 400 as 1040.
+    """
+    paper = [a for a in attempts if not a.practice_test.is_practice_test]
+    parts = [(None, paper)] if paper else []
+    parts += [(a.practice_test, [a]) for a in attempts if a.practice_test.is_practice_test]
+    return parts
+
+
+def part_score(attempts: list[TestAttempt]) -> int | None:
+    scores = [a.score for a in attempts if a.score is not None]
+    return sum(scores) if scores else None
+
+
+def homework_auto_grade(attempts: list[TestAttempt]):
+    """The homework's one grade: its part's score, or the mean of its parts' scores when it has several.
+
+    A past paper keeps its total and a practice test keeps its 200–800 score; several practice
+    tests average, so the grade stays on the scale each of them is on.
+    """
+    scores = [s for s in (part_score(atts) for _, atts in homework_score_parts(attempts)) if s is not None]
+    if not scores:
+        return 0
+    return (Decimal(sum(scores)) / len(scores)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+
+
+def completed_attempts_pool(student_ids, test_ids) -> dict[tuple[int, int], list[TestAttempt]]:
+    """Every finished attempt of these students on these tests in ONE query, keyed by
+    ``(student_id, practice_test_id)``, newest first in the database's own order — the order
+    ``_latest_completed_attempt`` picks from, so a pick from the pool is the same attempt."""
+    pool: dict[tuple[int, int], list[TestAttempt]] = {}
+    qs = (
+        TestAttempt.objects.filter(student_id__in=student_ids, practice_test_id__in=test_ids, is_completed=True)
+        .annotate(_finished_at=finished_at_expr())
+        .select_related("practice_test")
+        .order_by("-submitted_at", "-id")
+    )
+    for a in qs:
+        pool.setdefault((a.student_id, a.practice_test_id), []).append(a)
+    return pool
+
+
+def homework_score_parts_for(
+    student_id: int, assignment: Assignment, *, targets: list[int] | None = None, pool=None
+) -> list[tuple] | None:
+    """``homework_score_parts`` for the sitting that counts for ``assignment``; None until all of it is finished.
+
+    ``pool`` (from ``completed_attempts_pool``) answers from attempts already loaded, so a page of
+    many students and homework does not ask the database once per student, homework and test.
+    """
+    if targets is None:
+        targets = assignment_target_practice_test_ids(assignment)
+    since = homework_set_at(assignment)
+    if pool is None:
+        attempts = _collect_completed_attempts_for_targets(student_id, targets, since=since)
+    else:
+        attempts = []
+        for pt_id in targets:
+            ta = next(
+                (a for a in pool.get((student_id, pt_id), ()) if since is None or a._finished_at >= since), None
+            )
+            if ta is None:
+                return None
+            attempts.append(ta)
+    return homework_score_parts(attempts) if attempts else None
 
 
 def _apply_sync(student, assignment: Assignment, best: TestAttempt, total_score) -> bool:
@@ -129,8 +202,10 @@ def _apply_sync(student, assignment: Assignment, best: TestAttempt, total_score)
         attempt_changed = prev_attempt_id != best.id
         auto = assignment.is_auto_graded
 
-        # Already auto-graded on this exact attempt → nothing to do.
-        if s.status == Submission.STATUS_REVIEWED and not attempt_changed:
+        # Already auto-graded on this exact attempt → nothing to do, unless that grade is not the
+        # one the rule gives now: homework of several practice tests was graded on their sum.
+        regrade = auto and existing_review is not None and existing_review.grade != total_score
+        if s.status == Submission.STATUS_REVIEWED and not attempt_changed and not regrade:
             return False
         if s.status == Submission.STATUS_SUBMITTED and not attempt_changed and not auto:
             return False
@@ -190,8 +265,7 @@ def sync_practice_submission_for_assignment(student, assignment: Assignment) -> 
     if not attempts:
         return False
     best = _representative_attempt(attempts)
-    # Auto grade = total scaled score across all required sections (real recorded scores).
-    total_score = sum(a.score for a in attempts if a.score is not None)
+    total_score = homework_auto_grade(attempts)
     try:
         return _apply_sync(student, assignment, best, total_score)
     except Exception:

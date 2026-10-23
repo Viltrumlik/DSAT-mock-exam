@@ -281,3 +281,175 @@ class JournalPickerExcludesPracticeTestsTests(TestCase):
         ids = {x["id"] for x in r.json()["practice_tests"]}
         self.assertIn(pastpaper.id, ids)
         self.assertNotIn(practice.id, ids)
+
+
+class PracticeTestHomeworkScaleTests(TestCase):
+    """A practice test is one section on its own 200–800 scale. A homework of several is several
+    tests: its grade is their mean, never their sum, and the Results page shows each test on its
+    own row. A past paper's sections are one paper, so they still add up to its SAT total."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.teacher = User.objects.create_user(
+            email="pts_teacher@example.com", password="pw", role=acc_const.ROLE_TEACHER, subject=acc_const.DOMAIN_MATH,
+        )
+        self.student = User.objects.create_user(email="pts_student@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+        self.room = Classroom.objects.create(
+            name="Math", subject=Classroom.SUBJECT_MATH, level="middle",
+            lesson_days=Classroom.DAYS_ODD, created_by=self.teacher, teacher=self.teacher,
+        )
+        ClassroomMembership.objects.create(classroom=self.room, user=self.teacher, role=ClassroomMembership.ROLE_TEACHER)
+        ClassroomMembership.objects.create(classroom=self.room, user=self.student, role=ClassroomMembership.ROLE_STUDENT)
+
+    def _practice(self, number):
+        t = PracticeTest.objects.create(
+            subject="MATH", title=f"Exam Prep | Test {number} | Math", is_practice_test=True, is_published=True,
+            practice_access=PracticeTest.ACCESS_OPEN, practice_number=number,
+        )
+        seed_mc_questions_for_practice_test(t)
+        return t
+
+    def _paper(self, subject):
+        t = PracticeTest.objects.create(subject=subject, title=subject, collection_name="SAT March 2024", is_published=True)
+        seed_mc_questions_for_practice_test(t)
+        return t
+
+    def _homework(self, *tests):
+        return Assignment.objects.create(
+            classroom=self.room, created_by=self.teacher, title="CHUNG PRACTISE",
+            category=Assignment.CATEGORY_HOMEWORK, status=Assignment.STATUS_PUBLISHED,
+            practice_test_ids=[t.id for t in tests],
+        )
+
+    def _finish(self, test, score, *, is_timed=True):
+        # Saving a finished attempt fires the homework sync, as the runner does.
+        now = timezone.now()
+        return TestAttempt.objects.create(
+            student=self.student, practice_test=test, score=score, is_timed=is_timed,
+            is_completed=True, current_state=TestAttempt.STATE_COMPLETED, completed_at=now, submitted_at=now,
+        )
+
+    def _grade(self, a):
+        return float(Submission.objects.get(assignment=a, student=self.student).review.grade)
+
+    def _rows(self, **params):
+        self.client.force_authenticate(self.teacher)
+        r = self.client.get(RESULTS_URL.format(id=self.room.id), params)
+        self.assertEqual(r.status_code, 200, r.content)
+        return r.json()["rows"]
+
+    def test_two_practice_tests_are_graded_on_their_mean_not_their_sum(self):
+        pt1, pt3 = self._practice(1), self._practice(3)
+        a = self._homework(pt1, pt3)
+        self._finish(pt1, 640)
+        self._finish(pt3, 400)
+        self.assertEqual(self._grade(a), 520.0)
+
+    def test_the_mean_rounds_to_a_whole_score(self):
+        tests = [self._practice(n) for n in (1, 2, 3)]
+        a = self._homework(*tests)
+        for t, score in zip(tests, (500, 500, 510)):
+            self._finish(t, score)
+        self.assertEqual(self._grade(a), 503.0)
+
+    def test_a_past_paper_still_adds_up_to_its_total(self):
+        rw, math = self._paper("READING_WRITING"), self._paper("MATH")
+        a = self._homework(rw, math)
+        self._finish(rw, 650)
+        self._finish(math, 700)
+        self.assertEqual(self._grade(a), 1350.0)
+
+    def test_a_summed_grade_from_before_is_regraded_on_the_next_sync(self):
+        from classes.homework_auto_submit import sync_practice_submission_for_assignment
+
+        pt1, pt3 = self._practice(1), self._practice(3)
+        a = self._homework(pt1, pt3)
+        self._finish(pt1, 640)
+        self._finish(pt3, 400)
+        review = Submission.objects.get(assignment=a, student=self.student).review
+        review.grade = 1040  # what the old rule wrote
+        review.save()
+        self.assertTrue(sync_practice_submission_for_assignment(self.student, a))
+        self.assertEqual(self._grade(a), 520.0)
+        # And then it is settled.
+        self.assertFalse(sync_practice_submission_for_assignment(self.student, a))
+
+    def test_results_show_each_practice_test_on_its_own_row(self):
+        pt1, pt3 = self._practice(1), self._practice(3)
+        a = self._homework(pt1, pt3)
+        self._finish(pt1, 640)
+        self._finish(pt3, 400, is_timed=False)
+        rows = {r["content_name"]: r for r in self._rows()}
+        self.assertEqual(set(rows), {"CHUNG PRACTISE · Practice Test 1", "CHUNG PRACTISE · Practice Test 3"})
+        self.assertEqual(rows["CHUNG PRACTISE · Practice Test 1"]["score"], 640.0)
+        self.assertEqual(rows["CHUNG PRACTISE · Practice Test 3"]["score"], 400.0)
+        self.assertFalse(rows["CHUNG PRACTISE · Practice Test 1"]["untimed"])
+        self.assertTrue(rows["CHUNG PRACTISE · Practice Test 3"]["untimed"])
+        self.assertEqual({r["type"] for r in rows.values()}, {"Practice Test"})
+        self.assertEqual({r["status"] for r in rows.values()}, {Submission.STATUS_REVIEWED})
+        self.assertEqual(len(self._rows(type="past paper")), 0)
+        self.assertEqual(len(self._rows(type="practice test")), 2)
+
+    def test_results_of_a_mix_keep_the_past_paper_whole(self):
+        rw, math, pt4 = self._paper("READING_WRITING"), self._paper("MATH"), self._practice(4)
+        a = self._homework(rw, math, pt4)
+        self._finish(rw, 650)
+        self._finish(math, 700)
+        self._finish(pt4, 560)
+        rows = {r["content_name"]: r for r in self._rows()}
+        self.assertEqual(rows["CHUNG PRACTISE · Past Paper"]["score"], 1350.0)
+        self.assertEqual(rows["CHUNG PRACTISE · Past Paper"]["type"], "Past Paper")
+        self.assertEqual(rows["CHUNG PRACTISE · Practice Test 4"]["score"], 560.0)
+        self.assertEqual([r["type"] for r in self._rows(type="past paper")], ["Past Paper"])
+
+    def test_results_of_one_past_paper_stay_one_row(self):
+        rw, math = self._paper("READING_WRITING"), self._paper("MATH")
+        self._homework(rw, math)
+        self._finish(rw, 650)
+        self._finish(math, 700)
+        (row,) = self._rows()
+        self.assertEqual(row["content_name"], "CHUNG PRACTISE")
+        self.assertEqual(row["score"], 1350.0)
+
+    def test_results_split_rows_cost_the_same_queries_for_any_class_size(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        pt1, pt3 = self._practice(1), self._practice(3)
+        self._homework(pt1, pt3)
+        self._homework(pt1, pt3)
+
+        def finish_both(student):
+            self.student = student
+            self._finish(pt1, 640)
+            self._finish(pt3, 400)
+
+        def count():
+            self.client.force_authenticate(self.teacher)
+            with CaptureQueriesContext(connection) as ctx:
+                r = self.client.get(RESULTS_URL.format(id=self.room.id), {"type": "practice test"})
+            self.assertEqual(r.status_code, 200, r.content)
+            return len(ctx.captured_queries), len(r.json()["rows"])
+
+        finish_both(self.student)
+        one, rows_one = count()
+        for n in range(3):
+            other = User.objects.create_user(email=f"pts_more{n}@example.com", password="pw", role=acc_const.ROLE_STUDENT)
+            ClassroomMembership.objects.create(classroom=self.room, user=other, role=ClassroomMembership.ROLE_STUDENT)
+            finish_both(other)
+        four, rows_four = count()
+        self.assertEqual((rows_one, rows_four), (4, 16))  # 2 homework x 2 tests per student
+        self.assertEqual(four, one)
+
+    def test_a_teachers_own_mark_stays_one_row(self):
+        pt1, pt3 = self._practice(1), self._practice(3)
+        a = self._homework(pt1, pt3)
+        self._finish(pt1, 640)
+        self._finish(pt3, 400)
+        review = Submission.objects.get(assignment=a, student=self.student).review
+        review.is_auto = False
+        review.grade = 90
+        review.save()
+        (row,) = self._rows()
+        self.assertEqual(row["content_name"], "CHUNG PRACTISE")
+        self.assertEqual(row["score"], 90.0)
