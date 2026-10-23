@@ -148,7 +148,7 @@ struct TodayView: View {
 
                     SurveysWaitingCard(refreshID: refreshTick)
 
-                    SATCountdownRow(examDate: user.satExamDate) { router.openMe() }
+                    SATCountdownRow(examDate: user.satExamDate) { router.openMe(on: .overview) }
                         .stagger(3, shown: shown)
 
                     if showsReminderPrompt {
