@@ -7,11 +7,9 @@ import MasterSATKit
 /// two could not drift apart.
 ///
 /// **Study goal**, one of the web's sections, is not a row here: it is set from Overview's
-/// "Your goal" (the same sheet and date list Today uses). **Appearance** is not a row yet
-/// either — the app follows the phone's own light/dark until it has a theme setting of its own;
-/// it comes in as one more `ProfileView.Route` case, its row at the end of this list and its
-/// page in the root's destination switch. About is the app's own addition: a phone has a
-/// version worth knowing.
+/// "Your goal" (the same sheet and date list Today uses). **Appearance** sits where the web puts
+/// it, after Account and before Notifications (the goal's place is empty here). About is the
+/// app's own addition: a phone has a version worth knowing.
 struct ProfileSettingsTab: View {
     /// No address yet, or one not confirmed: Sign-in & password carries a "Confirm email" badge.
     let emailNeedsConfirming: Bool
@@ -21,6 +19,11 @@ struct ProfileSettingsTab: View {
             AccountMenuRow(
                 icon: "person.crop.circle", tone: Theme.accent, title: "Account", hint: "Photo, name and phone",
                 route: ProfileView.Route.accountDetails
+            )
+            AccountMenuRow(
+                icon: "circle.lefthalf.filled", tone: Theme.subjectEnglish, title: "Appearance",
+                hint: "System, light or dark",
+                route: ProfileView.Route.appearance
             )
             AccountMenuRow(
                 icon: "bell.badge", tone: Theme.info, title: "Notifications", hint: "What reaches you",

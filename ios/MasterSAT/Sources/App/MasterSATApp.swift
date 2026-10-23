@@ -12,6 +12,8 @@ struct MasterSATApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
+                // Once, here: the window's style, which every sheet and cover inherits.
+                .appliesStoredAppearance()
                 .task { await session.launch() }
         }
         .onChange(of: scenePhase) { _, phase in

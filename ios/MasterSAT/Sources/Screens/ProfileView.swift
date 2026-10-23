@@ -36,7 +36,7 @@ struct ProfileView: View {
 
     /// Pages no `AppLink` names.
     enum Route: Hashable {
-        case accountDetails, notifications, signIn, devices, about
+        case accountDetails, appearance, notifications, signIn, devices, about
         /// One of the student's classes, opened on the copy the Classes tab already holds.
         case classroom(id: Int)
     }
@@ -113,6 +113,7 @@ struct ProfileView: View {
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .accountDetails: AccountDetailsView()
+                case .appearance: AppearanceView()
                 case .notifications: NotificationSettingsView()
                 case .signIn: AccountSignInView()
                 case .devices: AccountDevicesView()
