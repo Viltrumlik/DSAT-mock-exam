@@ -151,9 +151,14 @@ struct NotificationSettingsView: View {
 
     /// Applying a switch means rebuilding the schedule, not waiting for the next visit to
     /// Home — a toggle that does nothing until tomorrow reads as a broken toggle.
+    ///
+    /// Only with both lists in hand: `reschedule` clears every pending reminder and rebuilds
+    /// from what it is given, so a failed read standing in as "none" wiped them all (offline,
+    /// say). Skipped, the switch is saved and Today's next load that has both applies it.
     private func rescheduleNow() async {
-        let assignments = (try? await session.student.assignments()) ?? []
-        let midterms = (try? await session.student.midterms()) ?? []
+        guard let assignments = try? await session.student.assignments(),
+              let midterms = try? await session.student.midterms()
+        else { return }
         await service.reschedule(assignments: assignments, midterms: midterms)
     }
 
