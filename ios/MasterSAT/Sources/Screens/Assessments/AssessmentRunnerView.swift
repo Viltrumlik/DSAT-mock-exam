@@ -22,6 +22,8 @@ struct AssessmentRunnerView: View {
     @State private var showSubmitConfirmation = false
     @State private var showMap = false
     @State private var showCalculator = false
+    /// The question a report is being written about, fixed when the Report button was tapped.
+    @State private var reporting: ReportedQuestion?
     @State private var didSubmit = false
     /// Crossed-out choices, per question. Scratch work, not an answer: the site keeps this
     /// client-side too, and a student who eliminates B has not told the server anything.
@@ -192,6 +194,16 @@ struct AssessmentRunnerView: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
         }
+        // Which question is reported is fixed by the tap, not read while the sheet is up: a
+        // page that turns behind it must not move the report on to the next question.
+        .sheet(item: $reporting) { target in
+            ReportProblemSheet(
+                system: .assessment,
+                questionId: target.questionId,
+                attemptId: attemptId,
+                questionNumber: target.number
+            )
+        }
     }
 
     /// Save-and-exit, the calculator, and the zoom control. Chrome only — the set's own
@@ -219,6 +231,8 @@ struct AssessmentRunnerView: View {
             AdaptiveSpacer()
 
             HStack(spacing: 12) {
+                reportButton(runner)
+
                 if offersCalculator {
                     Button { showCalculator = true } label: {
                         Image(systemName: "function")
@@ -252,6 +266,29 @@ struct AssessmentRunnerView: View {
         // 50 pt it had when its glyphs were 30 pt tall inside 10 pt of padding.
         .padding(.vertical, 3)
         .background(Theme.card)
+    }
+
+    /// "Report a problem with this question", as the web runner carries it in its own tool row.
+    ///
+    /// Beside the flag in purpose, not in glyph: flagging is the student's private bookmark and
+    /// this is a message to the school, and two flags in one runner would be read as one control.
+    /// Nothing here touches the answer behind it — the sheet opens over the page and the page
+    /// carries on as it was.
+    @ViewBuilder
+    private func reportButton(_ runner: AssessmentRunner) -> some View {
+        if let question = runner.currentQuestion {
+            Button {
+                reporting = ReportedQuestion(questionId: question.id, number: runner.currentIndex + 1)
+            } label: {
+                Image(systemName: "exclamationmark.bubble")
+                    .appFont(16, weight: .semibold)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: Self.minTarget, height: Self.minTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Report a problem with this question")
+        }
     }
 
     private func zoomButton(_ icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
