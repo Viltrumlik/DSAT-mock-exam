@@ -16447,15 +16447,15 @@ Carried into later phases (found in phase 4 reviews and on device, deliberately 
 
 Done on `feat/ios-redesign-phase5`, cut from `main` at `95fc244e`. The work:
 - Tasks 42–55, each with its own fix rounds.
-- A device check (Task 56) on the iOS 26.3 simulator, pinned to the local backend, with seeded data. Three passes found D1–D12; every one is fixed and re-checked on the device.
+- A device check (Task 56) on the iOS 26.3 simulator, pinned to the local backend, with seeded data. Four passes found D1–D13; every one is fixed and re-checked on the device.
 - One opus whole-branch review ("with fixes", 0 Critical / 10 Important / 15 Minor), then one fix wave of 22 items, re-reviewed clean.
 - The owner's answer to question 1 added two tasks:
-  - Task 57, the Me sheet as B: three fix rounds, the last for D12.
+  - Task 57, the Me sheet as B: four fix rounds, the last two for D12 and D13.
   - Task 58, Appearance: one fix round, for D10.
   - Each task was re-reviewed clean after its last round.
 - Order: Appearance was built second, right after the Account rows it hangs from. The plan lists it last.
 
-The kit went from 786 to 953 tests (all green at `f1f8d2a1`). The app clean-builds under Swift 6; all 130 distinct warnings are in the kit, none in the app's own sources.
+The kit went from 786 to 953 tests (all green; the last two commits touch only the app). The app clean-builds under Swift 6; all 130 distinct warnings are in the kit, none in the app's own sources.
 
 Decisions taken during phase 5 that later work builds on (the full list of rulings, each with its cost if wrong, is in the PR):
 - **P5-R1 Explore reads its four lines live on every visit.**
@@ -16465,7 +16465,7 @@ Decisions taken during phase 5 that later work builds on (the full list of rulin
   - Services shows the next booked hour, otherwise the next free one (always after now), and the next SAT **date** ("Next SAT: December 20").
 - **P5-R2 The Me sheet is the website's three tabs (owner, B).**
   - Overview · Classes · Settings sit under a hero that carries the 44-pt close button.
-  - While scrolled, an overlay copy of the tabs stays pinned. Each tab's page is at least one screen tall, so a switch while pinned always lands on content (D12).
+  - While scrolled, an overlay copy of the tabs stays pinned. Each tab's page is at least one screen tall, so a switch while pinned always lands on content (D12). While pinned, the page swap is not animated (`.transaction(value:)` on the scroll view), so the switch lands on the tabs from any tab (D13); unpinned, the pill still slides.
   - The tab lives in `AppRouter.meTab`: the avatar reopens the last tab, `/profile` opens Overview.
   - Every push from the sheet is a value route.
   - Overview adds Midterms & certificates:
@@ -16500,11 +16500,11 @@ Decisions taken during phase 5 that later work builds on (the full list of rulin
   - It reads "Nothing to do yet", in neutral, and is never "Catch up".
 - **P5-R8 Implementers never launch the app**: an unpinned launch once reached production. The controller runs one pinned rig.
 
-Verified on the device (build `f1f8d2a1` and earlier, iPhone 17 Pro, iOS 26.3): see the PR's checklist. It covers:
+Verified on the device (build `2c4bdcb2` and earlier, iPhone 17 Pro, iOS 26.3): see the PR's checklist. It covers:
 - Explore, Me B with all three tabs, the certificate over Me, and Appearance Light / Dark / System with the sheet open;
 - the empty states, the error art, the stale line, and Go to Classes;
 - the tab roots at AX5, xxxLarge, dark mode, and the Reduce Motion skeleton and push;
-- D1–D12, each re-checked after its fix.
+- D1–D13, each re-checked after its fix.
 
 A drag down on the pinned tab strip neither scrolls the page nor closes the sheet; that is accepted.
 
