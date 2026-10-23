@@ -78,8 +78,10 @@ struct ProfilePanel<Actions: View, Content: View>: View {
         .cardStyle(padding: 18)
     }
 
+    /// The tile beside the name; above it at the accessibility sizes, so the name has the
+    /// panel's whole width rather than breaking "certificates" mid-word beside the tile.
     private var heading: some View {
-        HStack(spacing: 12) {
+        AdaptiveStack(spacing: 12, columnSpacing: 10) {
             IconTile(systemName: icon, tone: tone, size: 40)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
@@ -174,9 +176,9 @@ struct ProfileChip: View {
 
     var body: some View {
         if let action {
-            Button(action: action) { chip }
+            // The chip is 27 pt tall; its reach is a thumb's.
+            Button(action: action) { chip.hitTarget(44) }
                 .buttonStyle(.plain)
-                .contentShape(Capsule())
         } else {
             chip
         }
@@ -187,9 +189,11 @@ struct ProfileChip: View {
             Image(systemName: icon).appFont(11, weight: .bold)
                 .accessibilityHidden(true)
             // Verbatim: an address or a phone number is not markdown, and must not become a link.
+            // One line, shortened in the middle, until the accessibility sizes — there an address
+            // wraps rather than lose its middle.
             Text(verbatim: text)
                 .appFont(12.5, weight: .bold)
-                .lineLimit(1)
+                .titleLineLimit(1)
                 .truncationMode(.middle)
         }
         .foregroundStyle(tone)
@@ -226,8 +230,12 @@ struct ProfileScoreRow: View {
     /// A midterm's name runs long ("Midterm 2 · Algebra and functions"); a test's does not.
     var titleLines = 1
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// One row while it fits; at the accessibility sizes the tile, the words and the score each
+    /// take a line, or the words would be squeezed to a word per line between the two.
     var body: some View {
-        HStack(spacing: 12) {
+        AdaptiveStack(spacing: 12, columnSpacing: 8) {
             IconTile(
                 systemName: math ? "function" : "book.closed.fill",
                 tone: math ? ProfileTone.sky : ProfileTone.emerald,
@@ -252,26 +260,29 @@ struct ProfileScoreRow: View {
                     detailText
                 }
             }
-            Spacer(minLength: 8)
-            VStack(alignment: .trailing, spacing: 0) {
-                Text(verbatim: score)
-                    .appFont(20, weight: .heavy)
-                    .monospacedDigit()
-                    .foregroundStyle(.primary)
-                if let ceiling {
-                    Text(verbatim: "/ \(ceiling)")
-                        .appFont(11, weight: .semibold)
-                        .foregroundStyle(Theme.textSecondary)
-                        .accessibilityLabel("out of \(ceiling)")
+            AdaptiveSpacer()
+            HStack(spacing: 12) {
+                VStack(alignment: typeSize.isAccessibilitySize ? .leading : .trailing, spacing: 0) {
+                    Text(verbatim: score)
+                        .appFont(20, weight: .heavy, monospacedDigits: true)
+                        .foregroundStyle(.primary)
+                    if let ceiling {
+                        Text(verbatim: "/ \(ceiling)")
+                            .appFont(11, weight: .semibold)
+                            .foregroundStyle(Theme.textSecondary)
+                            .accessibilityLabel("out of \(ceiling)")
+                    }
+                }
+                if opens {
+                    Image(systemName: "chevron.right")
+                        .appFont(12, weight: .bold)
+                        .foregroundStyle(Theme.textLabel)
+                        .accessibilityHidden(true)
                 }
             }
-            if opens {
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .bold)
-                    .foregroundStyle(Theme.textLabel)
-                    .accessibilityHidden(true)
-            }
+            .padding(.leading, typeSize.isAccessibilitySize ? 0 : 8)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var detailText: some View {
@@ -280,9 +291,13 @@ struct ProfileScoreRow: View {
                 .appFont(12, weight: .medium)
                 .foregroundStyle(Theme.textSecondary)
                 .titleLineLimit(1)
+                // As the title: uncut at the accessibility sizes, it still needs its own height.
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
+    /// Whole on one line, except at the accessibility sizes: held to its one-line width there,
+    /// it was wider than the row and pushed the whole page past the screen's edge.
     private var passedTag: some View {
         Label("Passed", systemImage: "checkmark.seal.fill")
             .appFont(11, weight: .heavy)
@@ -290,7 +305,7 @@ struct ProfileScoreRow: View {
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .background(Capsule().fill(ProfileTone.emerald.opacity(0.13)))
-            .fixedSize()
+            .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
     }
 }
 

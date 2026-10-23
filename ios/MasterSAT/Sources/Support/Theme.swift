@@ -142,11 +142,12 @@ extension View {
 
     /// A bar of `tone` along a card's top edge — what the card is about, readable before a word of
     /// it. Goes after `cardStyle`. It clips only itself to the card's corners, so the card's
-    /// shadow is not cut off the way clipping the whole card would cut it.
-    func cardToneBar(_ tone: Color, height: CGFloat = 3) -> some View {
+    /// shadow is not cut off the way clipping the whole card would cut it. Any fill will do: the
+    /// Me sheet's hero runs the page's three colours along its edge as a gradient.
+    func cardToneBar<Tone: ShapeStyle>(_ tone: Tone, height: CGFloat = 3) -> some View {
         overlay(alignment: .top) {
             Color.clear
-                .overlay(alignment: .top) { tone.frame(height: height) }
+                .overlay(alignment: .top) { Rectangle().fill(tone).frame(height: height) }
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)

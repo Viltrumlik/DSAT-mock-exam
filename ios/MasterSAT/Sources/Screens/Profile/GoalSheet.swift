@@ -23,7 +23,7 @@ struct GoalSheet: View {
                 HStack {
                     Text("Overall").appFont(13, weight: .semibold).foregroundStyle(Theme.textSecondary)
                     Text(ScoreText.string(english + math))
-                        .appFont(18, weight: .heavy).monospacedDigit()
+                        .appFont(18, weight: .heavy, monospacedDigits: true)
                         .foregroundStyle(Theme.accent)
                     Spacer()
                 }
@@ -60,7 +60,7 @@ struct GoalSheet: View {
             HStack(spacing: 6) {
                 Text(label).appFont(14, weight: .semibold)
                 Text(ScoreText.string(value.wrappedValue))
-                    .appFont(14, weight: .heavy).monospacedDigit()
+                    .appFont(14, weight: .heavy, monospacedDigits: true)
             }
             Slider(
                 value: Binding(get: { Double(value.wrappedValue) }, set: { value.wrappedValue = Int($0) }),

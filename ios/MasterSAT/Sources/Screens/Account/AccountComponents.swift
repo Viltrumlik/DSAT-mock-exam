@@ -50,9 +50,15 @@ extension AccountPageHeading where Accessory == EmptyView {
 }
 
 /// "Confirmed", "Not confirmed", "Connected", "This device" — the web's small status pill.
+///
+/// Whole on one line while there is room; at the accessibility sizes it wraps instead. Held to
+/// its one-line width there, it was wider than the phone, and every card on the Me sheet
+/// stretched to it — the page ran off both edges.
 struct AccountStatusPill: View {
     let text: String
     var tone: Color = Theme.success
+
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Text(text)
@@ -61,7 +67,7 @@ struct AccountStatusPill: View {
             .padding(.horizontal, 9)
             .padding(.vertical, 3)
             .background(Capsule().fill(tone.opacity(0.13)))
-            .fixedSize()
+            .fixedSize(horizontal: !typeSize.isAccessibilitySize, vertical: true)
     }
 }
 
@@ -85,6 +91,7 @@ struct AccountPillButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
+                .labelStyle(AccountPillLabelStyle())
                 .appFont(13, weight: .bold)
                 .foregroundStyle(kind == .solid ? Color.white : tone)
                 .padding(.horizontal, kind == .quiet ? 8 : 13)
@@ -92,7 +99,8 @@ struct AccountPillButtonStyle: ButtonStyle {
                 .background(
                     Capsule().fill(fill.opacity(configuration.isPressed ? 0.75 : 1))
                 )
-                .contentShape(Capsule())
+                // A pill is 32 pt tall at the default size; a thumb needs 44.
+                .hitTarget(44)
                 .opacity(isEnabled ? 1 : 0.5)
         }
 
@@ -101,6 +109,28 @@ struct AccountPillButtonStyle: ButtonStyle {
             case .solid: return tone
             case .soft: return tone.opacity(0.13)
             case .quiet: return Color.clear
+            }
+        }
+    }
+}
+
+/// A pill's icon and words — the words alone at the accessibility sizes, where a glyph as big
+/// as the text would break "Classmates" mid-word to fit beside it. VoiceOver reads the words
+/// either way.
+private struct AccountPillLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        AccountPillLabel(configuration: configuration)
+    }
+
+    private struct AccountPillLabel: View {
+        let configuration: LabelStyleConfiguration
+        @Environment(\.dynamicTypeSize) private var typeSize
+
+        var body: some View {
+            if typeSize.isAccessibilitySize {
+                configuration.title
+            } else {
+                Label(configuration)
             }
         }
     }
@@ -314,17 +344,23 @@ struct AccountMenuRow<Route: Hashable>: View {
         NavigationLink(value: route) {
             HStack(spacing: 13) {
                 IconTile(systemName: icon, tone: tone)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .appFont(16, weight: .bold)
-                        .foregroundStyle(.primary)
-                    Text(hint)
-                        .appFont(12, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.leading)
+                // The badge sits beside the words while they share a line, and under them at the
+                // accessibility sizes, where "Confirm email" beside "Sign-in & password" would
+                // leave neither a readable width.
+                AdaptiveStack(spacing: 13, columnSpacing: 6) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .appFont(16, weight: .bold)
+                            .foregroundStyle(.primary)
+                        Text(hint)
+                            .appFont(12, weight: .medium)
+                            .foregroundStyle(Theme.textSecondary)
+                            .multilineTextAlignment(.leading)
+                    }
+                    AdaptiveSpacer()
+                    if let badge { AccountStatusPill(text: badge, tone: Theme.warning) }
                 }
-                Spacer(minLength: 0)
-                if let badge { AccountStatusPill(text: badge, tone: Theme.warning) }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
                     .appFont(13, weight: .bold)
                     .foregroundStyle(Theme.textLabel)
