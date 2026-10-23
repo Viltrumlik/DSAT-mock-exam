@@ -26,13 +26,14 @@ enum LottieAsset: String, CaseIterable {
     case offline
     case error
 
-    /// Whether `LottieClip(_:)` repeats it when the caller does not say. The first three keep the
-    /// blanket default they always had; a burst that repeated would re-burst forever, and a
-    /// state's art that repeated would make an empty page look busy.
+    /// Whether `LottieClip(_:)` repeats it when the caller does not say. Only the flame does: it is
+    /// the one clip a screen may loop (the budget on `LottieClip`). A burst that repeated would
+    /// re-burst forever, a state's art that repeated would make an empty page look busy, and a
+    /// clip added without saying how it plays should play once.
     var loopsByDefault: Bool {
         switch self {
-        case .strikeFlame, .taskComplete, .trophy: true
-        case .coinBurst, .starBurst, .allDone, .noTasks, .noWords, .offline, .error: false
+        case .strikeFlame: true
+        case .taskComplete, .trophy, .coinBurst, .starBurst, .allDone, .noTasks, .noWords, .offline, .error: false
         }
     }
 
@@ -59,6 +60,13 @@ enum LottieAsset: String, CaseIterable {
 /// - `still` always shows the `rest` picture.
 ///
 /// One `LottieView` whatever the settings: they pick its playback, never which view is drawn.
+///
+/// The looping budget: at most two clips loop on a screen, and only the streak flame loops.
+/// - Today, Class, Words and Explore: the header's flame — one.
+/// - Rewards: the header's flame and `StreakCard`'s — two.
+/// - Nowhere else: the state art settles, the bursts, the trophy and the task check play once, and
+///   a clip that finishes costs nothing once it has. Pushed pages have no header, so no loop.
+/// A new `loop` goes on a screen with room under that count; Low Power Mode rests the ones it has.
 struct LottieClip: View {
     enum Playback { case loop, once, settle, still }
 

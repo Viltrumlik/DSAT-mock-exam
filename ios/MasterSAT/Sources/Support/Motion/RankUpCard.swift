@@ -61,9 +61,9 @@ struct RankUpCard: View {
     var body: some View {
         VStack(spacing: 14) {
             ZStack {
-                if !reduceMotion {
-                    LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
-                }
+                // Always there: a one-shot burst is blank under Reduce Motion (`LottieClip`), so the
+                // setting picks its playback and the tree stays the same.
+                LottieClip(.starBurst, playback: .once).frame(width: 230, height: 230)
                 LottieClip(.trophy, playback: reduceMotion ? .still : .once).frame(width: 130, height: 130)
             }
             .frame(height: 150)

@@ -123,7 +123,7 @@ struct TodayView: View {
 
                     if session.releaseGate.showsNudge {
                         UpdateNudgeCard(config: session.releaseGate.config) {
-                            withAnimation { session.releaseGate.dismissNudge() }
+                            withAnimation(rowAnimation) { session.releaseGate.dismissNudge() }
                         }
                     }
 
