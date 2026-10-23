@@ -32,6 +32,10 @@ struct AppHeader: View {
     /// keep their state — a flight's landing, a rolling count, an open inbox — when a digit or the
     /// text size moves the header between its row and its stacked form. Only the line of context
     /// ever swaps, and it holds nothing.
+    ///
+    /// The title is laid out last, so VoiceOver read it last too: the header is its own container
+    /// and the title sorts first in it, so a tab announces which page it is before its pills.
+    /// Both are modifiers on the parts, never a wrapper, so the instances above stay put.
     var body: some View {
         HeaderLayout(stacked: typeSize.isAccessibilitySize) {
             if let subtitle { contextLine(subtitle) }
@@ -47,8 +51,11 @@ struct AppHeader: View {
                 AvatarButton()
             }
             .headerPart(.actions)
-            PageTitle(title).headerPart(.title)
+            PageTitle(title)
+                .accessibilitySortPriority(1)
+                .headerPart(.title)
         }
+        .accessibilityElement(children: .contain)
     }
 
     /// The line of context: wide if it fits beside the pills, else the short one, else nothing —
