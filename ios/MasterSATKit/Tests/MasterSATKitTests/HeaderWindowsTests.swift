@@ -20,12 +20,23 @@ import Testing
         #expect(StrikesWindow(spendable: 2, run: 2, best: 0).runLine == "2 lessons in a row")
     }
 
-    @Test("A best is named whenever there is one — below, equal to, or above the run")
+    @Test("A best is named whenever there is one — equal to or above the run")
     func runLineBest() {
+        // A best BELOW the run is not asserted: the server's best is the high-water mark of the
+        // run itself, so "4 lessons in a row · best 2" is a state that cannot reach the phone,
+        // and pinning it down would only enshrine an impossible sentence.
         #expect(StrikesWindow(spendable: 4, run: 4, best: 0).runLine == "4 lessons in a row")
-        #expect(StrikesWindow(spendable: 4, run: 4, best: 2).runLine == "4 lessons in a row · best 2")
         #expect(StrikesWindow(spendable: 4, run: 4, best: 4).runLine == "4 lessons in a row · best 4")
         #expect(StrikesWindow(spendable: 4, run: 4, best: 9).runLine == "4 lessons in a row · best 9")
+    }
+
+    @Test("A run spent down to nothing still reads as a run (Ruling W-R2)")
+    func wholeRunSpent() {
+        let rewards = MyRewards(points: 0, coins: 0, currentStreak: 9, bestStreak: 12, strikes: 0, spentInStreak: 9)
+        let window = StrikesWindow(rewards: rewards)
+        #expect(window.spendable == 0, "all nine have been handed over in the Shop")
+        #expect(window.spokenSpendable == "0 strikes to spend")
+        #expect(window.runLine == "9 lessons in a row · best 12", "the run itself is untouched by spending")
     }
 
     @Test("A best is not dangled over a student with no run")
@@ -84,7 +95,16 @@ import Testing
         #expect(noBoard.placeLine == "Not on the board yet")
         #expect(noBoard.passLine == nil)
 
-        let deep = XPWindow(xp: 10, rank: 1204, pass: nil, points: 0, coins: 0, convertibleCoins: 0, pointsToNextCoin: 10)
+        let deep = XPWindow(
+            xp: 10,
+            rank: 1204,
+            pass: nil,
+            points: 0,
+            coins: 0,
+            convertibleCoins: 0,
+            maxConvertiblePoints: 0,
+            pointsToNextCoin: 10
+        )
         #expect(deep.placeLine == "#1204 in the centre", "a place is never grouped into #1,204")
     }
 
@@ -147,6 +167,32 @@ import Testing
         #expect(window.points == 27)
         #expect(window.coins == 29)
         #expect(window.convertibleCoins == 2)
+        #expect(window.maxConvertiblePoints == 20, "Convert spends 20 of the 27, not all 27")
         #expect(window.pointsToNextCoin == 3)
+    }
+
+    @Test("The climb line is the hero's three-way wording, held in one place")
+    func climbLine() {
+        // No rank at all: the place line already says so, and nothing is added under it.
+        #expect(XPWindow(rewards: rewards, board: nil).climbLine == nil)
+
+        // #1: nobody to pass.
+        let top = [row(1, 9, "Madina", 500, isMe: true), row(2, 2, "Dilnoza", 400)]
+        let first = XPWindow(rewards: rewards, board: LeaderboardBoard(rows: top, my: top[0]))
+        #expect(first.climbLine == "You're top of the whole board")
+
+        // A known row above: the pass sentence verbatim.
+        let fourth = XPWindow(rewards: rewards, board: boardWithMeFourth)
+        #expect(fourth.climbLine == "81 XP to pass Jasur")
+        #expect(fourth.climbLine == fourth.passLine)
+
+        // Ranked, but the response does not carry the row above: never a blank line.
+        let partial = [row(1, 1, "Aziz", 500), row(2, 2, "Dilnoza", 400), row(3, 3, "Jasur", 380)]
+        let tenth = XPWindow(
+            rewards: rewards,
+            board: LeaderboardBoard(rows: partial, my: row(10, 9, "Madina", 100, isMe: true))
+        )
+        #expect(tenth.passLine == nil)
+        #expect(tenth.climbLine == "Keep earning XP to climb")
     }
 }

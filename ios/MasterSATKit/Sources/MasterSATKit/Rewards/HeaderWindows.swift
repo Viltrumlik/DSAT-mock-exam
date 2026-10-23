@@ -36,7 +36,10 @@ public struct StrikesWindow: Sendable, Equatable {
     /// `MyRewards.bestStreak`. The best run so far; 0 for a student who has not started one.
     public let best: Int
 
-    public init(spendable: Int, run: Int, best: Int) {
+    /// Three loose integers, for tests and for nothing else. The app builds the window from the
+    /// payload (`init(rewards:)`), which is what stops `currentStreak` being handed to
+    /// `spendable` — the one mistake W-R2 exists to prevent.
+    init(spendable: Int, run: Int, best: Int) {
         self.spendable = spendable
         self.run = run
         self.best = best
@@ -82,20 +85,37 @@ public struct XPWindow: Sendable, Equatable {
     public let rank: Int?
     /// The row directly above, when the board can prove who it is.
     public let pass: LeaderboardPass?
+    /// `MyRewards.points`. What has been earned and *not yet converted* this season — converting
+    /// writes a negative row, so this number goes down when Convert is pressed. It is the figure
+    /// the points box counts, and the one the Convert alert spends.
     public let points: Int
+    /// `MyRewards.coins`. The spendable wallet: never reset by a season, never moved by XP.
     public let coins: Int
-    /// What Convert would mint right now: whole coins only.
+    /// What Convert would mint right now: whole coins only, so the change that does not add up to
+    /// a coin stays as points. Zero is the signal that there is nothing to convert — the box then
+    /// shows `nextCoinLine` in place of the button, rather than a Convert that would do nothing.
     public let convertibleCoins: Int
-    /// `rate − points % rate`, so it equals the rate rather than 0 when the points divide evenly.
+    /// `MyRewards.maxConvertiblePoints`. What Convert would actually spend: `points` minus the
+    /// change that does not add up to a coin. The alert names both halves of the trade ("Convert
+    /// N points into M coins?"), and N is this rather than `points` — a student with 27 points and
+    /// a rate of 10 spends 20, and being asked to confirm 27 would be asking for the wrong thing.
+    public let maxConvertiblePoints: Int
+    /// `rate − points % rate`, so it equals the rate rather than 0 when the points divide evenly:
+    /// a student who has just converted is a whole coin away from the next one, not zero away.
     public let pointsToNextCoin: Int
 
-    public init(
+    /// Every field loose, for tests and for nothing else. It is deliberately not public: a caller
+    /// outside the kit could otherwise build `rank: 1` together with a non-nil `pass`, and then
+    /// both `topLine` and `passLine` would be on screen at once, which the doc above promises can
+    /// never happen. The app builds the window from the payload and the board instead.
+    init(
         xp: Int,
         rank: Int?,
         pass: LeaderboardPass?,
         points: Int,
         coins: Int,
         convertibleCoins: Int,
+        maxConvertiblePoints: Int,
         pointsToNextCoin: Int
     ) {
         self.xp = xp
@@ -104,6 +124,7 @@ public struct XPWindow: Sendable, Equatable {
         self.points = points
         self.coins = coins
         self.convertibleCoins = convertibleCoins
+        self.maxConvertiblePoints = maxConvertiblePoints
         self.pointsToNextCoin = pointsToNextCoin
     }
 
@@ -123,6 +144,7 @@ public struct XPWindow: Sendable, Equatable {
             points: rewards.points,
             coins: rewards.coins,
             convertibleCoins: rewards.convertibleCoins,
+            maxConvertiblePoints: rewards.maxConvertiblePoints,
             pointsToNextCoin: rewards.pointsToNextCoin
         )
     }
@@ -131,6 +153,11 @@ public struct XPWindow: Sendable, Equatable {
     ///
     /// A place is an identifier, not a quantity: it is interpolated plainly so that no locale can
     /// group it into "#1,204", which reads as a different number entirely.
+    ///
+    /// "in the centre" is hard-coded, so the caller owes it the truth: the board passed to
+    /// `init(rewards:board:)` must be `LeaderboardQuery.heroBoard`'s — global, all time, XP
+    /// (W-R3). A standing from a group or branch board would be a place among a handful of
+    /// classmates printed as a place in the whole learning center.
     public var placeLine: String {
         guard let rank else { return "Not on the board yet" }
         return "#\(rank) in the centre"
@@ -143,10 +170,26 @@ public struct XPWindow: Sendable, Equatable {
     /// when the response does not carry the row directly above, where no honest number exists.
     public var passLine: String? { pass?.text }
 
-    /// "You're top of the whole board", worded exactly as the hero's `RankHeroContent.line` words
-    /// it, and only for the student standing at #1. Nil otherwise, so that exactly one of
-    /// `passLine` and `topLine` is ever on screen.
+    /// "You're top of the whole board" — `climbLine`'s #1 case on its own, and only for the
+    /// student standing at #1. Nil otherwise, so that exactly one of `passLine` and `topLine` is
+    /// ever on screen.
     public var topLine: String? { rank == 1 ? "You're top of the whole board" : nil }
+
+    /// The one line a ranked student is owed about climbing — the Rewards hero's sentence and
+    /// this window's, from the same place so the two cannot drift apart.
+    ///
+    /// Three cases, and the third is the one that is easy to forget: a student who is ranked but
+    /// whose row above the response does not carry gets "Keep earning XP to climb" rather than
+    /// nothing at all. A window that printed a blank under "#10 in the centre" would read as a
+    /// line that failed to load.
+    public static func climbLine(rank: Int, pass: LeaderboardPass?) -> String {
+        if rank == 1 { return "You're top of the whole board" }
+        return pass?.text ?? "Keep earning XP to climb"
+    }
+
+    /// `climbLine(rank:pass:)` for this window, and nil when there is no place to climb from —
+    /// an unranked student is told that by `placeLine` and is owed nothing further.
+    public var climbLine: String? { rank.map { Self.climbLine(rank: $0, pass: pass) } }
 
     /// "29 coins to spend".
     public var coinsLine: String { RewardsFormat.count(coins, "coin") + " to spend" }
