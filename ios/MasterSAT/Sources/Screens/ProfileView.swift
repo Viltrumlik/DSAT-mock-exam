@@ -15,8 +15,9 @@ import MasterSATKit
 /// Under the tabs, on every tab: My progress, then Sign out.
 ///
 /// The tabs stay pinned under the sheet's top edge while the page scrolls, so another tab is
-/// always one tap away. Which tab is open lives in `AppRouter` (`meTab`): the sheet reopens on
-/// the tab last open in this launch, and a link into Me picks its own.
+/// always one tap away; switching tabs while they are pinned lands on the new tab's top, just
+/// under them. Which tab is open lives in `AppRouter` (`meTab`): the sheet reopens on the tab
+/// last open in this launch, and a link into Me picks its own.
 ///
 /// The sheet's root is a stack root, so everything it opens is pushed as a value it declares
 /// here — `Route` for the account pages and the class page, `AssignmentListing` for a homework,
@@ -59,6 +60,8 @@ struct ProfileView: View {
     @State private var tabsPinned = false
     /// The pinned tabs' height, which a scroll to a panel must clear.
     @State private var tabBarHeight: CGFloat = 0
+    /// The scroll view's visible height: the least a tab's page may be, under the tabs.
+    @State private var viewportHeight: CGFloat = 0
 
     /// Where the tabs rest when the hero is in view.
     private static let tabsAnchor = "me.tabs"
@@ -69,41 +72,65 @@ struct ProfileView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollViewReader { proxy in
+                // An eager stack, not a `LazyVStack` with pinned headers: there, once the hero
+                // scrolled far out of the render window, the anchor the tab switch scrolls to was
+                // dropped, the scroll to it did nothing, and a much shorter tab left the page
+                // scrolled past its own end — the sheet went blank. Here everything stays laid
+                // out, the tabs report where they are at every offset, and a copy of them is
+                // pinned over the top edge once they have scrolled under it.
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    VStack(alignment: .leading, spacing: 0) {
                         hero
                             .stagger(0, shown: shown)
                             .padding(.bottom, 2)
-                        Color.clear
-                            .frame(height: 0)
+                        tabBar
                             .id(Self.tabsAnchor)
                             .onGeometryChange(for: Bool.self) { $0.frame(in: .scrollView).minY < 0 } action: { pinned in
                                 if tabsPinned != pinned { tabsPinned = pinned }
                             }
-                        Section {
-                            // A stable container: the tab's branch flips under it, the entrance
-                            // does not.
-                            VStack(alignment: .leading, spacing: 16) {
-                                tabContent(proxy)
-                                underTheTabs
+                            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                                if tabBarHeight != height { tabBarHeight = height }
                             }
-                            .padding(.top, 8)
-                            .stagger(2, shown: shown)
-                        } header: {
-                            tabBar.stagger(1, shown: shown)
+                            // Pinned, VoiceOver finds the copy over the top edge, not this one.
+                            .accessibilityHidden(tabsPinned)
+                            .stagger(1, shown: shown)
+                        // A stable container: the tab's branch flips under it, the entrance
+                        // does not.
+                        VStack(alignment: .leading, spacing: 16) {
+                            tabContent(proxy)
+                            underTheTabs
                         }
+                        .padding(.top, 8)
+                        // At least a screen under the tabs, so the offset that puts them at the
+                        // top edge exists on every tab: a short tab can never leave the page
+                        // scrolled past its end.
+                        .frame(minHeight: max(0, viewportHeight - tabBarHeight - 16), alignment: .top)
+                        .stagger(2, shown: shown)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 16)
+                }
+                .overlay(alignment: .top) {
+                    if tabsPinned {
+                        tabBar.padding(.horizontal, 16)
+                    }
+                }
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+                    if viewportHeight != height { viewportHeight = height }
                 }
                 .onChange(of: tab) { _, now in
                     if now == .classes { Task { await model.openClasses(session) } }
                     // With the tabs pinned, the new tab starts at its own top, just under them —
                     // not part-way down, wherever the old tab had been scrolled to.
                     guard tabsPinned else { return }
-                    var instant = Transaction()
-                    instant.disablesAnimations = true
-                    withTransaction(instant) { proxy.scrollTo(Self.tabsAnchor, anchor: .top) }
+                    scrollToTabs(proxy)
+                    // Again once the new tab has laid out: the tabs sit above the tab's page, so
+                    // the target is the same, but the first scroll ran in the update that swapped
+                    // the page in.
+                    Task { @MainActor in
+                        await Task.yield()
+                        scrollToTabs(proxy)
+                    }
                 }
             }
             .background(Theme.background)
@@ -218,9 +245,13 @@ struct ProfileView: View {
             .padding(.top, 14)
             .padding(.bottom, 8)
             .background(Theme.background.padding(.horizontal, -16))
-            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
-                if tabBarHeight != height { tabBarHeight = height }
-            }
+    }
+
+    /// The tabs to the top edge, at once: the new tab's page starts just under them.
+    private func scrollToTabs(_ proxy: ScrollViewProxy) {
+        var instant = Transaction()
+        instant.disablesAnimations = true
+        withTransaction(instant) { proxy.scrollTo(Self.tabsAnchor, anchor: .top) }
     }
 
     /// The router's tab, written only when it changes: re-tapping the open pill would otherwise
