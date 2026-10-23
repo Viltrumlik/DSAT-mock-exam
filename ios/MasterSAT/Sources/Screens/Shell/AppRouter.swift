@@ -50,6 +50,10 @@ final class AppRouter {
     /// The tab the Me sheet shows — and reopens on, for the rest of this launch.
     var meTab: MeTab = .overview
     var certificate: CertificateCode?
+    /// Which header window is up, if any — the flame's or the XP pill's. Not a sheet: it is one
+    /// overlay at the root (`HeaderWindowOverlay`), so it stands beside the sheets rather than
+    /// queueing with them.
+    private(set) var headerWindow: HeaderWindowKind?
     private(set) var scrollToTop: ScrollRequest?
     private(set) var reloadRequest: ReloadRequest?
     /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
@@ -68,7 +72,20 @@ final class AppRouter {
     /// Nothing renders from it, so it stays out of observation.
     @ObservationIgnored private var queued: Queued?
 
+    /// A header pill was tapped. Opening the other window while one is up just swaps the contents.
+    func openHeaderWindow(_ kind: HeaderWindowKind) {
+        if headerWindow != kind { headerWindow = kind }
+    }
+
+    /// ✕, a tap outside, or anywhere the student is sent somewhere else.
+    func closeHeaderWindow() {
+        if headerWindow != nil { headerWindow = nil }
+    }
+
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
+        // A window must never stay over a tab the student has just been sent to — and the windows'
+        // own Shop and Leaderboard buttons route through here, so this is the one place it closes.
+        closeHeaderWindow()
         switch link.placement {
         case .tab(let tab):
             show(tab)
@@ -105,6 +122,7 @@ final class AppRouter {
     /// The avatar opens Me where the student left it; `tab` is for a caller that needs one in
     /// particular — Today's SAT countdown wants Overview, where the date is set.
     func openMe(on tab: MeTab? = nil) {
+        closeHeaderWindow()
         if certificate != nil {
             certificate = nil
             queued = .me(tab)
@@ -129,6 +147,7 @@ final class AppRouter {
 
     /// Switch to a tab at its root, closing any sheet — a link to the tab itself, or "See all".
     func show(_ tab: AppTab) {
+        closeHeaderWindow()
         queued = nil
         closeSheets()
         select(tab)
@@ -140,6 +159,7 @@ final class AppRouter {
     /// (the trophy card's "See the board" lands on a hero that must show the place the card just
     /// named). Either way the hero is what the student is sent to, so the root scrolls back up.
     func showFresh(_ tab: AppTab) {
+        closeHeaderWindow()
         let onScreen = selection == tab && isAtRoot(tab)
         show(tab)
         if onScreen { requestReload(tab) }
@@ -154,6 +174,7 @@ final class AppRouter {
 
     /// Today's "See all": Class, on Tasks → To do for every class — not wherever it was last left.
     func showClassToDo() {
+        closeHeaderWindow()
         if !wantsClassToDo { wantsClassToDo = true }
         show(.classes)
         // At the top of the list, not wherever Class was last scrolled to.

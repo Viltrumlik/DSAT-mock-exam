@@ -91,6 +91,7 @@ private struct FlameGrow { var scale = 1.0 }
 struct StrikeChip: View {
     @Environment(RewardsStore.self) private var rewards
     @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(AppRouter.self) private var router
     @State private var showing = false
     /// Not scrolled off the top: the header scrolls with its page, and a flame that grows out of
     /// sight is a celebration nobody saw.
@@ -104,53 +105,61 @@ struct StrikeChip: View {
         // While a longer streak waits to be shown, the number last seen; it rolls up when the
         // rise plays (`CelebrationCenter.streakRose`).
         if let streak = celebrations.streakShown(rewards.streak) {
-            HStack(spacing: 2) {
-                LottieClip(.strikeFlame)
-                    .frame(width: 22, height: 22)
-                    .keyframeAnimator(initialValue: FlameGrow(), trigger: grows) { flame, grow in
-                        flame.scaleEffect(grow.scale, anchor: .bottom)
-                    } keyframes: { _ in
-                        KeyframeTrack(\.scale) {
-                            SpringKeyframe(1.7, duration: 0.22, spring: .snappy)
-                            SpringKeyframe(1.0, duration: 0.6, spring: .bouncy(duration: 0.6, extraBounce: 0.3))
+            // The whole chip is the button, and its body is untouched: the flame's on-screen
+            // report, its keyframe rise and the large content viewer all have to keep working.
+            Button {
+                router.openHeaderWindow(.strikes)
+            } label: {
+                HStack(spacing: 2) {
+                    LottieClip(.strikeFlame)
+                        .frame(width: 22, height: 22)
+                        .keyframeAnimator(initialValue: FlameGrow(), trigger: grows) { flame, grow in
+                            flame.scaleEffect(grow.scale, anchor: .bottom)
+                        } keyframes: { _ in
+                            KeyframeTrack(\.scale) {
+                                SpringKeyframe(1.7, duration: 0.22, spring: .snappy)
+                                SpringKeyframe(1.0, duration: 0.6, spring: .bouncy(duration: 0.6, extraBounce: 0.3))
+                            }
                         }
-                    }
-                Text(String(streak))
-                    .appFont(13, weight: .heavy, design: .rounded)
-                    .foregroundStyle(Theme.strike)
-                    .contentTransition(.numericText(value: Double(streak)))
+                    Text(String(streak))
+                        .appFont(13, weight: .heavy, design: .rounded)
+                        .foregroundStyle(Theme.strike)
+                        .contentTransition(.numericText(value: Double(streak)))
+                }
+                .padding(.leading, 5)
+                .padding(.trailing, 10)
+                .padding(.vertical, 3)
+                .background(Theme.card, in: Capsule())
+                // Header chrome: the pills sit beside the avatar on every tab, so they stop growing at
+                // `xxxLarge`; the large content viewer shows them bigger while they are pressed.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .sensoryFeedback(.impact(weight: .medium), trigger: grows)
+                .onGeometryChange(for: Bool.self) { proxy in
+                    let frame = proxy.frame(in: .global)
+                    return frame != .zero && frame.maxY > 0
+                } action: {
+                    onScreen = $0
+                    report()
+                }
+                .onAppear {
+                    showing = true
+                    report()
+                }
+                .onDisappear {
+                    showing = false
+                    report()
+                }
+                .onChange(of: celebrations.streakGrowth) { _, _ in
+                    if counted { grows += 1 }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
+                .accessibilityShowsLargeContentViewer {
+                    Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
+                }
             }
-            .padding(.leading, 5)
-            .padding(.trailing, 10)
-            .padding(.vertical, 3)
-            .background(Theme.card, in: Capsule())
-            // Header chrome: the pills sit beside the avatar on every tab, so they stop growing at
-            // `xxxLarge`; the large content viewer shows them bigger while they are pressed.
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            .sensoryFeedback(.impact(weight: .medium), trigger: grows)
-            .onGeometryChange(for: Bool.self) { proxy in
-                let frame = proxy.frame(in: .global)
-                return frame != .zero && frame.maxY > 0
-            } action: {
-                onScreen = $0
-                report()
-            }
-            .onAppear {
-                showing = true
-                report()
-            }
-            .onDisappear {
-                showing = false
-                report()
-            }
-            .onChange(of: celebrations.streakGrowth) { _, _ in
-                if counted { grows += 1 }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
-            .accessibilityShowsLargeContentViewer {
-                Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
-            }
+            .buttonStyle(PressBounce())
+            .accessibilityHint("Opens your strikes")
         }
     }
 
@@ -169,6 +178,7 @@ private struct PillPulse { var scale = 1.0 }
 struct XPPill: View {
     @Environment(RewardsStore.self) private var rewards
     @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(AppRouter.self) private var router
     /// Which pill this is. Every tab has its own header, so there are several; a flight lands on
     /// the one on screen, and only that one pulses and buzzes.
     @State private var owner = UUID()
@@ -180,44 +190,52 @@ struct XPPill: View {
         if let xp = rewards.xp {
             // XP still in the air is not on the pill yet: it rolls up when the flight lands.
             let shown = max(0, xp - celebrations.heldXP)
-            HStack(spacing: 4) {
-                Image(systemName: "bolt.fill").appFont(11, weight: .black)
-                Text("\(shown) XP").contentTransition(.numericText(value: Double(shown)))
-            }
-            .appFont(13, weight: .heavy, design: .rounded)
-            .foregroundStyle(Theme.accent)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(Theme.card, in: Capsule())
-            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-            .keyframeAnimator(initialValue: PillPulse(), trigger: pulses) { content, pulse in
-                content.scaleEffect(pulse.scale)
-            } keyframes: { _ in
-                KeyframeTrack(\.scale) {
-                    SpringKeyframe(1.4, duration: 0.14, spring: .snappy)
-                    SpringKeyframe(1.0, duration: 0.5, spring: .bouncy(duration: 0.5, extraBounce: 0.3))
+            // As the flame: the body is untouched inside the button — the XP flight lands on
+            // the frame this pill measures, so its geometry report must keep working.
+            Button {
+                router.openHeaderWindow(.xp)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "bolt.fill").appFont(11, weight: .black)
+                    Text("\(shown) XP").contentTransition(.numericText(value: Double(shown)))
                 }
+                .appFont(13, weight: .heavy, design: .rounded)
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Theme.card, in: Capsule())
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .keyframeAnimator(initialValue: PillPulse(), trigger: pulses) { content, pulse in
+                    content.scaleEffect(pulse.scale)
+                } keyframes: { _ in
+                    KeyframeTrack(\.scale) {
+                        SpringKeyframe(1.4, duration: 0.14, spring: .snappy)
+                        SpringKeyframe(1.0, duration: 0.5, spring: .bouncy(duration: 0.5, extraBounce: 0.3))
+                    }
+                }
+                .sensoryFeedback(.increase, trigger: pulses)
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
+                    frame = $0
+                    report()
+                }
+                .onAppear {
+                    showing = true
+                    celebrations.pillAppeared()
+                    report()
+                }
+                .onDisappear {
+                    showing = false
+                    celebrations.clearXPTarget(owner: owner)
+                }
+                .onChange(of: celebrations.landing) { _, landing in
+                    if landing?.owner == owner { pulses += 1 }
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(shown) XP")
+                .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
             }
-            .sensoryFeedback(.increase, trigger: pulses)
-            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: {
-                frame = $0
-                report()
-            }
-            .onAppear {
-                showing = true
-                celebrations.pillAppeared()
-                report()
-            }
-            .onDisappear {
-                showing = false
-                celebrations.clearXPTarget(owner: owner)
-            }
-            .onChange(of: celebrations.landing) { _, landing in
-                if landing?.owner == owner { pulses += 1 }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(shown) XP")
-            .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
+            .buttonStyle(PressBounce())
+            .accessibilityHint("Opens your XP and points")
         }
     }
 
