@@ -15657,10 +15657,14 @@ It passes only with `exit=0` and `** BUILD SUCCEEDED **`, and no new warnings in
 - **Haptics follow the student's hand, not the code.** A chip, tab or segment buzzes when the student picks it, never when the app sets it (Today's "See all", a reload re-resolving a chip, a deep link).
 - **The things that are not phase-5 work stay out**, listed in the outcome: performance items from phase 2, the matching game's accuracy figure, and the strike-shop coin burst (owner's call), plus anything that needs a server change.
 
-### Owner answers (2026-10-22)
+### Owner answers
 
-1. Me sheet: *(pending — this plan is written for the recommended option A; on B, Task 48 keeps the three tabs and only adds Midterms & certificates, Notifications and the `isDone` homework count)*.
-2. Services card: *(pending — asked after question 1; the plan is written for the recommended option, the next SAT date)*.
+1. **Me sheet — B, plus navigation and a theme** (owner, 2026-10-23, verbatim: "B qiling. ammo navigationni yaxshilang. shuningdek theme yo'q ekan shuni ham hal qiling" — "Do B. But improve the navigation. Also, there is no theme — fix that too.").
+   - The answer came after Task 48 had been built as A on a ledgered ruling (the question was open for a day).
+   - **Task 57** rebuilds the sheet as B: the website's three tabs and their content, plus Midterms & certificates, the Notifications row, the 44-pt close button, value routes, and a homework count on `HomeworkProgress.isDone`. It also improves the sheet's navigation: pinned tabs, the last tab remembered, back to the same tab and scroll position.
+   - **Task 58** adds the theme as an Appearance setting (System / Light / Dark), applied app-wide and remembered per device.
+   - The Decisions bullet above that describes the one-page sheet is superseded by these two tasks.
+2. Services card: *(not asked — one question at a time while question 1 was open; the recommended "next SAT date" is built, and the PR puts the question to the owner with the tickable-checklist alternative)*.
 
 ### Earlier phases' hand-off → tasks
 
