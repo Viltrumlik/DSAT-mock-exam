@@ -121,7 +121,12 @@ struct ProfileView: View {
                 .onChange(of: tab) { _, now in
                     if now == .classes { Task { await model.openClasses(session) } }
                     // With the tabs pinned, the new tab starts at its own top, just under them —
-                    // not part-way down, wherever the old tab had been scrolled to.
+                    // not part-way down, wherever the old tab had been scrolled to. The page was
+                    // swapped in at once (`tabSelection` writes it without animation while pinned):
+                    // an animated swap shrinks the scroll view's content from the old tab's height
+                    // to the new one's over the animation, the offset is clamped on the way down,
+                    // and that clamp wins over this scroll — from a long tab to a short one the
+                    // page then settled with the tabs far down the sheet.
                     guard tabsPinned else { return }
                     scrollToTabs(proxy)
                     // Again once the new tab has laid out: the tabs sit above the tab's page, so
@@ -256,8 +261,24 @@ struct ProfileView: View {
 
     /// The router's tab, written only when it changes: re-tapping the open pill would otherwise
     /// write an equal value, and every write to the router notifies the root.
+    ///
+    /// Pinned, the write is not animated: `PillTabs` writes inside `withAnimation`, which would
+    /// animate the page swap and shrink the content height from the old tab's to the new one's
+    /// while the scroll to the tabs ran (see `onChange(of: tab)`). With the swap instant, that
+    /// scroll lands on a settled layout. Unpinned, nothing scrolls and the swap keeps the pill's
+    /// animation: the offset there is no further than the tabs' rest position, which every tab's
+    /// minimum height keeps in range.
     private var tabSelection: Binding<MeTab> {
-        Binding(get: { tab }, set: { next in if tab != next { tab = next } })
+        Binding(
+            get: { tab },
+            set: { next in
+                guard tab != next else { return }
+                guard tabsPinned else { tab = next; return }
+                var instant = Transaction()
+                instant.disablesAnimations = true
+                withTransaction(instant) { tab = next }
+            }
+        )
     }
 
     @ViewBuilder private func tabContent(_ proxy: ScrollViewProxy) -> some View {
