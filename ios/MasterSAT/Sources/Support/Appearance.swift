@@ -36,9 +36,9 @@ extension View {
     /// Dresses the whole app in the stored appearance. Put it once, on the app's root view.
     ///
     /// On the root of the window group, `.preferredColorScheme` sets the style of the window
-    /// itself. Every sheet, full-screen cover, popover and system sheet the app presents
-    /// (the Me sheet, the certificate, a story's web page, the share sheet) is hung off that one
-    /// window, so each inherits it and none needs the modifier of its own. A second
+    /// itself. The app opens no window of its own and presents everything from inside the root
+    /// (sheets, full-screen covers, popovers, dialogs, and the Safari and share sheets in them),
+    /// so each one inherits the window's style and none needs the modifier of its own. A second
     /// `.preferredColorScheme` further down would only override the window for that one
     /// presentation, and is how a sheet ends up dark under a light app.
     func appliesStoredAppearance() -> some View {
