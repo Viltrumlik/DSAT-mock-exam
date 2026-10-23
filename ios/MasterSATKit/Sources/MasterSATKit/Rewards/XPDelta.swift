@@ -10,8 +10,8 @@ public enum XPDelta {
     }
 
     /// What a finished task's gain is measured from: the total the header holds when the work is
-    /// handed in, higher or lower than when it started (the start's total only when nothing is
-    /// held at hand-in).
+    /// handed in, higher or lower than when it started (the start's total only when the header
+    /// has no total at hand-in).
     ///
     /// The server pays a task's XP when it is handed in, so a rise the header took in between —
     /// a return to the app, a reconnect — came from somewhere else. Measured from the start, that

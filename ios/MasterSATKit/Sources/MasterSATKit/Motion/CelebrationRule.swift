@@ -218,11 +218,13 @@ public struct OutcomeBook: @unchecked Sendable {
     }
 
     /// A my-assignments list has arrived (`OutcomeMemory.noteSeen(in:)`): what it carries becomes
-    /// known to this phone before any review decides "improved". Called wherever the app loads
-    /// the student's assignments to show them, so an attempt counts as "the attempt before" on
-    /// whichever page first met it. Synchronous, so it cannot interleave with a review's own
-    /// read-and-write of the same memory on the main actor; and written only when it learned
-    /// something, since most loads carry nothing new.
+    /// known to this phone before any review decides "improved". Called by the pages a student
+    /// reads results from — Today, the Class tab, the assessment board and the homework page — so
+    /// an attempt counts as "the attempt before" on whichever of them first met it. Other reads
+    /// of the list (a classroom's own page, the roadmap's homework lookup, the reminder planner)
+    /// do not call it. Synchronous, so it cannot interleave with a review's own read-and-write of
+    /// the same memory on the main actor; and written only when it learned something, since most
+    /// loads carry nothing new.
     public func noteSeen(in assignments: [AssignmentListing], userID: Int) {
         var memory = read(userID: userID)
         let before = memory

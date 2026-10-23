@@ -167,6 +167,9 @@ import Testing
 /// window that is no longer full as if it were.
 @Suite struct HistoryWindowDriftTests {
 
+    /// The test skips only when the backend is not checked out at all (a kit-only clone). With
+    /// `backend/` present, a moved or renamed file FAILS: a skip would end the mirror silently.
+    static let backendFolder = "backend"
     static let backendFile = "backend/rewards/views.py"
 
     /// Every module-level `HISTORY_LIMIT = <int>` in a Python source.
@@ -189,9 +192,13 @@ import Testing
 
     @Test(
         "The kit's history window is the server's HISTORY_LIMIT",
-        .enabled(if: RepoPaths.exists(HistoryWindowDriftTests.backendFile), "backend/rewards/views.py is not checked out beside the kit")
+        .enabled(if: RepoPaths.exists(HistoryWindowDriftTests.backendFolder), "backend/ is not checked out beside the kit")
     )
     func matchesTheBackend() throws {
+        try #require(
+            RepoPaths.exists(Self.backendFile),
+            "\(Self.backendFile) is gone but backend/ is here — point backendFile at the module that defines HISTORY_LIMIT"
+        )
         let source = try String(contentsOf: RepoPaths.file(Self.backendFile), encoding: .utf8)
         let limits = Self.historyLimits(in: source)
         let limit = try #require(limits.first, "\(Self.backendFile) no longer defines HISTORY_LIMIT")
