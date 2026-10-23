@@ -63,6 +63,9 @@ enum ProfileFixtures {
 // MARK: - Homework
 
 @Suite struct ProfileHomeworkTests {
+    typealias F = ProfileFixtures
+    typealias W = WorkFixtures
+
     @Test("Submitted and graded work is turned in, in either case; a returned piece is not")
     func turnedIn() {
         #expect(ProfileHomework.isTurnedIn("SUBMITTED"))
@@ -71,6 +74,101 @@ enum ProfileFixtures {
         #expect(!ProfileHomework.isTurnedIn("RETURNED"))
         #expect(!ProfileHomework.isTurnedIn("in_progress"))
         #expect(!ProfileHomework.isTurnedIn(nil))
+    }
+
+    @Test("The work to catch up on comes first, then by due date, undated last")
+    func summary() throws {
+        let rows = [
+            try F.homework(1, "Later", due: F.at(6), status: "NOT_STARTED"),
+            try F.homework(2, "Missed", due: F.at(-2), status: "RETURNED"),
+            try F.homework(3, "Tomorrow", due: F.at(1), status: "in_progress"),
+            try F.homework(4, "Undated", due: nil, status: "not_started"),
+            try F.homework(5, "Sent", due: F.at(-4), status: "SUBMITTED"),
+            try F.homework(6, "Marked", due: F.at(-5), status: "graded"),
+        ]
+        let summary = ProfileHomework.summarise(rows, now: F.now)
+        #expect(summary.total == 6)
+        #expect(summary.turnedIn == 2)
+        #expect(summary.toDo.map(\.title) == ["Missed", "Tomorrow", "Later", "Undated"])
+        #expect(summary.catchUp == 1)
+        #expect(summary.turnedInPercent == 33)
+        #expect(ProfileWording.homeworkValue(summary) == "33%")
+        #expect(ProfileWording.homeworkDetail(summary) == "2 of 6 turned in")
+    }
+
+    @Test("Nothing set is no percentage at all, and says so")
+    func nothingSet() {
+        let summary = ProfileHomework.summarise([], now: ProfileFixtures.now)
+        #expect(summary.turnedInPercent == nil)
+        #expect(ProfileWording.homeworkValue(summary) == "—")
+        #expect(ProfileWording.homeworkDetail(summary) == "Nothing has been set yet.")
+        #expect(ProfileWording.homeworkEmpty(summary) == "No homework has been set for your classes yet.")
+    }
+
+    @Test("All handed in is caught up, not empty")
+    func caughtUp() throws {
+        let summary = ProfileHomework.summarise([try F.homework(1, "Sent", due: F.at(-1), status: "SUBMITTED")], now: F.now)
+        #expect(summary.toDo.isEmpty)
+        #expect(summary.turnedInPercent == 100)
+        #expect(ProfileWording.homeworkEmpty(summary) == "You're all caught up — nothing to hand in right now.")
+    }
+
+    // The same "done" as Today and the Class tab (`HomeworkProgress.isDone`), so a homework
+    // finished there leaves the Me sheet's list too.
+
+    @Test("A word-set homework that has been played is not to do — it is never handed in")
+    func playedWordSet() throws {
+        let played = try W.homework(1, due: F.at(1), extra: ["vocab_homeworks": [W.words(5, "completed")]])
+        let summary = ProfileHomework.summarise([played], now: F.now)
+        #expect(summary.toDo.isEmpty)
+        #expect(summary.turnedIn == 1)
+        #expect(ProfileWording.homeworkValue(summary) == "100%")
+    }
+
+    @Test("Classwork is done in class: never counted, never to do")
+    func classwork() throws {
+        let classwork: [String: Any] = ["category": "CLASSWORK"]
+        let rows = [
+            try W.homework(1, due: F.at(-1), extra: classwork),
+            try W.homework(2, due: F.at(2)),
+        ]
+        let summary = ProfileHomework.summarise(rows, now: F.now)
+        #expect(summary.total == 1)
+        #expect(summary.toDo.map(\.id) == [2])
+        #expect(summary.catchUp == 0)
+        #expect(ProfileHomework.summarise([try W.homework(3, due: nil, extra: classwork)], now: F.now).total == 0)
+    }
+
+    @Test("A quiz homework with a second quiz still open is to do, whatever the first says")
+    func secondOpenQuiz() throws {
+        let row = try W.homework(1, due: F.at(1), status: "graded", extra: [
+            "assessment_homeworks": [W.quiz(21, "graded"), W.quiz(22, "not_started")],
+        ])
+        let summary = ProfileHomework.summarise([row], now: F.now)
+        #expect(summary.toDo.map(\.id) == [1])
+        #expect(summary.turnedIn == 0)
+    }
+
+    @Test("A word set with no words is never owed")
+    func emptyWordSet() throws {
+        let row = try W.homework(1, due: F.at(-1), extra: ["vocab_homeworks": [W.words(5, "not_started", count: 0)]])
+        let summary = ProfileHomework.summarise([row], now: F.now)
+        #expect(summary.toDo.isEmpty)
+        #expect(summary.catchUp == 0)
+    }
+
+    @Test("A row's size is its question count, only for work made of questions")
+    func rowDetail() throws {
+        let quiz = try F.homework(1, "Q", due: nil, status: "not_started", extra: [
+            "classroom_name": "Math Middle A", "content_type": "assessment", "item_count": 22,
+        ])
+        #expect(ProfileHomework.rowDetail(quiz) == "Math Middle A · 22 questions")
+        let one = try F.homework(2, "Q", due: nil, status: "not_started", extra: ["content_type": "pastpaper", "item_count": 1])
+        #expect(ProfileHomework.rowDetail(one) == "1 question")
+        let file = try F.homework(3, "Essay", due: nil, status: "not_started", extra: [
+            "classroom_name": "English A", "content_type": "file", "item_count": 3,
+        ])
+        #expect(ProfileHomework.rowDetail(file) == "English A")
     }
 }
 
@@ -368,12 +466,17 @@ enum ProfileFixtures {
         #expect(ProfileResults.detail(dated, calendar: F.calendar) == "Reading & Writing · Sep 14")
     }
 
-    @Test("Roles read as the web writes them")
+    @Test("Roles, strikes and coins read as the web writes them")
     func wording() {
         #expect(ProfileWording.roleLabel("support_teacher") == "Support teacher")
         #expect(ProfileWording.roleLabel("student") == "Student")
         #expect(ProfileWording.roleLabel(nil) == "Student")
         #expect(ProfileWording.roleLabel("test_auditor") == "Content team")
+        #expect(ProfileWording.strikesDetail(currentStreak: 0, bestStreak: 6) == "Attend your next lesson to start a run.")
+        #expect(ProfileWording.strikesDetail(currentStreak: 1, bestStreak: 4) == "1 lesson in a row · best 4")
+        #expect(ProfileWording.strikesDetail(currentStreak: 3, bestStreak: 5) == "3 lessons in a row · best 5")
+        #expect(ProfileWording.coinsDetail(1) == "1 coin to spend in the shop")
+        #expect(ProfileWording.coinsDetail(12) == "12 coins to spend in the shop")
         #expect(ProfileWording.copied(username: "madina") == "@madina is copied.")
     }
 

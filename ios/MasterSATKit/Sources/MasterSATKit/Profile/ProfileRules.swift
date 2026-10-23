@@ -20,6 +20,65 @@ public enum ProfileHomework {
         let key = (status ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         return key == "submitted" || key == "graded" || key == "reviewed"
     }
+
+    public struct Summary: Sendable, Equatable {
+        /// Homework set, classwork left out.
+        public let total: Int
+        /// Of `total`, how many are finished — handed in, or played to the end.
+        public let turnedIn: Int
+        /// Still to do, the one to start next first: work to catch up on, then by due date,
+        /// undated last.
+        public let toDo: [AssignmentListing]
+        /// Of `toDo`, how many are past their date.
+        public let catchUp: Int
+
+        /// The Homework tile's figure: the share turned in, whole percent. Nil when nothing
+        /// has been set — a 0% there would read as a verdict on work that does not exist.
+        public var turnedInPercent: Int? {
+            guard total > 0 else { return nil }
+            return Int((Double(turnedIn) / Double(total) * 100).rounded())
+        }
+    }
+
+    /// Done is `HomeworkProgress.isDone` — Today's and the Class tab's answer — so a homework
+    /// finished there leaves this list too: a played word set is never handed in, and a quiz
+    /// homework's status is only its first quiz's. Classwork is done in class and is never
+    /// owed, so it is neither counted nor to do.
+    public static func summarise(_ rows: [AssignmentListing], now: Date = Date()) -> Summary {
+        func due(_ row: AssignmentListing) -> Date {
+            row.dueAt.flatMap(JSONCoding.parseServerDate) ?? .distantFuture
+        }
+        let homework = rows.filter { !$0.isClasswork }
+        let toDo = homework
+            .filter { !HomeworkProgress.isDone($0) }
+            .sorted { lhs, rhs in
+                let l = due(lhs), r = due(rhs)
+                return l != r ? l < r : lhs.id < rhs.id
+            }
+        return Summary(
+            total: homework.count,
+            turnedIn: homework.count - toDo.count,
+            toDo: toDo,
+            catchUp: toDo.filter { due($0) < now }.count
+        )
+    }
+
+    /// "22 questions" for work that is a set of questions (a quiz, a past paper, a practice
+    /// pack, a mock); nil for anything else, or when the server gave no count.
+    public static func sizeLabel(_ row: AssignmentListing) -> String? {
+        guard let count = row.itemCount, count > 0,
+              ["assessment", "pastpaper", "practice", "mock"].contains((row.contentType ?? "").lowercased())
+        else { return nil }
+        return "\(count) question\(count == 1 ? "" : "s")"
+    }
+
+    /// The line under a row's title: "Math Middle A · 22 questions".
+    public static func rowDetail(_ row: AssignmentListing) -> String {
+        [row.classroomName, sizeLabel(row)]
+            .compactMap { $0?.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
 }
 
 // MARK: - Lessons
@@ -445,6 +504,34 @@ public enum ProfileWording {
         case "test_admin", "test_auditor": return "Content team"
         default: return "Staff"
         }
+    }
+
+    /// The Strikes tile's line.
+    public static func strikesDetail(currentStreak: Int, bestStreak: Int) -> String {
+        guard currentStreak > 0 else { return "Attend your next lesson to start a run." }
+        return "\(currentStreak) \(currentStreak == 1 ? "lesson" : "lessons") in a row · best \(bestStreak)"
+    }
+
+    /// The Points tile's line.
+    public static func coinsDetail(_ coins: Int) -> String {
+        "\(coins) \(coins == 1 ? "coin" : "coins") to spend in the shop"
+    }
+
+    /// The Homework tile's line.
+    public static func homeworkDetail(_ summary: ProfileHomework.Summary) -> String {
+        summary.total == 0 ? "Nothing has been set yet." : "\(summary.turnedIn) of \(summary.total) turned in"
+    }
+
+    /// The Homework tile's figure: "80%", or "—" when nothing has been set.
+    public static func homeworkValue(_ summary: ProfileHomework.Summary) -> String {
+        summary.turnedInPercent.map { "\($0)%" } ?? "—"
+    }
+
+    /// Homework to do's empty answer: all handed in, or nothing set at all.
+    public static func homeworkEmpty(_ summary: ProfileHomework.Summary) -> String {
+        summary.total > 0
+            ? "You're all caught up — nothing to hand in right now."
+            : "No homework has been set for your classes yet."
     }
 
     /// The toast after "Copy username".
