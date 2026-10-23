@@ -191,6 +191,8 @@ struct RootTabView: View {
     @State private var rewards = RewardsStore()
     @State private var celebrations = CelebrationCenter()
     @State private var away = AwayCheck()
+    /// Which full-screen prompt has the stage, so the ones that can wait do (`AppPrompts`).
+    @State private var prompts = AppPrompts()
     /// The floating bar's measured height, so the room left for it is never a guess.
     @State private var barHeight: CGFloat = 0
 
@@ -250,12 +252,14 @@ struct RootTabView: View {
         .background {
             RewardsRefresher(userID: user.id, away: away)
             CelebrationSheetWatcher()
+            EventInvitePrompt()
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .overlay { RankUpOverlay() }
         .environment(router)
         .environment(rewards)
         .environment(celebrations)
+        .environment(prompts)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
             // The close button lives in the page's hero, on its root only: laid over the sheet,

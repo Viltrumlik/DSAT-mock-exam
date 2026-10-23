@@ -20,6 +20,9 @@ struct EventsView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // While this page is up, the event invitation holds off: recommending the page
+        // somebody is already reading is how a prompt teaches people to dismiss prompts.
+        .marksEventsScreenOpen()
         .task {
             if model == nil { model = EventsModel(api: EventsAPI(client: session.client)) }
         }
