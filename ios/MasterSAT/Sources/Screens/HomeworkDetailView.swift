@@ -849,6 +849,8 @@ struct HomeworkDetailView: View {
             return
         }
         loadGate.began(asked: rereadingRow)
+        // Only a load that read the page whole: one that failed must not stand down the page's
+        // next appearance, which is the retry.
         var completed = false
         defer { loadGate.ended(asked: rereadingRow, completed: completed) }
         detailError = nil
@@ -885,6 +887,10 @@ struct HomeworkDetailView: View {
         }
         // Awaited before the detail, which can throw: a row that did arrive is not lost with it.
         let row = await studentRow
+        // The row and the detail each carry this student's attempt at each set: noted, an
+        // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
+        // The row is noted as soon as it lands, so a detail that fails does not lose it.
+        if let userID, let row { OutcomeBook().noteSeen(in: [row], userID: userID) }
         let full: AssignmentListing
         do {
             full = try await fullAssignment
@@ -894,23 +900,20 @@ struct HomeworkDetailView: View {
             detailError = error.errorDescription ?? "Assignment not available"
             adopt(row, floor: floorAtStart)
             isLoading = false
-            completed = true
             return
         } catch {
             detailError = error.localizedDescription
             adopt(row, floor: floorAtStart)
             isLoading = false
-            completed = true
             return
         }
         // Together, so a page opened from a link appears whole rather than first without its words.
         detail = full
         adopt(row, floor: floorAtStart)
-        // It carries this student's attempt at each set, as a list row does: noted, an
-        // attempt first met on this page still counts as "the attempt before" (`OutcomeMemory`).
         if let userID { OutcomeBook().noteSeen(in: [full], userID: userID) }
         isLoading = false
-        completed = true
+        // A hand-in status that did not load is a failure the next appearance should retry.
+        completed = submissionError == nil
     }
 
     /// The student's row from `my-assignments`, or nil when it was not asked for or could not be read.
@@ -953,7 +956,8 @@ final class LoadGate {
         if wasAsked { asked += 1 }
     }
 
-    /// A load that was cancelled (the page was left) did not finish and does not count as one.
+    /// A load that was cancelled (the page was left) or failed did not finish and does not count
+    /// as one: the page coming back reads again rather than standing down on a failure.
     func ended(asked wasAsked: Bool, completed: Bool) {
         if wasAsked { asked -= 1 }
         if completed { finishedAt = .now }
