@@ -40,9 +40,14 @@ struct HomeworkRow: View {
         return parts
     }
 
+    /// The homework page's own status (`HomeworkStatus.shown`), never the row's raw one: the
+    /// server never marks word homework handed in, so a finished one sat in Done reading "Not
+    /// started" and "Catch up" while the page it opens said "Completed".
+    private var status: String? { HomeworkStatus.shown(for: assignment, submission: nil) }
+
     var body: some View {
         HStack(spacing: 13) {
-            IconTile(systemName: icon, tone: StatusLabel.color(assignment.workflowStatus), size: 40)
+            IconTile(systemName: icon, tone: StatusLabel.color(status), size: 40)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(assignment.title)
@@ -51,11 +56,11 @@ struct HomeworkRow: View {
                     .multilineTextAlignment(.leading)
 
                 HStack(spacing: 6) {
-                    Text(StatusLabel.homework(assignment.workflowStatus))
+                    Text(StatusLabel.homework(status))
                         .appFont(12, weight: .heavy)
-                        .foregroundStyle(StatusLabel.color(assignment.workflowStatus))
+                        .foregroundStyle(StatusLabel.color(status))
 
-                    if let due = DueLabel.text(assignment.dueAt, handedIn: ["submitted", "graded", "reviewed"].contains((assignment.workflowStatus ?? "").lowercased())) {
+                    if let due = DueLabel.text(assignment.dueAt, handedIn: HomeworkStatus.isWithTheTeacher(status)) {
                         Text("·").foregroundStyle(Theme.textLabel)
                         // States a fact. Even a passed deadline is phrased as information,
                         // never as an accusation.
