@@ -111,9 +111,9 @@ struct ProfileView: View {
                     .padding(.vertical, 16)
                 }
                 // Pinned, a tab switch swaps the page in at once (`PillTabs` writes the tab inside
-                // `withAnimation`): animated, the page re-laid itself out over the animation and the
-                // scroll to the tabs below landed against that layout in flight — from a long tab to
-                // a short one, the tabs settled far down the sheet. Unpinned, the pill still slides.
+                // `withAnimation`). Animated, the scroll to the tabs below did not hold on a device:
+                // from a long tab to a short one the tabs settled far down the sheet. The pinned copy
+                // sits outside this, so its pill still slides; unpinned, nothing here changes.
                 .transaction(value: tab) { t in if tabsPinned { t.animation = nil } }
                 .overlay(alignment: .top) {
                     if tabsPinned {
