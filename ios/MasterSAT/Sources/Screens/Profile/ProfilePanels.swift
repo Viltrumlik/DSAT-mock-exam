@@ -143,14 +143,10 @@ struct ProfileGoalPanel: View {
         } else {
             let rows = ProfileResults.recent(load.value ?? [])
             if rows.isEmpty {
-                Text("Your scores show up here after your first practice test.")
-                    .appFont(13, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .profileWell(ProfileTone.primary, radius: 11)
+                DashedEmpty(
+                    title: "No scores yet",
+                    hint: "Your scores show up here after your first practice test."
+                )
             } else {
                 VStack(spacing: 8) {
                     ForEach(rows) { attempt in
@@ -323,7 +319,8 @@ struct ProfileChecklistPanel: View {
                     .padding(.horizontal, 13)
                     .padding(.vertical, 8)
                     .background(Capsule().fill(ProfileTone.violet.opacity(0.13)))
-                    .contentShape(Capsule())
+                    // Drawn like its sibling pills, reached like them: 44 pt.
+                    .hitTarget(44)
             }
         case .photo, .phone:
             NavigationLink(value: ProfileView.Route.accountDetails) { Text(verbatim: item.action) }

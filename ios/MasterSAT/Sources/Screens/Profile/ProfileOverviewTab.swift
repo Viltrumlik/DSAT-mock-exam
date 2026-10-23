@@ -241,7 +241,10 @@ private struct ProfileHomeworkPanel: View {
             ) { await onRetry(.homework) }
         } else if let summary {
             let shown = Array(summary.toDo.prefix(4))
-            if shown.isEmpty {
+            if summary.total == 0 {
+                // Nothing set is not an achievement: the empty slot, not the caught-up well.
+                DashedEmpty(title: "No homework yet", hint: ProfileWording.homeworkEmpty(summary))
+            } else if shown.isEmpty {
                 HStack(spacing: 12) {
                     IconTile(systemName: "checkmark", tone: ProfileTone.emerald, size: 34)
                     Text(verbatim: ProfileWording.homeworkEmpty(summary))

@@ -215,9 +215,10 @@ struct HomeworkDetailView: View {
         statusFloor = HomeworkStatus.handedIn
     }
 
-    /// With the teacher already — its deadline is a date, not something to catch up on.
-    private func isHandedIn(_ a: AssignmentListing) -> Bool {
-        HomeworkStatus.isWithTheTeacher(status(a))
+    /// Nothing owed on it — with the teacher already, or nothing to do yet — so its deadline is a
+    /// date, not something to catch up on.
+    private func owesNothing(_ a: AssignmentListing) -> Bool {
+        HomeworkStatus.owesNothing(status(a))
     }
 
     /// The site's assignment hero — the kind of work, the title, and its dates — then the
@@ -265,7 +266,7 @@ struct HomeworkDetailView: View {
             HeroTile("Assigned", icon: "calendar", value: HomeworkWording.shortDate(a.assignedAt)),
             HeroTile("Due", icon: "calendar.badge.clock", value: a.dueAt == nil ? "No deadline" : HomeworkWording.shortDate(a.dueAt)),
             section,
-            HeroTile("Countdown", icon: "clock", value: HomeworkWording.countdown(dueAt: a.dueAt, handedIn: isHandedIn(a))),
+            HeroTile("Countdown", icon: "clock", value: HomeworkWording.countdown(dueAt: a.dueAt, handedIn: owesNothing(a))),
         ]
     }
 

@@ -302,6 +302,8 @@ enum StatusLabel {
         case "submitted": return "Submitted"
         // Words only (`HomeworkStatus`): every set played, nothing handed in.
         case HomeworkStatus.completed: return "Completed"
+        // Only empty word sets: nothing done, and nothing owed. Never "Completed".
+        case HomeworkStatus.nothingYet: return "Nothing to do yet"
         case "returned": return "Ready to revise"
         case "in_progress": return "In progress"
         default: return "Not started"

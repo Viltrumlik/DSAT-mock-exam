@@ -60,7 +60,8 @@ struct HomeworkRow: View {
                         .appFont(12, weight: .heavy)
                         .foregroundStyle(StatusLabel.color(status))
 
-                    if let due = DueLabel.text(assignment.dueAt, handedIn: HomeworkStatus.isWithTheTeacher(status)) {
+                    // Owing nothing — handed in, or nothing to do yet — the deadline is just a date.
+                    if let due = DueLabel.text(assignment.dueAt, handedIn: HomeworkStatus.owesNothing(status)) {
                         Text("·").foregroundStyle(Theme.textLabel)
                         // States a fact. Even a passed deadline is phrased as information,
                         // never as an accusation.

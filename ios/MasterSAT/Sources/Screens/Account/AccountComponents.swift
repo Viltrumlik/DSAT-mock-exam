@@ -340,25 +340,26 @@ struct AccountMenuRow<Route: Hashable>: View {
     var badge: String?
     let route: Route
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         NavigationLink(value: route) {
             HStack(spacing: 13) {
                 IconTile(systemName: icon, tone: tone)
-                // The badge sits beside the words while they share a line, and under them at the
-                // accessibility sizes, where "Confirm email" beside "Sign-in & password" would
-                // leave neither a readable width.
-                AdaptiveStack(spacing: 13, columnSpacing: 6) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title)
-                            .appFont(16, weight: .bold)
-                            .foregroundStyle(.primary)
-                        Text(hint)
-                            .appFont(12, weight: .medium)
-                            .foregroundStyle(Theme.textSecondary)
-                            .multilineTextAlignment(.leading)
+                Group {
+                    if let badge {
+                        AccountBadgeRow(isStacked: typeSize.isAccessibilitySize) {
+                            words
+                            AccountStatusPill(text: badge, tone: Theme.warning)
+                            // Never seen: the longest word of the title, measured.
+                            Text(verbatim: Self.longestWord(of: title))
+                                .appFont(16, weight: .bold)
+                                .hidden()
+                                .accessibilityHidden(true)
+                        }
+                    } else {
+                        words
                     }
-                    AdaptiveSpacer()
-                    if let badge { AccountStatusPill(text: badge, tone: Theme.warning) }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: "chevron.right")
@@ -370,6 +371,92 @@ struct AccountMenuRow<Route: Hashable>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .appFont(16, weight: .bold)
+                .foregroundStyle(.primary)
+            Text(hint)
+                .appFont(12, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    static func longestWord(of title: String) -> String {
+        let words = title.split(separator: " ")
+        return words.max { $0.count < $1.count }.map(String.init) ?? title
+    }
+}
+
+/// A menu row's words with its badge: beside them while the title's longest word still fits in
+/// the room the badge leaves, under them once it would not — "Sign-in & passwo/rd", broken
+/// mid-word beside "Confirm email" at the larger sizes, read worse than a badge a line lower.
+/// Always under at the accessibility sizes, where the badge wraps too.
+///
+/// Its three children: the words, the badge, and a hidden copy of the title's longest word that
+/// is only measured. One container whichever way it lays out, so nothing in it is rebuilt.
+private struct AccountBadgeRow: Layout {
+    let isStacked: Bool
+    var spacing: CGFloat = 13
+    var stackedSpacing: CGFloat = 6
+
+    private struct Arrangement {
+        let besides: Bool
+        let words: CGSize
+        let badge: CGSize
+    }
+
+    private func arrange(_ width: CGFloat?, _ subviews: Subviews) -> Arrangement {
+        let badge = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let longest = subviews[2].sizeThatFits(.unspecified).width
+        if !isStacked, let width, width - badge.width - spacing >= longest {
+            let words = subviews[0].sizeThatFits(ProposedViewSize(width: width - badge.width - spacing, height: nil))
+            return Arrangement(besides: true, words: words, badge: badge)
+        }
+        if !isStacked, width == nil {
+            let words = subviews[0].sizeThatFits(.unspecified)
+            return Arrangement(besides: true, words: words, badge: badge)
+        }
+        let words = subviews[0].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        return Arrangement(besides: false, words: words, badge: badge)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let a = arrange(proposal.width, subviews)
+        if a.besides {
+            return CGSize(
+                width: proposal.width ?? (a.words.width + spacing + a.badge.width),
+                height: max(a.words.height, a.badge.height)
+            )
+        }
+        return CGSize(
+            width: proposal.width ?? max(a.words.width, a.badge.width),
+            height: a.words.height + stackedSpacing + a.badge.height
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let a = arrange(bounds.width, subviews)
+        subviews[2].place(at: bounds.origin, proposal: .zero)
+        if a.besides {
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.midY), anchor: .leading,
+                proposal: ProposedViewSize(width: bounds.width - a.badge.width - spacing, height: a.words.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX, y: bounds.midY), anchor: .trailing,
+                proposal: ProposedViewSize(a.badge)
+            )
+        } else {
+            subviews[0].place(at: bounds.origin, proposal: ProposedViewSize(width: bounds.width, height: a.words.height))
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + a.words.height + stackedSpacing),
+                proposal: ProposedViewSize(width: bounds.width, height: a.badge.height)
+            )
+        }
     }
 }
 

@@ -214,13 +214,19 @@ struct ProfileView: View {
     /// under it and must not show at its sides. The room above the pills clears the sheet's
     /// grabber once they are pinned to the top edge.
     private var tabBar: some View {
-        PillTabs(items: tabs, selection: $tab)
+        PillTabs(items: tabs, selection: tabSelection)
             .padding(.top, 14)
             .padding(.bottom, 8)
             .background(Theme.background.padding(.horizontal, -16))
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
                 if tabBarHeight != height { tabBarHeight = height }
             }
+    }
+
+    /// The router's tab, written only when it changes: re-tapping the open pill would otherwise
+    /// write an equal value, and every write to the router notifies the root.
+    private var tabSelection: Binding<MeTab> {
+        Binding(get: { tab }, set: { next in if tab != next { tab = next } })
     }
 
     @ViewBuilder private func tabContent(_ proxy: ScrollViewProxy) -> some View {
