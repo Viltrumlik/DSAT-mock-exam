@@ -110,9 +110,35 @@ import Testing
             try sat(6, attempt: 8),
             try sat(7, attempt: 3),
         ]
-        #expect(MidtermResults.latest(list).map(\.attemptId) == [12, 8, 5])
-        #expect(MidtermResults.latest(list, limit: 1).map(\.attemptId) == [12])
+        #expect(MidtermResults.latest(list).map(\.attemptId) == [30, 12, 8])
+        #expect(MidtermResults.latest(list, limit: 1).map(\.attemptId) == [30])
         #expect(MidtermResults.latest([try sat(3, attempt: 20, released: false)]).isEmpty)
+    }
+
+    @Test("A sitting with a granted re-sit keeps its released score and certificate on the Me sheet")
+    func resitKeepsItsResult() throws {
+        let resit = try row([
+            "midterm_id": 5, "attempt_id": 30, "state": "COMPLETED", "submitted": true,
+            "results_visible": true, "score": 520, "resit_open": true,
+            "certificate": ["available": true, "code": "MS-7Q1"],
+        ])
+        #expect(resit.bucket == .available)
+        #expect(MidtermResults.latest([resit]).map(\.attemptId) == [30])
+        #expect(MidtermResults.latest([resit]).first?.certificateCode == "MS-7Q1")
+        // Once the re-sit is begun, the row is the new sitting: nothing released to show yet.
+        let begun = try row([
+            "midterm_id": 5, "attempt_id": 31, "state": "IN_PROGRESS", "submitted": false,
+            "results_visible": false, "resit_open": false,
+        ])
+        #expect(MidtermResults.latest([begun]).isEmpty)
+    }
+
+    @Test("A midterm is Math by its raw subject, whatever its case or spacing")
+    func listingIsMath() throws {
+        #expect(try row(["subject": "MATH"]).isMath)
+        #expect(try row(["subject": " math "]).isMath)
+        #expect(try !row(["subject": "ENGLISH"]).isMath)
+        #expect(try !row(["subject": ""]).isMath)
     }
 
     @Test("A certificate opens only when the listing says it is ready and gives its code")

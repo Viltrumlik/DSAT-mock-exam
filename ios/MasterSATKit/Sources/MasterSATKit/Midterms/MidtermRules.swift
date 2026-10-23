@@ -63,6 +63,10 @@ extension MidtermListing {
     /// The score to show: only once the teacher has released it.
     public var releasedScore: Double? { resultsVisible ? score : nil }
 
+    /// Read off the raw subject, as `Classroom.isMath` is — not off the display label, whose
+    /// wording may change.
+    public var isMath: Bool { subject.trimmingCharacters(in: .whitespaces).uppercased() == "MATH" }
+
     /// The code to open this row's certificate by — only for one the listing says is ready.
     public var certificateCode: String? {
         guard let certificate, certificate.available else { return nil }
@@ -76,12 +80,16 @@ public enum MidtermResults {
     /// Up to `limit` sittings whose score is out, the newest sitting first.
     ///
     /// Newest by attempt: a finished row carries no date, and the server numbers sittings as
-    /// they begin — Class → Results orders them the same way. Only what the midterm page files
-    /// under Past attempts: a granted re-sit still carries the old mark it is about to replace.
+    /// they begin — Class → Results orders them the same way.
+    ///
+    /// Every handed-in sitting, a granted re-sit included: the midterm page files that one under
+    /// Available so it can be started again, but until it is, its released score and certificate
+    /// are still the student's own (the controller's ruling, 2026-10-23). A begun re-sit is a
+    /// new, unsubmitted sitting, and drops out until its score is released.
     public static func latest(_ midterms: [MidtermListing], limit: Int = 3) -> [MidtermListing] {
         Array(
             midterms
-                .filter { $0.bucket == .past && $0.releasedScore != nil && $0.attemptId != nil }
+                .filter { $0.submitted && $0.releasedScore != nil && $0.attemptId != nil }
                 .sorted { ($0.attemptId ?? 0) > ($1.attemptId ?? 0) }
                 .prefix(max(0, limit))
         )
