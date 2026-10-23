@@ -74,11 +74,13 @@ struct SupportBookingView: View {
             SupportConfirmSheet(pick: pick) { topic in
                 await model.book(teacherId: pick.teacherId, startsAt: pick.hour.startsAt, topic: topic)
             }
+            .noBarClearance()
         }
         .sheet(item: $cancelling) { booking in
             SupportCancelSheet(booking: booking) { reason in
                 await model.cancel(booking, reason: reason)
             }
+            .noBarClearance()
         }
         .sheet(item: $inviting) { booking in
             SupportAddMemberSheet(
@@ -86,11 +88,13 @@ struct SupportBookingView: View {
                 load: { try await model.classmates(for: booking) },
                 invite: { student in await model.invite(student, to: booking) }
             )
+            .noBarClearance()
         }
         .sheet(item: $rating) { booking in
             SupportRateSheet(booking: booking) { stars, comment in
                 await model.rate(booking, stars: stars, comment: comment)
             }
+            .noBarClearance()
         }
     }
 
@@ -422,6 +426,7 @@ private struct SupportTeacherCard: View {
                 }
                 .padding(.vertical, 2)
             }
+            .noBarClearanceInRow()
             .onAppear {
                 // The first day with something left may be the third; bring it into view.
                 if teacher.days.indices.contains(selectedIndex) {

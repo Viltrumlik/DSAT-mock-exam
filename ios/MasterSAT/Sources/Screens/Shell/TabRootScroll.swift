@@ -29,16 +29,49 @@ struct TabRootScroll<Content: View>: View {
 
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The page has been scrolled up under the status bar. Only this flip is kept, never the
+    /// offset: a scroll would otherwise rebuild the whole page (`content` is built in this body).
+    @State private var underStatusBar = false
+    /// Where the status bar ends, on screen: the spot the top marker rests at, unscrolled.
+    @State private var statusBarBottom: CGFloat = 0
 
     private static var topID: String { "tab-root-top" }
+    /// How far the page must have moved before the status bar gets its material: a hair of
+    /// overscroll or a settling bounce is not "scrolled".
+    private static var scrollThreshold: CGFloat { 8 }
 
     var body: some View {
+        // Read once, so the measuring closure below holds values, not `self`.
+        let restingEdge = statusBarBottom
+        let threshold = Self.scrollThreshold
         ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     Color.clear.frame(height: 0).id(Self.topID)
                     content()
                 }
+                // iOS 17 has no `onScrollGeometryChange`: the offset is how far the top of the
+                // content has left the edge it rests at. Pulling down (a refresh) moves it the
+                // other way, so it never counts. Read on the content, not the zero-height marker.
+                .onGeometryChange(for: Bool.self) { top in
+                    restingEdge - top.frame(in: .global).minY > threshold
+                } action: { scrolled in
+                    if underStatusBar != scrolled { underStatusBar = scrolled }
+                }
+            }
+            // Content scrolled under the status bar would run into the clock. A zero-height inset
+            // whose background is a material reaches up into the safe area, so what the page
+            // passes behind there is blurred. It belongs to this page: every sheet, cover and the
+            // floating bar sit above it, and it takes no touch.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(.bar)
+                    .opacity(underStatusBar ? 1 : 0)
+                    // Instant under Reduce Motion: the value is picked, the tree is the same.
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: underStatusBar)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { statusBarBottom = $0 }
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
             }
             .detachedRefresh(onRefresh)
             .onChange(of: router.reloadRequest) { _, request in

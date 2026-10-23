@@ -444,6 +444,7 @@ struct PillTabs<Tab: Hashable>: View {
         // No negative padding to "bleed" the row to the screen edge: it made the first pill
         // start off-screen. The row lines up with the cards under it instead.
         .scrollIndicators(.hidden)
+        .noBarClearanceInRow()
         .sensoryFeedback(.selection, trigger: tapped)
     }
 }

@@ -60,6 +60,7 @@ struct LeaderboardView: View {
             LeaderboardFiltersSheet(query: $query, filters: filters, failed: filtersFailed) {
                 await loadFilters()
             }
+            .noBarClearance()
         }
     }
 
@@ -147,6 +148,7 @@ struct LeaderboardView: View {
                 }
             }
         }
+        .noBarClearanceInRow()
     }
 
     // MARK: - Filters

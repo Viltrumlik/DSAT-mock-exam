@@ -168,6 +168,7 @@ struct VocabularyView: View {
                     isBuilding = false
                     if saved { Task { await load() } }
                 }
+                .noBarClearance()
             }
             .alert(
                 "Delete this set?",

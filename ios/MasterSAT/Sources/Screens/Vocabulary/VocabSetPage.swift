@@ -68,6 +68,7 @@ struct VocabSetView: View {
                     isEditing = false
                     if saved { Task { await load() } }
                 }
+                .noBarClearance()
             }
         }
     }

@@ -70,6 +70,7 @@ struct NotificationBell: View {
             }
         }) {
             NotificationsInboxSheet { link in chosenLink = link }
+                .noBarClearance()
         }
         // Restarted on every change of phase: polling runs only while the app is in front,
         // and a return to the foreground refreshes at once.

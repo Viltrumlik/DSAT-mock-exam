@@ -297,4 +297,10 @@ extension View {
     func noBarClearance() -> some View {
         contentMargins(.bottom, 0)
     }
+
+    /// Put on a horizontal scroller — a row of pills, the stories. The tab's bottom margin reaches
+    /// it too, and in a row it is not room for the bar but extra height under the content.
+    func noBarClearanceInRow() -> some View {
+        contentMargins(.bottom, 0, for: .scrollContent)
+    }
 }

@@ -70,6 +70,7 @@ struct StoriesRail: View {
             .padding(.vertical, 2)
         }
         .scrollIndicators(.hidden)
+        .noBarClearanceInRow()
     }
 
     private var failure: some View {

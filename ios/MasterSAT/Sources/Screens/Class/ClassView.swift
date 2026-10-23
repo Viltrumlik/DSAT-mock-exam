@@ -125,6 +125,7 @@ struct ClassView: View {
                 ClassroomTelegramSheet(classroomId: room.id, className: room.name, initialState: telegram[room.id]) { state in
                     telegram[room.id] = state
                 }
+                .noBarClearance()
             }
             .sheet(isPresented: $joining) {
                 JoinClassSheet { _ in Task { await load() } }

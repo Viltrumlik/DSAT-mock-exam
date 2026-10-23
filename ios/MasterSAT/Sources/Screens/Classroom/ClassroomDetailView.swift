@@ -79,6 +79,7 @@ struct ClassroomDetailView: View {
             ClassroomTelegramSheet(classroomId: classroom.id, className: classroom.name, initialState: telegram) { state in
                 telegram = state
             }
+            .noBarClearance()
         }
     }
 

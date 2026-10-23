@@ -79,6 +79,7 @@ struct ServicesView: View {
         .detachedRefresh { await load() }
         .sheet(isPresented: $showingChecklist) {
             SatChecklistSheet(dates: examDates) { await loadExamDates() }
+                .noBarClearance()
         }
     }
 
