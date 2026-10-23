@@ -12,8 +12,8 @@ extension View {
     /// builds the very font it built before.
     ///
     /// `monospacedDigits` sets the digits inside the font, as `.system(…).monospacedDigit()`
-    /// did before the scale: a View `.monospacedDigit()` after this sits outside the font this
-    /// sets, and a count in a pill (`PillTabs`) was cut to "1:" with the pair.
+    /// did before the scale. A View `.monospacedDigit()` after this sits outside the font it
+    /// sets, and that pair was the suspect when a pill's count (`PillTabs`) came out "1:".
     nonisolated func appFont(
         _ size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil, monospacedDigits: Bool = false
     ) -> some View {
