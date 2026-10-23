@@ -269,17 +269,24 @@ struct RewardsHubView: View {
         await readHero()
     }
 
-    /// Only the newest read asked is shown (`LatestOnly.isNewestAsked`): its answer may wait for
-    /// the stage below, and an older one waiting in its place would be shown after it.
+    /// Only the newest read asked is shown (`LatestOnly.isNewestAsked`), and only onto a quiet
+    /// stage: an answer that lands on a busy one is never held, since it may be older than the
+    /// place the stage is about to bring.
     @MainActor
     private func readHero() async {
         let ticket = reads.hero.issue()
         do {
             let board = try await LeaderboardAPI(client: session.client).board(.heroBoard)
             guard reads.hero.isNewestAsked(ticket) else { return }
-            // The stage can have turned busy while the read was out — a return to the app, a
-            // task's own read: the place waits for it as well.
-            celebrations.whenQuiet(Self.heroQuietKey) { showHero(board, ticket: ticket) }
+            guard celebrations.isQuiet else {
+                // The stage turned busy while the read was out — a return to the app, a task's own
+                // read — and what made it busy can move the place: held for it, this answer would
+                // be shown (and noted) after a trophy card announcing a better one. Asked again
+                // once it is quiet instead.
+                celebrations.whenQuiet(Self.heroQuietKey) { Task { await readHero() } }
+                return
+            }
+            showHero(board, ticket: ticket)
         } catch {
             guard !Task.isCancelled, reads.hero.isNewestAsked(ticket) else { return }
             if !heroFailed { heroFailed = true }
