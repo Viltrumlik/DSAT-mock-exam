@@ -46,11 +46,14 @@ struct AppearanceView: View {
         // A tap on the look already in place changes nothing, so it writes nothing.
         guard choice != appearance else { return }
         tapped += 1
-        // One transaction for the ring, the tick and whatever re-colours with them: Reduce Motion
-        // turns animation off for the whole change, it does not pick a gentler one.
+        // One transaction for the ring and the tick: Reduce Motion turns animation off for the
+        // whole change, it does not pick a gentler one. The windows take the new style from the
+        // root (`WindowStyle`), in a frame.
         var swap = Transaction(animation: AppAppearance.swapAnimation(reduceMotion: reduceMotion))
         swap.disablesAnimations = reduceMotion
         withTransaction(swap) { appearance = choice }
+        // The ring moves and the colours change, and neither is heard: say what happened.
+        AccessibilityNotification.Announcement(choice.announcement).post()
     }
 }
 
@@ -72,6 +75,15 @@ private extension AppAppearance {
         case .system: "Changes when your phone does"
         case .light: "Bright and clear"
         case .dark: "Easy on the eyes at night"
+        }
+    }
+
+    /// Spoken once, when VoiceOver is running, after a change.
+    var announcement: String {
+        switch self {
+        case .system: "Following the phone"
+        case .light: "Light selected"
+        case .dark: "Dark selected"
         }
     }
 
@@ -148,7 +160,9 @@ private struct AppearanceTick: View {
     var body: some View {
         Circle()
             .fill(isOn ? Theme.accent : Color.clear)
-            .overlay(Circle().strokeBorder(Theme.accent.opacity(isOn ? 1 : 0.28), lineWidth: 2))
+            // The empty ring is a control's edge, so it holds 3:1 against the card (about 3.5:1 in
+            // light, higher in dark). The brand blue at a quarter strength did not.
+            .overlay(Circle().strokeBorder(isOn ? Theme.accent : Theme.textSecondary, lineWidth: 2))
             .overlay {
                 Image(systemName: "checkmark")
                     .appFont(11, weight: .heavy)

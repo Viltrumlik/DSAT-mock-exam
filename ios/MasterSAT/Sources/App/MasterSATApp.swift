@@ -12,7 +12,7 @@ struct MasterSATApp: App {
         WindowGroup {
             RootView()
                 .environment(session)
-                // Once, here: the window's style, which every sheet and cover inherits.
+                // Once, here: the stored look, written to the windows (not `preferredColorScheme`).
                 .appliesStoredAppearance()
                 .task { await session.launch() }
         }
