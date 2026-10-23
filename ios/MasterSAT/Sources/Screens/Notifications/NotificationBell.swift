@@ -46,7 +46,7 @@ struct NotificationBell: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .frame(minWidth: 17, minHeight: 17)
-                            .background(Capsule().fill(Theme.danger))
+                            .background(Capsule().fill(Theme.dangerFill))
                             // A ring in the page colour keeps the badge off the bell's outline.
                             .overlay(Capsule().stroke(Theme.background, lineWidth: 2))
                             .offset(x: 4, y: -3)

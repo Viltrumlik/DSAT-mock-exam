@@ -78,20 +78,27 @@ enum SubjectStyle {
         let label: String
         let icon: String
         let tone: Color
+        /// The tone as a fill under white type — the board's subject badge. English keeps
+        /// its light shade in dark mode (`Theme.subjectEnglishFill`); the brand blue holds.
+        let badgeFill: Color
     }
 
     static func of(_ subject: String?) -> Style {
         switch AssessmentSubjectKey.of(subject) {
         case .math:
-            return Style(label: "Math", icon: "function", tone: Theme.accent)
+            return Style(label: "Math", icon: "function", tone: Theme.accent, badgeFill: Theme.accent)
         case .english:
-            return Style(label: "English", icon: "text.book.closed.fill", tone: Theme.subjectEnglish)
+            return Style(
+                label: "English", icon: "text.book.closed.fill",
+                tone: Theme.subjectEnglish, badgeFill: Theme.subjectEnglishFill
+            )
         case nil:
             let raw = subject ?? ""
             return Style(
                 label: raw.isEmpty ? "General" : raw.humanisedSubject,
                 icon: "square.and.pencil",
-                tone: Theme.accent
+                tone: Theme.accent,
+                badgeFill: Theme.accent
             )
         }
     }

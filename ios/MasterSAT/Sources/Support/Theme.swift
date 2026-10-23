@@ -13,6 +13,9 @@ enum Theme {
     /// between the two at night should not see two brands.
     static let accent = dynamic(light: 0x2a68c0, dark: 0x3170d6)
     static let accentHover = dynamic(light: 0x21539e, dark: 0x5b8def)
+    /// Brand-blue TEXT on a card — the web's `text-primary dark:text-primary-hover`. On the
+    /// near-black dark surface the brand blue falls under 4.5:1; its hover shade clears it.
+    static let accentText = dynamic(light: 0x2a68c0, dark: 0x5b8def)
     static let accentSoft = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
         ? UIColor(red: 0.192, green: 0.439, blue: 0.839, alpha: 0.18)
         : UIColor(red: 0.165, green: 0.408, blue: 0.753, alpha: 0.10) })
@@ -26,6 +29,12 @@ enum Theme {
     static let warning = dynamic(light: 0xd97706, dark: 0xfbbf24)
     static let danger = dynamic(light: 0xdc2626, dark: 0xf87171)
     static let info = dynamic(light: 0x0284c7, dark: 0x38bdf8)
+
+    /// Fills under white type, the light-mode shade in both schemes. The semantic colours lift
+    /// in dark mode so they read as text on a dark card; under white a 10-pt badge on the lifted
+    /// red or purple falls to about 3:1, where the light shades hold 4.8:1 and 6.1:1.
+    static let dangerFill = dynamic(light: 0xdc2626, dark: 0xdc2626)
+    static let subjectEnglishFill = dynamic(light: 0x6d4ec7, dark: 0x6d4ec7)
 
     /// `--dz-amber`. A shade brighter than `warning`, and deliberately so: on the calendar
     /// and the assessments board it is a *category* (a test, work in flight), not a caution.

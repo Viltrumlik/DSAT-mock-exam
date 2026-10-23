@@ -659,7 +659,7 @@ struct AssessmentCard: View {
             .foregroundStyle(.white)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(style.tone))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(style.badgeFill))
             Spacer(minLength: 0)
             switch state.column {
             case .done:

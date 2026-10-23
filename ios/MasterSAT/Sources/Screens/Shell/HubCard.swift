@@ -39,7 +39,8 @@ struct HubCard<Route: Hashable>: View {
                     if let detail {
                         Text(detail)
                             .appFont(13, weight: .semibold)
-                            .foregroundStyle(Theme.accent)
+                            // Text, not a fill: the brand blue is about 3.6:1 on a dark card.
+                            .foregroundStyle(Theme.accentText)
                             .multilineTextAlignment(.leading)
                             .contentTransition(.opacity)
                             .transition(.opacity)
