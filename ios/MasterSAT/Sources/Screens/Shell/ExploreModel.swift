@@ -21,9 +21,13 @@ final class ExploreModel {
     private(set) var events = ProfileLoad<[LearningEvent]>()
     private(set) var surveys = ProfileLoad<[SurveyBrief]>()
 
-    /// The newest read asked of each slot. An answer from an older one is dropped, so a slow
-    /// read from the tab appearing never lands over the fresher one a pull started after it.
+    /// The newest read asked of each slot, and the read whose answer the slot holds. An answer
+    /// older than the one held is dropped, so a slow read from the tab appearing never lands
+    /// over the fresher one a pull started after it — but any newer one is taken, even when a
+    /// read after it is still out or has failed: a real answer beats keeping an older one.
+    /// Only the newest read's failure is recorded; an older one's says nothing.
     @ObservationIgnored private var tickets: [AnyKeyPath: Int] = [:]
+    @ObservationIgnored private var applied: [AnyKeyPath: Int] = [:]
 
     // MARK: - The lines
 
@@ -34,10 +38,12 @@ final class ExploreModel {
         roadmap.value.map { ExploreDigest.roadmap($0, when: CommunityFormat.dayMonth) }
     }
 
-    /// Nil only while all three of its reads are missing; with any of them, the line words the
-    /// parts that arrived (`ExploreDigest.services`).
+    /// Nil until the bookings and the calendar have each answered or failed; then the line words
+    /// the parts that arrived (`ExploreDigest.services`). Worded from whichever landed first,
+    /// a cold open read "Book an hour…", then the calendar's line, then "Your next hour…".
     var servicesLine: ExploreLine? {
-        ExploreDigest.services(
+        guard !bookings.isPending, !calendar.isPending else { return nil }
+        return ExploreDigest.services(
             bookings: bookings.value,
             calendar: calendar.value,
             examDates: examDates.value,
@@ -113,7 +119,8 @@ final class ExploreModel {
         let request = Task { try await fetch() }
         do {
             let value = try await request.value
-            guard tickets[slot] == ticket else { return }
+            guard ticket > (applied[slot] ?? 0) else { return }
+            applied[slot] = ticket
             if self[keyPath: slot].value != value { self[keyPath: slot].value = value }
             if self[keyPath: slot].failed { self[keyPath: slot].failed = false }
         } catch {
