@@ -16283,6 +16283,7 @@ Dates that the app formats on the phone's clock (an event's time, a lesson's day
 **Rules:**
 - `enum AppAppearance: String, CaseIterable { case system, light, dark }`, stored per device in `UserDefaults` (`@AppStorage("appearance")`), default `.system`.
 - Applied once at the root with `.preferredColorScheme(nil / .light / .dark)`. It reaches every tab, sheet and cover; check the Me sheet, the certificate sheet and a full-screen cover.
+  - *(As built, 2026-10-23: `preferredColorScheme(nil)` left an open sheet dark after switching back to System (device finding D10). The setting now writes the scene windows' `overrideUserInterfaceStyle` (`.unspecified` / `.light` / `.dark`) at launch and on change, with one writer; `preferredColorScheme` is not used. Built second, right after Task 57's Account rows, not last.)*
 - Settings → **Appearance** row (tile `circle.lefthalf.filled`, hint "System, light or dark") pushes `AppearanceView`. That page offers three choices with a preview swatch each, the current one ticked.
   - The change applies at once, with no animation of the colour swap under Reduce Motion.
   - VoiceOver: each choice is selected or not, and named "Use the phone's setting" / "Light" / "Dark".
@@ -16441,3 +16442,96 @@ Carried into later phases (found in phase 4 reviews and on device, deliberately 
 - **Phase 5 (device observations, pre-existing):** right after a hand-in the homework page's "What to do" row can still read "Continue · 1 answered" though the attempt is graded (the row comes from the list payload, re-read later); the review's pinned filter chips slide under the back button when scrolled; HomeworkDetail shows a stale "Not started" for ~0.3 s after a cover closes and still says "Not started" for a word homework after three games; tab roots scroll content under the status bar with no material; a reviewed quiz homework still offers "Start"/"Continue" and "up to +15 XP" during a retry (pay comes from the first attempt); Results reads "No results yet" while a retry is in progress (lists carry the newest started attempt); Today once came up scrolled ~55 pt after a hand-in (not reproduced); Me → Sign-in & password wraps "Emai / l" beside the Confirmed badge.
 - **Not verified on device:** the sign-in and change-password shakes (Task 41 items 14–15; the simulator panel stopped focusing text fields mid-check) and VoiceOver (item 17; the simulator has no VoiceOver). Both read correct in the final review.
 - **Owner:** iOS 17/18 are unchecked (only the iOS 26.3 runtime is installed, ~8 GB); TestFlight needs a paid Apple Developer account. `seed_phase4`'s "Phase 4 · photos" needs `allow_file_upload=True` to pay XP locally.
+
+## Phase 5 outcome (2026-10-23) and what it leaves
+
+Done on `feat/ios-redesign-phase5`, cut from `main` at `95fc244e`. The work:
+- Tasks 42–55, each with its own fix rounds.
+- A device check (Task 56) on the iOS 26.3 simulator, pinned to the local backend, with seeded data. Three passes found D1–D12; every one is fixed and re-checked on the device.
+- One opus whole-branch review ("with fixes", 0 Critical / 10 Important / 15 Minor), then one fix wave of 22 items, re-reviewed clean.
+- The owner's answer to question 1 added two tasks:
+  - Task 57, the Me sheet as B: three fix rounds, the last for D12.
+  - Task 58, Appearance: one fix round, for D10.
+  - Each task was re-reviewed clean after its last round.
+- Order: Appearance was built second, right after the Account rows it hangs from. The plan lists it last.
+
+The kit went from 786 to 953 tests (all green at `f1f8d2a1`). The app clean-builds under Swift 6; all 130 distinct warnings are in the kit, none in the app's own sources.
+
+Decisions taken during phase 5 that later work builds on (the full list of rulings, each with its cost if wrong, is in the PR):
+- **P5-R1 Explore reads its four lines live on every visit.**
+  - The requests run side by side and detached (6 requests).
+  - Each card fails on its own and keeps its fixed one-line description. A card never says "nothing" for a failure.
+  - Surveys pay **points**, not coins.
+  - Services shows the next booked hour, otherwise the next free one (always after now), and the next SAT **date** ("Next SAT: December 20").
+- **P5-R2 The Me sheet is the website's three tabs (owner, B).**
+  - Overview · Classes · Settings sit under a hero that carries the 44-pt close button.
+  - While scrolled, an overlay copy of the tabs stays pinned. Each tab's page is at least one screen tall, so a switch while pinned always lands on content (D12).
+  - The tab lives in `AppRouter.meTab`: the avatar reopens the last tab, `/profile` opens Overview.
+  - Every push from the sheet is a value route.
+  - Overview adds Midterms & certificates:
+    - a "Passed" tag only when the centre marked it;
+    - a certificate opens as a nested sheet;
+    - re-sits keep their result.
+  - The homework figure uses `HomeworkProgress.isDone` and leaves out classwork and empty-set homework. "Nothing set" is a dashed empty slot, never an achievement.
+- **P5-R3 Appearance is a device setting** (System / Light / Dark, default System).
+  - It sets the scene windows' `overrideUserInterfaceStyle`, with one writer.
+  - `preferredColorScheme` is gone: going back to System left an open sheet dark (D10).
+- **P5-R4 One state vocabulary.**
+  - `StateArt`: five one-shot Lotties that settle, with `rest` markers written by the generator.
+  - `EmptyState`.
+  - `ErrorState`: `.page` with art and offline wording, or `.inline`.
+  - `LoadingSkeleton`: breathes outside the focus zones, static under Reduce Motion.
+  - `StaleNote`.
+  - At most one state animation per screen. Error ≠ empty everywhere.
+- **P5-R5 Text follows the phone's text size.**
+  - `appFont` uses `@ScaledMetric`, is exact at the default size, and takes `monospacedDigits:`. 1,013 fixed fonts were converted.
+  - Chrome is capped at xxxLarge, with the Large Content Viewer.
+  - Rows stack through `AdaptiveStack`/`AnyLayout`, which keeps their identity. The segment bar stands in a column at the accessibility sizes (D11).
+  - `HeaderLayout` is one instance of the header's pills and bell in every arrangement.
+  - `SlotStack` drops the spacing of empty slots (D6).
+- **P5-R6 Haptics answer taps, not code.** The tab bar, pills and segments are driven by a tap counter. VoiceOver gets:
+  - labels and `.isSelected`;
+  - the tab-bar trait;
+  - the title read first;
+  - the rank-up card read once, after the XP line;
+  - Appearance announcing its choice.
+- **P5-R7 A homework of only empty word sets has nothing to do yet.**
+  - It is never owed and is not counted (Today's ring included).
+  - It reads "Nothing to do yet", in neutral, and is never "Catch up".
+- **P5-R8 Implementers never launch the app**: an unpinned launch once reached production. The controller runs one pinned rig.
+
+Verified on the device (build `f1f8d2a1` and earlier, iPhone 17 Pro, iOS 26.3): see the PR's checklist. It covers:
+- Explore, Me B with all three tabs, the certificate over Me, and Appearance Light / Dark / System with the sheet open;
+- the empty states, the error art, the stale line, and Go to Classes;
+- the tab roots at AX5, xxxLarge, dark mode, and the Reduce Motion skeleton and push;
+- D1–D12, each re-checked after its fix.
+
+A drag down on the pinned tab strip neither scrolls the page nor closes the sheet; that is accepted.
+
+Not verified on a device:
+- the iPhone SE tab roots: the simulator panel's access request went unanswered, so only the SE sign-in screen was checked;
+- VoiceOver (the simulator has none), including whether focus survives the pin releasing after a tab switch;
+- the pill row's scroll position at AX3+ when the pin releases;
+- haptics;
+- true offline (NWPathMonitor);
+- the zoom fallback under Reduce Motion on iOS 18;
+- iOS 17/18 runtimes.
+
+Not done, and why:
+- the retry row ("Retry · n answered", no XP on a retry): it needs a server field;
+- whole-page failures on pushed pages are still the inline form (no art);
+- ~35 hand-rolled hairline cards outside the plan's list;
+- the sub-44-pt clear, info, trash and remove buttons, and the leftover " · " readings (listed in the Task 53 report);
+- `ServicesExamDates.earliest` keeps a past date if the admin list is stale;
+- empty-set-only homework is still listed under Class → Done (it reads "Nothing to do yet");
+- phase-2 performance items (TodayPlan rebuilds, sequential People requests);
+- the kit's now-unused `ClassroomSubjectFilter` / `cardScheduleLine`;
+- the deferred minors listed in the PR.
+
+Owner's list:
+- question 2: the Services card's second line, either the next SAT date ★ (built) or a checklist ticked on this phone;
+- the sign-in copy "You're signed in, but your account didn't load". Proposed: "Your password is right, but your account didn't load — try again";
+- Matching's accuracy figure;
+- the strike-shop coin burst;
+- iOS 17/18 runtimes (~8 GB);
+- a paid Apple Developer account for TestFlight.
