@@ -52,8 +52,7 @@ struct HeaderWindowOverlay: View {
     @ViewBuilder private func content(for kind: HeaderWindowKind) -> some View {
         switch kind {
         case .strikes:
-            // Task 3 — the flame, the spendable count, the run line, Spend in the Shop.
-            Text("Strikes").appFont(22, weight: .heavy, design: .rounded)
+            StrikesWindowView()
         case .xp:
             // Task 4 — the bolt, the XP, the place, the points box and Convert.
             Text("XP and points").appFont(22, weight: .heavy, design: .rounded)
