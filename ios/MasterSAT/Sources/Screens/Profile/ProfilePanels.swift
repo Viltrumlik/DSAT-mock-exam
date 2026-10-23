@@ -2,12 +2,12 @@ import SwiftUI
 import MasterSATKit
 
 // Overview's panels — the web's `OverviewTab.tsx` pieces: Your goal (with Latest results),
-// Finish your profile (or "all set"), and Payments, coming soon. Each reads its own load from
+// Finish your profile (or "all set"), and Payments. Each reads its own load from
 // `ProfileModel` and fails on its own.
 
 /// Which panel's "Try again" was pressed.
 enum ProfileRetry {
-    case account, rewards, homework, attempts, examDates, midterms, classes, schedule, people
+    case account, rewards, homework, attempts, examDates, midterms, finance, classes, schedule, people
 }
 
 // MARK: - Your goal
@@ -336,69 +336,152 @@ struct ProfileChecklistPanel: View {
 
 // MARK: - Payments
 
-/// Payments, before there is anything to pay here — the owner asked for the block with
-/// "Coming soon" inside it, so the place exists before the feature does. It shows what is
-/// coming and no figures at all: a made-up amount on a student's own profile would read as a
-/// real bill.
+/// The student's own money at the learning center, as lc-up keeps it — the web's
+/// `PaymentsPanel`: what they owe or have in credit, the monthly price of their groups, and
+/// their latest payments.
+///
+/// Plain on purpose (owner, 2026-10-14): a few lines and a list, no tinted box and no
+/// coloured edge. An account lc-up has not been told about says so and shows nothing else;
+/// a load that failed says THAT, because "no payments" and "we could not read your payments"
+/// are different things to someone wondering whether they still owe for the month.
 struct ProfilePaymentsPanel: View {
-    private struct Preview: Identifiable {
-        let icon: String
-        let label: String
-        var id: String { label }
-    }
+    let model: ProfileModel
+    let onRetry: @MainActor (ProfileRetry) async -> Void
 
-    private static let previews = [
-        Preview(icon: "creditcard", label: "Pay for your course online"),
-        Preview(icon: "calendar.badge.clock", label: "See when your next payment is due"),
-        Preview(icon: "doc.text", label: "Keep every receipt in one place"),
-    ]
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// The web truncates a row to its line; at the accessibility sizes, where the figure has
+    /// moved below the words anyway, the words are allowed to wrap instead of being cut.
+    private var rowLines: Int { typeSize.isAccessibilitySize ? 3 : 1 }
 
     var body: some View {
         ProfilePanel(
             icon: "wallet.pass",
             tone: ProfileTone.violet,
             title: "Payments",
-            description: "Your course payments, on your profile."
+            description: "Your balance and payments at the learning center."
         ) {
-            Text("Coming soon")
-                .appFont(12, weight: .heavy)
-                .foregroundStyle(ProfileTone.violet)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 5)
-                .background(Capsule().fill(ProfileTone.violet.opacity(0.13)))
-        } content: {
-            VStack(spacing: 8) {
-                ForEach(Self.previews) { row in
-                    HStack(spacing: 12) {
-                        Image(systemName: row.icon)
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(ProfileTone.violet)
-                            .capDynamicType()
-                            .frame(width: 18)
-                            .accessibilityHidden(true)
-                        Text(verbatim: row.label)
-                            .appFont(13, weight: .semibold)
-                        Spacer(minLength: 0)
+            content
+        }
+    }
+
+    @ViewBuilder private var content: some View {
+        let load = model.finance
+        if load.isPending {
+            LoadingSkeleton(rows: 3, height: 18, label: "Loading your payments")
+        } else if load.isFailed {
+            ClassroomErrorState(
+                title: "Your payments didn't load.",
+                message: "Nothing has changed — try again in a moment."
+            ) { await onRetry(.finance) }
+        } else {
+            switch load.value {
+            case .linked(let finance):
+                figures(finance)
+            // Unlinked, and the belt-and-braces nil: neither is a failure, and neither
+            // claims the student is paid up.
+            case .unlinked, .none:
+                Text("Your payments will show here once your learning center links your account.")
+                    .appFont(13, weight: .medium)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// The figures and the list, spaced by hand: the due sentence belongs to the summary it
+    /// explains, and the panel's own 16-pt gap would set it adrift between the two blocks.
+    private func figures(_ finance: MyFinance) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                switch FinanceRules.balanceLine(finance) {
+                case .owes(let amount):
+                    line("You owe", amount, tone: ProfileTone.rose)
+                case .inCredit(let amount):
+                    line("In credit", amount)
+                case .allPaid:
+                    line("Balance", "All paid")
+                case .none:
+                    EmptyView()
+                }
+                if finance.monthlyCost > 0 {
+                    line("Monthly price", UZS.format(finance.monthlyCost))
+                    ForEach(FinanceRules.groupBreakdown(finance)) { group in
+                        line(group.name, UZS.format(group.monthlyCost), size: 12.5)
+                            .padding(.leading, 12)
                     }
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 11)
-                    .profileWell(ProfileTone.violet, radius: 11, opacity: 0.07)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .strokeBorder(ProfileTone.violet.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                    )
+                }
+                if let due = FinanceRules.dueSentence(finance) {
+                    Text(verbatim: due)
+                        .appFont(12.5, weight: .medium)
+                        .foregroundStyle(Theme.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
                 }
             }
-            Text("Until then, payments are made at your learning center as usual.")
-                .appFont(12.5, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                ProfileEyebrow("Recent payments")
+                payments(FinanceRules.recentPayments(finance))
+            }
         }
-        .cardToneBar(
-            LinearGradient(colors: [ProfileTone.violet, ProfileTone.violet.opacity(0.4), .clear], startPoint: .leading, endPoint: .trailing),
-            height: 4
-        )
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Payments — coming soon")
+    }
+
+    @ViewBuilder private func payments(_ rows: [FinancePayment]) -> some View {
+        if rows.isEmpty {
+            Text("No payments recorded yet.")
+                .appFont(13, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, payment in
+                    if index > 0 { Divider() }
+                    paymentRow(payment)
+                }
+            }
+        }
+    }
+
+    /// The day, then how it was paid and the month it buys, with the figure on the right —
+    /// stacked at the accessibility sizes, where the two would be a word to a line.
+    private func paymentRow(_ payment: FinancePayment) -> some View {
+        let note = FinanceRules.note(payment)
+        return AdaptiveStack(rowAlignment: .firstTextBaseline, spacing: 10, columnSpacing: 2) {
+            HStack(spacing: 0) {
+                Text(verbatim: FinanceRules.payDay(payment.date))
+                    .appFont(13, weight: .medium)
+                if !note.isEmpty {
+                    Text(verbatim: " · \(note)")
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .lineLimit(rowLines)
+            .truncationMode(.tail)
+            AdaptiveSpacer()
+            Text(verbatim: FinanceRules.amountText(payment))
+                .appFont(13, weight: .semibold, monospacedDigits: true)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// One summary line: what it is on the left, the figure on the right — the web's
+    /// `PaymentsLine`.
+    private func line(_ label: String, _ value: String, tone: Color? = nil, size: CGFloat = 13) -> some View {
+        AdaptiveStack(rowAlignment: .firstTextBaseline, spacing: 10, columnSpacing: 2) {
+            Text(verbatim: label)
+                .appFont(size, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(rowLines)
+                .truncationMode(.tail)
+            AdaptiveSpacer()
+            Text(verbatim: value)
+                .appFont(size, weight: .semibold, monospacedDigits: true)
+                .foregroundStyle(tone ?? .primary)
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }

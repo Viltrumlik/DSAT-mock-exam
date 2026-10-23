@@ -11,20 +11,27 @@ import MasterSATKit
 ///   is about to show something;
 /// - empty: nothing — a school with no stories posted should not get a band of grey circles;
 /// - failed: one quiet line, "Stories didn't load. Try again". A failed fetch is not an empty
-///   rail, and drawing nothing would tell the student the school has posted nothing.
+///   rail, and drawing nothing would tell the student the school has posted nothing. A payload
+///   the app cannot read counts as a failure, not as a school with nothing to say.
 ///
-/// While hidden it is zero points tall.
+/// While hidden it is zero points tall. A cancelled load (the student left the screen mid-
+/// request) is neither a failure nor an answer: the rail goes back to `.idle`, which the next
+/// appearance loads again, rather than staying a zero-height `.loading` for the life of the
+/// screen.
 struct StoriesRail: View {
     var refreshID: Int = 0
 
     @Environment(Session.self) private var session
+    @Environment(AppRouter.self) private var router
+    @Environment(\.openURL) private var openURL
     @State private var stories: [Story] = []
-    @State private var phase: Phase = .loading
+    @State private var phase: Phase = .idle
     @State private var loadedAt: Date?
     @State private var loadedForRefresh: Int?
     @State private var opened: StoryViewerItem?
+    @State private var pendingLink: AppLink?
 
-    private enum Phase { case loading, loaded, failed }
+    private enum Phase { case idle, loading, loaded, failed }
 
     /// Signed image URLs lapse in about an hour; the web treats the rail as fresh for five
     /// minutes, and so does this.
@@ -33,7 +40,7 @@ struct StoriesRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             switch phase {
-            case .loading:
+            case .idle, .loading:
                 Color.clear.frame(height: 0)
             case .failed:
                 failure
@@ -47,10 +54,19 @@ struct StoriesRail: View {
         }
         // Runs on every appearance; `loadIfNeeded` decides whether that is worth a request.
         .task(id: refreshID) { await loadIfNeeded() }
-        .fullScreenCover(item: $opened) { item in
-            StoryViewer(stories: item.stories, startIndex: item.index)
+        .fullScreenCover(item: $opened, onDismiss: routeIfAsked) { item in
+            StoryViewer(stories: item.stories, startIndex: item.index) { pendingLink = $0 }
                 .noBarClearance()
         }
+    }
+
+    /// A story's "Open" asked for a screen in the app. The move happens here, once the cover
+    /// has gone: a tab switch and a push made while a full-screen cover is still dismissing
+    /// are dropped on the way.
+    private func routeIfAsked() {
+        guard let link = pendingLink else { return }
+        pendingLink = nil
+        router.open(link, baseURL: session.client.config.baseURL) { openURL($0) }
     }
 
     private var rail: some View {
@@ -99,14 +115,20 @@ struct StoriesRail: View {
     }
 
     private func load() async {
+        if phase == .idle { phase = .loading }
         do {
             stories = try await StoriesAPI(client: session.client).rail()
             phase = .loaded
             loadedAt = Date()
             loadedForRefresh = refreshID
         } catch {
-            // Leaving the screen cancels the request; that is not a failure to report.
-            if Task.isCancelled { return }
+            // Leaving the screen cancels the request; that is not a failure to report. It
+            // must not leave the rail waiting for ever either, so a first load that was
+            // cancelled goes back to `.idle` and the next appearance asks again.
+            if Task.isCancelled {
+                if phase == .loading { phase = .idle }
+                return
+            }
             // A re-read that fails keeps the rail it had: the titles are still true.
             if phase != .loaded { phase = .failed }
         }

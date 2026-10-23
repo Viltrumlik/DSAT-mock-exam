@@ -7,27 +7,33 @@ import MasterSATKit
 ///   dates on them.
 /// - It moves on by itself every 6 seconds; tapping the left third goes back, the right
 ///   two-thirds forward; holding pauses. Past the last story it closes. Swiping down closes.
-/// - The clock waits for the picture to arrive, and stops while "Open" is showing a page or
-///   VoiceOver is running — six seconds is not long enough to hear a caption read out.
+/// - The clock waits for the picture to arrive, and stops while the app is in the background
+///   or VoiceOver is running — six seconds is not long enough to hear a caption read out.
+/// - "Open" either routes to the screen the link names (`onRoute`, and the viewer closes) or
+///   hands the page to the system browser, where the student's web session lives.
 struct StoryViewer: View {
     let stories: [Story]
+    /// Asked for a screen inside the app. The rail moves the router once this cover has gone:
+    /// a push made while a full-screen cover is still dismissing is dropped.
+    let onRoute: (AppLink) -> Void
 
     @State private var index: Int
     @State private var progress: Double = 0
     @State private var holding = false
     @State private var pressStart: Date?
     @State private var imageSettled: Bool
-    @State private var link: CommunityLink?
     @State private var dragOffset: CGFloat = 0
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     private static let duration: TimeInterval = 6
 
-    init(stories: [Story], startIndex: Int) {
+    init(stories: [Story], startIndex: Int, onRoute: @escaping (AppLink) -> Void = { _ in }) {
         self.stories = stories
+        self.onRoute = onRoute
         let start = min(max(startIndex, 0), max(stories.count - 1, 0))
         _index = State(initialValue: start)
         _imageSettled = State(initialValue: stories.indices.contains(start) ? stories[start].imageURL == nil : true)
@@ -37,7 +43,7 @@ struct StoryViewer: View {
 
     /// The clock runs only while the student can actually be looking at it.
     private var paused: Bool {
-        holding || link != nil || voiceOver || !imageSettled || scenePhase != .active
+        holding || voiceOver || !imageSettled || scenePhase != .active
     }
 
     var body: some View {
@@ -54,11 +60,6 @@ struct StoryViewer: View {
         }
         .statusBarHidden()
         .task(id: index) { await run() }
-        .fullScreenCover(item: $link) { page in
-            CommunitySafariView(url: page.url) { link = nil }
-                .ignoresSafeArea()
-                .noBarClearance()
-        }
     }
 
     // MARK: - The clock
@@ -220,8 +221,9 @@ struct StoryViewer: View {
     /// Its own band under the picture rather than laid over it: these are school notices, and
     /// text over an arbitrary photograph is a contrast gamble some of them would lose.
     @ViewBuilder private func caption(_ story: Story) -> some View {
+        let routed = story.routedLink
         let url = story.openableLink
-        if !story.title.isEmpty || !story.caption.isEmpty || url != nil {
+        if !story.title.isEmpty || !story.caption.isEmpty || routed != nil || url != nil {
             VStack(spacing: 5) {
                 if !story.title.isEmpty {
                     Text(story.title)
@@ -232,13 +234,20 @@ struct StoryViewer: View {
                     Text(story.caption)
                         .appFont(14, weight: .medium)
                         .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(8)
                 }
-                if let url {
-                    // In-app Safari: the page opens over the story instead of taking the
-                    // student out of the app, and the story waits while it is open.
+                if routed != nil || url != nil {
+                    // A place the app has a screen for is routed to, closing the viewer, so
+                    // the student lands on it signed in. Anything else goes to the system
+                    // browser, which carries their web session — the in-app Safari sheet this
+                    // replaces was signed out, and an "Open" that lands on a sign-in form is
+                    // the bug.
                     Button {
-                        link = CommunityLink(url: url)
+                        if let routed {
+                            onRoute(routed)
+                            dismiss()
+                        } else if let url {
+                            openURL(url)
+                        }
                     } label: {
                         Text("Open")
                             .appFont(14, weight: .heavy)

@@ -18,9 +18,22 @@ public struct Story: Decodable, Identifiable, Sendable, Equatable, Hashable {
     public let endsAt: String?
     public let createdAt: String?
 
-    /// Where "Open" goes, or nil when there is nothing openable. Web pages only:
-    /// `SFSafariViewController` throws on any other scheme, and a story is a notice, not a
-    /// launcher for other apps.
+    /// The screen this story's link means, when the app has one for it. A notice that points
+    /// at `/events` belongs on the Events screen — signed in, inside the app — not in a
+    /// browser; `openableLink` is for everything else.
+    ///
+    /// Nil for no link at all, for a place on the site the app has no screen for, and for
+    /// anywhere that is not this site.
+    public var routedLink: AppLink? {
+        let trimmed = linkURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let link = AppLink.parse(trimmed)
+        if case .unknown = link { return nil }
+        return link
+    }
+
+    /// Where "Open" goes when `routedLink` is nil — the system browser, where the student's
+    /// web session lives. Web pages only: a story is a notice, not a launcher for other apps.
     public var openableLink: URL? {
         let trimmed = linkURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed),
@@ -90,8 +103,11 @@ public struct StoriesAPI: Sendable {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            stories = (try? c.decodeIfPresent(CommunityLossyList<Story>.self, forKey: .stories))?
-                .elements ?? []
+            // A payload with no readable `stories` throws rather than reading as an empty
+            // rail: "the school has posted nothing" and "we could not read the answer" are
+            // different statements, and the rail says the second one out loud. The list
+            // itself stays lossy, so one malformed story never costs the whole rail.
+            stories = try c.decode(CommunityLossyList<Story>.self, forKey: .stories).elements
         }
 
         enum CodingKeys: String, CodingKey { case stories }
