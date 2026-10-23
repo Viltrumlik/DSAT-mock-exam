@@ -98,6 +98,10 @@ struct DotHeading: View {
                 Text(ScoreText.string(count))
                     .appFont(12, weight: .heavy)
                     .foregroundStyle(Theme.textLabel)
+                    // The title above has the row's priority, so the pill is held whole: a count
+                    // is one short line at any size, never squeezed to a sliver or cut.
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
