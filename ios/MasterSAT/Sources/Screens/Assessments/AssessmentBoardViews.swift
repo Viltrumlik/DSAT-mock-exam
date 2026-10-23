@@ -418,16 +418,8 @@ struct AssessmentNavCard: View {
                     }
                 }
             }
-            .padding(big ? 20 : 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card)
-            .overlay(alignment: .top) { Rectangle().fill(tone).frame(height: 3) }
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .cardStyle(padding: big ? 20 : 16)
+            .cardToneBar(tone)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -650,18 +642,10 @@ struct AssessmentCard: View {
 
             action.padding(.top, 14)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
+        .cardStyle(padding: 16)
         // The 3pt subject-coloured edge is the card's whole identity on the board — it is
         // what makes a wall of cards scannable without reading a word.
-        .overlay(alignment: .top) { Rectangle().fill(style.tone).frame(height: 3) }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        .cardToneBar(style.tone)
     }
 
     private var header: some View {

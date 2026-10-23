@@ -569,12 +569,7 @@ private struct FlashcardHoldStrip: View {
             StudyPill(text: "\(secondsLeft)s", icon: "timer", tone: Theme.accent)
                 .accessibilityHidden(true)
         }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.card))
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Theme.separator.opacity(0.6), lineWidth: 0.5)
-        )
+        .cardStyle(padding: 12)
         .accessibilityElement(children: .combine)
     }
 }

@@ -299,13 +299,7 @@ struct AssessmentRunnerView: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
+        .cardStyle(padding: 0)
     }
 
     /// The question itself. Order is the site's and it is not arbitrary: the stem comes

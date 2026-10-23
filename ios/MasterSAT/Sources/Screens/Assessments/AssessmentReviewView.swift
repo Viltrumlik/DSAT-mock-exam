@@ -546,14 +546,8 @@ struct ReviewQuestionCard: View {
             }
             .padding(18)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+        // Plain, as a focus zone's card is: the header and the body keep their own padding.
+        .cardStyle(padding: 0)
     }
 
     private var header: some View {

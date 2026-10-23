@@ -130,6 +130,19 @@ extension View {
             )
             .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 3)
     }
+
+    /// A bar of `tone` along a card's top edge — what the card is about, readable before a word of
+    /// it. Goes after `cardStyle`. It clips only itself to the card's corners, so the card's
+    /// shadow is not cut off the way clipping the whole card would cut it.
+    func cardToneBar(_ tone: Color, height: CGFloat = 3) -> some View {
+        overlay(alignment: .top) {
+            Color.clear
+                .overlay(alignment: .top) { tone.frame(height: height) }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
 }
 
 /// The web's `.ds-overline` — a small-caps section label with wide tracking.

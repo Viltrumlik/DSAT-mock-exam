@@ -422,9 +422,9 @@ struct RewardsBoardRow: View {
         .accessibilityLabel("Rank \(row.rank), \(row.displayName)\(mine ? ", you" : ""), \(spokenValue)")
 
         if mine {
-            line.frame(maxWidth: .infinity).chunky(Theme.accent, radius: 16)
+            line.frame(maxWidth: .infinity).chunky(Theme.accent)
         } else {
-            line.background(Theme.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            line.cardStyle(padding: 0)
         }
     }
 }
