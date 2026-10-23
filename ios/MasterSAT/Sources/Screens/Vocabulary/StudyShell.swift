@@ -130,7 +130,7 @@ struct StudyPill: View {
     var body: some View {
         HStack(spacing: 5) {
             if let icon { Image(systemName: icon).appFont(11, weight: .bold).accessibilityHidden(true) }
-            Text(text).appFont(13, weight: .heavy).monospacedDigit()
+            Text(text).appFont(13, weight: .heavy, monospacedDigits: true)
         }
         .foregroundStyle(tone)
         .lineLimit(1)
@@ -321,7 +321,7 @@ struct ModeOutcomeView: View {
             ForEach(stats) { stat in
                 VStack(spacing: 6) {
                     ModeStatValue(stat: stat)
-                        .appFont(25, weight: .heavy).monospacedDigit()
+                        .appFont(25, weight: .heavy, monospacedDigits: true)
                         .tracking(-0.6)
                         .foregroundStyle(colour(stat.tone))
                         .lineLimit(1)

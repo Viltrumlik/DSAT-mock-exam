@@ -236,7 +236,7 @@ struct AssessmentRunnerView: View {
                         zoom = max(0.7, (zoom - 0.1).rounded(toPlaces: 2))
                     }
                     Text("\(Int(zoom * 100))%")
-                        .appFont(11, weight: .bold).monospacedDigit()
+                        .appFont(11, weight: .bold, monospacedDigits: true)
                         .foregroundStyle(Theme.textSecondary)
                         // At least 40 pt, as it was; "100%" set large needs more, not an ellipsis.
                         .frame(minWidth: 40)
@@ -289,7 +289,7 @@ struct AssessmentRunnerView: View {
             VStack(alignment: .trailing, spacing: 3) {
                 // The count is the progress: it rolls when it moves, and no bar restates it.
                 Text("\(ScoreText.string(runner.answeredCount))/\(ScoreText.string(runner.questions.count))")
-                    .appFont(14, weight: .bold).monospacedDigit()
+                    .appFont(14, weight: .bold, monospacedDigits: true)
                     .foregroundStyle(Theme.textSecondary)
                     .contentTransition(reduceMotion ? .identity : .numericText(value: Double(runner.answeredCount)))
                     .animation(Motion.focus, value: runner.answeredCount)
@@ -524,7 +524,7 @@ struct AssessmentRunnerView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("\(ScoreText.string(runner.currentIndex + 1)) / \(ScoreText.string(runner.questions.count))")
-                        .appFont(14, weight: .bold).monospacedDigit()
+                        .appFont(14, weight: .bold, monospacedDigits: true)
                     Image(systemName: "chevron.up").appFont(10, weight: .bold)
                 }
                 // An ink pill with its own text colour: a dark pill and white text in light mode,
@@ -674,7 +674,7 @@ struct QuestionMapSheet: View {
                                     // Answered is the runner's selection blue: green means
                                     // "correct" on the review, and the runner never says so.
                                     Text(ScoreText.string(index + 1))
-                                        .appFont(15, weight: .bold).monospacedDigit()
+                                        .appFont(15, weight: .bold, monospacedDigits: true)
                                         .foregroundStyle(isCurrent ? .white : (isAnswered ? Theme.accent : Color.primary))
                                         .frame(maxWidth: .infinity, minHeight: 48)
                                         .background(

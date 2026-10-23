@@ -131,7 +131,7 @@ struct AccountEmailCodeFlow: View {
             .textContentType(.oneTimeCode)
             .focused($focus, equals: .code)
             .multilineTextAlignment(.center)
-            .appFont(30, weight: .bold, design: .rounded).monospacedDigit()
+            .appFont(30, weight: .bold, design: .rounded, monospacedDigits: true)
             .tracking(10)
             .padding(.vertical, 14)
             .background(Theme.card)
@@ -172,7 +172,7 @@ struct AccountEmailCodeFlow: View {
                     Button(left > 0 ? "Resend in \(left)s" : "Resend code") {
                         Task { await send(resending: true) }
                     }
-                    .appFont(13, weight: .semibold).monospacedDigit()
+                    .appFont(13, weight: .semibold, monospacedDigits: true)
                     .foregroundStyle(left > 0 || busy ? Theme.textLabel : Theme.accent)
                     .disabled(busy || left > 0)
                 }

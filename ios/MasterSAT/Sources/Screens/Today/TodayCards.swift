@@ -49,7 +49,7 @@ struct TodayHero: View {
                         .foregroundStyle(tone)
                 } else {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
-                        .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
+                        .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
                         .capDynamicType()
                         .contentTransition(.numericText())
                         // A fixed ring: "12/12" at a large text size shrinks to fit inside the
@@ -164,7 +164,7 @@ struct FreshResultCard: View {
             if let score = midterm.score {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(ScoreText.string(score))
-                        .appFont(32, weight: .heavy, design: .rounded).monospacedDigit()
+                        .appFont(32, weight: .heavy, design: .rounded, monospacedDigits: true)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")

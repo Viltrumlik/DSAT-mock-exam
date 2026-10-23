@@ -148,7 +148,7 @@ struct VocabSectionView: View {
                     .tracking(1.0)
                     .foregroundStyle(Theme.textSecondary)
                 Text(ScoreText.string(value))
-                    .appFont(26, weight: .heavy).monospacedDigit()
+                    .appFont(26, weight: .heavy, monospacedDigits: true)
                     .tracking(-0.5)
                     .foregroundStyle(ink)
             }

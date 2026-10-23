@@ -151,7 +151,7 @@ struct LiveQuizStandingsList: View {
     private func standingRow(_ row: LiveQuizParticipant, place: Int, mine: Bool) -> some View {
         HStack(spacing: 12) {
             Text(ScoreText.string(place))
-                .appFont(15, weight: .heavy).monospacedDigit()
+                .appFont(15, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(LiveQuizMedal.colour(forPlace: place) ?? Theme.textSecondary)
                 .capDynamicType()
                 .frame(width: 30)
@@ -167,7 +167,7 @@ struct LiveQuizStandingsList: View {
             }
             Spacer(minLength: 8)
             Text(ScoreText.string(row.score))
-                .appFont(15, weight: .heavy).monospacedDigit()
+                .appFont(15, weight: .heavy, monospacedDigits: true)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 11)
@@ -194,7 +194,7 @@ struct LiveQuizStatBox: View {
                 .appFont(12, weight: .semibold)
                 .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .appFont(24, weight: .heavy).monospacedDigit()
+                .appFont(24, weight: .heavy, monospacedDigits: true)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
         }

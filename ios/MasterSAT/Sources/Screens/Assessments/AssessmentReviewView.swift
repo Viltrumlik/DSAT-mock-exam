@@ -384,7 +384,7 @@ struct ScoreHero: View {
             if let result = review.result {
                 // The whole percent "Up from X%" below is weighed in, so the two never disagree at x.5.
                 RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)), suffix: "%")
-                    .appFont(56, weight: .black).monospacedDigit()
+                    .appFont(56, weight: .black, monospacedDigits: true)
                     .tracking(-2)
                     .foregroundStyle(.white)
                     .padding(.top, 12)
@@ -445,7 +445,7 @@ struct ScoreHero: View {
     private func stat(_ value: Int, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(ScoreText.string(value))
-                .appFont(26, weight: .heavy).monospacedDigit()
+                .appFont(26, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(.white)
             Text(label)
                 .appFont(11, weight: .bold)

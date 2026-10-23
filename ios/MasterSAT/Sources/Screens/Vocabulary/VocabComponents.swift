@@ -194,7 +194,7 @@ struct VocabMetaChip: View {
         HStack(spacing: 5) {
             Image(systemName: icon).appFont(10, weight: .bold)
                 .accessibilityHidden(true)
-            Text(text).appFont(12, weight: .bold).monospacedDigit()
+            Text(text).appFont(12, weight: .bold, monospacedDigits: true)
         }
         .foregroundStyle(ink)
         .lineLimit(1)

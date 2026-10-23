@@ -262,7 +262,7 @@ private struct CountdownCell: View {
     var body: some View {
         VStack(spacing: 3) {
             Text(ScoreText.string(value))
-                .appFont(25, weight: .heavy).monospacedDigit()
+                .appFont(25, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -352,7 +352,7 @@ private struct MidtermRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .appFont(22, weight: .heavy).monospacedDigit()
+                        .appFont(22, weight: .heavy, monospacedDigits: true)
                         .tracking(-0.5)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {

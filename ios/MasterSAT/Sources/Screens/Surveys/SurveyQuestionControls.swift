@@ -177,8 +177,7 @@ private struct SurveyScaleControl: View {
                     let on = picked == step
                     Button { onChange(.number(step)) } label: {
                         Text(verbatim: String(step))
-                            .appFont(15, weight: .bold)
-                            .monospacedDigit()
+                            .appFont(15, weight: .bold, monospacedDigits: true)
                             .foregroundStyle(on ? Color.white : Color.primary)
                             .frame(width: 44, height: 44)
                             .background(
@@ -289,8 +288,7 @@ private struct SurveyRatingControl: View {
             let gaps = CGFloat(max(steps.count - 1, 1))
             ForEach(Array(steps.enumerated()), id: \.element) { index, step in
                 Text(verbatim: String(step))
-                    .appFont(13, weight: .bold)
-                    .monospacedDigit()
+                    .appFont(13, weight: .bold, monospacedDigits: true)
                     .foregroundStyle(picked == step ? Theme.accent : Theme.textSecondary)
                     .capDynamicType()
                     .frame(width: 26, height: 22)

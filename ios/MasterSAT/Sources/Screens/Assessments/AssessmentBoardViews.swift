@@ -427,7 +427,7 @@ struct AssessmentNavCard: View {
 
     private func countChip(_ text: String, ink: Color, fill: Color) -> some View {
         Text(text)
-            .appFont(12, weight: .heavy).monospacedDigit()
+            .appFont(12, weight: .heavy, monospacedDigits: true)
             .foregroundStyle(ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
@@ -453,7 +453,7 @@ struct AssessmentSectionHead: View {
                     .tracking(-0.2)
                 if let count {
                     Text(ScoreText.string(count))
-                        .appFont(12, weight: .heavy).monospacedDigit()
+                        .appFont(12, weight: .heavy, monospacedDigits: true)
                         .foregroundStyle(Theme.textLabel)
                         .padding(.horizontal, 9)
                         .padding(.vertical, 2)
@@ -722,7 +722,7 @@ struct AssessmentCard: View {
                 Text("Progress").appFont(12, weight: .bold).foregroundStyle(Theme.textSecondary)
                 Spacer()
                 Text("\(ScoreText.string(answered)) / \(ScoreText.string(total))")
-                    .appFont(13, weight: .heavy).monospacedDigit()
+                    .appFont(13, weight: .heavy, monospacedDigits: true)
             }
             Bar(fraction: total > 0 ? Double(answered) / Double(total) : 0, tone: Theme.amber, height: 8)
             HStack(spacing: 6) {
@@ -746,7 +746,7 @@ struct AssessmentCard: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(ScoreText.string(percent))%")
-                        .appFont(32, weight: .heavy).monospacedDigit()
+                        .appFont(32, weight: .heavy, monospacedDigits: true)
                         .tracking(-1)
                     Text("\(ScoreText.string(correct)) / \(ScoreText.string(total)) correct")
                         .appFont(13, weight: .bold)

@@ -600,8 +600,7 @@ struct LeaderboardStandingRow: View {
                     Spacer(minLength: 4)
                     HStack(alignment: .firstTextBaseline, spacing: 3) {
                         Text(ScoreText.string(row.xp))
-                            .appFont(14, weight: .heavy)
-                            .monospacedDigit()
+                            .appFont(14, weight: .heavy, monospacedDigits: true)
                         Text("XP")
                             .appFont(11, weight: .bold)
                             .foregroundStyle(Theme.textSecondary)
@@ -647,8 +646,7 @@ struct LeaderboardRankBadge: View {
     var body: some View {
         let medal = RewardsPalette.medal(forRank: rank)
         Text(String(rank))
-            .appFont(13, weight: .heavy)
-            .monospacedDigit()
+            .appFont(13, weight: .heavy, monospacedDigits: true)
             .foregroundStyle(medal != nil || highlight ? Color.white : Theme.textSecondary)
             .shadow(color: medal != nil ? Color.black.opacity(0.3) : .clear, radius: 1, x: 0, y: 1)
             .padding(.horizontal, 6)
@@ -870,8 +868,7 @@ private struct LeaderboardPodiumColumn: View {
                 .padding(.horizontal, 2)
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(ScoreText.string(row.xp))
-                    .appFont(18, weight: .heavy)
-                    .monospacedDigit()
+                    .appFont(18, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(isWinner ? medal.solid : Color.primary)
                 Text("XP")
                     .appFont(10, weight: .bold)

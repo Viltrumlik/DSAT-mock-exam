@@ -176,7 +176,7 @@ struct PointsView: View {
                 TextField("", text: $amountText, prompt: Text(verbatim: "Points").foregroundStyle(Color.black.opacity(0.4)))
                     .keyboardType(.numberPad)
                     .focused($amountFocused)
-                    .appFont(16, weight: .bold).monospacedDigit()
+                    .appFont(16, weight: .bold, monospacedDigits: true)
                     .foregroundStyle(Color.black)
                     .tint(Theme.accent)
                     .padding(.horizontal, 12)
@@ -549,8 +549,7 @@ struct RewardsWalletTile<Media: View>: View {
                     .appFont(11, weight: .heavy)
                     .tracking(0.7)
                 Text(value)
-                    .appFont(26, weight: .heavy)
-                    .monospacedDigit()
+                    .appFont(26, weight: .heavy, monospacedDigits: true)
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                 // Wraps rather than truncates: the XP rule takes a sentence to state honestly.
@@ -635,8 +634,7 @@ struct RewardsAwardRow: View {
             // A conversion is the one row that SPENDS, so it is the one that must not wear a
             // green plus: signed, and neutral-coloured.
             Text(award.signedPoints)
-                .appFont(14, weight: .heavy)
-                .monospacedDigit()
+                .appFont(14, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(award.isSpend ? Theme.textSecondary : Theme.success)
         }
         .padding(.vertical, 10)
@@ -658,8 +656,7 @@ private struct RewardsRuleRow: View {
                 Spacer(minLength: 8)
                 if let amount = rule.amountText {
                     Text(amount)
-                        .appFont(14, weight: .heavy)
-                        .monospacedDigit()
+                        .appFont(14, weight: .heavy, monospacedDigits: true)
                 } else {
                     Text("Set by your teacher")
                         .appFont(12, weight: .bold)
@@ -694,8 +691,7 @@ private struct RewardsCoinRow: View {
             }
             Spacer(minLength: 12)
             Text(transaction.signedAmount)
-                .appFont(14, weight: .heavy)
-                .monospacedDigit()
+                .appFont(14, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(transaction.isSpend ? Theme.textSecondary : Theme.success)
         }
         .padding(.vertical, 10)

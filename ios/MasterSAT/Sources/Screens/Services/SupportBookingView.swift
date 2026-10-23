@@ -332,8 +332,7 @@ private struct SupportHeroHeader: View {
                                 .foregroundStyle(.white.opacity(0.8))
                                 .accessibilityHidden(true)
                             Text(tile.value)
-                                .appFont(16, weight: .heavy)
-                                .monospacedDigit()
+                                .appFont(16, weight: .heavy, monospacedDigits: true)
                                 .foregroundStyle(.white)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
@@ -542,8 +541,7 @@ private struct SupportHourCellView: View {
     private func content(timeColour: Color, captionColour: Color, struck: Bool) -> some View {
         VStack(spacing: 3) {
             Text(cell.time)
-                .appFont(14, weight: struck ? .bold : .heavy)
-                .monospacedDigit()
+                .appFont(14, weight: struck ? .bold : .heavy, monospacedDigits: true)
                 .strikethrough(struck)
                 .opacity(struck ? 0.75 : 1)
                 .foregroundStyle(timeColour)

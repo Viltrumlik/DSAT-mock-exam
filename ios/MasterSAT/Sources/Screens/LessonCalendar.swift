@@ -281,9 +281,8 @@ private struct DayCell: View {
                     Circle().stroke(Theme.accent, style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
                 }
                 Text(ScoreText.string(model.day))
-                    .appFont(14, weight: .bold)
+                    .appFont(14, weight: .bold, monospacedDigits: true)
                     .capDynamicType()
-                    .monospacedDigit()
                     .foregroundStyle(foreground)
             }
             .frame(width: 38, height: 38)
@@ -513,7 +512,7 @@ struct LessonRow: View {
             Spacer(minLength: 0)
             if !event.time.isEmpty {
                 Text(event.time)
-                    .appFont(13, weight: .bold).monospacedDigit()
+                    .appFont(13, weight: .bold, monospacedDigits: true)
                     .foregroundStyle(Theme.textSecondary)
             }
         }

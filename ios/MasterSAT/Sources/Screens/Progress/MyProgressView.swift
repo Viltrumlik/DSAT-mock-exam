@@ -245,8 +245,7 @@ struct MyProgressLevelCard: View {
                 Spacer(minLength: 8)
                 Chip(text: MyProgressText.pill(level.state), tone: pillTone)
                 Text(ProgressFormat.percent(level.overall))
-                    .appFont(24, weight: .heavy)
-                    .monospacedDigit()
+                    .appFont(24, weight: .heavy, monospacedDigits: true)
                     .tracking(-0.5)
                     .lineLimit(1)
                     .fixedSize()
@@ -339,8 +338,7 @@ struct MyProgressHalfRow: View {
 
     private var figure: some View {
         Text(ProgressFormat.percent(value))
-            .appFont(14, weight: .heavy)
-            .monospacedDigit()
+            .appFont(14, weight: .heavy, monospacedDigits: true)
             .fixedSize()
     }
 

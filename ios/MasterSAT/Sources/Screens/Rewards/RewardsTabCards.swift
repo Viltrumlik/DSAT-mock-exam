@@ -411,8 +411,7 @@ struct RewardsBoardRow: View {
             if mine { LeaderboardYouTag() }
             Spacer(minLength: 6)
             Text(value)
-                .appFont(13, weight: .heavy, design: .rounded)
-                .monospacedDigit()
+                .appFont(13, weight: .heavy, design: .rounded, monospacedDigits: true)
                 .foregroundStyle(mine ? RewardsPalette.accentText : Theme.textSecondary)
                 .fixedSize()
         }

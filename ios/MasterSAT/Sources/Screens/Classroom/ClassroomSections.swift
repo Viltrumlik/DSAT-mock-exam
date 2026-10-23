@@ -169,7 +169,7 @@ private struct ClassroomPodium: View {
                         Text("You").appFont(11, weight: .bold).foregroundStyle(Theme.accent)
                     }
                     Text(score(row).map { "\(ScoreText.string($0)) XP" } ?? "—")
-                        .appFont(12, weight: .bold).monospacedDigit()
+                        .appFont(12, weight: .bold, monospacedDigits: true)
                         .foregroundStyle(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
@@ -196,7 +196,7 @@ private struct ClassroomRankingRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Text(ScoreText.string(row.rank))
-                .appFont(14, weight: .heavy).monospacedDigit()
+                .appFont(14, weight: .heavy, monospacedDigits: true)
                 .capDynamicType()
                 .frame(width: 26)
                 .foregroundStyle(Theme.textSecondary)
@@ -214,7 +214,7 @@ private struct ClassroomRankingRow: View {
             // the teacher (the eye). They need different marks.
             if let score {
                 Text(ScoreText.string(score))
-                    .appFont(14, weight: .heavy).monospacedDigit()
+                    .appFont(14, weight: .heavy, monospacedDigits: true)
             } else if !row.hasResult {
                 Text("—").appFont(14).foregroundStyle(Theme.textLabel)
             } else {

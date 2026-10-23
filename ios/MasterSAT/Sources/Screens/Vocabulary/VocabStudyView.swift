@@ -443,7 +443,7 @@ struct FlashcardView: View {
                 Text(title).appFont(15, weight: .heavy)
                 Spacer(minLength: 0)
                 Text(ScoreText.string(words.count))
-                    .appFont(13, weight: .heavy).monospacedDigit()
+                    .appFont(13, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 2)

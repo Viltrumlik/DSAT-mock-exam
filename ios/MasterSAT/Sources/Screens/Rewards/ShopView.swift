@@ -395,8 +395,7 @@ private struct ShopBalance<Media: View>: View {
                     .tracking(1)
                     .foregroundStyle(Theme.textSecondary)
                 Text(ScoreText.string(value))
-                    .appFont(26, weight: .heavy)
-                    .monospacedDigit()
+                    .appFont(26, weight: .heavy, monospacedDigits: true)
                 if let sub {
                     Text(sub)
                         .appFont(12, weight: .semibold)
@@ -485,8 +484,7 @@ private struct ShopItemCard: View {
                                 .foregroundStyle(Color.orange)
                         }
                         Text(ScoreText.string(item.price))
-                            .appFont(18, weight: .heavy)
-                            .monospacedDigit()
+                            .appFont(18, weight: .heavy, monospacedDigits: true)
                     }
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(item.priceText)

@@ -10,8 +10,14 @@ extension View {
     ///
     /// `weight` and `design` stay optional, as in `Font.system`, so a call that named neither
     /// builds the very font it built before.
-    nonisolated func appFont(_ size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil) -> some View {
-        modifier(ScaledFont(size: size, weight: weight, design: design))
+    ///
+    /// `monospacedDigits` sets the digits inside the font, as `.system(…).monospacedDigit()`
+    /// did before the scale: a View `.monospacedDigit()` after this sits outside the font this
+    /// sets, and a count in a pill (`PillTabs`) was cut to "1:" with the pair.
+    nonisolated func appFont(
+        _ size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil, monospacedDigits: Bool = false
+    ) -> some View {
+        modifier(ScaledFont(size: size, weight: weight, design: design, monospacedDigits: monospacedDigits))
     }
 }
 
@@ -66,15 +72,18 @@ struct ScaledFont: ViewModifier {
     @ScaledMetric private var size: CGFloat
     private let weight: Font.Weight?
     private let design: Font.Design?
+    private let monospacedDigits: Bool
 
-    nonisolated init(size: CGFloat, weight: Font.Weight?, design: Font.Design?) {
+    nonisolated init(size: CGFloat, weight: Font.Weight?, design: Font.Design?, monospacedDigits: Bool = false) {
         _size = ScaledMetric(wrappedValue: size, relativeTo: Self.textStyle(for: size))
         self.weight = weight
         self.design = design
+        self.monospacedDigits = monospacedDigits
     }
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size, weight: weight, design: design))
+        let font = Font.system(size: size, weight: weight, design: design)
+        content.font(monospacedDigits ? font.monospacedDigit() : font)
     }
 
     /// The system text style whose default size is the nearest one at or below `size`: a 13-pt

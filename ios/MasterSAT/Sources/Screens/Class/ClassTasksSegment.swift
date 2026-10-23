@@ -192,7 +192,7 @@ struct AssessmentResultRow: View {
             Spacer(minLength: 0)
             if entry.state == .completed, entry.progress?.graded == true, let percent = entry.progress?.percent {
                 Text("\(percent)%")
-                    .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
+                    .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
                     .foregroundStyle(Theme.success)
             } else {
                 Chip(text: "Being marked", icon: "clock", tone: .neutral)
@@ -261,7 +261,7 @@ struct MidtermResultRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .appFont(20, weight: .heavy, design: .rounded).monospacedDigit()
+                        .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
                         .foregroundStyle(Theme.accent)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")

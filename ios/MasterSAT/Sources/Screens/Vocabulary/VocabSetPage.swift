@@ -158,7 +158,7 @@ struct VocabSetView: View {
                         .foregroundStyle(Theme.textSecondary)
                     Spacer()
                     Text("\(ScoreText.string(mastery.percent))%")
-                        .appFont(13, weight: .heavy).monospacedDigit()
+                        .appFont(13, weight: .heavy, monospacedDigits: true)
                         .foregroundStyle(tone.ink)
                 }
                 VocabMasteryBar(mastery: mastery, legend: true)
@@ -185,7 +185,7 @@ struct VocabSetView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .appFont(24, weight: .heavy).monospacedDigit()
+                .appFont(24, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.5)
                 .foregroundStyle(ink)
         }
@@ -347,7 +347,7 @@ struct VocabModeCard: View {
     private var score: some View {
         HStack(spacing: 4) {
             if mastered { Image(systemName: "checkmark.circle.fill").appFont(11, weight: .bold) }
-            Text(mastered ? "1/1" : "0/1").appFont(12, weight: .heavy).monospacedDigit()
+            Text(mastered ? "1/1" : "0/1").appFont(12, weight: .heavy, monospacedDigits: true)
         }
         // Unearned reads in the game's own tint, not a grey badge.
         .foregroundStyle(mastered ? VocabPalette.mastered.ink : tone.ink)

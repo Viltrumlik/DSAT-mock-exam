@@ -50,7 +50,7 @@ struct HubCard<Route: Hashable>: View {
                     // Zero is not shown: no badge says "nothing waiting" better than a grey 0.
                     if let count, count > 0 {
                         Text(ScoreText.string(count))
-                            .appFont(12, weight: .heavy, design: .rounded).monospacedDigit()
+                            .appFont(12, weight: .heavy, design: .rounded, monospacedDigits: true)
                             .foregroundStyle(tone)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 3)

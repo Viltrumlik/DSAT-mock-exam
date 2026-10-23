@@ -106,7 +106,7 @@ struct MidtermReportView: View {
                 Group {
                     if let score { RollingNumber(value: score) } else { Text(ScoreText.string(score)) }
                 }
-                .appFont(60, weight: .heavy).monospacedDigit()
+                .appFont(60, weight: .heavy, monospacedDigits: true)
                 .tracking(-1.5)
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -427,7 +427,7 @@ private struct MidtermStatTile: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
             Text(value)
-                .appFont(24, weight: .heavy).monospacedDigit()
+                .appFont(24, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.6)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -475,7 +475,7 @@ private struct SkillRow: View {
                 }
                 Spacer(minLength: 0)
                 Text("\(ScoreText.string(skill.wrong)) of \(ScoreText.string(skill.total))")
-                    .appFont(12, weight: .heavy).monospacedDigit()
+                    .appFont(12, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(tone)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
@@ -512,7 +512,7 @@ private struct CoveredRow: View {
             }
             Spacer(minLength: 0)
             Text("\(ScoreText.string(skill.correct))/\(ScoreText.string(skill.total))")
-                .appFont(13, weight: .heavy).monospacedDigit()
+                .appFont(13, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(full ? Theme.success : Theme.textSecondary)
         }
         .padding(.vertical, 9)

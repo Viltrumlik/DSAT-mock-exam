@@ -150,8 +150,7 @@ struct ScoreBox: View {
                 .tracking(1.3)
                 .foregroundStyle(emphasised ? Theme.accent.opacity(0.85) : Theme.textLabel)
             Text(ScoreText.string(value))
-                .appFont(30, weight: .heavy)
-                .monospacedDigit()
+                .appFont(30, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.9)
                 .foregroundStyle(emphasised ? Theme.accent : .primary)
                 // Three boxes across a phone leaves ~80pt each, and a four-digit total in
@@ -339,8 +338,7 @@ private struct HeroTileFlow: View {
                                     .appFont(12, weight: .semibold)
                                     .foregroundStyle(.white.opacity(0.8))
                                 Text(tile.value)
-                                    .appFont(17, weight: .heavy)
-                                    .monospacedDigit()
+                                    .appFont(17, weight: .heavy, monospacedDigits: true)
                                     .foregroundStyle(.white)
                             }
                             .padding(.horizontal, 11)
@@ -400,9 +398,12 @@ struct PillTabs<Tab: Hashable>: View {
                                 .accessibilityHidden(true)
                             Text(item.title).appFont(14, weight: .bold)
                             if let count = item.count {
+                                // Never cut: "All 12" came out "1:" at the default size. A
+                                // count is the reason the pill has a badge at all.
                                 Text(ScoreText.string(count))
-                                    .appFont(11, weight: .heavy)
-                                    .monospacedDigit()
+                                    .appFont(11, weight: .heavy, monospacedDigits: true)
+                                    .lineLimit(1)
+                                    .fixedSize()
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 1)
                                     .background(

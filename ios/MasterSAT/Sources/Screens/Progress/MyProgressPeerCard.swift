@@ -285,8 +285,7 @@ struct MyProgressMetricTile: View {
     private var figure: some View {
         HStack(alignment: .firstTextBaseline, spacing: 5) {
             Text(PeerMetricText.value(metric, unit: unit))
-                .appFont(30, weight: .heavy)
-                .monospacedDigit()
+                .appFont(30, weight: .heavy, monospacedDigits: true)
                 .tracking(-0.8)
             if unit == .words, metric.you != nil {
                 Text("words")
@@ -466,9 +465,8 @@ struct MyProgressAttendanceChart: View {
         VStack(spacing: 4) {
             if let value, value.isFinite {
                 Text(ProgressFormat.count(value))
-                    .appFont(10, weight: .bold)
+                    .appFont(10, weight: .bold, monospacedDigits: true)
                     .capDynamicType()
-                    .monospacedDigit()
                     .foregroundStyle(Theme.textSecondary)
                     .fixedSize()
                 RoundedRectangle(cornerRadius: 4, style: .continuous)

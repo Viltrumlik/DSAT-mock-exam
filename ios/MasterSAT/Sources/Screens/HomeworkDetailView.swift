@@ -289,7 +289,7 @@ struct HomeworkDetailView: View {
                 if let score = review.scoreText {
                     VStack(alignment: .trailing, spacing: 2) {
                         Text(score)
-                            .appFont(22, weight: .heavy).monospacedDigit()
+                            .appFont(22, weight: .heavy, monospacedDigits: true)
                             .foregroundStyle(tone)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)

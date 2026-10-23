@@ -363,7 +363,7 @@ private struct LiveQuizQuestionPanel: View {
                 .foregroundStyle(Theme.textSecondary)
             Spacer()
             Text(ScoreText.string(seconds) + "s")
-                .appFont(32, weight: .heavy).monospacedDigit()
+                .appFont(32, weight: .heavy, monospacedDigits: true)
                 .foregroundStyle(warning ? Theme.danger : Color.primary)
                 .contentTransition(.numericText(countsDown: true))
                 .animation(.default, value: seconds)
@@ -453,7 +453,7 @@ private struct LiveQuizOutcomeCard: View {
                     .foregroundStyle(Theme.success)
                 if let points {
                     Text("+" + ScoreText.string(points))
-                        .appFont(30, weight: .heavy).monospacedDigit()
+                        .appFont(30, weight: .heavy, monospacedDigits: true)
                 }
             case .notThisTime(let answer):
                 symbol("xmark.circle", Theme.textSecondary)

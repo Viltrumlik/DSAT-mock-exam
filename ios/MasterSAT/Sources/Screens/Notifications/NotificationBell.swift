@@ -42,8 +42,7 @@ struct NotificationBell: View {
                 .overlay(alignment: .topTrailing) {
                     if let text = NotificationBadge.text(for: count) {
                         Text(text)
-                            .appFont(10, weight: .heavy)
-                            .monospacedDigit()
+                            .appFont(10, weight: .heavy, monospacedDigits: true)
                             .foregroundStyle(.white)
                             .padding(.horizontal, 4)
                             .frame(minWidth: 17, minHeight: 17)

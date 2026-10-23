@@ -73,8 +73,7 @@ struct SpeedView: View {
             ZStack {
                 Circle().fill(Theme.amberSoft).frame(width: 220, height: 220)
                 Text("\(max(1, tick))")
-                    .appFont(108, weight: .bold, design: .rounded)
-                    .monospacedDigit()
+                    .appFont(108, weight: .bold, design: .rounded, monospacedDigits: true)
                     .foregroundStyle(Theme.amber)
                     // Re-mounted per tick, so each number comes in — 3 → 2 → 1 — without
                     // overshoot. Under Reduce Motion they crossfade.
