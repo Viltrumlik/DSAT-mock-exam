@@ -174,7 +174,10 @@ struct HomeworkDetailView: View {
                 // graded homework there shows "To do" and hides its feedback — not copied.
                 if let submission, let review = submission.review,
                    ["REVIEWED", "RETURNED"].contains((submission.status ?? "").uppercased()) {
-                    reviewCard(review, returned: submission.isReturned)
+                    reviewCard(review, grade: submission.composedGrade, returned: submission.isReturned)
+                } else if let grade = submission?.composedGrade,
+                          let settled = ComposedGradeRules.settledSoFar(grade) {
+                    settledSoFarCard(settled)
                 }
                 if let note = submission?.returnNote, !note.isEmpty { returnNote(note) }
                 lessonVideo(a)
@@ -272,8 +275,21 @@ struct HomeworkDetailView: View {
 
     /// The teacher's mark, and what they said. First after the header, because once work has
     /// been marked this is the one thing a student opens the page to read.
-    private func reviewCard(_ review: SubmissionReview, returned: Bool) -> some View {
+    ///
+    /// `grade` is the whole grade on a homework where the teacher's mark is only a share of it.
+    /// Where there is one it replaces the mark entirely: `review.scoreText` is then that share
+    /// and nothing more, and printing it here told a student with a 20%-weighted 50 that their
+    /// grade was 50 when the server — and their teacher's own screen — said 82. The arithmetic
+    /// is the server's and is never redone here; the words are `ComposedGradeRules`'.
+    private func reviewCard(_ review: SubmissionReview, grade: ComposedGrade?, returned: Bool) -> some View {
         let tone = returned ? Theme.warning : Theme.success
+        // The two states that have no number to show say a sentence instead, and a sentence
+        // does not belong in the figure's corner — it goes on its own line under the header.
+        let pending = (grade?.awaiting ?? false) || (grade?.unavailable ?? false)
+        let figure = ComposedGradeRules.pillText(review: review, grade: grade)
+        // "Auto-marked" labels the raw mark. A composed grade is nobody's single mark, so the
+        // label would be a claim about a number that has a teacher's judgement inside it.
+        let showsRawMark = !pending && grade?.percent == nil
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 IconTile(systemName: returned ? "arrow.uturn.backward.circle.fill" : "checkmark.seal.fill", tone: tone)
@@ -287,14 +303,14 @@ struct HomeworkDetailView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if let score = review.scoreText {
+                if let figure, !pending {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(score)
+                        Text(figure)
                             .appFont(22, weight: .heavy, monospacedDigits: true)
                             .foregroundStyle(tone)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        if review.isAuto {
+                        if review.isAuto, showsRawMark {
                             Text("Auto-marked")
                                 .appFont(11, weight: .bold)
                                 .foregroundStyle(Theme.textSecondary)
@@ -302,15 +318,62 @@ struct HomeworkDetailView: View {
                     }
                 }
             }
+            if let figure, pending {
+                Chip(text: figure, icon: "hourglass", tone: .warning)
+            }
+            if let grade, let sentence = ComposedGradeRules.breakdownSentence(grade) {
+                gradeBreakdown(sentence, failed: grade.unavailable)
+            }
             if let feedback = review.feedback, !feedback.isEmpty {
                 Text(feedback)
                     .appFont(15)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if !returned {
+            } else if !returned, !pending {
+                // Not while the grade is still waiting: there is no score above to point at,
+                // and the line under the chip already says what is happening.
                 Text("No written feedback — your score is shown above.")
                     .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
             }
+        }
+        .cardStyle()
+    }
+
+    /// Where the grade came from, said under the figure that shows it.
+    ///
+    /// A composition that could not be worked out is a failure, not a missing grade, so it is
+    /// given the warning panel the page uses for anything a student should not read past —
+    /// their teacher's mark IS saved, and only the total is unavailable.
+    private func gradeBreakdown(_ sentence: String, failed: Bool) -> some View {
+        Text(sentence)
+            .appFont(failed ? 13 : 12)
+            .foregroundStyle(failed ? Theme.warning : Theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(failed ? 12 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .fill(failed ? Theme.warningSoft : .clear)
+            )
+    }
+
+    /// The part of a grade that is already decided, before the teacher has marked anything.
+    ///
+    /// Vocabulary mastered on Monday settles the automatic side at once; the teacher may not
+    /// reach the hand-in until Friday. The server composes and serves that number anyway, and
+    /// without this card the student spends the week with no grade on the page at all.
+    private func settledSoFarCard(_ settled: ComposedGradeRules.SettledSoFar) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                IconTile(systemName: "hourglass", tone: Theme.info)
+                Text("Part of this grade is already decided").appFont(16, weight: .heavy)
+                Spacer(minLength: 0)
+            }
+            Chip(text: settled.figure, tone: .info)
+            Text(settled.sentence)
+                .appFont(13)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .cardStyle()
     }

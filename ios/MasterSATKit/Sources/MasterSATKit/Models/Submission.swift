@@ -108,6 +108,11 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
     public let workflowStatus: String?
     /// The teacher's mark and comment, once the work has been reviewed.
     public let review: SubmissionReview?
+    /// The whole grade, on a homework where the teacher's mark is only a share of it.
+    ///
+    /// `nil` on nearly every homework — only one that gives the mark a share composes at all —
+    /// and then `review` is read exactly as it was before this field existed.
+    public let composedGrade: ComposedGrade?
 
     public var isReturned: Bool { (status ?? "").lowercased() == "returned" || returnedAt != nil }
 
@@ -119,6 +124,7 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
         case returnedAt = "returned_at"
         case submittedAt = "submitted_at"
         case workflowStatus = "workflow_status"
+        case composedGrade = "composed_grade"
     }
 
     public init(from decoder: Decoder) throws {
@@ -132,6 +138,10 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
         files = (try? c.decodeIfPresent([SubmissionFile].self, forKey: .files)) as? [SubmissionFile] ?? []
         workflowStatus = try? c.decodeIfPresent(String.self, forKey: .workflowStatus)
         review = (try? c.decodeIfPresent(SubmissionReview.self, forKey: .review)) ?? nil
+        // `try?` is the whole mechanism: a homework with no manual component, and a payload
+        // this cannot read, both throw out of `ComposedGrade` and land here as nil — which is
+        // the one answer that means "show the mark as before".
+        composedGrade = (try? c.decodeIfPresent(ComposedGrade.self, forKey: .composedGrade)) ?? nil
     }
 }
 
