@@ -89,7 +89,7 @@ public enum ExploreDigest {
     ) -> ExploreLine? {
         guard bookings != nil || calendar != nil || examDates != nil else { return nil }
         let sat = examDates.flatMap(ServicesExamDates.earliest).map {
-            "Next SAT: \(ServicesExamDates.label(for: $0, now: now))"
+            "Next SAT: \(ServicesExamDates.dateFirst(for: $0, now: now))"
         }
         // The student's own hour is the news; what the calendar offers only matters without it.
         if let next = bookings.flatMap({ SupportSchedule.nextHourSummary(in: $0, now: now) }) {
@@ -114,9 +114,12 @@ public enum ExploreDigest {
             if !allowance.canBook { return "You've booked all the hours you can for now" }
         }
         guard !calendar.teachers.isEmpty else { return "No support teacher on your classes yet" }
+        // Only hours still ahead: a calendar kept from an earlier read can call an hour open
+        // that has started since, and "next" would then name the past.
         let soonest = calendar.teachers.flatMap(\.days).flatMap(\.hours)
             .filter { $0.state == .open }
             .compactMap { hour in hour.startDate.map { (hour: hour, starts: $0) } }
+            .filter { $0.starts > now }
             .min { $0.starts < $1.starts }
         guard let soonest else { return "No free hours in the next few days" }
         return "Next free hour: \(ServicesTime.hourLabel(soonest.hour.startsAt, now: now))"

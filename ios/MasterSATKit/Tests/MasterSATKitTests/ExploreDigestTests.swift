@@ -359,6 +359,22 @@ private func survey(_ id: Int, points: Int = 0) -> SurveyBrief {
         #expect(line?.text == "Next free hour: Tomorrow, 09:00")
     }
 
+    // `ExploreModel` keeps the last calendar when a read fails, so an hour the calendar
+    // called open may have started since; "next" never names one that has.
+    @Test("An open hour that has already started is not the next free hour")
+    func servicesOpenHourBeforeNowSkipped() {
+        let stale = teacher(9, "Dilafruz Karimova", [day("2026-09-25", [("08:00", .open), ("10:00", .open), ("15:00", .open)])])
+        let line = ExploreDigest.services(bookings: [], calendar: calendar([stale]), examDates: nil, now: now)
+        #expect(line == ExploreLine(text: "Next free hour: Today, 15:00"))
+    }
+
+    @Test("Every open hour already started: nothing free is offered")
+    func servicesOnlyPastOpenHours() {
+        let stale = teacher(9, "Dilafruz Karimova", [day("2026-09-25", [("08:00", .open), ("09:00", .open)])])
+        let line = ExploreDigest.services(bookings: [], calendar: calendar([stale]), examDates: nil, now: now)
+        #expect(line == ExploreLine(text: "No free hours in the next few days"))
+    }
+
     @Test("Teachers with nothing open in the window")
     func servicesNoOpenHours() {
         let full = teacher(9, "Dilafruz Karimova", [day("2026-09-25", [("11:00", .full), ("12:00", .closed), ("13:00", .off)])])
@@ -371,6 +387,33 @@ private func survey(_ id: Int, points: Int = 0) -> SurveyBrief {
         let dates = [try examDate(3, "2026-12-05"), try examDate(1, "2026-10-03"), try examDate(2, "2026-11-07", "Nov sitting")]
         let line = ExploreDigest.services(bookings: [], calendar: calendar([]), examDates: dates, now: now)
         #expect(line?.detail == "Next SAT: October 3")
+    }
+
+    // The admin labels the options "SAT" — "Next SAT: SAT" said the word twice and hid the
+    // date, which is what the line is for (device finding D1).
+    @Test("The detail names the date even when the admin labelled the sitting")
+    func servicesExamDateDetailIgnoresLabel() throws {
+        let dates = [try examDate(3, "2026-12-05", "SAT"), try examDate(1, "2026-10-03", "SAT"), try examDate(2, "2026-11-07", "SAT")]
+        let line = ExploreDigest.services(bookings: [], calendar: calendar([]), examDates: dates, now: now)
+        #expect(line?.detail == "Next SAT: October 3")
+    }
+
+    @Test("A sitting next year carries its year")
+    func servicesExamDateDetailNextYear() throws {
+        let line = ExploreDigest.services(
+            bookings: [], calendar: calendar([]), examDates: [try examDate(1, "2027-03-13", "SAT")], now: now
+        )
+        #expect(line?.detail == "Next SAT: March 13, 2027")
+    }
+
+    @Test("The admin's label stands in only when the date cannot be read")
+    func servicesExamDateDetailUnreadableDate() throws {
+        let labelled = ExploreDigest.services(
+            bookings: [], calendar: calendar([]), examDates: [try examDate(1, "someday", " December sitting ")], now: now
+        )
+        #expect(labelled?.detail == "Next SAT: December sitting")
+        let bare = ExploreDigest.services(bookings: [], calendar: calendar([]), examDates: [try examDate(1, "someday")], now: now)
+        #expect(bare?.detail == "Next SAT: someday")
     }
 
     @Test("No SAT date on offer, no detail")

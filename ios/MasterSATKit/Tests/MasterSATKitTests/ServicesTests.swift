@@ -802,4 +802,14 @@ private func day(_ date: String, _ states: [SupportHour.State]) -> SupportCalend
         #expect(ServicesExamDates.label(for: try option(3, "2026-12-05", " December SAT "), now: now) == "December SAT")
         #expect(ServicesExamDates.label(for: try option(4, "someday"), now: now) == "someday")
     }
+
+    @Test("Date first: the date even over the admin's label, which stands in only for a date that cannot be read")
+    func dateFirst() throws {
+        let now = at("2026-09-25T10:00:00+05:00")
+        #expect(ServicesExamDates.dateFirst(for: try option(1, "2026-12-05", "SAT"), now: now) == "December 5")
+        #expect(ServicesExamDates.dateFirst(for: try option(2, "2027-03-14", "SAT"), now: now) == "March 14, 2027")
+        #expect(ServicesExamDates.dateFirst(for: try option(3, "2026-10-03"), now: now) == "October 3")
+        #expect(ServicesExamDates.dateFirst(for: try option(4, "someday", " December SAT "), now: now) == "December SAT")
+        #expect(ServicesExamDates.dateFirst(for: try option(5, "someday"), now: now) == "someday")
+    }
 }
