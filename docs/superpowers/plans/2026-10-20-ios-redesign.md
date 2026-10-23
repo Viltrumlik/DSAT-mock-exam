@@ -16228,6 +16228,65 @@ Dates that the app formats on the phone's clock (an event's time, a lesson's day
 
 ---
 
+### Task 57: The Me sheet as B — the website's three tabs, with midterms, notifications and clearer navigation
+
+*(Owner answer 1, 2026-10-23. Supersedes Task 48's one-page sheet, commits 5f31d2a7 and 489a4d71; the kit's midterm rules from 305c9884 stay.)*
+
+**Files:**
+- `Screens/ProfileView.swift`, `Screens/Profile/*`, `Screens/Account/AccountComponents.swift`, `Screens/RootView.swift`.
+- Kit: `Profile/ProfileRules.swift` (restore `ProfileHomework.summarise` and its wording, on `isDone`) and its tests.
+- Recover the deleted code from git (`git show 489a4d71^:<path>`, `git show 5f31d2a7^:<path>`) rather than rewriting it; then apply this task's changes on top.
+
+**The sheet, as the website's profile (B):**
+- **Hero**: as before Task 48, with the close button moved into it as Task 48 did — a 32-pt circle in a 44×44 hit area, root only.
+- **Pinned tabs**: Overview · Classes · Settings (`PillTabs`) directly under the hero. They stay pinned under the top edge while the page scrolls, so switching is always one tap away.
+- **Overview**:
+  - the four figures (XP, Strikes, Points, Homework);
+  - Your goal (target, test day, latest results);
+  - Homework to do;
+  - Midterms & certificates (Task 48's `MeMidtermsPanel`, kept);
+  - Finish your profile, or the "all set" panel;
+  - Payments "coming soon".
+- **Classes**: as before Task 48 (each class's next lesson, teacher and Telegram group, then classmates), on the Tashkent calendar (Task 43).
+- **Settings**: Account, Notifications, Sign-in & password, Devices, About, Appearance (Task 58).
+- **Under the tabs, on every tab**: My progress, then Sign out.
+- **The homework count** (the phase-2 carry): `ProfileHomework.summarise` counts with `HomeworkProgress.isDone` and leaves classwork out, so a finished word-set homework leaves it as it leaves Today. Kit tests, test-first:
+  - a played word-set homework is not to do;
+  - classwork is never counted;
+  - a quiz homework with a second open quiz is to do;
+  - an empty word set is never owed.
+
+**Navigation (owner: "improve the navigation"):**
+- Every push from the sheet is a value declared at its root (`ProfileView.Route` + `AppLink`): the four figures' pages, Homework to do rows, "All homework", the checklist's actions, the Classes rows (the class page), and the settings rows. No `NavigationLink { destination }` remains in the sheet.
+- Back returns to the tab and scroll position the student left.
+- The sheet reopens on the tab last open in this launch: the tab lives in `AppRouter` (`meTab`), not in the view's `@State`.
+- A link into Me selects its tab: `AppLink.profile` → Overview, `.progress` → pushed over the current tab.
+
+**States:** every panel keeps its own load and failure; use the phase's `ErrorState` / `LoadingSkeleton` / `DashedEmpty`. Error ≠ empty.
+
+- [ ] Kit tests first, then restore and adapt; build check; commit `feat(ios): the Me sheet keeps the website's three tabs — with midterms, notifications and navigation that holds its place`.
+
+---
+
+### Task 58: Appearance — System, Light or Dark, for the whole app
+
+*(Owner answer 1, 2026-10-23: "theme yo'q ekan shuni ham hal qiling" — the app has no theme setting.)*
+
+**Files:**
+- Create: `ios/MasterSAT/Sources/Support/Appearance.swift`, `ios/MasterSAT/Sources/Screens/Account/AppearanceView.swift`.
+- Modify: `App/MasterSATApp.swift` or `Screens/RootView.swift`, and the Settings rows (Task 57).
+
+**Rules:**
+- `enum AppAppearance: String, CaseIterable { case system, light, dark }`, stored per device in `UserDefaults` (`@AppStorage("appearance")`), default `.system`.
+- Applied once at the root with `.preferredColorScheme(nil / .light / .dark)`. It reaches every tab, sheet and cover; check the Me sheet, the certificate sheet and a full-screen cover.
+- Settings → **Appearance** row (tile `circle.lefthalf.filled`, hint "System, light or dark") pushes `AppearanceView`. That page offers three choices with a preview swatch each, the current one ticked.
+  - The change applies at once, with no animation of the colour swap under Reduce Motion.
+  - VoiceOver: each choice is selected or not, and named "Use the phone's setting" / "Light" / "Dark".
+- The theme is a device setting, not an account setting: no server call, no backend change.
+- [ ] Build check; commit `feat(ios): Appearance — follow the phone, or always light, or always dark`.
+
+---
+
 ### Task 56: Run it, prove it, open the PR
 
 **Files:** the plan's "Phase 5 outcome" section; the PR body (scratchpad); screenshots on the orphan branch `pr-assets/ios-redesign-phase5`.
