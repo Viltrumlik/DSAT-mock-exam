@@ -364,12 +364,14 @@ struct VocabTestView: View {
         guard !answers.contains(where: { $0.id == question.id }) else { return }
         answers.append(TestAnswer(id: question.id, word: question.word, definition: question.definition,
                                   given: given, expected: expected, correct: correct))
-        typed = ""
         // The student sees nothing until the end, but the server hears every answer as it
         // lands — an abandoned test still records what was answered.
         runner.record(wordId: question.wordId, correct: correct)
 
         if index + 1 < questions.count {
+            // Emptied for the next word only. The last answer stays in the well through the
+            // closing beat, and the end screen replaces it: cleared, the word vanished first.
+            typed = ""
             turning = true
             withAnimation(Motion.focus) { index += 1 }
             return
@@ -385,8 +387,9 @@ struct VocabTestView: View {
             stats: [
                 ModeStat(label: "Correct", value: "\(ScoreText.string(right))/\(ScoreText.string(answers.count))", tone: .success),
                 .accuracy(VocabGames.accuracyPercent(correct: right, of: answers.count)),
-                // "To review", not "Missed": the count is the next thing to do, not a verdict.
-                ModeStat(label: "To review", value: ScoreText.string(wrong.count), tone: wrong.isEmpty ? .neutral : .danger),
+                // "To review", not "Missed": the count is the next thing to do, not a verdict —
+                // so the neutral tile whatever the count, as Matching's "Misses" is.
+                ModeStat(label: "To review", value: ScoreText.string(wrong.count)),
             ],
             restartLabel: "Take it again",
             extra: AnyView(TestReview(wrong: wrong))
