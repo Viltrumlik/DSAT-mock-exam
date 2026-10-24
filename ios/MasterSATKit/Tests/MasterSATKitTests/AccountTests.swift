@@ -412,14 +412,48 @@ enum AccountFixtures {
         #expect(try !user(["profile_complete": false, "missing_fields": ["email"], "is_frozen": true]).mustCompleteProfile)
     }
 
-    @Test("Names first when any is missing, else straight to the email")
+    @Test("The first step is the first the server says is outstanding, in the website's order")
     func steps() {
+        #expect(ProfileCompletion.firstStep(missing: ["password"]) == .password)
+        #expect(ProfileCompletion.firstStep(missing: ["lcup_phone"]) == .phone)
+        #expect(ProfileCompletion.firstStep(missing: ["password", "lcup_phone", "first_name", "email"]) == .password)
         #expect(ProfileCompletion.firstStep(missing: ["username", "email"]) == .names)
         #expect(ProfileCompletion.firstStep(missing: ["email"]) == .email)
+        // Nothing missing never reaches a step: `isRequired` does not mount the gate.
+        #expect(ProfileCompletion.firstStep(missing: []) == .email)
+        // A requirement this app has not been taught falls to the email step, deliberately.
+        // The server's extras are open-ended (`users/profile_completeness.py`,
+        // `register_requirement`), so one can arrive under a name no `Step` claims. The student
+        // then meets a step they can act on; Task 4's `advance(from:)` re-derives from the
+        // freshly read `missing_fields` rather than trusting `next(after:) == nil` as "done".
+        #expect(ProfileCompletion.firstStep(missing: ["something_new"]) == .email)
+        // The server's own order is not read: the list is asked about, step by step.
+        #expect(ProfileCompletion.firstStep(missing: ["lcup_phone", "password"]) == .password)
+        #expect(ProfileCompletion.firstStep(missing: ["email", "first_name"]) == .names)
+        #expect(ProfileCompletion.needsPassword(["password"]))
+        #expect(!ProfileCompletion.needsPassword(["lcup_phone"]))
+        #expect(ProfileCompletion.needsPhone(["lcup_phone"]))
+        #expect(!ProfileCompletion.needsPhone(["phone_number"]))
         #expect(ProfileCompletion.needsEmail(["first_name", "email"]))
         #expect(!ProfileCompletion.needsEmail(["first_name"]))
         #expect(ProfileCompletion.needsNames(["last_name"]))
         #expect(!ProfileCompletion.needsNames(["email"]))
+    }
+
+    @Test("Each step hands on to the next one still outstanding, and never to itself")
+    func stepAfterStep() {
+        let all = ["password", "lcup_phone", "username", "email"]
+        #expect(ProfileCompletion.next(after: .password, missing: all) == .phone)
+        #expect(ProfileCompletion.next(after: .phone, missing: all) == .names)
+        #expect(ProfileCompletion.next(after: .names, missing: all) == .email)
+        #expect(ProfileCompletion.next(after: .email, missing: all) == nil)
+        // A step the server still lists — the save it just made is not re-read as a new task.
+        #expect(ProfileCompletion.next(after: .password, missing: ["password"]) == nil)
+        #expect(ProfileCompletion.next(after: .phone, missing: ["password", "lcup_phone"]) == nil)
+        // The outstanding steps in between are skipped, not walked.
+        #expect(ProfileCompletion.next(after: .password, missing: ["email"]) == .email)
+        #expect(ProfileCompletion.next(after: .phone, missing: ["last_name", "email"]) == .names)
+        #expect(ProfileCompletion.next(after: .names, missing: []) == nil)
     }
 
     @Test("Each name at least three characters once trimmed, first failure named")
