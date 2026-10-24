@@ -37,8 +37,10 @@ pieces run in parallel sessions (`ios-header-windows`, `ios-onboarding`, `ios-pa
      creates it for you." **Text only — no buttons, no disclosure.** The owner chose this: the centre
      does both jobs, so there is nothing for the student to tap.
    - **No marketing panel.** `BrandPanel`, `Brand.promises` and `FloatingShapes` leave the sign-in
-     screen. `BrandPanel` itself is deleted — nothing else uses it; `BrandMark` and
-     `Brand.top/bottom/panel` stay (About, the gate and the update screen use them).
+     screen, and `BrandPanel` is deleted. Only `BrandMark` is kept: once the panel goes, the
+     `Brand` gradient enum, `BrandLockup` and `AuthField` have **no** remaining user either
+     (About tints `BrandMark` itself, the update screen loads `Image("BrandMark")`, and the gate
+     uses `AccountTextField`), so they go too — an earlier draft of this plan wrongly kept them.
 2. **Appearance.** The screen follows the Appearance setting (System / Light / Dark, phase 5's
    `appliesStoredAppearance`). Dark mode must be readable: any inverted fill uses the
    `Theme.ink` / `Theme.onInk` pair, never `.white` on a colour that lightens.
@@ -181,11 +183,18 @@ the owner's own session). Implementers never launch the app; the controller runs
    - `confirmPhone(_ phone: String) -> PhoneClaim` (`moved: Bool`) → `POST /lcup/claim/phone/`
      `{"phone": …}`.
    - `sayNotMe()` → the same path with `{"not_me": true}`, 204.
-   - `PhoneClaimRefusal` maps the server's statuses: `400` → `wrongNumber(hint:)` carrying
-     `fields["phone"].first` **and** the body's `hint`; `403` → `nothingToConfirm`; `409` →
-     `linkedElsewhere`; `429` → `tooManyTries`. Each keeps the server's own sentence (the owner's
-     Uzbek wording, with the `••NN` hint in it) and exposes it through `errorDescription`. Anything
-     else is rethrown untouched.
+   - `PhoneClaimRefusal` maps the server's statuses: `400` → `wrongNumber`; `403` →
+     `nothingToConfirm`; `409` → `linkedElsewhere`; `429` → `tooManyTries`. Each keeps the server's
+     own sentence (the owner's Uzbek wording, which already contains the `••NN` hint) and exposes it
+     through `errorDescription`. Anything else is rethrown untouched.
+     **No `hint` value** (review ruling, Task 1): the server sends it as a top-level string, which
+     `APIError.validation` cannot carry, and nothing needs it — the sentence shown to the student is
+     the sentence the server built the digits into. Reading them back out of Uzbek prose would break
+     silently the day that sentence is reworded.
+     The reason is **derived from the status alone**, so `.nothingToConfirm` means "this request got
+     a 403", not "the question is already answered" — any other 403 (a host guard, a future rule)
+     lands there too. The screen must therefore never advance on a reason; only a fresh
+     `profile()` read may say a step is done (see Task 4).
    - Construction mirrors `AccountAPI`: `public init(client: APIClient)`, `Sendable`, no state.
 6. Tests (swift-testing, `StubServer` as `AccountAPITests` uses it):
    - `firstStep` for `["password"]`, `["lcup_phone"]`, `["password","lcup_phone","first_name","email"]`,
@@ -279,10 +288,18 @@ warnings in the touched files.
 1. State: `password`, `passwordAgain`, `phone`, plus the existing `missing`, `step`, `busy`, `error`.
    `step` starts at `ProfileCompletion.firstStep(missing:)` — now possibly `.password` or `.phone`.
 2. One `advance(from: Step)`: re-read `account.profile()`, write `missing`, then
-   `ProfileCompletion.next(after:missing:)` — `nil` → `finish()`. It replaces the hand-rolled "what
-   next" branches in `saveNames` and `afterEmailConfirmed`. When the profile cannot be re-read
-   (offline), drop the step's own field from `missing` locally and advance from that — what
-   `afterEmailConfirmed` does today.
+   `ProfileCompletion.next(after:missing:)`. It replaces the hand-rolled "what next" branches in
+   `saveNames` and `afterEmailConfirmed`. When the profile cannot be re-read (offline), drop the
+   step's own field from `missing` locally and advance from that — what `afterEmailConfirmed` does
+   today.
+   **`nil` is not "done" on its own** (review ruling): it means "no step after this one is
+   outstanding", which is also what a field this app does not know (a future server requirement)
+   looks like. So on `nil`, re-derive from the fresh `missing`: empty → `finish()`; otherwise
+   `firstStep(missing:)` and show that step. A student then sees a step they can act on, or at worst
+   the email step, instead of the gate lifting and remounting under them.
+   **Never advance on a refusal reason.** `.nothingToConfirm` is only "the server answered 403", so
+   a 403 from anything else would otherwise skip the phone step. A step is done when the re-read
+   profile says so, and not before.
 3. **Password step** — title "Choose your password", description verbatim from the web: "You signed in
    with a one-time code. Choose your own password — from now on you sign in with your phone number
    and this password." Two `AccountSecureField`s ("New password", "Type it again", both
@@ -365,6 +382,12 @@ an orphan `pr-assets/ios-signin` branch, a short demo video, and the PR
   current trap was built.
 - **S1-R6** The phone step stays in Uzbek, verbatim. It asks for the number an administrator holds; a
   translation would be a second meaning of "o'zingizning raqamingiz".
+- **S1-R8** A refusal's reason is read from its status, and nothing advances on one. A 403 that is
+  not the gate's (a host guard, a future rule) would otherwise look like "already answered" and skip
+  the step it was refusing.
+- **S1-R9** `next(after:) == nil` is re-derived from the fresh `missing`, never trusted as "done". A
+  requirement this app has not been taught (the server's extras are open-ended) would otherwise lift
+  the gate and remount it under the student.
 - **S1-R7** Choosing the first password does not sign the student out — unlike changing a password.
   Signing out there would drop them back at a sign-in form with a password the server has only just
   learned.
