@@ -605,6 +605,9 @@ struct ReviewQuestionCard: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Report a problem with this question")
+        // Chrome in a header row that already carries six things: it holds still while the text
+        // around it grows, and the large content viewer names it on a press and hold.
+        .capDynamicType(label: "Report a problem", systemImage: "exclamationmark.bubble")
     }
 
     /// Grid-ins and short text: the two answers side by side, the correct one in the

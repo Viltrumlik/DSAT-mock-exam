@@ -80,6 +80,20 @@ public struct QuestionReport: Encodable, Sendable, Equatable {
     /// a long report is never refused after the student has written it.
     public static let messageLimit = 2000
 
+    /// `text`, cut to what the server will take.
+    ///
+    /// Counted in unicode scalars, not characters: DRF's `max_length` counts Python code
+    /// points while Swift's `count` counts grapheme clusters — one family emoji is a single
+    /// character here and several code points there. Counting the Swift way would let a message
+    /// through the field and have the server refuse it, which is the one thing the cap exists
+    /// to prevent. Cutting on a scalar boundary can only ever be stricter than the server.
+    public static func clampedMessage(_ text: String) -> String {
+        var scalars = text.unicodeScalars
+        guard scalars.count > messageLimit else { return text }
+        scalars.removeLast(scalars.count - messageLimit)
+        return String(scalars)
+    }
+
     private enum CodingKeys: String, CodingKey {
         case system
         case category

@@ -40,6 +40,9 @@ struct ReportProblemSheet: View {
     @State private var sent: Sent?
     @State private var detent: PresentationDetent = .medium
     @FocusState private var detailsFocused: Bool
+    /// Where VoiceOver goes once the form has been replaced by its answer: the button the
+    /// student was on no longer exists, and focus left on it lands nowhere.
+    @AccessibilityFocusState private var thanksFocused: Bool
 
     /// How the report was received. A repeat is still a success — the student is thanked for
     /// it, in words that say the first one was not lost.
@@ -140,9 +143,8 @@ struct ReportProblemSheet: View {
                 // Capped while typing, not on send: a student who has written past the limit
                 // should find that out at the 2001st character, not after tapping Send.
                 .onChange(of: message) { _, value in
-                    if value.count > QuestionReport.messageLimit {
-                        message = String(value.prefix(QuestionReport.messageLimit))
-                    }
+                    let clamped = QuestionReport.clampedMessage(value)
+                    if clamped != value { message = clamped }
                 }
                 Text("Anything that helps us find and fix it.")
                     .appFont(12, weight: .medium)
@@ -201,6 +203,7 @@ struct ReportProblemSheet: View {
                 .appFont(16, weight: .bold)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityFocused($thanksFocused)
             Button("Done") { dismiss() }
                 .buttonStyle(PrimaryButtonStyle())
                 .padding(.top, 2)
@@ -226,13 +229,28 @@ struct ReportProblemSheet: View {
                 message: message,
                 attemptId: attemptId
             ))
-            sent = result.deduped ? .alreadyReported : .fresh
+            let outcome: Sent = result.deduped ? .alreadyReported : .fresh
+            sent = outcome
+            // The form the student was reading has just been replaced. Said out loud, and focus
+            // moved to what replaced it — otherwise the button they pressed simply vanishes.
+            announce(outcome.title)
+            thanksFocused = true
         } catch let failure as APIError {
-            error = failure.errorDescription
+            // `errorDescription` is total today; a nil would leave the sheet silent and the tap
+            // looking like it did nothing, which is the one outcome worse than an error.
+            error = failure.errorDescription ?? Self.sendFailed
+            announce(error ?? Self.sendFailed)
         } catch {
             self.error = error.localizedDescription
+            announce(self.error ?? Self.sendFailed)
         }
         inFlight = false
+    }
+
+    private static let sendFailed = "Your report didn't send. Nothing has changed — try again."
+
+    private func announce(_ sentence: String) {
+        AccessibilityNotification.Announcement(sentence).post()
     }
 }
 

@@ -288,6 +288,10 @@ struct AssessmentRunnerView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Report a problem with this question")
+            // A glyph in a fixed 44-pt frame spills out of it at the accessibility sizes, and a
+            // speech bubble between a calculator and a zoom stepper does not say what it does.
+            // The cap holds the frame; the large content viewer names it on a press and hold.
+            .capDynamicType(label: "Report a problem", systemImage: "exclamationmark.bubble")
         }
     }
 

@@ -122,4 +122,23 @@ import Testing
             #expect(error.errorDescription == "Question not found.")
         }
     }
+
+    @Test("The cap counts what the server counts, so a long message is cut here and never refused there")
+    func messageCapCountsCodePoints() {
+        #expect(QuestionReport.messageLimit == 2000)
+
+        let plain = String(repeating: "a", count: 2001)
+        #expect(QuestionReport.clampedMessage(plain).unicodeScalars.count == 2000)
+        // Exactly at the limit is left alone — the cut is for what is over it.
+        let exact = String(repeating: "a", count: 2000)
+        #expect(QuestionReport.clampedMessage(exact) == exact)
+
+        // The case Swift's own `count` waves through: a family emoji is ONE character and seven
+        // code points, so 500 of them are 500 characters and 3,500 code points — a message the
+        // server's max_length=2000 refuses.
+        let emoji = String(repeating: "👨‍👩‍👧", count: 500)
+        #expect(emoji.count < QuestionReport.messageLimit)
+        #expect(emoji.unicodeScalars.count > QuestionReport.messageLimit)
+        #expect(QuestionReport.clampedMessage(emoji).unicodeScalars.count == 2000)
+    }
 }
