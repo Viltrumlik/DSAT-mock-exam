@@ -3,7 +3,7 @@ import MasterSATKit
 
 /// The profile's Overview — the web's `OverviewTab.tsx`, in the order it stacks on a phone:
 /// the four figures, Your goal (with Latest results), Homework to do, Midterms & certificates,
-/// Finish your profile (or the "all set" panel), and Payments, coming soon.
+/// Finish your profile (or the "all set" panel), and Payments.
 ///
 /// Each panel reads its own load from `ProfileModel` and fails on its own; the numbers open
 /// the pages they come from, as values the sheet's root declares.
@@ -42,7 +42,7 @@ struct ProfileOverviewTab: View {
                 onPickExamDate: onPickExamDate,
                 onRetry: onRetry
             )
-            ProfilePaymentsPanel()
+            ProfilePaymentsPanel(model: model, onRetry: onRetry)
         }
     }
 

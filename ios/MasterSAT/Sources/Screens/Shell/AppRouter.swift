@@ -30,9 +30,16 @@ enum MeTab: Hashable {
 /// `AppLink` values and every tab root declares `navigationDestination(for: AppLink.self)` —
 /// value routes declared at the stack root, the only kind that does not drop a push.
 ///
-/// One sheet at a time: the Me sheet and the certificate sheet never stand together. Asking
-/// for one while the other is up closes the other and holds the request until the root calls
-/// `sheetDismissed`. Every write is guarded so a no-op never notifies the root.
+/// One sheet at a time: the Me sheet, the certificate sheet and the event invitation never
+/// stand together. Asking for one while another is up closes that one and holds the request
+/// until the root calls `sheetDismissed`. Every write is guarded so a no-op never notifies
+/// the root.
+///
+/// The invitation is here for the same reason as the other two, and it was not always: shown
+/// from its own view, it was a third host presenting at the same time, so a deep link that
+/// arrived while it was up set `showingMe` against a view already presenting — the Me sheet
+/// never appeared and the flag stayed true, which left every later tap on the avatar doing
+/// nothing. It is also what lets the celebrations know the stage is taken.
 ///
 /// The Me sheet's tab lives here too (`meTab`), not in the page: the sheet's page is built
 /// afresh every time it opens, and it reopens on the tab the student last had open.
@@ -50,6 +57,10 @@ final class AppRouter {
     /// The tab the Me sheet shows — and reopens on, for the rest of this launch.
     var meTab: MeTab = .overview
     var certificate: CertificateCode?
+    /// The event the invitation is offering a seat at, and nil the rest of the time. Set by
+    /// `EventInvitePrompt` only once it has found the stage clear; presented by the root
+    /// beside the other two sheets.
+    var eventInvite: LearningEvent?
     private(set) var scrollToTop: ScrollRequest?
     private(set) var reloadRequest: ReloadRequest?
     /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
@@ -79,8 +90,8 @@ final class AppRouter {
             popToRoot(tab)
             push(page, on: tab)
         case .me(let page):
-            if certificate != nil {
-                certificate = nil
+            if certificate != nil || eventInvite != nil {
+                closeSheetsOtherThanMe()
                 queued = .link(link)
                 return
             }
@@ -91,8 +102,9 @@ final class AppRouter {
             if let page { me.append(page) }
             if !showingMe { showingMe = true }
         case .certificate(let code):
-            if showingMe {
-                showingMe = false
+            if showingMe || eventInvite != nil {
+                if showingMe { showingMe = false }
+                if eventInvite != nil { eventInvite = nil }
                 queued = .link(link)
                 return
             }
@@ -105,8 +117,8 @@ final class AppRouter {
     /// The avatar opens Me where the student left it; `tab` is for a caller that needs one in
     /// particular — Today's SAT countdown wants Overview, where the date is set.
     func openMe(on tab: MeTab? = nil) {
-        if certificate != nil {
-            certificate = nil
+        if certificate != nil || eventInvite != nil {
+            closeSheetsOtherThanMe()
             queued = .me(tab)
             return
         }
@@ -185,7 +197,15 @@ final class AppRouter {
 
     private func closeSheets() {
         if showingMe { showingMe = false }
+        closeSheetsOtherThanMe()
+    }
+
+    /// The certificate and the invitation, which are never the sheet being asked for by name
+    /// here. Kept apart from `closeSheets` because a push into Me while Me is already up is a
+    /// page change, not a second presentation, and must not close it.
+    private func closeSheetsOtherThanMe() {
         if certificate != nil { certificate = nil }
+        if eventInvite != nil { eventInvite = nil }
     }
 
     private func select(_ tab: AppTab) {

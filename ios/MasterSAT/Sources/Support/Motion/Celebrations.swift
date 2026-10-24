@@ -137,6 +137,15 @@ final class CelebrationCenter {
 
     private var covered: Bool { sheetUp || coversUp > 0 }
 
+    /// Whether a sheet or a full-screen cover has the screen — which every cover already tells
+    /// this centre through `coversCelebrations`, making it the one place that knows.
+    ///
+    /// Deliberately not observable: the count behind it is `@ObservationIgnored`, so a view
+    /// rendering from this would read it once and never hear it change. It is for code that
+    /// ASKS at the moment it needs to know — the event invitation, deciding whether the stage
+    /// is free (`EventInvitePrompt.stageIsClear`).
+    var isCovered: Bool { covered }
+
     /// How the pill rolls when an entry resolves: a quick fade under Reduce Motion.
     private var settleAnimation: Animation { reduceMotion ? Motion.focus : Motion.snappy }
 
@@ -560,6 +569,15 @@ struct OutcomeConfetti: View {
 extension View {
     /// Put on a full-screen cover's content. While it is up the root overlay is hidden behind
     /// it, so a celebration started inside waits, and plays the moment the cover has gone.
+    ///
+    /// REQUIRED on EVERY `fullScreenCover` inside the signed-in shell, not only the ones that
+    /// celebrate something. The register this keeps is also what `CelebrationCenter.isCovered`
+    /// answers, and that is the one thing the event invitation asks before it opens its sheet
+    /// (`EventInvitePrompt.stageIsClear`). A cover that forgets this line is invisible to that
+    /// check, so the invitation asks the root to present a sheet over a descendant that is
+    /// already presenting one: the sheet never appears, `onDismiss` never fires, and the
+    /// suppression it left behind outlives the cover. Adding a `fullScreenCover` means adding
+    /// this line in the same edit.
     func coversCelebrations(_ center: CelebrationCenter) -> some View {
         onAppear { center.coverAppeared() }
             .onDisappear { center.coverDisappeared() }

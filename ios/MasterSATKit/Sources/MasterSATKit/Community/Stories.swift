@@ -18,9 +18,31 @@ public struct Story: Decodable, Identifiable, Sendable, Equatable, Hashable {
     public let endsAt: String?
     public let createdAt: String?
 
-    /// Where "Open" goes, or nil when there is nothing openable. Web pages only:
-    /// `SFSafariViewController` throws on any other scheme, and a story is a notice, not a
-    /// launcher for other apps.
+    /// The place on THIS SITE the story's link means — everything the router can act on. A
+    /// notice that points at `/events` belongs on the Events screen, signed in, inside the
+    /// app; a notice that points at `/blog/2026/mock-day`, which the app has no screen for,
+    /// stays `.unknown` carrying its site path, and the router's `.web` branch hands that to
+    /// the browser (`AppLink.webURL(base:)`). Either way the viewer closes, the way following
+    /// a same-site link on the website leaves the story open.
+    ///
+    /// Nil for no link at all and for anywhere that is not this site — including a
+    /// protocol-relative `//evil.com/x`, which `AppLink.path` keeps as written so that
+    /// `webURL(base:)` refuses it. Those go to `openableLink`, or nowhere.
+    public var routedLink: AppLink? {
+        let trimmed = linkURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        let link = AppLink.parse(trimmed)
+        if case .unknown(let location) = link {
+            // A site path the app has no screen for is still the site's: keep it, and let the
+            // router open it on the website. Anything `webURL(base:)` would refuse — an
+            // off-site absolute, `mailto:`, `javascript:`, `//host/path` — is not ours.
+            guard location.hasPrefix("/"), !location.hasPrefix("//") else { return nil }
+        }
+        return link
+    }
+
+    /// Where "Open" goes when `routedLink` is nil — the system browser, where the student's
+    /// web session lives. Web pages only: a story is a notice, not a launcher for other apps.
     public var openableLink: URL? {
         let trimmed = linkURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, let url = URL(string: trimmed),
@@ -90,8 +112,14 @@ public struct StoriesAPI: Sendable {
 
         init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            stories = (try? c.decodeIfPresent(CommunityLossyList<Story>.self, forKey: .stories))?
-                .elements ?? []
+            // A payload with no readable `stories` throws rather than reading as an empty
+            // rail: "the school has posted nothing" and "we could not read the answer" are
+            // different statements, and the rail says the second one out loud. The list
+            // itself stays lossy, so one malformed story never costs the whole rail. A null
+            // `stories` is unreadable too, not an empty rail: the endpoint always sends a
+            // list, so a null is the server saying something went wrong, and the rail says
+            // so rather than claiming the school has posted nothing.
+            stories = try c.decode(CommunityLossyList<Story>.self, forKey: .stories).elements
         }
 
         enum CodingKeys: String, CodingKey { case stories }

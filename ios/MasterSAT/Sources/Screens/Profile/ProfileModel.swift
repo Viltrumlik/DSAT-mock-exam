@@ -23,10 +23,10 @@ struct ProfileLoad<Value> {
 ///
 /// Overview reads `/users/me/` (the phone and Telegram, for the hero and the checklist),
 /// `/users/telegram/config/`, `/rewards/me/`, `/classes/my-assignments/`, `/exams/attempts/`,
-/// `/users/exam-dates/` and `/midterms/mine/`; the Classes tab's count needs `/classes/`. The
-/// rest of the Classes tab — the timetable, each class's Telegram group, the classmates — waits
-/// until the tab is first opened, as on the web. It also re-reads the session's own copy of the
-/// account, which the goal and the date are drawn from.
+/// `/users/exam-dates/`, `/midterms/mine/` and `/lcup/me/finance/`; the Classes tab's count
+/// needs `/classes/`. The rest of the Classes tab — the timetable, each class's Telegram
+/// group, the classmates — waits until the tab is first opened, as on the web. It also
+/// re-reads the session's own copy of the account, which the goal and the date are drawn from.
 ///
 /// `ProfileLoad.isLoading` stays unused for the slots read through `run`, as in `ExploreModel`:
 /// no panel draws it, and a write nobody reads would redraw the page for nothing. Which reads
@@ -44,6 +44,10 @@ final class ProfileModel {
     private(set) var attempts = ProfileLoad<[ProfileAttempt]>()
     private(set) var examDates = ProfileLoad<[ExamDateOption]>()
     private(set) var midterms = ProfileLoad<[MidtermListing]>()
+    /// The student's own money at the learning center, for the Payments panel. A student
+    /// lc-up has not been told about answers `unlinked`, which is an answer — not a failure
+    /// and not "nothing owed".
+    private(set) var finance = ProfileLoad<MyFinanceState>()
     /// What the centre marked each shown sitting, by attempt. The list carries no pass mark,
     /// so it is read from each sitting's report; a sitting missing here simply shows no
     /// "Passed" — the panel never says "not passed", so an unknown claims nothing.
@@ -119,9 +123,10 @@ final class ProfileModel {
         async let results: Void = loadAttempts(session)
         async let dates: Void = loadExamDates(session)
         async let papers: Void = loadMidterms(session)
+        async let money: Void = loadFinance(session)
         async let rooms: Void = loadClasses(session, refreshing: true)
         async let timetable: Void = loadScheduleIfOpened(session)
-        _ = await (identity, details, signIn, wallet, work, results, dates, papers, rooms, timetable)
+        _ = await (identity, details, signIn, wallet, work, results, dates, papers, money, rooms, timetable)
     }
 
     func loadAccount(_ session: Session) async {
@@ -195,6 +200,14 @@ final class ProfileModel {
         if midterms.value != nil, !verdictsSettled, askingPassed.isDisjoint(with: shown) {
             verdictsSettled = true
         }
+    }
+
+    /// What the student owes or has in credit. Read with the other panels rather than when
+    /// the panel scrolls into view: it sits at the foot of the page, and a figure that
+    /// arrives as the student reaches it would read as a bill that just appeared.
+    func loadFinance(_ session: Session) async {
+        let api = FinanceAPI(client: session.client)
+        await run(\.finance) { try await api.mine() }
     }
 
     /// The class list. Once the Classes tab has been opened, a list that lands brings the
