@@ -1,162 +1,89 @@
 import SwiftUI
 import MasterSATKit
 
-/// The signed-out half of the app — the site's `/login` and `/register`.
+/// The signed-out half of the app: one quiet page, and the only way in.
 ///
-/// The web puts a brand panel beside the form and hides it below `lg`. A phone has no
-/// "beside", so the panel becomes a header band: the gradient, the mark and the promise
-/// still arrive first, which is the whole job of it. On iPad, where the width is regular,
-/// the two-column split comes back exactly as the site draws it.
+/// There is no Register form and no marketing panel. Every student here was enrolled by the
+/// learning centre, which created the account — so there is nothing to sell and nothing to
+/// sign up for, and the page is the shape of what is left: a mark, two fields and a button.
+/// The two lines under them are text, not buttons, because the centre does both jobs (resets
+/// a password, creates an account) and a tappable version would promise a channel the app
+/// does not have.
+///
+/// One identity field, not three. The server resolves an address, a username and a phone
+/// number on the same endpoint, so splitting them here would lock out two of the three ways in.
 ///
 /// Google and Telegram are not here. Both are browser flows that finish by setting a cookie
 /// on the site, and a native client holds tokens instead — so the buttons would look like a
-/// way in and be a dead end. Email and password sign in the same accounts either way.
+/// way in and be a dead end.
 struct AuthView: View {
     /// Why the session ended, when it ended on its own rather than by a tap. The web reads
     /// the same thing out of `authTabSync` and shows it above the form.
     let notice: String?
 
-    @Environment(\.horizontalSizeClass) private var widthClass
-    @State private var mode: Mode = .signIn
-    @State private var noticeDismissed = false
-
-    enum Mode { case signIn, register }
-
-    private var isWide: Bool { widthClass == .regular }
-
-    var body: some View {
-        // Outside every `ignoresSafeArea`, so it can still report the inset the status bar
-        // occupies — the band is drawn under the clock and needs to know by how much.
-        GeometryReader { screen in
-            let topInset = screen.safeAreaInsets.top
-            Group {
-                if isWide {
-                    HStack(spacing: 0) {
-                        panel(topInset: 48).frame(maxWidth: .infinity)
-                        ScrollView {
-                            // Centred against the panel beside it, the way the site's
-                            // `items-center justify-center` main column sits. Left at the
-                            // top it floats in a half-empty page on a portrait iPad.
-                            form
-                                .padding(.vertical, 40)
-                                .frame(minHeight: screen.size.height, alignment: .center)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                } else {
-                    // minHeight, so the sign-in form — which is short — does not leave the
-                    // page top-heavy with a band of empty grey under it. The copyright
-                    // takes the slack, exactly where the site's panel keeps it.
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            panel(topInset: topInset + 14)
-                            form.padding(.top, 24)
-                            Spacer(minLength: 16)
-                            copyright.padding(.bottom, 18)
-                        }
-                        .frame(minHeight: screen.size.height + topInset)
-                    }
-                    // The band starts at the top of the screen, which means it also scrolls
-                    // under the clock — and white-on-white, the lockup and the time land on
-                    // top of each other. This holds the strip behind the status bar at the
-                    // band's own colour so whatever passes under it is simply hidden.
-                    .overlay(alignment: .top) {
-                        Rectangle().fill(Brand.top).frame(height: topInset)
-                    }
-                }
-            }
-            .background(Theme.background)
-            .ignoresSafeArea(.container, edges: isWide ? .all : .top)
-            .scrollDismissesKeyboard(.interactively)
-            .animation(.easeInOut(duration: 0.22), value: mode)
-            // The form is a different one now. Said as a screen change, it cuts off an alert the
-            // other form announced and VoiceOver has not finished (or not yet begun) reading — a
-            // "wrong password" heard over the Register form is about a form that is gone.
-            .onChange(of: mode) { AccessibilityNotification.ScreenChanged(nil).post() }
-        }
-    }
-
-    @ViewBuilder
-    private func panel(topInset: CGFloat) -> some View {
-        switch mode {
-        case .signIn:
-            BrandPanel(
-                headline: "Your digital SAT, mastered.",
-                showsPromises: true,
-                compact: !isWide,
-                topInset: topInset
-            )
-        case .register:
-            BrandPanel(
-                headline: "Real past papers. Real scores. Real progress.",
-                blurb: "Take a full-length diagnostic, get your predicted score, and focus on the exact domains where you're losing points.",
-                // On a phone the register form is five fields tall. The pitch comes off
-                // rather than pushing the first one below the fold.
-                showsPromises: isWide,
-                compact: !isWide,
-                topInset: topInset
-            )
-        }
-    }
-
-    private var copyright: some View {
-        Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-            .appFont(12, weight: .medium)
-            .foregroundStyle(Theme.textLabel)
-    }
-
-    @ViewBuilder
-    private var form: some View {
-        Group {
-            switch mode {
-            case .signIn:
-                SignInForm(notice: noticeDismissed ? nil : notice) {
-                    noticeDismissed = true
-                    mode = .register
-                }
-            case .register:
-                RegisterForm { mode = .signIn }
-            }
-        }
-        .frame(maxWidth: 460)
-        .padding(.horizontal, 20)
-        .padding(.bottom, 36)
-    }
-}
-
-// MARK: - Sign in
-
-private struct SignInForm: View {
-    let notice: String?
-    let onRegister: () -> Void
-
     @Environment(Session.self) private var session
-    @State private var email = ""
+    /// Whatever the student types to be recognised: a phone number, an address or a username.
+    @State private var identity = ""
     @State private var password = ""
     @State private var error: String?
     @State private var retryable = false
-    @State private var forgotOpen = false
+    /// The notice is about the session that just ended; once they have tried to sign in again
+    /// it is about nothing, so it goes.
+    @State private var noticeDismissed = false
     @FocusState private var focus: AuthFocus?
-    /// Bumped when the server said the email or password is wrong: the password box shakes and
+    /// Bumped when the server said the identity or password is wrong: the password box shakes and
     /// a warning haptic plays. Other failures (offline, throttled) only say so.
     @State private var refusals = 0
-    /// The sign-in on its way. Leaving the form (Register now) cancels it, so its failure is never
-    /// announced over a form it does not belong to.
+    /// The sign-in on its way. A second tap cancels the first, so two attempts never race to
+    /// set the same error.
     @State private var attempt: Task<Void, Never>?
 
     private var canSubmit: Bool {
-        !email.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !session.isWorking
+        !identity.trimmingCharacters(in: .whitespaces).isEmpty && !password.isEmpty && !session.isWorking
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Text("Welcome back")
-                .appFont(30, weight: .heavy)
-                .tracking(-0.8)
-                .padding(.bottom, 2)
+        GeometryReader { screen in
+            ScrollView {
+                // The page is short, so it is centred rather than left at the top — and
+                // `minHeight` is what lets the keyboard push it up instead of covering the
+                // password box. The copyright takes the slack at the bottom.
+                VStack(spacing: 0) {
+                    Spacer(minLength: 28)
+                    form
+                    Spacer(minLength: 28)
+                    copyright
+                }
+                .frame(minHeight: screen.size.height)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
+            }
+            .scrollDismissesKeyboard(.interactively)
+        }
+        // Not `Theme.background`: the mockup's page is white, where the grouped background is
+        // the grey a page of cards sits on. In dark mode this is the same near-black.
+        .background(Color(.systemBackground).ignoresSafeArea())
+        .sensoryFeedback(.warning, trigger: refusals)
+        .onDisappear { attempt?.cancel() }
+    }
 
-            if let notice, error == nil {
+    private var form: some View {
+        VStack(spacing: 0) {
+            logo
+
+            Text("Sign in")
+                .appFont(22, weight: .heavy)
+                .tracking(-0.4)
+                .padding(.top, 18)
+            Text("MasterSAT Center")
+                .appFont(12, weight: .medium)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.top, 3)
+
+            // Above the fields, where the eye is not, and said once (below).
+            if let notice, !noticeDismissed, error == nil {
                 AuthAlert(tone: .warning, message: notice)
+                    .padding(.top, 20)
             }
             if let error {
                 AuthAlert(tone: .danger, message: error) {
@@ -170,16 +97,21 @@ private struct SignInForm: View {
                         .disabled(session.isWorking)
                     }
                 }
+                .padding(.top, 20)
             }
 
-            AuthField(label: "Email or username", icon: "envelope") {
+            SoftField {
                 // `verbatim`, because a plain string placeholder is a LocalizedStringKey:
-                // SwiftUI parses it as markdown, spots an address in it, and draws the hint
-                // as a blue tappable link inside an empty field.
-                TextField(text: $email, prompt: Text(verbatim: "name@example.com or username")) {
-                    Text("Email or username")
+                // SwiftUI parses it as markdown, and a hint with an address or a `+998` in it
+                // comes out as a blue tappable link inside an empty field.
+                TextField(text: $identity, prompt: Text(verbatim: "Phone, email or username")) {
+                    Text(verbatim: "Phone, email or username")
                 }
                     .textContentType(.username)
+                    // The email keyboard, even though a phone number is one of the three: it
+                    // has no autocaps, `@` and `.` on the first plane and digits one tap away,
+                    // and a password manager still fills it. A phone pad would make the other
+                    // two untypable.
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
@@ -187,6 +119,7 @@ private struct SignInForm: View {
                     .submitLabel(.next)
                     .onSubmit { focus = .password }
             }
+            .padding(.top, 22)
 
             PasswordField(
                 label: "Password",
@@ -196,239 +129,87 @@ private struct SignInForm: View {
                 shakes: refusals,
                 onSubmit: { if canSubmit { submit() } }
             )
-
-            HStack {
-                Spacer()
-                Button("Forgot password?") { forgotOpen.toggle() }
-                    .appFont(13, weight: .bold)
-                    .foregroundStyle(Theme.accent)
-            }
-            if forgotOpen {
-                Text("Ask your teacher or the MasterSAT center to reset your password.")
-                    .appFont(12, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            .padding(.top, 10)
 
             Button(action: submit) {
                 if session.isWorking {
                     ProgressView().tint(.white).frame(maxWidth: .infinity)
                 } else {
-                    Label("Sign in", systemImage: "rectangle.portrait.and.arrow.forward")
-                        .frame(maxWidth: .infinity)
+                    Text("Sign in").frame(maxWidth: .infinity)
                 }
             }
             .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             .disabled(!canSubmit)
             // The spinner has no words of its own.
             .accessibilityLabel(session.isWorking ? "Signing in" : "Sign in")
-            .padding(.top, 2)
+            .padding(.top, 16)
 
-            HStack(spacing: 5) {
-                Text("Don't have an account?")
-                    .appFont(14, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                Button("Register now") {
-                    attempt?.cancel()
-                    onRegister()
-                }
-                    .appFont(14, weight: .bold)
-                    .foregroundStyle(Theme.accent)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
+            help
+                .padding(.top, 22)
         }
-        .sensoryFeedback(.warning, trigger: refusals)
-        .onDisappear { attempt?.cancel() }
+        // One centred column at every width: the iPad split is gone with the panel that
+        // filled its other half.
+        .frame(maxWidth: 460)
+        .padding(.horizontal, 20)
+    }
+
+    /// The mark in a brand-blue tile, arriving with phase 4's spring.
+    ///
+    /// White on brand blue in both themes: `Theme.accent` is blue in light and dark, so the
+    /// mark never ends up white on a fill that lightened under it.
+    private var logo: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Theme.accent)
+            .frame(width: 56, height: 56)
+            .overlay { BrandMark(height: 30) }
+            .modifier(LogoArrival())
+    }
+
+    /// The two things a student who cannot get in needs to know, and neither is a tap: each is
+    /// one `Text`, so VoiceOver reads the sentence whole instead of in halves.
+    private var help: some View {
+        VStack(spacing: 7) {
+            Text("Forgot your password? ").foregroundStyle(Theme.textSecondary)
+                + Text("Your centre resets it.").foregroundStyle(Theme.accentText)
+            Text("No account yet? Your learning centre creates it for you.")
+                .foregroundStyle(Theme.textSecondary)
+        }
+        .appFont(13, weight: .medium)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var copyright: some View {
+        Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
+            .appFont(12, weight: .medium)
+            .foregroundStyle(Theme.textLabel)
     }
 
     private func submit() {
         focus = nil
         error = nil
+        noticeDismissed = true
         attempt?.cancel()
         attempt = Task {
             do {
                 try await session.signIn(
-                    email: email.trimmingCharacters(in: .whitespaces),
+                    email: identity.trimmingCharacters(in: .whitespaces),
                     password: password
                 )
             } catch {
-                // Cancelled — the form was left — is not a failure, and `APIClient` reports it as
-                // a transport error: nothing to show, nothing to announce.
+                // Cancelled — a second tap took over — is not a failure, and `APIClient` reports
+                // it as a transport error: nothing to show, nothing to announce.
                 guard !Task.isCancelled else { return }
                 let copy = AuthErrorCopy.classify(error)
                 self.error = copy.message
                 retryable = copy.retryable
-                // On this screen a 401 from the token exchange is a wrong email or password
-                // (`AuthErrorCopy`); one from /me after it (`AccountDidNotLoad`) is not.
+                // On this screen a 401 from the token exchange is a wrong identity or password
+                // (`AuthErrorCopy`); one from /me after it (`AccountDidNotLoad`) is not, and
+                // neither is "cannot reach the server" — shaking there teaches a student to
+                // retype a password that was right.
                 if case .unauthorized? = error as? APIError { refusals += 1 }
                 // The alert appears where the eye is not; VoiceOver hears it once.
                 AccessibilityNotification.Announcement(copy.message).post()
-            }
-        }
-    }
-}
-
-// MARK: - Register
-
-private struct RegisterForm: View {
-    let onSignIn: () -> Void
-
-    @Environment(Session.self) private var session
-    @State private var firstName = ""
-    @State private var lastName = ""
-    @State private var username = ""
-    @State private var email = ""
-    @State private var password = ""
-    @State private var error: String?
-    /// The server refused because someone of this name is already enrolled. Only staff can
-    /// add a second, so the way out is to sign in — not to try a different spelling.
-    @State private var duplicateName = false
-    /// This form is the one on screen. A registration still on its way when the student goes back to
-    /// sign in finishes (the account may already exist), but its failure is not read out over the
-    /// other form.
-    @State private var onScreen = false
-    @FocusState private var focus: AuthFocus?
-
-    private var canSubmit: Bool {
-        !firstName.isEmpty && !lastName.isEmpty && !username.isEmpty
-            && !email.isEmpty && !password.isEmpty && !session.isWorking
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Create your account")
-                    .appFont(30, weight: .heavy)
-                    .tracking(-0.8)
-                Text("Join the MasterSAT program.")
-                    .appFont(14, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-            .padding(.bottom, 2)
-
-            if let error {
-                AuthAlert(tone: .danger, message: error) {
-                    if duplicateName {
-                        Button("Sign in instead", action: onSignIn)
-                            .appFont(12, weight: .bold)
-                            .foregroundStyle(Theme.accent)
-                    }
-                }
-            }
-
-            HStack(alignment: .top, spacing: 11) {
-                AuthField(label: "First name") {
-                    TextField("John", text: $firstName)
-                        .textContentType(.givenName)
-                        .focused($focus, equals: .firstName)
-                        .submitLabel(.next)
-                        .onSubmit { focus = .lastName }
-                }
-                AuthField(label: "Last name") {
-                    TextField("Doe", text: $lastName)
-                        .textContentType(.familyName)
-                        .focused($focus, equals: .lastName)
-                        .submitLabel(.next)
-                        .onSubmit { focus = .username }
-                }
-            }
-
-            AuthField(label: "Username", icon: "person") {
-                TextField("johndoe123", text: $username)
-                    .textContentType(.username)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused($focus, equals: .username)
-                    .submitLabel(.next)
-                    .onSubmit { focus = .email }
-            }
-
-            AuthField(label: "Email address", icon: "envelope") {
-                TextField(text: $email, prompt: Text(verbatim: "name@example.com")) {
-                    Text("Email address")
-                }
-                    .textContentType(.emailAddress)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .focused($focus, equals: .email)
-                    .submitLabel(.next)
-                    .onSubmit { focus = .password }
-            }
-
-            PasswordField(
-                label: "Password",
-                text: $password,
-                textContentType: .newPassword,
-                focus: $focus,
-                field: .password,
-                onSubmit: { if canSubmit { submit() } }
-            )
-
-            Button(action: submit) {
-                if session.isWorking {
-                    ProgressView().tint(.white).frame(maxWidth: .infinity)
-                } else {
-                    Label("Create account", systemImage: "person.badge.plus")
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
-            .disabled(!canSubmit)
-            .accessibilityLabel(session.isWorking ? "Creating your account" : "Create account")
-            .padding(.top, 2)
-
-            HStack(spacing: 5) {
-                Text("Already have an account?")
-                    .appFont(14, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                Button("Sign in", action: onSignIn)
-                    .appFont(14, weight: .bold)
-                    .foregroundStyle(Theme.accent)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 8)
-        }
-        .onAppear { onScreen = true }
-        .onDisappear { onScreen = false }
-    }
-
-    /// Shows the alert and says it: it appears where the eye is not, and VoiceOver hears it once.
-    private func fail(_ message: String) {
-        error = message
-        if onScreen { AccessibilityNotification.Announcement(message).post() }
-    }
-
-    private func submit() {
-        focus = nil
-        error = nil
-        duplicateName = false
-
-        // Checked here as well as on the server, because a round trip to be told a name is
-        // two letters long is a round trip that did not need making. Same rule, same words.
-        let first = firstName.trimmingCharacters(in: .whitespaces)
-        let last = lastName.trimmingCharacters(in: .whitespaces)
-        let user = username.trimmingCharacters(in: .whitespaces)
-        guard first.count >= 3, last.count >= 3, user.count >= 3 else {
-            fail("First name, last name, and username must be at least 3 characters.")
-            return
-        }
-
-        Task {
-            do {
-                try await session.register(
-                    firstName: first,
-                    lastName: last,
-                    username: user,
-                    email: email.trimmingCharacters(in: .whitespaces),
-                    password: password
-                )
-            } catch APIError.validation(let detail, let code, _) {
-                duplicateName = code == "duplicate_full_name"
-                fail(detail.isEmpty ? "Registration failed. Please check your details." : detail)
-            } catch {
-                fail(AuthErrorCopy.classify(error).message)
             }
         }
     }

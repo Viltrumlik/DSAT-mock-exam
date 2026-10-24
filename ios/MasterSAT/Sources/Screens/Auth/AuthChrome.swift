@@ -1,36 +1,15 @@
 import SwiftUI
 import MasterSATKit
 
-/// The brand panel and the form controls the site's `/login` and `/register` share.
+/// The brand mark and the form controls the auth and account screens share.
 ///
-/// Both pages are the same page with a different form in it, which is why the panel, the
-/// fields and the alert live here rather than being written twice.
+/// The marketing panel that used to live here is gone with the Register form: sign-in is one
+/// quiet page now, and nothing on it is selling the platform to someone the centre has
+/// already enrolled. The brand gradient and the lockup went with it — the three screens that
+/// still show the mark (sign-in, the completion gate, About) each draw it on their own
+/// surface, and the update screen loads the asset itself.
 
 // MARK: - Brand
-
-/// The two blues the auth panel is painted with, `linear-gradient(160deg,#2a68c0,#1f4d9a)`.
-///
-/// Fixed, not `Theme.accent`: the accent shifts to indigo in dark mode so it survives a dark
-/// surface, but this panel *is* the surface and carries white text either way. A student
-/// switching their phone to dark mode should still meet the same blue they see on the site.
-enum Brand {
-    static let top = Color(red: 0.165, green: 0.408, blue: 0.753)
-    static let bottom = Color(red: 0.122, green: 0.302, blue: 0.604)
-
-    /// 160° in CSS terms: 0° points up, so the ramp runs down and slightly right.
-    static let panel = LinearGradient(
-        colors: [top, bottom],
-        startPoint: UnitPoint(x: 0.329, y: 0.030),
-        endPoint: UnitPoint(x: 0.671, y: 0.970)
-    )
-
-    /// What the platform promises, in the site's own words and order.
-    static let promises: [(icon: String, text: String)] = [
-        ("chart.line.uptrend.xyaxis", "Live readiness and score trends"),
-        ("sparkles", "Classroom assessments and monthly midterm exams"),
-        ("checkmark.shield.fill", "Real Exam environment"),
-    ]
-}
 
 /// The mark itself — the shield from `frontend/public/images/logo.png`.
 ///
@@ -52,28 +31,12 @@ struct BrandMark: View {
     }
 }
 
-/// The lockup: mark beside the word, as the site draws it in the panel's top corner.
-struct BrandLockup: View {
-    var height: CGFloat = 44
-    var fontSize: CGFloat = 21
-
-    var body: some View {
-        HStack(spacing: 11) {
-            BrandMark(height: height)
-                .modifier(LogoArrival())
-                // The word beside it names the brand; the mark would read it a second time.
-                .accessibilityHidden(true)
-            Text("MasterSAT")
-                .font(.system(size: fontSize, weight: .heavy))
-                .tracking(-0.4)
-                .foregroundStyle(.white)
-        }
-    }
-}
-
-/// The mark arriving as the panel appears: it springs up from 70% — chrome above the form, never
-/// over it, so a spring is allowed. Under Reduce Motion it only fades in.
-private struct LogoArrival: ViewModifier {
+/// The mark arriving: it springs up from 70% — chrome above the form, never over it, so a
+/// spring is allowed. Under Reduce Motion it only fades in.
+///
+/// Not private: the sign-in page's logo tile wears it too, and the spring is the phase-4 one
+/// so the two screens that show the mark do not arrive differently.
+struct LogoArrival: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var arrived = false
 
@@ -88,200 +51,31 @@ private struct LogoArrival: ViewModifier {
     }
 }
 
-/// The site's `<aside class="authbrand">`.
-///
-/// `compact` is the phone: the panel cannot sit *beside* anything, so it becomes the header
-/// band. The promises come off in that layout when the form behind them is long — five
-/// fields and a pitch do not both fit above the fold, and the fields are what the student
-/// came for.
-struct BrandPanel: View {
-    let headline: String
-    var blurb: String?
-    var showsPromises: Bool = true
-    var compact: Bool = false
-    /// How far down the lockup has to start to clear the status bar. Passed in rather than
-    /// hard-coded, because a Dynamic Island and a notch do not agree on the number.
-    var topInset: CGFloat = 48
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            BrandLockup(height: compact ? 38 : 48, fontSize: compact ? 19 : 21)
-
-            Text(headline)
-                .appFont(compact ? 27 : 40, weight: .heavy)
-                .tracking(compact ? -0.7 : -1.1)
-                .lineSpacing(compact ? 0 : 2)
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, compact ? 18 : 40)
-
-            if let blurb {
-                Text(blurb)
-                    .appFont(compact ? 14 : 16, weight: .medium)
-                    .foregroundStyle(.white.opacity(0.82))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, compact ? 10 : 18)
-            }
-
-            if showsPromises {
-                VStack(alignment: .leading, spacing: compact ? 11 : 16) {
-                    ForEach(Brand.promises, id: \.text) { promise in
-                        PromiseRow(icon: promise.icon, text: promise.text, compact: compact)
-                    }
-                }
-                .padding(.top, compact ? 18 : 34)
-            }
-
-            if !compact {
-                Spacer(minLength: 24)
-                Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-                    .appFont(12, weight: .medium)
-                    .foregroundStyle(.white.opacity(0.7))
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: compact ? nil : .infinity, alignment: .topLeading)
-        .padding(.horizontal, compact ? 22 : 44)
-        .padding(.top, topInset)
-        .padding(.bottom, compact ? 30 : 48)
-        .background(Brand.panel)
-        .overlay { FloatingShapes(compact: compact) }
-        .clipped()
-    }
-}
-
-private struct PromiseRow: View {
-    let icon: String
-    let text: String
-    let compact: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .fill(.white.opacity(0.15))
-                .frame(width: compact ? 28 : 32, height: compact ? 28 : 32)
-                .overlay(
-                    Image(systemName: icon)
-                        .appFont(compact ? 13 : 15, weight: .semibold)
-                        .foregroundStyle(.white)
-                        .accessibilityHidden(true)
-                )
-            Text(text)
-                .appFont(compact ? 14 : 15, weight: .medium)
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-}
-
-/// The panel's drifting shapes — the web's `dz-floatA…D` keyframes.
-///
-/// Decoration, and nothing but: `allowsHitTesting(false)` because an overlay in SwiftUI is
-/// hit-testable by default, and a 280pt circle over a form eats every tap under it.
-private struct FloatingShapes: View {
-    let compact: Bool
-    @State private var drifting = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The panel breathes — unless Reduce Motion is on: then every shape holds still at rest.
-    private var breathing: Bool { drifting && !reduceMotion }
-
-    /// One slow drift, `seconds` each way. Under Reduce Motion a short settle to rest instead,
-    /// which also replaces a drift already running when it is switched on.
-    private func drift(_ seconds: Double) -> Animation {
-        reduceMotion ? .easeOut(duration: 0.3) : .easeInOut(duration: seconds).repeatForever(autoreverses: true)
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            let w = geometry.size.width
-            let h = geometry.size.height
-            ZStack {
-                Circle()
-                    .fill(.white.opacity(0.10))
-                    .frame(width: 280, height: 280)
-                    .position(x: w + 30, y: -20)
-                    .offset(y: breathing ? 14 : -14)
-                    .animation(drift(14), value: breathing)
-
-                RoundedRectangle(cornerRadius: 44, style: .continuous)
-                    .fill(.white.opacity(0.08))
-                    .frame(width: 200, height: 200)
-                    .position(x: w - 60, y: h + 40)
-                    .offset(x: breathing ? -12 : 12)
-                    .animation(drift(16), value: breathing)
-
-                Circle()
-                    .stroke(.white.opacity(0.11), lineWidth: 18)
-                    .frame(width: 150, height: 150)
-                    .position(x: -20, y: h - 60)
-                    .offset(y: breathing ? -16 : 16)
-                    .animation(drift(13), value: breathing)
-
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(.white.opacity(0.07))
-                    .frame(width: 60, height: 60)
-                    .position(x: w - (compact ? 70 : 120), y: compact ? 130 : 90)
-                    .offset(x: breathing ? 10 : -10, y: breathing ? -8 : 8)
-                    .animation(drift(15), value: breathing)
-
-                // The brightest of the shapes, and the only one that reads as an object
-                // rather than a wash — so it stays out of the band, where at this size it
-                // lands squarely on the headline.
-                if !compact {
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(.white.opacity(0.30))
-                        .frame(width: 16, height: 16)
-                        // Below the promises, above the copyright — the one stretch of the
-                        // panel that is always empty, whichever page is showing.
-                        .position(x: 40, y: h * 0.62)
-                        .offset(y: breathing ? 12 : -12)
-                        .animation(drift(11), value: breathing)
-                }
-            }
-        }
-        // Decoration only: it takes no taps and says nothing to VoiceOver.
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
-        .onAppear { if !drifting { drifting = true } }
-    }
-}
-
 // MARK: - Form controls
 
-/// The web's `Field` + `Input`: a bold label, a bordered box, an icon inside it on the left.
-struct AuthField<Accessory: View>: View {
-    let label: String
-    var icon: String?
+/// The sign-in page's input box: a soft grey fill, no border, no label above it — the mockup's
+/// `#f4f5f8` field, where the placeholder is the label.
+///
+/// The fill is a token (`Theme.surface2`, the system's `tertiarySystemFill`), never the literal
+/// `#f4f5f8`: a fixed near-white box in dark mode is a white slab with white text on it, which
+/// is exactly the trap `Theme.ink`/`Theme.onInk` exists to stop elsewhere.
+///
+/// `minHeight`, not `height`: 48 pt clears the 44 pt target the mockup's 40 pt box does not
+/// (it was drawn 270 pt wide), and at AX3 the box has to grow with the type rather than clip it.
+struct SoftField<Content: View>: View {
     /// Bumped when what was typed here was refused — the box shakes (`focusShake`).
     var shakes: Int = 0
-    @ViewBuilder let content: () -> Accessory
+    @ViewBuilder let content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label)
-                .appFont(13, weight: .bold)
-                .foregroundStyle(Theme.textSecondary)
-            HStack(spacing: 10) {
-                if let icon {
-                    Image(systemName: icon)
-                        .appFont(14, weight: .semibold)
-                        .foregroundStyle(Theme.textLabel)
-                        .capDynamicType()
-                        .frame(width: 16)
-                        .accessibilityHidden(true)
-                }
-                content()
-            }
-            .padding(.horizontal, 13)
-            .frame(height: 48)
-            .background(Theme.card)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
-            )
-            .focusShake(shakes, cornerRadius: Theme.Radius.control)
+        HStack(spacing: 8) {
+            content()
         }
+        .padding(.horizontal, 13)
+        .frame(minHeight: 48)
+        .background(Theme.surface2)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .focusShake(shakes, cornerRadius: Theme.Radius.control)
     }
 }
 
@@ -338,6 +132,9 @@ extension AuthAlert where Action == EmptyView {
 /// Swapping `SecureField` for `TextField` replaces the view, and a replaced view is not the
 /// focused one — so focus is put back by hand. Without that, revealing what you typed costs
 /// you the keyboard and the caret.
+///
+/// It sits in a `SoftField`, where there is no label above the box: `label` is the placeholder
+/// as well as the name VoiceOver reads, so the box still says what it is.
 struct PasswordField: View {
     let label: String
     @Binding var text: String
@@ -352,12 +149,14 @@ struct PasswordField: View {
     @State private var revealed = false
 
     var body: some View {
-        AuthField(label: label, icon: "lock", shakes: shakes) {
+        SoftField(shakes: shakes) {
             Group {
+                // `verbatim` for the placeholder: a plain string is a LocalizedStringKey, which
+                // SwiftUI parses as markdown before drawing it.
                 if revealed {
-                    TextField(text: $text, prompt: Text(verbatim: "••••••••")) { Text(label) }
+                    TextField(text: $text, prompt: Text(verbatim: label)) { Text(verbatim: label) }
                 } else {
-                    SecureField(text: $text, prompt: Text(verbatim: "••••••••")) { Text(label) }
+                    SecureField(text: $text, prompt: Text(verbatim: label)) { Text(verbatim: label) }
                 }
             }
             .textContentType(textContentType)
@@ -385,8 +184,8 @@ struct PasswordField: View {
     }
 }
 
-/// Which box the keyboard is in. Shared by both forms so `PasswordField` can name a field
-/// on either of them.
+/// Which box the keyboard is in. Two, since the sign-in page is the only form here: the one
+/// identity field (`email` — it also takes a phone or a username) and the password.
 enum AuthFocus: Hashable {
-    case email, password, firstName, lastName, username
+    case email, password
 }
