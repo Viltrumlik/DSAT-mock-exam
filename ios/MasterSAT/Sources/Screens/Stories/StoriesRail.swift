@@ -15,9 +15,11 @@ import MasterSATKit
 ///   the app cannot read counts as a failure, not as a school with nothing to say.
 ///
 /// While hidden it is zero points tall. A cancelled load (the student left the screen mid-
-/// request) is neither a failure nor an answer: the rail goes back to `.idle`, which the next
-/// appearance loads again, rather than staying a zero-height `.loading` for the life of the
-/// screen.
+/// request) is neither a failure nor an answer, so it is not drawn as one: the rail goes back
+/// to `.idle`. What asks again is `.task(id: refreshID)` — Today bumps `refreshTick` on every
+/// return to the tab and on pull-to-refresh (`TodayView.onAppear`), and the task re-runs on
+/// each appearance besides. Nothing else re-triggers the rail: the eager `SlotStack` inside the
+/// `TabView` is never torn down.
 struct StoriesRail: View {
     var refreshID: Int = 0
 
@@ -101,6 +103,10 @@ struct StoriesRail: View {
                     .appFont(13, weight: .bold)
                     .underline()
                     .foregroundStyle(Theme.accent)
+                    // 13-pt underlined text is a 16-pt target; this is the rail's only
+                    // control, and the row is already its own line.
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
@@ -122,9 +128,10 @@ struct StoriesRail: View {
             loadedAt = Date()
             loadedForRefresh = refreshID
         } catch {
-            // Leaving the screen cancels the request; that is not a failure to report. It
-            // must not leave the rail waiting for ever either, so a first load that was
-            // cancelled goes back to `.idle` and the next appearance asks again.
+            // Leaving the screen cancels the request; that is not a failure to report. A
+            // first load that was cancelled goes back to `.idle`, so the state says "not
+            // asked yet" rather than "asking"; the next bump of `refreshID`, or the next
+            // appearance, asks again either way.
             if Task.isCancelled {
                 if phase == .loading { phase = .idle }
                 return
