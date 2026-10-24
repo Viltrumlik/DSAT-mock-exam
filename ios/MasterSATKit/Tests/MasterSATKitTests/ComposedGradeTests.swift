@@ -48,6 +48,19 @@ import Testing
         #expect(try submission(composed: "final").composedGrade == nil)
     }
 
+    @Test("A state this build has never heard of is not read as a settled grade")
+    func unknownState() throws {
+        // The failure this guards: `awaiting` and `unavailable` both come out false for an
+        // unrecognised word, so the percent beside them prints as the last word on a grade the
+        // server may not have finished with. A backend that adds a state must not silently
+        // turn an old app into a liar — it shows the mark it always showed.
+        let future = try submission(composed: grade("awaiting_second_marker", percent: 60))
+        #expect(future.composedGrade == nil)
+        #expect(ComposedGradeRules.pillText(review: mark, grade: future.composedGrade) == "50 / 100")
+        #expect(try submission(composed: grade("")).composedGrade == nil)
+        #expect(try submission(composed: grade("FINAL")).composedGrade == nil)
+    }
+
     @Test("The final state carries the whole grade and both sides of the split")
     func final() throws {
         let composed = try #require(
@@ -60,6 +73,20 @@ import Testing
         #expect(composed.automaticWeight == 80)
         #expect(composed.awaiting == false)
         #expect(composed.unavailable == false)
+    }
+
+    @Test("The two sides of the grade read the same quoted as they do unquoted")
+    func percentsAsStrings() throws {
+        // DRF writes a `DecimalField` as a string in places. A percent lost to a pair of
+        // quotes is a split sentence that names no numbers and a settled card that never
+        // appears — the one bug this whole type exists to stop.
+        let composed = try #require(
+            try submission(composed: grade("final", percent: "82.00", automatic: "90.50", manual: "50.00")).composedGrade
+        )
+        #expect(composed.percent == 82)
+        #expect(composed.automaticPercent == 90.5)
+        #expect(composed.manualPercent == 50)
+        #expect(ComposedGradeRules.pillText(review: mark, grade: composed) == "82%")
     }
 
     @Test("Weights arriving as strings, out of range, or missing still read as 0-100 that sum")
@@ -90,6 +117,39 @@ import Testing
         #expect(ComposedGradeRules.percentText(0) == "0%")
         // Never "-0%".
         #expect(ComposedGradeRules.percentText(-0.001) == "0%")
+        // A full grade is "100%", not "100.00%" — the zeros the website drops, dropped here.
+        #expect(ComposedGradeRules.percentText(100) == "100%")
+        #expect(ComposedGradeRules.percentText(90.10) == "90.1%")
+        #expect(ComposedGradeRules.percentText(90.004) == "90%")
+    }
+
+    @Test("A composition with no total of its own leaves the card with whatever the mark was")
+    func pillWithoutATotal() throws {
+        // `final` and nothing numeric with it: there is no grade to print, and with no review
+        // either there is nothing at all. A card that invents a figure here is the failure.
+        let composed = try submission(composed: grade("final")).composedGrade
+        #expect(ComposedGradeRules.pillText(review: nil, grade: composed) == nil)
+        #expect(ComposedGradeRules.pillText(review: mark, grade: composed) == "50 / 100")
+    }
+
+    @Test("Which state draws a sentence, and which number may be called auto-marked")
+    func readings() throws {
+        func composed(_ state: String, percent: Any? = NSNull()) throws -> ComposedGrade? {
+            try submission(composed: grade(state, percent: percent)).composedGrade
+        }
+        #expect(try ComposedGradeRules.isPending(composed("awaiting_manual_mark", percent: 72)))
+        #expect(try ComposedGradeRules.isPending(composed("unavailable")))
+        #expect(try !ComposedGradeRules.isPending(composed("final", percent: 82)))
+        // No composition at all: the card is the card it always was.
+        #expect(!ComposedGradeRules.isPending(nil))
+
+        // "Auto-marked" labels the raw mark and nothing else: a composed grade has a teacher's
+        // judgement inside it, and a sentence is not a number at all.
+        #expect(try !ComposedGradeRules.showsRawMark(composed("final", percent: 82)))
+        #expect(try !ComposedGradeRules.showsRawMark(composed("awaiting_manual_mark", percent: 72)))
+        #expect(try !ComposedGradeRules.showsRawMark(composed("unavailable")))
+        #expect(try ComposedGradeRules.showsRawMark(composed("final")))
+        #expect(ComposedGradeRules.showsRawMark(nil))
     }
 
     @Test("Each state puts its own word where the mark used to be")

@@ -4,8 +4,9 @@ import Foundation
 ///
 /// A homework can give the teacher's mark a share of the grade — `manual_grade_weight_percent`
 /// — and then `review.grade` is that mark and nothing more: with a 20% share, a teacher's 50
-/// sits inside a grade the server composed as 90. The phone used to print the mark on its own,
-/// so a student read 50 where their teacher's screens said 90.
+/// sits inside a grade the server composed as 82 (an automatic 90 on the other 80%). The phone
+/// used to print the mark on its own, so a student read 50 where their teacher's screens
+/// said 82.
 ///
 /// The arithmetic is the server's (`backend/classes/grade_composition.py`) and is NEVER redone
 /// here. The `state` is the server's own word too: "the teacher has not marked yet" and "we
@@ -54,11 +55,17 @@ public struct ComposedGrade: Decodable, Sendable, Equatable {
         self.unavailable = unavailable
     }
 
-    // The server's three state names. Spelled here rather than compared inline so that a
-    // rename on the backend is one grep away from this file.
+    // The server's four state names (`backend/classes/grade_composition.py`). Spelled here
+    // rather than compared inline so that a rename on the backend is one grep away from this
+    // file.
     static let stateNoManualComponent = "no_manual_component"
     static let stateAwaitingManual = "awaiting_manual_mark"
+    static let stateFinal = "final"
     static let stateUnavailable = "unavailable"
+
+    /// The three that compose something. Anything else — a state this build has never heard
+    /// of, including one a later backend adds — is not read as a settled grade.
+    static let composingStates: Set<String> = [stateAwaitingManual, stateFinal, stateUnavailable]
 
     /// Thrown for a payload that composes nothing — no manual component, or a shape this
     /// cannot read. Both mean the same thing to every caller: show the raw mark, as before.
@@ -76,8 +83,13 @@ public struct ComposedGrade: Decodable, Sendable, Equatable {
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         // A payload with no readable `state` is malformed, not "final with no numbers": the
-        // one thing this type must never do is invent a grade, so it declines instead.
-        guard let state = try? c.decode(String.self, forKey: .state), state != Self.stateNoManualComponent else {
+        // one thing this type must never do is invent a grade, so it declines instead. The same
+        // goes for a state this build does not know: `awaiting` and `unavailable` would both
+        // come out false and the percent beside them would print as the final word on a grade
+        // the server has not finished with. An app a year behind the backend shows the mark it
+        // always showed instead, which is the one answer that cannot be wrong.
+        guard let state = try? c.decode(String.self, forKey: .state),
+              Self.composingStates.contains(state) else {
             throw NothingComposed()
         }
         percent = Self.number(c, .percent)
@@ -116,6 +128,23 @@ public enum ComposedGradeRules {
         while text.hasSuffix("0") { text.removeLast() }
         if text.hasSuffix(".") { text.removeLast() }
         return text + "%"
+    }
+
+    /// Whether the figure is a sentence rather than a number — the two states that have no
+    /// total to show yet. A card that draws it as a figure puts a sentence in the corner where
+    /// a percentage goes, so the page asks this before it draws.
+    public static func isPending(_ grade: ComposedGrade?) -> Bool {
+        guard let grade else { return false }
+        return grade.awaiting || grade.unavailable
+    }
+
+    /// Whether the number on show is the review's own raw mark rather than a composed grade.
+    ///
+    /// What "Auto-marked" is allowed to label. A composed grade is nobody's single mark — it
+    /// has a teacher's judgement inside it — so the label would be a claim about a number no
+    /// engine produced.
+    public static func showsRawMark(_ grade: ComposedGrade?) -> Bool {
+        !isPending(grade) && grade?.percent == nil
     }
 
     /// The figure in the student's feedback card.

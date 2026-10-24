@@ -21,6 +21,12 @@ import MasterSATKit
 /// Drawn as an empty view in `RootTabView`'s `.background { }`, for `RewardsRefresher`'s
 /// reason: the polling and the loaded event live here, so a change to either rebuilds this
 /// and not the tab view, whose rebuild would take the navigation stacks with it.
+///
+/// The waiting is here; the SHEET is not. It is the router's third sheet, presented by
+/// `RootTabView` beside the Me and certificate sheets, because a sheet presented from this
+/// zero-size view is a second host presenting at the same time: a deep link arriving while
+/// the invitation was up set `showingMe` against an already-presenting view, SwiftUI dropped
+/// the Me sheet and left the flag true, and every later tap on the avatar did nothing.
 struct EventInvitePrompt: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
@@ -28,29 +34,20 @@ struct EventInvitePrompt: View {
     /// Only to ask whether a cover has the screen — never rendered from, so this view does not
     /// rebuild with the celebrations.
     @Environment(CelebrationCenter.self) private var celebrations
-    @Environment(\.openURL) private var openURL
     @State private var model = EventInviteModel()
 
     var body: some View {
-        @Bindable var model = model
         Color.clear
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
             .task {
-                await model.run(api: EventsAPI(client: session.client), stageIsClear: stageIsClear)
-            }
-            .sheet(item: $model.invitation) { event in
-                EventInviteSheet(
-                    event: event,
+                await model.run(
                     api: EventsAPI(client: session.client),
-                    onSeeAllEvents: {
-                        model.invitation = nil
-                        // Through the router, as every route in this app is: `show` closes the
-                        // other sheets and lands on Explore's Events page at its root.
-                        router.open(.events, baseURL: session.client.config.baseURL) { openURL($0) }
-                    },
-                    onClose: { model.invitation = nil }
+                    stageIsClear: stageIsClear,
+                    // Handed to the router, which presents it: the one host, the one sheet
+                    // at a time.
+                    present: { router.eventInvite = $0 }
                 )
             }
     }
@@ -66,15 +63,18 @@ struct EventInvitePrompt: View {
     private func stageIsClear() -> Bool {
         !router.showingMe
             && router.certificate == nil
+            && router.eventInvite == nil
             && !celebrations.isCovered
             && !prompts.isTourShowing
             && !EventsScreenPresence.shared.isOpen
     }
 }
 
-/// The waiting, and the event that came out of it.
+/// The waiting, and nothing else: the event it settles on is handed to the router, which
+/// owns every sheet. Nothing here is rendered from, so it is a plain class — an observable
+/// one would only invite a future reader to draw from it and bring the tab view's rebuild
+/// back with them.
 @MainActor
-@Observable
 final class EventInviteModel {
     /// Long enough for the page behind it to settle, short enough to still read as
     /// "on sign-in" — the website's own 2200 ms.
@@ -82,16 +82,16 @@ final class EventInviteModel {
     /// How often to look again while something else still has the screen.
     private static let recheck: Duration = .seconds(1)
 
-    /// The event on screen. Bound to the sheet, so closing it clears this.
-    var invitation: LearningEvent?
-
-    /// Nothing renders from either of these, so they stay out of observation.
-    @ObservationIgnored private let memory = EventInviteMemory()
+    private let memory = EventInviteMemory()
     /// One run per launch. `.task` runs again whenever the view it is on is rebuilt with a new
     /// identity, and a second run would ask about a second event in the same sitting.
-    @ObservationIgnored private var hasRun = false
+    private var hasRun = false
 
-    func run(api: EventsAPI, stageIsClear: @escaping @MainActor () -> Bool) async {
+    func run(
+        api: EventsAPI,
+        stageIsClear: @escaping @MainActor () -> Bool,
+        present: @escaping @MainActor (LearningEvent) -> Void
+    ) async {
         guard !hasRun else { return }
         hasRun = true
 
@@ -111,7 +111,7 @@ final class EventInviteModel {
             if stageIsClear() {
                 // Marked as it opens, not as it was chosen.
                 memory.remember(featured.id)
-                invitation = featured
+                present(featured)
                 return
             }
             do { try await Task.sleep(for: Self.recheck) } catch { return }
@@ -122,30 +122,42 @@ final class EventInviteModel {
 /// Whether the Events screen is on screen right now.
 ///
 /// A `NavigationPath` cannot be read back, so the only honest answer comes from the page
-/// itself saying when it is up. A count rather than a flag: the page can appear on a second
-/// tab before the first one's disappearance arrives, and a flag would end up stuck false.
+/// itself saying when it is up. A SET of the pages currently up, rather than a count: the
+/// page can appear on a second tab before the first one's disappearance arrives, so a flag
+/// would end up stuck false — and a count, which this was, ran the other way. `opened()` had
+/// no ceiling, so a single unmatched `onAppear` (a page rebuilt with a new identity, a
+/// disappearance SwiftUI never sent) left the count above zero for the life of the process
+/// and the invitation never fired again. Keyed by the view's own token, a repeated `opened()`
+/// from the same page changes nothing.
 @MainActor
 final class EventsScreenPresence {
     static let shared = EventsScreenPresence()
 
-    private var open = 0
+    private var open: Set<UUID> = []
 
-    var isOpen: Bool { open > 0 }
+    var isOpen: Bool { !open.isEmpty }
 
-    func opened() { open += 1 }
+    func opened(_ token: UUID) { open.insert(token) }
 
-    func closed() { open = max(0, open - 1) }
+    func closed(_ token: UUID) { open.remove(token) }
 }
 
 extension View {
     /// Put on the Events page: while it is up, the event invitation holds off.
-    ///
-    /// `@MainActor` because the presence it touches is: a `View` extension is not isolated by
-    /// the protocol, so without this the two closures below would be nonisolated code reaching
-    /// main-actor state.
-    @MainActor
     func marksEventsScreenOpen() -> some View {
-        onAppear { EventsScreenPresence.shared.opened() }
-            .onDisappear { EventsScreenPresence.shared.closed() }
+        modifier(EventsScreenPresenceMarker())
+    }
+}
+
+/// A modifier rather than two closures on the call site, because the token has to be state:
+/// one identity per living view, so the `onDisappear` clears exactly what its own `onAppear`
+/// set and nothing else's.
+private struct EventsScreenPresenceMarker: ViewModifier {
+    @State private var token = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { EventsScreenPresence.shared.opened(token) }
+            .onDisappear { EventsScreenPresence.shared.closed(token) }
     }
 }

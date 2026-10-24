@@ -295,11 +295,15 @@ struct HomeworkDetailView: View {
         let tone = returned ? Theme.warning : Theme.success
         // The two states that have no number to show say a sentence instead, and a sentence
         // does not belong in the figure's corner — it goes on its own line under the header.
-        let pending = (grade?.awaiting ?? false) || (grade?.unavailable ?? false)
+        // Which state that is, and what "Auto-marked" may label, are the kit's readings of the
+        // grade (`ComposedGradeRules`); this page only draws them.
+        let pending = ComposedGradeRules.isPending(grade)
         let figure = ComposedGradeRules.pillText(review: review, grade: grade)
-        // "Auto-marked" labels the raw mark. A composed grade is nobody's single mark, so the
-        // label would be a claim about a number that has a teacher's judgement inside it.
-        let showsRawMark = !pending && grade?.percent == nil
+        let showsRawMark = ComposedGradeRules.showsRawMark(grade)
+        // A total that could not be worked out is a failure, and the hourglass this page uses
+        // everywhere means "not yet": under it a student reads a broken grade as a queue they
+        // are in. The two states look different because they ARE different.
+        let failed = grade?.unavailable ?? false
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 IconTile(systemName: returned ? "arrow.uturn.backward.circle.fill" : "checkmark.seal.fill", tone: tone)
@@ -329,10 +333,10 @@ struct HomeworkDetailView: View {
                 }
             }
             if let figure, pending {
-                Chip(text: figure, icon: "hourglass", tone: .warning)
+                Chip(text: figure, icon: failed ? "exclamationmark.triangle.fill" : "hourglass", tone: .warning)
             }
             if let grade, let sentence = ComposedGradeRules.breakdownSentence(grade) {
-                gradeBreakdown(sentence, failed: grade.unavailable)
+                gradeBreakdown(sentence, failed: failed)
             }
             if let feedback = review.feedback, !feedback.isEmpty {
                 Text(feedback)

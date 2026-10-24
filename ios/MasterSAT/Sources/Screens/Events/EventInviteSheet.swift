@@ -79,6 +79,8 @@ struct EventInviteSheet: View {
         return parts.joined(separator: " · ")
     }
 
+    private static let confirmed = "You're in — your seat is saved."
+
     /// The seat is taken, said plainly; the sheet closes on its own a beat later so the
     /// student is not left pressing a button to acknowledge good news.
     ///
@@ -86,7 +88,7 @@ struct EventInviteSheet: View {
     /// and a half is one that gets read out halfway and then disappears mid-sentence.
     private var confirmation: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("You're in — your seat is saved.", systemImage: "checkmark.circle.fill")
+            Label(Self.confirmed, systemImage: "checkmark.circle.fill")
                 .appFont(14, weight: .heavy)
                 .foregroundStyle(Theme.success)
                 .fixedSize(horizontal: false, vertical: true)
@@ -95,7 +97,11 @@ struct EventInviteSheet: View {
                     .buttonStyle(PrimaryButtonStyle(fullWidth: true))
             }
         }
+        // Said out loud, because the buttons that were focused have just been replaced by this
+        // card: VoiceOver's focus is left orphaned on a view that no longer exists, and the one
+        // thing the student pressed the button to find out goes unspoken.
         .task {
+            AccessibilityNotification.Announcement(Self.confirmed).post()
             guard !voiceOver else { return }
             try? await Task.sleep(for: .seconds(1.4))
             onClose()

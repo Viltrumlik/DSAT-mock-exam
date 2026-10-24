@@ -16,6 +16,18 @@ import Testing
         #expect(UZS.format(12_345_678) == "12,345,678 UZS")
     }
 
+    @Test("The grouping is the same for the amounts the app actually holds")
+    func groupingOfDoubles() {
+        // Every figure on the panel arrives as a `Double`, and an untyped literal above picks
+        // the `Int` overload — so the one the app calls went unpinned while its tests passed.
+        #expect(UZS.format(1_250_000.0) == "1,250,000 UZS")
+        #expect(UZS.format(0.0) == "0 UZS")
+        #expect(UZS.format(999.0) == "999 UZS")
+        #expect(UZS.format(1_000.0) == "1,000 UZS")
+        #expect(UZS.format(12_345_678.0) == "12,345,678 UZS")
+        #expect(UZS.format(-480_000.0) == "-480,000 UZS")
+    }
+
     @Test("Nothing owed never prints as minus nothing")
     func negativeZero() {
         #expect(UZS.format(-0.0) == "0 UZS")
@@ -102,6 +114,37 @@ import Testing
         #expect(try decode(["linked": false]).finance == nil)
     }
 
+    @Test("An answer with no `linked` key at all is read as unlinked, never as a linked zero")
+    func missingLinkedKey() throws {
+        // The key the whole payload hangs off. Reading its absence as "linked" would draw a
+        // balance of nothing over a student the learning center simply has not tied up yet.
+        #expect(try decode([:] as [String: Any]) == .unlinked)
+        #expect(try decode(["balance": -480_000]) == .unlinked)
+    }
+
+    @Test("A balance that is not a number is unknown, never zero")
+    func unreadableBalance() throws {
+        // `Double("—")` is nil, and nil here means "lc-up never said". Falling back to 0 would
+        // tell a student in debt that they are square with the centre.
+        let finance = try #require(try decode(Self.payload(balance: "—", debt: "n/a")).finance)
+        #expect(finance.balance == nil)
+        #expect(finance.debt == nil)
+        #expect(FinanceRules.balanceLine(finance) == nil)
+    }
+
+    @Test("A payments key that is not a list is a payload this does not understand")
+    func paymentsNotAList() throws {
+        // Swallowed into an empty list, this drew "No payments recorded yet" over a student's
+        // real history. Error is not empty: the list itself throws and the panel says so.
+        var object = Self.payload()
+        object["payments"] = ["count": 3]
+        #expect(throws: (any Error).self) { try decode(object) }
+        // Absent is still fine — it means none.
+        var noKey = Self.payload()
+        noKey.removeValue(forKey: "payments")
+        #expect(try decode(noKey).finance?.payments.isEmpty == true)
+    }
+
     @Test("A balance lc-up never sent stays unknown")
     func noBalance() throws {
         let finance = try #require(try decode(Self.payload(balance: NSNull(), debt: NSNull())).finance)
@@ -131,6 +174,21 @@ import Testing
         #expect(state.finance?.debt == 480_000)
         // The whole URL, not `url.path`, which drops the trailing slash Django insists on.
         #expect(server.requests.first?.url?.absoluteString == "https://mastersat.uz/api/lcup/me/finance/")
+    }
+
+    @Test("A refusal reaches the caller rather than passing for an empty account")
+    func apiPropagatesFailure() async throws {
+        // Everything downstream is built on this throwing: the panel's own error line with its
+        // "Try again", and the frozen screen leaving the administrator's wording alone instead
+        // of inventing a debt of nothing.
+        let server = StubServer()
+        server.handler = { _ in .json(["detail": "Server error"], status: 500) }
+        let api = FinanceAPI(client: APIClient(
+            config: APIConfig(baseURL: URL(string: "https://mastersat.uz")!, clientIdentifier: "ios/test"),
+            storage: InMemoryTokenStorage(TokenPair(access: "A", refresh: "R")),
+            session: server.session()
+        ))
+        await #expect(throws: APIError.self) { try await api.mine() }
     }
 }
 
