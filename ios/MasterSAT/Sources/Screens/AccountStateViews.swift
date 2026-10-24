@@ -39,6 +39,10 @@ struct FrozenAccountView: View {
                     .appFont(17, weight: .heavy, monospacedDigits: true)
                     .foregroundStyle(Theme.danger)
                     .multilineTextAlignment(.center)
+                    // The amount is what this screen exists to say, and it is the most
+                    // compressible thing on it: without this, the largest text sizes truncate it
+                    // in preference to the paragraphs around it.
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
                     .background(
@@ -165,6 +169,21 @@ struct StateScreen<Detail: View, Actions: View>: View {
     }
 
     var body: some View {
+        // Scrollable, because at the accessibility text sizes a title, a message, an amount, a
+        // paragraph and two full-width buttons are taller than a phone: without this the buttons
+        // — the only way off a frozen account — go off the bottom with no way to reach them.
+        // The minimum height keeps the screen centred when it does fit, which is every other
+        // size: a bare ScrollView would collapse the Spacers and sit it all under the status bar.
+        GeometryReader { proxy in
+            ScrollView {
+                content.frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .background(Theme.background.ignoresSafeArea())
+    }
+
+    private var content: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 40)
             switch mark {
@@ -194,8 +213,8 @@ struct StateScreen<Detail: View, Actions: View>: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 460)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.background.ignoresSafeArea())
+        // The height and the background belong to the scroll view above, not to its content.
+        .frame(maxWidth: .infinity)
     }
 }
 

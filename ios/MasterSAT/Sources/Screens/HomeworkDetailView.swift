@@ -41,6 +41,11 @@ struct HomeworkDetailView: View {
     @State private var freshRow: AssignmentListing?
     @State private var detailError: String?
     @State private var submission: Submission?
+    /// The homework's composed grade, which the server serves whether or not a hand-in exists:
+    /// a word set mastered on Monday settles the automatic side days before the upload slot is
+    /// used. Held beside the row so that grade — and the line saying it can still go up — is
+    /// shown in that week, instead of waiting for something to show it on.
+    @State private var composedGrade: ComposedGrade?
     /// The hand-in could not be read. Its section says so rather than offering a first
     /// hand-in over work that may already be there.
     @State private var submissionError: String?
@@ -175,7 +180,12 @@ struct HomeworkDetailView: View {
                 if let submission, let review = submission.review,
                    ["REVIEWED", "RETURNED"].contains((submission.status ?? "").uppercased()) {
                     reviewCard(review, grade: submission.composedGrade, returned: submission.isReturned)
-                } else if let grade = submission?.composedGrade,
+                // The standalone grade stands in only while there is no row — never beside one.
+                // `submitHomework` answers with a bare `Submission`, so after a hand-in the row is
+                // fresh while the grade read before it is stale; preferring the row by its
+                // presence, not by `??` on the grade, is what keeps the old "already decided"
+                // card from surviving next to the new feedback.
+                } else if let grade = submission == nil ? composedGrade : submission?.composedGrade,
                           let settled = ComposedGradeRules.settledSoFar(grade) {
                     settledSoFarCard(settled)
                 }
@@ -934,11 +944,14 @@ struct HomeworkDetailView: View {
         async let fullAssignment = session.student.assignment(classroomId: classroomId, id: assignmentId)
         async let studentRow = readRow(readsRow)
         do {
-            // nil is "nothing handed in yet" — a normal state, not a failure.
-            submission = try await session.student.mySubmission(
+            // A nil row is "nothing handed in yet" — a normal state, not a failure. The grade
+            // comes back beside it because it can exist without it.
+            let answer = try await session.student.mySubmissionAnswer(
                 classroomId: classroomId,
                 assignmentId: assignmentId
             )
+            submission = answer.submission
+            composedGrade = answer.composedGrade
         } catch where Task.isCancelled {
             // Leaving the page (a push over it, a pop) cancels `.task`, and `APIClient` wraps that
             // as a transport failure. Not a failure, so nothing is stored: the page that comes

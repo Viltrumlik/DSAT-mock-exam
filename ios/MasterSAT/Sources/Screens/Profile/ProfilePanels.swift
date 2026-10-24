@@ -461,6 +461,10 @@ struct ProfilePaymentsPanel: View {
             Text(verbatim: FinanceRules.amountText(payment))
                 .appFont(13, weight: .semibold, monospacedDigits: true)
                 .lineLimit(1)
+                // At the accessibility sizes the row stacks and the amount takes its own line,
+                // where "1,250,000 UZS" is still wider than the panel. A shrunk amount can be
+                // read; a truncated one ("1,250,0…") cannot.
+                .minimumScaleFactor(0.7)
         }
         .padding(.vertical, 7)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -481,6 +485,8 @@ struct ProfilePaymentsPanel: View {
                 .appFont(size, weight: .semibold, monospacedDigits: true)
                 .foregroundStyle(tone ?? .primary)
                 .lineLimit(1)
+                // Same reason as the payment row's amount: shrink the figure rather than cut it.
+                .minimumScaleFactor(0.7)
         }
         .accessibilityElement(children: .combine)
     }

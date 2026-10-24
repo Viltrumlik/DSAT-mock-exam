@@ -25,6 +25,9 @@ struct EventInvitePrompt: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
     @Environment(AppPrompts.self) private var prompts
+    /// Only to ask whether a cover has the screen — never rendered from, so this view does not
+    /// rebuild with the celebrations.
+    @Environment(CelebrationCenter.self) private var celebrations
     @Environment(\.openURL) private var openURL
     @State private var model = EventInviteModel()
 
@@ -54,14 +57,16 @@ struct EventInvitePrompt: View {
 
     /// Whether the screen is free for one more thing to ask for it.
     ///
-    /// The router's own observable state and `AppPrompts` — not `CelebrationCenter`'s cover
-    /// count, which is private to it: a view gating on that would read it once and never hear
-    /// that it changed. Read fresh on each pass of the loop rather than observed, so nothing
-    /// here rebuilds the shell.
+    /// Every one of these is READ on each pass of the loop, never observed: rendering from them
+    /// would rebuild the shell, and `CelebrationCenter.isCovered` could not be observed anyway
+    /// (the count behind it is `@ObservationIgnored`). Asking at the moment of the check is what
+    /// makes a cover opened long after the first pass — a vocab game, the assessment runner,
+    /// Live Quiz, the story viewer — count just as much as one that was up at the start.
     @MainActor
     private func stageIsClear() -> Bool {
         !router.showingMe
             && router.certificate == nil
+            && !celebrations.isCovered
             && !prompts.isTourShowing
             && !EventsScreenPresence.shared.isOpen
     }

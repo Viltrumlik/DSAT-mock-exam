@@ -174,11 +174,20 @@ public struct StudentAPI: Sendable {
     // MARK: - Homework submission
 
     /// The student's submission, or `nil` when nothing has been handed in yet.
+    ///
+    /// For a page that shows the grade, prefer `mySubmissionAnswer`: a weighted homework has a
+    /// composed grade before it has a row, and this method cannot carry one.
     public func mySubmission(classroomId: Int, assignmentId: Int) async throws -> Submission? {
+        try await mySubmissionAnswer(classroomId: classroomId, assignmentId: assignmentId).submission
+    }
+
+    /// The row and the composed grade together — `MySubmissionAnswer` says why the grade
+    /// outlives the row.
+    public func mySubmissionAnswer(classroomId: Int, assignmentId: Int) async throws -> MySubmissionAnswer {
         try await client.send(
             .get("/classes/\(classroomId)/assignments/\(assignmentId)/my-submission/"),
             as: MaybeSubmission.self
-        ).submission
+        ).answer
     }
 
     /// One assignment, whole.

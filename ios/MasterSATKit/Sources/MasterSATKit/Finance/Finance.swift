@@ -117,11 +117,14 @@ public struct MyFinance: Decodable, Sendable, Equatable {
         frozenForDebt = ((try? c.decodeIfPresent(Bool.self, forKey: .frozenForDebt)) ?? nil) ?? false
         freezeDay = FinanceDecoding.number(c, .freezeDay).map { Int($0.rounded()) } ?? 1
         monthlyCost = FinanceDecoding.number(c, .monthlyCost) ?? 0
-        // A group or a payment the app cannot read must not blank the panel: the rest of the
-        // money is still the student's to see.
-        groups = ((try? c.decodeIfPresent(CommunityLossyList<FinanceGroupCost>.self, forKey: .groups)) ?? nil)?
+        // A group or a payment ROW the app cannot read must not blank the panel: the rest of the
+        // money is still the student's to see. But a `payments` key that is not a list at all is
+        // a payload this does not understand, and swallowing it would draw "No payments recorded
+        // yet" over a student's real history — error is not empty. So the list itself throws and
+        // only its rows are lossy. An absent key is still fine: it means none.
+        groups = try c.decodeIfPresent(CommunityLossyList<FinanceGroupCost>.self, forKey: .groups)?
             .elements ?? []
-        payments = ((try? c.decodeIfPresent(CommunityLossyList<FinancePayment>.self, forKey: .payments)) ?? nil)?
+        payments = try c.decodeIfPresent(CommunityLossyList<FinancePayment>.self, forKey: .payments)?
             .elements ?? []
     }
 }

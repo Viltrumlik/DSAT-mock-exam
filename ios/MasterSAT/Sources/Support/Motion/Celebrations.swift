@@ -137,6 +137,15 @@ final class CelebrationCenter {
 
     private var covered: Bool { sheetUp || coversUp > 0 }
 
+    /// Whether a sheet or a full-screen cover has the screen — which every cover already tells
+    /// this centre through `coversCelebrations`, making it the one place that knows.
+    ///
+    /// Deliberately not observable: the count behind it is `@ObservationIgnored`, so a view
+    /// rendering from this would read it once and never hear it change. It is for code that
+    /// ASKS at the moment it needs to know — the event invitation, deciding whether the stage
+    /// is free (`EventInvitePrompt.stageIsClear`).
+    var isCovered: Bool { covered }
+
     /// How the pill rolls when an entry resolves: a quick fade under Reduce Motion.
     private var settleAnimation: Animation { reduceMotion ? Motion.focus : Motion.snappy }
 
