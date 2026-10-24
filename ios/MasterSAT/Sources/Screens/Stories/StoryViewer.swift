@@ -26,6 +26,13 @@ struct StoryViewer: View {
     @State private var pressStart: Date?
     @State private var imageSettled: Bool
     @State private var dragOffset: CGFloat = 0
+    /// When the caption was last touched. A long notice scrolls, and six seconds is not enough
+    /// to read one — a story swapped mid-sentence would make the scrolling pointless.
+    ///
+    /// An instant rather than a flag because a scroll view can swallow the end of a gesture it
+    /// takes over: a flag set on touch and cleared on release could stick, and a story that
+    /// never advances again is the worse bug. This expires by itself.
+    @State private var captionTouchedAt: Date?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -44,9 +51,17 @@ struct StoryViewer: View {
 
     private var story: Story? { stories.indices.contains(index) ? stories[index] : nil }
 
+    /// How long a touch on the caption holds the clock. Long enough to cover the gap between
+    /// one flick and the next while reading, short enough that a story put down mid-caption
+    /// carries on by itself.
+    private static let captionGrace: TimeInterval = 4
+
     /// The clock runs only while the student can actually be looking at it.
     private var paused: Bool {
-        holding || voiceOver || !imageSettled || scenePhase != .active
+        if let captionTouchedAt, Date().timeIntervalSince(captionTouchedAt) < Self.captionGrace {
+            return true
+        }
+        return holding || voiceOver || !imageSettled || scenePhase != .active
     }
 
     var body: some View {
@@ -75,6 +90,8 @@ struct StoryViewer: View {
 
     private func run() async {
         progress = 0
+        // The hold belongs to the caption that was being read, not to the one that replaces it.
+        captionTouchedAt = nil
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(50))
             if Task.isCancelled { return }
@@ -292,6 +309,15 @@ struct StoryViewer: View {
                 .padding(.bottom, 18)
             }
             .scrollBounceBehavior(.basedOnSize)
+            // A hand on the caption holds the clock, so a notice too long for six seconds is
+            // not swapped out mid-sentence. Simultaneous, so it reads the touch without taking
+            // it from the scroll view; `onEnded` is a courtesy, since the grace expires anyway
+            // when the scroll view claims the gesture and never reports its end.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in captionTouchedAt = Date() }
+                    .onEnded { _ in captionTouchedAt = Date() }
+            )
             // Together: the band asks for the height its words need (`fixedSize`, so it never
             // takes the picture's space the way a plain `ScrollView` would) and is clamped to
             // half the screen, past which it scrolls.
