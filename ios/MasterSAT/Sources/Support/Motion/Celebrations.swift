@@ -569,6 +569,15 @@ struct OutcomeConfetti: View {
 extension View {
     /// Put on a full-screen cover's content. While it is up the root overlay is hidden behind
     /// it, so a celebration started inside waits, and plays the moment the cover has gone.
+    ///
+    /// REQUIRED on EVERY `fullScreenCover` inside the signed-in shell, not only the ones that
+    /// celebrate something. The register this keeps is also what `CelebrationCenter.isCovered`
+    /// answers, and that is the one thing the event invitation asks before it opens its sheet
+    /// (`EventInvitePrompt.stageIsClear`). A cover that forgets this line is invisible to that
+    /// check, so the invitation asks the root to present a sheet over a descendant that is
+    /// already presenting one: the sheet never appears, `onDismiss` never fires, and the
+    /// suppression it left behind outlives the cover. Adding a `fullScreenCover` means adding
+    /// this line in the same edit.
     func coversCelebrations(_ center: CelebrationCenter) -> some View {
         onAppear { center.coverAppeared() }
             .onDisappear { center.coverDisappeared() }

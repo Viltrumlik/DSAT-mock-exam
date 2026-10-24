@@ -26,6 +26,7 @@ struct StoriesRail: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var openURL
+    @Environment(CelebrationCenter.self) private var celebrations
     @State private var stories: [Story] = []
     @State private var phase: Phase = .idle
     @State private var loadedAt: Date?
@@ -58,6 +59,7 @@ struct StoriesRail: View {
         .task(id: refreshID) { await loadIfNeeded() }
         .fullScreenCover(item: $opened, onDismiss: routeIfAsked) { item in
             StoryViewer(stories: item.stories, startIndex: item.index) { pendingLink = $0 }
+                .coversCelebrations(celebrations)
                 .noBarClearance()
         }
     }

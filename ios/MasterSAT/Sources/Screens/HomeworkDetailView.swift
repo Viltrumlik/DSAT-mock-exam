@@ -181,10 +181,13 @@ struct HomeworkDetailView: View {
                    ["REVIEWED", "RETURNED"].contains((submission.status ?? "").uppercased()) {
                     reviewCard(review, grade: submission.composedGrade, returned: submission.isReturned)
                 // The standalone grade stands in only while there is no row — never beside one.
-                // `submitHomework` answers with a bare `Submission`, so after a hand-in the row is
-                // fresh while the grade read before it is stale; preferring the row by its
-                // presence, not by `??` on the grade, is what keeps the old "already decided"
-                // card from surviving next to the new feedback.
+                // Whenever a row exists it is authoritative, grade and all: every response that
+                // carries a row carries that row's own `composed_grade` with it
+                // (`SubmissionSerializer`), so the row's grade is never older than the row. The
+                // standalone grade is the no-row case alone — a weighted homework has a composed
+                // grade before anything has been handed in. Preferring the row by its PRESENCE,
+                // not by `??` on the grade, is what keeps a stale "already decided" card from
+                // surviving beside new feedback.
                 } else if let grade = submission == nil ? composedGrade : submission?.composedGrade,
                           let settled = ComposedGradeRules.settledSoFar(grade) {
                     settledSoFarCard(settled)
@@ -874,19 +877,19 @@ struct HomeworkDetailView: View {
                     staged.removeAll { carried.contains($0.token) }
                     for token in tokens { thumbnails.drop(token) }
                 }
-                submission = (try? await session.student.mySubmission(
+                submission = (try? await session.student.mySubmissionAnswer(
                     classroomId: classroomId,
                     assignmentId: a.id
-                )) ?? submission
+                ))?.submission ?? submission
             } catch APIError.conflict(let detail) {
                 // Changed somewhere else (another device, a teacher's return). Show what the
                 // server holds now; the staged files stay, ready to send against it.
                 actionError = detail.isEmpty ? "Submission was modified. Refresh and try again." : detail
                 sendFailed = true
-                submission = (try? await session.student.mySubmission(
+                submission = (try? await session.student.mySubmissionAnswer(
                     classroomId: classroomId,
                     assignmentId: a.id
-                )) ?? submission
+                ))?.submission ?? submission
             } catch APIError.http(413, _) {
                 // Refused by the proxy before the server saw it; the body is an HTML page.
                 actionError = "That upload is too big to send at once. Send fewer files at a time."

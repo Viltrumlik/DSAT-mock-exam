@@ -33,6 +33,7 @@ private struct EventsScreen: View {
     @Bindable var model: EventsModel
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(CelebrationCenter.self) private var celebrations
     @State private var cancelling: LearningEvent?
     @State private var confirmingFinalSignUp: LearningEvent?
 
@@ -60,6 +61,7 @@ private struct EventsScreen: View {
         }
         .fullScreenCover(item: $model.presentedTicket) { ticket in
             EventTicketView(ticket: ticket)
+                .coversCelebrations(celebrations)
                 .noBarClearance()
         }
         .confirmationDialog(

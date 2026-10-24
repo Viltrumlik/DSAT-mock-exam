@@ -20,23 +20,44 @@ struct EventInviteSheet: View {
     @State private var height: CGFloat = 320
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            header
-            card
-            if signedUp {
-                confirmation
-            } else {
-                if let failure { refusal(failure) }
-                actions
+        // A ScrollView, because the card grows: at the accessibility sizes the three words of
+        // the header alone take several lines, and the measured content runs past the phone.
+        // The detent is clamped to what the screen can actually give, so the part that no
+        // longer fits is scrolled to rather than cut off — the fate "Later" / "Sign up" /
+        // "See all events" met at AX5 while the detent was the raw measurement.
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                header
+                card
+                if signedUp {
+                    confirmation
+                } else {
+                    if let failure { refusal(failure) }
+                    actions
+                }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 24)
-        .padding(.bottom, 18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
-        .presentationDetents([.height(max(height, 260))])
+        // No rubber band while everything fits: at the ordinary sizes this is still a card.
+        .scrollBounceBehavior(.basedOnSize)
+        .presentationDetents([.height(detentHeight)])
         .presentationDragIndicator(.visible)
+    }
+
+    /// What the sheet asks for: the content's own height, never less than a card and never
+    /// more than the screen can give. Without the ceiling the system clamps an over-tall
+    /// request itself and the overflow simply disappears, since there was nothing to scroll.
+    private var detentHeight: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let screen = (scenes.first { $0.activationState == .foregroundActive } ?? scenes.first)?.screen
+        // 0.92, not 1: a sheet that reaches the very top reads as a page, and the drag
+        // indicator needs somewhere to be.
+        let ceiling = (screen?.bounds.height ?? 800) * 0.92
+        return min(max(height, 260), ceiling)
     }
 
     private var header: some View {
