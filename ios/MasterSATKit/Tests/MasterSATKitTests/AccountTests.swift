@@ -456,6 +456,36 @@ enum AccountFixtures {
         #expect(ProfileCompletion.next(after: .names, missing: []) == nil)
     }
 
+    @Test("The decision after a step: nil is not done, and an unreadable list is not an empty one")
+    func outcomeAfterAStep() {
+        // The ordinary walk.
+        #expect(ProfileCompletion.outcome(after: .password, missing: ["lcup_phone", "email"], lastKnown: [])
+            == (["lcup_phone", "email"], .show(.phone)))
+        #expect(ProfileCompletion.outcome(after: .email, missing: [], lastKnown: ["email"])
+            == ([], .finished))
+        // A field no `Step` claims: `next(after:)` is nil, and trusting that as "done" would
+        // lift the gate and remount it under the student (ruling S1-R9). The email step is
+        // where an unknown extra lands, so that is what they are shown.
+        #expect(ProfileCompletion.outcome(after: .email, missing: ["foo"], lastKnown: [])
+            == (["foo"], .show(.email)))
+        // Offline: the step's own field drops out of the last known list, the rest stands.
+        #expect(ProfileCompletion.outcome(after: .password, missing: nil, lastKnown: ["password", "lcup_phone"])
+            == (["lcup_phone"], .show(.phone)))
+        // Unreadable with nothing else outstanding — the one case where a local drop finishes.
+        #expect(ProfileCompletion.outcome(after: .password, missing: nil, lastKnown: ["password"])
+            == ([], .finished))
+        #expect(ProfileCompletion.outcome(after: .names, missing: nil, lastKnown: ProfileCompletion.nameFields)
+            == ([], .finished))
+        // A field the server lists again (a save that did not stick, a rule re-armed): the
+        // student is sent back to it rather than past it.
+        #expect(ProfileCompletion.outcome(after: .password, missing: ["password"], lastKnown: [])
+            == (["password"], .show(.password)))
+        // An earlier step re-listed after this one: the walk goes back, because `firstStep`
+        // reads the list and not its own order.
+        #expect(ProfileCompletion.outcome(after: .phone, missing: ["password"], lastKnown: ["lcup_phone"])
+            == (["password"], .show(.password)))
+    }
+
     @Test("Each name at least three characters once trimmed, first failure named")
     func nameCheck() {
         #expect(ProfileCompletion.nameProblem(firstName: "Ali", lastName: "Vali", username: "ali") == nil)

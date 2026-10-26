@@ -59,13 +59,29 @@ import Testing
             #expect(AccountCopy.initialPasswordFailure(error)
                 == "Request was throttled. Expected available in 42 seconds.")
         }
-        // A refusal with no sentence at all, and a transport failure, both fall back.
-        #expect(AccountCopy.initialPasswordFailure(APIError.http(status: 429, detail: ""))
+        // A 400 with no sentence of its own is still Django's verdict on the password, so the
+        // fallback may advise a longer one.
+        #expect(AccountCopy.initialPasswordFailure(APIError.validation(detail: "", code: nil, fields: [:]))
             == AccountCopy.initialPasswordFailed)
-        #expect(AccountCopy.initialPasswordFailure(APIError.forbidden(detail: "", reason: nil))
-            == AccountCopy.initialPasswordFailed)
-        #expect(AccountCopy.initialPasswordFailure(APIError.transport(underlying: "offline"))
-            == AccountCopy.initialPasswordFailed)
+    }
+
+    @Test("A failure that was not about the password does not blame the password")
+    func initialPasswordNotBlamed() {
+        // Offline, a 5xx and a throttle say nothing about what was typed. "Try a longer one"
+        // there has a student rewriting a password the server never saw.
+        for failure: APIError in [
+            .transport(underlying: "offline"),
+            .http(status: 500, detail: ""),
+            .http(status: 429, detail: ""),
+            .unavailable(status: 503),
+            .forbidden(detail: "", reason: nil),
+        ] {
+            #expect(AccountCopy.initialPasswordFailure(failure) == AccountCopy.initialPasswordNotSaved)
+            #expect(!AccountCopy.initialPasswordFailure(failure).contains("longer"))
+        }
+        // A sentence the server did send still wins over both fallbacks.
+        #expect(AccountCopy.initialPasswordFailure(APIError.forbidden(detail: "Nothing to choose.", reason: nil))
+            == "Nothing to choose.")
     }
 
     @Test("The number is posted as typed, and the answer says whether the link moved")

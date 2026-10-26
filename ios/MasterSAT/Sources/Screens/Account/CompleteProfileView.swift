@@ -4,10 +4,13 @@ import MasterSATKit
 /// The profile-completion gate: the web's `ProfileCompletionGate`, as a whole screen.
 ///
 /// Shown in place of the app while `ProfileCompletion.isRequired(for:)` holds — the server says
-/// `profile_complete: false` with `missing_fields`. Names under three characters, or an email
-/// that is missing or unconfirmed. Nothing in the API refuses an incomplete profile; the gate
-/// is the only thing that asks, so it cannot be dismissed — only completed, or left by signing
-/// out (there is no password reset anywhere, so a code that never arrives must not trap anyone).
+/// `profile_complete: false` with `missing_fields`. Four steps in the website's order: the first
+/// password an lc-up account chooses for itself (`lcup/claims.py`), then the number its
+/// administrator holds (`lcup/phone_confirm.py`), then names under three characters, then an
+/// email that is missing or unconfirmed. Nothing in the API refuses an incomplete profile; the
+/// gate is the only thing that asks, so it cannot be dismissed — only completed, or left by
+/// signing out (there is no password reset anywhere, so a code that never arrives must not trap
+/// anyone).
 ///
 /// It disappears on its own: every save hands the server's fresh verdict back to the session
 /// (`Session.refreshUser()`), and once nothing is missing the gate's condition stops holding.
@@ -391,52 +394,68 @@ struct CompleteProfileView: View {
 
     // MARK: Actions
 
-    /// What the server calls the field this step fills, so an offline advance can drop it
-    /// from the local list. The names step fills three.
-    private static func fields(of step: ProfileCompletion.Step) -> [String] {
-        switch step {
-        case .password: return [ProfileCompletion.passwordField]
-        case .phone: return [ProfileCompletion.phoneField]
-        case .names: return ProfileCompletion.nameFields
-        case .email: return ["email"]
+    /// The one "what next": every step ends here, and none of them decides for itself.
+    ///
+    /// This half only fetches. The decision — `nil` is not "done", the unreadable fallback, the
+    /// unknown-extra re-derivation — is `ProfileCompletion.outcome(after:missing:lastKnown:)`,
+    /// in the kit, where it is tested without a view.
+    ///
+    /// The verdict is the server's, re-read (`GET /users/me/`, the web's `invalidateMe`) unless
+    /// the call that just succeeded already answered with it (`knownMissing`).
+    private func advance(from step: ProfileCompletion.Step, knownMissing: [String]? = nil) async {
+        // Both a server that cannot be reached and an answer whose `missing_fields` is absent
+        // or malformed arrive here as nil: unreadable, never "nothing missing". Reading nil as
+        // an empty list is how a student offline gets told their profile is all set.
+        // (Written out rather than with `??`, whose right-hand autoclosure cannot await.)
+        let fresh: [String]?
+        if let knownMissing {
+            fresh = knownMissing
+        } else {
+            fresh = try? await account.profile().missingFields
+        }
+        let decision = ProfileCompletion.outcome(after: step, missing: fresh, lastKnown: missing)
+        missing = decision.missing
+        switch decision.outcome {
+        case .show(let next): show(next)
+        case .finished: await finish()
         }
     }
 
-    /// The one "what next": every step ends here, and none of them decides for itself.
+    /// Whether a refused save was about what the student just typed: Django's verdict on a
+    /// password, or a number that is not the one lc-up holds. Those are answers to this form.
+    /// Every other failure is about the account or the connection — which is what
+    /// `recoveredElsewhere` asks the server about.
+    private static func isAboutTheValue(_ error: Error) -> Bool {
+        if case .validation(_, _, _)? = error as? APIError { return true }
+        if case .wrongNumber? = (error as? PhoneClaimRefusal)?.reason { return true }
+        return false
+    }
+
+    /// Whether this step's field is already cleared — and if it is, walks on. True when the
+    /// student should see the next step instead of the refusal.
     ///
-    /// The verdict is the server's, re-read (`GET /users/me/`, the web's `invalidateMe`) unless
-    /// the call that just succeeded already answered with it (`knownMissing`). When it cannot be
-    /// read at all — offline — this step's own fields are dropped locally and the walk goes on
-    /// from that, which is what the email step has always done.
+    /// Once a field is gone the server refuses that step for good: "There is no first password
+    /// to choose for this account." (`lcup/claims.py`) and `NOTHING_TO_CONFIRM`
+    /// (`lcup/phone_confirm.py`). That happens whenever the save landed but its reply did not
+    /// (ordinary on a phone), the step was done on another device, or a namesake account's
+    /// confirm answered this account's prompt — and the student is then on a form that can
+    /// never succeed, which is the trap this whole screen exists to remove.
     ///
-    /// **`nil` is not "done".** It means "no step after this one is outstanding", which is also
-    /// what a requirement this build has never heard of looks like: the server's extras are
-    /// open-ended (`users/profile_completeness.py`, `register_requirement`). So on `nil` the
-    /// decision is re-derived from the fresh list — empty means finished, anything else means
-    /// `firstStep`, even if that is this step again. A student then always has a step they can
-    /// act on, instead of the gate lifting and remounting under them a moment later.
+    /// **The refusal itself never advances anything** (rulings S1-R5, S1-R8): it only prompts a
+    /// fresh `account.profile()` read, and only that list may say a step is done. A 403 from a
+    /// host guard or a rule the server grows later finds the field still listed and shows its
+    /// sentence, exactly as before.
     ///
-    /// **Nothing here reads a refusal.** `PhoneClaimRefusal.nothingToConfirm` is only "that
-    /// request got a 403" — a host guard's would otherwise look like "already answered" and skip
-    /// the step it was refusing. A step is done when the re-read profile says so, and not before.
-    private func advance(from step: ProfileCompletion.Step, knownMissing: [String]? = nil) async {
-        if let knownMissing {
-            missing = knownMissing
-        } else if let fresh = try? await account.profile() {
-            missing = fresh.missingFields ?? []
-        } else {
-            let own = Self.fields(of: step)
-            missing.removeAll { own.contains($0) }
-        }
-        if let next = ProfileCompletion.next(after: step, missing: missing) {
-            show(next)
-            return
-        }
-        guard missing.isEmpty else {
-            show(ProfileCompletion.firstStep(missing: missing))
-            return
-        }
-        await finish()
+    /// This is also what rescues a stale step: `Session.restore()` opens the gate offline from
+    /// `UserCache`, whose `missing_fields` is the one from sign-in time, so a relaunch without
+    /// a network can show a step the server has long since cleared. It lifts as soon as the
+    /// network is back, with no second copy of the verdict to keep in step.
+    private func recoveredElsewhere(from step: ProfileCompletion.Step) async -> Bool {
+        guard let fresh = try? await account.profile().missingFields else { return false }
+        let own = ProfileCompletion.fields(of: step)
+        guard !fresh.contains(where: own.contains) else { return false }
+        await advance(from: step, knownMissing: fresh)
+        return true
     }
 
     private func savePassword() async {
@@ -457,6 +476,13 @@ struct CompleteProfileView: View {
             passwordAgain = ""
             await advance(from: .password)
         } catch {
+            // Django's verdict on the password belongs on this form. Anything else may mean
+            // there is no first password left to choose (`recoveredElsewhere`).
+            if !Self.isAboutTheValue(error), await recoveredElsewhere(from: .password) {
+                password = ""
+                passwordAgain = ""
+                return
+            }
             self.error = AccountCopy.initialPasswordFailure(error)
         }
     }
@@ -481,10 +507,11 @@ struct CompleteProfileView: View {
         } catch {
             // The number itself was refused: the server's sentence names the digits it holds
             // (`••NN`), so it belongs under the box the student is retyping. Everything else is
-            // about the account, not the number, and is the form's to say.
-            if case .wrongNumber? = (error as? PhoneClaimRefusal)?.reason {
+            // about the account, not the number — and may mean the question is already answered
+            // (`recoveredElsewhere`), so the form only speaks when it is still outstanding.
+            if Self.isAboutTheValue(error) {
                 phoneError = AccountCopy.phoneFailure(error)
-            } else {
+            } else if !(await recoveredElsewhere(from: .phone)) {
                 self.error = AccountCopy.phoneFailure(error)
             }
         }
@@ -501,7 +528,11 @@ struct CompleteProfileView: View {
             try await lcup.sayNotMe()
             await advance(from: .phone)
         } catch {
-            self.error = AccountCopy.phoneFailure(error, fallback: AccountCopy.notMeFailed)
+            // Nothing was typed here, so every refusal may be the question already answered —
+            // a lost reply, or the namesake's own account having answered it.
+            if !(await recoveredElsewhere(from: .phone)) {
+                self.error = AccountCopy.phoneFailure(error, fallback: AccountCopy.notMeFailed)
+            }
         }
     }
 
@@ -522,8 +553,10 @@ struct CompleteProfileView: View {
                 username: username.trimmingCharacters(in: .whitespacesAndNewlines)
             ))
             // The PATCH answers with the fresh verdict itself, so this one step needs no
-            // second read; the decision is still `advance`'s alone.
-            await advance(from: .names, knownMissing: profile.missingFields ?? [])
+            // second read; the decision is still `advance`'s alone. An answer without a
+            // readable list is not taken for "nothing missing" — nil sends `advance` to
+            // `/users/me/` for it.
+            await advance(from: .names, knownMissing: profile.missingFields)
         } catch {
             self.error = Self.saveFailure(error)
         }

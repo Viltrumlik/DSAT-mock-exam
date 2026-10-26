@@ -89,6 +89,58 @@ public enum ProfileCompletion {
         return outstanding(from: index + 1, missing: missing)
     }
 
+    /// What the server calls the fields a step fills, so a step that could not re-read the
+    /// verdict can drop its own from the list it was last given. The names step fills three.
+    public static func fields(of step: Step) -> [String] {
+        switch step {
+        case .password: return [passwordField]
+        case .phone: return [phoneField]
+        case .names: return nameFields
+        case .email: return ["email"]
+        }
+    }
+
+    /// What the gate does once a step is done: the whole decision, so it is tested here rather
+    /// than eyeballed inside a view.
+    public enum Outcome: Sendable, Equatable {
+        case show(Step)
+        case finished
+    }
+
+    /// The decision after `step`, and the list it was made from (the gate keeps that list).
+    ///
+    /// `missing` is the freshly read `missing_fields`. **nil means it could not be read at
+    /// all** — the server was unreachable, or its answer carried no readable list — and then
+    /// the verdict falls back to `lastKnown` without this step's own fields, which is what the
+    /// email step has always done. Reading nil as an empty list is how an offline student gets
+    /// told their profile is all set.
+    ///
+    /// **`next(after:) == nil` is not "done" on its own** (ruling S1-R9). It means "no step
+    /// after this one is outstanding", which is also what a requirement this build has never
+    /// heard of looks like: the server's extras are open-ended
+    /// (`users/profile_completeness.py`, `register_requirement`). So on `nil` the decision is
+    /// re-derived from the list — empty means finished, anything else means `firstStep`, even
+    /// if that is this step again. A student then always has a step they can act on, instead
+    /// of the gate lifting and remounting under them a moment later.
+    ///
+    /// Only a read list may say a step is done. Nothing here looks at why a save failed
+    /// (ruling S1-R8): a 403 from a host guard or a future rule would otherwise read as
+    /// "already answered" and skip the step it was refusing.
+    public static func outcome(
+        after step: Step,
+        missing: [String]?,
+        lastKnown: [String]
+    ) -> (missing: [String], outcome: Outcome) {
+        let outstanding = missing ?? lastKnown.filter { !fields(of: step).contains($0) }
+        if let next = next(after: step, missing: outstanding) {
+            return (outstanding, .show(next))
+        }
+        guard outstanding.isEmpty else {
+            return (outstanding, .show(firstStep(missing: outstanding)))
+        }
+        return (outstanding, .finished)
+    }
+
     private static func outstanding(from index: Int, missing: [String]) -> Step? {
         Step.allCases[index...].first { isOutstanding($0, missing: missing) }
     }
@@ -382,6 +434,9 @@ public enum AccountCopy {
 
     // lc-up first sign-in — the web's three fallbacks, the phone step's in Uzbek
     public static let initialPasswordFailed = "Could not save the password. Try a longer one."
+    /// When the refusal was not about the password: nothing was heard back, or the server
+    /// broke. "Try a longer one" there sends a student rewriting a password that was fine.
+    public static let initialPasswordNotSaved = "That didn't go through. Your password isn't saved yet — try again."
     public static let phoneSaveFailed = "Raqamni saqlab bo'lmadi. Qaytadan urinib ko'ring."
     public static let notMeFailed = "Saqlab bo'lmadi. Qaytadan urinib ko'ring."
 
@@ -449,9 +504,17 @@ public enum AccountCopy {
     }
 
     /// A refused first password: Django's own word on it (`{"password": ["This password is too
-    /// common."]}`), else the 403's sentence, else the web's fallback.
+    /// common."]}`), else the 403's sentence, else a fallback.
+    ///
+    /// Which fallback depends on who was refusing. "Try a longer one" is advice about the
+    /// password, so it is only for a 400 — Django's verdict on the password, arriving without a
+    /// sentence of its own. A transport failure, a 5xx or a 429 says nothing about the password,
+    /// and blaming it there would have a student rewriting a password the server never saw.
     public static func initialPasswordFailure(_ error: Error) -> String {
-        fieldMessages(error)?[ProfileCompletion.passwordField] ?? serverSentence(error) ?? initialPasswordFailed
+        if let message = fieldMessages(error)?[ProfileCompletion.passwordField] { return message }
+        if let sentence = serverSentence(error) { return sentence }
+        if case .validation(_, _, _)? = error as? APIError { return initialPasswordFailed }
+        return initialPasswordNotSaved
     }
 
     /// A refused phone answer, in the server's Uzbek — the `wrongNumber` sentence carries the
