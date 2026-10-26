@@ -50,6 +50,44 @@ import Testing
         #expect(StrikesWindow(spendable: 1, run: 3, best: 3).spokenSpendable == "1 strike to spend")
         #expect(StrikesWindow(spendable: 2, run: 3, best: 3).spokenSpendable == "2 strikes to spend")
     }
+
+    @Test("The printed unit agrees with the spoken one, singular at one")
+    func spendableUnit() {
+        #expect(StrikesWindow(spendable: 0, run: 0, best: 0).spendableUnit == "strikes to spend")
+        #expect(StrikesWindow(spendable: 1, run: 3, best: 3).spendableUnit == "strike to spend")
+        #expect(StrikesWindow(spendable: 2, run: 3, best: 3).spendableUnit == "strikes to spend")
+    }
+
+    @Test("With no run held back, the window shows the payload's own run")
+    func noShownRun() {
+        let rewards = MyRewards(points: 0, coins: 0, currentStreak: 4, bestStreak: 9, strikes: 4, spentInStreak: 0)
+        let window = StrikesWindow(rewards: rewards, shownRun: nil)
+        #expect(window.run == 4)
+        #expect(window.spendable == 4, "nothing is held, so nothing is clamped")
+        #expect(window.runLine == "4 lessons in a row · best 9")
+    }
+
+    @Test("A shown run equal to the real one changes nothing")
+    func shownRunMatchesPayload() {
+        let rewards = MyRewards(points: 0, coins: 0, currentStreak: 9, bestStreak: 12, strikes: 3, spentInStreak: 6)
+        let window = StrikesWindow(rewards: rewards, shownRun: 9)
+        #expect(window == StrikesWindow(rewards: rewards))
+        #expect(window.spendable == 3)
+        #expect(window.run == 9)
+    }
+
+    @Test("A held older run never has more strikes offered than it contains")
+    func heldRunClampsSpendable() {
+        // The flame is still on 3 while the newest answer already counts a run of 4 with four
+        // strikes in hand. "4 strikes to spend / 3 lessons in a row" would offer a strike the run
+        // on screen does not contain.
+        let rewards = MyRewards(points: 0, coins: 0, currentStreak: 4, bestStreak: 9, strikes: 4, spentInStreak: 0)
+        let window = StrikesWindow(rewards: rewards, shownRun: 3)
+        #expect(window.run == 3)
+        #expect(window.spendable == 3, "never more strikes than the run the flame is showing")
+        #expect(window.runLine == "3 lessons in a row · best 9")
+        #expect(window.best == 9, "the best is the payload's, not the held run's")
+    }
 }
 
 @Suite struct XPWindowTests {

@@ -28,13 +28,16 @@ struct StrikesWindowView: View {
     /// store carries only the header's three figures and this window needs the strikes and the
     /// best run as well.
     @State private var mine: MyRewards?
-    /// The last read did not land. With `mine` still set it means a stale refresh (the numbers
-    /// stay, with a note); with nothing kept it is the failure state. Never an empty "0".
+    /// The last read did not land, and nothing was kept — the failure state, with "Try again".
+    /// There is no stale state to distinguish: the window is built fresh on every open and reads
+    /// once, so a failure here is always a first failure over no numbers at all.
     @State private var failed = false
     /// The glow's far end. Flipped on appearance so the breath starts, and back whenever Reduce
     /// Motion is turned on mid-window.
     @State private var breathingOut = false
-    /// VoiceOver's cursor, sent to the figures when the window opens (W-R7).
+    /// VoiceOver's cursor, sent to the one combined figure — "3 strikes to spend" — when it
+    /// appears (W-R7). On the element itself rather than on the stack around it: a container has
+    /// no element of its own, so which child the cursor would land on is anyone's guess.
     @AccessibilityFocusState private var figuresFocused: Bool
 
     /// The window's wording, from the kit — the big number, the unit and the run line in one
@@ -42,33 +45,31 @@ struct StrikesWindowView: View {
     ///
     /// The run it is built with is `streakShown`: while a rise is being held for a celebration
     /// the header's flame still shows the old run, and a window drawn right under that flame must
-    /// not print a number the flame has not rolled to yet. Only the three fields `StrikesWindow`
-    /// reads are carried over — spendable, run, best — so no other figure can be invented here.
+    /// not print a number the flame has not rolled to yet. The kit takes that run as a parameter
+    /// and keeps the two figures consistent with it, so nothing here rebuilds a payload.
     private var window: StrikesWindow? {
         guard let mine else { return nil }
-        guard let shown = celebrations.streakShown(rewards.streak), shown != mine.currentStreak else {
-            return StrikesWindow(rewards: mine)
-        }
-        return StrikesWindow(rewards: MyRewards(
-            points: mine.points,
-            coins: mine.coins,
-            currentStreak: shown,
-            bestStreak: mine.bestStreak,
-            strikes: mine.strikes
-        ))
+        return StrikesWindow(rewards: mine, shownRun: celebrations.streakShown(rewards.streak))
     }
 
     /// Both tracks of the glow are always drawn; the setting picks how far it travels, which is
     /// what "Reduce Motion never restructures the tree" means here. Still, it rests half way
     /// between the two ends rather than at the dim, small one.
-    private var breathes: Bool { !reduceMotion }
+    ///
+    /// The budget is the one `LottieClip` uses for the flame it sits behind
+    /// (`MotionBudget.allowsLoopingLottie`): a `repeatForever` is a loop that never finishes, so
+    /// Low Power rests it exactly as it rests the flame. Reading it per update rather than once
+    /// keeps the two in step when the setting changes while the window is open.
+    private var breathes: Bool {
+        MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+            .allowsLoopingLottie
+    }
     private var glowPhase: Double { breathes ? (breathingOut ? 1 : 0) : 0.5 }
 
     var body: some View {
         VStack(spacing: 4) {
             flame
             figures
-                .accessibilityFocused($figuresFocused)
             shopButton
                 .padding(.top, 14)
             RewardsExplainButton(explainer: .strike, title: RewardsExplainer.strike.title)
@@ -76,10 +77,17 @@ struct StrikesWindowView: View {
         }
         .frame(maxWidth: .infinity)
         .task { await read() }
-        // A beat, because a cursor set in the frame the window is inserted in finds nothing there
-        // yet — the same wait `RankUpCard` takes. Nothing is announced: the student asked for this
-        // window, so the cursor arriving on the figure is the whole answer (W-R7).
-        .task {
+        // The cursor goes to the figure when the figure is actually there. A fixed wait would
+        // usually land before `/rewards/me/` answers, leaving the cursor on the loading skeleton
+        // inside an `.isModal` card — and the numbers that replaced it might then never be heard.
+        // So this is keyed on the figures appearing, with a short beat for the frame they are
+        // inserted in (a cursor set in that frame finds nothing yet — the wait `RankUpCard`
+        // takes). Lowered before it is raised, so a second appearance moves the cursor again.
+        // Nothing is announced: the student asked for this window, so the cursor arriving on the
+        // figure is the whole answer (W-R7).
+        .task(id: window != nil) {
+            guard window != nil else { return }
+            figuresFocused = false
             try? await Task.sleep(for: .milliseconds(250))
             if !Task.isCancelled { figuresFocused = true }
         }
@@ -125,13 +133,16 @@ struct StrikesWindowView: View {
                         .appFont(42, weight: .black, design: .rounded)
                         .foregroundStyle(Theme.strike)
                         .contentTransition(.numericText(value: Double(window.spendable)))
-                    Text(window.spendable == 1 ? "strike to spend" : "strikes to spend")
+                    // The unit comes from the kit beside `spokenSpendable`, so the caption on
+                    // screen and the sentence VoiceOver hears are one tested decision.
+                    Text(window.spendableUnit)
                         .appFont(13, weight: .bold)
                 }
                 // The numeral and its unit are one sentence, so VoiceOver says "3 strikes to
                 // spend" rather than "3" and then a caption of its own (W-R7).
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(window.spokenSpendable)
+                .accessibilityFocused($figuresFocused)
 
                 Text(window.runLine)
                     .appFont(11.5, weight: .medium)
@@ -139,9 +150,9 @@ struct StrikesWindowView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // The numbers stay and say they may be old: a refresh that failed over good
-                // figures never blanks them.
-                if failed { StaleNote().padding(.top, 6) }
+                // No stale state here: the window is rebuilt on every open and reads once, so
+                // there is never a failed refresh sitting over good numbers — a failure is
+                // always a first failure, and `ErrorState` below is the whole of it.
             }
         } else if failed {
             // Error is not empty: a failed read must never be drawn as "0 strikes to spend".
@@ -150,7 +161,9 @@ struct StrikesWindowView: View {
                 message: "Nothing has been spent — the window just couldn't fetch your total.",
                 style: .inline
             ) {
-                await Task { @MainActor in await read() }.value
+                // `ErrorState.retry` is already `@MainActor () async -> Void` and is run in a
+                // task of its own, so there is nothing left for a wrapper to do here.
+                await read()
             }
         } else {
             LoadingSkeleton(rows: 2, height: 22, label: "Loading your strikes")
@@ -195,7 +208,15 @@ struct StrikesWindowView: View {
         do {
             let me = try await session.rewards.me()
             guard rewards.apply(me, ticket: ticket) else {
-                if again, !Task.isCancelled { await read(again: false) }
+                guard !Task.isCancelled else { return }
+                if again {
+                    await read(again: false)
+                } else if mine == nil {
+                    // Twice refused with nothing to show: the window has no numbers and no way
+                    // to ask for more, so it must offer "Try again" rather than a skeleton that
+                    // never resolves.
+                    failed = true
+                }
                 return
             }
             if failed { failed = false }

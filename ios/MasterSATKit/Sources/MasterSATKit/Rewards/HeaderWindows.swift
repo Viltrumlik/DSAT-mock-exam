@@ -48,8 +48,21 @@ public struct StrikesWindow: Sendable, Equatable {
     /// The only initialiser the app uses. Taking the whole payload rather than three loose
     /// integers is deliberate: a caller cannot then pass `currentStreak` where `strikes` belongs,
     /// which is the mistake W-R2 is about.
-    public init(rewards: MyRewards) {
-        self.init(spendable: rewards.strikes, run: rewards.currentStreak, best: rewards.bestStreak)
+    ///
+    /// `shownRun` is the run the header's flame has actually rolled to. While a rise is held back
+    /// for a celebration the flame still shows the older run, and a window drawn right under that
+    /// flame must print the same number — so the caller passes it here instead of rebuilding a
+    /// `MyRewards` with one field swapped (which would quietly default every other field).
+    ///
+    /// **`spendable` is clamped to the run being shown.** The two figures come from different
+    /// moments — `strikes` from the newest answer, `shownRun` from the one the flame is still on —
+    /// and left alone they can contradict each other: "4 strikes to spend / 3 lessons in a row",
+    /// an offer of a strike the run on screen does not contain. Never offer more strikes than the
+    /// run the flame is displaying; the true total arrives a moment later when the rise lands.
+    /// With no held rise the clamp does nothing, since `strikes` is `currentStreak − spentInStreak`.
+    public init(rewards: MyRewards, shownRun: Int? = nil) {
+        let run = shownRun ?? rewards.currentStreak
+        self.init(spendable: min(rewards.strikes, run), run: run, best: rewards.bestStreak)
     }
 
     /// "4 lessons in a row · best 9".
@@ -63,6 +76,11 @@ public struct StrikesWindow: Sendable, Equatable {
         let lessons = RewardsFormat.count(run, "lesson") + " in a row"
         return best > 0 ? lessons + " · best \(best)" : lessons
     }
+
+    /// "strikes to spend" — the caption printed under the big numeral, singular at one. It lives
+    /// here beside `spokenSpendable` so the seen and the spoken wording are one tested decision
+    /// rather than a ternary in a `body` that nothing checks.
+    public var spendableUnit: String { spendable == 1 ? "strike to spend" : "strikes to spend" }
 
     /// "3 strikes to spend" — the big number read aloud with its unit, so VoiceOver gets one
     /// sentence instead of a bare numeral followed by a separate caption (W-R7).
