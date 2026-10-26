@@ -38,7 +38,9 @@ jobs:
         run: python manage.py spectacular --file ../openapi-ci.yaml
 
   frontend:
-    runs-on: ubuntu-latest
+    # Pinned because this job installs Playwright's browsers; see the note in
+    # golden_journeys_continuous.yml. The backend job above stays on `ubuntu-latest`.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
