@@ -488,8 +488,8 @@ Earlier:
 | Points at production | ✅ reached `mastersat.uz`; refused by it — see above |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
 | Sign in — wrong password, reveal toggle, submit from the keyboard | ✅ driven on the simulator |
-| Register — an account created, auto-signed-in, and the duplicate-name refusal | ✅ driven against a local backend |
-| Auth two-column layout | ✅ driven on an iPad simulator |
+| Sign in — a phone number and its one-time code, as an lc-up account's first sign-in | ✅ driven against a local backend |
+| The completion gate — first password, the lc-up phone with its `••NN` hint, then email | ✅ driven against a local backend |
 | App icon on the home screen | ✅ checked on the simulator |
 | Home — goal sliders, exam-date picker, ticking countdown, calendar | ✅ driven on the simulator |
 | Assessments board — tabs, counts, card states | ✅ driven on the simulator |

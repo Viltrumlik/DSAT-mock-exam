@@ -448,12 +448,12 @@ struct CompleteProfileView: View {
     ///
     /// This is also what rescues a stale step: `Session.restore()` opens the gate offline from
     /// `UserCache`, whose `missing_fields` is the one from sign-in time, so a relaunch without
-    /// a network can show a step the server has long since cleared. It lifts as soon as the
-    /// network is back, with no second copy of the verdict to keep in step.
+    /// a network can show a step the server has long since cleared. Nothing re-reads on its own
+    /// when the gate appears, so that step stands until the student tries it once — then this
+    /// lifts it, with no second copy of the verdict to keep in step.
     private func recoveredElsewhere(from step: ProfileCompletion.Step) async -> Bool {
-        guard let fresh = try? await account.profile().missingFields else { return false }
-        let own = ProfileCompletion.fields(of: step)
-        guard !fresh.contains(where: own.contains) else { return false }
+        guard let fresh = try? await account.profile().missingFields,
+              ProfileCompletion.isCleared(step, in: fresh) else { return false }
         await advance(from: step, knownMissing: fresh)
         return true
     }
@@ -511,7 +511,11 @@ struct CompleteProfileView: View {
             // (`recoveredElsewhere`), so the form only speaks when it is still outstanding.
             if Self.isAboutTheValue(error) {
                 phoneError = AccountCopy.phoneFailure(error)
-            } else if !(await recoveredElsewhere(from: .phone)) {
+            } else if await recoveredElsewhere(from: .phone) {
+                // The question was answered elsewhere, so the number typed for it goes with it:
+                // a later return to this step must not open on someone else's answer.
+                phone = ""
+            } else {
                 self.error = AccountCopy.phoneFailure(error)
             }
         }

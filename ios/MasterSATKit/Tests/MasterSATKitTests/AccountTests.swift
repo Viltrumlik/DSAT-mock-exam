@@ -480,10 +480,33 @@ enum AccountFixtures {
         // student is sent back to it rather than past it.
         #expect(ProfileCompletion.outcome(after: .password, missing: ["password"], lastKnown: [])
             == (["password"], .show(.password)))
-        // An earlier step re-listed after this one: the walk goes back, because `firstStep`
-        // reads the list and not its own order.
+        // An earlier step re-listed after this one, with nothing later outstanding: the walk
+        // goes back, because `firstStep` reads the list and not its own order.
         #expect(ProfileCompletion.outcome(after: .phone, missing: ["password"], lastKnown: ["lcup_phone"])
             == (["password"], .show(.password)))
+        // With something later outstanding too, the later step comes first — the earlier one is
+        // reached a step on, through the same `firstStep`. Either way nothing is lost.
+        #expect(ProfileCompletion.outcome(after: .phone, missing: ["password", "email"], lastKnown: [])
+            == (["password", "email"], .show(.email)))
+        // An unknown extra after the first step, not only after the last.
+        #expect(ProfileCompletion.outcome(after: .password, missing: ["foo"], lastKnown: [])
+            == (["foo"], .show(.email)))
+    }
+
+    @Test("Only the read list may say a step is done — never the refusal that prompted the read")
+    func clearedInAFreshList() {
+        // The lost reply, the other device, the namesake's confirm: the field is gone, so the
+        // student walks on instead of meeting a 403 that can never clear.
+        #expect(ProfileCompletion.isCleared(.password, in: ["lcup_phone", "email"]))
+        #expect(ProfileCompletion.isCleared(.phone, in: ["email"]))
+        #expect(ProfileCompletion.isCleared(.email, in: []))
+        // Still listed: a 403 from a host guard, a 409 or a 429 all land here and keep their
+        // sentence (rulings S1-R5, S1-R8).
+        #expect(!ProfileCompletion.isCleared(.password, in: ["password", "email"]))
+        #expect(!ProfileCompletion.isCleared(.phone, in: ["lcup_phone"]))
+        // The names step fills three, and one still listed means it is not done.
+        #expect(!ProfileCompletion.isCleared(.names, in: ["username"]))
+        #expect(ProfileCompletion.isCleared(.names, in: ["email"]))
     }
 
     @Test("Each name at least three characters once trimmed, first failure named")

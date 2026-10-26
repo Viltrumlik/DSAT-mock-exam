@@ -100,6 +100,21 @@ public enum ProfileCompletion {
         }
     }
 
+    /// Whether a freshly read `missing_fields` says this step is already done.
+    ///
+    /// The one question a refused save may ask (rulings S1-R5, S1-R8). Once a field is gone the
+    /// server refuses its step for good — "There is no first password to choose for this
+    /// account." (`lcup/claims.py`), `NOTHING_TO_CONFIRM` (`lcup/phone_confirm.py`) — which
+    /// happens when a save landed but its reply did not, when the step was done on another
+    /// device, or when a namesake's confirm answered this account's prompt. Without this the
+    /// student sits on a form that can never succeed.
+    ///
+    /// It reads the list and nothing else: the refusal itself never decides, so a 403 from a
+    /// host guard, a 409 or a 429 all find the field still listed and keep their sentence.
+    public static func isCleared(_ step: Step, in fresh: [String]) -> Bool {
+        !fresh.contains(where: fields(of: step).contains)
+    }
+
     /// What the gate does once a step is done: the whole decision, so it is tested here rather
     /// than eyeballed inside a view.
     public enum Outcome: Sendable, Equatable {
@@ -435,8 +450,10 @@ public enum AccountCopy {
     // lc-up first sign-in — the web's three fallbacks, the phone step's in Uzbek
     public static let initialPasswordFailed = "Could not save the password. Try a longer one."
     /// When the refusal was not about the password: nothing was heard back, or the server
-    /// broke. "Try a longer one" there sends a student rewriting a password that was fine.
-    public static let initialPasswordNotSaved = "That didn't go through. Your password isn't saved yet — try again."
+    /// broke. "Try a longer one" there sends a student rewriting a password that was fine, and
+    /// saying it is not saved would claim to know something a timeout cannot tell us — the save
+    /// may well have landed, which is what `isCleared` finds on the next tap.
+    public static let initialPasswordNotSaved = "That didn't go through. Try again."
     public static let phoneSaveFailed = "Raqamni saqlab bo'lmadi. Qaytadan urinib ko'ring."
     public static let notMeFailed = "Saqlab bo'lmadi. Qaytadan urinib ko'ring."
 
