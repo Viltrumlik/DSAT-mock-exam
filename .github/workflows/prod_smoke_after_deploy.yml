@@ -14,7 +14,10 @@ on:
 
 jobs:
   smoke:
-    runs-on: ubuntu-latest
+    # Pinned: `playwright install --with-deps` cannot install Chromium on the Ubuntu 26.04
+    # that `ubuntu-latest` now means. See golden_journeys_continuous.yml for the full note.
+    # This one matters most — it is the check that a deploy actually worked.
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
