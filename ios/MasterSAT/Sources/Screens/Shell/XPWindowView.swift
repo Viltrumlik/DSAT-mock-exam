@@ -433,7 +433,9 @@ struct XPWindowView: View {
     /// Convert, or — when there is nothing whole to convert — the quiet line that says how far off
     /// the next coin is. A Convert button that would mint nothing is worse than no button.
     ///
-    /// It is also off while nothing is confirmed (`unconfirmedNote`): a conversion is not
+    /// It is also off while nothing is confirmed (`unconfirmed`, set from the outcome itself rather
+    /// than by matching the sentence it prints — a money guard keyed on wording is what let the two
+    /// copies of this flow drift apart unnoticed): a conversion is not
     /// idempotent, and after a lost answer AND a lost read-back the points on screen may already
     /// have been spent, so trading them again could mint a second time. That is the simpler
     /// guarantee than reasoning about how stale the figures might be — the hold lifts the moment

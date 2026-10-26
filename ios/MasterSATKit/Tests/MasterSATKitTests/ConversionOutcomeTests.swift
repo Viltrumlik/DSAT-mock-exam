@@ -68,6 +68,32 @@ import Testing
         #expect(nearly.text(unconfirmed: Self.hubUnconfirmed) == "Not enough points yet — 1 point to your next coin.")
     }
 
+    @Test("The distance to the next coin is the SERVER's, not one the app recomputes")
+    func nextCoinComesFromTheAnswer() {
+        // The refactor moved this figure from `before.applying(answer.balances)` to the answer's
+        // own balances. They agree today only because `applying` passes the field straight through
+        // — so this pins the SOURCE rather than the arithmetic: a server saying something the app's
+        // own `rate − points % rate` would never produce (7 here, where 10 − 4 % 10 is 6) must
+        // still be what the student is told. Without it, a future `applying` that recomputed the
+        // field would quietly change the sentence and no test would notice.
+        let balances = RewardsBalances(
+            coins: 4,
+            points: 4,
+            xp: 0,
+            pointsPerCoin: 10,
+            pointsToNextCoin: 7,
+            convertibleCoins: 0,
+            maxConvertiblePoints: 0
+        )
+        let outcome = ConversionOutcome.decide(
+            answer: ConversionResult(minted: 0, pointsSpent: 0, detail: "", balances: balances),
+            before: rewards(points: 4, coins: 4),
+            readBack: nil
+        )
+        #expect(outcome == .nothingToMint(pointsToNextCoin: 7))
+        #expect(outcome.text(unconfirmed: Self.hubUnconfirmed) == "Not enough points yet — 7 points to your next coin.")
+    }
+
     @Test("Nothing whole to mint is an ordinary answer, not a failure")
     func nothingToMint() {
         let outcome = ConversionOutcome.decide(
