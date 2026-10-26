@@ -29,13 +29,14 @@ struct XPWindowView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The payload behind the points box. The store carries only the header's three figures, and
     /// this window needs the points, the coins and the conversion rate as well.
     @State private var mine: MyRewards?
     /// `/rewards/me/` did not land. With nothing kept it is the failure state; with `mine` kept
-    /// it is a refresh that failed over good numbers — which here means the conversion's
-    /// read-back, the one read this window takes after the first. Never an empty "0 points".
+    /// it is a refresh that failed over good numbers — the conversion's read-back, "Check again",
+    /// or the read each return to the front takes. Never an empty "0 points".
     @State private var meFailed = false
     /// The hero board, for the place and the climb line — and its own failure, kept apart from
     /// the payload's so one can be shown while the other is said to have failed.
@@ -54,9 +55,21 @@ struct XPWindowView: View {
     /// what `CelebrationCenter` draws in.
     @State private var pointsSpot = FrameBox()
 
-    /// The glow's far end. Flipped on appearance, and back whenever Reduce Motion is turned on
-    /// while the window is up.
+    /// The far end of all three loops — the glow, the bolt's pulse and the coin's turn. Flipped on
+    /// appearance, and back whenever the motion budget closes while the window is up.
+    ///
+    /// One flag for the three, which is the point: a `@State` flipped once and an
+    /// `.animation(…repeatForever…) { }` scoped to the properties it drives is the only loop idiom
+    /// here that actually stops. A `keyframeAnimator(repeating: true)` keeps invalidating its
+    /// output every frame however the budget reads, which is the cost
+    /// `MotionBudget.allowsLoopingLottie` exists to avoid.
     @State private var breathingOut = false
+    /// The coin's own far end, and not `breathingOut` for one reason: the coin is inserted with
+    /// the figures, long after the bolt's `onAppear` has already flipped that flag, and a flag
+    /// that is already at its far end is not a change — so the coin would be handed 360° with no
+    /// animation to get there and would never turn. It has its own, flipped from its own
+    /// appearance.
+    @State private var coinTurning = false
     /// VoiceOver's cursor, sent to the figures when the window opens (W-R7).
     @AccessibilityFocusState private var figuresFocused: Bool
 
@@ -98,11 +111,22 @@ struct XPWindowView: View {
     /// Power rests them exactly as it rests a looping Lottie. `!reduceMotion` alone would turn
     /// three of them forever on a dying battery. Read per update rather than once, so the art
     /// follows the setting changing while the window is open.
+    ///
+    /// And it is honoured, not merely consulted: when it says rest, the animation handed to all
+    /// three is `nil` and the values they are given are the resting ones, so nothing is
+    /// invalidated again until the setting changes.
     private var breathes: Bool {
         MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
             .allowsLoopingLottie
     }
+    /// The glow rests half way between its two ends rather than at the dim, small one.
     private var glowPhase: Double { breathes ? (breathingOut ? 1 : 0) : 0.5 }
+    /// The bolt rests where it started.
+    private var boltScale: Double { breathes && breathingOut ? 1.09 : 1 }
+    /// The coin rests face on. A full turn and no turn are the same picture, so the far end is a
+    /// whole 360° — `autoreverses: false` then starts each lap from where the last one began
+    /// instead of unwinding it.
+    private var coinAngle: Double { breathes && coinTurning ? 360 : 0 }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -112,14 +136,36 @@ struct XPWindowView: View {
                 .padding(.top, 10)
             waysOn
                 .padding(.top, 10)
-            HStack(spacing: 2) {
+            // One above the other at the accessibility sizes, as the Leaderboard/Shop pair below
+            // is: two full titles cannot share the ~300 pt an SE leaves inside this card at AX5.
+            AdaptiveStack(columnAlignment: .center, spacing: 2) {
                 RewardsExplainButton(explainer: .xp, title: RewardsExplainer.xp.title)
                 RewardsExplainButton(explainer: .points, title: RewardsExplainer.points.title)
             }
             .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
-        .task { await load() }
+        // Read on every activation, not once.
+        //
+        // A window left open across a background/foreground would otherwise show two moments at
+        // once: `RewardsRefresher` re-reads `/rewards/me/` into `RewardsStore` on the return, so
+        // the store-driven XP above moves while `mine` — the points, the coins, the rate — does
+        // not. The Convert alert quotes `mine`, so it could offer "20 points into 2 coins" while
+        // the server spends 50 and mints 5. No money is lost (the server decides Max), but the
+        // student confirms a trade that is not the one they are shown.
+        //
+        // `.task(id:)` rather than a close on background: the window stays usable, and this needs
+        // nothing of `RootView.swift`, which belongs to another session this round.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await load()
+        }
+        // The flag lives on the router, which outlives this view, so it is cleared from both ends.
+        // Here, because a route taken while a conversion is out destroys the window and every
+        // `@State` write `convert()` has left to make, this one included; and at the end of
+        // `convert()`, because a conversion that settles with the window still open has no
+        // disappearance coming.
+        .onDisappear { router.setHeaderWindowBusy(false) }
         // The cursor goes to the figure when the figure is actually there. A fixed wait from the
         // window's own appearance would usually land before `/rewards/me/` answers, leaving the
         // cursor on the loading skeleton inside an `.isModal` card — and the numbers that replaced
@@ -177,20 +223,17 @@ struct XPWindowView: View {
                 BoltShape(lit: true).fill(Color.white.opacity(0.38))
             }
             .frame(width: 70, height: 92)
-            // One expression, no branch — but the gate is on the output, not on `repeating:`.
-            // `repeating: false` does not hold the initial value: the track plays through once
-            // and rests at its FINAL keyframe, so a Reduce-Motion student would still see the
-            // bolt pulse once as the window opens, which is exactly the motion W-R5 owes them
-            // none of. So the animator keeps repeating and the scale it hands out is ignored
-            // while the budget says rest.
-            .keyframeAnimator(initialValue: 1.0, repeating: true) { view, scale in
-                view.scaleEffect(breathes ? scale : 1)
-            } keyframes: { _ in
-                KeyframeTrack {
-                    CubicKeyframe(1.09, duration: 0.64)
-                    CubicKeyframe(1.04, duration: 0.32)
-                    CubicKeyframe(1.0, duration: 0.64)
-                }
+            // The glow's idiom, for the reason in `breathingOut`'s doc: a
+            // `keyframeAnimator(repeating: true)` runs forever and merely has its output thrown
+            // away when the budget is closed, so a dying battery still paid for a `scaleEffect`
+            // invalidated every frame for as long as the window was open. The repeat is scoped to
+            // the one property it drives, so no other change in the update is caught in it.
+            //
+            // The mockup's three-stop pulse (1 → 1.09 → 1.04 → 1) becomes one autoreversing
+            // breath over the same ~1.6 s: a two-point animation is what a far-end flag can
+            // express, and at this amplitude the hold at 1.04 was never legible anyway.
+            .animation(breathes ? .easeInOut(duration: 0.8).repeatForever(autoreverses: true) : nil) {
+                $0.scaleEffect(boltScale)
             }
         }
         .frame(width: 110, height: 104)
@@ -363,20 +406,21 @@ struct XPWindowView: View {
 
     /// The coin, turning slowly about its own axis. Decorative; the count beside it is the figure.
     ///
-    /// Gated on the output, like the bolt: `repeating: false` would rest the coin at 360° — a full
-    /// turn played once — rather than hold it still, so the angle is dropped instead.
+    /// The glow's idiom, like the bolt: a flag flipped once, and a repeat scoped to the one
+    /// property it drives, so that a closed budget actually stops the loop rather than discarding
+    /// its output frame by frame.
     private var coin: some View {
         RewardsCoinArt(kind: .coin, size: 34)
-            .keyframeAnimator(initialValue: 0.0, repeating: true) { view, angle in
-                view.rotation3DEffect(
-                    .degrees(breathes ? angle : 0),
+            .animation(breathes ? .linear(duration: 2.4).repeatForever(autoreverses: false) : nil) {
+                $0.rotation3DEffect(
+                    .degrees(coinAngle),
                     axis: (x: 0, y: 1, z: 0),
                     perspective: 0.6
                 )
-            } keyframes: { _ in
-                KeyframeTrack { LinearKeyframe(360.0, duration: 2.4) }
             }
             .accessibilityHidden(true)
+            .onAppear { coinTurning = breathes }
+            .onChange(of: breathes) { _, now in coinTurning = now }
     }
 
     /// Convert, or — when there is nothing whole to convert — the quiet line that says how far off
@@ -425,6 +469,11 @@ struct XPWindowView: View {
 
     /// Side by side, one above the other at the accessibility sizes. Routing closes the window
     /// itself (`AppRouter.open`), so neither of these has anything to undo.
+    ///
+    /// And both are held off while a conversion is out, because that close is a forced one: a
+    /// route must take the window with it or leave it floating over the tab the student has been
+    /// sent to. Holding the two buttons is what keeps the forced path off the one journey where
+    /// the window has something left to say.
     private var waysOn: some View {
         AdaptiveStack(spacing: 8, columnSpacing: 8) {
             wayOn("Leaderboard", tint: Theme.accent, hint: "Opens the leaderboard") {
@@ -434,6 +483,7 @@ struct XPWindowView: View {
                 router.open(.shop, baseURL: session.client.config.baseURL) { openURL($0) }
             }
         }
+        .disabled(converting)
     }
 
     private func wayOn(
@@ -564,10 +614,21 @@ struct XPWindowView: View {
     /// answer that was dropped on the way back may still have been a conversion that landed. When
     /// it shows the coins rose after an error, the note says it worked rather than leaving "That
     /// didn't go through" over a box that went up.
+    ///
+    /// **The other copy of this flow is `RewardsHubView.convert()`** — same request, same alert,
+    /// same notes, same read-back ordering. Change one and the other needs the same change; the
+    /// shared money path is deliberately not extracted into the kit until the owner has seen this
+    /// branch.
+    ///
+    /// The window refuses to close for the length of it (`AppRouter.headerWindowBusy`). Unlike the
+    /// hub, which lives in a tab nothing tears down, this view is destroyed on close and every
+    /// write below would go with it — the note, the announcement on both failure branches, and the
+    /// burst's own coordinates.
     @MainActor
     private func convert() async {
         guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
         converting = true
+        router.setHeaderWindowBusy(true)
         convertNote = nil
         var answered = false
         // Coins were minted. Only that note is news the window already shows; every other note is
@@ -604,6 +665,11 @@ struct XPWindowView: View {
             }
         }
         converting = false
+        // The note is on screen and the figures have settled, so the window is the student's to
+        // close again — the hold is exactly as long as the promise the button makes. What follows
+        // runs in an unstructured task of its own and reaches the root's `CelebrationCenter`, so a
+        // close here no longer silences it.
+        router.setHeaderWindowBusy(false)
         // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
         // cursor goes with it: the figures are where the window's result shows, so it goes there.
         // Lowered first, with a yield between: the cursor is usually already on the figures when

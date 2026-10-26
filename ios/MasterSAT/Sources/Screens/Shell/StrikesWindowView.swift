@@ -9,7 +9,9 @@ import MasterSATKit
 /// question that pill cannot: how many of those are still in hand. A student who has spent six of
 /// nine has three, and showing nine here would be an offer the Shop refuses.
 ///
-/// It reads `/rewards/me/` once and nothing else (W-R3). The read is ticketed against
+/// It reads `/rewards/me/` and nothing else (W-R3) — once on opening, and again on every return
+/// to the front, because a window left open across a background shows the store-driven half of
+/// the header moving while its own payload stands still. The read is ticketed against
 /// `RewardsStore` exactly as the Rewards hub's is, so the window and the pill behind it can never
 /// disagree about the same two numbers, and the run it prints is `streakShown` — the figure the
 /// flame has actually rolled to, not one a celebration is still holding back.
@@ -23,14 +25,16 @@ struct StrikesWindowView: View {
     @Environment(AppRouter.self) private var router
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
 
     /// The one payload the window shows. Kept here rather than read from the store, because the
     /// store carries only the header's three figures and this window needs the strikes and the
     /// best run as well.
     @State private var mine: MyRewards?
-    /// The last read did not land, and nothing was kept — the failure state, with "Try again".
-    /// There is no stale state to distinguish: the window is built fresh on every open and reads
-    /// once, so a failure here is always a first failure over no numbers at all.
+    /// The last read did not land. With nothing kept it is the failure state, with "Try again";
+    /// with `mine` kept it is a refresh that failed over good numbers — the read each return to
+    /// the front takes, or "Check again" — and then the numbers stay with a `StaleNote` over them.
+    /// Never an empty "0 strikes to spend". The twin's two states, for the twin's reasons.
     @State private var failed = false
     /// The glow's far end. Flipped on appearance so the breath starts, and back whenever Reduce
     /// Motion is turned on mid-window.
@@ -76,7 +80,20 @@ struct StrikesWindowView: View {
                 .padding(.top, 2)
         }
         .frame(maxWidth: .infinity)
-        .task { await read() }
+        // Read on every activation, not once.
+        //
+        // A window left open across a background/foreground would otherwise print two moments at
+        // once: `RewardsRefresher` re-reads `/rewards/me/` into `RewardsStore` on the return, so
+        // `rewards.streak` — the run on the line below — moves while `mine.strikes` does not. That
+        // is the contradiction the kit's clamp exists to prevent ("3 strikes to spend / 4 lessons
+        // in a row"), arriving from the other side, where the clamp cannot reach it.
+        //
+        // `.task(id:)` rather than a close on background: the window stays usable, and this needs
+        // nothing of `RootView.swift`, which belongs to another session this round.
+        .task(id: scenePhase) {
+            guard scenePhase == .active else { return }
+            await read()
+        }
         // The cursor goes to the figure when the figure is actually there. A fixed wait would
         // usually land before `/rewards/me/` answers, leaving the cursor on the loading skeleton
         // inside an `.isModal` card — and the numbers that replaced it might then never be heard.
@@ -150,9 +167,17 @@ struct StrikesWindowView: View {
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
-                // No stale state here: the window is rebuilt on every open and reads once, so
-                // there is never a failed refresh sitting over good numbers — a failure is
-                // always a first failure, and `ErrorState` below is the whole of it.
+                // The numbers stay and say they may be old: a refresh that failed over good
+                // figures never blanks them — with a way out, because this window has no pull to
+                // refresh. Reachable since the read on each activation: before that the window
+                // read once and a failure was always a first failure.
+                if failed {
+                    VStack(spacing: 6) {
+                        StaleNote()
+                        checkAgain
+                    }
+                    .padding(.top, 6)
+                }
             }
         } else if failed {
             // Error is not empty: a failed read must never be drawn as "0 strikes to spend".
@@ -170,6 +195,20 @@ struct StrikesWindowView: View {
                 .padding(.horizontal, 48)
                 .padding(.vertical, 6)
         }
+    }
+
+    /// The way out of a read that did not land — the twin's button, worded and shaped the same.
+    ///
+    /// This window has no pull to refresh — it is a card, not a page — so a note that only said
+    /// "couldn't refresh" would stick for as long as the window is open. The button is the gesture
+    /// the note would otherwise ask for: one more `/rewards/me/`, which clears the note when it
+    /// goes through.
+    private var checkAgain: some View {
+        Button("Check again") { Task { await read() } }
+            .appFont(11.5, weight: .heavy)
+            .foregroundStyle(Theme.accentText)
+            .buttonStyle(.plain)
+            .hitTarget(44)
     }
 
     // MARK: - The ways on

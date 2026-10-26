@@ -27,10 +27,16 @@ struct HeaderWindowOverlay: View {
                 Color.black.opacity(0.38)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
+                    // `closeHeaderWindow` refuses while the open window declares itself busy, so
+                    // the tap the dimming invites cannot destroy a window with a request still
+                    // out and take every word of its answer with it.
                     .onTapGesture { router.closeHeaderWindow() }
                     .accessibilityHidden(true)
                     .transition(.opacity)
-                HeaderWindowCard(onClose: { router.closeHeaderWindow() }) {
+                HeaderWindowCard(
+                    canClose: !router.headerWindowBusy,
+                    onClose: { router.closeHeaderWindow() }
+                ) {
                     content(for: kind)
                 }
                 .padding(.horizontal, 18)
@@ -66,6 +72,11 @@ struct HeaderWindowOverlay: View {
 /// capped so iPad does not stretch it into a banner. The ✕ sits outside the scroll view: at AX5 a
 /// close button that has scrolled away is a window VoiceOver and thumbs both struggle to leave.
 struct HeaderWindowCard<Content: View>: View {
+    /// False while the content has work out that would be lost with it — the XP window's
+    /// conversion. The ✕ is then held off (and says why), as the dim's tap and `.escape` are by
+    /// the router's own guard: this card is destroyed on close, so a dismissal mid-request drops
+    /// every write that was going to say what happened.
+    var canClose = true
     let onClose: () -> Void
     @ViewBuilder var content: Content
 
@@ -101,7 +112,11 @@ struct HeaderWindowCard<Content: View>: View {
                         .hitTarget(44)
                 }
                 .buttonStyle(PressBounce())
+                .disabled(!canClose)
                 .accessibilityLabel("Close")
+                // A button held off says why — "dimmed" is not a reason — and it is held off for
+                // at most one request.
+                .accessibilityHint(canClose ? "" : "Available once this finishes")
             }
             .padding(.top, 12)
             .padding(.trailing, 12)
@@ -143,7 +158,9 @@ struct HeaderWindowCard<Content: View>: View {
         .opacity(contentHeight == 0 ? 0 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
-        // VoiceOver's two-finger scrub puts it away, as it does a sheet.
+        // VoiceOver's two-finger scrub puts it away, as it does a sheet. It goes through the same
+        // `onClose` as the ✕ and the dim, so the busy guard holds for it too — there is no second
+        // door out of the card.
         .accessibilityAction(.escape, onClose)
     }
 }
