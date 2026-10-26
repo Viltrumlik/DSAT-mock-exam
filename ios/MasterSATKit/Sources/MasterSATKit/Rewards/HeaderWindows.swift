@@ -10,7 +10,9 @@ import Foundation
 ///
 /// Neither value reads anything. They are built from a `MyRewards` the caller already has and the
 /// hero board it already asked for (Ruling W-R3), so the window can never show a total the pill
-/// behind it disagrees with, and opening a window costs no request.
+/// behind it disagrees with, and the *values* cost no request. The view that builds them does take
+/// one read of its own — `/rewards/me/` for the fields the header's store does not carry, which
+/// W-R4 sanctions — and these types know nothing of it.
 
 // MARK: - Strikes
 

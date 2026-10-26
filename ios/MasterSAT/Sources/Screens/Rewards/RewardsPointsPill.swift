@@ -55,6 +55,11 @@ struct RewardsExplainButton: View {
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.circle")
                     .appFont(14, weight: .semibold)
+                    // The glyph is capped even in the titled case, where the button as a whole is
+                    // not: `frame` does not clip, so a 14-pt symbol rendering near 35 pt at AX5
+                    // grew straight out of its 28-pt square and into the title beside it. A no-op
+                    // for the bare-glyph call sites, which the cap below already holds here.
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .frame(width: 28, height: 28)
                 if let title {
                     Text(title).appFont(12, weight: .semibold)
@@ -69,7 +74,7 @@ struct RewardsExplainButton: View {
         // A glyph in a fixed 28-pt square cannot grow, so it is held still and shown large on a
         // long press (`capDynamicType`, spelled out here). With words beside it there is a line
         // that can wrap instead, and capping those would be holding back type a student asked to
-        // be larger — so only the bare glyph takes the cap.
+        // be larger — so only the TEXT is let go here; the glyph keeps its own cap, above.
         .dynamicTypeSize(...(title == nil ? DynamicTypeSize.xxxLarge : .accessibility5))
         .accessibilityShowsLargeContentViewer {
             Label(explainer.title, systemImage: "exclamationmark.circle")
