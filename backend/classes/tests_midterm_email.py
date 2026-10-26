@@ -260,6 +260,34 @@ class FanOutTests(MidtermEmailFixture):
             result = send_midterm_scheduled_emails(sched.pk)
         self.assertEqual((result["sent"], result["failed"]), (1, 1))
 
+    def test_mailguns_recipient_limit_is_waited_out_not_counted_as_failed(self):
+        from smtplib import SMTPDataError
+
+        from django.core.mail import EmailMultiAlternatives
+
+        sched = self._schedule()
+        limited = {"done": False}
+        original_send = EmailMultiAlternatives.send
+
+        def _limit_once(message, *args, **kwargs):
+            if not limited["done"]:
+                limited["done"] = True
+                raise SMTPDataError(
+                    421,
+                    b"Domain mg.mastersat.uz is not allowed to send: recipient limit (26) "
+                    b"exceeded, try again after Mon, 19 Oct 2026 15:49:10 UTC",
+                )
+            return original_send(message, *args, **kwargs)
+
+        with patch.object(
+            EmailMultiAlternatives, "send", autospec=True, side_effect=_limit_once
+        ), patch("core.mail_delivery._pause") as pause:
+            result = send_midterm_scheduled_emails(sched.pk)
+
+        self.assertEqual((result["sent"], result["failed"]), (2, 0))
+        self.assertEqual(sorted(m.to[0] for m in mail.outbox), [self.s1.email, self.s2.email])
+        pause.assert_called_once()
+
     def test_nothing_is_sent_while_sending_is_disabled(self):
         sched = self._schedule()
         with override_settings(EMAIL_SENDING_ENABLED=False):

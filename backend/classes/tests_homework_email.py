@@ -87,6 +87,39 @@ class HomeworkEmailTests(TestCase):
         hw.refresh_from_db()
         self.assertIsNotNone(hw.notified_at)
 
+    # ── delivery ─────────────────────────────────────────────────────────────
+    def test_mailguns_recipient_limit_is_waited_out_not_counted_as_failed(self):
+        """2026-08-19: five homeworks set a minute apart lost 26 addresses to this 421."""
+        from smtplib import SMTPDataError
+        from unittest.mock import patch
+
+        from django.core.mail import EmailMultiAlternatives
+
+        from classes.mail_homework import send_homework_assigned_emails
+
+        hw = self._homework()
+        limited = {"done": False}
+        original_send = EmailMultiAlternatives.send
+
+        def _limit_once(message, *args, **kwargs):
+            if not limited["done"]:
+                limited["done"] = True
+                raise SMTPDataError(
+                    421,
+                    b"Domain mg.mastersat.uz is not allowed to send: recipient limit (26) "
+                    b"exceeded, try again after Wed, 19 Aug 2026 10:54:37 UTC",
+                )
+            return original_send(message, *args, **kwargs)
+
+        with patch.object(
+            EmailMultiAlternatives, "send", autospec=True, side_effect=_limit_once
+        ), patch("core.mail_delivery._pause") as pause:
+            result = send_homework_assigned_emails(hw.pk)
+
+        self.assertEqual((result["sent"], result["failed"]), (2, 0))
+        self.assertEqual({r for m in mail.outbox for r in m.to}, {"hw_s1@t.com", "hw_s2@t.com"})
+        pause.assert_called_once()
+
     # ── content ──────────────────────────────────────────────────────────────
     def test_email_carries_deadline_and_a_link_to_the_detail_page(self):
         hw = self._homework(instructions="Read the passage twice.")

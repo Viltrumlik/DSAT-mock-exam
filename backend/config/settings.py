@@ -111,6 +111,13 @@ DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'MasterSAT <support@masters
 # the logo breaks in every inbox. See core/mail.py.
 EMAIL_SITE_URL = os.getenv('EMAIL_SITE_URL', 'https://mastersat.uz')
 
+# Mailgun lets this domain send ~26 recipients per 30 s and answers 421 past that. Bulk
+# senders (core/mail_delivery.py) leave this gap between messages in each process — 24 per
+# 30 s — and retry a 421 up to EMAIL_SEND_MAX_ATTEMPTS times after the wait Mailgun names.
+# The gap is forced to 0 under tests below, so no suite sleeps.
+EMAIL_SEND_INTERVAL_SECONDS = float(os.getenv('EMAIL_SEND_INTERVAL_SECONDS', '1.25'))
+EMAIL_SEND_MAX_ATTEMPTS = int(os.getenv('EMAIL_SEND_MAX_ATTEMPTS', '5'))
+
 # Where the ops console lives. The QR on an event ticket points here, because `host_guard`
 # only allows the ops pages' API calls on the admin host — a QR aimed at the apex opens a
 # page that 403s the moment it loads. Set per environment; the default is production's.
@@ -373,6 +380,9 @@ FORCE_SQLITE_FOR_TESTS = os.getenv("LMS_FORCE_SQLITE_FOR_TESTS", "").lower() in 
 RUNNING_TESTS = any(a in ("test", "pytest") for a in sys.argv)
 if RUNNING_TESTS and FORCE_SQLITE_FOR_TESTS:
     DATABASE_URL = ""
+if RUNNING_TESTS:
+    # The test runner swaps in locmem mail; there is no relay to pace for.
+    EMAIL_SEND_INTERVAL_SECONDS = 0.0
 
 if not DEBUG and not DATABASE_URL:
     raise ValueError("DATABASE_URL must be set in production")
