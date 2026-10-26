@@ -41,6 +41,11 @@ struct HomeworkDetailView: View {
     @State private var freshRow: AssignmentListing?
     @State private var detailError: String?
     @State private var submission: Submission?
+    /// The homework's composed grade, which the server serves whether or not a hand-in exists:
+    /// a word set mastered on Monday settles the automatic side days before the upload slot is
+    /// used. Held beside the row so that grade — and the line saying it can still go up — is
+    /// shown in that week, instead of waiting for something to show it on.
+    @State private var composedGrade: ComposedGrade?
     /// The hand-in could not be read. Its section says so rather than offering a first
     /// hand-in over work that may already be there.
     @State private var submissionError: String?
@@ -174,7 +179,18 @@ struct HomeworkDetailView: View {
                 // graded homework there shows "To do" and hides its feedback — not copied.
                 if let submission, let review = submission.review,
                    ["REVIEWED", "RETURNED"].contains((submission.status ?? "").uppercased()) {
-                    reviewCard(review, returned: submission.isReturned)
+                    reviewCard(review, grade: submission.composedGrade, returned: submission.isReturned)
+                // The standalone grade stands in only while there is no row — never beside one.
+                // Whenever a row exists it is authoritative, grade and all: every response that
+                // carries a row carries that row's own `composed_grade` with it
+                // (`SubmissionSerializer`), so the row's grade is never older than the row. The
+                // standalone grade is the no-row case alone — a weighted homework has a composed
+                // grade before anything has been handed in. Preferring the row by its PRESENCE,
+                // not by `??` on the grade, is what keeps a stale "already decided" card from
+                // surviving beside new feedback.
+                } else if let grade = submission == nil ? composedGrade : submission?.composedGrade,
+                          let settled = ComposedGradeRules.settledSoFar(grade) {
+                    settledSoFarCard(settled)
                 }
                 if let note = submission?.returnNote, !note.isEmpty { returnNote(note) }
                 lessonVideo(a)
@@ -272,8 +288,25 @@ struct HomeworkDetailView: View {
 
     /// The teacher's mark, and what they said. First after the header, because once work has
     /// been marked this is the one thing a student opens the page to read.
-    private func reviewCard(_ review: SubmissionReview, returned: Bool) -> some View {
+    ///
+    /// `grade` is the whole grade on a homework where the teacher's mark is only a share of it.
+    /// Where there is one it replaces the mark entirely: `review.scoreText` is then that share
+    /// and nothing more, and printing it here told a student with a 20%-weighted 50 that their
+    /// grade was 50 when the server — and their teacher's own screen — said 82. The arithmetic
+    /// is the server's and is never redone here; the words are `ComposedGradeRules`'.
+    private func reviewCard(_ review: SubmissionReview, grade: ComposedGrade?, returned: Bool) -> some View {
         let tone = returned ? Theme.warning : Theme.success
+        // The two states that have no number to show say a sentence instead, and a sentence
+        // does not belong in the figure's corner — it goes on its own line under the header.
+        // Which state that is, and what "Auto-marked" may label, are the kit's readings of the
+        // grade (`ComposedGradeRules`); this page only draws them.
+        let pending = ComposedGradeRules.isPending(grade)
+        let figure = ComposedGradeRules.pillText(review: review, grade: grade)
+        let showsRawMark = ComposedGradeRules.showsRawMark(grade)
+        // A total that could not be worked out is a failure, and the hourglass this page uses
+        // everywhere means "not yet": under it a student reads a broken grade as a queue they
+        // are in. The two states look different because they ARE different.
+        let failed = grade?.unavailable ?? false
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 IconTile(systemName: returned ? "arrow.uturn.backward.circle.fill" : "checkmark.seal.fill", tone: tone)
@@ -287,14 +320,14 @@ struct HomeworkDetailView: View {
                     }
                 }
                 Spacer(minLength: 0)
-                if let score = review.scoreText {
+                if let figure, !pending {
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text(score)
+                        Text(figure)
                             .appFont(22, weight: .heavy, monospacedDigits: true)
                             .foregroundStyle(tone)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
-                        if review.isAuto {
+                        if review.isAuto, showsRawMark {
                             Text("Auto-marked")
                                 .appFont(11, weight: .bold)
                                 .foregroundStyle(Theme.textSecondary)
@@ -302,15 +335,62 @@ struct HomeworkDetailView: View {
                     }
                 }
             }
+            if let figure, pending {
+                Chip(text: figure, icon: failed ? "exclamationmark.triangle.fill" : "hourglass", tone: .warning)
+            }
+            if let grade, let sentence = ComposedGradeRules.breakdownSentence(grade) {
+                gradeBreakdown(sentence, failed: failed)
+            }
             if let feedback = review.feedback, !feedback.isEmpty {
                 Text(feedback)
                     .appFont(15)
                     .fixedSize(horizontal: false, vertical: true)
-            } else if !returned {
+            } else if !returned, !pending {
+                // Not while the grade is still waiting: there is no score above to point at,
+                // and the line under the chip already says what is happening.
                 Text("No written feedback — your score is shown above.")
                     .appFont(13)
                     .foregroundStyle(Theme.textSecondary)
             }
+        }
+        .cardStyle()
+    }
+
+    /// Where the grade came from, said under the figure that shows it.
+    ///
+    /// A composition that could not be worked out is a failure, not a missing grade, so it is
+    /// given the warning panel the page uses for anything a student should not read past —
+    /// their teacher's mark IS saved, and only the total is unavailable.
+    private func gradeBreakdown(_ sentence: String, failed: Bool) -> some View {
+        Text(sentence)
+            .appFont(failed ? 13 : 12)
+            .foregroundStyle(failed ? Theme.warning : Theme.textSecondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(failed ? 12 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .fill(failed ? Theme.warningSoft : .clear)
+            )
+    }
+
+    /// The part of a grade that is already decided, before the teacher has marked anything.
+    ///
+    /// Vocabulary mastered on Monday settles the automatic side at once; the teacher may not
+    /// reach the hand-in until Friday. The server composes and serves that number anyway, and
+    /// without this card the student spends the week with no grade on the page at all.
+    private func settledSoFarCard(_ settled: ComposedGradeRules.SettledSoFar) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                IconTile(systemName: "hourglass", tone: Theme.info)
+                Text("Part of this grade is already decided").appFont(16, weight: .heavy)
+                Spacer(minLength: 0)
+            }
+            Chip(text: settled.figure, tone: .info)
+            Text(settled.sentence)
+                .appFont(13)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .cardStyle()
     }
@@ -797,19 +877,19 @@ struct HomeworkDetailView: View {
                     staged.removeAll { carried.contains($0.token) }
                     for token in tokens { thumbnails.drop(token) }
                 }
-                submission = (try? await session.student.mySubmission(
+                submission = (try? await session.student.mySubmissionAnswer(
                     classroomId: classroomId,
                     assignmentId: a.id
-                )) ?? submission
+                ))?.submission ?? submission
             } catch APIError.conflict(let detail) {
                 // Changed somewhere else (another device, a teacher's return). Show what the
                 // server holds now; the staged files stay, ready to send against it.
                 actionError = detail.isEmpty ? "Submission was modified. Refresh and try again." : detail
                 sendFailed = true
-                submission = (try? await session.student.mySubmission(
+                submission = (try? await session.student.mySubmissionAnswer(
                     classroomId: classroomId,
                     assignmentId: a.id
-                )) ?? submission
+                ))?.submission ?? submission
             } catch APIError.http(413, _) {
                 // Refused by the proxy before the server saw it; the body is an HTML page.
                 actionError = "That upload is too big to send at once. Send fewer files at a time."
@@ -871,11 +951,14 @@ struct HomeworkDetailView: View {
         async let fullAssignment = session.student.assignment(classroomId: classroomId, id: assignmentId)
         async let studentRow = readRow(readsRow)
         do {
-            // nil is "nothing handed in yet" — a normal state, not a failure.
-            submission = try await session.student.mySubmission(
+            // A nil row is "nothing handed in yet" — a normal state, not a failure. The grade
+            // comes back beside it because it can exist without it.
+            let answer = try await session.student.mySubmissionAnswer(
                 classroomId: classroomId,
                 assignmentId: assignmentId
             )
+            submission = answer.submission
+            composedGrade = answer.composedGrade
         } catch where Task.isCancelled {
             // Leaving the page (a push over it, a pop) cancels `.task`, and `APIClient` wraps that
             // as a transport failure. Not a failure, so nothing is stored: the page that comes

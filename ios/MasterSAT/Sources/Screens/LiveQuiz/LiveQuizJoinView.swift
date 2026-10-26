@@ -114,6 +114,7 @@ final class LiveQuizJoinModel {
 
 private struct LiveQuizJoinScreen: View {
     @Environment(Session.self) private var session
+    @Environment(CelebrationCenter.self) private var celebrations
     @Bindable var model: LiveQuizJoinModel
     @FocusState private var codeFocused: Bool
 
@@ -154,6 +155,7 @@ private struct LiveQuizJoinScreen: View {
                 model.presented = nil
             }
             .environment(session)
+            .coversCelebrations(celebrations)
             .noBarClearance()
         }
         .onChange(of: model.presented) { _, presented in

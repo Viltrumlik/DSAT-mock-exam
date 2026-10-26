@@ -43,11 +43,87 @@ import Testing
         #expect(try await api().rail().isEmpty)
     }
 
-    @Test("Only a web page can be opened — SFSafariViewController throws on anything else")
+    @Test("A payload with no readable stories is a failure, not an empty rail")
+    func unreadablePayloadThrows() async {
+        // The claim is narrower than "it throws": the client turns every decode failure into
+        // `APIError.decoding`, which is what the rail reads as "we could not understand the
+        // answer" rather than as a transport problem.
+        func isDecoding(_ error: APIError?) -> Bool {
+            if let error, case .decoding = error { return true }
+            return false
+        }
+        server.handler = { _ in .json(["results": []]) }
+        let noKey = await #expect(throws: APIError.self) { try await api().rail() }
+        #expect(isDecoding(noKey))
+
+        server.handler = { _ in .json(["stories": "soon"]) }
+        let notAList = await #expect(throws: APIError.self) { try await api().rail() }
+        #expect(isDecoding(notAList))
+
+        // A null list is unreadable too — the endpoint always sends a list, so a null means
+        // something went wrong, and the rail must not read it as "nothing posted".
+        server.handler = { _ in .json(["stories": NSNull()]) }
+        let null = await #expect(throws: APIError.self) { try await api().rail() }
+        #expect(isDecoding(null))
+    }
+
+    @Test("Anywhere on the site is routed; anywhere else is not")
+    func routedLinks() {
+        func link(_ raw: String) -> AppLink? { Story(id: 1, title: "t", linkURL: raw).routedLink }
+        #expect(link("/events") == .events)
+        #expect(link("https://mastersat.uz/events") == .events)
+        #expect(link("https://www.mastersat.uz/classes/12?from=story") == .classroom(id: 12))
+        #expect(link("  /vocabulary/sets/8  ") == .vocabularySet(id: 8))
+        // Protocol-relative, on the site: still the site, still routed.
+        #expect(link("//mastersat.uz/events") == .events)
+        // Somewhere on the site the app has no screen for: still routed, as the site path it
+        // is, so the router's `.web` branch opens it on the website rather than the viewer
+        // showing no "Open" at all.
+        #expect(link("/blog/2026/mock-day") == .unknown("/blog/2026/mock-day"))
+        #expect(
+            link("/blog/2026/mock-day")?.webURL(base: config.baseURL)?.absoluteString
+                == "https://mastersat.uz/blog/2026/mock-day"
+        )
+        // Not this site: `openableLink` or nothing. A protocol-relative off-site link must
+        // never become a path the router would open on mastersat.uz.
+        #expect(link("https://example.com/a") == nil)
+        #expect(link("//evil.com/x") == nil)
+        #expect(link("mailto:office@mastersat.uz") == nil)
+        #expect(link("javascript:alert(1)") == nil)
+        #expect(link("") == nil)
+        #expect(link("   ") == nil)
+    }
+
+    @Test("A story's link produces an Open button, or deliberately none at all")
+    func openButtonPresence() {
+        func shows(_ raw: String) -> Bool {
+            let story = Story(id: 1, title: "t", linkURL: raw)
+            return story.routedLink != nil || story.openableLink != nil
+        }
+        // Everything on the site, screen or no screen, and every off-site web page.
+        #expect(shows("/events"))
+        #expect(shows("/blog/2026/mock-day"))
+        #expect(shows("https://mastersat.uz/blog"))
+        #expect(shows("//mastersat.uz/events"))
+        #expect(shows("https://example.com/a"))
+        // A link saved without a scheme is relative on the website too (`href="example.com"`
+        // resolves against the site), so it gets the same button and the same 404 — not the
+        // silence the app used to answer with.
+        #expect(shows("example.com"))
+        // Nothing else gets a button.
+        #expect(!shows("//evil.com/x"))
+        #expect(!shows("mailto:office@mastersat.uz"))
+        #expect(!shows("javascript:alert(1)"))
+        #expect(!shows(""))
+    }
+
+    @Test("Only a web page can be opened in the browser — a story is not a launcher")
     func openableLinks() {
         func link(_ raw: String) -> URL? { Story(id: 1, title: "t", linkURL: raw).openableLink }
         #expect(link("https://example.com/a?b=1") != nil)
         #expect(link("http://example.com") != nil)
+        // On the site but with no screen of its own: the browser can still have it.
+        #expect(link("https://mastersat.uz/blog") != nil)
         #expect(link("  https://example.com  ")?.host == "example.com")
         #expect(link("") == nil)
         #expect(link("javascript:alert(1)") == nil)
@@ -55,5 +131,8 @@ import Testing
         #expect(link("ftp://example.com/file") == nil)
         #expect(link("https://") == nil)
         #expect(link("example.com") == nil)
+        // Protocol-relative: no scheme, so not something to hand the browser.
+        #expect(link("//evil.com/x") == nil)
+        #expect(link("//mastersat.uz/events") == nil)
     }
 }

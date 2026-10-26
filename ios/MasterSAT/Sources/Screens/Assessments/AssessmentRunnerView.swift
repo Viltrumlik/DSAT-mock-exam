@@ -20,8 +20,12 @@ struct AssessmentRunnerView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var runner: AssessmentRunner?
     @State private var showSubmitConfirmation = false
-    @State private var showMap = false
-    @State private var showCalculator = false
+    /// The one sheet the runner may have up. One host, one `.sheet(item:)`: a second
+    /// `.sheet` on the same view cannot present while the first is up, which is how the
+    /// Report button went dead behind the calculator — and, because `ReportedQuestion.id`
+    /// is the question id, a second tap handed `.sheet(item:)` an equal item and it saw no
+    /// change at all. As one item, asking for another sheet swaps the one on screen.
+    @State private var sheet: RunnerSheet?
     @State private var didSubmit = false
     /// Crossed-out choices, per question. Scratch work, not an answer: the site keeps this
     /// client-side too, and a student who eliminates B has not told the server anything.
@@ -53,6 +57,23 @@ struct AssessmentRunnerView: View {
 
     /// The top of the scrolled page — a new question opens here.
     private static let top = "runner.top"
+
+    /// The runner's three sheets, as one value: the map, the calculator and a report about
+    /// one question. One `.sheet(item:)` hosts all three, so there is never a second one
+    /// waiting behind the first for its turn that never comes.
+    private enum RunnerSheet: Identifiable, Hashable {
+        case map
+        case calculator
+        case report(ReportedQuestion)
+
+        var id: String {
+            switch self {
+            case .map: "map"
+            case .calculator: "calculator"
+            case .report(let target): "report.\(target.questionId)"
+            }
+        }
+    }
 
     /// Desmos is offered on Middle and Senior maths sets only — the web runner's rule, read
     /// from the set's raw subject and level. A Junior or Foundation set is meant to be worked
@@ -178,19 +199,32 @@ struct AssessmentRunnerView: View {
 
             footer(runner)
         }
-        .sheet(isPresented: $showMap) {
-            QuestionMapSheet(runner: runner) { index in
-                move(to: index, runner)
-                showMap = false
-            }
-            .presentationDetents([.medium, .large])
-        }
-        .sheet(isPresented: $showCalculator) {
-            CalculatorPanel { showCalculator = false }
-                // Resizable rather than full-screen: a graph is only useful next to the
-                // question it belongs to, and Desmos needs real height to be usable.
+        // Each case keeps its own presentation configuration; the host is shared.
+        .sheet(item: $sheet) { which in
+            switch which {
+            case .map:
+                QuestionMapSheet(runner: runner) { index in
+                    move(to: index, runner)
+                    sheet = nil
+                }
                 .presentationDetents([.medium, .large])
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            case .calculator:
+                CalculatorPanel { sheet = nil }
+                    // Resizable rather than full-screen: a graph is only useful next to the
+                    // question it belongs to, and Desmos needs real height to be usable.
+                    .presentationDetents([.medium, .large])
+                    .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            case .report(let target):
+                // Which question is reported is fixed by the tap, not read while the sheet is
+                // up: a page that turns behind it must not move the report on to the next
+                // question.
+                ReportProblemSheet(
+                    system: .assessment,
+                    questionId: target.questionId,
+                    attemptId: attemptId,
+                    questionNumber: target.number
+                )
+            }
         }
     }
 
@@ -219,11 +253,13 @@ struct AssessmentRunnerView: View {
             AdaptiveSpacer()
 
             HStack(spacing: 12) {
+                reportButton(runner)
+
                 if offersCalculator {
-                    Button { showCalculator = true } label: {
+                    Button { sheet = .calculator } label: {
                         Image(systemName: "function")
                             .appFont(16, weight: .semibold)
-                            .foregroundStyle(showCalculator ? Theme.accent : Theme.textSecondary)
+                            .foregroundStyle(sheet == .calculator ? Theme.accent : Theme.textSecondary)
                             .frame(width: Self.minTarget, height: Self.minTarget)
                             .contentShape(Rectangle())
                     }
@@ -252,6 +288,33 @@ struct AssessmentRunnerView: View {
         // 50 pt it had when its glyphs were 30 pt tall inside 10 pt of padding.
         .padding(.vertical, 3)
         .background(Theme.card)
+    }
+
+    /// "Report a problem with this question", as the web runner carries it in its own tool row.
+    ///
+    /// Beside the flag in purpose, not in glyph: flagging is the student's private bookmark and
+    /// this is a message to the school, and two flags in one runner would be read as one control.
+    /// Nothing here touches the answer behind it — the sheet opens over the page and the page
+    /// carries on as it was.
+    @ViewBuilder
+    private func reportButton(_ runner: AssessmentRunner) -> some View {
+        if let question = runner.currentQuestion {
+            Button {
+                sheet = .report(ReportedQuestion(questionId: question.id, number: runner.currentIndex + 1))
+            } label: {
+                Image(systemName: "exclamationmark.bubble")
+                    .appFont(16, weight: .semibold)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(width: Self.minTarget, height: Self.minTarget)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Report a problem with this question")
+            // A glyph in a fixed 44-pt frame spills out of it at the accessibility sizes, and a
+            // speech bubble between a calculator and a zoom stepper does not say what it does.
+            // The cap holds the frame; the large content viewer names it on a press and hold.
+            .capDynamicType(label: "Report a problem", systemImage: "exclamationmark.bubble")
+        }
     }
 
     private func zoomButton(_ icon: String, label: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -520,7 +583,7 @@ struct AssessmentRunnerView: View {
             .opacity(runner.currentIndex == 0 ? 0.4 : 1)
 
             Button {
-                showMap = true
+                sheet = .map
             } label: {
                 HStack(spacing: 6) {
                     Text("\(ScoreText.string(runner.currentIndex + 1)) / \(ScoreText.string(runner.questions.count))")
