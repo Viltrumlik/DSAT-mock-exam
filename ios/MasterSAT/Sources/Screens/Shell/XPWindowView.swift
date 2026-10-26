@@ -363,7 +363,11 @@ struct XPWindowView: View {
     /// Points, coins and Convert, on an inset of its own so the trade is one thing on the card.
     @ViewBuilder private var pointsBox: some View {
         if let window {
-            HStack(spacing: 10) {
+            // A row while the words fit beside the coin; a column once they cannot. Checked on the
+            // device at AX5, where the fixed row squeezed "9 points" into a sliver of width and
+            // broke it mid-word ("point / s"), with the coin crushed to an edge and the next-coin
+            // line stacked one word per line beside it.
+            AdaptiveStack(spacing: 10, columnSpacing: 8) {
                 coin
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: "\(ScoreText.string(window.points)) points")
@@ -377,7 +381,8 @@ struct XPWindowView: View {
                 // coins to spend". Convert keeps its own element, below.
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(RewardsFormat.count(window.points, "point")), \(window.coinsLine)")
-                Spacer(minLength: 4)
+                // Not a plain `Spacer`: once the box is a column it would only add the gap twice.
+                AdaptiveSpacer()
                 convertControl(window)
             }
             .padding(10)
