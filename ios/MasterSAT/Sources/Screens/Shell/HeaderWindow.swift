@@ -54,8 +54,7 @@ struct HeaderWindowOverlay: View {
         case .strikes:
             StrikesWindowView()
         case .xp:
-            // Task 4 — the bolt, the XP, the place, the points box and Convert.
-            Text("XP and points").appFont(22, weight: .heavy, design: .rounded)
+            XPWindowView()
         }
     }
 }
