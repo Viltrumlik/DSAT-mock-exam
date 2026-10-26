@@ -44,12 +44,20 @@ struct EventInvitePrompt: View {
             .task {
                 await model.run(
                     api: EventsAPI(client: session.client),
+                    role: signedInRole,
                     stageIsClear: stageIsClear,
                     // Handed to the router, which presents it: the one host, the one sheet
                     // at a time.
                     present: { router.eventInvite = $0 }
                 )
             }
+    }
+
+    /// The signed-in account's role, or nil before one is known — which is not invited, the
+    /// same way an unrecognised role is not (`EventInviteRules.mayBeInvited`).
+    private var signedInRole: String? {
+        if case .signedIn(let user) = session.phase { return user.role }
+        return nil
     }
 
     /// Whether the screen is free for one more thing to ask for it.
@@ -81,6 +89,14 @@ final class EventInviteModel {
     private static let openDelay: Duration = .milliseconds(2200)
     /// How often to look again while something else still has the screen.
     private static let recheck: Duration = .seconds(1)
+    /// How long to keep looking before giving the moment up (owner, 2026-10-26).
+    ///
+    /// The web's dialog waits for as long as its page is mounted, because on a laptop that IS
+    /// the sitting. A phone is not: "right after signing in" and "while I was reading something
+    /// at lunchtime" are different interruptions, and only the first is the one this card was
+    /// written for. If the screen never clears inside three minutes, the seat waits for the
+    /// next launch.
+    private static let giveUpAfter: Duration = .seconds(180)
 
     private let memory = EventInviteMemory()
     /// One run per launch. `.task` runs again whenever the view it is on is rebuilt with a new
@@ -89,11 +105,15 @@ final class EventInviteModel {
 
     func run(
         api: EventsAPI,
+        role: String?,
         stageIsClear: @escaping @MainActor () -> Bool,
         present: @escaping @MainActor (LearningEvent) -> Void
     ) async {
         guard !hasRun else { return }
         hasRun = true
+        // Before the request, not after: a teacher is not asked, and is not made to pay for
+        // the list either.
+        guard EventInviteRules.mayBeInvited(role: role) else { return }
 
         let events: [LearningEvent]
         do {
@@ -107,6 +127,7 @@ final class EventInviteModel {
 
         do { try await Task.sleep(for: Self.openDelay) } catch { return }
 
+        let deadline = ContinuousClock.now.advanced(by: Self.giveUpAfter)
         while !Task.isCancelled {
             if stageIsClear() {
                 // Marked as it opens, not as it was chosen.
@@ -114,6 +135,9 @@ final class EventInviteModel {
                 present(featured)
                 return
             }
+            // Nothing is remembered on the way out: the event was never put to the student, so
+            // the next launch may still ask.
+            guard ContinuousClock.now < deadline else { return }
             do { try await Task.sleep(for: Self.recheck) } catch { return }
         }
     }

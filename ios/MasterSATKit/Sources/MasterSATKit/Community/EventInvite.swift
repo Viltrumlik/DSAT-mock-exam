@@ -17,6 +17,23 @@ public enum EventInviteRules {
     ///
     /// Nil for an empty list (a failed load arrives here as one — a card cannot honestly name
     /// an event it did not load) and when every candidate has already been seen.
+    /// Whether this account is one to invite to a seat at all.
+    ///
+    /// Seats are a student's, and `can_sign_up` is not a role check — the server leaves that to
+    /// the client, which is why the web gates its dialog on `isStudentSiteRole`. Without this, a
+    /// teacher signing in on their phone was offered a student's seat (owner, 2026-10-26).
+    /// Public learners count: events are one of the two things they see.
+    ///
+    /// An unknown or missing role is NOT invited. A role this build does not recognise is more
+    /// likely a new staff role than a new kind of student, and the cost of staying quiet is one
+    /// missed prompt.
+    public static func mayBeInvited(role: String?) -> Bool {
+        switch (role ?? "").trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+        case "student", "public_student": return true
+        default: return false
+        }
+    }
+
     public static func featured(_ events: [LearningEvent], shown: Set<Int> = []) -> LearningEvent? {
         events
             .filter { $0.canSignUp && !shown.contains($0.id) }

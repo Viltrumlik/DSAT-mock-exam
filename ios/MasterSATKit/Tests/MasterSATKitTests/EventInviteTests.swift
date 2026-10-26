@@ -103,4 +103,23 @@ import Testing
         memory.remember(first!.id)
         #expect(EventInviteRules.featured(events, shown: memory.shownIds)?.id == 2)
     }
+
+    @Test("A seat is a student's: staff are not invited, and neither is a role this build cannot read")
+    func onlyStudentsAreInvited() {
+        // The web's `isStudentSiteRole`: a learner, centre or public, and nobody else.
+        #expect(EventInviteRules.mayBeInvited(role: "student"))
+        #expect(EventInviteRules.mayBeInvited(role: "public_student"))
+        // However it is cased or padded on the way here.
+        #expect(EventInviteRules.mayBeInvited(role: "  STUDENT "))
+
+        for staff in ["teacher", "support_teacher", "test_admin", "test_auditor", "admin", "super_admin"] {
+            #expect(!EventInviteRules.mayBeInvited(role: staff), "\(staff) was offered a student's seat")
+        }
+
+        // Nothing known yet, and a role added after this build shipped: both stay quiet, because
+        // an unrecognised role is likelier to be new staff than a new kind of student.
+        #expect(!EventInviteRules.mayBeInvited(role: nil))
+        #expect(!EventInviteRules.mayBeInvited(role: ""))
+        #expect(!EventInviteRules.mayBeInvited(role: "regional_coordinator"))
+    }
 }
