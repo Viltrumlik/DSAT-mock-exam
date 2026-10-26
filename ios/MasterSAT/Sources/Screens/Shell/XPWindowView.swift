@@ -84,17 +84,30 @@ struct XPWindowView: View {
         return boardFailed ? .failed : .loading
     }
 
+    /// A conversion whose outcome is unknown — the answer was lost and so was the read-back — so
+    /// the points on screen may already have been spent. Convert stays off until a read confirms
+    /// them, because a second conversion is a second conversion.
+    private var unconfirmed: Bool { convertNote == Self.unconfirmedNote }
+
     /// Both tracks always exist; the setting picks the animation, never the tree. The bolt and the
     /// coin stop where they started, and the glow rests half way between its two ends rather than
     /// at the dim, small one.
-    private var breathes: Bool { !reduceMotion }
+    ///
+    /// The budget is the twin's, and the flame's (`MotionBudget.allowsLoopingLottie`): the glow,
+    /// the bolt and the coin are all `repeatForever` loops, and a loop never finishes, so Low
+    /// Power rests them exactly as it rests a looping Lottie. `!reduceMotion` alone would turn
+    /// three of them forever on a dying battery. Read per update rather than once, so the art
+    /// follows the setting changing while the window is open.
+    private var breathes: Bool {
+        MotionBudget(reduceMotion: reduceMotion, lowPower: ProcessInfo.processInfo.isLowPowerModeEnabled)
+            .allowsLoopingLottie
+    }
     private var glowPhase: Double { breathes ? (breathingOut ? 1 : 0) : 0.5 }
 
     var body: some View {
         VStack(spacing: 4) {
             bolt
             figures
-                .accessibilityFocused($figuresFocused)
             pointsBox
                 .padding(.top, 10)
             waysOn
@@ -107,11 +120,18 @@ struct XPWindowView: View {
         }
         .frame(maxWidth: .infinity)
         .task { await load() }
-        // A beat, because a cursor set in the frame the window is inserted in finds nothing there
-        // yet — the same wait `RankUpCard` takes. Nothing is announced: the student asked for this
-        // window, so the cursor arriving on the figure is the whole answer (W-R7). The one thing
-        // that does speak is the conversion's result, below.
-        .task {
+        // The cursor goes to the figure when the figure is actually there. A fixed wait from the
+        // window's own appearance would usually land before `/rewards/me/` answers, leaving the
+        // cursor on the loading skeleton inside an `.isModal` card — and the numbers that replaced
+        // it might then never be heard. So this is keyed on the figures appearing, with a short
+        // beat for the frame they are inserted in (a cursor set in that frame finds nothing yet —
+        // the wait `RankUpCard` takes). Lowered before it is raised, so a second appearance moves
+        // the cursor again. Nothing is announced: the student asked for this window, so the cursor
+        // arriving on the figure is the whole answer (W-R7). The one thing that does speak is the
+        // conversion's result, below.
+        .task(id: window != nil) {
+            guard window != nil else { return }
+            figuresFocused = false
             try? await Task.sleep(for: .milliseconds(250))
             if !Task.isCancelled { figuresFocused = true }
         }
@@ -157,10 +177,14 @@ struct XPWindowView: View {
                 BoltShape(lit: true).fill(Color.white.opacity(0.38))
             }
             .frame(width: 70, height: 92)
-            // One expression, no branch: `repeating: false` holds the bolt at its initial scale,
-            // which is what Reduce Motion is owed.
-            .keyframeAnimator(initialValue: 1.0, repeating: breathes) { view, scale in
-                view.scaleEffect(scale)
+            // One expression, no branch — but the gate is on the output, not on `repeating:`.
+            // `repeating: false` does not hold the initial value: the track plays through once
+            // and rests at its FINAL keyframe, so a Reduce-Motion student would still see the
+            // bolt pulse once as the window opens, which is exactly the motion W-R5 owes them
+            // none of. So the animator keeps repeating and the scale it hands out is ignored
+            // while the budget says rest.
+            .keyframeAnimator(initialValue: 1.0, repeating: true) { view, scale in
+                view.scaleEffect(breathes ? scale : 1)
             } keyframes: { _ in
                 KeyframeTrack {
                     CubicKeyframe(1.09, duration: 0.64)
@@ -196,15 +220,30 @@ struct XPWindowView: View {
                 // One sentence rather than a numeral followed by a caption of its own (W-R7). The
                 // place rides with it because "455 XP" and "·" read as two fragments apart.
                 .accessibilityElement(children: .ignore)
+                // Spoken with the formatting the screen uses, not the raw integer: `ScoreText`
+                // is what wrote the numeral above, so the two cannot drift apart.
                 .accessibilityLabel(
-                    placeState == .shown ? "\(window.xp) XP, \(window.placeLine)" : "\(window.xp) XP"
+                    placeState == .shown
+                        ? "\(ScoreText.string(window.xp)) XP, \(window.placeLine)"
+                        : "\(ScoreText.string(window.xp)) XP"
                 )
+                // On the combined element itself rather than on the stack around it: a container
+                // has no element of its own, so which child the cursor would land on is anyone's
+                // guess (W-R7).
+                .accessibilityFocused($figuresFocused)
 
                 place(window)
 
                 // The numbers stay and say they may be old: a refresh that failed over good
-                // figures never blanks them.
-                if meFailed { StaleNote().padding(.top, 6) }
+                // figures never blanks them — with a way out, because this window has no pull to
+                // refresh and Convert is held off until a read confirms the figures.
+                if meFailed {
+                    VStack(spacing: 6) {
+                        StaleNote()
+                        checkAgain
+                    }
+                    .padding(.top, 6)
+                }
             }
         } else if meFailed {
             // Error is not empty: a failed read must never be drawn as "0 XP".
@@ -213,13 +252,29 @@ struct XPWindowView: View {
                 message: "Nothing has been lost — the window just couldn't fetch your total.",
                 style: .inline
             ) {
-                await Task { @MainActor in _ = await loadMe() }.value
+                // `ErrorState.retry` is already `@MainActor () async -> Void` and is run in a task
+                // of its own, so there is nothing left for a wrapper to do here.
+                _ = await loadMe()
             }
         } else {
             LoadingSkeleton(rows: 2, height: 22, label: "Loading your XP")
                 .padding(.horizontal, 48)
                 .padding(.vertical, 6)
         }
+    }
+
+    /// The way out of a read that did not land.
+    ///
+    /// This window has no pull to refresh — it is a card, not a page — so a note that only says
+    /// "couldn't refresh" would stick for as long as the window is open, over figures Convert is
+    /// then held off from trading. The button is the gesture the note used to ask for: one more
+    /// `/rewards/me/`, which clears both the note and the hold on Convert when it goes through.
+    private var checkAgain: some View {
+        Button("Check again") { Task { await loadMe() } }
+            .appFont(11.5, weight: .heavy)
+            .foregroundStyle(Theme.accentText)
+            .buttonStyle(.plain)
+            .hitTarget(44)
     }
 
     /// The line under the place — and, when the board failed, the place's own failure.
@@ -290,21 +345,34 @@ struct XPWindowView: View {
             .accessibilityElement(children: .contain)
 
             if let convertNote {
-                Text(convertNote)
-                    .appFont(11, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
+                VStack(spacing: 6) {
+                    Text(convertNote)
+                        .appFont(11, weight: .semibold)
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // The unconfirmed note is the one that asks the student to look, and the only
+                    // one Convert is held off behind. It carries the button itself unless the
+                    // figures above already offer it, so there is never a second one.
+                    if convertNote == Self.unconfirmedNote, !meFailed { checkAgain }
+                }
+                .padding(.top, 6)
             }
         }
     }
 
     /// The coin, turning slowly about its own axis. Decorative; the count beside it is the figure.
+    ///
+    /// Gated on the output, like the bolt: `repeating: false` would rest the coin at 360° — a full
+    /// turn played once — rather than hold it still, so the angle is dropped instead.
     private var coin: some View {
         RewardsCoinArt(kind: .coin, size: 34)
-            .keyframeAnimator(initialValue: 0.0, repeating: breathes) { view, angle in
-                view.rotation3DEffect(.degrees(angle), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            .keyframeAnimator(initialValue: 0.0, repeating: true) { view, angle in
+                view.rotation3DEffect(
+                    .degrees(breathes ? angle : 0),
+                    axis: (x: 0, y: 1, z: 0),
+                    perspective: 0.6
+                )
             } keyframes: { _ in
                 KeyframeTrack { LinearKeyframe(360.0, duration: 2.4) }
             }
@@ -313,6 +381,12 @@ struct XPWindowView: View {
 
     /// Convert, or — when there is nothing whole to convert — the quiet line that says how far off
     /// the next coin is. A Convert button that would mint nothing is worse than no button.
+    ///
+    /// It is also off while nothing is confirmed (`unconfirmedNote`): a conversion is not
+    /// idempotent, and after a lost answer AND a lost read-back the points on screen may already
+    /// have been spent, so trading them again could mint a second time. That is the simpler
+    /// guarantee than reasoning about how stale the figures might be — the hold lifts the moment
+    /// a read goes through, which "Check again" is there to ask for.
     @ViewBuilder private func convertControl(_ window: XPWindow) -> some View {
         if window.convertibleCoins > 0 {
             Button { confirmingConvert = true } label: {
@@ -330,12 +404,14 @@ struct XPWindowView: View {
                 .hitTarget(44)
             }
             .buttonStyle(PressBounce())
-            .disabled(converting)
-            // The spinner has no words of its own.
+            .disabled(converting || unconfirmed)
+            // The spinner has no words of its own, and a button held off says why — "dimmed" is
+            // not a reason.
             .accessibilityLabel(
                 converting ? "Converting points"
                     : "Convert points into \(RewardsFormat.count(window.convertibleCoins, "coin"))"
             )
+            .accessibilityHint(unconfirmed ? "Unavailable until your points are checked again" : "")
         } else {
             Text(window.nextCoinLine)
                 .appFont(11, weight: .heavy)
@@ -403,14 +479,22 @@ struct XPWindowView: View {
         let ticket = rewards.ticket()
         do {
             let me = try await session.rewards.me()
-            if meFailed { meFailed = false }
-            // A read went through, so "pull down to check" has been done. Not the conversion's own
-            // read-back, which decides its note itself.
-            if !converting, convertNote == Self.unconfirmedNote { convertNote = nil }
             guard rewards.apply(me, ticket: ticket) else {
-                if again, !Task.isCancelled { return await loadMe(again: false) }
+                guard !Task.isCancelled else { return nil }
+                if again { return await loadMe(again: false) }
+                // Twice refused with nothing to show: the window has no numbers and no second
+                // read coming, so it must offer "Try again" rather than a skeleton that never
+                // resolves. With numbers kept, the `StaleNote` path already says they may be old.
+                if mine == nil { meFailed = true }
                 return nil
             }
+            if meFailed { meFailed = false }
+            // A read the window actually took, so "check again" has been done and Convert is let
+            // go — after the ticket, never before it: a refused answer leaves `mine` as it was,
+            // and lifting the hold over figures the window did not take is the double-mint this
+            // hold exists to prevent. Not the conversion's own read-back, which decides its note
+            // itself.
+            if !converting, convertNote == Self.unconfirmedNote { convertNote = nil }
             if mine != me {
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = me }
             }
@@ -435,6 +519,16 @@ struct XPWindowView: View {
     /// check's bookkeeping, and a window that can be opened and shut in a second is not where that
     /// belongs. Nor does it wait for a quiet stage — this window reports `coversCelebrations`, so
     /// while it is up the stage is held anyway.
+    ///
+    /// **The place can outrun the XP beside it, and that is accepted.** The board is the server's
+    /// current answer and already counts a gain still held for a flight, while the figure above it
+    /// is the pill's `xp − heldXP` (W-R3) — so a window opened over a held gain can read "#4" next
+    /// to a total that has not yet risen to it. Accepted rather than re-read, because the only
+    /// moment a re-read would fix is `heldXP` reaching zero, and it cannot reach zero while this
+    /// window is open: the card covers the stage, so no flight runs and nothing is released until
+    /// it closes. A re-read keyed on that would be a line that never fires. The two numbers are a
+    /// place that is true now and a total that is one held gain behind it — never a wrong place,
+    /// and the next open shows both settled.
     @MainActor
     private func loadBoard() async {
         let ticket = reads.board.issue()
@@ -455,7 +549,11 @@ struct XPWindowView: View {
 
     /// Nothing is known — the answer was lost and so was the read-back — so the note sends the
     /// student to look; the next read that goes through takes it away (`loadMe`).
-    private static let unconfirmedNote = "We couldn't confirm that went through. Pull down to check your coins."
+    ///
+    /// Worded for a window, not a page: the hub says "pull down to check your coins" because the
+    /// hub has a pull. This card's scroll view has none, so the note names the button beside it
+    /// (`checkAgain`) instead of asking for a gesture that does nothing here.
+    private static let unconfirmedNote = "We couldn't confirm that went through. Check again to see your coins."
 
     /// Spends Max — every point that buys a whole coin. The hub's flow, not a second version of
     /// it: not idempotent (a second call is a second conversion), so it runs once per
@@ -508,6 +606,12 @@ struct XPWindowView: View {
         converting = false
         // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
         // cursor goes with it: the figures are where the window's result shows, so it goes there.
+        // Lowered first, with a yield between: the cursor is usually already on the figures when
+        // the window is driven by VoiceOver, and writing `true` over `true` moves nothing. A beat
+        // rather than a bare yield, so the two writes land in different updates instead of being
+        // coalesced into one that changes nothing.
+        figuresFocused = false
+        try? await Task.sleep(for: .milliseconds(50))
         figuresFocused = true
         if let convertNote {
             // After the figures have been read, not over them: speech started by the cursor's move
