@@ -150,7 +150,7 @@ class AnnouncementTests(EventEmailFixture):
         self.assertEqual((result["sent"], result["failed"]), (2, 1))
         self.assertEqual(self._recipients(), {"ev_anna5@t.com", "ev_carla5@t.com"})
 
-    def test_a_dropped_connection_is_retried_once_before_counting_as_failed(self):
+    def test_a_dropped_connection_is_retried_before_counting_as_failed(self):
         """A disconnect mid-batch must not lose the rest of the announcement either — the
         backend's own connection would otherwise sit dead for every message still to come."""
         from smtplib import SMTPServerDisconnected
@@ -172,13 +172,46 @@ class AnnouncementTests(EventEmailFixture):
 
         with patch.object(
             EmailMultiAlternatives, "send", autospec=True, side_effect=_disconnect_once_then_send
-        ):
+        ), patch("core.mail_delivery._pause") as pause:
             result = event_mail.send_event_announcement_emails(self.event.pk)
 
-        # Both students end up sent: the one hit by the disconnect is retried once, not
-        # simply counted as failed.
+        # Both students end up sent: the one hit by the disconnect is retried after a
+        # wait, not simply counted as failed.
         self.assertEqual((result["sent"], result["failed"]), (2, 0))
         self.assertEqual(self._recipients(), {"ev_anna5@t.com", "ev_boris5@t.com"})
+        pause.assert_called_once_with(5)
+
+    def test_mailguns_recipient_limit_is_waited_out_not_counted_as_failed(self):
+        """2026-09-18: the announcement ran into Mailgun's 421 and lost 242 of 372."""
+        from smtplib import SMTPDataError
+        from unittest.mock import patch
+
+        from django.core.mail import EmailMultiAlternatives
+
+        from events import mail as event_mail
+
+        services.publish(self.event, now=self.now)
+        limited = {"done": False}
+        original_send = EmailMultiAlternatives.send
+
+        def _limit_boris_once(message, *args, **kwargs):
+            if message.to == ["ev_boris5@t.com"] and not limited["done"]:
+                limited["done"] = True
+                raise SMTPDataError(
+                    421,
+                    b"Domain mg.mastersat.uz is not allowed to send: recipient limit (26) "
+                    b"exceeded, try again after Fri, 18 Sep 2026 08:15:35 UTC",
+                )
+            return original_send(message, *args, **kwargs)
+
+        with patch.object(
+            EmailMultiAlternatives, "send", autospec=True, side_effect=_limit_boris_once
+        ), patch("core.mail_delivery._pause") as pause:
+            result = event_mail.send_event_announcement_emails(self.event.pk)
+
+        self.assertEqual((result["sent"], result["failed"]), (2, 0))
+        self.assertEqual(self._recipients(), {"ev_anna5@t.com", "ev_boris5@t.com"})
+        pause.assert_called_once()
 
 
 class SeatHolderEmailTests(EventEmailFixture):

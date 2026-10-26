@@ -38,6 +38,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from core.mail import brand_context
+from core.mail_delivery import PacedSender
 from users.email_utils import is_deliverable_email
 
 from .models import ClassroomMembership
@@ -413,11 +414,10 @@ def _notify_class_in_app(schedule: MidtermSchedule, context: dict) -> int:
     return written
 
 
-def _send_one(*, address: str, subject: str, text: str, html: str) -> bool:
-    """One message, one connection. Sharing an SMTP connection across the class would be
-    fewer handshakes, but a single broken send can leave that connection unusable and take
-    the rest of the class with it — and this runs off the request, where the handshakes cost
-    nobody anything."""
+def _send_one(*, sender: PacedSender, address: str, subject: str, text: str, html: str) -> bool:
+    """One message through the class's paced sender. It shares one SMTP connection across the
+    class but drops and reopens it after any failure, so a broken send cannot take the rest
+    of the class with it (see core.mail_delivery)."""
     msg = EmailMultiAlternatives(
         subject=subject,
         body=text,
@@ -425,7 +425,7 @@ def _send_one(*, address: str, subject: str, text: str, html: str) -> bool:
         to=[address],
     )
     msg.attach_alternative(html, "text/html")
-    msg.send(fail_silently=False)
+    sender.send(msg)
     return True
 
 
@@ -463,16 +463,17 @@ def send_midterm_scheduled_emails(schedule_id: int) -> dict:
     html = render_to_string("email/midterm_scheduled.html", context)
 
     sent = failed = 0
-    for student in _recipients(schedule):
-        try:
-            _send_one(address=student.email, subject=subject, text=text, html=html)
-            sent += 1
-        except Exception:
-            # One unreachable mailbox must not cost the rest of the class their notice.
-            failed += 1
-            logger.exception(
-                "midterm_scheduled_email failed schedule=%s student=%s", schedule_id, student.pk
-            )
+    with PacedSender("midterm_scheduled_email") as sender:
+        for student in _recipients(schedule):
+            try:
+                _send_one(sender=sender, address=student.email, subject=subject, text=text, html=html)
+                sent += 1
+            except Exception:
+                # One unreachable mailbox must not cost the rest of the class their notice.
+                failed += 1
+                logger.exception(
+                    "midterm_scheduled_email failed schedule=%s student=%s", schedule_id, student.pk
+                )
     logger.info(
         "midterm_scheduled_email schedule=%s sent=%s failed=%s notified=%s",
         schedule_id, sent, failed, notified,

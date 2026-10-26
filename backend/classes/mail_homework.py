@@ -40,6 +40,7 @@ from django.template.loader import render_to_string
 from django.utils import timezone
 
 from core.mail import brand_context
+from core.mail_delivery import PacedSender
 from users.email_utils import is_deliverable_email
 
 from .models import Assignment, ClassroomMembership
@@ -229,7 +230,7 @@ def _text_body(context: dict) -> str:
     return "\n".join(lines)
 
 
-def _send_one(*, address: str, subject: str, text: str, html: str) -> None:
+def _send_one(*, sender: PacedSender, address: str, subject: str, text: str, html: str) -> None:
     msg = EmailMultiAlternatives(
         subject=subject,
         body=text,
@@ -237,7 +238,7 @@ def _send_one(*, address: str, subject: str, text: str, html: str) -> None:
         to=[address],
     )
     msg.attach_alternative(html, "text/html")
-    msg.send(fail_silently=False)
+    sender.send(msg)
 
 
 @shared_task(name="classes.mail_homework.send_homework_assigned_emails")
@@ -263,13 +264,16 @@ def send_homework_assigned_emails(assignment_id: int) -> dict:
     html = render_to_string("email/homework_assigned.html", context)
 
     sent = failed = 0
-    for student in _recipients(assignment):
-        try:
-            _send_one(address=student.email, subject=subject, text=text, html=html)
-            sent += 1
-        except Exception:
-            failed += 1
-            logger.exception("homework_email failed assignment=%s student=%s", assignment_id, student.pk)
+    # Paced: a teacher setting homework for five classes in a minute is exactly the burst
+    # Mailgun's limit cuts off (see core.mail_delivery).
+    with PacedSender("homework_email") as sender:
+        for student in _recipients(assignment):
+            try:
+                _send_one(sender=sender, address=student.email, subject=subject, text=text, html=html)
+                sent += 1
+            except Exception:
+                failed += 1
+                logger.exception("homework_email failed assignment=%s student=%s", assignment_id, student.pk)
     logger.info("homework_email assignment=%s sent=%s failed=%s", assignment_id, sent, failed)
     return {"status": "ok", "assignment_id": assignment_id, "sent": sent, "failed": failed}
 

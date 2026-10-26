@@ -6,7 +6,8 @@ enqueue helper that falls back to a daemon thread when no broker is configured.
 
 Two things differ, and both follow from the size of the audience. The announcement goes to
 every student in the learning center — about 370 addresses — so the fan-out reuses ONE SMTP
-connection rather than opening one per message, and the announcement alone skips students who
+connection rather than opening one per message, paced under Mailgun's sending limit (see
+``core.mail_delivery``), and the announcement alone skips students who
 muted Events. The other three are about a seat the student is holding, so they go whatever
 that switch says.
 """
@@ -18,13 +19,14 @@ import threading
 
 from celery import shared_task
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives, get_connection
+from django.core.mail import EmailMultiAlternatives
 from django.db import connection as db_connection
 from django.db import transaction
 from django.template.loader import render_to_string
 from django.utils import timezone
 
 from core.mail import brand_context
+from core.mail_delivery import PacedSender
 from notifications import constants as note_const
 from notifications.models import NotificationPreference
 from users.email_utils import is_deliverable_email
@@ -176,57 +178,33 @@ def _mailable(students, *, skip_muted: bool):
 
 
 def _send_batch(recipients, *, subject: str, text: str, html: str) -> dict:
-    """One message per address over ONE connection. Each send isolated.
+    """One message per address over ONE connection, paced under Mailgun's limit.
 
     The announcement is the first message this codebase sends to every student at once. A
-    connection per message would have the worker — which runs `--concurrency 2` — holding a
-    slot for several minutes while it shook hands with Mailgun 370 times.
+    connection per message would have the worker — which runs `--concurrency 2` — shaking
+    hands with Mailgun 370 times. Paced, the announcement now takes ~8 minutes; publish only
+    fires it once, so every address it drops is dropped for good — which is what happened
+    to 242 of 372 on 2026-09-18, when it ran unpaced into the limit. See core.mail_delivery.
     """
     if not recipients:
         return {"sent": 0, "failed": 0}
 
     sent = failed = 0
-    connection = get_connection()
-    try:
-        connection.open()
-    except Exception:
-        logger.exception("event_email connection failed")
-        return {"sent": 0, "failed": len(recipients)}
-    try:
+    with PacedSender("event_email") as sender:
         for student in recipients:
             message = EmailMultiAlternatives(
                 subject=subject,
                 body=text,
                 from_email=getattr(settings, "DEFAULT_FROM_EMAIL", None),
                 to=[student.email],
-                connection=connection,
             )
             message.attach_alternative(html, "text/html")
             try:
-                message.send(fail_silently=False)
+                sender.send(message)
                 sent += 1
             except Exception:
-                # A dropped connection leaves the backend holding a dead socket, after which
-                # `.open()` is a no-op and every remaining message in the batch would fail
-                # with it — losing the rest of an ~370-student announcement for good, since
-                # publish only fires this once. Close it, reopen a fresh one, and give THIS
-                # message a single retry before it counts as failed.
-                logger.warning(
-                    "event_email send failed, retrying once student=%s", student.pk
-                )
-                try:
-                    connection.close()
-                except Exception:
-                    pass
-                try:
-                    connection.open()
-                    message.send(fail_silently=False)
-                    sent += 1
-                except Exception:
-                    failed += 1
-                    logger.exception("event_email failed student=%s", student.pk)
-    finally:
-        connection.close()
+                failed += 1
+                logger.exception("event_email failed student=%s", student.pk)
     return {"sent": sent, "failed": failed}
 
 
