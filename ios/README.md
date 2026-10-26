@@ -51,12 +51,19 @@ question count and time estimate, a body per state, one full-width action. A pas
 is an amber "Catch up" chip, and a refused start is an alert on the card — never the whole
 board turning into an error.
 
-Sign in and register are the site's own `/login` and `/register`, kept in
-`Sources/Screens/Auth/`. The web puts a brand panel beside the form and hides it below
-`lg`; a phone has no "beside", so the panel becomes the header band — gradient, drifting
-shapes, mark, headline and the three promises. On iPad the width is regular and the
-two-column split comes back exactly as the site draws it. On a phone the promises come off
-the *register* band, because five fields and a pitch do not both fit above the fold.
+Sign in is one quiet page, `Sources/Screens/Auth/`, and there is no Register: the app is for
+learning-centre students, whose accounts the centre creates. So the brand panel, its three
+promises and the drifting shapes went with the form they were pitching to — a mark, two soft
+grey fields and a button, the same centred column on a phone and on an iPad. One field takes a
+phone number, an email or a username, because the server accepts all three
+(`users/backends.py:_phone_username`, `lcup/auth_backend.py`), and the two lines under the
+button are text, not buttons: the centre resets a password and the centre creates an account,
+so there is nothing for the student to tap.
+
+An lc-up student's first sign-in then continues behind the completion gate
+(`Sources/Screens/Account/CompleteProfileView.swift`): their own first password, the number
+their administrator holds, their names, their email — the website's order, with every step
+re-reading the server's verdict instead of trusting its own answer.
 
 Google and Telegram are deliberately absent. Both are browser flows that end by setting a
 cookie on the site, and a native client holds tokens instead — so the buttons would look
@@ -64,8 +71,8 @@ like a way in and be a dead end. Email and password reach the same accounts.
 
 The logo is the site's own `frontend/public/images/logo.png`, not a redraw.
 `scripts`-free and reproducible: the shield is scaled into `Assets.xcassets` as `AppIcon`
-(white on `#2a68c0`) and as a **template** `BrandMark`, so it takes white on the panel and
-brand blue on a card — the same thing the web does with `brightness(0) invert(1)`.
+(white on `#2a68c0`) and as a **template** `BrandMark`, so it takes white on the sign-in page's
+brand-blue tile and brand blue on a card — the same thing the web does with `brightness(0) invert(1)`.
 `ASSETCATALOG_COMPILER_APPICON_NAME` has to be set in `project.yml`: with
 `GENERATE_INFOPLIST_FILE: NO` nothing else names the icon, and the home screen shows the
 blank default tile no matter what the catalogue holds.
@@ -481,8 +488,8 @@ Earlier:
 | Points at production | ✅ reached `mastersat.uz`; refused by it — see above |
 | Sign in → home → homework → assessment → submit → review | ✅ driven against a local backend |
 | Sign in — wrong password, reveal toggle, submit from the keyboard | ✅ driven on the simulator |
-| Register — an account created, auto-signed-in, and the duplicate-name refusal | ✅ driven against a local backend |
-| Auth two-column layout | ✅ driven on an iPad simulator |
+| Sign in — a phone number and its one-time code, as an lc-up account's first sign-in | ✅ driven against a local backend |
+| The completion gate — first password, the lc-up phone with its `••NN` hint, then email | ✅ driven against a local backend |
 | App icon on the home screen | ✅ checked on the simulator |
 | Home — goal sliders, exam-date picker, ticking countdown, calendar | ✅ driven on the simulator |
 | Assessments board — tabs, counts, card states | ✅ driven on the simulator |

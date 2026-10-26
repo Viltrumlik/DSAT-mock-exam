@@ -233,7 +233,8 @@ struct AccountSecureField<Focus: Hashable>: View {
     }
 }
 
-/// The bordered box itself — `AuthField`'s look, plus the red edge of a refused value.
+/// The bordered box itself — the account forms' labelled field, plus the red edge of a refused
+/// value. Not the sign-in page's `SoftField`: these boxes carry a label and a hint line.
 struct AccountFieldBox<Content: View>: View {
     var icon: String?
     var invalid = false

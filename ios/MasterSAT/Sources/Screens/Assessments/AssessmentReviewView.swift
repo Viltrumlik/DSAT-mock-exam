@@ -471,6 +471,10 @@ struct ReviewQuestionCard: View {
 
     private var outcome: Outcome { Outcome.of(question) }
 
+    /// The report being written about this card's question, if any. Per card: every card owns
+    /// its own, so the one on screen is always the one reported.
+    @State private var reporting: ReportedQuestion?
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -548,6 +552,15 @@ struct ReviewQuestionCard: View {
         }
         // Plain, as a focus zone's card is: the header and the body keep their own padding.
         .cardStyle(padding: 0)
+        // No attempt id, exactly as the website's review page sends none: this report is about
+        // the question itself, not about the sitting it was last seen in.
+        .sheet(item: $reporting) { target in
+            ReportProblemSheet(
+                system: .assessment,
+                questionId: target.questionId,
+                questionNumber: target.number
+            )
+        }
     }
 
     private var header: some View {
@@ -570,9 +583,31 @@ struct ReviewQuestionCard: View {
                 .padding(.vertical, 4)
                 .background(Capsule().fill(outcome.tone.opacity(0.12)))
                 .overlay(Capsule().stroke(outcome.tone.opacity(0.3), lineWidth: 1))
+            reportButton
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 14)
+    }
+
+    /// One per question, as the website puts one on every review card: the student is reading
+    /// the marked paper and this is the moment a wrong key is noticed.
+    private var reportButton: some View {
+        Button {
+            reporting = ReportedQuestion(questionId: question.id, number: index + 1)
+        } label: {
+            Image(systemName: "exclamationmark.bubble")
+                .appFont(14, weight: .semibold)
+                .foregroundStyle(Theme.textSecondary)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Theme.surface2))
+                .hitTarget(44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Report a problem with this question")
+        // Chrome in a header row that already carries six things: it holds still while the text
+        // around it grows, and the large content viewer names it on a press and hold.
+        .capDynamicType(label: "Report a problem", systemImage: "exclamationmark.bubble")
     }
 
     /// Grid-ins and short text: the two answers side by side, the correct one in the

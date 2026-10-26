@@ -7,27 +7,43 @@ import MasterSATKit
 ///   dates on them.
 /// - It moves on by itself every 6 seconds; tapping the left third goes back, the right
 ///   two-thirds forward; holding pauses. Past the last story it closes. Swiping down closes.
-/// - The clock waits for the picture to arrive, and stops while "Open" is showing a page or
-///   VoiceOver is running — six seconds is not long enough to hear a caption read out.
+/// - The clock waits for the picture to arrive, and stops while the app is in the background
+///   or VoiceOver is running — six seconds is not long enough to hear a caption read out.
+/// - "Open" either routes anywhere on this site (`onRoute`, and the viewer closes — the app's
+///   own screen when there is one, else the website through the router) or hands an off-site
+///   page to the system browser, where the student's web session lives and the viewer stays.
+/// - The caption band is capped at half the screen and scrolls past that, so a long notice at
+///   the accessibility sizes cannot push "Open" off the bottom.
 struct StoryViewer: View {
     let stories: [Story]
+    /// Asked for a screen inside the app. The rail moves the router once this cover has gone:
+    /// a push made while a full-screen cover is still dismissing is dropped.
+    let onRoute: (AppLink) -> Void
 
     @State private var index: Int
     @State private var progress: Double = 0
     @State private var holding = false
     @State private var pressStart: Date?
     @State private var imageSettled: Bool
-    @State private var link: CommunityLink?
     @State private var dragOffset: CGFloat = 0
+    /// When the caption was last touched. A long notice scrolls, and six seconds is not enough
+    /// to read one — a story swapped mid-sentence would make the scrolling pointless.
+    ///
+    /// An instant rather than a flag because a scroll view can swallow the end of a gesture it
+    /// takes over: a flag set on touch and cleared on release could stick, and a story that
+    /// never advances again is the worse bug. This expires by itself.
+    @State private var captionTouchedAt: Date?
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     private static let duration: TimeInterval = 6
 
-    init(stories: [Story], startIndex: Int) {
+    init(stories: [Story], startIndex: Int, onRoute: @escaping (AppLink) -> Void = { _ in }) {
         self.stories = stories
+        self.onRoute = onRoute
         let start = min(max(startIndex, 0), max(stories.count - 1, 0))
         _index = State(initialValue: start)
         _imageSettled = State(initialValue: stories.indices.contains(start) ? stories[start].imageURL == nil : true)
@@ -35,18 +51,32 @@ struct StoryViewer: View {
 
     private var story: Story? { stories.indices.contains(index) ? stories[index] : nil }
 
+    /// How long a touch on the caption holds the clock. Long enough to cover the gap between
+    /// one flick and the next while reading, short enough that a story put down mid-caption
+    /// carries on by itself.
+    private static let captionGrace: TimeInterval = 4
+
     /// The clock runs only while the student can actually be looking at it.
     private var paused: Bool {
-        holding || link != nil || voiceOver || !imageSettled || scenePhase != .active
+        if let captionTouchedAt, Date().timeIntervalSince(captionTouchedAt) < Self.captionGrace {
+            return true
+        }
+        return holding || voiceOver || !imageSettled || scenePhase != .active
     }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if let story {
-                VStack(spacing: 0) {
-                    picture(story)
-                    caption(story)
+                // The screen's own height, so the caption band can be capped against it: the
+                // picture is a `GeometryReader` with no intrinsic height of its own, and a
+                // caption left to grow freely at AX5 squeezes it to nothing and then runs the
+                // "Open" button off the bottom.
+                GeometryReader { screen in
+                    VStack(spacing: 0) {
+                        picture(story)
+                        caption(story, maxHeight: screen.size.height / 2)
+                    }
                 }
                 .overlay(alignment: .top) { chrome }
                 .offset(y: dragOffset)
@@ -54,17 +84,14 @@ struct StoryViewer: View {
         }
         .statusBarHidden()
         .task(id: index) { await run() }
-        .fullScreenCover(item: $link) { page in
-            CommunitySafariView(url: page.url) { link = nil }
-                .ignoresSafeArea()
-                .noBarClearance()
-        }
     }
 
     // MARK: - The clock
 
     private func run() async {
         progress = 0
+        // The hold belongs to the caption that was being read, not to the one that replaces it.
+        captionTouchedAt = nil
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(50))
             if Task.isCancelled { return }
@@ -204,6 +231,8 @@ struct StoryViewer: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
+            // Chrome, not content: the × holds its size while the caption below grows.
+            .capDynamicType(label: "Close", systemImage: "xmark")
         }
         .padding(.horizontal, 10)
         .padding(.top, 10)
@@ -219,43 +248,81 @@ struct StoryViewer: View {
 
     /// Its own band under the picture rather than laid over it: these are school notices, and
     /// text over an arbitrary photograph is a contrast gamble some of them would lose.
-    @ViewBuilder private func caption(_ story: Story) -> some View {
+    ///
+    /// The band sizes itself to its words and stops at `maxHeight` (half the screen), past
+    /// which it scrolls in place. The website's picture is `flex: 1; min-height: 0` in a
+    /// `100dvh` column and the page itself scrolls; here nothing scrolls, so a long notice at
+    /// the accessibility sizes would otherwise take the "Open" button off the bottom of the
+    /// device with it.
+    @ViewBuilder private func caption(_ story: Story, maxHeight: CGFloat) -> some View {
+        let routed = story.routedLink
         let url = story.openableLink
-        if !story.title.isEmpty || !story.caption.isEmpty || url != nil {
-            VStack(spacing: 5) {
-                if !story.title.isEmpty {
-                    Text(story.title)
-                        .appFont(17, weight: .heavy)
-                        .foregroundStyle(.white)
-                }
-                if !story.caption.isEmpty {
-                    Text(story.caption)
-                        .appFont(14, weight: .medium)
-                        .foregroundStyle(.white.opacity(0.85))
-                        .lineLimit(8)
-                }
-                if let url {
-                    // In-app Safari: the page opens over the story instead of taking the
-                    // student out of the app, and the story waits while it is open.
-                    Button {
-                        link = CommunityLink(url: url)
-                    } label: {
-                        Text("Open")
-                            .appFont(14, weight: .heavy)
-                            .foregroundStyle(Color(white: 0.07))
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(.white))
+        if !story.title.isEmpty || !story.caption.isEmpty || routed != nil || url != nil {
+            ScrollView {
+                VStack(spacing: 5) {
+                    if !story.title.isEmpty {
+                        Text(story.title)
+                            .appFont(17, weight: .heavy)
+                            .foregroundStyle(.white)
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 7)
+                    if !story.caption.isEmpty {
+                        Text(story.caption)
+                            .appFont(14, weight: .medium)
+                            .foregroundStyle(.white.opacity(0.85))
+                    }
+                    if routed != nil || url != nil {
+                        // A place on the site is routed to, closing the viewer, so the student
+                        // lands on it signed in — on its own screen when the app has one, else
+                        // on the website through the router's `.web` branch. Anything else goes
+                        // to the system browser, which carries their web session — the in-app
+                        // Safari sheet this replaces was signed out, and an "Open" that lands on
+                        // a sign-in form is the bug.
+                        Button {
+                            if let routed {
+                                onRoute(routed)
+                                dismiss()
+                            } else if let url {
+                                // Off-site: deliberately NOT a dismiss. It matches the website's
+                                // `target="_blank"` — the story is still there when the student
+                                // comes back from the browser.
+                                openURL(url)
+                            }
+                        } label: {
+                            Text("Open")
+                                .appFont(14, weight: .heavy)
+                                .foregroundStyle(Color(white: 0.07))
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 9)
+                                .frame(minHeight: 44)
+                                .background(Capsule().fill(.white))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.top, 7)
+                        .accessibilityLabel(openLabel(story, routed: routed))
+                    }
                 }
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 18)
+                .padding(.top, 14)
+                .padding(.bottom, 18)
             }
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+            .scrollBounceBehavior(.basedOnSize)
+            // A hand on the caption holds the clock, so a notice too long for six seconds is
+            // not swapped out mid-sentence. Simultaneous, so it reads the touch without taking
+            // it from the scroll view; `onEnded` is a courtesy, since the grace expires anyway
+            // when the scroll view claims the gesture and never reports its end.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in captionTouchedAt = Date() }
+                    .onEnded { _ in captionTouchedAt = Date() }
+            )
+            // Together: the band asks for the height its words need (`fixedSize`, so it never
+            // takes the picture's space the way a plain `ScrollView` would) and is clamped to
+            // half the screen, past which it scrolls.
+            .frame(maxHeight: max(maxHeight, 0))
+            .fixedSize(horizontal: false, vertical: true)
             .background(
                 LinearGradient(
                     colors: [.black.opacity(0.92), .black.opacity(0)],
@@ -264,5 +331,15 @@ struct StoryViewer: View {
                 )
             )
         }
+    }
+
+    /// "Open" alone says nothing about where it goes; VoiceOver gets the destination.
+    private func openLabel(_ story: Story, routed: AppLink?) -> String {
+        if routed != nil {
+            return story.title.isEmpty ? "Open this story's page" : "Open \(story.title)"
+        }
+        return story.title.isEmpty
+            ? "Open in the browser"
+            : "Open \(story.title) in the browser"
     }
 }

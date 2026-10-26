@@ -20,6 +20,9 @@ struct EventsView: View {
         .background(Theme.background)
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // While this page is up, the event invitation holds off: recommending the page
+        // somebody is already reading is how a prompt teaches people to dismiss prompts.
+        .marksEventsScreenOpen()
         .task {
             if model == nil { model = EventsModel(api: EventsAPI(client: session.client)) }
         }
@@ -30,6 +33,7 @@ private struct EventsScreen: View {
     @Bindable var model: EventsModel
 
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(CelebrationCenter.self) private var celebrations
     @State private var cancelling: LearningEvent?
     @State private var confirmingFinalSignUp: LearningEvent?
 
@@ -57,6 +61,7 @@ private struct EventsScreen: View {
         }
         .fullScreenCover(item: $model.presentedTicket) { ticket in
             EventTicketView(ticket: ticket)
+                .coversCelebrations(celebrations)
                 .noBarClearance()
         }
         .confirmationDialog(

@@ -1,5 +1,4 @@
 import SwiftUI
-import SafariServices
 import MasterSATKit
 
 // Pieces shared by the surveys, events and stories screens. Prefixed `Community` so they
@@ -149,47 +148,6 @@ enum CommunityErrorText {
         }
         let text = (error as? LocalizedError)?.errorDescription ?? ""
         return text.isEmpty ? fallback : text
-    }
-}
-
-/// A web page to show in-app, as an identity for `.fullScreenCover(item:)`.
-struct CommunityLink: Identifiable, Equatable {
-    let url: URL
-    var id: String { url.absoluteString }
-}
-
-/// `SFSafariViewController` — a story's "Open" link stays inside the app, with Safari's own
-/// chrome and none of this app's cookies or tokens.
-struct CommunitySafariView: UIViewControllerRepresentable {
-    let url: URL
-    /// Safari's own Done button dismisses the controller behind SwiftUI's back; this is how
-    /// the presenting state hears about it.
-    var onFinish: () -> Void = {}
-
-    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
-
-    func makeUIViewController(context: Context) -> SFSafariViewController {
-        let controller = SFSafariViewController(url: url)
-        controller.preferredControlTintColor = UIColor(Theme.accent)
-        controller.dismissButtonStyle = .close
-        controller.delegate = context.coordinator
-        return controller
-    }
-
-    func updateUIViewController(_ controller: SFSafariViewController, context: Context) {
-        context.coordinator.onFinish = onFinish
-    }
-
-    final class Coordinator: NSObject, SFSafariViewControllerDelegate {
-        var onFinish: () -> Void
-
-        init(onFinish: @escaping () -> Void) {
-            self.onFinish = onFinish
-        }
-
-        func safariViewControllerDidFinish(_ controller: SFSafariViewController) {
-            onFinish()
-        }
     }
 }
 

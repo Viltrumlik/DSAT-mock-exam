@@ -342,6 +342,7 @@ struct ProfileView: View {
         case .attempts: await model.loadAttempts(session)
         case .examDates: await model.loadExamDates(session)
         case .midterms: await model.loadMidterms(session)
+        case .finance: await model.loadFinance(session)
         case .classes: await model.retryClasses(session)
         case .schedule: await model.loadSchedule(session)
         case .people: await model.loadSelectedPeople(session, force: true)

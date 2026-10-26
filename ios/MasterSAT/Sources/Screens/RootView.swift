@@ -168,7 +168,10 @@ private struct CelebrationSheetWatcher: View {
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
             .accessibilityHidden(true)
-            .onChange(of: router.showingMe || router.certificate != nil) { _, up in
+            // The invitation counts as much as the other two: a sheet it does not know about is
+            // one confetti, an XP flight or the rank-up card can play behind, where nobody sees
+            // it and the queue records that it was shown.
+            .onChange(of: router.showingMe || router.certificate != nil || router.eventInvite != nil) { _, up in
                 // Up at once. Down only from the sheets' onDismiss (`RootTabView.sheetDismissed`),
                 // once the sheet has actually left the screen.
                 if up { celebrations.setSheetUp(true) }
@@ -191,6 +194,8 @@ struct RootTabView: View {
     @State private var rewards = RewardsStore()
     @State private var celebrations = CelebrationCenter()
     @State private var away = AwayCheck()
+    /// Which full-screen prompt has the stage, so the ones that can wait do (`AppPrompts`).
+    @State private var prompts = AppPrompts()
     /// The floating bar's measured height, so the room left for it is never a guess.
     @State private var barHeight: CGFloat = 0
 
@@ -250,6 +255,7 @@ struct RootTabView: View {
         .background {
             RewardsRefresher(userID: user.id, away: away)
             CelebrationSheetWatcher()
+            EventInvitePrompt()
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .overlay { RankUpOverlay() }
@@ -257,6 +263,7 @@ struct RootTabView: View {
         .environment(router)
         .environment(rewards)
         .environment(celebrations)
+        .environment(prompts)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
             // The close button lives in the page's hero, on its root only: laid over the sheet,
@@ -272,6 +279,19 @@ struct RootTabView: View {
         }
         .sheet(item: $router.certificate, onDismiss: { sheetDismissed() }) {
             MidtermCertificateSheet(code: $0.code)
+        }
+        // The third sheet, presented from the same host as the other two so the router can
+        // serialise all three: two sheets asked for at once from different views is how a
+        // presentation gets dropped while the flag behind it stays set.
+        .sheet(item: $router.eventInvite, onDismiss: { sheetDismissed() }) { event in
+            EventInviteSheet(
+                event: event,
+                api: EventsAPI(client: session.client),
+                // Through the router, as every route in this app is: landing on Events closes
+                // this sheet on the way.
+                onSeeAllEvents: { open(.events) },
+                onClose: { if router.eventInvite != nil { router.eventInvite = nil } }
+            )
         }
         // A tapped push, a reminder or an inbox row lands here. `onAppear` covers the tap
         // that launched the app from closed, which set the link before this view existed.
@@ -296,7 +316,7 @@ struct RootTabView: View {
     /// a celebration that waited under the sheet plays.
     private func sheetDismissed() {
         router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
-        celebrations.setSheetUp(router.showingMe || router.certificate != nil)
+        celebrations.setSheetUp(router.showingMe || router.certificate != nil || router.eventInvite != nil)
     }
 }
 

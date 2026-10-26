@@ -201,27 +201,8 @@ final class Session {
         phase = .signedIn(try await identify())
     }
 
-    /// Create the account and sign straight into it — the two steps the web's register
-    /// page takes, since registration answers with a user rather than a token pair.
-    func register(
-        firstName: String,
-        lastName: String,
-        username: String,
-        email: String,
-        password: String
-    ) async throws {
-        isWorking = true
-        defer { isWorking = false }
-        try await auth.register(
-            firstName: firstName,
-            lastName: lastName,
-            username: username,
-            email: email,
-            password: password
-        )
-        try await auth.signIn(email: email, password: password)
-        phase = .signedIn(try await identify())
-    }
+    // There is no `register`: the app has one way in, and it is the account the learning
+    // centre created. See `AuthService` for why the endpoint is not called at all.
 
     /// Load the identity that the rest of the app is built from.
     ///

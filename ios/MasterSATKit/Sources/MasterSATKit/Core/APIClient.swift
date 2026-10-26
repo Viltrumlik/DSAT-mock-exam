@@ -241,7 +241,7 @@ public actor APIClient {
     ///
     /// A serializer raises its code inside the error map, so `code` arrives as a
     /// single-element array (`{"code": ["duplicate_full_name"]}`) rather than a string.
-    /// Reading only the string form is how that branch silently never fires.
+    /// Reading only the string form is how a branch on a code silently never fires.
     private static func reason(from data: Data) -> String? {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         for key in ["reason", "code", "error"] {

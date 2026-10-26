@@ -108,6 +108,11 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
     public let workflowStatus: String?
     /// The teacher's mark and comment, once the work has been reviewed.
     public let review: SubmissionReview?
+    /// The whole grade, on a homework where the teacher's mark is only a share of it.
+    ///
+    /// `nil` on nearly every homework — only one that gives the mark a share composes at all —
+    /// and then `review` is read exactly as it was before this field existed.
+    public let composedGrade: ComposedGrade?
 
     public var isReturned: Bool { (status ?? "").lowercased() == "returned" || returnedAt != nil }
 
@@ -119,6 +124,7 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
         case returnedAt = "returned_at"
         case submittedAt = "submitted_at"
         case workflowStatus = "workflow_status"
+        case composedGrade = "composed_grade"
     }
 
     public init(from decoder: Decoder) throws {
@@ -132,19 +138,57 @@ public struct Submission: Decodable, Sendable, Equatable, Identifiable {
         files = (try? c.decodeIfPresent([SubmissionFile].self, forKey: .files)) as? [SubmissionFile] ?? []
         workflowStatus = try? c.decodeIfPresent(String.self, forKey: .workflowStatus)
         review = (try? c.decodeIfPresent(SubmissionReview.self, forKey: .review)) ?? nil
+        // `try?` is the whole mechanism: a homework with no manual component, and a payload
+        // this cannot read, both throw out of `ComposedGrade` and land here as nil — which is
+        // the one answer that means "show the mark as before".
+        composedGrade = (try? c.decodeIfPresent(ComposedGrade.self, forKey: .composedGrade)) ?? nil
+    }
+}
+
+/// Everything `my-submission` answers with: the row, when there is one, and the homework's
+/// composed grade either way.
+///
+/// The grade is NOT only a property of a submission. The server composes it from the assignment
+/// and the student (`composed_grade_payload_for`), so a homework whose automatic side is already
+/// settled — word sets mastered on Monday — carries a real grade for the whole week before the
+/// upload slot is used and any row exists. Reading the composition only off the row hid that
+/// grade, and with it the sentence explaining why it is not final yet.
+public struct MySubmissionAnswer: Sendable {
+    public let submission: Submission?
+    /// The composition as served, which is the row's when there is a row. Nil on a homework with
+    /// no manual component — nearly all of them — and on a payload this cannot read.
+    public let composedGrade: ComposedGrade?
+
+    public init(submission: Submission?, composedGrade: ComposedGrade?) {
+        self.submission = submission
+        self.composedGrade = composedGrade
     }
 }
 
 /// `my-submission` answers `200 {}` when nothing has been handed in — not a 404. That empty
 /// object failed to decode as a `Submission` (it has no `id`), so every homework without a
-/// submission yet opened to an error screen. An object with no `id` is "nothing yet".
+/// submission yet opened to an error screen. An object with no `id` is "nothing yet" — but the
+/// body it arrives in can still carry the homework's composed grade, so that is read separately.
 struct MaybeSubmission: Decodable, Sendable {
     let submission: Submission?
+    let composedGrade: ComposedGrade?
 
-    private enum Probe: String, CodingKey { case id }
+    private enum Probe: String, CodingKey {
+        case id
+        case composedGrade = "composed_grade"
+    }
 
     init(from decoder: Decoder) throws {
         let probe = try decoder.container(keyedBy: Probe.self)
         submission = probe.contains(.id) ? try Submission(from: decoder) : nil
+        // Off the row where there is one, so the two can never disagree; off the bare body
+        // otherwise. `try?` keeps an unreadable composition from failing the whole read, for the
+        // reason `Submission.init(from:)` gives.
+        composedGrade = submission?.composedGrade
+            ?? ((try? probe.decodeIfPresent(ComposedGrade.self, forKey: .composedGrade)) ?? nil)
+    }
+
+    var answer: MySubmissionAnswer {
+        MySubmissionAnswer(submission: submission, composedGrade: composedGrade)
     }
 }
