@@ -69,8 +69,23 @@ struct HeaderWindowCard<Content: View>: View {
     let onClose: () -> Void
     @ViewBuilder var content: Content
 
-    /// What the content wants. The scroll view is capped to it, so the card hugs short content and
-    /// only grows to the room it has been offered — then scrolls inside that.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// **How the card learns its height.** A `ScrollView` takes every point of height it is
+    /// offered, whatever is inside it, so a card built around one opens as tall as the screen and
+    /// then jumps short. So the content is measured — a scroll view proposes its content the
+    /// content's own ideal height along the scroll axis, whatever the scroll view's own frame is —
+    /// and the scroll view is capped to what came back. The card then hugs short content and grows
+    /// only to the room it has been offered, scrolling inside that.
+    ///
+    /// Zero until the first measure, which is also the cap, so the card cannot open screen-tall;
+    /// it is hidden for that one frame (`opacity`) rather than shown at a height nobody chose. The
+    /// entrance is the only motion there (W-R6).
+    ///
+    /// Why not `ViewThatFits(in: .vertical)`, which needs no measuring: its candidates are
+    /// separate identities, and both windows hold their read in `@State` and read once on
+    /// appearance. A content that outgrew the plain candidate would be rebuilt as the scrolling
+    /// one with empty state, read again, come back short, and flap between the two.
     @State private var contentHeight: CGFloat = 0
 
     var body: some View {
@@ -90,6 +105,10 @@ struct HeaderWindowCard<Content: View>: View {
             }
             .padding(.top, 12)
             .padding(.trailing, 12)
+            // Above the scroll view, which is a later sibling in this stack and would otherwise
+            // win the ~9 pt where the ✕'s 44-pt reach hangs below its 26-pt row (`hitTarget`
+            // keeps the reach outside the layout frame on purpose, so neighbours do not move).
+            .zIndex(1)
 
             ScrollView {
                 content
@@ -97,15 +116,31 @@ struct HeaderWindowCard<Content: View>: View {
                     .padding(.horizontal, 20)
                     .padding(.bottom, 20)
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { measured in
-                        if measured != contentHeight { contentHeight = measured }
+                        guard measured != contentHeight else { return }
+                        // The first measure lands under the hidden frame, so it must not animate:
+                        // the entrance is the only motion a window opens with. Every later one is
+                        // a skeleton becoming numbers, which both windows do on every open — the
+                        // card's bottom edge moves, and that is worth a short curve, not a snap.
+                        guard contentHeight > 0 else {
+                            contentHeight = measured
+                            return
+                        }
+                        // Under Reduce Motion the edge simply moves, as the status-bar inset does
+                        // (`TabRootScroll`): the value is picked, the tree is the same either way.
+                        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
+                            contentHeight = measured
+                        }
                     }
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(maxHeight: contentHeight == 0 ? nil : contentHeight)
+            .frame(maxHeight: contentHeight)
         }
         .frame(maxWidth: 420)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
         .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+        // After the background and the shadow, so the one unmeasured frame hides the whole card
+        // and not only what is inside it.
+        .opacity(contentHeight == 0 ? 0 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         // VoiceOver's two-finger scrub puts it away, as it does a sheet.

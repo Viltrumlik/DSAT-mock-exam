@@ -159,14 +159,18 @@ struct StrikeChip: View {
                 .onChange(of: celebrations.streakGrowth) { _, _ in
                     if counted { grows += 1 }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
-                .accessibilityShowsLargeContentViewer {
-                    Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
-                }
             }
             .buttonStyle(PressBounce())
+            // On the BUTTON, not inside its label: the element, its label, the viewer and the
+            // hint belong to the control, so VoiceOver reads one element with the button trait
+            // and the hint that goes with it. Inside the label they described a view the button
+            // then wrapped, and the hint sat on a different element from the label.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row")
             .accessibilityHint("Opens your strikes")
+            .accessibilityShowsLargeContentViewer {
+                Label(streak == 1 ? "1 lesson in a row" : "\(streak) lessons in a row", systemImage: "flame.fill")
+            }
         }
     }
 
@@ -237,12 +241,13 @@ struct XPPill: View {
                 .onChange(of: celebrations.landing) { _, landing in
                     if landing?.owner == owner { pulses += 1 }
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(shown) XP")
-                .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
             }
             .buttonStyle(PressBounce())
+            // On the BUTTON, as the flame's are, so the label and the hint are one element's.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(shown) XP")
             .accessibilityHint("Opens your XP and points")
+            .accessibilityShowsLargeContentViewer { Label("\(shown) XP", systemImage: "bolt.fill") }
         }
     }
 
