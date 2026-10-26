@@ -112,8 +112,7 @@ struct TodayView: View {
                         title: "Today",
                         subtitle: dateLine,
                         shortSubtitle: shortDateLine,
-                        subtitleLabel: spokenDate,
-                        showsBell: true
+                        subtitleLabel: spokenDate
                     )
                     .stagger(0, shown: shown)
 

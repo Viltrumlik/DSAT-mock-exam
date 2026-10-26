@@ -1,7 +1,17 @@
 import SwiftUI
 import MasterSATKit
 
-/// Every tab's header: a line of context, streak, XP, (bell), avatar — then the title.
+/// Every tab's header: a line of context, streak, XP, bell, avatar — then the title.
+///
+/// The bell is on every tab (the owner's call), not only Today: a student who is deep in Words
+/// should not have to go home to see that something is waiting. Only the tab on screen polls —
+/// a tab left behind gets `onDisappear`, which cancels the bell's `.task` — so five headers are
+/// still one poll a minute, the cadence Today had alone.
+///
+/// Room on the narrowest phone, with nothing cut: the actions are 84 pt (bell 42 + 8 + avatar 34)
+/// and the pills stop growing at `xxxLarge`, where the widest honest pair is about 210 pt — 302 pt
+/// of the iPhone SE's 343 pt of content. What gives way first is the line of context, which only
+/// Today has (`HeaderLayout`), and at the accessibility sizes the header stacks instead.
 struct AppHeader: View {
     let title: String
     var subtitle: String?
@@ -10,20 +20,17 @@ struct AppHeader: View {
     var shortSubtitle: String?
     /// What VoiceOver reads for the line, when it is more than the line shows.
     var subtitleLabel: String?
-    var showsBell: Bool
 
     init(
         title: String,
         subtitle: String? = nil,
         shortSubtitle: String? = nil,
-        subtitleLabel: String? = nil,
-        showsBell: Bool = false
+        subtitleLabel: String? = nil
     ) {
         self.title = title
         self.subtitle = subtitle
         self.shortSubtitle = shortSubtitle
         self.subtitleLabel = subtitleLabel
-        self.showsBell = showsBell
     }
 
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -47,7 +54,7 @@ struct AppHeader: View {
             .headerPart(.pills)
             HStack(spacing: 8) {
                 // RootTabView routes what the inbox opens, the same way it routes a push.
-                if showsBell { NotificationBell(onOpen: { NotificationRouter.shared.open($0) }) }
+                NotificationBell(onOpen: { NotificationRouter.shared.open($0) })
                 AvatarButton()
             }
             .headerPart(.actions)
