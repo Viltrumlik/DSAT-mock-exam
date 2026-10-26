@@ -100,10 +100,13 @@ final class AppRouter {
         if headerWindow != kind { headerWindow = kind }
     }
 
-    /// The open window says whether it can be dismissed right now (`headerWindowBusy`).
+    /// Whether work that outlives its window is still in flight — a conversion, which spends real
+    /// points and is not idempotent.
     ///
-    /// Written by the window, cleared by it twice over — when the work settles and when the view
-    /// goes — so a flag can never latch on and leave a window nothing can close.
+    /// **The flag belongs to the work, not to the window.** It is raised before the request and
+    /// lowered when that request settles, by the unstructured task that owns it, which a dismissal
+    /// does not cancel. So it stays up across a forced close, and a window reopened in those few
+    /// hundred milliseconds offers no second Convert.
     func setHeaderWindowBusy(_ busy: Bool) {
         if headerWindowBusy != busy { headerWindowBusy = busy }
     }
@@ -114,11 +117,12 @@ final class AppRouter {
     /// `headerWindowBusy`, but a route — a deep link, a notification tap — must take the window
     /// with it whatever it is doing: a window left over the tab the student has just been sent to
     /// would have nothing left to close it.
+    /// A forced close takes the window and leaves the flag alone: the request it stands for is
+    /// still out, and the task that raised it will lower it when it settles. Clearing it here
+    /// would let the student reopen the window and start a second conversion over the first.
     func closeHeaderWindow(force: Bool = false) {
         guard force || !headerWindowBusy else { return }
         if headerWindow != nil { headerWindow = nil }
-        // The window that owned the flag is going, so its own clearing writes will be dropped.
-        if headerWindowBusy { headerWindowBusy = false }
     }
 
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {

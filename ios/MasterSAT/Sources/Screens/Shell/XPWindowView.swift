@@ -160,12 +160,11 @@ struct XPWindowView: View {
             guard scenePhase == .active else { return }
             await load()
         }
-        // The flag lives on the router, which outlives this view, so it is cleared from both ends.
-        // Here, because a route taken while a conversion is out destroys the window and every
-        // `@State` write `convert()` has left to make, this one included; and at the end of
-        // `convert()`, because a conversion that settles with the window still open has no
-        // disappearance coming.
-        .onDisappear { router.setHeaderWindowBusy(false) }
+        // The flag is NOT cleared here. It stands for a request that is still out, and this view
+        // going is exactly the case where that matters: a route can take the window mid-conversion
+        // (`closeHeaderWindow(force:)`), and lowering the flag on the way out would let the window
+        // be reopened and a second, non-idempotent conversion start over the first. `convert()`
+        // lowers it from its own task, which a dismissal does not cancel.
         // The cursor goes to the figure when the figure is actually there. A fixed wait from the
         // window's own appearance would usually land before `/rewards/me/` answers, leaving the
         // cursor on the loading skeleton inside an `.isModal` card — and the numbers that replaced
@@ -453,11 +452,14 @@ struct XPWindowView: View {
                 .hitTarget(44)
             }
             .buttonStyle(PressBounce())
-            .disabled(converting || unconfirmed)
+            // `headerWindowBusy` as well as `converting`: a conversion whose window a route closed
+            // keeps running, and this window may be a NEW one opened over it, with `converting`
+            // false and a stale `convertibleCoins`. Converting again there would spend twice.
+            .disabled(converting || unconfirmed || router.headerWindowBusy)
             // The spinner has no words of its own, and a button held off says why — "dimmed" is
             // not a reason.
             .accessibilityLabel(
-                converting ? "Converting points"
+                converting || router.headerWindowBusy ? "Converting points"
                     : "Convert points into \(RewardsFormat.count(window.convertibleCoins, "coin"))"
             )
             .accessibilityHint(unconfirmed ? "Unavailable until your points are checked again" : "")
@@ -631,14 +633,23 @@ struct XPWindowView: View {
     /// burst's own coordinates.
     @MainActor
     private func convert() async {
-        guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
+        guard !converting, !router.headerWindowBusy, let before = mine, before.convertibleCoins > 0 else { return }
         converting = true
         router.setHeaderWindowBusy(true)
+        // Lowered on every path, including the ones that leave early below: this task is not
+        // cancelled by the window going, so the flag cannot latch — and until it is lowered a
+        // reopened window will not offer Convert again.
+        defer { router.setHeaderWindowBusy(false) }
         convertNote = nil
         var answered = false
         // Coins were minted. Only that note is news the window already shows; every other note is
         // the only signal that the conversion did not happen.
         var minted = false
+        // What happened, in words. Held HERE and not only in `convertNote`, because a route may
+        // have taken the window with it by now (`closeHeaderWindow(force:)`) — then every write to
+        // this view's state goes nowhere, and reading it back for the announcement would say
+        // nothing on exactly the branches that must be said aloud.
+        var note: String?
         do {
             let result = try await session.rewards.convert(points: nil)
             answered = true
@@ -648,11 +659,12 @@ struct XPWindowView: View {
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = after }
             }
             if result.minted > 0 { celebrateMint() }
-            convertNote = result.detail.isEmpty
+            note = result.detail.isEmpty
                 ? (result.minted > 0
                     ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
                     : "Not enough points yet — \(RewardsFormat.count(after.pointsToNextCoin, "point")) to your next coin.")
                 : result.detail
+            convertNote = note
         } catch {
             // Said only after the read-back below: it decides which note is true.
         }
@@ -662,19 +674,15 @@ struct XPWindowView: View {
                 // The answer was lost but the conversion was not.
                 minted = true
                 celebrateMint()
-                convertNote = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
+                note = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
             } else if fresh != nil {
-                convertNote = "That didn't go through — your coins are as they were. Try again."
+                note = "That didn't go through — your coins are as they were. Try again."
             } else {
-                convertNote = Self.unconfirmedNote
+                note = Self.unconfirmedNote
             }
+            convertNote = note
         }
         converting = false
-        // The note is on screen and the figures have settled, so the window is the student's to
-        // close again — the hold is exactly as long as the promise the button makes. What follows
-        // runs in an unstructured task of its own and reaches the root's `CelebrationCenter`, so a
-        // close here no longer silences it.
-        router.setHeaderWindowBusy(false)
         // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
         // cursor goes with it: the figures are where the window's result shows, so it goes there.
         // Lowered first, with a yield between: the cursor is usually already on the figures when
@@ -684,12 +692,15 @@ struct XPWindowView: View {
         figuresFocused = false
         try? await Task.sleep(for: .milliseconds(50))
         figuresFocused = true
-        if let convertNote {
+        if let note {
             // After the figures have been read, not over them: speech started by the cursor's move
             // is not cut off. A success waits its turn behind that read; a conversion that did not
             // go through is said at normal priority, so it cannot be dropped.
+            //
+            // Said from the local copy, so a window a route closed mid-conversion still tells the
+            // student what became of their points — the centre outlives this view.
             do { try await Task.sleep(for: .milliseconds(400)) } catch { return }
-            celebrations.announce(convertNote, queued: minted)
+            celebrations.announce(note, queued: minted)
         }
     }
 
@@ -705,10 +716,15 @@ struct XPWindowView: View {
     /// the burst would have carried. Written as the hub writes it — measure, ask, give the haptic
     /// only if no burst was counted — rather than as an unconditional buzz, so the day the window
     /// stops covering the stage it still cannot double up.
+    /// A route can take the window mid-conversion, and then `pointsSpot.rect` is where the box
+    /// WAS: bursting there would throw coins at a corner of whatever page the student has landed
+    /// on. With no window up the burst has no place of its own, so it goes to the middle of the
+    /// stage, as every other placeless cue does.
     @MainActor
     private func celebrateMint() {
         let bursts = celebrations.coinCount
-        celebrations.coinBurst(at: pointsSpot.rect.celebrationPoint)
+        let spot = router.headerWindow == .xp ? pointsSpot.rect.celebrationPoint : nil
+        celebrations.coinBurst(at: spot)
         if celebrations.coinCount == bursts { convertBuzz += 1 }
     }
 }
