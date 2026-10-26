@@ -27,8 +27,10 @@ public enum APIError: Error, Sendable {
     /// whose real problem is one sentence long and entirely fixable.
     ///
     /// `code` is the serializer's machine-readable branch where it sends one — registration
-    /// refuses a duplicate full name with `duplicate_full_name`, and the screen turns that
-    /// into a link to sign in rather than a dead end.
+    /// refuses a duplicate full name with `duplicate_full_name`, for instance. It is kept
+    /// because every serializer's code travels this way and a screen should branch on the code
+    /// rather than the sentence; that particular one no longer reaches the app, which has no
+    /// Register form (the centre creates the accounts).
     case validation(detail: String, code: String?, fields: [String: [String]])
 
     /// 426. This build is older than the server's minimum and must be updated before the
