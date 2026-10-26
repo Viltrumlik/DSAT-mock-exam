@@ -13,9 +13,9 @@ import MasterSATKit
 
 /// The mark itself — the shield from `frontend/public/images/logo.png`.
 ///
-/// The asset is a template, so it takes the colour it is given: white on the brand panel,
-/// brand blue on a card. That is the same thing the web does with
-/// `filter: brightness(0) invert(1)`, minus the filter.
+/// The asset is a template, so it takes the colour it is given: white on the sign-in page's
+/// brand-blue tile, brand blue on the gate's and About's own surface. That is the same thing
+/// the web does with `filter: brightness(0) invert(1)`, minus the filter.
 struct BrandMark: View {
     var height: CGFloat = 44
     var tint: Color = .white

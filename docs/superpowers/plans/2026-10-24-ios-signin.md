@@ -121,10 +121,11 @@ App (`ios/MasterSAT/`):
 
 - `Sources/Screens/Auth/AuthView.swift` — rewritten: `AuthView` is the look-C page and the sign-in
   form; `RegisterForm` and `Mode` are gone.
-- `Sources/Screens/Auth/AuthChrome.swift` — `BrandPanel`, `PromiseRow`, `FloatingShapes`,
-  `Brand.promises` deleted; `SoftField` added (the look-C grey box); `AuthField`, `AuthAlert`,
-  `PasswordField`, `BrandMark`, `BrandLockup`, `Brand.top/bottom/panel` stay (the gate, About, the
-  update screen and `AccountEmailVerification` use them). `AuthFocus` loses the register-only cases.
+- `Sources/Screens/Auth/AuthChrome.swift` — `BrandPanel`, `PromiseRow`, `FloatingShapes` and the
+  whole `Brand` enum deleted, and with the panel gone so are `BrandLockup` and `AuthField`, which
+  had no other user (see **Approved design** 1); `SoftField` added (the look-C grey box);
+  `AuthAlert`, `PasswordField`, `BrandMark`, `LogoArrival` stay (the gate, About and
+  `AccountEmailVerification` use them). `AuthFocus` loses the register-only cases.
 - `Sources/App/MasterSATApp.swift` — `Session.register` deleted (~206-224).
 - `Sources/Screens/Account/CompleteProfileView.swift` — the two new steps, the four-step order, and
   one `advance(from:)` that reads the fresh profile after every save.
@@ -229,9 +230,10 @@ N ≥ 953 plus the new tests, nothing removed except by Task 2.
 **Files:** `Screens/Auth/AuthView.swift`, `Screens/Auth/AuthChrome.swift`.
 
 1. `AuthChrome.swift`:
-   - delete `BrandPanel`, `PromiseRow`, `FloatingShapes` and `Brand.promises`; keep `Brand.top`,
-     `Brand.bottom`, `Brand.panel` (About and the update screen draw the gradient), `BrandMark`,
-     `BrandLockup`, `LogoArrival`, `AuthField`, `AuthAlert`, `PasswordField`.
+   - delete `BrandPanel`, `PromiseRow`, `FloatingShapes` and the `Brand` enum (nothing draws the
+     gradient once the panel goes — About tints `BrandMark` itself and the update screen loads
+     `Image("BrandMark")`), and with them `BrandLockup` and `AuthField`, which had no other user;
+     keep `BrandMark`, `LogoArrival`, `AuthAlert`, `PasswordField`.
    - `LogoArrival` becomes reachable from `AuthView` (the new logo tile uses it); the spring is the
      phase-4 one, and Reduce Motion still only fades.
    - new `SoftField<Content>`: the mockup's grey box — a token fill, no stroke, radius
@@ -347,8 +349,11 @@ Checks:
 2. `uat_s1@mastersat.test` + `uatpass123` signs in; so does the same account's **username**; so does
    the lc-up account's **phone number** (`+998 90 123 45 67`, spaces and all) with its last four
    digits.
-3. A wrong password: the field shakes once, the alert says "The email or password you entered is
-   incorrect.", and the password field keeps focus.
+3. A wrong password: the field shakes once and the alert says "The details you entered are
+   incorrect." (one field now takes a phone, an email or a username, so the sentence cannot name
+   one of the three). Focus is **not** kept: `submit()` clears it before sending, as phase 4 did,
+   so the shake plays on a field the keyboard is not covering — the password is still in the box
+   and one tap returns to it.
 4. The backend stopped: "Cannot connect to the server…" with Retry, and **no** shake.
 5. A `public_student` account: the server's "This app is for learning center students…" sentence.
 6. The lc-up account's first sign-in: password step → phone step (a wrong number first, for the
