@@ -229,6 +229,10 @@ never "#—", and never a silent omission that reads as "not on the board".
   wordings fail `ViewThatFits`, and the header stacks — the designed give-way. (The first estimate
   here said ~150 pt of pills and ~242 pt total; it was low, and the conclusion is unchanged.)
   The project has no `#Preview` anywhere, so none was added.
+  **Confirmed on an actual iPhone SE (3rd gen), iOS 26.3, 2026-10-26** — not arithmetic any more:
+  at the default size the header is one row with room left; at AX5 it stacks and nothing clips;
+  both windows open at both sizes, the card scrolls, and the points box stacks without breaking a
+  word. Screenshots on `pr-assets/ios-header-windows` (`d2850ea1`).
 - The polling check of W-R8.
 
 **Review after this task.**
