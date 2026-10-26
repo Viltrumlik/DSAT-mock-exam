@@ -3,7 +3,7 @@ import Foundation
 /// The token exchange worked — the password was right — and reading the account afterwards
 /// (`/users/me/`) answered 401.
 ///
-/// A distinct error because on the sign-in form a bare 401 means "wrong email or password" and
+/// A distinct error because on the sign-in form a bare 401 means "what you typed is wrong" and
 /// nothing else can; this one must not be read that way, or a student with a correct password is
 /// sent hunting for a typo.
 public struct AccountDidNotLoad: Error, Sendable, Equatable {
@@ -17,8 +17,9 @@ public struct AccountDidNotLoad: Error, Sendable, Equatable {
     }
 }
 
-/// The sentence to show when a sign-in or a sign-up fails, and whether trying the same thing again
-/// could work. A port of the web's `classifyLoginError`.
+/// The sentence to show when a sign-in fails, and whether trying the same thing again could
+/// work. A port of the web's `classifyLoginError`. (There is no sign-up in the app: the centre
+/// creates the accounts.)
 public enum AuthErrorCopy {
     public static func classify(_ error: Error) -> (message: String, retryable: Bool) {
         if error is AccountDidNotLoad {
@@ -36,7 +37,12 @@ public enum AuthErrorCopy {
             // student has no session yet. `APIError`'s own wording is written for the
             // other case and would send them looking for a problem they do not have.
             // (A 401 AFTER the token exchange is `AccountDidNotLoad`, not this.)
-            return ("The email or password you entered is incorrect.", false)
+            //
+            // "The details you entered": the one identity field takes a phone number or a
+            // username as readily as an email (`users/backends.py:_phone_username`,
+            // `lcup/auth_backend.py`), and naming the wrong one of the three is how a student
+            // who typed their phone goes looking for an email account they never had.
+            return ("The details you entered are incorrect.", false)
         case .forbidden(let detail, _):
             // The server's own words: a teacher signing in here is told to use the teacher
             // portal, and a frozen account is told it is frozen.

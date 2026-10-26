@@ -2,14 +2,17 @@ import Foundation
 import Testing
 @testable import MasterSATKit
 
-/// What the sign-in and register forms say when something fails — and, above all, that a 401 which
-/// follows a GOOD password is never read as a wrong one.
+/// What the sign-in form says when something fails — and, above all, that a 401 which follows a
+/// GOOD password is never read as a wrong one.
 @Suite struct AuthErrorCopyTests {
 
-    @Test("A refused token exchange is a wrong email or password")
+    @Test("A refused token exchange blames what was typed, without naming which of the three")
     func wrongPassword() {
         let copy = AuthErrorCopy.classify(APIError.unauthorized)
-        #expect(copy.message == "The email or password you entered is incorrect.")
+        #expect(copy.message == "The details you entered are incorrect.")
+        // The one identity field takes a phone number or a username too, so the sentence cannot
+        // name an email: a student who typed their phone would go hunting for an email account.
+        #expect(!copy.message.lowercased().contains("email"))
         #expect(!copy.retryable)
     }
 
