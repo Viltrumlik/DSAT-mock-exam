@@ -83,11 +83,18 @@ Mockup: `ios-redesign/.superpowers/brainstorm/74526-1792779410/content/windows-f
   *Cost if wrong:* the same number read three times, or a window VoiceOver cannot leave.
 - **W-R8 The bell is on every tab's header** (owner). `AppHeader(showsBell:)` defaults to `true`
   and the parameter goes away; `HeaderLayout`'s `.actions` slot already carries bell + avatar in
-  both the row and the stacked arrangement. One `NotificationBell` per tab means one poll per tab
-  root that has appeared — the poll is `task(id: scenePhase)` on a view that exists in all five
-  roots once each has been visited. Checked in Task 5: at most one timer runs per visited tab and
-  each is a 60 s poll of one small aggregate, as Today's is today.
-  *Cost if wrong:* five polls a minute instead of one.
+  both the row and the stacked arrangement.
+  *The polling cost, measured in Task 5:* **one timer, the visible tab's.** The poll is a
+  `.task(id: scenePhase)`, and a `.task` is cancelled when its view goes — a `TabView` keeps a
+  visited tab built but does fire `onDisappear` on it (the whole flight-target design depends on
+  that: `flameAppeared` / `clearXPTarget` are paired from the header's own appearances). So a left
+  tab's loop stops and restarts on return. What a bell in five headers does add is one immediate
+  summary read per tab entrance, which is cheap and leaves the badge fresher.
+  *What this ruling first got wrong:* the arrival path is NOT appearance-bound the way the timer
+  is. `onChange(of: router.arrivals)` watches shared observable state, so it reaches every BUILT
+  bell — one push could fire five reads. The bell now ignores an arrival unless it is the bell on
+  screen (`onScreen`, set from its own appearances).
+  *Cost if wrong:* five polls a minute, or five reads per push, instead of one.
 
 ## File structure
 
@@ -214,11 +221,14 @@ never "#—", and never a silent omission that reads as "not on the board".
 ## Task 5 — the bell on every tab
 
 - `AppHeader.showsBell` goes away; the bell is always built. `TodayView` drops the argument.
-- Layout proof at AX5 and on the iPhone SE (375 pt): the `.actions` slot is bell + avatar, 42 + 34
-  with an 8 gap = 84 pt, plus the pills (~150 pt at xxxLarge) ≈ 242 pt of SE's 343-pt content width
-  — the line of context is what gives way (`HeaderLayout`'s `ViewThatFits` ending in an empty view),
-  and at the accessibility sizes the header stacks. Task 5 verifies this rather than assuming it:
-  Class, Words, Rewards and Explore at AX5 and at 375 pt, light and dark.
+- Layout proof at AX5 and on the iPhone SE (375 pt, so 343 pt of content). Measured in Task 5, not
+  assumed: the `.actions` slot is bell 42 + 8 + avatar 34 = 84 pt (the avatar's `hitTarget(44)` is
+  layout-neutral), and the pills at their `xxxLarge` cap are ~186 pt (~210 pt at absurd figures),
+  so the block is ~278 pt of 343 — it fits, with ~65 pt spare. Class, Words, Rewards and Explore
+  pass no line of context at all, so there is nothing to clip; Today's line finds ~49 pt left, both
+  wordings fail `ViewThatFits`, and the header stacks — the designed give-way. (The first estimate
+  here said ~150 pt of pills and ~242 pt total; it was low, and the conclusion is unchanged.)
+  The project has no `#Preview` anywhere, so none was added.
 - The polling check of W-R8.
 
 **Review after this task.**
