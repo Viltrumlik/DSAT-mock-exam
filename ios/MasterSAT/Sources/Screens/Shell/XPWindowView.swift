@@ -48,6 +48,14 @@ struct XPWindowView: View {
     @State private var converting = false
     @State private var confirmingConvert = false
     @State private var convertNote: String?
+    /// A conversion whose outcome is unknown — the answer was lost and so was the read-back — so
+    /// the points on screen may already have been spent. Convert stays off until a read confirms
+    /// them, because a second conversion is a second conversion.
+    ///
+    /// Asked of `ConversionOutcome` when the conversion is decided (`== .unconfirmed`), never
+    /// matched back out of the sentence on screen: the hold is a money guard, and keying it on
+    /// wording is how the two copies of this flow drifted apart in the first place.
+    @State private var unconfirmed = false
     /// Counts conversions whose coin burst was skipped, so the haptic the burst would have given
     /// is still given — once. Over this window that is every conversion; see `celebrateMint()`.
     @State private var convertBuzz = 0
@@ -96,11 +104,6 @@ struct XPWindowView: View {
         if board != nil { return .shown }
         return boardFailed ? .failed : .loading
     }
-
-    /// A conversion whose outcome is unknown — the answer was lost and so was the read-back — so
-    /// the points on screen may already have been spent. Convert stays off until a read confirms
-    /// them, because a second conversion is a second conversion.
-    private var unconfirmed: Bool { convertNote == Self.unconfirmedNote }
 
     /// Both tracks always exist; the setting picks the animation, never the tree. The bolt and the
     /// coin stop where they started, and the glow rests half way between its two ends rather than
@@ -401,7 +404,7 @@ struct XPWindowView: View {
                     // The unconfirmed note is the one that asks the student to look, and the only
                     // one Convert is held off behind. It carries the button itself unless the
                     // figures above already offer it, so there is never a second one.
-                    if convertNote == Self.unconfirmedNote, !meFailed { checkAgain }
+                    if unconfirmed, !meFailed { checkAgain }
                 }
                 .padding(.top, 6)
             }
@@ -551,7 +554,10 @@ struct XPWindowView: View {
             // and lifting the hold over figures the window did not take is the double-mint this
             // hold exists to prevent. Not the conversion's own read-back, which decides its note
             // itself.
-            if !converting, convertNote == Self.unconfirmedNote { convertNote = nil }
+            if !converting, unconfirmed {
+                unconfirmed = false
+                convertNote = nil
+            }
             if mine != me {
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = me }
             }
@@ -622,10 +628,11 @@ struct XPWindowView: View {
     /// it shows the coins rose after an error, the note says it worked rather than leaving "That
     /// didn't go through" over a box that went up.
     ///
-    /// **The other copy of this flow is `RewardsHubView.convert()`** — same request, same alert,
-    /// same notes, same read-back ordering. Change one and the other needs the same change; the
-    /// shared money path is deliberately not extracted into the kit until the owner has seen this
-    /// branch.
+    /// **Which outcome this was, and what it says, is `ConversionOutcome` in the kit** — shared
+    /// with `RewardsHubView.convert()`, the other surface that spends points, and tested there
+    /// rather than in two uncheckable copies (which had already drifted apart once). What stays
+    /// here is this window's own I/O: the request, the busy flag, the balances written into
+    /// `@State`, the burst, the focus move and the announcement.
     ///
     /// The window refuses to close for the length of it (`AppRouter.headerWindowBusy`). Unlike the
     /// hub, which lives in a tab nothing tears down, this view is destroyed on close and every
@@ -641,7 +648,8 @@ struct XPWindowView: View {
         // reopened window will not offer Convert again.
         defer { router.setHeaderWindowBusy(false) }
         convertNote = nil
-        var answered = false
+        unconfirmed = false
+        var answered: ConversionResult?
         // Coins were minted. Only that note is news the window already shows; every other note is
         // the only signal that the conversion did not happen.
         var minted = false
@@ -652,35 +660,30 @@ struct XPWindowView: View {
         var note: String?
         do {
             let result = try await session.rewards.convert(points: nil)
-            answered = true
-            minted = result.minted > 0
+            answered = result
+            // Decided from the answer alone: a server that spoke is the authority on its own
+            // conversion, so the read-back below is not consulted on this path.
+            let outcome = ConversionOutcome.decide(answer: result, before: before, readBack: nil)
+            minted = outcome.mintedCoins
             let after = before.applying(result.balances)
             if mine != after {
                 withAnimation(reduceMotion ? Motion.focus : Motion.snappy) { mine = after }
             }
-            if result.minted > 0 { celebrateMint() }
-            note = result.detail.isEmpty
-                ? (result.minted > 0
-                    ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
-                    : "Not enough points yet — \(RewardsFormat.count(after.pointsToNextCoin, "point")) to your next coin.")
-                : result.detail
+            if minted { celebrateMint() }
+            note = outcome.text(unconfirmed: Self.unconfirmedNote)
             convertNote = note
         } catch {
             // Said only after the read-back below: it decides which note is true.
         }
         let fresh = await loadMe()
-        if !answered {
-            if let fresh, fresh.coins > before.coins {
-                // The answer was lost but the conversion was not.
-                minted = true
-                celebrateMint()
-                note = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
-            } else if fresh != nil {
-                note = "That didn't go through — your coins are as they were. Try again."
-            } else {
-                note = Self.unconfirmedNote
-            }
+        if answered == nil {
+            let outcome = ConversionOutcome.decide(answer: nil, before: before, readBack: fresh)
+            minted = outcome.mintedCoins
+            // The answer was lost but, when the coins rose, the conversion was not.
+            if minted { celebrateMint() }
+            note = outcome.text(unconfirmed: Self.unconfirmedNote)
             convertNote = note
+            unconfirmed = outcome == .unconfirmed
         }
         converting = false
         // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's

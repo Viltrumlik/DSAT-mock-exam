@@ -44,6 +44,10 @@ struct RewardsHubView: View {
     @State private var converting = false
     @State private var confirmingConvert = false
     @State private var convertNote: String?
+    /// Whether the note on the card is the unconfirmed one (`ConversionOutcome.unconfirmed`) —
+    /// asked of the outcome when it is decided rather than matched back out of the sentence, so
+    /// that rewording the sentence can never quietly change what the card does about it.
+    @State private var convertUnconfirmed = false
     /// Counts conversions whose coin burst was skipped (a sheet or a cover is up), so the haptic
     /// the burst would have given is still given — once, by the card.
     @State private var convertBuzz = 0
@@ -153,7 +157,10 @@ struct RewardsHubView: View {
                     trophyPlays += 1
                 }
                 // Yesterday's "Converted 30 points…" is not news on a later visit.
-                if convertNote != nil, !converting { convertNote = nil }
+                if convertNote != nil, !converting {
+                    convertNote = nil
+                    convertUnconfirmed = false
+                }
                 // The first appearance's section board is the `.task(id:)` below's to read — it
                 // runs then too — so it is read once, not twice.
                 Task { await load(includingSection: !first) }
@@ -236,7 +243,10 @@ struct RewardsHubView: View {
             if meFailed { meFailed = false }
             // A read went through, so "pull down to check" has been done: the coins now say it.
             // Not the conversion's own read-back, which decides its note itself.
-            if !converting, convertNote == Self.unconfirmedNote { convertNote = nil }
+            if !converting, convertUnconfirmed {
+                convertUnconfirmed = false
+                convertNote = nil
+            }
             // The header reads the same answer, so the two never disagree.
             if rewards.apply(me, ticket: ticket) {
                 setMine(me)
@@ -340,6 +350,10 @@ struct RewardsHubView: View {
 
     /// Nothing is known — the answer was lost and so was the read-back — so the note sends the
     /// student to look; the next read that goes through takes it away (`loadMe`).
+    ///
+    /// This page's own wording, handed to `ConversionOutcome.text(unconfirmed:)`: the hub has a
+    /// pull to refresh, so it asks for the gesture. The XP window, a floating card with no pull,
+    /// names its "Check again" button instead. Every other sentence is shared.
     private static let unconfirmedNote = "We couldn't confirm that went through. Pull down to check your coins."
 
     /// Spends Max — every point that buys a whole coin. Not idempotent (a second call is a second
@@ -354,42 +368,42 @@ struct RewardsHubView: View {
     /// A coin bursts only when a coin was minted, and only where the stage is clear: under a
     /// sheet or a cover `coinBurst` does nothing, so the card gives the success haptic itself —
     /// and always the words and the VoiceOver announcement, which the burst never carries.
+    ///
+    /// **Which outcome this was, and what it says, is `ConversionOutcome` in the kit** — the same
+    /// decision the XP window makes, tested there rather than in two uncheckable copies. What
+    /// stays here is this page's I/O: the request, the balances written into `@State`, the burst,
+    /// the focus move and the announcement.
     @MainActor
     private func convert() async {
         guard !converting, let before = mine, before.convertibleCoins > 0 else { return }
         converting = true
         convertNote = nil
-        var answered = false
+        convertUnconfirmed = false
+        var answered: ConversionResult?
         // Coins were minted. Only that note is news the screen already shows; every other note
         // is the only spoken signal that the conversion did not happen.
         var minted = false
         do {
             let result = try await session.rewards.convert(points: nil)
-            answered = true
-            minted = result.minted > 0
-            let after = before.applying(result.balances)
-            setMine(after)
-            if result.minted > 0 { celebrateMint() }
-            convertNote = result.detail.isEmpty
-                ? (result.minted > 0
-                    ? "Converted \(result.pointsSpent) points into \(RewardsFormat.count(result.minted, "coin"))."
-                    : "Not enough points yet — \(RewardsFormat.count(after.pointsToNextCoin, "point")) to your next coin.")
-                : result.detail
+            answered = result
+            // Decided from the answer alone: a server that spoke is the authority on its own
+            // conversion, so the read-back below is not consulted on this path.
+            let outcome = ConversionOutcome.decide(answer: result, before: before, readBack: nil)
+            minted = outcome.mintedCoins
+            setMine(before.applying(result.balances))
+            if minted { celebrateMint() }
+            convertNote = outcome.text(unconfirmed: Self.unconfirmedNote)
         } catch {
             // Said only after the read-back below: it decides which note is true.
         }
         let fresh = await loadMe()
-        if !answered {
-            if let fresh, fresh.coins > before.coins {
-                // The answer was lost but the conversion was not.
-                minted = true
-                celebrateMint()
-                convertNote = "Converted points into \(RewardsFormat.count(fresh.coins - before.coins, "coin"))."
-            } else if fresh != nil {
-                convertNote = "That didn't go through — your coins are as they were. Try again."
-            } else {
-                convertNote = Self.unconfirmedNote
-            }
+        if answered == nil {
+            let outcome = ConversionOutcome.decide(answer: nil, before: before, readBack: fresh)
+            minted = outcome.mintedCoins
+            // The answer was lost but, when the coins rose, the conversion was not.
+            if minted { celebrateMint() }
+            convertNote = outcome.text(unconfirmed: Self.unconfirmedNote)
+            convertUnconfirmed = outcome == .unconfirmed
         }
         converting = false
         // A conversion that spent every coin it could leaves no Convert button, and VoiceOver's
