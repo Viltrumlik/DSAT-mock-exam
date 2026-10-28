@@ -20,33 +20,54 @@ struct VocabSectionView: View {
 
     private var tone: VocabPalette.Tone { VocabPalette.section(id: sectionId) }
 
+    /// The page's name: the section's own once it has loaded, the one the link carried until then.
+    private var heading: String { detail?.title ?? title }
+
     var body: some View {
         Group {
             if let detail {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        NewLookPageHeading(title: detail.title, subtitle: detail.description)
+                            .padding(.bottom, 4)
                         header(detail)
                         setList(detail)
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 24)
                 }
-                .background(Theme.background)
+                .background(NewLook.page)
             } else if failed {
                 ScrollView {
-                    VocabErrorNotice(
-                        title: "This section isn't available",
-                        message: "It may have been unpublished. Head back to the vocabulary hub and pick another one."
-                    ) { await load() }
-                    .padding(16)
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !heading.isEmpty { NewLookPageHeading(title: heading) }
+                        VocabErrorNotice(
+                            title: "This section isn't available",
+                            message: "It may have been unpublished. Head back to the vocabulary hub and pick another one."
+                        ) { await load() }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
                 }
-                .background(Theme.background)
+                .background(NewLook.page)
             } else {
                 // The header, then the set cards.
-                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(Theme.background)
+                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(NewLook.page)
             }
         }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
+        // The "!" is the trailing pill of the bar: the title moved out of the header card into
+        // the page's own heading, and the explanation went with the bar.
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                VocabExplainButton(
+                    title: "What the ring and the bars mean",
+                    text: "The ring counts the **sets** you have finished in this section. The four-colour bar on each card below is that set’s four games — one colour each — filled once you play that game with every word right."
+                )
+            }
+        }
         .task { if detail == nil { await load() } }
         .detachedRefresh { await load() }
     }
@@ -54,9 +75,9 @@ struct VocabSectionView: View {
     private func header(_ detail: VocabSectionDetail) -> some View {
         let percent = detail.mastery.percent
         let complete = percent >= 100
-        return VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 14) {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center, spacing: 14) {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(tone.tile)
                     .frame(width: 40, height: 40)
                     .overlay(
@@ -66,29 +87,17 @@ struct VocabSectionView: View {
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
                     FlowLayout(spacing: 6) {
-                        Chip(text: "Question bank", tone: .accent)
+                        NewLookChip(text: "Question bank", style: .blue, small: false)
                         if detail.everySetMastered {
-                            Chip(text: "Every set mastered", icon: "checkmark.circle.fill", tone: .success)
+                            NewLookChip(text: "Every set mastered", systemImage: "checkmark.circle", style: .green, small: false)
                         }
                     }
-                    HStack(alignment: .center, spacing: 2) {
-                        Text(detail.title)
-                            .appFont(26, weight: .heavy)
-                            .tracking(-0.6)
-                            .fixedSize(horizontal: false, vertical: true)
-                        VocabExplainButton(
-                            title: "What the ring and the bars mean",
-                            text: "The ring counts the **sets** you have finished in this section. The four-colour bar on each card below is that set’s four games — one colour each — filled once you play that game with every word right."
-                        )
-                    }
-                    if let description = detail.description, !description.isEmpty {
-                        Text(description)
-                            .appFont(13)
-                            .foregroundStyle(Theme.textSecondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("The ring counts the sets you have finished here.")
+                        .appFont(14, weight: .medium)
+                        .foregroundStyle(NewLook.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 VocabProgressRing(
@@ -101,79 +110,35 @@ struct VocabSectionView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(ScoreText.string(detail.mastery.masteredSets)) of \(ScoreText.string(detail.sets.count)) sets mastered")
             }
+            .padding(.bottom, 4)
 
-            VStack(spacing: 10) {
-                fact(
-                    "Sets",
-                    icon: "square.stack.3d.up",
-                    value: detail.sets.count,
-                    detail: detail.startedSets > 0
-                        ? "\(ScoreText.string(detail.startedSets)) already started"
-                        : "none started yet"
-                )
-                fact(
-                    "Words",
-                    icon: "textformat",
-                    value: detail.wordCount,
-                    detail: "\(ScoreText.string(detail.progress.mastered)) of them mastered"
-                )
-                fact(
-                    "Sets mastered",
-                    icon: "trophy",
-                    value: detail.mastery.masteredSets,
-                    detail: "\(ScoreText.string(percent))% of this section",
-                    ink: tone.ink
-                )
-            }
+            NewLookFactTile(
+                label: "Sets",
+                value: ScoreText.string(detail.sets.count),
+                detail: detail.startedSets > 0
+                    ? "\(ScoreText.string(detail.startedSets)) already started"
+                    : "none started yet",
+                carve: "square.stack.3d.up",
+                layout: .row
+            )
+            NewLookFactTile(
+                label: "Words",
+                value: ScoreText.string(detail.wordCount),
+                detail: "\(ScoreText.string(detail.progress.mastered)) of them mastered",
+                carve: "textformat",
+                layout: .row
+            )
+            NewLookFactTile(
+                label: "Sets mastered",
+                value: ScoreText.string(detail.mastery.masteredSets),
+                valueColor: tone.ink,
+                detail: "\(ScoreText.string(percent))% of this section",
+                carve: "trophy",
+                layout: .row
+            )
         }
-        .padding(18)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .overlay(alignment: .top) { VocabTopEdge(colour: tone.solid) }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
-    }
-
-    /// One aggregate under the title. `detail` is a DIFFERENT fact, never a restatement of
-    /// the number above it.
-    private func fact(_ label: String, icon: String, value: Int, detail: String, ink: Color = .primary) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(label.uppercased())
-                    .appFont(11, weight: .bold)
-                    .tracking(1.0)
-                    .foregroundStyle(Theme.textSecondary)
-                Text(ScoreText.string(value))
-                    .appFont(26, weight: .heavy, monospacedDigits: true)
-                    .tracking(-0.5)
-                    .foregroundStyle(ink)
-            }
-            Spacer(minLength: 0)
-            Text(detail)
-                .appFont(12, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.trailing)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.background))
-        .overlay(alignment: .bottomTrailing) {
-            Image(systemName: icon)
-                .appFont(52, weight: .light)
-                .foregroundStyle(Color.primary.opacity(0.05))
-                .offset(x: 8, y: 10)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
+        .padding(.top, 4)
+        .newLookEdgedCard(tone.solid, padding: 16, radius: 24)
     }
 
     @ViewBuilder
@@ -186,9 +151,9 @@ struct VocabSectionView: View {
         } else {
             VStack(spacing: 14) {
                 ForEach(detail.sets) { set in
-                    NavigationLink {
-                        VocabSetView(setId: set.id, title: set.title)
-                    } label: {
+                    // A value, not a destination: whichever stack the section was pushed on — the
+                    // Words tab, or another tab through a link — resolves `AppLink`s.
+                    NavigationLink(value: AppLink.vocabularySet(id: set.id)) {
                         VocabSetCard(
                             title: set.title,
                             wordCount: set.wordCount,

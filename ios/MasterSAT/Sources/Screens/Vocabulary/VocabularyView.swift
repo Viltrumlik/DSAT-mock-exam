@@ -36,6 +36,9 @@ struct VocabularyView: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
+    /// This root's claim on the status bar: white over the band.
+    @State private var statusBarOwner = UUID()
     /// "Review today" steps aside while the search field holds text, so the results start at the
     /// top of a small phone with the keyboard up. Its own state, written in an animation as the
     /// field empties or fills, rather than an animation keyed on the whole page.
@@ -90,51 +93,77 @@ struct VocabularyView: View {
         return .loading
     }
 
-    private var segmentItems: [SegmentBar<Segment>.Item] {
+    private var segmentOptions: [(value: Segment, title: String)] {
         [
-            .init(segment: .homework, title: outstanding > 0 ? "Homework · \(ScoreText.string(outstanding))" : "Homework"),
-            .init(segment: .bank, title: "Word bank"),
-            .init(segment: .mine, title: "My sets"),
+            (.homework, outstanding > 0 ? "Homework · \(ScoreText.string(outstanding))" : "Homework"),
+            (.bank, "Word bank"),
+            (.mine, "My sets"),
         ]
     }
 
     var body: some View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .words, onRefresh: { await load() }) {
-                VStack(alignment: .leading, spacing: 16) {
-                    AppHeader(title: "Words").stagger(0, shown: shown)
-
-                    if !reviewHidden {
-                        reviewCard
-                            .stagger(1, shown: shown)
-                            .transition(.opacity)
+                VStack(spacing: 0) {
+                    // The root's band: the title, the bell and the avatar. "Review today" rides up
+                    // over its lower edge; while a search holds the field the card steps aside and
+                    // the band takes its compact form, since nothing overlaps it then.
+                    TabBand(shown: shown, bottomPadding: reviewHidden ? 22 : TabBandMetrics.rowBottom) {
+                        Text("Words")
+                            .appDisplayFont(32)
+                            .tracking(-0.8)
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                            .padding(.leading, 4)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilitySortPriority(1)
                     }
 
-                    WordSearchField(query: $query).stagger(2, shown: shown)
-
-                    if isSearching {
-                        searchResults
-                    } else {
-                        SegmentBar(items: segmentItems, selection: $segment)
-                            .stagger(3, shown: shown)
-
-                        Group {
-                            switch segment {
-                            case .homework: homeworkList
-                            case .bank: bankList
-                            case .mine: mineList
-                            }
+                    VStack(alignment: .leading, spacing: 16) {
+                        if !reviewHidden {
+                            reviewCard
+                                .stagger(1, shown: shown)
+                                .transition(.opacity)
+                                .padding(.top, -(TabBandMetrics.rowBottom - 18))
                         }
-                        .stagger(4, shown: shown)
 
-                        VocabGameGuide()
-                            .padding(.top, 4)
+                        WordSearchField(query: $query).stagger(2, shown: shown)
+
+                        if isSearching {
+                            searchResults
+                        } else {
+                            NewLookSegmented(options: segmentOptions, selection: $segment)
+                                .stagger(3, shown: shown)
+
+                            Group {
+                                switch segment {
+                                case .homework: homeworkList
+                                case .bank: bankList
+                                case .mine: mineList
+                                }
+                            }
+                            .stagger(4, shown: shown)
+
+                            VocabGameGuide()
+                                .padding(.top, 4)
+                        }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
                 }
-                .padding(16)
             }
             .scrollDismissesKeyboard(.interactively)
-            .background(Theme.background)
+            .background(NewLook.page)
+            // The band's blue stays under the status bar however far the page scrolls (as Today).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(ClassTabPalette.band)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .overlay { ClassTabBottomFade(color: NewLook.page) }
             .navigationTitle("Words")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
@@ -149,10 +178,13 @@ struct VocabularyView: View {
             // Not `.task`: a TabView never tears its tabs down.
             .onAppear {
                 if !shown { shown = true }
+                // The band is blue in either appearance: the clock over it is white.
+                statusBar?.ask(.light, on: .words, owner: statusBarOwner)
                 Task { await load() }
                 // Back from a page: read the search again, quietly, with the answer still shown.
                 if isSearching { runSearch(searchText, pause: false) }
             }
+            .onDisappear { statusBar?.release(owner: statusBarOwner) }
             // A newer keystroke cancels the older search; a cancelled search stores nothing.
             .onChange(of: searchText) { _, text in runSearch(text, pause: true) }
             // Fades out with the first letter and back when the field is cleared; under Reduce
@@ -341,7 +373,7 @@ struct VocabularyView: View {
                 message: "When a teacher assigns a word list it lands here with its due date. Until then, pick any set from the word bank."
             )
         } else {
-            VStack(spacing: 18) {
+            VStack(spacing: 16) {
                 ForEach(groups) { VocabHomeworkGroupCard(group: $0) }
             }
         }
@@ -395,20 +427,7 @@ struct VocabularyView: View {
             )
         } else {
             VStack(spacing: 14) {
-                HStack {
-                    Text("Sets you built")
-                        .appFont(15, weight: .heavy)
-                    Spacer()
-                    Button { isBuilding = true } label: {
-                        Label("New set", systemImage: "plus")
-                            .appFont(13, weight: .heavy)
-                            .padding(.vertical, 8)
-                            .padding(.leading, 12)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressBounce())
-                    .foregroundStyle(Theme.accent)
-                }
+                NewLookSectionHeader(title: "Sets you built", actionTitle: "New set") { isBuilding = true }
                 ForEach(mySets) { set in
                     NavigationLink(value: Route.set(id: set.id, title: set.title)) {
                         VocabSetCard(
@@ -417,7 +436,9 @@ struct VocabularyView: View {
                             completed: set.completed,
                             mastery: set.mastery,
                             subtitle: createdLabel(set.createdAt),
-                            reservesTrailingControl: true
+                            reservesTrailingControl: true,
+                            tone: VocabPalette.custom,
+                            glyph: VocabPalette.customGlyph
                         )
                     }
                     .buttonStyle(.plain)
@@ -427,7 +448,7 @@ struct VocabularyView: View {
                         Button { pendingDelete = set } label: {
                             Image(systemName: "trash")
                                 .appFont(14, weight: .semibold)
-                                .foregroundStyle(Theme.textSecondary)
+                                .foregroundStyle(NewLook.muted)
                                 .frame(width: 36, height: 36)
                                 .contentShape(Rectangle())
                         }
@@ -435,8 +456,8 @@ struct VocabularyView: View {
                         .disabled(isDeleting)
                         .accessibilityLabel("Delete \(set.title)")
                         .capDynamicType(label: "Delete \(set.title)", systemImage: "trash")
-                        .padding(.top, 10)
-                        .padding(.trailing, 8)
+                        .padding(.top, 12)
+                        .padding(.trailing, 10)
                     }
                 }
             }
@@ -550,17 +571,24 @@ struct VocabHomeworkGroupCard: View {
     private var late: Bool { DueLabel.text(group.dueAt)?.late ?? false }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
-                IconTile(
-                    systemName: "graduationcap.fill",
-                    tone: allDone ? Theme.success : Theme.amber,
-                    size: 40
-                )
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(allDone ? VocabPalette.mastered.tile : VocabPalette.section(.amber).tile)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: "graduationcap.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(allDone ? VocabPalette.mastered.solid : VocabPalette.section(.amber).solid)
+                    )
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 8) {
                     Text(group.assignmentTitle)
-                        .appFont(17, weight: .heavy)
-                        .titleLineLimit(2)
+                        .appDisplayFont(18)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
+                        // Beside the done chip a small phone has room for a few words a line.
+                        .titleLineLimit(3)
                     FlowLayout(spacing: 6) {
                         if let name = group.classroomName, !name.isEmpty {
                             if let classroomId = group.classroomId {
@@ -579,13 +607,13 @@ struct VocabHomeworkGroupCard: View {
                 // "Done" is any game finished on a set with words; the segment's count is mastery.
                 // A homework with nothing to play yet has nothing to be done: it is not "complete".
                 if group.playableCount == 0 {
-                    Chip(text: "No words yet", tone: .neutral)
+                    NewLookChip(text: "No words yet")
                 } else if allDone {
-                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) complete",
-                         icon: "checkmark.circle.fill", tone: .success)
+                    NewLookChip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) complete",
+                                systemImage: "checkmark.circle", style: .green)
                 } else {
-                    Chip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) done",
-                         tone: late ? .warning : .neutral)
+                    NewLookChip(text: "\(ScoreText.string(group.doneCount)) / \(ScoreText.string(group.playableCount)) done",
+                                style: late ? .orange : .gray)
                 }
             }
 
@@ -598,7 +626,8 @@ struct VocabHomeworkGroupCard: View {
                             completed: set.completed,
                             mastery: set.mastery,
                             subtitle: set.sectionTitle,
-                            actionLabel: "Start"
+                            actionLabel: "Start",
+                            inset: true
                         )
                     }
                     .buttonStyle(.plain)
@@ -609,25 +638,17 @@ struct VocabHomeworkGroupCard: View {
                 }
             }
         }
-        .cardStyle(padding: 16)
+        .newLookCard(padding: 16)
         .overlay {
             if allDone {
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(NewLook.green.opacity(0.4), lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
     }
 
     private func classroomChip(_ name: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "person.2.fill").appFont(10, weight: .bold)
-                .accessibilityHidden(true)
-            Text(name).appFont(12, weight: .semibold).lineLimit(1)
-        }
-        .foregroundStyle(Theme.textSecondary)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(Theme.surface2))
+        NewLookChip(text: name, systemImage: "person.2.fill", style: .gray)
     }
 }
