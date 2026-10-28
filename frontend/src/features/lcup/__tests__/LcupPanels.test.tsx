@@ -123,6 +123,20 @@ describe("lc-up status", () => {
     expect(post).toHaveBeenCalledWith("/lcup/sync/?dry_run=1");
   });
 
+  it("names the learners whose lc-up phone another account holds, and who holds it", async () => {
+    await mount(<StatusPanel />, {
+      "/lcup/status/": {
+        ...STATUS,
+        phone_conflicts: [
+          { user_id: 5, name: "Aziz Tursunov", role: "student", lcup_name: "Tursunov Aziz", held_by: [{ id: 9, name: "Malika Tursunova", role: "public_student" }] },
+        ],
+      },
+    });
+    expect(host.textContent).toContain("lc-up phone already on another account (1)");
+    expect(host.querySelector('a[href="/ops/students/5"]')?.textContent).toBe("Aziz Tursunov");
+    expect(host.querySelector('a[href="/ops/public/9"]')?.textContent).toBe("Malika Tursunova");
+  });
+
   it("asks before marking the initial review done", async () => {
     await mount(<StatusPanel />, { "/lcup/status/": STATUS });
     await click(button("Mark initial review done"));

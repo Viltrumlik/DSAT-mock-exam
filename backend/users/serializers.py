@@ -102,6 +102,34 @@ class UserMeLastMockResultSerializer(serializers.Serializer):
     completed_at = serializers.CharField(allow_null=True, required=False)
 
 
+#: What a refused edit says. A linked learner's name and phone are lc-up's (``lcup.profiles``).
+LCUP_LOCKED_ME = "Your learning centre sets this in lc-up. Ask the centre to change it."
+LCUP_LOCKED_ADMIN = "Set in lc-up. Change it there; it reaches here within 15 minutes."
+
+
+def _refuse_lcup_locked(instance, attrs, message: str) -> None:
+    """Refuse a change to a field lc-up decides for ``instance`` (owner, 2026-10-28: "To'liq lc-up
+    bo'yicha"); the sync would undo it 15 minutes later. The same value sent back is no change."""
+    if instance is None or not getattr(instance, "pk", None):
+        return
+    from lcup.phones import normalize_phone as lcup_phone
+    from lcup.profiles import locked_fields
+
+    errors = {}
+    for name in locked_fields(instance):
+        if name not in attrs:
+            continue
+        old, new = getattr(instance, name), attrs[name]
+        if name == "phone_number":
+            same = lcup_phone(new) == lcup_phone(old)
+        else:
+            same = " ".join((new or "").split()) == " ".join((old or "").split())
+        if not same:
+            errors[name] = [message]
+    if errors:
+        raise serializers.ValidationError(errors)
+
+
 class UserMeSerializer(serializers.ModelSerializer):
     last_mock_result = serializers.SerializerMethodField(read_only=True)
     profile_image_url = serializers.SerializerMethodField(read_only=True)
@@ -121,10 +149,23 @@ class UserMeSerializer(serializers.ModelSerializer):
     # (``settings.FREEZE_ACCESS_EXEMPT_EMAILS``), which stay frozen for debt on every staff
     # screen (``UserSerializer`` reports the raw flag) but can use the site.
     is_frozen = serializers.SerializerMethodField(read_only=True)
+    # The fields lc-up decides for this account: the profile shows them, and does not offer to edit them.
+    lcup_locked_fields = serializers.SerializerMethodField(read_only=True)
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_frozen(self, obj) -> bool:
         return is_frozen_for_access(obj)
+
+    @extend_schema_field(serializers.ListField(child=serializers.CharField()))
+    def get_lcup_locked_fields(self, obj) -> list[str]:
+        from lcup.profiles import locked_fields
+
+        return locked_fields(obj)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        _refuse_lcup_locked(self.instance, attrs, LCUP_LOCKED_ME)
+        return attrs
 
     @extend_schema_field(serializers.BooleanField())
     def get_profile_complete(self, obj) -> bool:
@@ -165,6 +206,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "email_released_at",
             "profile_complete",
             "missing_fields",
+            "lcup_locked_fields",
         ]
         extra_kwargs = {
             "profile_image": {"required": False, "allow_null": True},
@@ -478,6 +520,7 @@ class UserSerializer(serializers.ModelSerializer):
         for field in ("first_name", "last_name"):
             if field in attrs:
                 attrs[field] = normalize_name(attrs[field])
+        _refuse_lcup_locked(self.instance, attrs, LCUP_LOCKED_ADMIN)
 
         # Duplicate full names are rejected on the PUBLIC registration endpoint only.
         # Production had 36 name-collision groups covering 89 of 387 accounts, most of

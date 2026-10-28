@@ -85,6 +85,8 @@ export type PersonCore = {
   /** Null for staff. */
   glance: PersonGlance | null;
   one_time_password: PersonOneTimePassword | null;
+  /** The profile fields lc-up decides for this linked learner: the form shows them locked. */
+  lcup_locked_fields?: string[];
   username: string;
   first_name: string;
   last_name: string;

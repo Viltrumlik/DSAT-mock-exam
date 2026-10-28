@@ -218,6 +218,10 @@ def _event_title(ev) -> str:
         if detail.get("password_changed"):
             fields.append("password")
         return "Edited by an admin: " + (", ".join(fields) or "no fields")
+    if ev.event_type == "lcup_profile_sync":
+        # "Updated from lc-up: first name, phone, login" — the login follows the phone it is named after.
+        labels = {**FIELD_LABELS, "username": "login"}
+        return "Updated from lc-up: " + ", ".join(labels.get(f, f.replace("_", " ")) for f in detail.get("changes", {}))
     return EVENT_TITLES.get(ev.event_type) or ev.event_type.replace("_", " ").capitalize()
 
 
@@ -243,8 +247,8 @@ def history_part(user) -> dict:
                                      "by": ev.actor_name or ""}))
     for ev in SecurityAuditEvent.objects.filter(user=user).exclude(event_type__in=NOISE)[:HISTORY_LIMIT]:
         admin = ev.event_type in ADMIN_EVENT_TYPES
-        rows.append((ev.created_at, {"kind": "admin" if admin else "security", "title": _event_title(ev),
-                                     "by": (ev.detail or {}).get("actor", "") if admin else ""}))
+        by = (ev.detail or {}).get("actor", "") if admin else ("lc-up sync" if ev.event_type == "lcup_profile_sync" else "")
+        rows.append((ev.created_at, {"kind": "admin" if admin else "security", "title": _event_title(ev), "by": by}))
     link = LcupStudentLink.objects.filter(user=user).first()
     if link:
         for p in LcupPayment.objects.filter(lcup_student_id=link.lcup_student_id).order_by("-paid_on")[:HISTORY_LIMIT]:

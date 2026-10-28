@@ -17,6 +17,8 @@ export interface ProfileMe {
   target_math: number | null;
   profile_image_url: string | null;
   last_password_change: string | null;
+  /** The fields the learning centre sets in lc-up for this account — shown, not edited here. */
+  lcup_locked_fields: string[];
 }
 
 const toNumber = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -38,6 +40,9 @@ export function toProfileMe(me: any): ProfileMe {
     target_math: toNumber(me?.target_math),
     profile_image_url: me?.profile_image_url || null,
     last_password_change: me?.last_password_change || null,
+    lcup_locked_fields: Array.isArray(me?.lcup_locked_fields)
+      ? me.lcup_locked_fields.filter((f: unknown): f is string => typeof f === "string")
+      : [],
   };
 }
 

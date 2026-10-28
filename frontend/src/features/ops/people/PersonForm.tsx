@@ -19,7 +19,10 @@ import type { PersonCore } from "./personApi";
  */
 
 const INPUT =
-  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
+  "h-10 w-full rounded-lg border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-muted-foreground";
+
+/** Under a field lc-up decides for a linked learner (``lcup.profiles``, owner 2026-10-28). */
+const FROM_LCUP = "Set in lc-up — change it there; it reaches here within 15 minutes.";
 
 /** The serializer's field errors, in the order a person reads the form. */
 const ERROR_FIELDS = ["email", "phone_number", "username", "first_name", "last_name", "role", "subject"];
@@ -107,16 +110,18 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
   };
 
   const id = (name: string) => `${uid}-${name}`;
+  // lc-up's fields on a linked learner: shown, not edited — the sync would undo it within 15 minutes.
+  const locked = new Set(person.lcup_locked_fields ?? []);
 
   return (
     <Fieldset title="Profile" icon={UserRound} description="What they are called, how they sign in, what they are">
       <form onSubmit={(e) => void save(e)} className="space-y-6" noValidate>
         <Group title="Name">
-          <Field id={id("first")} label="First name">
-            <input id={id("first")} value={firstName} onChange={(e) => setFirstName(e.target.value)} className={INPUT} />
+          <Field id={id("first")} label="First name" hint={locked.has("first_name") ? FROM_LCUP : undefined}>
+            <input id={id("first")} value={firstName} disabled={locked.has("first_name")} onChange={(e) => setFirstName(e.target.value)} className={INPUT} />
           </Field>
-          <Field id={id("last")} label="Last name">
-            <input id={id("last")} value={lastName} onChange={(e) => setLastName(e.target.value)} className={INPUT} />
+          <Field id={id("last")} label="Last name" hint={locked.has("last_name") ? FROM_LCUP : undefined}>
+            <input id={id("last")} value={lastName} disabled={locked.has("last_name")} onChange={(e) => setLastName(e.target.value)} className={INPUT} />
           </Field>
         </Group>
 
@@ -130,10 +135,15 @@ export function PersonForm({ person, onSaved }: { person: PersonCore; onSaved: (
               className={INPUT}
             />
           </Field>
-          <Field id={id("phone")} label="Phone" hint="Also their login for a one-time password">
+          <Field
+            id={id("phone")}
+            label="Phone"
+            hint={locked.has("phone_number") ? `${FROM_LCUP} Also their login for a one-time password.` : "Also their login for a one-time password"}
+          >
             <input
               id={id("phone")}
               type="tel"
+              disabled={locked.has("phone_number")}
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               autoComplete="off"

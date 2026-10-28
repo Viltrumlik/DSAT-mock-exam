@@ -44,7 +44,20 @@ export interface LcupStatus {
     needs_review_teachers: number;
     groups_pending: number;
     unclaimed_accounts: number;
+    /** Linked learners whose lc-up phone another account already holds (absent before the profile sync). */
+    phone_conflicts?: number;
   };
+  /** Who they are, and who holds their lc-up phone — for an admin to settle. Empty while the profile sync is off. */
+  phone_conflicts?: LcupPhoneConflict[];
+}
+
+export interface LcupPhoneConflict {
+  user_id: number;
+  name: string;
+  /** "student" or "public_student": which /ops list their page is under. */
+  role: string;
+  lcup_name: string;
+  held_by: { id: number; name: string; role: string }[];
 }
 
 export interface LcupGroup {

@@ -47,6 +47,10 @@ export function AccountSection({ me, onSaved }: { me: ProfileMe; onSaved: (me: P
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me]);
 
+  // The learning centre sets these in lc-up for a linked learner; an edit here would be undone.
+  const locked = new Set(me.lcup_locked_fields);
+  const centreHint = "Set by your learning centre. Ask them to change it.";
+
   const set = (key: keyof Draft) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setDraft((d) => ({ ...d, [key]: e.target.value }));
     setErrors((errs) => ({ ...errs, [key]: [] }));
@@ -150,11 +154,11 @@ export function AccountSection({ me, onSaved }: { me: ProfileMe; onSaved: (me: P
 
       <form onSubmit={save} className="mt-5 flex flex-col gap-5" noValidate>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="First name" htmlFor="acc-first" error={error("first_name")}>
-            <Input id="acc-first" autoComplete="given-name" value={draft.first_name} onChange={set("first_name")} invalid={!!error("first_name")} />
+          <Field label="First name" htmlFor="acc-first" error={error("first_name")} hint={locked.has("first_name") ? centreHint : undefined}>
+            <Input id="acc-first" autoComplete="given-name" value={draft.first_name} onChange={set("first_name")} invalid={!!error("first_name")} disabled={locked.has("first_name")} />
           </Field>
-          <Field label="Last name" htmlFor="acc-last" error={error("last_name")}>
-            <Input id="acc-last" autoComplete="family-name" value={draft.last_name} onChange={set("last_name")} invalid={!!error("last_name")} />
+          <Field label="Last name" htmlFor="acc-last" error={error("last_name")} hint={locked.has("last_name") ? centreHint : undefined}>
+            <Input id="acc-last" autoComplete="family-name" value={draft.last_name} onChange={set("last_name")} invalid={!!error("last_name")} disabled={locked.has("last_name")} />
           </Field>
           <Field label="Username" htmlFor="acc-username" error={error("username")} hint="At least 3 characters. Classmates find you by it.">
             <Input
@@ -166,7 +170,12 @@ export function AccountSection({ me, onSaved }: { me: ProfileMe; onSaved: (me: P
               invalid={!!error("username")}
             />
           </Field>
-          <Field label="Phone number" htmlFor="acc-phone" error={error("phone_number")} hint="Optional. So your learning center can reach you.">
+          <Field
+            label="Phone number"
+            htmlFor="acc-phone"
+            error={error("phone_number")}
+            hint={locked.has("phone_number") ? centreHint : "Optional. So your learning center can reach you."}
+          >
             <Input
               id="acc-phone"
               type="tel"
@@ -176,6 +185,7 @@ export function AccountSection({ me, onSaved }: { me: ProfileMe; onSaved: (me: P
               value={draft.phone_number}
               onChange={set("phone_number")}
               invalid={!!error("phone_number")}
+              disabled={locked.has("phone_number")}
             />
           </Field>
         </div>

@@ -224,6 +224,12 @@ def _one_time_password(user):
     }
 
 
+def _lcup_locked_fields(user) -> list[str]:
+    from lcup.profiles import locked_fields
+
+    return locked_fields(user)
+
+
 def person_core(user, request=None) -> dict:
     from lcup.models import LcupStudentLink, LinkStatus
 
@@ -238,6 +244,8 @@ def person_core(user, request=None) -> dict:
         "avatar_url": profile_image_url(user, request),
         "glance": _glance(user, section) if learner else None,
         "one_time_password": _one_time_password(user),
+        # lc-up decides these for a linked learner (``lcup.profiles``): the form shows them locked.
+        "lcup_locked_fields": _lcup_locked_fields(user),
         "username": user.username or "",
         "first_name": user.first_name or "",
         "last_name": user.last_name or "",
