@@ -123,14 +123,22 @@ struct FloatingTabBar: View {
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
                     }
-                    .foregroundStyle(ink(selected: selection == tab))
+                    // The style's colours change with a short fade of their own, scoped to the
+                    // colours (`animation(_:body:)`): a trigger modifier over the label would also
+                    // wrap the pill's `if` below, and the pill would be caught in it.
+                    .animation(styleAnimation) { $0.foregroundStyle(ink(selected: selection == tab)) }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                     .background {
                         if selection == tab {
-                            // Dark glass: a white pill lifted off the glass (`0 6px 16px`).
-                            Capsule().fill(isDark ? Color.white : Theme.accent.opacity(0.13))
-                                .shadow(color: Color(.sRGB, red: 10 / 255, green: 12 / 255, blue: 40 / 255).opacity(isDark ? 0.30 : 0), radius: 8, y: 6)
+                            // Dark glass: a white pill lifted off the glass (`0 6px 16px`). Its
+                            // colours fade inside the branch; its slide is the selection's own.
+                            Capsule()
+                                .animation(styleAnimation) { capsule in
+                                    capsule
+                                        .foregroundStyle(isDark ? Color.white : Theme.accent.opacity(0.13))
+                                        .shadow(color: Color(.sRGB, red: 10 / 255, green: 12 / 255, blue: 40 / 255).opacity(isDark ? 0.30 : 0), radius: 8, y: 6)
+                                }
                                 .matchedGeometryEffect(id: "pill", in: pill)
                         }
                     }
@@ -147,12 +155,15 @@ struct FloatingTabBar: View {
         .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .padding(6)
         .background { glass }
-        .animation(reduceMotion ? nil : Motion.focus, value: style)
         .sensoryFeedback(.selection, trigger: tapped)
         // One tab bar to VoiceOver, with its five tabs inside it.
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
     }
+
+    /// How a change of style recolours the bar: a short fade, or none under Reduce Motion. Scoped
+    /// to colours wherever it is used, so nothing moves with it.
+    private var styleAnimation: Animation? { reduceMotion ? nil : Motion.focus }
 
     private func ink(selected: Bool) -> Color {
         if let darkInk { return selected ? darkInk : .white.opacity(0.72) }
@@ -167,13 +178,15 @@ struct FloatingTabBar: View {
             Capsule()
                 .fill(.ultraThinMaterial)
                 .environment(\.colorScheme, isDark ? .dark : colorScheme)
-            Capsule().fill(.white.opacity(isDark ? 0.12 : 0))
-            Capsule().strokeBorder(.white.opacity(isDark ? 0.20 : 0), lineWidth: 1)
+            Capsule().animation(styleAnimation) { $0.foregroundStyle(.white.opacity(isDark ? 0.12 : 0)) }
+            Capsule().strokeBorder(lineWidth: 1).animation(styleAnimation) { $0.foregroundStyle(.white.opacity(isDark ? 0.20 : 0)) }
         }
-        .shadow(
-            color: isDark ? Color(.sRGB, red: 5 / 255, green: 8 / 255, blue: 30 / 255).opacity(0.45) : .black.opacity(0.13),
-            radius: isDark ? 17 : 18,
-            y: isDark ? 14 : 6
-        )
+        .animation(styleAnimation) { capsules in
+            capsules.shadow(
+                color: isDark ? Color(.sRGB, red: 5 / 255, green: 8 / 255, blue: 30 / 255).opacity(0.45) : .black.opacity(0.13),
+                radius: isDark ? 17 : 18,
+                y: isDark ? 14 : 6
+            )
+        }
     }
 }

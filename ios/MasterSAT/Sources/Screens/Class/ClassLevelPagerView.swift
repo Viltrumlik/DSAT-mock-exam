@@ -61,6 +61,9 @@ struct ClassLevelPagerView: View {
                 .scrollIndicators(.hidden)
                 // The cards' shadows and the neighbours' edges are drawn past the row.
                 .scrollClipDisabled()
+                // The tab's room for the floating bar reaches this row too, as ~90 pt of empty
+                // height under every pager. A row is not where the bar sits.
+                .noBarClearanceInRow()
                 .onAppear {
                     guard !placed else { return }
                     placed = true
@@ -81,9 +84,11 @@ struct ClassLevelPagerView: View {
             ClassLevelCardView(card: card, width: cardWidth, filled: filled)
         }
         .buttonStyle(CardPress())
+        // The neighbours fade and shrink a touch; under Reduce Motion they only fade. The same
+        // modifiers either way — the setting picks the values, never the tree.
         .opacity(onShow ? 1 : 0.5)
-        .scaleEffect(onShow ? 1 : 0.96)
-        .animation(ClassTabMotion.fade(0.3), value: onShow)
+        .scaleEffect(reduceMotion || onShow ? 1 : 0.96)
+        .animation(ClassTabMotion.fade(0.25), value: onShow)
         .accessibilityHint(hint(for: card, onShow: onShow))
     }
 
