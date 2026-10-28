@@ -25,12 +25,12 @@ from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership
 from users.models import User
 
-from . import finance, tasks
+from . import finance, profiles, tasks
 from .accounts import create_account_for, reissue_claim
 from .auth_backend import _audit
 from .classrooms import branch_for, create_classroom_for, teachers_for
 from .claims import set_initial_password
-from .conf import lcup_enabled
+from .conf import lcup_enabled, profile_sync_enabled
 from .matching import SUPPORTER_REASON
 from .models import (
     AccountClaim,
@@ -89,6 +89,9 @@ class StatusView(_AdminView):
             ).count(),
             "unclaimed_accounts": AccountClaim.objects.filter(password_set_at__isnull=True).count(),
         }
+        # lc-up's phone is already on another account, so it could not be set (ours is unique).
+        conflicts = profiles.phone_conflicts() if profile_sync_enabled() else []
+        counts["phone_conflicts"] = len(conflicts)
         return Response(
             {
                 "enabled": lcup_enabled(),
@@ -96,6 +99,7 @@ class StatusView(_AdminView):
                 "last_run": run_row(runs[0]) if runs else None,
                 "recent_runs": [run_row(run) for run in runs],
                 "counts": counts,
+                "phone_conflicts": conflicts,
             }
         )
 

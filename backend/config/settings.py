@@ -335,6 +335,9 @@ LCUP_DEBT_FREEZE_DAY = int(os.getenv("LCUP_DEBT_FREEZE_DAY", "6") or 6)
 # list. Off by default; literal "true" only. The free trial is this many lessons (the owner: one).
 LCUP_ATTENDANCE_CHECKS_ENABLED = os.getenv("LCUP_ATTENDANCE_CHECKS_ENABLED", "False").lower() == "true"
 LCUP_FREE_TRIAL_LESSONS = int(os.getenv("LCUP_FREE_TRIAL_LESSONS", "1") or 1)
+# A linked learner's name and phone follow lc-up on every sync and are not edited here (lcup.profiles;
+# owner, 2026-10-28: "To'liq lc-up bo'yicha"). Off by default; literal "true" only.
+LCUP_PROFILE_SYNC_ENABLED = os.getenv("LCUP_PROFILE_SYNC_ENABLED", "False").lower() == "true"
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.

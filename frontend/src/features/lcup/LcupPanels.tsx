@@ -12,6 +12,7 @@ import {
   type GroupLinkStatus,
   type LcupGroup,
   type LcupPerson,
+  type LcupPhoneConflict,
   type LcupRun,
   type LinkStatus,
   type StudentFilter,
@@ -176,6 +177,42 @@ function RunRow({ run }: { run: LcupRun }) {
   );
 }
 
+/**
+ * A linked learner's phone is lc-up's (owner, 2026-10-28) — except where another account already
+ * holds it, since a phone here belongs to one account. Usually siblings on one parent's number, or a
+ * second account of the same learner: an admin decides which keeps it.
+ */
+function PhoneConflicts({ conflicts }: { conflicts: LcupPhoneConflict[] }) {
+  if (conflicts.length === 0) return null;
+  const person = (p: { id: number; name: string; role?: string }) => (
+    <Link href={`/ops/${p.role === "public_student" ? "public" : p.role && p.role !== "student" ? "staff" : "students"}/${p.id}`} prefetch={false} className="text-primary hover:underline">
+      {p.name}
+    </Link>
+  );
+  return (
+    <div className="border-t border-border px-3 py-2">
+      <p className="font-medium text-foreground">
+        lc-up phone already on another account ({conflicts.length})
+      </p>
+      <p className="text-muted-foreground">Their name follows lc-up; the phone waits until the other account no longer holds it.</p>
+      <ul className="mt-1.5 space-y-1">
+        {conflicts.map((c) => (
+          <li key={c.user_id}>
+            {person({ id: c.user_id, name: c.name, role: c.role })}
+            <span className="text-muted-foreground"> (lc-up: {c.lcup_name}) — held by </span>
+            {c.held_by.map((h, i) => (
+              <span key={h.id}>
+                {i > 0 ? ", " : null}
+                {person(h)}
+              </span>
+            ))}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function StatusPanel() {
   const q = useLcupStatus();
   const sync = useLcupAction((dryRun: boolean) => lcupApi.sync(dryRun));
@@ -212,6 +249,7 @@ export function StatusPanel() {
           <Field label="Groups to pair">{c.groups_pending}</Field>
           <Field label="Accounts not claimed yet">{c.unclaimed_accounts}</Field>
         </dl>
+        <PhoneConflicts conflicts={status.phone_conflicts ?? []} />
         {sync.isSuccess || sync.error ? (
           <div className="border-t border-border px-3 py-2">
             {sync.isSuccess ? (

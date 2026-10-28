@@ -57,6 +57,11 @@ def attendance_checks_enabled() -> bool:
     return bool(getattr(settings, "LCUP_ATTENDANCE_CHECKS_ENABLED", False))
 
 
+def profile_sync_enabled() -> bool:
+    """A linked learner's name and phone are lc-up's: set on every sync, not edited here (``lcup.profiles``)."""
+    return bool(getattr(settings, "LCUP_PROFILE_SYNC_ENABLED", False))
+
+
 def free_trial_lessons() -> int:
     """How many lessons a trial student comes to for free (owner, 2026-10-20: one — "birinchi darsda")."""
     try:

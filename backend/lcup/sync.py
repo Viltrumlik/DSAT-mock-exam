@@ -30,7 +30,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 from access import constants as acc_const
 from classes.models import Branch, Classroom, ClassroomMembership
 
-from . import audience, finance
+from . import audience, finance, profiles
 from .accounts import create_account_for, create_teacher_account_for
 from .attendance import apply_day, plan_day, push_day, push_held_reason
 from .classrooms import branch_for, create_classroom_for, teachers_for
@@ -454,6 +454,8 @@ def _run_stages(client, run: _Run) -> None:
         # theirs exists (owner, 2026-10-13); matching would hand them the old one.
         _stage(run, "match_students", lambda: _match_students(run))
     _stage(run, "accounts", lambda: _accounts(run))
+    # After the links and accounts settle: every linked learner carries lc-up's name and phone.
+    _stage(run, "profiles", lambda: profiles.apply(run))
     _stage(run, "rosters", lambda: _rosters(run))
     # After rosters: the seat rule reads this run's seats — the roster adding a returning student
     # makes them a student again, and one it took out of their last class becomes public.

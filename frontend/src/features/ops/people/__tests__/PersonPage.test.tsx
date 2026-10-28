@@ -327,6 +327,19 @@ describe("the person page's tabs", () => {
 });
 
 describe("the Overview", () => {
+  it("locks the name and phone lc-up sets, and says where they change", async () => {
+    route(core({ lcup_locked_fields: ["first_name", "last_name", "phone_number"] }));
+    await renderPage();
+    const profile = box("Profile")!;
+    const input = (label: string) => {
+      const l = [...profile.querySelectorAll("label")].find((x) => x.textContent?.trim().startsWith(label))!;
+      return document.getElementById(l.getAttribute("for")!) as HTMLInputElement;
+    };
+    expect([input("First name").disabled, input("Last name").disabled, input("Phone").disabled]).toEqual([true, true, true]);
+    expect(input("Username").disabled).toBe(false);
+    expect(profile.textContent).toContain("Set in lc-up");
+  });
+
   it("opens with the name, the form and a Summary, the debt said once — in the figures", async () => {
     route(core());
     await renderPage();

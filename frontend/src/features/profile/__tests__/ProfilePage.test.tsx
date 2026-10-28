@@ -387,6 +387,16 @@ describe("Overview", () => {
 });
 
 describe("Settings", () => {
+  it("shows the fields the learning centre sets in lc-up locked, and says who changes them", async () => {
+    users.getMe.mockResolvedValue({ ...ME, phone_number: "998901234567", lcup_locked_fields: ["first_name", "last_name", "phone_number"] });
+    await renderPage("?tab=settings&section=account");
+    for (const id of ["#acc-first", "#acc-last", "#acc-phone"]) {
+      expect(host.querySelector<HTMLInputElement>(id)!.disabled).toBe(true);
+    }
+    expect(host.querySelector<HTMLInputElement>("#acc-username")!.disabled).toBe(false);
+    expect(text()).toContain("Set by your learning centre");
+  });
+
   it("opens the section the address names", async () => {
     await renderPage("?tab=settings&section=devices");
     await flush(() => text().includes("Chrome on Windows"));
