@@ -30,6 +30,29 @@ class AssessmentSet(models.Model):
         (SOURCE_HARD_QUESTIONS, "Hard questions"),
         (SOURCE_EXTERNAL, "External source"),
     ]
+    # Foundation Math homework topics (2026-10-28, the folders of the school's
+    # "Foundation_Homework_Answers" pack). Math-only, and only for a set that is for the
+    # Foundation cohort (primary or second level) — see ``source_problem``.
+    FOUNDATION_SOURCE_CHOICES = [
+        ("FOUNDATION_S01", "S01 Positive and Negative Numbers"),
+        ("FOUNDATION_S02", "S02 Order of Operations and the Number Line"),
+        ("FOUNDATION_S03", "S03 Common Fractions"),
+        ("FOUNDATION_S04", "S04 Decimals"),
+        ("FOUNDATION_S06", "S06 Ratio and Proportion"),
+        ("FOUNDATION_S07", "S07 Percent"),
+        ("FOUNDATION_S08", "S08 Linear Equations in One Variable"),
+        ("FOUNDATION_S09", "S09 Equations with Absolute Value"),
+        ("FOUNDATION_S13", "S13 Powers and Their Properties"),
+        ("FOUNDATION_S14", "S14 Monomials Sum and Difference of Polynomials"),
+        ("FOUNDATION_S15", "S15 Multiplying Monomials and Polynomials"),
+        ("FOUNDATION_S16", "S16 Special Products"),
+        ("FOUNDATION_S18", "S18 The Coordinate Plane and Distance"),
+        ("FOUNDATION_S19", "S19 Triangles"),
+        ("FOUNDATION_S20", "S20 Squares and Rectangles"),
+        ("FOUNDATION_S21", "S21 Circles"),
+    ]
+    FOUNDATION_SOURCES = tuple(code for code, _ in FOUNDATION_SOURCE_CHOICES)
+    SOURCE_CHOICES = SOURCE_CHOICES + FOUNDATION_SOURCE_CHOICES
     ALLOWED_SOURCES_BY_SUBJECT = {
         SUBJECT_ENGLISH: (SOURCE_SQB, SOURCE_SATOPLAM, SOURCE_EXTERNAL),
         SUBJECT_MATH: (
@@ -38,6 +61,7 @@ class AssessmentSet(models.Model):
             SOURCE_PREP_PROS,
             SOURCE_HARD_QUESTIONS,
             SOURCE_EXTERNAL,
+            *FOUNDATION_SOURCES,
         ),
     }
 
@@ -210,6 +234,17 @@ class AssessmentSet(models.Model):
     def allowed_sources_for_subject(cls, subject: str) -> tuple[str, ...]:
         """Source keys valid for the given subject (empty for unknown subjects)."""
         return cls.ALLOWED_SOURCES_BY_SUBJECT.get(subject, ())
+
+    @classmethod
+    def source_problem(cls, subject: str, source: str, level: str, secondary: str) -> str:
+        """Why ``source`` doesn't fit this set ("" when it does). Blank source is fine."""
+        if not source:
+            return ""
+        if source not in cls.allowed_sources_for_subject(subject):
+            return f"'{source}' is not a valid source for {subject} sets."
+        if source in cls.FOUNDATION_SOURCES and cls.LEVEL_FOUNDATION not in (level, secondary):
+            return "Foundation homework sources are only for Foundation-level sets."
+        return ""
 
     @classmethod
     def allowed_levels_for_subject(cls, subject: str) -> tuple[str, ...]:

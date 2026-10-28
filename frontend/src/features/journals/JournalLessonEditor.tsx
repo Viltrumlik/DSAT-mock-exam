@@ -141,7 +141,10 @@ export default function JournalLessonEditor({ journalId, lessonId }: { journalId
   const subject = journal?.subject ?? "";
   const level = journal?.level ?? "";
   const domainSubject = subject === "MATH" ? "math" : subject === "ENGLISH" ? "english" : "";
-  const allowedSources = useMemo(() => allowedSourcesForSubject(domainSubject), [domainSubject]);
+  const allowedSources = useMemo(
+    () => allowedSourcesForSubject(domainSubject, level ? [level] : undefined),
+    [domainSubject, level]
+  );
   const showPastpapers = level === "middle" || level === "senior";
   useEffect(() => {
     if (subject === "MATH") setPracticeScope("MATH");

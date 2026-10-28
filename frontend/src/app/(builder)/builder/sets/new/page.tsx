@@ -8,7 +8,7 @@ import type { Subject } from "@/features/assessments/types";
 import { normalizeApiError } from "@/lib/apiError";
 import { getSubject } from "@/lib/permissions";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
-import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import { allowedSourcesForSubject, reconcileSource, sourceLabel } from "@/lib/assessmentSources";
 import {
   levelsForSubject,
   levelLabel,
@@ -66,7 +66,7 @@ function NewAssessmentSetForm() {
   });
   const [error, setError] = useState<string | null>(null);
 
-  const sourceOptions = allowedSourcesForSubject(form.subject);
+  const sourceOptions = allowedSourcesForSubject(form.subject, [form.level, form.secondary_level]);
   const levelOptions = levelsForSubject(form.subject);
   const secondaryOptions = secondaryLevelOptions(form.subject, form.level);
 
@@ -188,11 +188,14 @@ function NewAssessmentSetForm() {
                 onChange={(e) => {
                   const level = e.target.value;
                   // Blanking the primary, or moving it onto the second level, clears the
-                  // second level — the server would reject either pair.
+                  // second level — the server would reject either pair. A Foundation
+                  // homework source goes too once no level is Foundation.
+                  const secondary_level = reconcileSecondaryLevel(form.subject, level, form.secondary_level);
                   setForm({
                     ...form,
                     level,
-                    secondary_level: reconcileSecondaryLevel(form.subject, level, form.secondary_level),
+                    secondary_level,
+                    source: reconcileSource(form.subject, form.source, [level, secondary_level]),
                   });
                 }}
               >
@@ -218,7 +221,14 @@ function NewAssessmentSetForm() {
               className={`${INPUT} disabled:cursor-not-allowed disabled:opacity-50`}
               value={form.secondary_level}
               disabled={!form.level}
-              onChange={(e) => setForm({ ...form, secondary_level: e.target.value })}
+              onChange={(e) => {
+                const secondary_level = e.target.value;
+                setForm({
+                  ...form,
+                  secondary_level,
+                  source: reconcileSource(form.subject, form.source, [form.level, secondary_level]),
+                });
+              }}
             >
               <option value="">None</option>
               {secondaryOptions.map((l) => (

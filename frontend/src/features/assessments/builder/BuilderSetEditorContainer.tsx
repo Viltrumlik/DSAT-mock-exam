@@ -16,7 +16,7 @@ import { assessmentsAdminApi as assessmentAuthoringApi } from "@/features/assess
 import { DownloadQuestionsCsvButton } from "@/features/questionsAdmin/DownloadQuestionsCsvButton";
 import { QuestionBankPickerModal } from "./QuestionBankPickerModal";
 import { AssessmentCategorySelect } from "@/features/assessments/components/AssessmentCategorySelect";
-import { allowedSourcesForSubject, sourceLabel } from "@/lib/assessmentSources";
+import { allowedSourcesForSubject, reconcileSource, sourceLabel } from "@/lib/assessmentSources";
 import {
   levelsForSubject,
   levelLabel,
@@ -1060,7 +1060,7 @@ export default function BuilderSetEditorContainer() {
                     disabled={upsertSet.isPending || versionOutdated}
                   >
                     <option value="">None</option>
-                    {allowedSourcesForSubject(view.subject).map((s) => (
+                    {allowedSourcesForSubject(view.subject, [view.level, view.secondary_level]).map((s) => (
                       <option key={s} value={s}>{sourceLabel(s)}</option>
                     ))}
                   </select>
@@ -1074,10 +1074,13 @@ export default function BuilderSetEditorContainer() {
                       const level = e.target.value;
                       // Blanking the primary, or moving it onto the second level, clears
                       // the second level in the same undo step — the server rejects
-                      // either pair, and this way the save just works.
+                      // either pair, and this way the save just works. Same for a
+                      // Foundation homework source once no level is Foundation.
+                      const secondary_level = reconcileSecondaryLevel(view.subject, level, view.secondary_level);
                       patchSetTracked({
                         level,
-                        secondary_level: reconcileSecondaryLevel(view.subject, level, view.secondary_level),
+                        secondary_level,
+                        source: reconcileSource(view.subject, view.source, [level, secondary_level]),
                       });
                     }}
                     disabled={upsertSet.isPending || versionOutdated}
@@ -1095,7 +1098,12 @@ export default function BuilderSetEditorContainer() {
                   <select
                     className={cn(INPUT, "disabled:cursor-not-allowed disabled:opacity-50")}
                     value={String(view.secondary_level || "")}
-                    onChange={(e) => patchSetTracked({ secondary_level: e.target.value })}
+                    onChange={(e) =>
+                      patchSetTracked({
+                        secondary_level: e.target.value,
+                        source: reconcileSource(view.subject, view.source, [view.level, e.target.value]),
+                      })
+                    }
                     disabled={upsertSet.isPending || versionOutdated || !view.level}
                   >
                     <option value="">None</option>
