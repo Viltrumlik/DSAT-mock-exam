@@ -277,6 +277,12 @@ private struct NewLookWindowModifier<Window: View>: ViewModifier {
                             .padding(18)
                             .frame(maxWidth: 440)
                             .newLookSurface(NewLook.card, radius: 26, shadow: .pop)
+                            // A hairline, so the window still has an edge at night, where the
+                            // navy shadow does not show.
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 26, style: .continuous)
+                                    .strokeBorder(NewLook.line, lineWidth: 1)
+                            )
                             .padding(.horizontal, 18)
                             .accessibilityAddTraits(.isModal)
                             .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
