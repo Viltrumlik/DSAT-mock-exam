@@ -35,6 +35,8 @@ struct ClassPageView: View {
     @State private var opened = false
     /// This page's claim on the tab bar's style.
     @State private var chromeOwner = UUID()
+    /// The class whose Class info sheet is up.
+    @State private var infoClass: Classroom?
 
     private var theme: ClassTheme { LevelPalette(subject: route.subject, level: route.level).theme }
 
@@ -52,6 +54,12 @@ struct ClassPageView: View {
         // The page is dark whatever the phone's setting: its words, spinners and refresh control are
         // drawn for it.
         .environment(\.colorScheme, .dark)
+        // Outside the dark override, so the sheet follows the phone's own setting.
+        .sheet(item: $infoClass) { room in
+            ClassInfoSheet(classroom: room, subject: route.subject, level: route.level)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(.hidden, for: .navigationBar)
@@ -71,15 +79,30 @@ struct ClassPageView: View {
 
     // MARK: - Header
 
+    /// The class card. With a class behind it, a tap opens Class info; a level with none shows its
+    /// name and opens nothing.
     private var header: some View {
+        Group {
+            if let room = model.content?.classroom {
+                Button { infoClass = room } label: { headerCard(opensInfo: true) }
+                    .buttonStyle(PressBounce())
+                    .accessibilityHint("Opens the class info: schedule, people, files and the Telegram group")
+            } else {
+                headerCard(opensInfo: false)
+            }
+        }
+        .redacted(reason: model.phase == .loading ? .placeholder : [])
+        .modifier(ClassPageRise(shown: headerShown, delay: 0.14))
+    }
+
+    private func headerCard(opensInfo: Bool) -> some View {
         ClassPageHeaderCard(
             title: model.content?.title ?? ClassPageContent.placeholderTitle(for: route),
             subject: route.subject,
             classroom: model.content?.classroom,
-            theme: theme
+            theme: theme,
+            opensInfo: opensInfo
         )
-        .redacted(reason: model.phase == .loading ? .placeholder : [])
-        .modifier(ClassPageRise(shown: headerShown, delay: 0.14))
     }
 
     // MARK: - Sessions
@@ -208,12 +231,13 @@ struct ClassPageView: View {
 
 /// The glass card under the strip: the subject's glyph, the class's name, its days and time, its
 /// room and teacher (`height:100px; border-radius:20px`). A level with no class of the student's
-/// shows its name only.
+/// shows its name only. When it opens Class info, a small chevron at its edge says so.
 struct ClassPageHeaderCard: View {
     let title: String
     let subject: ClassSubject
     let classroom: Classroom?
     let theme: ClassTheme
+    let opensInfo: Bool
 
     private var schedule: String { classroom?.headerScheduleLine ?? "" }
     private var room: String { ClassroomSchedule.roomLabel(classroom?.roomNumber) }
@@ -250,6 +274,12 @@ struct ClassPageHeaderCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            if opensInfo {
+                Image(systemName: "chevron.right")
+                    .appFont(13, weight: .bold)
+                    .foregroundStyle(.white.opacity(0.6))
+                    .accessibilityHidden(true)
+            }
         }
         .padding(.leading, 14)
         .padding(.trailing, 16)
