@@ -52,6 +52,14 @@ class APICSRFEnforceMiddleware:
         if path.startswith("/api/") and unsafe:
             # Auth client telemetry — `navigator.sendBeacon` cannot attach X-CSRFToken.
             # Same-origin / trusted Origin only; payload is non-authoritative aggregates.
+            # The crash screen's report (config.client_errors): a root-layout crash may have no
+            # CSRF token to send, and the payload is log-only. Same-site Origin only when an auth
+            # cookie rides along — without one there is no credential to forge.
+            if path.startswith("/api/health/client-error/"):
+                has_cookie = bool(request.COOKIES.get("lms_access") or request.COOKIES.get("lms_refresh"))
+                if has_cookie and not _is_same_site_origin(request):
+                    return JsonResponse({"detail": "Bad origin."}, status=403)
+                return self.get_response(request)
             if path.startswith("/api/auth/client-telemetry/"):
                 if not _is_same_site_origin(request):
                     return JsonResponse({"detail": "Bad origin."}, status=403)

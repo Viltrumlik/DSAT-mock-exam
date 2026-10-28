@@ -16,6 +16,7 @@ from users.views import (
     SessionListView,
 )
 from config.health import LiveHealthView, ReadyHealthView
+from config.client_errors import ClientErrorReportView
 from config.ops_alerting import AlertmanagerWebhookView
 from config.csrf_api import CsrfTokenView
 from config.csp_report import CSPReportView
@@ -40,6 +41,7 @@ urlpatterns = [
     path('api/ops/alertmanager/webhook/', AlertmanagerWebhookView.as_view(), name='alertmanager-webhook'),
     path('api/health/live/', LiveHealthView.as_view(), name='health-live'),
     path('api/health/ready/', ReadyHealthView.as_view(), name='health-ready'),
+    path('api/health/client-error/', ClientErrorReportView.as_view(), name='client-error-report'),
     path('api/csp-report/', CSPReportView.as_view(), name='csp-report'),
     path("api/schema/", SpectacularAPIView.as_view(), name="openapi-schema"),
     path("api/schema/swagger/", SpectacularSwaggerView.as_view(url_name="openapi-schema"), name="openapi-swagger"),
