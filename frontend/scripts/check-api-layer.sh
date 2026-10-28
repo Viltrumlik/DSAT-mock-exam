@@ -13,12 +13,14 @@
 #   lib/openapi-types.ts           — generated from the schema
 #   lib/openapiClient.gen.ts       — generated from the schema
 #   lib/auth/authClientTelemetry.ts— flushes on tab close via sendBeacon / keepalive fetch
+#   lib/clientErrorReport.ts       — the crash screen's report: keepalive fetch, and the crash
+#                                    may have taken the axios instance's providers with it
 #   features/*/api.ts              — the per-feature API layer, which calls lib/api.ts
 set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
-EXEMPT='^src/(lib/api\.ts|lib/openapi-types\.ts|lib/openapiClient\.gen\.ts|lib/auth/authClientTelemetry\.ts|features/[^:]*/api\.ts):'
+EXEMPT='^src/(lib/api\.ts|lib/openapi-types\.ts|lib/openapiClient\.gen\.ts|lib/auth/authClientTelemetry\.ts|lib/clientErrorReport\.ts|features/[^:]*/api\.ts):'
 
 offenders=$(
   grep -rn '"/api/' src \

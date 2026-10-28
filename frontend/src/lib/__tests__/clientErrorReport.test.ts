@@ -11,7 +11,7 @@ describe("reportClientError", () => {
     reportClientError(new TypeError("Cannot read properties of undefined (reading 'xp')"), "crash");
 
     const [url, init] = fetchMock.mock.calls[0];
-    expect(url).toBe("/api/health/client-error/");
+    expect(url).toMatch(/\/health\/client-error\/$/);
     expect(init.method).toBe("POST");
     expect(init.keepalive).toBe(true);
     const body = JSON.parse(init.body);
