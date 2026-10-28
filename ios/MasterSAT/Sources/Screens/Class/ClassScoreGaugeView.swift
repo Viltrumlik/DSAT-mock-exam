@@ -101,7 +101,7 @@ private struct ClassGaugeFace: View, Animatable {
                     .tracking(1.26)
                     .foregroundStyle(ClassTabPalette.gaugeTitle)
                 Text(verbatim: "\(score)")
-                    .appFont(46, weight: .heavy, design: .rounded, monospacedDigits: true)
+                    .appDisplayFont(46, monospacedDigits: true)
                     .tracking(-1)
                     .foregroundStyle(ClassTabPalette.gaugeScore)
                 if let target = gauge.target {

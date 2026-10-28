@@ -170,7 +170,7 @@ struct ClassSessionCard: View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Session \(session.lesson.lessonNumber)")
-                    .appFont(18, weight: .heavy)
+                    .appDisplayFont(18)
                     .tracking(-0.3)
                     .foregroundStyle(.white)
                 // The schedule's date for this session — the old Schedule segment, on the trail.

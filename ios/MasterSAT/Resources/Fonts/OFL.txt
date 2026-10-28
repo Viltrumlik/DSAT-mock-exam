@@ -1,0 +1,7 @@
+ArchivoDisplay-ExtraBold.ttf — a static instance of Archivo (weight 800, width 112%),
+PostScript name ArchivoDisplay-ExtraBold.
+
+Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+The license text is available at https://openfontlicense.org

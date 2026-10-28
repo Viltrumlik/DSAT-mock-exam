@@ -180,7 +180,7 @@ struct ClassBandHeader: View {
     var body: some View {
         HStack(spacing: 10) {
             Text("Class")
-                .appFont(32, weight: .heavy, design: .rounded)
+                .appDisplayFont(32)
                 .tracking(-0.8)
                 .foregroundStyle(.white)
                 .lineLimit(1)

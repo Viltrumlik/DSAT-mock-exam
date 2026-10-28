@@ -280,7 +280,7 @@ struct ClassPageHeaderCard: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .appFont(20, weight: .heavy)
+                    .appDisplayFont(20)
                     .tracking(-0.4)
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)

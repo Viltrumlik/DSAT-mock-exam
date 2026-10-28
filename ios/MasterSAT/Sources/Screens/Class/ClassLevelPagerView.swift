@@ -239,7 +239,7 @@ struct ClassLevelCardView: View {
     private var nameRow: some View {
         AdaptiveStack(rowAlignment: .bottom, spacing: 10, columnSpacing: 4) {
             Text(card.levelLabel)
-                .appFont(26, weight: .heavy, design: .rounded)
+                .appDisplayFont(26)
                 .tracking(-0.6)
                 .foregroundStyle(.white)
                 .lineLimit(1)
@@ -260,7 +260,7 @@ struct ClassLevelCardView: View {
                 CountingNumber(value: shownFraction) { fraction in
                     let done = counts ? Int((Double(card.covered) * fraction).rounded()) : card.covered
                     (Text(verbatim: "\(done)") + Text(verbatim: " / \(card.total)").foregroundStyle(.white.opacity(0.8)))
-                        .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
+                        .appDisplayFont(20, monospacedDigits: true)
                         .tracking(-0.4)
                         .foregroundStyle(.white)
                 }
