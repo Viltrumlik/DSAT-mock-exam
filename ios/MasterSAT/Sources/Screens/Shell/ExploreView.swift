@@ -1,11 +1,12 @@
 import SwiftUI
 import MasterSATKit
 
-/// Roadmap, Services, Events, Surveys — the learning center around the class.
+/// Services, Events, Surveys — the learning center around the class. (The roadmap is the Class
+/// tab now: its level cards are the ladder, and each class page walks the sessions.)
 ///
-/// Each card says what is behind it right now (`ExploreModel`): the level and the next lesson,
-/// the next support hour, the student's ticket, the surveys waiting. A card whose reads have not
-/// answered keeps the fixed description it always had.
+/// Each card says what is behind it right now (`ExploreModel`): the next support hour, the
+/// student's ticket, the surveys waiting. A card whose reads have not answered keeps the fixed
+/// description it always had.
 struct ExploreView: View {
     @Binding var path: NavigationPath
     @Environment(Session.self) private var session
@@ -15,14 +16,12 @@ struct ExploreView: View {
 
     /// What each card says without a live line: before its reads answer, and if they never do.
     private enum Fixed {
-        static let roadmap = "Your level, lesson by lesson, and what comes next"
         static let services = "Support hours with a teacher, and registering for the SAT"
         static let events = "What's coming up, and your tickets"
         static let surveys = "Tell the learning center how it's going"
     }
 
     var body: some View {
-        let roadmap = model.roadmapLine
         let services = model.servicesLine
         let events = model.eventsLine
         let surveys = model.surveysLine
@@ -31,28 +30,25 @@ struct ExploreView: View {
             TabRootScroll(tab: .explore, onRefresh: { await model.load(session) }) {
                 VStack(alignment: .leading, spacing: 14) {
                     AppHeader(title: "Explore").stagger(0, shown: shown)
-                    HubCard(title: "Roadmap", subtitle: roadmap?.text ?? Fixed.roadmap, detail: roadmap?.detail,
-                            icon: "map.fill", tone: Theme.accentDeep, route: AppLink.roadmap)
-                        .stagger(1, shown: shown)
                     HubCard(title: "Services", subtitle: services?.text ?? Fixed.services, detail: services?.detail,
                             icon: "lifepreserver", tone: Theme.subjectEnglish, route: AppLink.services)
-                        .stagger(2, shown: shown)
+                        .stagger(1, shown: shown)
                     HubCard(title: "Events", subtitle: events?.text ?? Fixed.events, detail: events?.detail,
                             icon: "calendar", tone: Theme.amber,
                             count: events?.badge, countMeaning: "open for sign-up", route: AppLink.events)
-                        .stagger(3, shown: shown)
+                        .stagger(2, shown: shown)
                     HubCard(title: "Surveys", subtitle: surveys?.text ?? Fixed.surveys, detail: surveys?.detail,
                             icon: "list.clipboard", tone: Theme.success,
                             count: surveys?.badge, countMeaning: "waiting", route: AppLink.surveys)
-                        .stagger(4, shown: shown)
+                        .stagger(3, shown: shown)
                 }
                 .padding(16)
                 // One animation for the lot: a card grows or shrinks as its line arrives, the
                 // cards below it make way, and the words and the badge change inside it. Only
-                // the container holding all four can move them together.
+                // the container holding all three can move them together.
                 .animation(
                     reduceMotion ? Motion.focus : Motion.snappy,
-                    value: [roadmap, services, events, surveys]
+                    value: [services, events, surveys]
                 )
             }
             .background(Theme.background)
