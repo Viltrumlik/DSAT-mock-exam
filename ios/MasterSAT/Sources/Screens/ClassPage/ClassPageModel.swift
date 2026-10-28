@@ -17,6 +17,9 @@ struct ClassPageContent: Equatable {
     /// Class info sheet. Nil on a level behind them that no class of theirs is tagged with: the
     /// card then shows the level's name only, and opens nothing.
     let classroom: Classroom?
+    /// `/classes/` has not answered on this page: the card says the class's details did not load
+    /// rather than standing there with no days, room or teacher, as if the class had none.
+    let classesFailed: Bool
     /// The classroom the sessions' homework and classwork open in. The roadmap names it for the
     /// student's own level (`own_classroom_id`); a level behind them carries no ids to open.
     let workClassroomId: Int?
@@ -50,8 +53,9 @@ extension ClassPageContent {
     ///   own level is completed.
     /// * **The class** is the student's membership in that subject at that level. On their own
     ///   level the roadmap's `own_classroom_id` wins over a level tag, which a centre may have left
-    ///   blank or got wrong. `classrooms` is nil when `/classes/` failed: the card then falls back
-    ///   to the level's name, and the sessions still open (their classroom id is the roadmap's).
+    ///   blank or got wrong. `classrooms` is nil when `/classes/` failed: the card then shows the
+    ///   level's name and says the details did not load, and the sessions still open (their
+    ///   classroom id is the roadmap's).
     static func make(
         route: ClassPageRoute,
         roadmap: RoadmapResponse,
@@ -81,6 +85,7 @@ extension ClassPageContent {
             trail: SessionTrail(lessons: level?.lessons ?? [], levelPassed: passed),
             levelPassed: passed,
             classroom: classroom,
+            classesFailed: classrooms == nil,
             workClassroomId: ownId ?? classroom?.id,
             xpCeiling: SessionTrail.xpCeiling(rules)
         )
@@ -127,6 +132,11 @@ final class ClassPageModel {
     private(set) var phase: Phase = .loading
     /// The last refresh failed over a page already on screen. The page stays; one line says so.
     private(set) var refreshFailed = false
+    /// The last answers from the two sources that only dress the page. A refresh that loses one
+    /// keeps what the page already showed — a real answer, if an older one — instead of
+    /// stripping the class card or the XP pills; nothing here is ever a made-up default.
+    @ObservationIgnored private var lastClassrooms: [Classroom]?
+    @ObservationIgnored private var lastRules: [RewardRule]?
 
     var content: ClassPageContent? {
         if case .loaded(let content) = phase { return content }
@@ -135,7 +145,8 @@ final class ClassPageModel {
 
     /// Runs on every appearance (a homework finished, a reading read), so the trail moves on
     /// without a pull. The roadmap is the page: its failure is the page's failure, unless the page
-    /// is already up. The classes and the rules only dress it, and fail quietly.
+    /// is already up. The classes and the rules only dress it: a failure keeps their last answer,
+    /// and with none, the card says the details did not load and the XP pills stay hidden.
     func load(route: ClassPageRoute, session: Session) async {
         let roadmapAPI = RoadmapAPI(client: session.client)
         let classroomsAPI = session.classrooms
@@ -160,10 +171,14 @@ final class ClassPageModel {
             return
         }
         let rooms = try? await roomsRequest
-        let rules = (try? await rulesRequest) ?? []
+        let rules = try? await rulesRequest
         if Task.isCancelled { return }
+        if let rooms { lastClassrooms = rooms }
+        if let rules { lastRules = rules }
 
-        let fresh = ClassPageContent.make(route: route, roadmap: roadmap, classrooms: rooms, rules: rules)
+        let fresh = ClassPageContent.make(
+            route: route, roadmap: roadmap, classrooms: lastClassrooms, rules: lastRules ?? []
+        )
         // An unchanged page is not written again: the trail would re-render for nothing.
         if phase != .loaded(fresh) { phase = .loaded(fresh) }
         if refreshFailed { refreshFailed = false }

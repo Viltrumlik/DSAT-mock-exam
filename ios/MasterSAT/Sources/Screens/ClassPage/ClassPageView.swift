@@ -100,6 +100,7 @@ struct ClassPageView: View {
             title: model.content?.title ?? ClassPageContent.placeholderTitle(for: route),
             subject: route.subject,
             classroom: model.content?.classroom,
+            detailsFailed: model.content?.classesFailed ?? false,
             theme: theme,
             opensInfo: opensInfo
         )
@@ -232,11 +233,14 @@ struct ClassPageView: View {
 
 /// The glass card under the strip: the subject's glyph, the class's name, its days and time, its
 /// room and teacher (`height:100px; border-radius:20px`). A level with no class of the student's
-/// shows its name only. When it opens Class info, a small chevron at its edge says so.
+/// shows its name only — and when the classes did not load, a line that says so, never a blank. When
+/// it opens Class info, a small chevron at its edge says so.
 struct ClassPageHeaderCard: View {
     let title: String
     let subject: ClassSubject
     let classroom: Classroom?
+    /// `/classes/` did not answer, so the card cannot know the class's details.
+    let detailsFailed: Bool
     let theme: ClassTheme
     let opensInfo: Bool
 
@@ -272,6 +276,9 @@ struct ClassPageHeaderCard: View {
                         if !room.isEmpty { detail(icon: "door.left.hand.open", text: room) }
                         if !teacher.isEmpty { detail(icon: "person", text: teacher) }
                     }
+                }
+                if classroom == nil && detailsFailed {
+                    detail(icon: "exclamationmark.triangle", text: "Class details didn't load. Pull to try again.")
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

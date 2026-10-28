@@ -36,6 +36,12 @@ struct ClassView: View {
     /// The page's width, for the pagers' cards and their snapping. Measured while the band and
     /// the skeleton are up, long before the roadmap answers; 0 until then.
     @State private var pageWidth: CGFloat = 0
+    /// The load the tab's appearance started. Cancelled when the tab goes away and before the next
+    /// one starts, so an appearance's load never outlives the appearance.
+    @State private var loadTask: Task<Void, Never>?
+    /// Every load's number. A pull and an appearance can still overlap; only the newest load's
+    /// answer is applied, so an older one landing late never writes over a newer one.
+    @State private var loadGeneration = 0
 
     private var tracks: [RoadmapTrack] { roadmap?.tracks ?? [] }
     private var pagers: [ClassLevelPager] { ClassLevelCards.pagers(for: tracks) }
@@ -81,11 +87,17 @@ struct ClassView: View {
             }
             .overlay { ClassTabBottomFade() }
             .toolbar(.hidden, for: .navigationBar)
-            // Not `.task`: a TabView never tears its tabs down.
+            // Not `.task`: a TabView never tears its tabs down. The task is held instead, and given
+            // up when the tab goes — a push, another tab — so loads cannot land out of order.
             .onAppear {
                 if !shown { shown = true }
                 showToDoIfAsked()
-                Task { await load() }
+                loadTask?.cancel()
+                loadTask = Task { await load() }
+            }
+            .onDisappear {
+                loadTask?.cancel()
+                loadTask = nil
             }
             .onChange(of: router.wantsClassToDo) { showToDoIfAsked() }
             .navigationDestination(for: ClassPageRoute.self) { ClassPageView(route: $0) }
@@ -146,6 +158,8 @@ struct ClassView: View {
     /// Today's "See all": the class page of the subject whose homework is due soonest, at the
     /// student's current level — Math when nothing is owed, else Reading & Writing. Applied
     /// once, then the request is cleared. Waits for the roadmap: `load` asks again when it lands.
+    /// If the homework does not load, the tab stays on its root: which subject is owed is not
+    /// known, and a guess would push a page the student did not ask for.
     private func showToDoIfAsked() {
         guard router.wantsClassToDo, !routingToDo, hasLoaded else { return }
         let candidates = pagers
@@ -156,13 +170,15 @@ struct ClassView: View {
         routingToDo = true
         let student = session.student
         Task { @MainActor in
-            let homework = (try? await student.assignments()) ?? []
+            defer {
+                router.classToDoShown()
+                routingToDo = false
+            }
+            guard let homework = try? await student.assignments() else { return }
             // Only onto the tab's root: a page the student opened meanwhile is theirs.
             if path.isEmpty, let route = ClassToDoTarget.route(pagers: candidates, homework: homework) {
                 path.append(route)
             }
-            router.classToDoShown()
-            routingToDo = false
         }
     }
 
@@ -170,15 +186,20 @@ struct ClassView: View {
 
     @MainActor
     private func load() async {
+        loadGeneration += 1
+        let generation = loadGeneration
         let api = RoadmapAPI(client: session.client)
         do {
             let fresh = try await api.roadmap()
+            // A newer load has been started since: its answer is the one to show.
+            guard generation == loadGeneration else { return }
             roadmap = fresh
             loadError = nil
             if refreshFailed { refreshFailed = false }
-        } catch where Task.isCancelled {
+        } catch where Task.isCancelled || generation != loadGeneration {
             // Not a failure: `APIClient` wraps a cancellation as a transport error. Nothing is
             // stored, so a first load stays a skeleton and a refresh keeps its cards unmarked.
+            // A superseded load's failure says nothing about the newer one either.
             return
         } catch let error as APIError {
             loadError = error.errorDescription ?? "Couldn't load your classes."
