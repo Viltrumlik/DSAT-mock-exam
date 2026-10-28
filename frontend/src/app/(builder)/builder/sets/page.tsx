@@ -557,7 +557,7 @@ export default function BuilderSetsPage() {
                 <label className="mb-1 block text-xs font-bold text-muted-foreground">Source</label>
                 <select value={csvSource} onChange={(e) => setCsvSource(e.target.value)} className="w-full rounded-xl border border-border bg-card px-3 py-2 text-sm font-semibold">
                   <option value="">Select a source…</option>
-                  {allowedSourcesForSubject(selectedSubject as Subject).map((s) => (
+                  {allowedSourcesForSubject(selectedSubject as Subject, [selectedLevel === UNASSIGNED_LEVEL ? "" : selectedLevel]).map((s) => (
                     <option key={s} value={s}>{sourceLabel(s)}</option>
                   ))}
                 </select>

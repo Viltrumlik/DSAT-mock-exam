@@ -229,6 +229,12 @@ class AssessmentSet(models.Model):
         )
         if problem:
             raise ValidationError({"secondary_level": problem})
+        # Same reason for the source: a Foundation homework topic needs a Foundation level.
+        problem = self.source_problem(
+            self.subject, self.source or "", self.level or "", self.secondary_level or ""
+        )
+        if problem:
+            raise ValidationError({"source": problem})
 
     @classmethod
     def allowed_sources_for_subject(cls, subject: str) -> tuple[str, ...]:
