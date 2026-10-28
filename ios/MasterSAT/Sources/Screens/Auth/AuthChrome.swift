@@ -309,11 +309,10 @@ struct AuthCompactBand: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .background {
-            ZStack(alignment: .topTrailing) {
-                ClassTabPalette.band
-                ShieldWatermark().offset(x: 120, y: -40)
-            }
-            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous))
+            // An overlay, not a ZStack: the 270-pt shield must not make the band taller.
+            ClassTabPalette.band
+                .overlay(alignment: .topTrailing) { ShieldWatermark().offset(x: 120, y: -60) }
+                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous))
             .ignoresSafeArea(edges: .top)
         }
     }
