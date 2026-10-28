@@ -21,6 +21,7 @@ struct ClassView: View {
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
+    @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
 
     @State private var roadmap: RoadmapResponse?
     @State private var loadError: String?
@@ -42,6 +43,8 @@ struct ClassView: View {
     /// Every load's number. A pull and an appearance can still overlap; only the newest load's
     /// answer is applied, so an older one landing late never writes over a newer one.
     @State private var loadGeneration = 0
+    /// This root's claim on the status bar: white over the band.
+    @State private var statusBarOwner = UUID()
 
     private var tracks: [RoadmapTrack] { roadmap?.tracks ?? [] }
     private var pagers: [ClassLevelPager] { ClassLevelCards.pagers(for: tracks) }
@@ -91,11 +94,15 @@ struct ClassView: View {
             // up when the tab goes — a push, another tab — so loads cannot land out of order.
             .onAppear {
                 if !shown { shown = true }
+                // The band is blue in either appearance: the clock over it is white. Named, not read
+                // off the router: this root is the Class tab, whichever tab is open as it appears.
+                statusBar?.ask(.light, on: .classes, owner: statusBarOwner)
                 showToDoIfAsked()
                 loadTask?.cancel()
                 loadTask = Task { await load() }
             }
             .onDisappear {
+                statusBar?.release(owner: statusBarOwner)
                 loadTask?.cancel()
                 loadTask = nil
             }

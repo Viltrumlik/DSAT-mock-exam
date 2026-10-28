@@ -22,6 +22,7 @@ struct ClassPageView: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
     @Environment(TabBarChrome.self) private var chrome: TabBarChrome?
+    @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var model = ClassPageModel()
@@ -71,10 +72,15 @@ struct ClassPageView: View {
         .task { await model.load(route: route, session: session) }
         .onAppear {
             headerShown = true
-            // The tab this page is showing in is the open one as it appears.
+            // The tab this page is showing in is the open one as it appears. The page is dark in
+            // either appearance, so the bar wears dark glass and the clock is white.
             chrome?.ask(.darkGlass(ink: theme.deep), on: router.selection, owner: chromeOwner)
+            statusBar?.ask(.light, on: router.selection, owner: chromeOwner)
         }
-        .onDisappear { chrome?.release(owner: chromeOwner) }
+        .onDisappear {
+            chrome?.release(owner: chromeOwner)
+            statusBar?.release(owner: chromeOwner)
+        }
     }
 
     // MARK: - Header

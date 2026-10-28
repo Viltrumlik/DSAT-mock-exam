@@ -201,6 +201,8 @@ struct RootTabView: View {
     /// What the bar wears, as the page on screen asks (`TabBarChrome`). Handed down, never read
     /// here: a read in this body would rebuild the tab view, and its stacks, on every request.
     @State private var tabBarChrome = TabBarChrome()
+    /// The status bar's text, asked for the same way (`StatusBarChrome`); read by `StatusBarHost`.
+    @State private var statusBarChrome = StatusBarChrome()
 
     /// Space between the bar and the home indicator, and between the bar and the last thing
     /// a page shows. One place, so the bar and the room made for it cannot drift apart.
@@ -259,6 +261,7 @@ struct RootTabView: View {
             RewardsRefresher(userID: user.id, away: away)
             CelebrationSheetWatcher()
             EventInvitePrompt()
+            StatusBarHost()
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .overlay { RankUpOverlay() }
@@ -268,6 +271,7 @@ struct RootTabView: View {
         .environment(celebrations)
         .environment(prompts)
         .environment(tabBarChrome)
+        .environment(statusBarChrome)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
             // The close button lives in the page's hero, on its root only: laid over the sheet,
