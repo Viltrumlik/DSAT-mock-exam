@@ -29,21 +29,21 @@ struct CertificatePDFSheet: View {
         NavigationStack {
             Group {
                 if let fileURL {
-                    CertificateQuickLook(url: fileURL)
-                        .ignoresSafeArea(edges: .bottom)
+                    VStack(spacing: 0) {
+                        CertificateQuickLook(url: fileURL)
+                        filePanel(fileURL)
+                    }
                 } else if let failure {
                     VStack(spacing: 14) {
-                        Image(systemName: "doc.badge.clock")
-                            .appFont(30)
-                            .foregroundStyle(Theme.warning)
-                            .accessibilityHidden(true)
+                        NewLookTile(systemName: "doc.badge.clock", tone: .orange)
                         Text(failure.message)
-                            .appFont(15, weight: .semibold)
+                            .appFont(16, weight: .semibold)
+                            .foregroundStyle(NewLook.ink)
                             .multilineTextAlignment(.center)
                             .fixedSize(horizontal: false, vertical: true)
                         if failure.retryable {
                             Button("Try again") { attempt += 1 }
-                                .buttonStyle(SecondaryButtonStyle())
+                                .buttonStyle(NewLookButtonStyle(kind: .tint))
                         }
                     }
                     .padding(28)
@@ -53,22 +53,25 @@ struct CertificatePDFSheet: View {
                         ProgressView().controlSize(.large)
                         Text("Preparing…")
                             .appFont(15, weight: .semibold)
-                            .foregroundStyle(Theme.textSecondary)
+                            .foregroundStyle(NewLook.muted)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .background(Theme.background)
+            .background(NewLook.sheet)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
+                        .appFont(17, weight: .bold)
+                        .foregroundStyle(NewLook.blueText)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     if let fileURL {
                         ShareLink(item: fileURL) {
                             Image(systemName: "square.and.arrow.up")
+                                .foregroundStyle(NewLook.blueText)
                         }
                         .accessibilityLabel("Share")
                     }
@@ -77,6 +80,41 @@ struct CertificatePDFSheet: View {
         }
         .task(id: attempt) { await fetch() }
         .onDisappear { removeFile() }
+    }
+
+    private var isCertificate: Bool { title == "Certificate" }
+
+    /// Under the page: what the file is, and the toolbar's Share again, within thumb reach.
+    private func filePanel(_ url: URL) -> some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                NewLookTile(
+                    systemName: isCertificate ? "rosette" : "doc.text.fill",
+                    tone: isCertificate ? .bronze : .blue
+                )
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(url.lastPathComponent)
+                        .appFont(16, weight: .bold)
+                        .foregroundStyle(NewLook.ink)
+                        .lineLimit(2)
+                    Text("Pinch to zoom · Share to save or send")
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
+                }
+                Spacer(minLength: 0)
+            }
+            .newLookCard(padding: 14)
+            .accessibilityElement(children: .combine)
+
+            ShareLink(item: url) {
+                Label("Share or save", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(NewLookButtonStyle(size: .large))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 8)
+        .background(NewLook.sheet.ignoresSafeArea(edges: .bottom))
     }
 
     @MainActor
