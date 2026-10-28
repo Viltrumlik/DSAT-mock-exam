@@ -41,6 +41,10 @@ enum RewardsExplainer: String, CaseIterable, Identifiable {
 /// The "!" itself: a small button that opens the explainer in a popover beside it.
 struct RewardsExplainButton: View {
     let explainer: RewardsExplainer
+    /// The words beside the glyph, for a place with room for them — the strikes window says
+    /// "What a strike is" in full, where a tile's corner can only hold the mark. Nil, and the
+    /// button is the bare glyph it has always been, so every existing call site is untouched.
+    var title: String?
 
     @State private var shown = false
 
@@ -48,17 +52,33 @@ struct RewardsExplainButton: View {
         Button {
             shown = true
         } label: {
-            Image(systemName: "exclamationmark.circle")
-                .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
-                .frame(width: 28, height: 28)
-                // Drawn small in its tile's corner; reached like any other button.
-                .hitTarget(44)
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle")
+                    .appFont(14, weight: .semibold)
+                    // The glyph is capped even in the titled case, where the button as a whole is
+                    // not: `frame` does not clip, so a 14-pt symbol rendering near 35 pt at AX5
+                    // grew straight out of its 28-pt square and into the title beside it. A no-op
+                    // for the bare-glyph call sites, which the cap below already holds here.
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .frame(width: 28, height: 28)
+                if let title {
+                    Text(title).appFont(12, weight: .semibold)
+                }
+            }
+            .foregroundStyle(Theme.textSecondary)
+            // Drawn small in its tile's corner; reached like any other button.
+            .hitTarget(44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(explainer.title)
-        // The glyph sits in a fixed 28-pt square; held still, it is shown large on a long press.
-        .capDynamicType(label: explainer.title, systemImage: "exclamationmark.circle")
+        // A glyph in a fixed 28-pt square cannot grow, so it is held still and shown large on a
+        // long press (`capDynamicType`, spelled out here). With words beside it there is a line
+        // that can wrap instead, and capping those would be holding back type a student asked to
+        // be larger — so only the TEXT is let go here; the glyph keeps its own cap, above.
+        .dynamicTypeSize(...(title == nil ? DynamicTypeSize.xxxLarge : .accessibility5))
+        .accessibilityShowsLargeContentViewer {
+            Label(explainer.title, systemImage: "exclamationmark.circle")
+        }
         // After the cap, so the explainer's own words still grow with the phone's setting —
         // and scroll, at the largest sizes, rather than run off the popover.
         .popover(isPresented: $shown) {

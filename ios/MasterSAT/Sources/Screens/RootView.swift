@@ -259,6 +259,7 @@ struct RootTabView: View {
         }
         .overlay { CelebrationLayer().ignoresSafeArea() }
         .overlay { RankUpOverlay() }
+        .overlay { HeaderWindowOverlay() }
         .environment(router)
         .environment(rewards)
         .environment(celebrations)

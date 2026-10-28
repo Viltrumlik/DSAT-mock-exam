@@ -61,9 +61,11 @@ enum LottieAsset: String, CaseIterable {
 ///
 /// One `LottieView` whatever the settings: they pick its playback, never which view is drawn.
 ///
-/// The looping budget: at most two clips loop on a screen, and only the streak flame loops.
+/// The looping budget: at most three clips loop on a screen, and only the streak flame loops.
 /// - Today, Class, Words and Explore: the header's flame — one.
 /// - Rewards: the header's flame and `StreakCard`'s — two.
+/// - With the Strikes header window open: its own flame as well — three, because the page behind
+///   is dimmed but still drawn, so its loops keep running under the window (W-R5). Accepted.
 /// - Nowhere else: the state art settles, the bursts, the trophy and the task check play once, and
 ///   a clip that finishes costs nothing once it has. Pushed pages have no header, so no loop.
 /// A new `loop` goes on a screen with room under that count; Low Power Mode rests the ones it has.

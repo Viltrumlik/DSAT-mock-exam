@@ -123,6 +123,16 @@ public struct ConversionResult: Decodable, Sendable, Equatable {
     public let detail: String
     public let balances: RewardsBalances
 
+    /// Four loose fields, for tests and for nothing else — the app only ever receives this value
+    /// from the server. It is what lets `ConversionOutcome.decide` be exercised over every answer
+    /// the endpoint can give, including the ones that are awkward to provoke against a real one.
+    init(minted: Int, pointsSpent: Int, detail: String, balances: RewardsBalances) {
+        self.minted = minted
+        self.pointsSpent = pointsSpent
+        self.detail = detail
+        self.balances = balances
+    }
+
     enum CodingKeys: String, CodingKey {
         case minted, detail
         case pointsSpent = "points_spent"

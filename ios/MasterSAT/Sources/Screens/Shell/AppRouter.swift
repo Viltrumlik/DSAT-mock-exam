@@ -57,6 +57,22 @@ final class AppRouter {
     /// The tab the Me sheet shows — and reopens on, for the rest of this launch.
     var meTab: MeTab = .overview
     var certificate: CertificateCode?
+    /// Which header window is up, if any — the flame's or the XP pill's. Not a sheet: it is one
+    /// overlay at the root (`HeaderWindowOverlay`), so it stands beside the sheets rather than
+    /// queueing with them.
+    private(set) var headerWindow: HeaderWindowKind?
+    /// The open window is in the middle of something that must not be interrupted. Today that is
+    /// exactly one thing: the XP window's conversion.
+    ///
+    /// **Why the flag lives here and not in the window.** The Rewards hub runs the same conversion
+    /// inside a tab a `TabView` never tears down, so every `@State` write after the request still
+    /// lands. This window is destroyed the instant `headerWindow` becomes nil — and a tap on the
+    /// dim, which the dimming itself invites, does exactly that. Every later write is then dropped:
+    /// no note, nothing announced on the two failure branches, and a coin bursting at the
+    /// coordinates of a card that is gone. So the window declares itself busy and the close paths a
+    /// student can take refuse until it settles. It is at most one request, and it is the promise
+    /// the hub already makes: the button is off from the press until the read-back settles.
+    private(set) var headerWindowBusy = false
     /// The event the invitation is offering a seat at, and nil the rest of the time. Set by
     /// `EventInvitePrompt` only once it has found the stage clear; presented by the root
     /// beside the other two sheets.
@@ -79,7 +95,40 @@ final class AppRouter {
     /// Nothing renders from it, so it stays out of observation.
     @ObservationIgnored private var queued: Queued?
 
+    /// A header pill was tapped. Opening the other window while one is up just swaps the contents.
+    func openHeaderWindow(_ kind: HeaderWindowKind) {
+        if headerWindow != kind { headerWindow = kind }
+    }
+
+    /// Whether work that outlives its window is still in flight — a conversion, which spends real
+    /// points and is not idempotent.
+    ///
+    /// **The flag belongs to the work, not to the window.** It is raised before the request and
+    /// lowered when that request settles, by the unstructured task that owns it, which a dismissal
+    /// does not cancel. So it stays up across a forced close, and a window reopened in those few
+    /// hundred milliseconds offers no second Convert.
+    func setHeaderWindowBusy(_ busy: Bool) {
+        if headerWindowBusy != busy { headerWindowBusy = busy }
+    }
+
+    /// ✕, a tap outside, or anywhere the student is sent somewhere else.
+    ///
+    /// `force` is for the second kind. A student's own dismissal waits for
+    /// `headerWindowBusy`, but a route — a deep link, a notification tap — must take the window
+    /// with it whatever it is doing: a window left over the tab the student has just been sent to
+    /// would have nothing left to close it.
+    /// A forced close takes the window and leaves the flag alone: the request it stands for is
+    /// still out, and the task that raised it will lower it when it settles. Clearing it here
+    /// would let the student reopen the window and start a second conversion over the first.
+    func closeHeaderWindow(force: Bool = false) {
+        guard force || !headerWindowBusy else { return }
+        if headerWindow != nil { headerWindow = nil }
+    }
+
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
+        // A window must never stay over a tab the student has just been sent to — and the windows'
+        // own Shop and Leaderboard buttons route through here, so this is the one place it closes.
+        closeHeaderWindow(force: true)
         switch link.placement {
         case .tab(let tab):
             show(tab)
@@ -117,6 +166,7 @@ final class AppRouter {
     /// The avatar opens Me where the student left it; `tab` is for a caller that needs one in
     /// particular — Today's SAT countdown wants Overview, where the date is set.
     func openMe(on tab: MeTab? = nil) {
+        closeHeaderWindow(force: true)
         if certificate != nil || eventInvite != nil {
             closeSheetsOtherThanMe()
             queued = .me(tab)
@@ -141,6 +191,7 @@ final class AppRouter {
 
     /// Switch to a tab at its root, closing any sheet — a link to the tab itself, or "See all".
     func show(_ tab: AppTab) {
+        closeHeaderWindow(force: true)
         queued = nil
         closeSheets()
         select(tab)
@@ -152,6 +203,7 @@ final class AppRouter {
     /// (the trophy card's "See the board" lands on a hero that must show the place the card just
     /// named). Either way the hero is what the student is sent to, so the root scrolls back up.
     func showFresh(_ tab: AppTab) {
+        closeHeaderWindow(force: true)
         let onScreen = selection == tab && isAtRoot(tab)
         show(tab)
         if onScreen { requestReload(tab) }
@@ -166,6 +218,7 @@ final class AppRouter {
 
     /// Today's "See all": Class, on Tasks → To do for every class — not wherever it was last left.
     func showClassToDo() {
+        closeHeaderWindow(force: true)
         if !wantsClassToDo { wantsClassToDo = true }
         show(.classes)
         // At the top of the list, not wherever Class was last scrolled to.

@@ -25,6 +25,13 @@ struct NotificationBell: View {
     @State private var showingInbox = false
     /// A destination chosen in the inbox, held until the sheet is gone.
     @State private var chosenLink: AppLink?
+    /// Whether this bell is the one on screen. Every tab's header carries a bell now, and a tab
+    /// the student has visited stays built behind the one they are looking at — so a push landing
+    /// while the app is open would otherwise have all five of them read the summary at once. The
+    /// polling loop below already stops with its tab (a `.task` is cancelled when its view goes);
+    /// this is the same rule for the arrival, which comes from shared observable state instead and
+    /// so reaches every built bell.
+    @State private var onScreen = false
 
     private var count: Int { session.notifications.unreadTotal }
     private var router: NotificationRouter { .shared }
@@ -81,7 +88,10 @@ struct NotificationBell: View {
                 try? await Task.sleep(for: .seconds(60))
             }
         }
+        .onAppear { onScreen = true }
+        .onDisappear { onScreen = false }
         .onChange(of: router.arrivals) {
+            guard onScreen else { return }
             Task { await refresh() }
         }
     }

@@ -91,9 +91,12 @@ struct RankHeroContent: View {
 
     /// The next step, never the distance from the top. Without the row above in the response
     /// there is no honest number, so none is given.
+    ///
+    /// The wording lives in the kit (`XPWindow.climbLine`) because the XP header window says the
+    /// same thing about the same two rows: one copy, so they cannot drift. The crown stays here —
+    /// it is the view's business which icon a #1 gets.
     private func line(rank: Int, pass: LeaderboardPass?) -> String {
-        if rank == 1 { return "You're top of the whole board" }
-        return pass?.text ?? "Keep earning XP to climb"
+        XPWindow.climbLine(rank: rank, pass: pass)
     }
 
     private var spoken: String {
