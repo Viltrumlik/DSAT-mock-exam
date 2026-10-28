@@ -131,13 +131,20 @@ struct FloatingTabBar: View {
                     .padding(.vertical, 8)
                     .background {
                         if selection == tab {
-                            // Dark glass: a white pill lifted off the glass (`0 6px 16px`). Its
-                            // colours fade inside the branch; its slide is the selection's own.
+                            // The design's solid blue pill (`#2A68C0`, `0 4px 12px` at 30 %); under
+                            // the dark glass a white one lifted off it (`0 6px 16px`). Its colours
+                            // fade inside the branch; its slide is the selection's own.
                             Capsule()
                                 .animation(styleAnimation) { capsule in
                                     capsule
-                                        .foregroundStyle(isDark ? Color.white : Theme.accent.opacity(0.13))
-                                        .shadow(color: Color(.sRGB, red: 10 / 255, green: 12 / 255, blue: 40 / 255).opacity(isDark ? 0.30 : 0), radius: 8, y: 6)
+                                        .foregroundStyle(isDark ? Color.white : Theme.accent)
+                                        .shadow(
+                                            color: isDark
+                                                ? Color(.sRGB, red: 10 / 255, green: 12 / 255, blue: 40 / 255).opacity(0.30)
+                                                : Theme.accent.opacity(0.30),
+                                            radius: isDark ? 8 : 6,
+                                            y: isDark ? 6 : 4
+                                        )
                                 }
                                 .matchedGeometryEffect(id: "pill", in: pill)
                         }
@@ -167,7 +174,7 @@ struct FloatingTabBar: View {
 
     private func ink(selected: Bool) -> Color {
         if let darkInk { return selected ? darkInk : .white.opacity(0.72) }
-        return selected ? Theme.accent : Theme.textSecondary
+        return selected ? .white : Theme.textSecondary
     }
 
     /// The capsule behind the tabs. The same layers in both styles, so a change of style is a change
