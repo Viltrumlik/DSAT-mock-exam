@@ -99,7 +99,7 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
     delivered = {
         d.journal_lesson_id: d
         for d in ClassroomLesson.objects.filter(classroom=classroom).select_related(
-            "assignment", "classwork_assignment"
+            "assignment", "classwork_assignment", "midterm_schedule"
         )
     }
 
@@ -173,6 +173,27 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
             ).values_list("idempotency_key", flat=True)
         }
 
+    # The midterms this student has finished, out of the ones this class has been granted. A
+    # granted midterm row carries its access window (`midterm_schedule`), which names the exam;
+    # a completed attempt on that exam is the same "sat it" the Midterms page and the
+    # certificates go by (``midterms.access.has_completed_attempt``). One query for the whole
+    # ladder, and none at all before a midterm is granted. A legacy window that names only the
+    # old ``exams.MockExam`` has no ``midterm_id`` and stays "available".
+    granted_midterm_ids = {
+        d.midterm_schedule.midterm_id
+        for d in delivered.values()
+        if d.midterm_schedule_id and d.midterm_schedule is not None and d.midterm_schedule.midterm_id
+    }
+    sat_midterm_ids: set[int] = set()
+    if granted_midterm_ids:
+        from midterms.models import MidtermAttempt
+
+        sat_midterm_ids = set(
+            MidtermAttempt.objects.filter(
+                student=user, midterm_id__in=granted_midterm_ids, is_completed=True
+            ).values_list("midterm_id", flat=True)
+        )
+
     lessons: list[dict] = []
     for session in sessions:
         d = delivered.get(session.id)
@@ -192,8 +213,16 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         if session.is_midterm:
             # Midterms aren't homework; they're milestones. "available" once the classroom
             # has been granted the sitting (a start code is still needed to actually begin,
-            # which the student handles on the Midterm page — not from the roadmap).
-            state = "available" if (d and d.midterm_schedule_id) else "upcoming"
+            # which the student handles on the Midterm page — not from the roadmap), and
+            # "completed" once this student has finished that sitting — which also counts it
+            # in `completed_lessons`, as the level's total already counts the marker.
+            schedule = d.midterm_schedule if (d and d.midterm_schedule_id) else None
+            if schedule is not None and schedule.midterm_id in sat_midterm_ids:
+                state = "completed"
+            elif schedule is not None:
+                state = "available"
+            else:
+                state = "upcoming"
             assignment_id = None
         elif not released:
             state = "upcoming"

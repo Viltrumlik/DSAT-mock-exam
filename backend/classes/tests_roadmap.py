@@ -10,6 +10,8 @@ The load-bearing guarantees:
   the student never ends up with a roadmap where no rung is theirs.
 * own-level lessons name their handed-out classwork and whether the student did it, from
   bulk queries — never one per lesson.
+* a midterm marker is upcoming until the class is granted it, available once it is, and
+  completed once THIS student has finished that sitting — counted in ``completed_lessons``.
 """
 
 from __future__ import annotations
@@ -20,12 +22,14 @@ from django.contrib.auth import get_user_model
 from django.db import connection
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
 from classes.models import Assignment, Classroom, ClassroomMembership, Submission
 from journals import delivery, services
 from journals.models import ClassroomLesson, Journal, JournalLesson
+from midterms.models import Midterm, MidtermAttempt
 
 User = get_user_model()
 
@@ -670,3 +674,121 @@ class RoadmapClassworkTests(RoadmapTestBase):
 
         self.assertTrue(lessons[self.s3.lesson_number]["classwork_done"])
         self.assertEqual(len(three.captured_queries), len(one.captured_queries))
+
+
+class RoadmapMidtermTests(RoadmapTestBase):
+    """A midterm marker's state: upcoming → available once granted → completed once sat.
+
+    "Sat" is a completed attempt on the exam the class's access window names — the rule the
+    Midterms page and the certificates use. It is this student's own attempt, and it is read
+    for the whole ladder at once.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.marker = self.j_mid.lessons.get(lesson_type=JournalLesson.TYPE_MIDTERM)
+        self.paper = self._paper(self.marker, "Middle Math Midterm 1")
+
+    def _paper(self, marker, title) -> Midterm:
+        paper = Midterm.objects.create(
+            title=title,
+            subject=Midterm.MATH,
+            scoring_scale=Midterm.SCALE_800,
+            duration_minutes=35,
+            is_published=True,
+        )
+        marker.midterm_exam = paper
+        marker.save(update_fields=["midterm_exam"])
+        return paper
+
+    def _grant(self, marker):
+        delivered, created = delivery.grant_midterm(self.math_mid, marker, actor=self.admin)
+        self.assertTrue(created)
+        self.assertIsNotNone(delivered.midterm_schedule_id)
+        return delivered
+
+    def _sit(self, student, paper, *, finished=True):
+        return MidtermAttempt.objects.create(
+            midterm=paper,
+            student=student,
+            is_completed=finished,
+            current_state=(
+                MidtermAttempt.STATE_COMPLETED if finished else MidtermAttempt.STATE_NOT_STARTED
+            ),
+            completed_at=timezone.now() if finished else None,
+        )
+
+    def _middle(self):
+        return self._level(self._track(self._get(), "math"), "middle")
+
+    def _row(self, marker):
+        return next(
+            l for l in self._middle()["lessons"] if l["lesson_number"] == marker.lesson_number
+        )
+
+    def test_upcoming_until_granted_then_available(self):
+        self.assertEqual(self._row(self.marker)["state"], "upcoming")
+        self._grant(self.marker)
+        row = self._row(self.marker)
+        self.assertEqual(row["state"], "available")
+        self.assertTrue(row["is_midterm"])
+        self.assertIsNone(row["assignment_id"])
+
+    def test_a_finished_sitting_is_completed_and_counts_toward_the_level(self):
+        self._grant(self.marker)
+        self._sit(self.student, self.paper)
+        data = self._get()
+        track = self._track(data, "math")
+        row = next(
+            l
+            for l in self._level(track, "middle")["lessons"]
+            if l["lesson_number"] == self.marker.lesson_number
+        )
+        self.assertEqual(row["state"], "completed")
+        # 3 homeworks + the marker; only the marker is done.
+        self.assertEqual(track["completed_lessons"], 1)
+        self.assertEqual(track["total_lessons"], 4)
+        self.assertEqual(track["completion_rate"], 0.25)
+
+    def test_an_unfinished_attempt_or_a_classmates_sitting_is_not_completed(self):
+        self._grant(self.marker)
+        classmate = User.objects.create_user(
+            email="rm_mt_mate@t.com", password="x", role=acc_const.ROLE_STUDENT
+        )
+        self._enrol(classmate, self.math_mid)
+        self._sit(classmate, self.paper)
+        self._sit(self.student, self.paper, finished=False)
+        self.assertEqual(self._row(self.marker)["state"], "available")
+
+    def test_a_sitting_without_a_grant_stays_upcoming(self):
+        # An attempt alone (a standalone grant, an old sitting) is not this class's marker
+        # being opened: until the class is granted the midterm, the marker has not arrived.
+        self._sit(self.student, self.paper)
+        self.assertEqual(self._row(self.marker)["state"], "upcoming")
+
+    def test_query_count_does_not_grow_with_midterms(self):
+        """Attempts are read once for the whole ladder, never per midterm."""
+        self._grant(self.marker)
+        self._sit(self.student, self.paper)
+        self._get()  # warm anything cached per process
+        with CaptureQueriesContext(connection) as one:
+            self._get()
+
+        second = services.add_session(
+            self.j_mid, actor=self.admin, lesson_type=JournalLesson.TYPE_MIDTERM
+        )
+        second.status = JournalLesson.STATUS_PUBLISHED
+        second.save(update_fields=["status"])
+        paper2 = self._paper(second, "Middle Math Midterm 2")
+        self._grant(second)
+        self._sit(self.student, paper2)
+        with CaptureQueriesContext(connection) as two:
+            middle = self._middle()
+
+        states = {
+            l["lesson_number"]: l["state"] for l in middle["lessons"] if l["is_midterm"]
+        }
+        self.assertEqual(
+            states, {self.marker.lesson_number: "completed", second.lesson_number: "completed"}
+        )
+        self.assertEqual(len(two.captured_queries), len(one.captured_queries))
