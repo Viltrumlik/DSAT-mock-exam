@@ -441,6 +441,9 @@ private struct SessionStepNode: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+        // What a step still ahead asks, after its name: "Due before next session". A done or unset
+        // step's line would only repeat its state.
+        .accessibilityValue(step.state == .done || step.state == .notYet ? "" : meta)
     }
 
     @ViewBuilder private var words: some View {
@@ -462,18 +465,20 @@ private struct SessionStepNode: View {
         }
     }
 
+    /// "Session 28, Classwork, to do" — and for the step in front of the student, the Resume
+    /// button's own words: "Resume Classwork, Session 28".
     private var accessibilityText: String {
+        let number = session.lesson.lessonNumber
+        if isNow { return "Resume \(step.kind.title), Session \(number)" }
         let state: String
         switch step.state {
         case .done: state = "done"
-        case .now: state = "up next"
-        case .todo: state = "to do"
+        case .now, .todo: state = "to do"
         case .locked: state = "locked"
         case .notYet: state = "not set yet"
         case .notSet: state = ""
         }
-        let what = isNow ? "Resume \(step.kind.title)" : step.kind.title
-        return "Session \(session.lesson.lessonNumber), \(what), \(meta), \(state)"
+        return "Session \(number), \(step.kind.title), \(state)"
     }
 }
 

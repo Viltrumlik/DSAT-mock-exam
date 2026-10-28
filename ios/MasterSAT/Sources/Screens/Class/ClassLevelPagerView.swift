@@ -347,14 +347,21 @@ struct ClassLevelCardView: View {
         return "\(what) · Unlocks after \(after)"
     }
 
+    /// "Math, Junior, current level, 25 of 36 lessons covered" — the card as one sentence.
     private var accessibilityText: String {
-        let head = "\(ClassTabSubject.label(card.subject)), \(card.levelLabel), \(card.state.pillText)"
+        let state: String
+        switch card.state {
+        case .completed: state = "completed level"
+        case .current: state = "current level"
+        case .locked: state = "locked level"
+        }
+        let head = "\(ClassTabSubject.label(card.subject)), \(card.levelLabel), \(state)"
         switch card.state {
         case .locked:
-            return "\(head). \(lockText)"
+            return "\(head), \(lockText.replacingOccurrences(of: " · ", with: ", "))"
         case .completed, .current:
-            if comingSoon { return "\(head). Lessons coming soon" }
-            return "\(head). \(card.covered) of \(lessonsText) covered, \(card.percent) percent"
+            if comingSoon { return "\(head), lessons coming soon" }
+            return "\(head), \(card.covered) of \(lessonsText) covered"
         }
     }
 }

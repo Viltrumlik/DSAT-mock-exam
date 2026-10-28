@@ -36,12 +36,20 @@ struct ClassScoreGaugeView: View {
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityText)
+        .accessibilityHint("On a scale of \(gauge.range.lowerBound) to \(gauge.range.upperBound)")
     }
 
+    /// "SAT score 1100, target 1500" — or one section's, "Math score 550, target 700".
     private var accessibilityText: String {
-        let title = gauge.subject == nil ? "SAT score" : gauge.title.capitalized
-        var text = "\(title) \(gauge.score), on a scale of \(gauge.range.lowerBound) to \(gauge.range.upperBound)"
-        if let target = gauge.target { text += ". Target \(target)" }
+        let title: String
+        if gauge.subject == nil {
+            title = "SAT score"
+        } else {
+            let words = gauge.title.lowercased()
+            title = words.prefix(1).uppercased() + words.dropFirst()
+        }
+        var text = "\(title) \(gauge.score)"
+        if let target = gauge.target { text += ", target \(target)" }
         return text
     }
 }
