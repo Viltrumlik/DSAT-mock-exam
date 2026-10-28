@@ -9,7 +9,8 @@ struct AppLinkPage: View {
 
     var body: some View {
         switch link {
-        case .classroom(let id): LearnMoreClassroomView(classroomId: id)
+        // The class page for that class's subject and level, else the classroom page.
+        case .classroom(let id): ClassroomLinkPage(classroomId: id)
         case .homework(let classroomId, let assignmentId):
             HomeworkDetailView(classroomId: classroomId, assignmentId: assignmentId)
         case .midterms, .examReview: MidtermsView()
@@ -22,7 +23,6 @@ struct AppLinkPage: View {
         case .leaderboard: LeaderboardView()
         case .surveys: SurveysListView()
         case .survey(let id): SurveyFillView(surveyId: id)
-        case .roadmap: RoadmapView()
         case .roadmapDelivery(let id): RoadmapReadingView(deliveryId: id)
         case .progress: MyProgressView()
         case .assessments: AssessmentsListView()
@@ -31,8 +31,8 @@ struct AppLinkPage: View {
         case .liveQuiz: LiveQuizJoinView()
         case .vocabularySet(let id): VocabSetView(setId: id, title: "")
         case .vocabularySection(let id): VocabSectionView(sectionId: id, title: "")
-        // `.classes` is a tab placement (`AppRouter.show`): no link pushes it.
-        case .home, .classes, .vocabulary, .profile, .certificate, .unknown:
+        // `.classes` and `.roadmap` are tab placements (`AppRouter.show`): no link pushes them.
+        case .home, .classes, .roadmap, .vocabulary, .profile, .certificate, .unknown:
             ContentUnavailableView("Nothing to open", systemImage: "link")
         }
     }

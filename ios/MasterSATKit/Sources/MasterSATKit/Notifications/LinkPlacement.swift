@@ -27,13 +27,15 @@ extension AppLink {
     public var placement: LinkPlacement {
         switch self {
         case .home: return .tab(.today)
-        case .classes: return .tab(.classes)
-        case .classroom, .homework, .assessments, .midterms, .midtermResult, .examReview, .liveQuiz:
+        // The roadmap is the Class tab now: its level cards are the ladder, and a session's
+        // reading is pushed there, where its class page lives.
+        case .classes, .roadmap: return .tab(.classes)
+        case .classroom, .homework, .assessments, .midterms, .midtermResult, .examReview, .liveQuiz, .roadmapDelivery:
             return .push(.classes, self)
         case .vocabulary: return .tab(.words)
         case .vocabularySection, .vocabularySet: return .push(.words, self)
         case .points, .shop, .leaderboard: return .push(.rewards, self)
-        case .roadmap, .roadmapDelivery, .services, .support, .events, .surveys, .survey:
+        case .services, .support, .events, .surveys, .survey:
             return .push(.explore, self)
         case .profile: return .me(push: nil)
         case .progress: return .me(push: self)

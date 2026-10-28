@@ -145,3 +145,33 @@ public enum ClassLevelCards {
         return min(100, max(0, RGB.jsRound(Double(done) / Double(total) * 100)))
     }
 }
+
+// MARK: - A class's page
+
+extension ClassSubject {
+    /// A classroom's `subject` as the server spells it (`MATH`, `ENGLISH`). Nil for a blank or
+    /// unknown one.
+    public init?(classroomSubject: String?) {
+        switch (classroomSubject ?? "").trimmingCharacters(in: .whitespaces).uppercased() {
+        case "MATH": self = .math
+        case "ENGLISH": self = .english
+        default: return nil
+        }
+    }
+}
+
+/// Which class page a link to one class opens (`AppLink.classroom`).
+public enum ClassPageTarget {
+    /// The rungs a class page can be drawn for.
+    public static let levels: Set<String> = ["foundation", "junior", "middle", "senior"]
+
+    /// The class's subject and level code, when both are ones the Class tab draws. Nil for a class
+    /// with no level (a centre left it blank), a level code this build does not know, or a subject
+    /// it does not: those links keep the classroom page.
+    public static func key(for classroom: Classroom) -> (subject: ClassSubject, level: String)? {
+        guard let subject = ClassSubject(classroomSubject: classroom.subject) else { return nil }
+        let level = (classroom.level ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard levels.contains(level) else { return nil }
+        return (subject, level)
+    }
+}

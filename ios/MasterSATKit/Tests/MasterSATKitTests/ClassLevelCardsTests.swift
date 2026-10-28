@@ -139,3 +139,31 @@ private func englishTrack() -> RoadmapTrack {
         #expect(cards[1].unlocksAfter == "Foundation")
     }
 }
+
+@Suite struct ClassPageTargetTests {
+    private func room(subject: String?, level: String?) throws -> Classroom {
+        var json: [String: Any] = ["id": 7, "name": "Math G12"]
+        if let subject { json["subject"] = subject }
+        if let level { json["level"] = level }
+        return try JSONCoding.decoder.decode(Classroom.self, from: JSONSerialization.data(withJSONObject: json))
+    }
+
+    @Test("A class with a known subject and level opens that class page")
+    func known() throws {
+        let math = try #require(ClassPageTarget.key(for: room(subject: "MATH", level: "junior")))
+        #expect(math.subject == .math)
+        #expect(math.level == "junior")
+        let english = try #require(ClassPageTarget.key(for: room(subject: "english", level: " Senior ")))
+        #expect(english.subject == .english)
+        #expect(english.level == "senior")
+    }
+
+    @Test("No level, an unknown level or an unknown subject: no class page — the classroom page stays")
+    func unknown() throws {
+        #expect(ClassPageTarget.key(for: try room(subject: "MATH", level: nil)) == nil)
+        #expect(ClassPageTarget.key(for: try room(subject: "MATH", level: "")) == nil)
+        #expect(ClassPageTarget.key(for: try room(subject: "MATH", level: "advanced")) == nil)
+        #expect(ClassPageTarget.key(for: try room(subject: "PHYSICS", level: "junior")) == nil)
+        #expect(ClassPageTarget.key(for: try room(subject: nil, level: "junior")) == nil)
+    }
+}
