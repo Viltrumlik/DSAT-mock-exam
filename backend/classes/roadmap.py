@@ -44,7 +44,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from .models import Classroom, ClassroomMembership
+from .models import Assignment, Classroom, ClassroomMembership
 
 # Display order of the ladder — the union of every level any subject offers. Each track
 # filters this through its own subject's offered set (see ``build_roadmap``); it is NOT the
@@ -98,7 +98,9 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
 
     delivered = {
         d.journal_lesson_id: d
-        for d in ClassroomLesson.objects.filter(classroom=classroom).select_related("assignment")
+        for d in ClassroomLesson.objects.filter(classroom=classroom).select_related(
+            "assignment", "classwork_assignment"
+        )
     }
 
     # Which of this student's deliveries they have already marked read. One query for the
@@ -129,11 +131,47 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         for d in delivered.values()
         if d.homework_released_at and d.assignment_id and d.assignment
     ]
+
+    # The in-class work each delivery handed out, keyed by delivery id. Classwork has no
+    # release timestamp: the carrier is minted PUBLISHED at the moment a teacher hands it out
+    # (or grants the first item in class), so its existence IS the release. The status check
+    # is the rule the student's Assignments list applies — a carrier a teacher has since
+    # archived 404s for the student, so the ladder must not offer it either.
+    classwork_by_delivery = {
+        d.id: d.classwork_assignment
+        for d in delivered.values()
+        if d.classwork_assignment_id
+        and d.classwork_assignment is not None
+        and d.classwork_assignment.status == Assignment.STATUS_PUBLISHED
+    }
+
     completed_ids: set[int] = set()
-    if released_assignments:
+    if released_assignments or classwork_by_delivery:
         # The one canonical completion primitive (Submission SUBMITTED/REVIEWED + a graded
-        # AssessmentResult), scoped to this classroom + this student.
-        completed_ids = _completion_map(classroom, [user.id], released_assignments).get(user.id, set())
+        # AssessmentResult), scoped to this classroom + this student. Homework and classwork
+        # go through ONE call — assignment ids are unique across both, so a classwork id in
+        # the set can never mark a homework completed, and the query count stays flat.
+        completed_ids = _completion_map(
+            classroom, [user.id], released_assignments + list(classwork_by_delivery.values())
+        ).get(user.id, set())
+
+    # Classwork is paid only by a teacher's hand, and that award is the whole of a student's
+    # outcome for most in-class lessons — a written brief has nothing to submit. So a
+    # classwork award counts as done, exactly as the assignment page treats it
+    # (``AssignmentSerializer.get_classwork_award``: any row under the key, a 0 included).
+    # One query for the whole ladder, by the unique idempotency key.
+    awarded_classwork_ids: set[int] = set()
+    if classwork_by_delivery:
+        from rewards.constants import EVENT_CLASSWORK_MANUAL, classwork_key
+        from rewards.models import PointAward
+
+        by_key = {classwork_key(a.id, user.id): a.id for a in classwork_by_delivery.values()}
+        awarded_classwork_ids = {
+            by_key[key]
+            for key in PointAward.objects.filter(
+                event=EVENT_CLASSWORK_MANUAL, idempotency_key__in=list(by_key)
+            ).values_list("idempotency_key", flat=True)
+        }
 
     lessons: list[dict] = []
     for session in sessions:
@@ -164,6 +202,13 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
         else:
             state = "available"
 
+        # A midterm is a sitting, not a lesson with in-class work; anything else needs a
+        # delivery row to have handed classwork out at all.
+        classwork = (
+            classwork_by_delivery.get(d.id) if (d is not None and not session.is_midterm) else None
+        )
+        classwork_id = classwork.id if classwork is not None else None
+
         lessons.append(
             {
                 "lesson_number": session.lesson_number,
@@ -192,6 +237,17 @@ def _own_level_lessons(classroom, user, journal) -> list[dict]:
                         d.id in read_delivery_ids
                         or not _requires_read_confirmation(session)
                     )
+                ),
+                # ── the in-class work handed out in this session ──────────────────
+                #
+                # Own level only, like `assignment_id`: a locked level's outline carries
+                # neither key. Null until a teacher has handed the classwork out.
+                "classwork_assignment_id": classwork_id,
+                # Submitted (or an assessment graded) on the carrier, or awarded by the
+                # teacher. False whenever there is no carrier to have done.
+                "classwork_done": bool(
+                    classwork_id
+                    and (classwork_id in completed_ids or classwork_id in awarded_classwork_ids)
                 ),
             }
         )

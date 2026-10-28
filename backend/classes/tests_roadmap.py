@@ -8,6 +8,8 @@ The load-bearing guarantees:
 * English has no Foundation course, so an English track carries no Foundation rung at
   all — Math still carries all four. A mis-tagged own level is the one exception, kept so
   the student never ends up with a roadmap where no rung is theirs.
+* own-level lessons name their handed-out classwork and whether the student did it, from
+  bulk queries — never one per lesson.
 """
 
 from __future__ import annotations
@@ -15,13 +17,15 @@ from __future__ import annotations
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIClient
 
 from access import constants as acc_const
-from classes.models import Classroom, ClassroomMembership, Submission
+from classes.models import Assignment, Classroom, ClassroomMembership, Submission
 from journals import delivery, services
-from journals.models import Journal, JournalLesson
+from journals.models import ClassroomLesson, Journal, JournalLesson
 
 User = get_user_model()
 
@@ -518,3 +522,151 @@ class RoadmapCurrentWeekTests(RoadmapTestBase):
         self.math_mid.lesson_days = "NONSENSE"
         self.math_mid.save(update_fields=["lesson_days"])
         self.assertIsNone(self._track(self._get(), "math")["current_week"])
+
+
+class RoadmapClassworkTests(RoadmapTestBase):
+    """`classwork_assignment_id` / `classwork_done` — the middle step of a session's trail.
+
+    The carrier has no release timestamp: it exists once a teacher hands the classwork out,
+    and it is minted PUBLISHED. "Done" is either the canonical completion signal on that
+    carrier or a teacher's classwork award, which is all most in-class lessons ever get.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.s1, self.s2, self.s3 = list(
+            self.j_mid.lessons.filter(lesson_type=JournalLesson.TYPE_HOMEWORK).order_by(
+                "lesson_number"
+            )
+        )
+
+    def _hand_out(self, session) -> Assignment:
+        services.ensure_classwork(session)
+        carrier, _ = delivery.assign_classwork(self.math_mid, session, actor=self.admin)
+        return carrier
+
+    def _lessons(self):
+        middle = self._level(self._track(self._get(), "math"), "middle")
+        return {l["lesson_number"]: l for l in middle["lessons"]}
+
+    def test_handed_out_and_not_yet_done(self):
+        carrier = self._hand_out(self.s1)
+        row = self._lessons()[self.s1.lesson_number]
+        self.assertEqual(row["classwork_assignment_id"], carrier.id)
+        self.assertFalse(row["classwork_done"])
+        # The classwork carrier is not the homework: nothing about it releases homework.
+        self.assertIsNone(row["assignment_id"])
+        self.assertEqual(row["state"], "upcoming")
+
+    def test_a_submission_on_the_carrier_is_done(self):
+        carrier = self._hand_out(self.s1)
+        sub = Submission.objects.create(
+            assignment=carrier, student=self.student, status=Submission.STATUS_DRAFT
+        )
+        # A draft is not handed in — the same rule the homework state uses.
+        self.assertFalse(self._lessons()[self.s1.lesson_number]["classwork_done"])
+
+        sub.status = Submission.STATUS_SUBMITTED
+        sub.save(update_fields=["status"])
+        self.assertTrue(self._lessons()[self.s1.lesson_number]["classwork_done"])
+
+    def test_classwork_done_never_completes_the_homework(self):
+        # One completion call serves both; a classwork id in it must not leak into `state`.
+        hw_delivery, _, _ = delivery.release_homework(self.math_mid, self.s1, actor=self.admin)
+        carrier = self._hand_out(self.s1)
+        Submission.objects.create(
+            assignment=carrier, student=self.student, status=Submission.STATUS_SUBMITTED
+        )
+        row = self._lessons()[self.s1.lesson_number]
+        self.assertTrue(row["classwork_done"])
+        self.assertEqual(row["assignment_id"], hw_delivery.assignment_id)
+        self.assertEqual(row["state"], "available")
+
+    def test_a_teacher_award_is_done_and_is_per_student(self):
+        carrier = self._hand_out(self.s1)
+        classmate = User.objects.create_user(
+            email="rm_mate@t.com", password="x", role=acc_const.ROLE_STUDENT
+        )
+        self._enrol(classmate, self.math_mid)
+
+        # A classmate's award is theirs alone.
+        delivery.award_classwork(carrier, classmate, points=5, actor=self.admin)
+        self.assertFalse(self._lessons()[self.s1.lesson_number]["classwork_done"])
+
+        # An explicit 0 is "assessed, earned nothing" — the teacher looked, so it is done,
+        # exactly as the assignment page shows a 0 award rather than no result.
+        delivery.award_classwork(carrier, self.student, points=0, actor=self.admin)
+        self.assertTrue(self._lessons()[self.s1.lesson_number]["classwork_done"])
+
+    def test_no_delivery_or_no_classwork_is_null_and_not_done(self):
+        # s2: homework released, classwork never handed out. s3: no delivery row at all.
+        delivery.release_homework(self.math_mid, self.s2, actor=self.admin)
+        lessons = self._lessons()
+        for session in (self.s2, self.s3):
+            row = lessons[session.lesson_number]
+            self.assertIsNone(row["classwork_assignment_id"])
+            self.assertFalse(row["classwork_done"])
+
+    def test_an_archived_carrier_is_not_offered(self):
+        # Students never see an ARCHIVED assignment (it 404s), so the ladder must not
+        # point at one either — even one they had already done.
+        carrier = self._hand_out(self.s1)
+        Submission.objects.create(
+            assignment=carrier, student=self.student, status=Submission.STATUS_SUBMITTED
+        )
+        carrier.status = Assignment.STATUS_ARCHIVED
+        carrier.save(update_fields=["status"])
+        row = self._lessons()[self.s1.lesson_number]
+        self.assertIsNone(row["classwork_assignment_id"])
+        self.assertFalse(row["classwork_done"])
+
+    def test_a_midterm_row_never_carries_classwork(self):
+        # The hand-out refuses a midterm, but a delivery row is still a row: pin the guard
+        # against one that somehow holds a carrier.
+        midterm = self.j_mid.lessons.get(lesson_type=JournalLesson.TYPE_MIDTERM)
+        stray = Assignment.objects.create(
+            classroom=self.math_mid,
+            created_by=self.admin,
+            title="stray",
+            category=Assignment.CATEGORY_CLASSWORK,
+            status=Assignment.STATUS_PUBLISHED,
+        )
+        ClassroomLesson.objects.create(
+            classroom=self.math_mid,
+            journal_lesson=midterm,
+            lesson_number=midterm.lesson_number,
+            classwork_assignment=stray,
+        )
+        delivery.award_classwork(stray, self.student, points=5, actor=self.admin)
+        row = self._lessons()[midterm.lesson_number]
+        self.assertTrue(row["is_midterm"])
+        self.assertIsNone(row["classwork_assignment_id"])
+        self.assertFalse(row["classwork_done"])
+
+    def test_a_locked_level_carries_no_classwork_keys(self):
+        """Like `assignment_id`, the omission is the boundary on a locked rung."""
+        self._hand_out(self.s1)
+        track = self._track(self._get(), "math")
+        for level in ("foundation", "junior", "senior"):
+            for les in self._level(track, level)["lessons"]:
+                self.assertNotIn("classwork_assignment_id", les)
+                self.assertNotIn("classwork_done", les)
+
+    def test_query_count_does_not_grow_with_classwork_lessons(self):
+        """Submissions and awards are read once for the whole ladder, never per lesson."""
+        self._hand_out(self.s1)
+        self._get()  # warm anything cached per process, so only the ladder is compared
+        with CaptureQueriesContext(connection) as one:
+            self._get()
+
+        for session in (self.s2, self.s3):
+            carrier = self._hand_out(session)
+            Submission.objects.create(
+                assignment=carrier, student=self.student, status=Submission.STATUS_SUBMITTED
+            )
+            delivery.award_classwork(carrier, self.student, points=3, actor=self.admin)
+        with CaptureQueriesContext(connection) as three:
+            lessons = self._lessons()
+
+        self.assertTrue(lessons[self.s3.lesson_number]["classwork_done"])
+        self.assertEqual(len(three.captured_queries), len(one.captured_queries))
