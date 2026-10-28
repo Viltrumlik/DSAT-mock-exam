@@ -44,7 +44,7 @@ struct HeaderWindowOverlay: View {
                 .padding(.vertical, 40)
                 // The page behind is dimmed but still drawn and still alive, so a celebration
                 // started under the window waits for it exactly as it waits under a cover.
-                .coversCelebrations(celebrations)
+                .coversCelebrations(celebrations, holdsStatusBar: false)
                 .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
             }
         }
