@@ -1,16 +1,17 @@
 import SwiftUI
 import MasterSATKit
 
-/// The Class tab — every class the student is in, together.
+/// The Class tab — the owner's "Class Tab" design: the blue band, then one pager of level cards
+/// per subject the student studies (Math, then Reading & Writing), then the SAT SCORE gauge.
 ///
-/// Chips narrow it to a subject (or, with two classes of one subject, to one class); one class
-/// has no chips. Under them, each class's next lesson with its Telegram group and a live quiz to
-/// join, then the segments. A tab root: every row pushes a VALUE resolved here, so re-tapping
-/// the tab pops it.
+/// Everything on it comes from the roadmap (`GET /classes/roadmap/`) through the kit — the
+/// cards from `ClassLevelCards`, the gauge from `SATGauge` and the student's targets — so this
+/// file only loads, routes and lays out. A card opens its class page (`ClassPageRoute`); the
+/// lessons, tasks, schedule and people live there now, not on this tab.
+///
+/// A tab root: every page it opens is a VALUE pushed onto `path`, so re-tapping the tab pops it.
 struct ClassView: View {
-    enum Segment: Hashable { case tasks, schedule, people, files }
-
-    /// Pages this root pushes that no `AppLink` names.
+    /// Pages this root pushes that no `AppLink` names. Kept for the pages that still push them.
     enum Route: Hashable {
         case assessmentReview(attemptId: Int, homeworkId: Int)
         case midtermReport(attemptId: Int, title: String)
@@ -20,98 +21,75 @@ struct ClassView: View {
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
-    @Environment(\.openURL) private var openURL
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    @State private var classrooms: [Classroom] = []
-    @State private var classesError: String?
+    @State private var roadmap: RoadmapResponse?
+    @State private var loadError: String?
+    /// The roadmap has answered at least once, either way.
     @State private var hasLoaded = false
-    @State private var assignments: [AssignmentListing] = []
-    @State private var midterms: [MidtermListing] = []
-    /// Whether each of those has arrived. Empty is not "loaded": until `.loaded`, the Tasks lists
-    /// show a spinner or a retry, never "Nothing to do here", and no badge counts them.
-    @State private var homeworkState = ClassSourceState.pending
-    @State private var midtermState = ClassSourceState.pending
-    /// The last refresh failed over a list that was already on screen (`ClassSourceState` keeps
-    /// the old rows and forgets that it failed). The rows stay; one line under them says so.
+    /// The last refresh failed over cards that were already on screen. They stay; one line
+    /// under them says they may be old.
     @State private var refreshFailed = false
-    /// The next two weeks of lessons, for the class cards. The calendar loads its own month.
-    @State private var upcoming: [ScheduleEvent] = []
-    @State private var liveRooms: [LiveQuizSummary] = []
-    @State private var telegram: [Int: TelegramGroupState] = [:]
-    @State private var homeworkXP: Int?
-    /// The chip by id, never by position — ids change shape when the classes do, so every reload
-    /// resolves it again (`ClassFilter.resolvedID`).
-    @State private var chip = ClassFilter.allID
-    @State private var segment: Segment = .tasks
-    @State private var taskFilter: ClassTaskFilter = .toDo
-    @State private var telegramClass: Classroom?
+    /// Today's "See all" is being routed — the homework list is on its way.
+    @State private var routingToDo = false
     @State private var joining = false
-    @State private var refreshTick = 0
-    /// People and Files, per class, kept while the tab lives.
-    @State private var sections = ClassSectionsModel()
     @State private var shown = false
-    @Namespace private var zoom
+    /// The page's width, for the pagers' cards and their snapping. Measured while the band and
+    /// the skeleton are up, long before the roadmap answers; 0 until then.
+    @State private var pageWidth: CGFloat = 0
 
-    private var filter: ClassFilter { ClassFilter(classrooms: classrooms) }
-    private var activeChip: String { filter.resolvedID(chip) }
-    private var visibleClasses: [Classroom] { filter.classes(for: activeChip) }
+    private var tracks: [RoadmapTrack] { roadmap?.tracks ?? [] }
+    private var pagers: [ClassLevelPager] { ClassLevelCards.pagers(for: tracks) }
 
-    private var tasks: ClassTasks {
-        ClassTasks(assignments: assignments, midterms: midterms, filter: filter, chipID: activeChip, homeworkXP: homeworkXP)
+    private var user: CurrentUser? {
+        if case .signedIn(let user) = session.phase { return user }
+        return nil
     }
 
-    private var motion: Animation { reduceMotion ? Motion.focus : Motion.snappy }
-
-    private var cardTransition: AnyTransition {
-        reduceMotion ? .opacity : .scale(scale: 0.92).combined(with: .opacity)
-    }
-
-    private var chipItems: [PillTabs<String>.Item] {
-        filter.chips.map { chip in
-            // Owed homework only, as the To do badge counts it: classwork is done in class.
-            let open = homeworkState == .loaded ? assignments.filter {
-                filter.includes(classroomId: $0.classroomId, chipID: chip.id)
-                    && !HomeworkProgress.isDone($0) && !$0.isClasswork
-            }.count : 0
-            let icon = chip.subject == .math ? "function" : chip.subject == .english ? "book.closed" : "square.grid.2x2"
-            return PillTabs<String>.Item(tab: chip.id, title: chip.label, icon: icon, count: open > 0 ? open : nil)
-        }
-    }
-
-    private var segmentItems: [SegmentBar<Segment>.Item] {
-        [
-            .init(segment: .tasks, title: "Tasks"),
-            .init(segment: .schedule, title: "Schedule"),
-            .init(segment: .people, title: "People"),
-            .init(segment: .files, title: "Files"),
-        ]
+    private var gauge: SATGauge? {
+        SATGauge(
+            tracks: tracks,
+            targetScore: user?.targetScore,
+            targetMath: user?.targetMath,
+            targetEnglish: user?.targetEnglish
+        )
     }
 
     var body: some View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .classes, onRefresh: {
-                refreshTick += 1
                 await load()
+                await session.refreshUser()
             }) {
-                VStack(alignment: .leading, spacing: 16) {
-                    AppHeader(title: "Class").stagger(0, shown: shown)
+                VStack(spacing: 0) {
+                    ClassBandHeader(shown: shown)
                     content
                 }
-                .padding(16)
+                .padding(.bottom, 16)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                    if width > 0, width != pageWidth { pageWidth = width }
+                }
             }
-            .background(Theme.background)
+            .background { ClassTabBackground() }
+            // The design keeps the status bar on the band's blue however far the page scrolls.
+            // A zero-height inset whose background reaches up into the safe area, over the
+            // material `TabRootScroll` puts there; it takes no touch.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(ClassTabPalette.band)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .overlay { ClassTabBottomFade() }
             .toolbar(.hidden, for: .navigationBar)
             // Not `.task`: a TabView never tears its tabs down.
             .onAppear {
-                shown = true
+                if !shown { shown = true }
                 showToDoIfAsked()
                 Task { await load() }
             }
             .onChange(of: router.wantsClassToDo) { showToDoIfAsked() }
-            .navigationDestination(for: AssignmentListing.self) { assignment in
-                HomeworkDetailView(assignment: assignment).zoomDestination(id: assignment.id, in: zoom)
-            }
+            .navigationDestination(for: ClassPageRoute.self) { ClassPageView(route: $0) }
+            .navigationDestination(for: AssignmentListing.self) { HomeworkDetailView(assignment: $0) }
             .navigationDestination(for: Route.self) { route in
                 switch route {
                 case .assessmentReview(let attemptId, let homeworkId):
@@ -121,12 +99,6 @@ struct ClassView: View {
                 }
             }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
-            .sheet(item: $telegramClass, onDismiss: { Task { await loadTelegram() } }) { room in
-                ClassroomTelegramSheet(classroomId: room.id, className: room.name, initialState: telegram[room.id]) { state in
-                    telegram[room.id] = state
-                }
-                .noBarClearance()
-            }
             .sheet(isPresented: $joining) {
                 JoinClassSheet { _ in Task { await load() } }
                     .presentationDetents([.medium])
@@ -136,99 +108,61 @@ struct ClassView: View {
 
     @ViewBuilder
     private var content: some View {
-        if !hasLoaded && classrooms.isEmpty {
-            // A class card or two, then the segment under them.
-            LoadingSkeleton(rows: 2, height: 100, style: .cards)
-        } else if let classesError, classrooms.isEmpty {
-            // A failed load is never "no classes yet". The whole tab, so the page form — its art
-            // and its "You're offline" — as on Today.
+        if roadmap == nil && !hasLoaded {
+            // Two cards where the pagers will stand, over the band's edge as they do.
+            LoadingSkeleton(rows: 2, height: 128, style: .cards, label: "Loading your classes")
+                .padding(.horizontal, 28)
+                .padding(.top, -48)
+        } else if roadmap == nil {
+            // A failed load is never "no classes yet".
             ErrorState(title: "Couldn't load your classes", style: .page) { await load() }
-                .accessibilityHint(classesError)
-        } else if classrooms.isEmpty {
+                .accessibilityHint(loadError ?? "")
+                .padding(.horizontal, 16)
+        } else if pagers.isEmpty {
             EmptyState(
                 art: .noTasks,
                 title: "No classes yet",
-                message: "Have a class code? Join now to get started.",
+                message: "When you join a class at MasterSAT, your levels and lessons show up here.",
                 action: (title: "Join with a code", run: { joining = true })
             )
-        } else {
-            if !filter.chips.isEmpty {
-                PillTabs(items: chipItems, selection: $chip).stagger(1, shown: shown)
+            .padding(.horizontal, 16)
+        } else if pageWidth > 0 {
+            ClassLevelsBoard(pagers: pagers, gauge: gauge, width: pageWidth, onOpen: open)
+            if refreshFailed {
+                StaleNote()
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
             }
-
-            VStack(spacing: 12) {
-                ForEach(visibleClasses) { room in
-                    ClassLessonCard(
-                        room: room,
-                        next: ProfileLessons.next(
-                            in: upcoming, classroomId: room.id, hours: room.lessonHours, calendar: ServicesTime.calendar
-                        ),
-                        telegram: TelegramGroupButton.resolve(state: telegram[room.id], classroomGroupURL: room.telegramGroupURL),
-                        liveQuizOn: liveRooms.contains { $0.classroomId == room.id },
-                        onTelegram: { openTelegram(room) }
-                    )
-                    .transition(cardTransition)
-                }
-            }
-            .animation(motion, value: visibleClasses.map(\.id))
-            .stagger(2, shown: shown)
-
-            SegmentBar(items: segmentItems, selection: $segment)
-                .stagger(3, shown: shown)
-
-            Group {
-                switch segment {
-                case .tasks:
-                    ClassTasksSegment(
-                        tasks: tasks,
-                        homework: homeworkState,
-                        midterms: midtermState,
-                        filter: $taskFilter,
-                        zoom: zoom,
-                        retry: { await load() }
-                    )
-                case .schedule:
-                    ClassScheduleSegment(
-                        classIds: activeChip == ClassFilter.allID ? nil : Set(visibleClasses.map(\.id)),
-                        assignments: assignments,
-                        refreshID: refreshTick,
-                        path: $path
-                    )
-                case .people:
-                    ClassPeopleSegment(classes: visibleClasses, model: sections, refreshID: refreshTick)
-                case .files:
-                    ClassFilesSegment(classes: visibleClasses, model: sections, refreshID: refreshTick)
-                }
-            }
-            .stagger(4, shown: shown)
-
-            if refreshFailed { StaleNote() }
-
-            Button { joining = true } label: {
-                Label("Join another class", systemImage: "person.badge.plus")
-                    .appFont(13, weight: .bold)
-                    .foregroundStyle(Theme.accent)
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PressBounce())
-            .padding(.top, 4)
         }
     }
 
-    /// Today's "See all": every class, Tasks, To do. Applied once, then the request is cleared.
-    private func showToDoIfAsked() {
-        guard router.wantsClassToDo else { return }
-        if chip != ClassFilter.allID { chip = ClassFilter.allID }
-        if segment != .tasks { segment = .tasks }
-        if taskFilter != .toDo { taskFilter = .toDo }
-        router.classToDoShown()
+    private func open(_ card: ClassLevelCard) {
+        guard card.opensClassPage else { return }
+        path.append(ClassPageRoute(subject: card.subject, level: card.level))
     }
 
-    private func openTelegram(_ room: Classroom) {
-        switch TelegramGroupButton.resolve(state: telegram[room.id], classroomGroupURL: room.telegramGroupURL) {
-        case .join: telegramClass = room
-        case .link(let raw): if let url = URL(string: raw) { openURL(url) }
-        case .none: break
+    // MARK: - Today's "See all"
+
+    /// Today's "See all": the class page of the subject whose homework is due soonest, at the
+    /// student's current level — Math when nothing is owed, else Reading & Writing. Applied
+    /// once, then the request is cleared. Waits for the roadmap: `load` asks again when it lands.
+    private func showToDoIfAsked() {
+        guard router.wantsClassToDo, !routingToDo, hasLoaded else { return }
+        let candidates = pagers
+        guard candidates.contains(where: { $0.currentIndex != nil }) else {
+            router.classToDoShown()
+            return
+        }
+        routingToDo = true
+        let student = session.student
+        Task { @MainActor in
+            let homework = (try? await student.assignments()) ?? []
+            // Only onto the tab's root: a page the student opened meanwhile is theirs.
+            if path.isEmpty, let route = ClassToDoTarget.route(pagers: candidates, homework: homework) {
+                path.append(route)
+            }
+            router.classToDoShown()
+            routingToDo = false
         }
     }
 
@@ -236,84 +170,105 @@ struct ClassView: View {
 
     @MainActor
     private func load() async {
-        let classroomsAPI = session.classrooms
-        let student = session.student
-        let rewardsAPI = session.rewards
-        let live = LiveQuizAPI(client: session.client)
-        let now = Date.now
-        // The endpoint reads its dates on the phone's calendar and the cards read Tashkent's: a
-        // day back keeps today's lesson in the window on a phone that is already into tomorrow.
-        let start = now.addingTimeInterval(-86_400)
-        let end = Calendar.current.date(byAdding: .day, value: 14, to: now) ?? now
-        // A list that failed shows its skeleton again while this retries.
-        if homeworkState == .failed { homeworkState = .pending }
-        if midtermState == .failed { midtermState = .pending }
-        async let rooms = classroomsAPI.classrooms()
-        async let homework = student.assignments()
-        async let papers = student.midterms()
-        async let rules = rewardsAPI.rules()
-        async let lessons = student.schedule(from: start, to: end)
-        async let quizzes = live.mine()
+        let api = RoadmapAPI(client: session.client)
         do {
-            // A removed student's row still comes back from /classes/ with no role.
-            let fresh = ProfileClasses.memberships(try await rooms)
-            // Chip ids change shape with the classes ("math" ↔ "class-7"): resolve against the
-            // classes just fetched, so a chip that has gone reads as All in the same update.
-            let resolved = ClassFilter(classrooms: fresh).resolvedID(chip)
-            withAnimation(motion) {
-                classrooms = fresh
-                chip = resolved
-            }
-            classesError = nil
+            let fresh = try await api.roadmap()
+            roadmap = fresh
+            loadError = nil
+            if refreshFailed { refreshFailed = false }
         } catch where Task.isCancelled {
             // Not a failure: `APIClient` wraps a cancellation as a transport error. Nothing is
-            // stored, so a first load stays a skeleton and a refresh keeps its rows unmarked.
+            // stored, so a first load stays a skeleton and a refresh keeps its cards unmarked.
             return
         } catch let error as APIError {
-            classesError = error.errorDescription ?? "Couldn't load your classes."
+            loadError = error.errorDescription ?? "Couldn't load your classes."
+            refreshFailed = roadmap != nil
         } catch {
-            classesError = error.localizedDescription
+            loadError = error.localizedDescription
+            refreshFailed = roadmap != nil
         }
-        // The classes have answered, so their cards and any error can show now; the lists below
-        // wait on their own sources.
         hasLoaded = true
-        // Each of the rest fails on its own and keeps what was on screen. Homework and midterms
-        // also say whether they arrived: a failure with nothing loaded is a retry, not "nothing".
-        let freshHomework = try? await homework
-        if Task.isCancelled { return }
-        if let freshHomework {
-            withAnimation(motion) { assignments = freshHomework }
-            // Every marked attempt the list carries becomes known to this phone, before any review
-            // decides whether a score is better than the one before it (`OutcomeMemory`).
-            if case .signedIn(let user) = session.phase { OutcomeBook().noteSeen(in: freshHomework, userID: user.id) }
-        }
-        homeworkState.finish(succeeded: freshHomework != nil)
-        let freshMidterms = try? await papers
-        if Task.isCancelled { return }
-        if let freshMidterms { midterms = freshMidterms }
-        midtermState.finish(succeeded: freshMidterms != nil)
-        // A failure over rows that were already here leaves `.loaded` as it was, so it is read
-        // off the outcomes: any source that failed while it had something to show.
-        let stale = (classesError != nil && !classrooms.isEmpty)
-            || (freshHomework == nil && homeworkState == .loaded)
-            || (freshMidterms == nil && midtermState == .loaded)
-        if refreshFailed != stale { refreshFailed = stale }
-        if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
-        if let fresh = try? await lessons { upcoming = fresh }
-        if let fresh = try? await quizzes {
-            liveRooms = fresh.filter { $0.status != .finished && $0.status != .terminated }
-        }
-        await loadTelegram()
+        showToDoIfAsked()
     }
+}
 
-    /// A failed lookup leaves the button on the class's static link, which still works.
-    @MainActor
-    private func loadTelegram() async {
-        let api = ClassroomTelegramAPI(client: session.client)
-        for room in classrooms {
-            if let state = try? await api.state(classroomId: room.id), telegram[room.id] != state {
-                telegram[room.id] = state
+// MARK: - The board
+
+/// The pagers and the gauge, and their entrance: the cards rise 18 pt and fade in, the bars
+/// fill, and the percents and the score count up over 1.1 s. Under Reduce Motion nothing rises
+/// or counts — the final values are there from the first frame and the board only fades in.
+///
+/// The entrance plays once, the first time the board appears; a refresh changes the numbers in
+/// place.
+private struct ClassLevelsBoard: View {
+    let pagers: [ClassLevelPager]
+    let gauge: SATGauge?
+    let width: CGFloat
+    let onOpen: (ClassLevelCard) -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var entered = false
+
+    var body: some View {
+        let filled = entered || reduceMotion
+        VStack(spacing: 0) {
+            VStack(spacing: 0) {
+                ForEach(pagers) { pager in
+                    ClassLevelPagerView(pager: pager, width: width, filled: filled, onOpen: onOpen)
+                }
+            }
+            // Over the band's lower edge: the first card's top is 48 pt above it.
+            .padding(.top, -54)
+            .animation(reduceMotion ? ClassTabMotion.calmFade : ClassTabMotion.fade(0.6).delay(0.2)) {
+                $0.opacity(entered ? 1 : 0)
+            }
+            .animation(ClassTabMotion.glide(0.8).delay(0.2)) {
+                $0.offset(y: reduceMotion || entered ? 0 : 18)
+            }
+
+            if let gauge {
+                ClassScoreGaugeView(gauge: gauge, counted: filled)
+                    .padding(.top, 24)
+                    .animation(reduceMotion ? ClassTabMotion.calmFade : ClassTabMotion.fade(0.8).delay(0.5)) {
+                        $0.opacity(entered ? 1 : 0)
+                    }
             }
         }
+        .onAppear { if !entered { entered = true } }
+    }
+}
+
+// MARK: - Where "See all" goes
+
+/// Which class page Today's "See all" opens. Pure, so the choice is the same however it is
+/// reached.
+enum ClassToDoTarget {
+    /// The subject of the homework due soonest — in Today's own order, catch-ups first — that
+    /// belongs to a subject with a current level: matched by its class, else by its subject.
+    /// With nothing owed, Math, else Reading & Writing. Nil when no subject has a current level.
+    static func route(pagers: [ClassLevelPager], homework: [AssignmentListing]) -> ClassPageRoute? {
+        let open = pagers.filter { $0.currentIndex != nil }.sorted { $0.subject < $1.subject }
+        guard let fallback = open.first else { return nil }
+        let owed = TodayPlan(assignments: homework, events: [], homeworkXP: nil).homework
+        for item in owed {
+            guard let assignment = item.assignment else { continue }
+            if let pager = pager(for: assignment, in: open) { return route(for: pager) }
+        }
+        return route(for: fallback)
+    }
+
+    private static func pager(for assignment: AssignmentListing, in pagers: [ClassLevelPager]) -> ClassLevelPager? {
+        if let classroomId = assignment.classroomId,
+           let byClass = pagers.first(where: { $0.classroomId == classroomId }) {
+            return byClass
+        }
+        guard let key = AssessmentSubjectKey.of(assignment.subject),
+              let subject = ClassSubject(rawValue: key.rawValue) else { return nil }
+        return pagers.first { $0.subject == subject }
+    }
+
+    private static func route(for pager: ClassLevelPager) -> ClassPageRoute? {
+        guard let index = pager.currentIndex, pager.cards.indices.contains(index) else { return nil }
+        return ClassPageRoute(subject: pager.subject, level: pager.cards[index].level)
     }
 }
