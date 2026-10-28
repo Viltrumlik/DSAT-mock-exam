@@ -22,6 +22,9 @@ import MasterSATKit
 /// `TabView` is never torn down.
 struct StoriesRail: View {
     var refreshID: Int = 0
+    /// Drawn inside Today's blue band (the new look): white rings and white captions, so the
+    /// circles read on blue.
+    var onBand = false
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
@@ -80,7 +83,7 @@ struct StoriesRail: View {
                     Button {
                         opened = StoryViewerItem(stories: stories, index: index)
                     } label: {
-                        StoryCircle(story: story)
+                        StoryCircle(story: story, onBand: onBand)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(story.title.isEmpty ? "Story" : story.title)
@@ -88,6 +91,8 @@ struct StoriesRail: View {
                 }
             }
             .padding(.vertical, 2)
+            // On the band the rail runs to the screen's edges and starts at the page's margin.
+            .padding(.horizontal, onBand ? 16 : 0)
         }
         .scrollIndicators(.hidden)
         .noBarClearanceInRow()
@@ -97,14 +102,14 @@ struct StoriesRail: View {
         HStack(spacing: 5) {
             Text("Stories didn't load.")
                 .appFont(13, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(onBand ? Color.white.opacity(0.8) : Theme.textSecondary)
             Button {
                 Task { await load() }
             } label: {
                 Text("Try again")
                     .appFont(13, weight: .bold)
                     .underline()
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(onBand ? Color.white : Theme.accent)
                     // 13-pt underlined text is a 16-pt target; this is the rail's only
                     // control, and the row is already its own line.
                     .frame(minHeight: 44)
@@ -112,6 +117,7 @@ struct StoriesRail: View {
             }
             .buttonStyle(.plain)
         }
+        .padding(.horizontal, onBand ? 16 : 0)
     }
 
     private func loadIfNeeded() async {
@@ -147,29 +153,36 @@ struct StoriesRail: View {
 /// One circle: a 66pt gradient ring around the picture (or a blank), the title under it.
 private struct StoryCircle: View {
     let story: Story
+    var onBand = false
+
+    /// Off the band: the web's blue → pink ring. On it: a white ring with the band's blue showing
+    /// through a 3-pt gap (the kit's story circles on the band).
+    private var ring: AnyShapeStyle {
+        onBand
+            ? AnyShapeStyle(Color.white)
+            : AnyShapeStyle(LinearGradient(
+                colors: [Theme.accent, StoryPalette.ringEnd],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ))
+    }
 
     var body: some View {
         VStack(spacing: 7) {
             Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [Theme.accent, StoryPalette.ringEnd],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(ring)
                 .frame(width: 66, height: 66)
                 .overlay {
                     picture
                         .clipShape(Circle())
-                        .overlay(Circle().stroke(Theme.card, lineWidth: 2))
-                        .padding(3)
+                        .overlay(Circle().stroke(onBand ? ClassTabPalette.band : Theme.card, lineWidth: onBand ? 3 : 2))
+                        .padding(onBand ? 2.5 : 3)
                 }
             Text(story.title)
                 .appFont(11, weight: .bold)
                 // A rail of 78-pt cells: the caption cannot outgrow its cell.
                 .capDynamicType()
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(onBand ? Color.white : Color.primary)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .frame(maxWidth: 78)

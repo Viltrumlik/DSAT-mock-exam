@@ -100,11 +100,21 @@ public enum UpNextCompact {
             case lesson
         }
 
+        /// What the chip prints. A catch-up prints its day alone ("Tue") — its orange and its
+        /// icon say "catch up", which keeps a one-line row's title from being cut to "Pra…".
         public let text: String
         public let tone: Tone
+        /// The whole phrase, for VoiceOver: "Catch up · Tue", "Due Thu", "Today · 16:00".
+        public let spoken: String
+
+        public init(text: String, tone: Tone, spoken: String? = nil) {
+            self.text = text
+            self.tone = tone
+            self.spoken = spoken ?? text
+        }
     }
 
-    /// "Due Thu", "Due Nov 6", "Catch up · Tue" for homework; the start time ("16:00") or "Today"
+    /// "Due Thu", "Due Nov 6", a catch-up's "Tue" (spoken "Catch up · Tue") for homework; the start time ("16:00") or "Today"
     /// for a lesson. Nil for homework with no deadline.
     ///
     /// The weekday within six days, the date beyond (the app's `DueLabel` rule), on the
@@ -121,7 +131,7 @@ public enum UpNextCompact {
             formatter.setLocalizedDateFormatFromTemplate(days <= 6 ? "EEE" : "MMMd")
             let label = formatter.string(from: due)
             return item.catchUp
-                ? Chip(text: "Catch up · \(label)", tone: .catchUp)
+                ? Chip(text: label, tone: .catchUp, spoken: "Catch up · \(label)")
                 : Chip(text: "Due \(label)", tone: .due)
         case .lesson:
             // "16:00-18:00" → "16:00": the chip says when it starts; a lesson the schedule gave no
@@ -130,7 +140,9 @@ public enum UpNextCompact {
             let start = clock.split(separator: "-", maxSplits: 1).first.map {
                 $0.trimmingCharacters(in: .whitespaces)
             } ?? clock
-            return Chip(text: start.isEmpty ? "Today" : start, tone: .lesson)
+            return start.isEmpty
+                ? Chip(text: "Today", tone: .lesson)
+                : Chip(text: start, tone: .lesson, spoken: "Today · \(start)")
         }
     }
 

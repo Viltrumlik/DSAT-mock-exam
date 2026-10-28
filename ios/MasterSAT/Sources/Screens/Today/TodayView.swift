@@ -14,15 +14,15 @@ struct TodayView: View {
         case midtermReport(attemptId: Int, title: String)
     }
 
-    /// How many homework rows Up next shows before "See all".
-    private static let upNextLimit = 6
-
     let user: CurrentUser
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
     @Environment(CelebrationCenter.self) private var celebrations
+    @Environment(RewardsStore.self) private var rewards
+    @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
+    @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var assignments: [AssignmentListing] = []
@@ -50,6 +50,13 @@ struct TodayView: View {
     /// Bumped by pull-to-refresh, so the pieces that load themselves reload with the page.
     @State private var refreshTick = 0
     @State private var shown = false
+    /// Today has read the hero board at least once: an empty place is then "not on the board yet",
+    /// not "loading". The place itself is `RewardsStore.rank`, noted by whoever read it last.
+    @State private var rankRead = false
+    @State private var showingChecklist = false
+    @State private var examDates: ServicesLoadState<[ExamDateOption]> = .loading
+    /// This root's claim on the status bar: white over the band.
+    @State private var statusBarOwner = UUID()
     @Namespace private var zoom
 
     /// Worked out on the learning center's calendar — Tashkent's Monday-to-Sunday week and
@@ -79,19 +86,6 @@ struct TodayView: View {
         reduceMotion ? .opacity : .scale(scale: 0.94).combined(with: .opacity)
     }
 
-    /// The day the plan below is about, so on Tashkent's clock too.
-    private func dateText(_ style: Date.FormatStyle) -> String {
-        var style = style
-        style.timeZone = ServicesTime.tashkent
-        return Date.now.formatted(style)
-    }
-
-    /// "Tuesday, 20 October" — and, where that does not fit beside the pills, "Tue, 20 Oct".
-    private var dateLine: String { dateText(.dateTime.weekday(.wide).day().month(.wide)) }
-    private var shortDateLine: String { dateText(.dateTime.weekday(.abbreviated).day().month(.abbreviated)) }
-    /// What VoiceOver reads, whichever form is drawn.
-    private var spokenDate: String { dateText(.dateTime.weekday(.wide).day().month(.wide).year()) }
-
     /// Only asked once iOS has confirmed it has not asked yet, and only when there is something
     /// real to be reminded about.
     private var showsReminderPrompt: Bool {
@@ -108,64 +102,97 @@ struct TodayView: View {
                 classesKnown = false
                 await load()
             }) {
-                SlotStack(spacing: 18) {
-                    AppHeader(
-                        title: "Today",
-                        subtitle: dateLine,
-                        shortSubtitle: shortDateLine,
-                        subtitleLabel: spokenDate
-                    )
-                    .stagger(0, shown: shown)
+                VStack(spacing: 0) {
+                    // 1–2: the wordmark, the bell and the avatar; the stories moved up into the
+                    // band, above the stat cards (owner, 2026-10-28).
+                    TabBand(shown: shown) {
+                        BrandWordmark()
+                    } below: {
+                        StoriesRail(refreshID: refreshTick, onBand: true)
+                    }
 
-                    // The learning center's noticeboard, above everything the student owns.
-                    StoriesRail(refreshID: refreshTick)
-                    LiveQuizRunningCard(refreshID: refreshTick)
+                    // 3: Coins · XP · Strike · Leaderboard, riding up over the band's edge.
+                    TodayStatCards(rank: rewards.rank, rankRead: rankRead) { router.openLeaderboardSheet() }
+                        .padding(.horizontal, 16)
+                        .padding(.top, -62)
 
-                    if session.releaseGate.showsNudge {
-                        UpdateNudgeCard(config: session.releaseGate.config) {
-                            withAnimation(rowAnimation) { session.releaseGate.dismissNudge() }
+                    SlotStack(spacing: 18) {
+                        // 4: the Daily Challenge — the owner's other session builds it; empty until then.
+                        DailyChallengeSlot()
+
+                        LiveQuizRunningCard(refreshID: refreshTick)
+
+                        if session.releaseGate.showsNudge {
+                            UpdateNudgeCard(config: session.releaseGate.config) {
+                                withAnimation(rowAnimation) { session.releaseGate.dismissNudge() }
+                            }
                         }
-                    }
 
-                    TodayHero(progress: plan.week, loaded: hasLoaded, bounce: heroBounce, failed: homeworkFailed)
-                        .stagger(1, shown: shown)
+                        // 5: this week, then Up next, compact.
+                        TodayHero(progress: plan.week, loaded: hasLoaded, bounce: heroBounce, failed: homeworkFailed)
+                            .stagger(1, shown: shown)
 
-                    upNext.stagger(2, shown: shown)
+                        upNext.stagger(2, shown: shown)
 
-                    if let result = freshResult, let attemptId = result.attemptId {
-                        FreshResultCard(
-                            midterm: result,
-                            onOpen: {
-                                markSeen(attemptId)
-                                // A root push: a second tap while the first is in flight stacks nothing.
-                                guard path.isEmpty else { return }
-                                path.append(Route.midtermReport(attemptId: attemptId, title: result.title))
-                            },
-                            onLater: { withAnimation(rowAnimation) { markSeen(attemptId) } }
+                        // 6: a fresh result, the SAT countdown, the reminder nudge.
+                        if let result = freshResult, let attemptId = result.attemptId {
+                            FreshResultCard(
+                                midterm: result,
+                                onOpen: {
+                                    markSeen(attemptId)
+                                    // A root push: a second tap while the first is in flight stacks nothing.
+                                    guard path.isEmpty else { return }
+                                    path.append(Route.midtermReport(attemptId: attemptId, title: result.title))
+                                },
+                                onLater: { withAnimation(rowAnimation) { markSeen(attemptId) } }
+                            )
+                            .transition(rowTransition)
+                        }
+
+                        SurveysWaitingCard(refreshID: refreshTick)
+
+                        SATCountdownRow(examDate: user.satExamDate) { router.openMe(on: .overview) }
+                            .stagger(3, shown: shown)
+
+                        if showsReminderPrompt {
+                            ReminderPromptCard(
+                                onEnable: {
+                                    Task {
+                                        await session.notifications.requestPermission()
+                                        await session.notifications.reschedule(assignments: assignments, midterms: midterms)
+                                    }
+                                },
+                                onDismiss: { promptDismissed = true }
+                            )
+                        }
+
+                        // 7: Services — each opens what the app already has.
+                        TodayServicesRow(
+                            onSupport: { open(.support) },
+                            onRegistration: { showingChecklist = true },
+                            // No FAQ page exists in the app: the closest is Services, which says
+                            // what each service is and how it works.
+                            onFAQ: { open(.services) }
                         )
-                        .transition(rowTransition)
+                        .stagger(4, shown: shown)
+
+                        // 8: the Shop rail.
+                        TodayShopRail(refreshID: refreshTick) { open(.shop) }
                     }
-
-                    SurveysWaitingCard(refreshID: refreshTick)
-
-                    SATCountdownRow(examDate: user.satExamDate) { router.openMe(on: .overview) }
-                        .stagger(3, shown: shown)
-
-                    if showsReminderPrompt {
-                        ReminderPromptCard(
-                            onEnable: {
-                                Task {
-                                    await session.notifications.requestPermission()
-                                    await session.notifications.reschedule(assignments: assignments, midterms: midterms)
-                                }
-                            },
-                            onDismiss: { promptDismissed = true }
-                        )
-                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
                 }
-                .padding(16)
             }
-            .background(Theme.background)
+            .background(NewLook.page)
+            // The band's blue stays under the status bar however far the page scrolls (as Class).
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Color.clear.frame(height: 0)
+                    .background(ClassTabPalette.band)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .overlay { ClassTabBottomFade(color: NewLook.page) }
             .toolbar(.hidden, for: .navigationBar)
             // Not `.task`: a TabView never tears its tabs down, so a task would load once per
             // launch. This runs on every return to the tab and every pop back to the root.
@@ -176,9 +203,12 @@ struct TodayView: View {
                 // look needs no bump: they load as they appear.)
                 if shown { refreshTick += 1 }
                 shown = true
+                // The band is blue in either appearance: the clock over it is white.
+                statusBar?.ask(.light, on: .today, owner: statusBarOwner)
                 loadSeen()
                 Task { await load() }
             }
+            .onDisappear { statusBar?.release(owner: statusBarOwner) }
             // The ring bounces WITH the double confetti, so a week finished under a sheet or a
             // cover bounces when its confetti plays there, not unseen beneath it.
             .onChange(of: celebrations.allDonePlays) { _, _ in
@@ -194,6 +224,32 @@ struct TodayView: View {
                 }
             }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
+            .sheet(isPresented: $showingChecklist) {
+                SatChecklistSheet(dates: examDates) { await loadExamDates() }
+                    .noBarClearance()
+            }
+            .task(id: showingChecklist) {
+                if showingChecklist, examDates.value == nil { await loadExamDates() }
+            }
+        }
+    }
+
+    /// Through the router, as every route in the app is: a page pushed on the tab it belongs to.
+    private func open(_ link: AppLink) {
+        router.open(link, baseURL: session.client.config.baseURL) { openURL($0) }
+    }
+
+    /// The SAT checklist's exam dates, read when the checklist opens (as Services reads them).
+    @MainActor
+    private func loadExamDates() async {
+        if examDates.value == nil { examDates = .loading }
+        do {
+            let dates = try await session.student.examDates()
+            guard !Task.isCancelled else { return }
+            examDates = .loaded(dates)
+        } catch {
+            guard !Task.isCancelled, examDates.value == nil else { return }
+            examDates = .failed(ServicesError.message(error))
         }
     }
 
@@ -201,24 +257,20 @@ struct TodayView: View {
 
     @ViewBuilder
     private var upNext: some View {
-        let next = plan.upNext(limit: Self.upNextLimit)
+        let next = UpNextCompact.select(plan)
         let owed = plan.homework.count + plan.lessons.count
         VStack(alignment: .leading, spacing: 10) {
-            // At the accessibility sizes "See all" drops under the heading rather than squeezing
-            // "Up next" onto two lines.
-            AdaptiveStack(spacing: 9, columnSpacing: 4) {
-                // No count over a failure: a zero beside "didn't load" would read as "nothing owed".
-                // And none at zero: the all-caught-up card below already says so.
-                DotHeading(title: "Up next", count: hasLoaded && !homeworkFailed && owed > 0 ? owed : nil)
-                if next.more > 0 {
-                    Button("See all") { router.showClassToDo() }
-                        .appFont(13, weight: .bold)
-                        .foregroundStyle(Theme.accent)
-                }
-            }
+            // No count over a failure: a zero beside "didn't load" would read as "nothing owed".
+            // And none at zero: the all-caught-up card below already says so.
+            NewLookSectionHeader(
+                title: "Up next",
+                count: hasLoaded && !homeworkFailed && owed > 0 ? owed : nil,
+                actionTitle: next.more > 0 ? "See all" : nil,
+                action: next.more > 0 ? { router.showClassToDo() } : nil
+            )
             if !hasLoaded {
                 // The rows' own shape, so the page does not jump when they arrive.
-                LoadingSkeleton(rows: 3, height: 80, style: .cards)
+                LoadingSkeleton(rows: 3, height: 54, style: .cards)
             } else if homeworkFailed {
                 // A failed load is never "all caught up". The week card above says it too, in a
                 // line; this is the page's one piece of art.
@@ -229,7 +281,7 @@ struct TodayView: View {
             } else if plan.isAllClear {
                 AllDoneCard()
             } else {
-                ForEach(next.items) { item in
+                CompactUpNextList(items: next.items) { item in
                     row(item).transition(rowTransition)
                 }
                 // Only when no lesson is listed: beside lessons kept from the last load, "didn't
@@ -248,17 +300,17 @@ struct TodayView: View {
     @ViewBuilder
     private func row(_ item: WorkItem) -> some View {
         if let assignment = item.assignment {
-            NavigationLink(value: assignment) { WorkRow(item: item) }
+            NavigationLink(value: assignment) { CompactWorkRow(item: item) }
                 .buttonStyle(PressBounce())
                 .zoomSource(id: assignment.id, in: zoom)
-        } else if case .lesson(let event) = item.source, let classroomId = event.classroomId {
+        } else if let classroomId = item.lessonClassroomId {
             // A lesson opens its class: the class page at the class's level (`ClassroomLinkPage`).
-            NavigationLink(value: AppLink.classroom(id: classroomId)) { WorkRow(item: item) }
+            NavigationLink(value: AppLink.classroom(id: classroomId)) { CompactWorkRow(item: item) }
                 .buttonStyle(PressBounce())
                 .accessibilityHint("Opens the class")
         } else {
             // A lesson with no class to name is information only.
-            WorkRow(item: item)
+            CompactWorkRow(item: item)
         }
     }
 
@@ -306,6 +358,8 @@ struct TodayView: View {
         // Only the lesson lengths come from the classes, so they are asked for once, not on every
         // return to the tab (a pull to refresh asks again).
         async let rooms = needsClasses ? (try? await classroomsAPI.classrooms()) : nil
+        // The Leaderboard card's place: the hero board, as the Rewards hero and the XP window ask it.
+        async let board = try? await LeaderboardAPI(client: session.client).board(.heroBoard)
         var freshHomework: [AssignmentListing]?
         do {
             freshHomework = try await homework
@@ -360,8 +414,28 @@ struct TodayView: View {
         } catch {
             // Cancelled: no answer about tonight's lessons, so the last word on them stands.
         }
+        if let fresh = await board, !Task.isCancelled { showRank(fresh) }
         hasLoaded = true
         celebrateIfWeekJustFinished()
+    }
+
+    /// Notes the place the card shows — onto a quiet stage only, as the Rewards hero does: while
+    /// a welcome-back check or a trophy card is playing, the place it is about to announce must
+    /// not be on the card first. Asked again once the stage is quiet.
+    @MainActor
+    private func showRank(_ board: LeaderboardBoard) {
+        guard celebrations.isQuiet else {
+            celebrations.whenQuiet("today.rank") { Task { await reloadRank() } }
+            return
+        }
+        rewards.noteRank(board.standing?.rank)
+        if !rankRead { rankRead = true }
+    }
+
+    @MainActor
+    private func reloadRank() async {
+        guard let fresh = try? await LeaderboardAPI(client: session.client).board(.heroBoard) else { return }
+        showRank(fresh)
     }
 
     /// The week's last homework just went in: double confetti, and the ring bounces as it plays
@@ -372,41 +446,5 @@ struct TodayView: View {
             celebrations.allDone()
         }
         lastWeek = week
-    }
-}
-
-/// `VStack(alignment: .leading, spacing:)` that puts no gap around a subview with no height.
-///
-/// Today's optional slots — the stories rail, the live-quiz banner, the survey card — load
-/// themselves, so they stay in the stack while they have nothing to show, as zero-height views.
-/// A `VStack` still spaced each of them, and the page opened on a 54-pt hole under the header.
-/// Everything with a height lays out as it did in that `VStack`: each child is offered the
-/// stack's width and its own height, and sits at the leading edge.
-private struct SlotStack: Layout {
-    var spacing: CGFloat
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let sizes = subviews.map { $0.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) }
-        let shown = sizes.filter { $0.height > 0 }
-        let height = shown.reduce(0) { $0 + $1.height } + spacing * CGFloat(max(shown.count - 1, 0))
-        return CGSize(width: sizes.map(\.width).max() ?? 0, height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let width = proposal.width ?? bounds.width
-        var y = bounds.minY
-        var placedOne = false
-        for subview in subviews {
-            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
-            if size.height > 0 {
-                if placedOne { y += spacing }
-                placedOne = true
-            }
-            subview.place(
-                at: CGPoint(x: bounds.minX, y: y), anchor: .topLeading,
-                proposal: ProposedViewSize(width: width, height: size.height)
-            )
-            y += size.height
-        }
     }
 }

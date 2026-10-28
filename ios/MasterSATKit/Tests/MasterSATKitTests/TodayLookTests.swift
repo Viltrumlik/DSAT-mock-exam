@@ -89,8 +89,8 @@ import Testing
             == .init(text: "Due Thu", tone: .due))
         #expect(UpNextCompact.chip(for: later, now: F.now, calendar: F.calendar, locale: english)
             == .init(text: "Due Sep 24", tone: .due))
-        #expect(UpNextCompact.chip(for: late, now: F.now, calendar: F.calendar, locale: english)
-            == .init(text: "Catch up · Sun", tone: .catchUp))
+        let lateChip = UpNextCompact.chip(for: late, now: F.now, calendar: F.calendar, locale: english)
+        #expect(lateChip == .init(text: "Sun", tone: .catchUp, spoken: "Catch up · Sun"))
         #expect(UpNextCompact.chip(for: undated, now: F.now, calendar: F.calendar, locale: english) == nil)
     }
 
@@ -102,6 +102,8 @@ import Testing
         ], homeworkXP: nil, now: F.now, calendar: F.calendar)
         let chips = plan.lessons.compactMap { UpNextCompact.chip(for: $0, now: F.now, calendar: F.calendar)?.text }
         #expect(Set(chips) == ["16:00", "Today"])
+        let spoken = plan.lessons.compactMap { UpNextCompact.chip(for: $0, now: F.now, calendar: F.calendar)?.spoken }
+        #expect(Set(spoken) == ["Today · 16:00", "Today"])
     }
 
     @Test("The XP chip shows only on homework that still pays")

@@ -171,7 +171,7 @@ private struct CelebrationSheetWatcher: View {
             // The invitation counts as much as the other two: a sheet it does not know about is
             // one confetti, an XP flight or the rank-up card can play behind, where nobody sees
             // it and the queue records that it was shown.
-            .onChange(of: router.showingMe || router.certificate != nil || router.eventInvite != nil) { _, up in
+            .onChange(of: router.anySheetUp) { _, up in
                 // Up at once. Down only from the sheets' onDismiss (`RootTabView.sheetDismissed`),
                 // once the sheet has actually left the screen.
                 if up { celebrations.setSheetUp(true) }
@@ -301,6 +301,13 @@ struct RootTabView: View {
                 onClose: { if router.eventInvite != nil { router.eventInvite = nil } }
             )
         }
+        // The fourth: Today's rank card opens the short board (mockup 13), from the same host.
+        .sheet(isPresented: $router.showingLeaderboard, onDismiss: { sheetDismissed() }) {
+            LeaderboardSheet(onClose: { if router.showingLeaderboard { router.showingLeaderboard = false } })
+                .environment(router)
+                .environment(rewards)
+                .environment(celebrations)
+        }
         // A tapped push, a reminder or an inbox row lands here. `onAppear` covers the tap
         // that launched the app from closed, which set the link before this view existed.
         .onAppear {
@@ -324,7 +331,7 @@ struct RootTabView: View {
     /// a celebration that waited under the sheet plays.
     private func sheetDismissed() {
         router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
-        celebrations.setSheetUp(router.showingMe || router.certificate != nil || router.eventInvite != nil)
+        celebrations.setSheetUp(router.anySheetUp)
     }
 }
 

@@ -15,9 +15,10 @@ final class RewardsStore {
     private(set) var streak: Int?
     private(set) var coins: Int?
     /// The place on the default board (global, all time, XP) last read — by the Rewards hero, the
-    /// leaderboard on its default slice, or the welcome-back check. Bookkeeping for "while you
-    /// were away"; nothing renders from it.
-    @ObservationIgnored private(set) var rank: Int?
+    /// leaderboard on its default slice, the welcome-back check or Today. "While you were away"
+    /// measures from it, and Today's Leaderboard card shows it (so it is observed: a place noted
+    /// anywhere moves the card).
+    private(set) var rank: Int?
     /// The highest history row id last applied — where the next welcome-back caption starts
     /// counting new earnings. The highest id, not the first row: the history is ordered by when
     /// an award was dated, and an award dated back can still be the newest to arrive.

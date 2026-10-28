@@ -77,6 +77,9 @@ final class AppRouter {
     /// `EventInvitePrompt` only once it has found the stage clear; presented by the root
     /// beside the other two sheets.
     var eventInvite: LearningEvent?
+    /// The leaderboard sheet (mockup 13): Today's rank card opens it. A sheet like the other
+    /// three, presented from the same root and serialised with them here.
+    var showingLeaderboard = false
     private(set) var scrollToTop: ScrollRequest?
     private(set) var reloadRequest: ReloadRequest?
     /// Today's "See all" asked for Class on Tasks → To do, across every class. Held until the
@@ -89,6 +92,7 @@ final class AppRouter {
     private enum Queued {
         case link(AppLink)
         case me(MeTab?)
+        case leaderboard
     }
 
     /// A sheet asked for while the other sheet was up; opened once that one has gone.
@@ -125,6 +129,22 @@ final class AppRouter {
         if headerWindow != nil { headerWindow = nil }
     }
 
+    /// Whether any of the root's sheets is up — what the celebrations wait for.
+    var anySheetUp: Bool { showingMe || certificate != nil || eventInvite != nil || showingLeaderboard }
+
+    /// Today's rank card. Asked for while another sheet is up, it closes that one and opens once
+    /// it has gone, as the Me sheet does.
+    func openLeaderboardSheet() {
+        closeHeaderWindow(force: true)
+        if showingMe || certificate != nil || eventInvite != nil {
+            if showingMe { showingMe = false }
+            closeSheetsOtherThanMe()
+            queued = .leaderboard
+            return
+        }
+        if !showingLeaderboard { showingLeaderboard = true }
+    }
+
     func open(_ link: AppLink, baseURL: URL, openURL: (URL) -> Void) {
         // A window must never stay over a tab the student has just been sent to — and the windows'
         // own Shop and Leaderboard buttons route through here, so this is the one place it closes.
@@ -139,7 +159,7 @@ final class AppRouter {
             popToRoot(tab)
             push(page, on: tab)
         case .me(let page):
-            if certificate != nil || eventInvite != nil {
+            if certificate != nil || eventInvite != nil || showingLeaderboard {
                 closeSheetsOtherThanMe()
                 queued = .link(link)
                 return
@@ -151,9 +171,10 @@ final class AppRouter {
             if let page { me.append(page) }
             if !showingMe { showingMe = true }
         case .certificate(let code):
-            if showingMe || eventInvite != nil {
+            if showingMe || eventInvite != nil || showingLeaderboard {
                 if showingMe { showingMe = false }
                 if eventInvite != nil { eventInvite = nil }
+                if showingLeaderboard { showingLeaderboard = false }
                 queued = .link(link)
                 return
             }
@@ -167,7 +188,7 @@ final class AppRouter {
     /// particular — Today's SAT countdown wants Overview, where the date is set.
     func openMe(on tab: MeTab? = nil) {
         closeHeaderWindow(force: true)
-        if certificate != nil || eventInvite != nil {
+        if certificate != nil || eventInvite != nil || showingLeaderboard {
             closeSheetsOtherThanMe()
             queued = .me(tab)
             return
@@ -186,6 +207,7 @@ final class AppRouter {
         switch next {
         case .link(let link): open(link, baseURL: baseURL, openURL: openURL)
         case .me(let tab): openMe(on: tab)
+        case .leaderboard: openLeaderboardSheet()
         }
     }
 
@@ -259,6 +281,7 @@ final class AppRouter {
     private func closeSheetsOtherThanMe() {
         if certificate != nil { certificate = nil }
         if eventInvite != nil { eventInvite = nil }
+        if showingLeaderboard { showingLeaderboard = false }
     }
 
     private func select(_ tab: AppTab) {
