@@ -114,14 +114,22 @@ def apply(run) -> None:
             run.counts[f"profile_{name}"] += 1
 
 
+def _family_number(holder, phone: str) -> bool:
+    """``holder`` is lc-up's student too, on this same number: a parent's phone lc-up gives several
+    children. Only one account here can carry it (ours is unique), so it stays with whoever has it —
+    nothing for an admin to settle (Saidnazar and Shukrona Saidburxonov, 2026-10-28)."""
+    return LcupStudentLink.objects.filter(user=holder, status__in=LINKED, deleted_in_lcup=False, phone=phone).exists()
+
+
 def phone_conflicts() -> list[dict]:
-    """Linked learners whose lc-up phone another account already holds — for an admin to settle."""
+    """Linked learners whose lc-up phone another account already holds — for an admin to settle. A
+    family number two lc-up students share is not one (``_family_number``)."""
     out = []
     for link in mirrored_links().exclude(phone=""):
         if normalize_phone(link.user.phone_number) == link.phone:
             continue
         taken = phone_owners(User.objects.exclude(pk=link.user_id), link.phone)
-        if taken:
+        if taken and not all(_family_number(u, link.phone) for u in taken):
             out.append(
                 {
                     "user_id": link.user_id,

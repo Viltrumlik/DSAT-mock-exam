@@ -76,6 +76,17 @@ class MirrorTests(ProfileFixture):
         self.assertEqual([(c["user_id"], [h["id"] for h in c["held_by"]]) for c in conflict], [(self.kid.pk, [sibling.pk])])
         self.assertNotIn("phone_number", profiles.locked_fields(self.kid))
 
+    def test_a_family_number_two_lcup_students_share_is_not_a_conflict(self):
+        sister = User.objects.create_user(None, password=None, username="sis", role=C.ROLE_PUBLIC_STUDENT, phone_number="998901112233")
+        LcupStudentLink.objects.create(lcup_student_id=8, name="Zokirjonova Malika", phone="998901112233", user=sister,
+                                       status=LinkStatus.CONFIRMED)
+        counts = self.apply()
+        self.assertIsNone(self.kid.phone_number)  # one account here per number: it stays with her
+        self.assertEqual(counts["profile_phone_taken"], 1)
+        self.assertEqual(profiles.phone_conflicts(), [])
+        sister.refresh_from_db()
+        self.assertEqual(sister.phone_number, "998901112233")
+
     def test_an_account_named_after_its_phone_keeps_its_login_and_code_on_the_new_one(self):
         self.kid.username = self.kid.phone_number = "998900000001"
         self.kid.save(update_fields=["username", "phone_number"])
