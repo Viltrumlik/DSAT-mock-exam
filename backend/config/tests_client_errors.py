@@ -92,3 +92,10 @@ class ClientErrorReportTests(TestCase):
             codes = [self.post(CRASH).status_code for _ in range(31)]
         self.assertEqual(codes[:30], [204] * 30)
         self.assertEqual(codes[30], 429)
+
+    def test_a_rotated_forwarded_for_does_not_reset_the_limit(self):
+        with self.assertLogs("frontend.client_error", level="WARNING"):
+            codes = [
+                self.post(CRASH, HTTP_X_FORWARDED_FOR=f"10.0.0.{i}").status_code for i in range(31)
+            ]
+        self.assertEqual(codes[30], 429)

@@ -21,6 +21,16 @@ FIELD_LIMITS = {
 }
 
 
+class ClientErrorThrottle(ScopedRateThrottle):
+    """Keyed on the address nginx saw, not DRF's default — that reads X-Forwarded-For, which
+    nginx appends to rather than replaces, so a caller could rotate it past the limit."""
+
+    def get_ident(self, request):
+        from users.views import _client_address
+
+        return _client_address(request)
+
+
 class ClientErrorReportView(APIView):
     """
     Sink for the frontend crash screen (`CrashScreen.tsx`): one line in the gunicorn log per
@@ -37,7 +47,7 @@ class ClientErrorReportView(APIView):
     authentication_classes: list = []
     permission_classes: list = []
     parser_classes = [JSONParser]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ClientErrorThrottle]
     throttle_scope = "client_error"
     MAX_BODY_BYTES = 16_384
 
