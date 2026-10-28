@@ -16,17 +16,27 @@ struct VocabExplainButton: View {
     let title: String
     /// Markdown — the web bolds the phrase that carries the rule.
     let text: String
+    /// Placed in a navigation bar. From iOS 26 the bar draws its own glass circle round every
+    /// item, so the button's own disc inside it read as a circle in a circle: there it is the
+    /// "!" alone. On iOS 17 and 18 the bar has no glass, and the disc stays.
+    var inToolbar = false
 
     @State private var shown = false
+
+    private var drawsDisc: Bool {
+        guard inToolbar else { return true }
+        if #available(iOS 26.0, *) { return false }
+        return true
+    }
 
     var body: some View {
         Button { shown.toggle() } label: {
             Text(verbatim: "!")
-                .appFont(12, weight: .black)
-                .foregroundStyle(shown ? Color.white : NewLook.blueText)
+                .appFont(drawsDisc ? 12 : 16, weight: .black)
+                .foregroundStyle(shown && drawsDisc ? Color.white : NewLook.blueText)
                 .frame(width: 22, height: 22)
-                .background(Circle().fill(shown ? NewLook.blue : NewLook.blue.opacity(0.10)))
-                .overlay(Circle().strokeBorder(shown ? Color.clear : NewLook.blue.opacity(0.35), lineWidth: 1))
+                .background(Circle().fill(drawsDisc ? (shown ? NewLook.blue : NewLook.blue.opacity(0.10)) : Color.clear))
+                .overlay(Circle().strokeBorder(shown || !drawsDisc ? Color.clear : NewLook.blue.opacity(0.35), lineWidth: 1))
                 // A 20pt dot is too small to hit; the target is the size a thumb needs.
                 .frame(width: 34, height: 34)
                 .contentShape(Rectangle())
@@ -558,11 +568,14 @@ struct VocabEmptyState: View {
     var action: (@MainActor () -> Void)?
 
     var body: some View {
-        EmptyState(title: title, message: message, action: way)
-            .background(
-                RoundedRectangle(cornerRadius: 13, style: .continuous)
-                    .strokeBorder(Theme.separator.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
-            )
+        // The kit's quiet dashed box (mockup 91), with the way forward inside it.
+        if let way {
+            QuietEmptyNote(title: title, message: message) {
+                StateTintButton(title: way.title, action: way.run)
+            }
+        } else {
+            QuietEmptyNote(title: title, message: message)
+        }
     }
 
     private var way: (title: String, run: @MainActor () -> Void)? {

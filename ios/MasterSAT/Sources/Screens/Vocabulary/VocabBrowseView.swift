@@ -64,7 +64,8 @@ struct VocabSectionView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 VocabExplainButton(
                     title: "What the ring and the bars mean",
-                    text: "The ring counts the **sets** you have finished in this section. The four-colour bar on each card below is that set’s four games — one colour each — filled once you play that game with every word right."
+                    text: "The ring counts the **sets** you have finished in this section. The four-colour bar on each card below is that set’s four games — one colour each — filled once you play that game with every word right.",
+                    inToolbar: true
                 )
             }
         }

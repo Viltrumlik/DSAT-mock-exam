@@ -11,6 +11,7 @@ struct NewLookSegmented<Value: Hashable>: View {
     @Binding var selection: Value
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
     @Namespace private var thumb
 
     var body: some View {
@@ -26,9 +27,13 @@ struct NewLookSegmented<Value: Hashable>: View {
                         .frame(maxWidth: .infinity, minHeight: 36)
                         .background {
                             if on {
+                                // `raised`, not `card`: at night the card's navy is the
+                                // track's own colour and the thumb vanished into it. The hairline
+                                // is for the night too — invisible on the white thumb by day.
                                 Capsule()
-                                    .fill(NewLook.card)
-                                    .shadow(color: .black.opacity(0.08), radius: 4, y: 2)
+                                    .fill(NewLook.raised)
+                                    .overlay(Capsule().strokeBorder(Color.white.opacity(colorScheme == .dark ? 0.10 : 0), lineWidth: 1))
+                                    .shadow(color: .black.opacity(colorScheme == .dark ? 0.35 : 0.08), radius: 4, y: 2)
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }
                         }
@@ -70,17 +75,20 @@ struct NewLookFilterChips<Value: Hashable>: View {
                             if let systemImage = option.systemImage {
                                 Image(systemName: systemImage)
                                     .font(.system(size: 13, weight: .semibold))
-                                    .foregroundStyle(on ? .white : option.tone)
+                                    .foregroundStyle(on ? NewLook.card : option.tone)
                             }
                             Text(option.title)
                                 .appFont(14, weight: .bold)
                             if let count = option.count {
                                 Text(String(count))
                                     .appFont(12, weight: .heavy)
-                                    .foregroundStyle(on ? Color.white.opacity(0.7) : NewLook.blueText)
+                                    .foregroundStyle(on ? NewLook.card.opacity(0.7) : NewLook.blueText)
                             }
                         }
-                        .foregroundStyle(on ? Color.white : NewLook.ink)
+                        // The chosen chip is ink, so its words are the card's colour: white
+                        // on the near-black chip by day, navy on the pale chip at night (white
+                        // there was white on white).
+                        .foregroundStyle(on ? NewLook.card : NewLook.ink)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 34)
                         .background(on ? NewLook.ink : NewLook.card, in: Capsule())
