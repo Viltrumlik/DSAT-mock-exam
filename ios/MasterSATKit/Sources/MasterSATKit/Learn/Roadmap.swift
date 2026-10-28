@@ -224,6 +224,12 @@ public struct RoadmapLesson: Decodable, Sendable, Equatable {
     public let hasRoadmap: Bool
     /// Whether the student has got past the reading — read it, or it asks no confirmation.
     public let roadmapRead: Bool
+    /// The in-class work a teacher handed out in this session. Nil until it is handed out,
+    /// always nil for a midterm, and absent from an older server altogether.
+    public let classworkAssignmentId: Int?
+    /// Submitted on that classwork, or awarded for it by the teacher. False whenever there is
+    /// no classwork to have done — and on a server that does not send the key.
+    public let classworkDone: Bool
 
     public var scheduledDate: Date? { scheduledFor.flatMap(JSONCoding.parseServerDate) }
 
@@ -238,7 +244,9 @@ public struct RoadmapLesson: Decodable, Sendable, Equatable {
         scheduledFor: String? = nil,
         deliveryId: Int? = nil,
         hasRoadmap: Bool = false,
-        roadmapRead: Bool = false
+        roadmapRead: Bool = false,
+        classworkAssignmentId: Int? = nil,
+        classworkDone: Bool = false
     ) {
         self.lessonNumber = lessonNumber
         self.title = title
@@ -251,6 +259,8 @@ public struct RoadmapLesson: Decodable, Sendable, Equatable {
         self.deliveryId = deliveryId
         self.hasRoadmap = hasRoadmap
         self.roadmapRead = roadmapRead
+        self.classworkAssignmentId = classworkAssignmentId
+        self.classworkDone = classworkDone
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -263,6 +273,8 @@ public struct RoadmapLesson: Decodable, Sendable, Equatable {
         case deliveryId = "delivery_id"
         case hasRoadmap = "has_roadmap"
         case roadmapRead = "roadmap_read"
+        case classworkAssignmentId = "classwork_assignment_id"
+        case classworkDone = "classwork_done"
     }
 
     public init(from decoder: Decoder) throws {
@@ -287,6 +299,8 @@ public struct RoadmapLesson: Decodable, Sendable, Equatable {
         deliveryId = LearnDecode.int(c, .deliveryId)
         hasRoadmap = LearnDecode.bool(c, .hasRoadmap) ?? false
         roadmapRead = LearnDecode.bool(c, .roadmapRead) ?? false
+        classworkAssignmentId = LearnDecode.int(c, .classworkAssignmentId)
+        classworkDone = LearnDecode.bool(c, .classworkDone) ?? false
     }
 }
 
