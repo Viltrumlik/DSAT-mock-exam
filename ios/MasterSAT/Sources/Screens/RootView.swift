@@ -198,6 +198,9 @@ struct RootTabView: View {
     @State private var prompts = AppPrompts()
     /// The floating bar's measured height, so the room left for it is never a guess.
     @State private var barHeight: CGFloat = 0
+    /// What the bar wears, as the page on screen asks (`TabBarChrome`). Handed down, never read
+    /// here: a read in this body would rebuild the tab view, and its stacks, on every request.
+    @State private var tabBarChrome = TabBarChrome()
 
     /// Space between the bar and the home indicator, and between the bar and the last thing
     /// a page shows. One place, so the bar and the room made for it cannot drift apart.
@@ -264,6 +267,7 @@ struct RootTabView: View {
         .environment(rewards)
         .environment(celebrations)
         .environment(prompts)
+        .environment(tabBarChrome)
         .tint(Theme.accent)
         .sheet(isPresented: $router.showingMe, onDismiss: { sheetDismissed() }) {
             // The close button lives in the page's hero, on its root only: laid over the sheet,
