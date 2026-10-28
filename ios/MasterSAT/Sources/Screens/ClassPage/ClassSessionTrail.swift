@@ -220,8 +220,8 @@ struct ClassSessionCard: View {
 }
 
 /// "Up to +N XP" (owner's Q2): what attending and the homework pay at most, read off the live
-/// rules. The design's coin pill, reshaped for XP — a bolt on an amber disc, never a coin. A locked
-/// session's is dimmed, as the design dims its pill.
+/// rules. The design's bronze coin pill, carrying XP — a bolt on the bronze disc, never a coin. A
+/// locked session's is dimmed, as the design dims its pill.
 private struct SessionXPPill: View {
     let amount: Int
     let dimmed: Bool
@@ -229,24 +229,24 @@ private struct SessionXPPill: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(ClassPageInk.amberDisc)
-                .overlay(Circle().strokeBorder(ClassPageInk.amber, lineWidth: 1.5))
+                .fill(ClassPageInk.bronzeDisc)
+                .overlay(Circle().strokeBorder(ClassPageInk.bronzeRing, lineWidth: 1.5))
                 .frame(width: 18, height: 18)
                 .overlay {
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 9, weight: .black))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(ClassPageInk.bronzeInk)
                 }
             Text("Up to +\(amount) XP")
                 .appFont(12, weight: .heavy, monospacedDigits: true)
-                .foregroundStyle(ClassPageInk.amberInk)
+                .foregroundStyle(ClassPageInk.bronzeInk)
                 .lineLimit(1)
         }
         .padding(.leading, 3)
         .padding(.trailing, 9)
         .frame(minHeight: 24)
-        .background(Capsule().fill(ClassPageInk.amber.opacity(0.14)))
-        .overlay(Capsule().strokeBorder(ClassPageInk.amber.opacity(0.45), lineWidth: 1))
+        .background(Capsule().fill(ClassPageInk.bronzeGlass.opacity(0.14)))
+        .overlay(Capsule().strokeBorder(ClassPageInk.bronzeRing.opacity(0.50), lineWidth: 1))
         .opacity(dimmed ? 0.55 : 1)
         .fixedSize()
         .capDynamicType()
@@ -477,7 +477,8 @@ private struct SessionStepNode: View {
     }
 }
 
-/// The node's disc, in the design's four looks (`NODE`).
+/// The node's disc, in the design's four looks (`NODE`), glyphs at the design's sizes: done 22,
+/// to do 18, locked 16 (now 26, in `NowDisc`).
 private struct StepDisc: View {
     let state: SessionStepState
     let kind: SessionStepKind
@@ -490,7 +491,7 @@ private struct StepDisc: View {
         case .done:
             disc(size: 44, base: theme.base1, tint: Color(theme.l1, opacity: 0.30), ring: Color(theme.l2, opacity: 0.8), ringWidth: 1.5) {
                 Image(systemName: "checkmark")
-                    .font(.system(size: 17, weight: .bold))
+                    .font(.system(size: 22, weight: .semibold))
                     .foregroundStyle(.white)
                     .shadow(color: Color(theme.l2, opacity: 0.9), radius: 4)
             }
@@ -499,7 +500,7 @@ private struct StepDisc: View {
         case .locked:
             disc(size: 40, base: theme.base3, tint: .white.opacity(0.06), ring: .white.opacity(0.18), ringWidth: 1) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
             }
         case .notYet:
@@ -512,7 +513,7 @@ private struct StepDisc: View {
         case .todo, .notSet:
             disc(size: 40, base: theme.base2, tint: .white.opacity(0.08), ring: .white.opacity(0.30), ringWidth: 1.5) {
                 Image(systemName: kind.icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.75))
             }
         }
@@ -566,7 +567,7 @@ private struct NowDisc: View {
             }
             .overlay {
                 Image(systemName: kind.icon)
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(.system(size: 26, weight: .semibold))
                     .foregroundStyle(Color(theme.c1))
             }
             .onAppear { pulsing = breathes }
@@ -643,17 +644,7 @@ struct ClassMidtermCard: View {
 
     private func card(opens: Bool) -> some View {
         HStack(spacing: 12) {
-            Circle()
-                .fill(Color(midterm.state == .locked ? theme.base3 : theme.base1))
-                .overlay(Circle().fill(.white.opacity(0.08)))
-                .overlay(Circle().strokeBorder(.white.opacity(midterm.state == .locked ? 0.18 : 0.30), lineWidth: 1.5))
-                .frame(width: 40, height: 40)
-                .overlay {
-                    Image(systemName: midterm.state == .locked ? "lock.fill" : "graduationcap.fill")
-                        .font(.system(size: midterm.state == .locked ? 13 : 16, weight: .semibold))
-                        .foregroundStyle(.white.opacity(midterm.state == .locked ? 0.5 : 0.85))
-                }
-                .accessibilityHidden(true)
+            disc.accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Midterm")
                     .appFont(16, weight: .heavy)
@@ -681,6 +672,28 @@ struct ClassMidtermCard: View {
     }
 
     private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: 20, style: .continuous) }
+
+    /// The trail's own discs: a sat midterm wears the done node's lit check, a scheduled one the
+    /// cap on the to-do glass, a locked one the lock.
+    private var disc: some View {
+        let sat = midterm.state == .completed
+        let locked = midterm.state == .locked
+        return Circle()
+            .fill(Color(locked ? theme.base3 : theme.base1))
+            .overlay(Circle().fill(sat ? Color(theme.l1, opacity: 0.30) : .white.opacity(0.08)))
+            .overlay(Circle().strokeBorder(
+                sat ? Color(theme.l2, opacity: 0.8) : .white.opacity(locked ? 0.18 : 0.30),
+                lineWidth: 1.5
+            ))
+            .frame(width: 40, height: 40)
+            .overlay {
+                Image(systemName: sat ? "checkmark" : (locked ? "lock.fill" : "graduationcap.fill"))
+                    .font(.system(size: sat ? 20 : (locked ? 16 : 18), weight: .semibold))
+                    .foregroundStyle(.white.opacity(locked ? 0.5 : (sat ? 1 : 0.85)))
+                    .shadow(color: Color(theme.l2, opacity: sat ? 0.9 : 0), radius: 4)
+            }
+            .shadow(color: Color(theme.l1, opacity: sat ? 0.3 : 0), radius: 7)
+    }
 
     /// The paper's own title when it has one, and its date.
     private var subtitle: String {

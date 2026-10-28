@@ -17,12 +17,16 @@ enum ClassPageInk {
     /// The Completed badge: `rgb(110,231,183)` glass, `#A7F3D0` ink.
     static let green = Color(.sRGB, red: 110 / 255, green: 231 / 255, blue: 183 / 255)
     static let greenInk = Color(.sRGB, red: 167 / 255, green: 243 / 255, blue: 208 / 255)
-    /// The In progress badge — and the XP pill, which the design draws in the same warm family as
-    /// its coin pill: `rgb(252,211,77)` glass, `#FDE68A` ink.
+    /// The In progress badge: `rgb(252,211,77)` glass, `#FDE68A` ink.
     static let amber = Color(.sRGB, red: 252 / 255, green: 211 / 255, blue: 77 / 255)
     static let amberInk = Color(.sRGB, red: 253 / 255, green: 230 / 255, blue: 138 / 255)
-    /// The XP pill's disc: the app's amber, as `XPCapChip` and every other "+N XP" wear it.
-    static let amberDisc = Color(.sRGB, red: 245 / 255, green: 158 / 255, blue: 11 / 255)
+
+    /// The reward pill, in the design's bronze: `rgba(243,233,223,.14)` glass in a
+    /// `rgba(194,145,95,.50)` ring, `#F3E9DF` ink, and a `#9A6432` disc ringed `#C2915F`.
+    static let bronzeGlass = Color(.sRGB, red: 243 / 255, green: 233 / 255, blue: 223 / 255)
+    static let bronzeRing = Color(.sRGB, red: 194 / 255, green: 145 / 255, blue: 95 / 255)
+    static let bronzeInk = Color(.sRGB, red: 243 / 255, green: 233 / 255, blue: 223 / 255)
+    static let bronzeDisc = Color(.sRGB, red: 154 / 255, green: 100 / 255, blue: 50 / 255)
 }
 
 /// CSS `box-shadow` under glass. A SwiftUI shadow on a 7 % fill is 7 % of a shadow, and one on the
@@ -171,6 +175,8 @@ struct ClassPageBadge: View {
         .background(Capsule().fill(fill))
         .overlay(Capsule().strokeBorder(ring, lineWidth: 1))
         .fixedSize()
+        // A pill beside the heading, never wrapping: its type stops at `xxxLarge`, as the XP pill's.
+        .capDynamicType()
     }
 
     static func completed() -> ClassPageBadge {
