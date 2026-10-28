@@ -165,20 +165,60 @@ private func states(_ session: TrailSession) -> [SessionStepState] { session.ste
         #expect(sat.nowSessionId == nil)
     }
 
-    @Test("Not completed while work is still to come: homework unreleased, or nothing handed out yet")
-    func completionGuards() {
+    @Test("The latest session, its homework not set yet: still now, the Homework node \"Not set yet\"")
+    func homeworkNotSetYet() throws {
         // Read and classwork done in class, homework not released yet (state upcoming).
-        let homeworkPending = lesson(1, .upcoming, delivery: 901, reading: true, read: true, classwork: 701, classworkDone: true)
-        // Delivered, and nothing handed out at all.
-        let nothingYet = lesson(2, .upcoming, delivery: 902)
-        let trail = SessionTrail(lessons: [homeworkPending, nothingYet])
-        #expect(trail.sessions.map(\.state) == [.now, .open])
-        #expect(states(trail.sessions[0]) == [.done, .done, .notSet])
-        #expect(trail.sessions[0].doneCount == 2)
-        #expect(trail.sessions[0].existingCount == 2)
-        #expect(trail.sessions[0].nowStep == nil)
-        #expect(trail.sessions[1].existingCount == 0)
+        let pending = lesson(1, .upcoming, delivery: 901, reading: true, read: true, classwork: 701, classworkDone: true)
+        let trail = SessionTrail(lessons: [pending, lesson(2, reading: true)])
+        let session = try #require(trail.sessions.first)
+        #expect(session.state == .now)
+        #expect(states(session) == [.done, .done, .notYet])
+        #expect(session.step(.homework).exists)
+        #expect(session.doneCount == 2)
+        #expect(session.existingCount == 3)
+        // Nothing to open, so nothing to resume.
+        #expect(session.nowStep == nil)
         #expect(trail.nowSessionId == 1)
+    }
+
+    @Test("A step still to do comes before the unset homework as the now step")
+    func nowSkipsUnsetHomework() throws {
+        let pending = lesson(1, .upcoming, delivery: 901, reading: true, classwork: 701)
+        let session = try #require(SessionTrail(lessons: [pending]).sessions.first)
+        #expect(states(session) == [.now, .todo, .notYet])
+        #expect(session.nowStep == .topic)
+    }
+
+    @Test("Homework never set, or deleted: completed once a later session is released, never stuck on now")
+    func classMovedOn() {
+        // 1: delivered, everything it had done, homework never released.
+        let neverSet = lesson(1, .upcoming, delivery: 901, reading: true, read: true, classwork: 701, classworkDone: true)
+        // 2: delivered and handed nothing at all — then the class moved on.
+        let empty = lesson(2, .upcoming, delivery: 902)
+        // 3: the session after them, released.
+        let trail = SessionTrail(lessons: [neverSet, empty, released(3)])
+        #expect(trail.sessions.map(\.state) == [.completed, .completed, .now])
+        // The homework that never came is not drawn on a finished session.
+        #expect(states(trail.sessions[0]) == [.done, .done, .notSet])
+        #expect(trail.sessions[0].existingCount == 2)
+        #expect(trail.sessions[1].existingCount == 0)
+        #expect(trail.nowSessionId == 3)
+    }
+
+    @Test("A later midterm is not a later session: the session before it waits on its homework")
+    func midtermDoesNotMoveTheClassOn() {
+        let pending = lesson(11, .upcoming, delivery: 911, reading: true, read: true)
+        let trail = SessionTrail(lessons: [pending, lesson(12, .available, delivery: 912, midterm: true)])
+        #expect(trail.sessions.first?.state == .now)
+        #expect(trail.sessions.first?.step(.homework).state == .notYet)
+    }
+
+    @Test("An unfinished session with no homework, the class moved on: open, its homework not drawn")
+    func leftBehindWithoutHomework() {
+        let unread = lesson(1, .upcoming, delivery: 901, reading: true)
+        let trail = SessionTrail(lessons: [unread, released(2)])
+        #expect(trail.sessions.map(\.state) == [.now, .open])
+        #expect(states(trail.sessions[0]) == [.now, .notSet, .notSet])
     }
 
     @Test("Rows come out in lesson order, whatever order they arrive in")
@@ -188,21 +228,66 @@ private func states(_ session: TrailSession) -> [SessionStepState] { session.ste
         #expect(trail.nowSessionId == 1)
     }
 
-    @Test("A level behind the student is finished whole, though its lessons are bare outlines")
+    @Test("A level behind the student is finished whole, 3/3, though its lessons are bare outlines")
     func passedLevel() {
         let trail = SessionTrail(
             lessons: [lesson(1, nil, reading: true), lesson(2, nil), lesson(3, nil, midterm: true)],
             levelPassed: true
         )
         #expect(trail.sessions.map(\.state) == [.completed, .completed])
+        // An outline carries no `has_roadmap`: every session is drawn whole, not "2/2".
         #expect(states(trail.sessions[0]) == [.done, .done, .done])
-        #expect(states(trail.sessions[1]) == [.notSet, .done, .done])
+        #expect(states(trail.sessions[1]) == [.done, .done, .done])
+        #expect(trail.sessions.allSatisfy { $0.doneCount == 3 && $0.existingCount == 3 })
         guard case .midterm(let midterm) = trail.items[2] else {
             Issue.record("the midterm must stay a marker")
             return
         }
         #expect(midterm.state == .completed)
         #expect(trail.nowSessionId == nil)
+        // Passed: the page opens at its top, and the links are lit all the way.
+        #expect(trail.openingItemId == nil)
+        #expect(trail.litThroughId == 3)
+    }
+
+    @Test("Opening: the now session; between lessons, the last one completed — never the top")
+    func openingRow() {
+        let done1 = released(1, topicRead: true, classworkDone: true, homeworkDone: true)
+        let done2 = released(2, topicRead: true, classworkDone: true, homeworkDone: true)
+        // Between lessons: everything released is finished, the rest is locked.
+        let between = SessionTrail(lessons: [done1, done2, lesson(3, reading: true), lesson(4)])
+        #expect(between.nowSessionId == nil)
+        #expect(between.openingItemId == 2)
+        #expect(between.litThroughId == 2)
+
+        let inProgress = SessionTrail(lessons: [done1, released(2), lesson(3)])
+        #expect(inProgress.openingItemId == 2)
+        #expect(inProgress.litThroughId == 2)
+
+        // Nothing started: the first row, at the bottom of the stack, and nothing lit.
+        let fresh = SessionTrail(lessons: [lesson(1), lesson(2)])
+        #expect(fresh.openingItemId == 1)
+        #expect(fresh.litThroughId == nil)
+
+        #expect(SessionTrail(lessons: []).openingItemId == nil)
+    }
+
+    @Test("A midterm the student has sat is Completed, and the links light through it")
+    func satMidtermLightsThrough() throws {
+        let trail = SessionTrail(lessons: [
+            released(11, topicRead: true, classworkDone: true, homeworkDone: true),
+            lesson(12, .completed, delivery: 912, midterm: true),
+            lesson(13, reading: true),
+        ])
+        guard case .midterm(let midterm) = trail.items[1] else {
+            Issue.record("the midterm must stay a marker")
+            return
+        }
+        #expect(midterm.state == .completed)
+        #expect(trail.nowSessionId == nil)
+        #expect(trail.litThroughId == 12)
+        // The page still opens on the last session finished.
+        #expect(trail.openingItemId == 11)
     }
 
     @Test("Badges: three words for four states")
@@ -224,9 +309,9 @@ private func states(_ session: TrailSession) -> [SessionStepState] { session.ste
 
 @Suite struct SessionXPCeilingTests {
 
-    @Test("Rules not loaded: the defaults, 5 + 15")
-    func defaults() {
-        #expect(SessionTrail.xpCeiling([]) == 20)
+    @Test("Rules not loaded, or none served: no number at all — the pill is hidden, not defaulted")
+    func notLoaded() {
+        #expect(SessionTrail.xpCeiling([]) == nil)
     }
 
     @Test("Live rules: attendance plus the homework maximum — classwork is teacher-priced and left out")

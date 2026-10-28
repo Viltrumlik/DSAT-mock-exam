@@ -31,6 +31,10 @@ public enum SessionStepState: String, Sendable, Equatable {
     case todo
     /// In a session that has not been released yet.
     case locked
+    /// Expected, and not handed out yet: the homework of the latest session released, before
+    /// the teacher sets it. Drawn and counted in "x/n done", labelled "Not set yet", and it
+    /// opens nothing — so it is never the `.now` step.
+    case notYet
     /// This session has no such step: no reading written, no classwork handed out, or no
     /// homework released. Not drawn as a node, and not counted in "x/n done".
     case notSet
@@ -134,36 +138,54 @@ public enum SessionTrailItem: Sendable, Equatable, Identifiable {
 ///   lesson has a reading (`.notSet` when it has none), and Classwork and Homework are
 ///   `.locked`: they are handed out at the lesson, so whether they will exist is not known
 ///   yet, and the design draws the whole trail locked.
-/// * **Completed.** A released session is completed when every step it has is done — and
-///   it has at least one, and its homework is not still to come (state `upcoming`). Without
-///   those two guards a session whose work has not been handed out yet would read as done,
-///   and flip back to "In progress" the moment its homework is released.
+/// * **Completed.** A released session is completed when every step it has is done AND its
+///   homework has been set — or, failing that, a later session has been released. The second
+///   half is what keeps a session whose homework is still to come from reading as done (and
+///   flipping back to "In progress" the moment it is set), without pinning one whose homework
+///   never comes — never released, or deleted after release — on "now" for ever: once the
+///   class has moved on, it is finished with what it had.
+/// * **Not set yet.** The latest session released, with no homework set, shows its Homework
+///   node as `.notYet`: counted in "x/n", never the `.now` step, opening nothing.
 /// * **Now.** The first released session that is not completed. Its first step not done,
 ///   in trail order, is `.now`; its other unfinished steps are `.todo`. Every other released,
 ///   unfinished session is `.open`, with its unfinished steps `.todo`.
 /// * **A level behind the student** (`levelPassed`) is finished whole. Its lessons are bare
-///   outlines — the server sends no state for them — so every session is completed and every
-///   step done (Topic only where the lesson has a reading), and every midterm sat.
+///   outlines — the server sends no state and no `has_roadmap` for them — so every session is
+///   completed with all three steps done (3/3), and every midterm sat.
 public struct SessionTrail: Sendable, Equatable {
     public let items: [SessionTrailItem]
+    /// The level is behind the student: every row reads as finished, and the page opens at its
+    /// top (`openingItemId`).
+    public let levelPassed: Bool
 
     public init(lessons: [RoadmapLesson], levelPassed: Bool = false) {
         let ordered = lessons.enumerated()
             .sorted { ($0.element.lessonNumber, $0.offset) < ($1.element.lessonNumber, $1.offset) }
             .map(\.element)
+        // For each row, whether a session after it has been released: the class has moved on.
+        var releasedAfter = Array(repeating: false, count: ordered.count)
+        var seen = false
+        for index in ordered.indices.reversed() {
+            releasedAfter[index] = seen
+            let lesson = ordered[index]
+            if !lesson.isMidterm, Self.isReleased(lesson) { seen = true }
+        }
 
         var items: [SessionTrailItem] = []
         var nowTaken = false
-        for lesson in ordered {
+        for (index, lesson) in ordered.enumerated() {
             if lesson.isMidterm {
                 items.append(.midterm(TrailMidterm(lesson: lesson, state: Self.midtermState(lesson, levelPassed: levelPassed))))
                 continue
             }
-            let session = Self.session(lesson, levelPassed: levelPassed, isNow: !nowTaken)
+            let session = Self.session(
+                lesson, levelPassed: levelPassed, isNow: !nowTaken, laterReleased: releasedAfter[index]
+            )
             if session.state == .now { nowTaken = true }
             items.append(.session(session))
         }
         self.items = items
+        self.levelPassed = levelPassed
     }
 
     /// Every session, midterms left out.
@@ -174,9 +196,36 @@ public struct SessionTrail: Sendable, Equatable {
         }
     }
 
-    /// The session to scroll to on open. Nil when every released session is completed, or
+    /// The session in front of the student. Nil when every released session is completed, or
     /// nothing is released at all.
     public var nowSessionId: Int? { sessions.first { $0.state == .now }?.id }
+
+    /// Where the lit path and the glowing links between the cards end: the session in front of
+    /// the student, else the highest row finished — a sat midterm included, so the link lights
+    /// through it. Nil when nothing has started.
+    public var litThroughId: Int? {
+        if let now = nowSessionId { return now }
+        return items.last { item in
+            switch item {
+            case .session(let session): return session.state == .completed
+            case .midterm(let midterm): return midterm.state == .completed
+            }
+        }?.id
+    }
+
+    /// The row the page opens on (the design's `seek()`):
+    ///
+    /// * the session in front of the student;
+    /// * with none, on a level behind the student: nil — the page opens at its top;
+    /// * with none, the last session completed — the student is between lessons, and the
+    ///   next one is not released yet;
+    /// * with nothing completed either, the first row, at the bottom of the stack.
+    public var openingItemId: Int? {
+        if let now = nowSessionId { return now }
+        if levelPassed { return nil }
+        if let last = sessions.last(where: { $0.state == .completed }) { return last.id }
+        return items.first?.id
+    }
 
     // MARK: Rules
 
@@ -201,13 +250,15 @@ public struct SessionTrail: Sendable, Equatable {
         ]
     }
 
-    static func session(_ lesson: RoadmapLesson, levelPassed: Bool, isNow: Bool) -> TrailSession {
+    static func session(
+        _ lesson: RoadmapLesson, levelPassed: Bool, isNow: Bool, laterReleased: Bool = false
+    ) -> TrailSession {
         let facts = stepFacts(lesson)
 
         if levelPassed {
-            let steps = facts.map { fact in
-                SessionStep(kind: fact.kind, state: (fact.kind == .topic && !fact.exists) ? .notSet : .done)
-            }
+            // An outline says nothing about its reading, so the Topic cannot be told missing from
+            // present: a finished level is drawn whole, 3/3.
+            let steps = facts.map { SessionStep(kind: $0.kind, state: .done) }
             return TrailSession(lesson: lesson, state: .completed, steps: steps)
         }
 
@@ -219,13 +270,18 @@ public struct SessionTrail: Sendable, Equatable {
         }
 
         let existing = facts.filter(\.exists)
-        let completed = !existing.isEmpty && existing.allSatisfy(\.done) && lesson.state != .upcoming
+        let homeworkSet = lesson.assignmentId != nil
+        let completed = existing.allSatisfy(\.done) && (homeworkSet || laterReleased)
         let state: TrailSessionState = completed ? .completed : (isNow ? .now : .open)
+        // The latest session released, waiting on its homework: the node is drawn, unset.
+        let homeworkPending = !homeworkSet && !laterReleased
 
         let firstUndone: SessionStepKind? = state == .now ? existing.first(where: { !$0.done })?.kind : nil
         let steps = facts.map { fact -> SessionStep in
             let stepState: SessionStepState
-            if !fact.exists {
+            if fact.kind == .homework, homeworkPending {
+                stepState = .notYet
+            } else if !fact.exists {
                 stepState = .notSet
             } else if fact.done {
                 stepState = .done
@@ -248,21 +304,17 @@ public struct SessionTrail: Sendable, Equatable {
 
     // MARK: The reward pill
 
-    /// The attendance rule's default, when the rules have not loaded.
-    public static let defaultAttendanceXP = 5
-    /// The homework rule's default maximum, when the rules have not loaded.
-    public static let defaultHomeworkXP = 15
-
     /// "Up to +N XP" on a session card: what attending pays plus the most its homework pays,
     /// read off the live `/rewards/rules/`.
     ///
     /// * Classwork is left out — a teacher prices it per carrier, so there is no ceiling to
     ///   quote.
-    /// * An empty list means the rules have not loaded: the defaults, 5 + 15 = 20.
+    /// * An empty list means the rules did not load (or came back empty): nil, and the card
+    ///   shows no pill. A default would be a number the server never said.
     /// * Once loaded, a rule the server does not serve is switched off, and one that pays no
     ///   XP (`grantsXP == false`) adds nothing — this is an XP pill, not a points pill.
-    public static func xpCeiling(_ rules: [RewardRule]) -> Int {
-        guard !rules.isEmpty else { return defaultAttendanceXP + defaultHomeworkXP }
+    public static func xpCeiling(_ rules: [RewardRule]) -> Int? {
+        guard !rules.isEmpty else { return nil }
         func xp(_ event: String) -> Int {
             guard let rule = rules.first(where: { $0.event == event }), rule.grantsXP else { return 0 }
             return max(0, rule.points)

@@ -75,7 +75,8 @@ private struct TrailCurve: Shape {
 struct ClassSessionCard: View {
     let session: TrailSession
     let theme: ClassTheme
-    let xpCeiling: Int
+    /// Nil when the rules did not load: no pill.
+    let xpCeiling: Int?
     /// Where the steps' work lives (`ClassPageContent.workClassroomId`).
     let classroomId: Int?
     /// The page's entrance has run: the bar fills and, on the now session, the lit path draws in.
@@ -85,7 +86,9 @@ struct ClassSessionCard: View {
 
     private var drawn: [SessionStep] { session.steps.filter(\.exists) }
     private var fraction: Double {
-        session.existingCount == 0 ? 0 : Double(session.doneCount) / Double(session.existingCount)
+        // A finished session that had nothing to do is finished all the same.
+        if session.existingCount == 0 { return session.state == .completed ? 1 : 0 }
+        return Double(session.doneCount) / Double(session.existingCount)
     }
 
     var body: some View {
@@ -93,8 +96,9 @@ struct ClassSessionCard: View {
             heading
             progress.padding(.top, 10)
             if drawn.isEmpty {
-                // Released, but nothing handed out yet and no reading written: no trail to walk.
-                Text("Nothing handed out for this session yet.")
+                // Only a session the class has moved on from can have nothing at all: a released one
+                // still waiting always shows its homework as "Not set yet" (`SessionTrail`).
+                Text("Nothing was handed out in this session.")
                     .appFont(12.5, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.62))
                     .frame(maxWidth: .infinity)
@@ -200,12 +204,17 @@ struct ClassSessionCard: View {
                     }
                 }
                 .accessibilityHidden(true)
-            Text("\(session.doneCount)/\(session.existingCount) done")
-                .appFont(12, weight: .bold, monospacedDigits: true)
-                .foregroundStyle(.white.opacity(0.78))
-                .fixedSize()
-                .accessibilityLabel("\(session.doneCount) of \(session.existingCount) done")
-            SessionXPPill(amount: xpCeiling, dimmed: session.state == .locked)
+            if session.existingCount > 0 {
+                Text("\(session.doneCount)/\(session.existingCount) done")
+                    .appFont(12, weight: .bold, monospacedDigits: true)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .fixedSize()
+                    .accessibilityLabel("\(session.doneCount) of \(session.existingCount) done")
+            }
+            // No rules, no number: hidden rather than defaulted. A ceiling of 0 says nothing either.
+            if let xpCeiling, xpCeiling > 0 {
+                SessionXPPill(amount: xpCeiling, dimmed: session.state == .locked)
+            }
         }
     }
 }
@@ -343,6 +352,9 @@ private extension SessionStepKind {
         case .homework: return "Submitted"
         }
     }
+
+    /// The homework of the latest session, before the teacher sets it (`SessionStepState.notYet`).
+    static let notYetLine = "Not set yet"
 }
 
 /// One step: its node on the trail and, beside it, its label — or, for the step in front of the
@@ -366,7 +378,16 @@ private struct SessionStepNode: View {
         }
     }
 
-    private var meta: String { step.state == .done ? step.kind.doneLine : step.kind.waitingLine }
+    private var meta: String {
+        switch step.state {
+        case .done: return step.kind.doneLine
+        case .notYet: return SessionStepKind.notYetLine
+        default: return step.kind.waitingLine
+        }
+    }
+
+    /// A step that cannot be walked yet reads quieter.
+    private var dimmed: Bool { step.state == .locked || step.state == .notYet }
 
     var body: some View {
         // Taken out first: the guides' closures are Sendable and may not read the view.
@@ -411,7 +432,7 @@ private struct SessionStepNode: View {
             VStack(alignment: leftColumn ? .leading : .trailing, spacing: 1) {
                 Text(step.kind.title)
                     .appFont(13.5, weight: .bold)
-                    .foregroundStyle(step.state == .locked ? .white.opacity(0.62) : .white)
+                    .foregroundStyle(dimmed ? .white.opacity(0.62) : .white)
                 Text(meta)
                     .appFont(11.5, weight: .semibold)
                     .foregroundStyle(.white.opacity(0.62))
@@ -430,6 +451,7 @@ private struct SessionStepNode: View {
         case .now: state = "up next"
         case .todo: state = "to do"
         case .locked: state = "locked"
+        case .notYet: state = "not set yet"
         case .notSet: state = ""
         }
         let what = isNow ? "Resume \(step.kind.title)" : step.kind.title
@@ -461,6 +483,13 @@ private struct StepDisc: View {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white.opacity(0.5))
+            }
+        case .notYet:
+            // The to-do disc, fainter: the step will come, and is not there to do yet.
+            disc(size: 40, base: theme.base2, tint: .white.opacity(0.05), ring: .white.opacity(0.20), ringWidth: 1.5) {
+                Image(systemName: kind.icon)
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.45))
             }
         case .todo, .notSet:
             disc(size: 40, base: theme.base2, tint: .white.opacity(0.08), ring: .white.opacity(0.30), ringWidth: 1.5) {

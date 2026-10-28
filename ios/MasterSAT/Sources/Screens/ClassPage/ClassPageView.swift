@@ -151,8 +151,8 @@ struct ClassPageView: View {
     private func list(_ content: ClassPageContent) -> some View {
         // Highest number on top: the stack is walked from the bottom up.
         let rows = Array(content.trail.items.reversed())
-        let lit = content.litThrough
-        let focus = content.openingItemId ?? rows.first?.id ?? 0
+        let lit = content.trail.litThroughId
+        let focus = content.trail.openingItemId ?? rows.first?.id ?? 0
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(spacing: 0) {
@@ -202,14 +202,15 @@ struct ClassPageView: View {
         }
     }
 
-    /// The design's `seek()` and `intro()`: put the now session in view — centred, or at the bottom
-    /// of the screen when the level has not started — then start the entrance a beat later. Both
-    /// once; a reload keeps the student where they are.
+    /// The design's `seek()` and `intro()`: put the row the kit opens on in view (`openingItemId`:
+    /// the now session, else the last one finished) — centred, or at the bottom of the screen when
+    /// the level has not started; a level behind the student stays at its top. Then start the
+    /// entrance a beat later. Both once; a reload keeps the student where they are.
     private func open(_ content: ClassPageContent, proxy: ScrollViewProxy) {
         guard !opened else { return }
         opened = true
-        if let target = content.openingItemId {
-            let anchor: UnitPoint = content.litThrough == nil ? .bottom : .center
+        if let target = content.trail.openingItemId {
+            let anchor: UnitPoint = content.trail.litThroughId == nil ? .bottom : .center
             Task {
                 // One layout pass first, so the rows have their heights.
                 await Task.yield()

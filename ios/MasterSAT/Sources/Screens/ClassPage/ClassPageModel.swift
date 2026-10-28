@@ -20,8 +20,9 @@ struct ClassPageContent: Equatable {
     /// The classroom the sessions' homework and classwork open in. The roadmap names it for the
     /// student's own level (`own_classroom_id`); a level behind them carries no ids to open.
     let workClassroomId: Int?
-    /// "Up to +N XP" on every session card (owner's Q2).
-    let xpCeiling: Int
+    /// "Up to +N XP" on every session card (owner's Q2). Nil when the rules did not load: the
+    /// cards then show no pill rather than a number the server never said.
+    let xpCeiling: Int?
 
     /// The class card's title: the class's own name, or "Junior Math" when there is no class.
     var title: String {
@@ -29,25 +30,6 @@ struct ClassPageContent: Equatable {
         return "\(levelLabel) \(subjectLabel)"
     }
 
-    /// Where the trail's lit part and the glowing links end: the session in front of the student,
-    /// else the highest one finished. Nil when nothing has started.
-    var litThrough: Int? {
-        if let now = trail.nowSessionId { return now }
-        return trail.items.last { item in
-            switch item {
-            case .session(let session): return session.state == .completed
-            case .midterm(let midterm): return midterm.state == .completed
-            }
-        }?.id
-    }
-
-    /// The row the page opens on (the design's `seek()`): the session in front of the student.
-    /// With none, a level not started yet opens on its first session, at the bottom of the
-    /// stack; a level finished opens at the top, on its last.
-    var openingItemId: Int? {
-        if let now = trail.nowSessionId { return now }
-        return litThrough == nil ? trail.items.first?.id : nil
-    }
 }
 
 extension ClassPageContent {
@@ -111,7 +93,7 @@ enum ClassPageLinks {
     /// Nil for a step that is locked or not set, and for one whose id the server withheld.
     static func link(_ kind: SessionStepKind, in session: TrailSession, classroomId: Int?) -> AppLink? {
         let step = session.step(kind)
-        guard step.exists, step.state != .locked else { return nil }
+        guard step.exists, step.state != .locked, step.state != .notYet else { return nil }
         let lesson = session.lesson
         switch kind {
         case .topic:
