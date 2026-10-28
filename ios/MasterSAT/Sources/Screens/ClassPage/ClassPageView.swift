@@ -14,8 +14,9 @@ import MasterSATKit
 /// `AppLink` the tab's stack already resolves — the reading, or the homework page, which is also the
 /// classwork page (`ClassPageLinks`).
 ///
-/// The back button is the system's, over a transparent bar: it keeps the swipe back and the long
-/// press, and on iOS 26 it is the design's glass circle.
+/// The navigation bar is hidden and the back button is the design's own 42-pt glass circle, the same
+/// on iOS 17, 18 and 26 (`ClassPageBackButton`). Hiding the bar turns UIKit's swipe back off with it,
+/// so `InteractivePopKeeper` turns it back on for this page alone; VoiceOver's escape goes back too.
 struct ClassPageView: View {
     let route: ClassPageRoute
 
@@ -24,6 +25,7 @@ struct ClassPageView: View {
     @Environment(TabBarChrome.self) private var chrome: TabBarChrome?
     @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dismiss) private var dismiss
 
     @State private var model = ClassPageModel()
     /// The header has risen into place (the design's `inUp`, 140 ms in).
@@ -43,13 +45,23 @@ struct ClassPageView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // The design's strip row: 44 tall, 6 under the status bar.
+            HStack(spacing: 0) {
+                ClassPageBackButton { dismiss() }
+                Spacer(minLength: 0)
+            }
+            .frame(height: ClassPageTopStrip.backRowHeight)
+            .padding(.horizontal, 16)
+            .padding(.top, ClassPageTopStrip.backRowTop)
+            .modifier(ClassPageRise(shown: headerShown, delay: 0.06, distance: -12))
             header
                 .padding(.horizontal, 16)
-                .padding(.top, 10)
+                .padding(.top, ClassPageTopStrip.cardTop)
             sessions
                 .padding(.top, 14)
         }
         .background { ClassPageTopStrip() }
+        .background { InteractivePopKeeper().frame(width: 0, height: 0) }
         .background { ClassPageBackdrop(theme: theme) }
         .overlay(alignment: .bottom) { ClassPageFade(edge: .bottom, theme: theme) }
         // The page is dark whatever the phone's setting: its words, spinners and refresh control are
@@ -61,12 +73,11 @@ struct ClassPageView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        // A page pushed over this one says "Back", not a class name, beside its chevron.
         .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        // A chevron alone, as the design's back button: no "Back" beside it.
-        .toolbarRole(.editor)
+        .toolbar(.hidden, for: .navigationBar)
+        // VoiceOver's two-finger scrub: the system button's escape, kept with the bar hidden.
+        .accessibilityAction(.escape) { dismiss() }
         // Runs again whenever the page comes back into view — after a reading or a homework — so a
         // step just finished moves the trail on without a pull.
         .task { await model.load(route: route, session: session) }
@@ -322,11 +333,13 @@ struct ClassPageHeaderCard: View {
 // MARK: - States
 
 /// The design's entrance for one block: it fades in (0.6 s) as it rises 18 pt into place (0.8 s,
-/// `cubic-bezier(.2,.8,.2,1)`), `delay` after the page asks. Under Reduce Motion it is simply there —
-/// the same modifiers, given their resting values and no animation.
+/// `cubic-bezier(.2,.8,.2,1)`), `delay` after the page asks — or, for the back button, drops 12 pt
+/// (`distance` -12). Under Reduce Motion it is simply there — the same modifiers, given their
+/// resting values and no animation.
 private struct ClassPageRise: ViewModifier {
     let shown: Bool
     let delay: Double
+    var distance: CGFloat = 18
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -337,8 +350,134 @@ private struct ClassPageRise: ViewModifier {
                 $0.opacity(up ? 1 : 0)
             }
             .animation(reduceMotion ? nil : .timingCurve(0.2, 0.8, 0.2, 1, duration: 0.8).delay(delay)) {
-                $0.offset(y: up ? 0 : 18)
+                $0.offset(y: up ? 0 : distance)
             }
+    }
+}
+
+// MARK: - Back
+
+/// The design's back button: a 42-pt glass circle — white at 14 % in a 22 % white ring — with a white
+/// 28-pt chevron (`MS28 chevron_left`), in a 44-pt target. One look on every iOS: the system's button
+/// is a bare chevron before iOS 26 and a glass capsule of its own on it.
+private struct ClassPageBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 28, weight: .medium))
+                .foregroundStyle(.white)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(.white.opacity(0.14)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.22), lineWidth: 1))
+                .contentShape(Circle())
+                .hitTarget(44)
+        }
+        .buttonStyle(PressBounce())
+        .accessibilityLabel("Back")
+        .capDynamicType(label: "Back", systemImage: "chevron.left")
+    }
+}
+
+/// The swipe back, on a page that hides its navigation bar.
+///
+/// UIKit turns the interactive pop off along with the bar. The well-worn fix is a delegate of one's
+/// own for the stack's pop gesture that lets it begin whenever there is a page to go back to and no
+/// transition is running — the second half is what keeps a swipe during a push from wedging the
+/// stack. Every other question the gesture asks (which touches, which gestures it waits on) is
+/// passed on to UIKit's own delegate, so only "may it begin" changes.
+///
+/// iOS 26 pops a bar-less page through its content swipe (`interactiveContentPopGestureRecognizer`)
+/// rather than the edge one, so both are kept; before it, the edge one is all there is. Checked on the
+/// iOS 26.3 simulator: an edge swipe on a bar-less page does nothing without this and pops with it.
+///
+/// Scoped to this page: installed as it appears, and UIKit's delegates put back as it goes (a swipe
+/// already under way keeps running; a cancelled one brings the page back and installs again), so no
+/// other page and no other stack behaves any differently.
+private struct InteractivePopKeeper: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Keeper { Keeper() }
+    func updateUIViewController(_ keeper: Keeper, context: Context) {}
+
+    final class Keeper: UIViewController, UIGestureRecognizerDelegate {
+        /// A gesture taken over, and the delegate UIKit gave it. Weak both: the stack owns them.
+        private struct Kept {
+            weak var gesture: UIGestureRecognizer?
+            weak var original: UIGestureRecognizerDelegate?
+        }
+
+        private var kept: [Kept] = []
+        private weak var stack: UINavigationController?
+
+        override func loadView() {
+            let view = UIView()
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            self.view = view
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            install()
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            restore()
+        }
+
+        private func install() {
+            guard kept.isEmpty, let stack = navigationController else { return }
+            self.stack = stack
+            var gestures: [UIGestureRecognizer] = []
+            if let edge = stack.interactivePopGestureRecognizer { gestures.append(edge) }
+            if #available(iOS 26.0, *), let content = stack.interactiveContentPopGestureRecognizer {
+                gestures.append(content)
+            }
+            for gesture in gestures where gesture.delegate !== self {
+                kept.append(Kept(gesture: gesture, original: gesture.delegate))
+                gesture.delegate = self
+            }
+        }
+
+        private func restore() {
+            for entry in kept where entry.gesture?.delegate === self {
+                entry.gesture?.delegate = entry.original
+            }
+            kept = []
+            stack = nil
+        }
+
+        private func original(for gesture: UIGestureRecognizer) -> UIGestureRecognizerDelegate? {
+            kept.first { $0.gesture === gesture }?.original
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            guard let stack else { return false }
+            return stack.viewControllers.count > 1 && stack.transitionCoordinator == nil
+        }
+
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+            original(for: gestureRecognizer)?.gestureRecognizer?(gestureRecognizer, shouldReceive: touch) ?? true
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer, shouldRequireFailureOf other: UIGestureRecognizer
+        ) -> Bool {
+            original(for: gestureRecognizer)?.gestureRecognizer?(gestureRecognizer, shouldRequireFailureOf: other) ?? false
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy other: UIGestureRecognizer
+        ) -> Bool {
+            original(for: gestureRecognizer)?.gestureRecognizer?(gestureRecognizer, shouldBeRequiredToFailBy: other) ?? false
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+        ) -> Bool {
+            original(for: gestureRecognizer)?.gestureRecognizer?(gestureRecognizer, shouldRecognizeSimultaneouslyWith: other) ?? false
+        }
     }
 }
 

@@ -89,13 +89,22 @@ private struct DotTexture: View {
 }
 
 /// The glass strip across the top: white at 7 %, rounded 34 at the bottom, a light edge along its
-/// lower rim and a soft shadow under it. It reaches up under the status bar and ends 50 pt below the
-/// navigation bar (the design's 156 on a 874-pt phone), so the class card overhangs its rim.
+/// lower rim and a soft shadow under it. It reaches up under the status bar and holds the back button;
+/// it ends 40 pt down the class card (the design's 156 on a 874-pt phone), so the card overhangs its
+/// rim.
 struct ClassPageTopStrip: View {
+    /// The design's rows under a 54-pt status bar: the back button's row at 60 (6 below it), 44 tall;
+    /// the class card at 116 (12 below that); the strip's rim at 156 (40 down the card).
+    static let backRowTop: CGFloat = 6
+    static let backRowHeight: CGFloat = 44
+    static let cardTop: CGFloat = 12
+    static let rimIntoCard: CGFloat = 40
+    private static let belowSafeArea = backRowTop + backRowHeight + cardTop + rimIntoCard
+
     var body: some View {
-        // The reader sits where the page's content starts, under the status and navigation bars; how
-        // far down that is, it reads off its own frame. (A reader told to ignore the safe area reads
-        // an inset of 0.) The strip then reaches back up to the screen's edge.
+        // The reader sits where the page's content starts, under the status bar; how far down that
+        // is, it reads off its own frame. (A reader told to ignore the safe area reads an inset of 0.)
+        // The strip then reaches back up to the screen's edge.
         GeometryReader { proxy in
             let top = max(0, proxy.frame(in: .global).minY)
             let shape = UnevenRoundedRectangle(bottomLeadingRadius: 34, bottomTrailingRadius: 34, style: .continuous)
@@ -108,7 +117,7 @@ struct ClassPageTopStrip: View {
                     }
                 }
                 .background(GlassShadow(shape: shape, color: ClassPageInk.shade.opacity(0.25), radius: 16, y: 12))
-                .frame(height: top + 50)
+                .frame(height: top + Self.belowSafeArea)
                 .offset(y: -top)
         }
         .allowsHitTesting(false)
