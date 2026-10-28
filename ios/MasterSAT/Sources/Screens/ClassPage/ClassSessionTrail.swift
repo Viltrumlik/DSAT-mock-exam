@@ -285,7 +285,8 @@ private struct SessionTrailArea: View {
                     theme: theme,
                     link: ClassPageLinks.link(step.kind, in: session, classroomId: classroomId),
                     leftColumn: index % 2 == 0,
-                    center: points[index]
+                    center: points[index],
+                    areaWidth: width
                 )
             }
         }
@@ -360,6 +361,10 @@ private extension SessionStepKind {
 /// One step: its node on the trail and, beside it, its label — or, for the step in front of the
 /// student, the white "Resume" popover. Placed by alignment guides so the node's centre lands on its
 /// point whichever side the words are on: right of a left-column node, left of a right-column one.
+///
+/// The words take the design's width (196 for a label, 206 for the popover) when the trail area has
+/// it beside the node, and the room there when it has not — a 375-pt phone leaves 200 — so they end
+/// at the area's edge and the node stays on its point.
 private struct SessionStepNode: View {
     let step: SessionStep
     let session: TrailSession
@@ -367,6 +372,11 @@ private struct SessionStepNode: View {
     let link: AppLink?
     let leftColumn: Bool
     let center: CGPoint
+    /// The trail area's width, for the room beside the node.
+    let areaWidth: CGFloat
+
+    /// The design's gap between a node and its words.
+    private static let gap: CGFloat = 10
 
     private var isNow: Bool { step.state == .now }
     /// done 44, now 54, to do and locked 40.
@@ -376,6 +386,14 @@ private struct SessionStepNode: View {
         case .done: return 44
         default: return 40
         }
+    }
+
+    /// The design's `width`, or the room between the node and the area's edge on the words' side.
+    private func wordsWidth(_ design: CGFloat) -> CGFloat {
+        let room = leftColumn
+            ? areaWidth - (center.x + size / 2 + Self.gap)
+            : center.x - size / 2 - Self.gap
+        return max(0, min(design, room))
     }
 
     private var meta: String {
@@ -411,7 +429,7 @@ private struct SessionStepNode: View {
     /// The disc and its words as one element — inside the link's label, so the link stays the
     /// button VoiceOver activates.
     private var row: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: Self.gap) {
             if leftColumn {
                 StepDisc(state: step.state, kind: step.kind, theme: theme)
                 words
@@ -427,7 +445,7 @@ private struct SessionStepNode: View {
 
     @ViewBuilder private var words: some View {
         if isNow {
-            ResumePopover(title: step.kind.title, meta: meta, theme: theme)
+            ResumePopover(title: step.kind.title, meta: meta, theme: theme, width: wordsWidth(206))
         } else {
             VStack(alignment: leftColumn ? .leading : .trailing, spacing: 1) {
                 Text(step.kind.title)
@@ -439,7 +457,7 @@ private struct SessionStepNode: View {
             }
             .multilineTextAlignment(leftColumn ? .leading : .trailing)
             .lineLimit(2)
-            .frame(width: 196, alignment: leftColumn ? .leading : .trailing)
+            .frame(width: wordsWidth(196), alignment: leftColumn ? .leading : .trailing)
             .capDynamicType()
         }
     }
@@ -558,10 +576,12 @@ private struct NowDisc: View {
 
 /// The white card beside the now node: the step, a line about it, and the gradient "Resume" button
 /// (`width:206px; border-radius:16px`). The whole row is the link, so the button is drawn, not wired.
+/// `width` is 206, or the room the node leaves on a narrower phone (`SessionStepNode`).
 private struct ResumePopover: View {
     let title: String
     let meta: String
     let theme: ClassTheme
+    let width: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -595,7 +615,7 @@ private struct ResumePopover: View {
         }
         .padding(.leading, 12)
         .padding([.trailing, .vertical], 10)
-        .frame(width: 206, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white))
         .shadow(color: ClassPageInk.shade.opacity(0.20), radius: 3, y: 2)
         .shadow(color: ClassPageInk.shade.opacity(0.45), radius: 18, y: 16)
