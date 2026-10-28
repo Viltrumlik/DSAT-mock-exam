@@ -56,3 +56,12 @@ class FoundationSourceTests(TestCase):
         s = AssessmentSetAdminWriteSerializer(inst, data={"level": "junior"}, partial=True)
         self.assertFalse(s.is_valid())
         self.assertIn("source", s.errors)
+
+    def test_admin_clean_rejects_topic_on_junior_set(self):
+        from django.core.exceptions import ValidationError
+
+        inst = AssessmentSet(subject="math", title="S01 HW", source=S01, level="junior")
+        with self.assertRaises(ValidationError) as ctx:
+            inst.clean()
+        self.assertIn("source", ctx.exception.message_dict)
+        AssessmentSet(subject="math", title="S01 HW", source=S01, level="foundation").clean()
