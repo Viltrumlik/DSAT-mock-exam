@@ -99,6 +99,8 @@ export const metadata: Metadata = {
 import Script from "next/script";
 import "katex/dist/katex.min.css";
 
+const STALE_CHUNK_RELOAD = `window.addEventListener("error",function(e){var t=e.target,u=t&&(t.src||t.href);if(!u||String(u).indexOf("/_next/static/")<0)return;try{var k="mastersat:stale-build-reload-at",n=Date.now();if(n-Number(sessionStorage.getItem(k)||0)<30000)return;sessionStorage.setItem(k,String(n))}catch(x){return}location.reload()},true);`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -114,7 +116,12 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${plusJakarta.variable} ${baloo.variable}`}
     >
-      <head />
+      <head>
+        {/* Runs before any chunk: when a page from an older release asks for a /_next/static
+            file the new release no longer has, React never starts, so no error boundary can
+            catch it. Reload once (same guard as lib/staleBuild.ts) to fetch the current page. */}
+        <script dangerouslySetInnerHTML={{ __html: STALE_CHUNK_RELOAD }} />
+      </head>
       <body className="antialiased">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           <QueryProvider>

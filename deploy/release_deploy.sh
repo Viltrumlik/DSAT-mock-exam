@@ -307,6 +307,18 @@ echo "-> Frontend npm ci + build"
 npm ci --prefix "$RELEASE_DIR/frontend" --no-audit --no-fund
 npm run build --prefix "$RELEASE_DIR/frontend"
 
+# Carry the live release's /_next/static chunks into the new one. A phone that opened a page
+# before this deploy (a Telegram in-app tab, a restored Chrome tab) still asks for the old
+# hashes; without them it gets a 404 and a blank "Application error" screen. The new build's
+# own files win (--update=none), and files older than 14 days are dropped so the carry-over cannot pile
+# up across releases forever (-p keeps each file's age as it travels).
+DEPLOY_STAGE="carry_static_chunks"
+OLD_STATIC="${OLD_CURRENT_REAL:+$OLD_CURRENT_REAL/frontend/.next/static}"
+if [[ -n "$OLD_STATIC" ]] && [[ -d "$OLD_STATIC" ]]; then
+  echo "-> Carry previous release's static chunks (14 days)"
+  (cd "$OLD_STATIC" && find . -type f -mtime -14 -exec cp --update=none -p --parents {} "$RELEASE_DIR/frontend/.next/static/" \;)
+fi
+
 DEPLOY_STAGE="pm2_stop_before_migrate"
 echo "-> Stop PM2 app processes (Celery first, then API/frontend)"
 $PM2 stop sat-celery-worker 2>/dev/null || true
