@@ -49,6 +49,10 @@ struct CompleteProfileView: View {
     /// goes back to a step that was part of their gate; for a student whose only outstanding
     /// field was the email it would offer a detour they were never asked to take.
     private let hadNamesStep: Bool
+    /// What the server said was missing when the gate opened — the count behind "Step 1 of 3"
+    /// (`ProfileCompletion.position`). Fixed for the gate's life, so the total never shrinks
+    /// under the student as steps clear.
+    private let owedAtStart: [String]
 
     init(user: CurrentUser, onDone: @escaping () -> Void) {
         self.user = user
@@ -57,6 +61,7 @@ struct CompleteProfileView: View {
         _missing = State(initialValue: missing)
         _step = State(initialValue: ProfileCompletion.firstStep(missing: missing))
         hadNamesStep = ProfileCompletion.needsNames(missing)
+        owedAtStart = missing
         // All three are always shown and pre-filled, so a name Telegram guessed wrong can be
         // corrected here, not only the ones the server flagged.
         _firstName = State(initialValue: user.firstName ?? "")
@@ -75,10 +80,12 @@ struct CompleteProfileView: View {
     }
 
     var body: some View {
-        ScrollView {
+        // The new look (mockup 03): the sign-in's blue top as a compact band, so the front door
+        // and these steps read as one flow, with the step chip on it.
+        VStack(spacing: 0) {
+            AuthCompactBand(step: finished ? nil : ProfileCompletion.position(of: step, owedAtStart: owedAtStart))
+            ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                BrandMark(height: 36, tint: Theme.accent)
-
                 if finished {
                     finishedStep
                 } else {
@@ -114,12 +121,14 @@ struct CompleteProfileView: View {
                     .disabled(busy || emailBusy || finishing)
                 }
             }
-            .padding(24)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 22)
             .frame(maxWidth: 480, alignment: .leading)
             .frame(maxWidth: .infinity)
+            }
+            .scrollDismissesKeyboard(.interactively)
         }
-        .scrollDismissesKeyboard(.interactively)
-        .background(Theme.background.ignoresSafeArea())
+        .background(NewLook.page.ignoresSafeArea())
         // A refusal is spoken once — it changed, so it is news. The same sentence set twice
         // does not re-announce, which is what a student retrying the same wrong number hears.
         .onChange(of: error) { _, now in
@@ -138,11 +147,12 @@ struct CompleteProfileView: View {
     private func heading(_ title: String, _ description: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: title)
-                .appFont(26, weight: .heavy)
+                .appDisplayFont(28)
                 .tracking(-0.6)
+                .foregroundStyle(NewLook.ink)
             Text(verbatim: description)
-                .appFont(14, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(16, weight: .medium)
+                .foregroundStyle(NewLook.ink4)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -193,7 +203,7 @@ struct CompleteProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             .disabled(busy)
             .accessibilityLabel(busy ? "Saving" : "Save password")
         }
@@ -237,7 +247,7 @@ struct CompleteProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             .disabled(busy)
             .accessibilityLabel(Text(verbatim: busy ? "Saqlanmoqda" : "Tasdiqlash"))
 
@@ -319,7 +329,7 @@ struct CompleteProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             .disabled(busy)
             .accessibilityLabel(busy ? "Saving" : (afterNames == nil ? "Save" : "Save and continue"))
 
@@ -372,7 +382,7 @@ struct CompleteProfileView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             .disabled(finishing)
             .accessibilityLabel(finishing ? "Continuing" : "Continue")
         }

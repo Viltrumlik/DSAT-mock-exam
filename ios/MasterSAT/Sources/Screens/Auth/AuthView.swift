@@ -34,6 +34,8 @@ struct AuthView: View {
     /// Bumped when the server said the identity or password is wrong: the password box shakes and
     /// a warning haptic plays. Other failures (offline, throttled) only say so.
     @State private var refusals = 0
+    /// The last attempt was refused: the password box is drawn red until it is edited (mockup 02).
+    @State private var passwordRefused = false
     /// The sign-in on its way. A second tap cancels the first, so two attempts never race to
     /// set the same error.
     @State private var attempt: Task<Void, Never>?
@@ -44,41 +46,44 @@ struct AuthView: View {
 
     var body: some View {
         GeometryReader { screen in
+            let top = screen.safeAreaInsets.top
             ScrollView {
                 // The page is short, so it is centred rather than left at the top — and
                 // `minHeight` is what lets the keyboard push it up instead of covering the
                 // password box. The copyright takes the slack at the bottom.
                 VStack(spacing: 0) {
-                    Spacer(minLength: 28)
+                    // The new look's blue top (mockup 01), under the status bar too.
+                    AuthBand(height: min(330, (screen.size.height + top) * 0.38))
                     form
+                        .padding(.top, 28)
                     Spacer(minLength: 28)
                     copyright
                 }
-                .frame(minHeight: screen.size.height)
+                .frame(minHeight: screen.size.height + top)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 20)
+                .padding(.bottom, 12)
             }
+            .ignoresSafeArea(.container, edges: .top)
             .scrollDismissesKeyboard(.interactively)
         }
         // Not `Theme.background`: the mockup's page is white, where the grouped background is
         // the grey a page of cards sits on. In dark mode this is the same near-black.
-        .background(Color(.systemBackground).ignoresSafeArea())
+        .background(NewLook.page.ignoresSafeArea())
         .sensoryFeedback(.warning, trigger: refusals)
         .onDisappear { attempt?.cancel() }
     }
 
     private var form: some View {
-        VStack(spacing: 0) {
-            logo
-
+        VStack(alignment: .leading, spacing: 0) {
             Text("Sign in")
-                .appFont(22, weight: .heavy)
-                .tracking(-0.4)
-                .padding(.top, 18)
+                .appDisplayFont(32)
+                .tracking(-0.8)
+                .foregroundStyle(NewLook.ink)
+                .accessibilityAddTraits(.isHeader)
             Text("MasterSAT Center")
-                .appFont(12, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.top, 3)
+                .appFont(16, weight: .medium)
+                .foregroundStyle(NewLook.muted)
+                .padding(.top, 4)
 
             // Above the fields, where the eye is not, and said once (below).
             if let notice, !noticeDismissed, error == nil {
@@ -100,7 +105,7 @@ struct AuthView: View {
                 .padding(.top, 20)
             }
 
-            SoftField {
+            SoftField(systemImage: "person") {
                 // `verbatim`, because a plain string placeholder is a LocalizedStringKey:
                 // SwiftUI parses it as markdown, and a hint with an address or a `+998` in it
                 // comes out as a blue tappable link inside an empty field.
@@ -127,9 +132,11 @@ struct AuthView: View {
                 focus: $focus,
                 field: .password,
                 shakes: refusals,
+                invalid: passwordRefused,
                 onSubmit: { if canSubmit { submit() } }
             )
-            .padding(.top, 10)
+            .padding(.top, 12)
+            .onChange(of: password) { _, _ in if passwordRefused { passwordRefused = false } }
 
             Button(action: submit) {
                 if session.isWorking {
@@ -138,41 +145,28 @@ struct AuthView: View {
                     Text("Sign in").frame(maxWidth: .infinity)
                 }
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
             .disabled(!canSubmit)
             // The spinner has no words of its own.
             .accessibilityLabel(session.isWorking ? "Signing in" : "Sign in")
-            .padding(.top, 16)
+            .padding(.top, 18)
 
             help
-                .padding(.top, 22)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 24)
         }
         // One centred column at every width: the iPad split is gone with the panel that
         // filled its other half.
-        .frame(maxWidth: 460)
+        .frame(maxWidth: 460, alignment: .leading)
         .padding(.horizontal, 20)
     }
 
-    /// The mark in a brand-blue tile, arriving with phase 4's spring.
-    ///
-    /// White on brand blue in both themes: `Theme.accent` is blue in light and dark, so the
-    /// mark never ends up white on a fill that lightened under it.
-    private var logo: some View {
-        RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(Theme.accent)
-            .frame(width: 56, height: 56)
-            .overlay { BrandMark(height: 30) }
-            .modifier(LogoArrival())
-    }
-
-    /// The two things a student who cannot get in needs to know, and neither is a tap: each is
-    /// one `Text`, so VoiceOver reads the sentence whole instead of in halves.
     private var help: some View {
         VStack(spacing: 7) {
-            Text("Forgot your password? ").foregroundStyle(Theme.textSecondary)
-                + Text("Your centre resets it.").foregroundStyle(Theme.accentText)
+            Text("Forgot your password? ").foregroundStyle(NewLook.ink4)
+                + Text("Your centre resets it.").foregroundStyle(NewLook.blueText)
             Text("No account yet? Your learning centre creates it for you.")
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
         }
         .appFont(13, weight: .medium)
         .multilineTextAlignment(.center)
@@ -181,8 +175,8 @@ struct AuthView: View {
 
     private var copyright: some View {
         Text("© \(ScoreText.string(Calendar.current.component(.year, from: Date()))) MasterSAT Center")
-            .appFont(12, weight: .medium)
-            .foregroundStyle(Theme.textLabel)
+            .appFont(13, weight: .medium)
+            .foregroundStyle(NewLook.muted)
     }
 
     private func submit() {
@@ -207,7 +201,10 @@ struct AuthView: View {
                 // (`AuthErrorCopy`); one from /me after it (`AccountDidNotLoad`) is not, and
                 // neither is "cannot reach the server" — shaking there teaches a student to
                 // retype a password that was right.
-                if case .unauthorized? = error as? APIError { refusals += 1 }
+                if case .unauthorized? = error as? APIError {
+                    refusals += 1
+                    passwordRefused = true
+                }
                 // The alert appears where the eye is not; VoiceOver hears it once.
                 AccessibilityNotification.Announcement(copy.message).post()
             }
