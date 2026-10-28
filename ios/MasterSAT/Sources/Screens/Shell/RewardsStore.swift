@@ -24,6 +24,10 @@ final class RewardsStore {
     /// an award was dated, and an award dated back can still be the newest to arrive.
     @ObservationIgnored private(set) var newestAwardID: Int?
     @ObservationIgnored private var order = LatestOnly()
+    /// The last read of `/rewards/me/` failed. Today's stat cards stop drawing their loading block
+    /// then — a block that shimmers on while nothing is coming promises an answer that is not on
+    /// its way — and fall back to the quiet dash.
+    private(set) var lastReadFailed = false
 
     /// Take one before asking `/rewards/me/` yourself, and hand it back to `apply`.
     func ticket() -> UInt64 { order.issue() }
@@ -32,7 +36,10 @@ final class RewardsStore {
     @discardableResult
     func refresh(using api: RewardsAPI) async -> Int? {
         let ticket = ticket()
-        guard let me = try? await api.me() else { return nil }
+        guard let me = try? await api.me() else {
+            noteReadFailed()
+            return nil
+        }
         apply(me, ticket: ticket)
         return xp
     }
@@ -47,6 +54,7 @@ final class RewardsStore {
     @discardableResult
     func apply(_ me: MyRewards, ticket: UInt64) -> Bool {
         guard order.accept(ticket) else { return false }
+        if lastReadFailed { lastReadFailed = false }
         if let newest = me.history.map(\.id).max(), newest != newestAwardID { newestAwardID = newest }
         guard xp != me.xp || streak != me.currentStreak || coins != me.coins else { return true }
         withAnimation(Motion.snappy) {
@@ -55,6 +63,13 @@ final class RewardsStore {
             if coins != me.coins { coins = me.coins }
         }
         return true
+    }
+
+    /// A read of `/rewards/me/` made elsewhere (the welcome-back check) failed. A cancelled read
+    /// is no failure: nothing is said then.
+    func noteReadFailed() {
+        guard !Task.isCancelled, !lastReadFailed else { return }
+        lastReadFailed = true
     }
 
     /// The default board's standing was read. A student with no XP has none; the last known

@@ -71,8 +71,12 @@ struct TodayStatCard: View {
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(RewardsStore.self) private var rewards
     /// A number has been on the card: from now on a change is a real one, and it counts.
     @State private var hasShownNumber = false
+
+    /// Not read yet, and a read can still land.
+    private var loading: Bool { figure.isLoading && !rewards.lastReadFailed }
 
     var body: some View {
         Button(action: action) {
@@ -91,12 +95,13 @@ struct TodayStatCard: View {
                     // Not read yet: a block where the number will land (mockup 90), never a zero.
                     // Laid over the figure, which stays in place and only fades — the card's
                     // height and the tree are the same before and after.
-                    .opacity(figure.isLoading ? 0 : 1)
+                    // A read that failed is not on its way: the quiet dash stays.
+                    .opacity(loading ? 0 : 1)
                     .overlay(alignment: .leading) {
-                        SkeletonClock(running: figure.isLoading) {
+                        SkeletonClock(running: loading) {
                             SkeletonBlock(width: 78, height: 20)
                         }
-                        .opacity(figure.isLoading ? 1 : 0)
+                        .opacity(loading ? 1 : 0)
                     }
                     Text(figure.caption)
                         .newLookCaps()

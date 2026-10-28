@@ -76,6 +76,8 @@ final class AwayCheck {
             // nothing; neither is an answer that came back for another account), nothing flies,
             // and the baseline stays as it was.
             celebrations.resolveAway(away, xpAfter: nil, label: nil)
+            // Today's stat cards stop waiting for numbers that are not coming.
+            if isSignedIn(as: userID, in: session) { rewards.noteReadFailed() }
             return .failed
         }
         // Before the store takes the new streak, so no flame shows it early.
