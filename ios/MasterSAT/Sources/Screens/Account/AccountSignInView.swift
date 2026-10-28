@@ -424,8 +424,7 @@ struct AccountPasswordChangedView: View {
 
     var body: some View {
         StateScreen(
-            icon: "checkmark.shield",
-            tone: Theme.success,
+            medal: StateMedal.green("checkmark.shield.fill"),
             title: "Password changed",
             message: "For your security, every device signed in to your account has been signed out — this phone too. Sign in again with your new password."
         ) {
@@ -438,7 +437,7 @@ struct AccountPasswordChangedView: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
             .disabled(leaving)
             .accessibilityLabel(leaving ? "Signing you out" : "Sign in again")
         }

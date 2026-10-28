@@ -578,9 +578,33 @@ extension View {
     /// already presenting one: the sheet never appears, `onDismiss` never fires, and the
     /// suppression it left behind outlives the cover. Adding a `fullScreenCover` means adding
     /// this line in the same edit.
-    func coversCelebrations(_ center: CelebrationCenter) -> some View {
-        onAppear { center.coverAppeared() }
-            .onDisappear { center.coverDisappeared() }
+    ///
+    /// It also tells the status bar (`StatusBarChrome`) that a cover is up, so the tab underneath
+    /// stops choosing the clock's colour. `holdsStatusBar: false` is for a window that leaves the
+    /// page under it on screen, dimmed — the header windows over a blue band keep its white clock.
+    func coversCelebrations(_ center: CelebrationCenter, holdsStatusBar: Bool = true) -> some View {
+        modifier(CoverRegistration(center: center, holdsStatusBar: holdsStatusBar))
+    }
+}
+
+private struct CoverRegistration: ViewModifier {
+    let center: CelebrationCenter
+    let holdsStatusBar: Bool
+
+    /// Optional: a cover drawn without the shell (a preview) still renders.
+    @Environment(StatusBarChrome.self) private var statusBar: StatusBarChrome?
+    @State private var owner = UUID()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                center.coverAppeared()
+                if holdsStatusBar { statusBar?.coverAppeared(owner) }
+            }
+            .onDisappear {
+                center.coverDisappeared()
+                statusBar?.coverDisappeared(owner)
+            }
     }
 }
 

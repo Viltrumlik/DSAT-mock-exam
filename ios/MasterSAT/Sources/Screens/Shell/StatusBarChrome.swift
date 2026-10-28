@@ -39,11 +39,25 @@ final class StatusBarChrome {
     }
 
     private var request: Request?
+    /// The full-screen covers up right now (`coversCelebrations` registers each). A cover hides
+    /// the tab under it, so the tab's request does not speak for it: the question runner, a word
+    /// game, a ticket — light pages, all of them — would otherwise wear the band's white clock,
+    /// invisible on their paper. While one is up the system answers, from the cover's own
+    /// controller: dark text on a light page, light text at night, hidden for a story.
+    private var covers: Set<UUID> = []
 
     /// The style while `tab` is open.
     func style(on tab: AppTab) -> Style {
-        guard let request, request.tab == tab else { return .standard }
+        guard covers.isEmpty, let request, request.tab == tab else { return .standard }
         return request.style
+    }
+
+    func coverAppeared(_ cover: UUID) {
+        if !covers.contains(cover) { covers.insert(cover) }
+    }
+
+    func coverDisappeared(_ cover: UUID) {
+        if covers.contains(cover) { covers.remove(cover) }
     }
 
     func ask(_ style: Style, on tab: AppTab, owner: UUID) {
@@ -117,6 +131,19 @@ private final class StatusBarAnchorView: UIView {
             overlay = StatusBarOverlayWindow(windowScene: scene)
         }
         overlay?.isHidden = false
+    }
+}
+
+/// White text for a page that paints its own blue under the status bar wherever it stands — the
+/// "front door" screens (sign-in, a frozen account, can't reach, time to update), which live
+/// outside the tab shell and its `StatusBarHost`. Put it in the page's background; it holds while
+/// the page is on screen.
+struct LightStatusBar: View {
+    var body: some View {
+        StatusBarWindowAnchor(light: true)
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

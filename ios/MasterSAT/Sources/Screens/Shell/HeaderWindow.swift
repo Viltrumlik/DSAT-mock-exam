@@ -24,7 +24,8 @@ struct HeaderWindowOverlay: View {
     var body: some View {
         ZStack {
             if let kind = router.headerWindow {
-                Color.black.opacity(0.38)
+                // The kit's `.dim`: navy at 36 %, lighter than black (mockup 12).
+                Color(.sRGB, red: 10 / 255, green: 22 / 255, blue: 50 / 255, opacity: 0.36)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     // `closeHeaderWindow` refuses while the open window declares itself busy, so
@@ -43,7 +44,7 @@ struct HeaderWindowOverlay: View {
                 .padding(.vertical, 40)
                 // The page behind is dimmed but still drawn and still alive, so a celebration
                 // started under the window waits for it exactly as it waits under a cover.
-                .coversCelebrations(celebrations)
+                .coversCelebrations(celebrations, holdsStatusBar: false)
                 .transition(reduceMotion ? .opacity : .scale(scale: 0.96).combined(with: .opacity))
             }
         }
@@ -105,10 +106,10 @@ struct HeaderWindowCard<Content: View>: View {
                 Spacer(minLength: 0)
                 Button(action: onClose) {
                     Image(systemName: "xmark")
-                        .appFont(15, weight: .heavy)
-                        .foregroundStyle(Theme.textSecondary)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.surface2, in: Circle())
+                        .appFont(13, weight: .heavy)
+                        .foregroundStyle(NewLook.ink4)
+                        .frame(width: 30, height: 30)
+                        .background(NewLook.line, in: Circle())
                         .hitTarget(44)
                 }
                 .buttonStyle(PressBounce())
@@ -151,8 +152,8 @@ struct HeaderWindowCard<Content: View>: View {
             .frame(maxHeight: contentHeight)
         }
         .frame(maxWidth: 420)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-        .shadow(color: .black.opacity(0.18), radius: 24, y: 10)
+        // The kit's `.pop`: white, r26, `--sh-pop`.
+        .newLookSurface(NewLook.card, radius: 26, shadow: .pop)
         // After the background and the shadow, so the one unmeasured frame hides the whole card
         // and not only what is inside it.
         .opacity(contentHeight == 0 ? 0 : 1)

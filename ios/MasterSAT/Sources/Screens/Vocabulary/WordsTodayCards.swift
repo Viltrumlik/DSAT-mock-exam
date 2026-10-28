@@ -30,27 +30,34 @@ struct ReviewTodayCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
-                IconTile(systemName: "character.book.closed.fill", tone: Theme.amber, size: 40)
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(VocabPalette.section(.amber).tile)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: "character.book.closed.fill")
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(VocabPalette.section(.amber).solid)
+                    )
                     .accessibilityHidden(true)
-                Overline("Review today")
+                Text("Review today")
+                    .newLookCaps()
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 0)
             }
             content
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18, radius: 24)
     }
 
     @ViewBuilder private var content: some View {
         switch state {
         case .loading:
-            VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: "000 words still to master")
-                    .appFont(22, weight: .heavy, design: .rounded)
-                    .redacted(reason: .placeholder)
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(Theme.surface2)
-                    .frame(height: 64)
+            // The count and the Next up box's shape, with the kit's shimmer (mockup 90).
+            SkeletonClock {
+                VStack(alignment: .leading, spacing: 12) {
+                    SkeletonLine(fraction: 0.7, height: 24)
+                    SkeletonBlock(height: 64, radius: 16)
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading today's review")
@@ -110,10 +117,11 @@ struct ReviewTodayCard: View {
     private func headline(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .appFont(20, weight: .heavy, design: .rounded)
+                .appDisplayFont(20)
+                .foregroundStyle(NewLook.ink)
             Text(detail)
                 .appFont(13, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .accessibilityElement(children: .combine)
@@ -122,18 +130,22 @@ struct ReviewTodayCard: View {
     @ViewBuilder private func count(_ review: VocabReview) -> some View {
         if review.wordsToMaster > 0 {
             VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(ScoreText.string(review.wordsToMaster))
-                        .appFont(34, weight: .black, design: .rounded)
+                        .appDisplayFont(40, monospacedDigits: true)
+                        .tracking(-1)
+                        .foregroundStyle(NewLook.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                         .contentTransition(reduceMotion ? .identity : .numericText(value: Double(review.wordsToMaster)))
                     Text(review.wordsToMaster == 1 ? "word still to master" : "words still to master")
-                        .appFont(14, weight: .bold)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(15, weight: .bold)
+                        .foregroundStyle(NewLook.ink2)
                 }
                 if review.wordsMastered > 0 {
                     Text(verbatim: "\(ScoreText.string(review.wordsMastered)) mastered so far")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Theme.textLabel)
+                        .appFont(13, weight: .semibold)
+                        .foregroundStyle(NewLook.muted)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -142,18 +154,20 @@ struct ReviewTodayCard: View {
 
     private func nextUp(title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            Overline("Next up")
+            Text("Next up").newLookCaps()
             Text(title)
-                .appFont(16, weight: .heavy)
+                .appFont(17, weight: .bold)
+                .foregroundStyle(NewLook.ink)
                 .titleLineLimit(2)
             Text(detail)
-                .appFont(13, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(14, weight: .medium)
+                .foregroundStyle(NewLook.ink2)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(12)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.amberSoft, in: RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous))
+        .background(VocabPalette.section(.amber).chip, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -171,12 +185,12 @@ struct ReviewTodayCard: View {
                 if starting {
                     ProgressView().tint(.white)
                 } else {
-                    Image(systemName: "play.fill").appFont(13, weight: .bold)
+                    Image(systemName: "play.fill").appFont(14, weight: .bold)
                 }
                 Text(starting ? "Opening…" : "Start")
             }
         }
-        .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+        .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
         .disabled(starting)
         // "Start" alone says nothing about what it starts.
         .accessibilityLabel(starting ? "Opening \(title)" : "Start \(title)")
@@ -185,8 +199,8 @@ struct ReviewTodayCard: View {
     @ViewBuilder private var noteLine: some View {
         if let note {
             Text(note)
-                .appFont(12, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(12.5, weight: .medium)
+                .foregroundStyle(NewLook.ink4)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -199,16 +213,19 @@ struct WordSearchField: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .foregroundStyle(Theme.textSecondary)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(NewLook.muted)
                 .accessibilityHidden(true)
             TextField("Search words or definitions", text: $query)
+                .foregroundStyle(NewLook.ink)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .submitLabel(.search)
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .foregroundStyle(Theme.textLabel)
+                        .font(.system(size: 18))
+                        .foregroundStyle(NewLook.chevron)
                         // A 44-pt target, flush with the field's trailing edge.
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -217,11 +234,15 @@ struct WordSearchField: View {
                 .accessibilityLabel("Clear search")
             }
         }
-        .appFont(15, weight: .medium)
+        .appFont(16, weight: .medium)
         .padding(.leading, 14)
         .padding(.trailing, query.isEmpty ? 14 : 0)
-        .frame(minHeight: 44)
-        .background(Theme.card, in: Capsule())
+        .frame(minHeight: 46)
+        .background {
+            Capsule()
+                .fill(NewLook.card)
+                .shadow(color: Color(.sRGB, red: 14 / 255, green: 36 / 255, blue: 80 / 255).opacity(0.08), radius: 1, y: 1)
+        }
     }
 }
 
@@ -237,7 +258,10 @@ struct VocabSearchRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if let section = word.sectionTitle, !section.isEmpty {
-                Overline("From \(section)")
+                Text("From \(section)")
+                    .newLookCaps()
+                    .lineLimit(1)
+                    .padding(.horizontal, 4)
             }
             VocabWordRow(word: word)
         }

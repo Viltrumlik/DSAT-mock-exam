@@ -72,6 +72,12 @@ struct StrikesWindowView: View {
 
     var body: some View {
         VStack(spacing: 4) {
+            Text("Strikes")
+                .appDisplayFont(22)
+                .tracking(-0.4)
+                .foregroundStyle(NewLook.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityAddTraits(.isHeader)
             flame
             figures
             shopButton
@@ -147,13 +153,15 @@ struct StrikesWindowView: View {
             VStack(spacing: 4) {
                 VStack(spacing: 2) {
                     Text(ScoreText.string(window.spendable))
-                        .appFont(42, weight: .black, design: .rounded)
-                        .foregroundStyle(Theme.strike)
+                        .appDisplayFont(44, monospacedDigits: true)
+                        .tracking(-1)
+                        .foregroundStyle(NewLook.orange)
                         .contentTransition(.numericText(value: Double(window.spendable)))
                     // The unit comes from the kit beside `spokenSpendable`, so the caption on
                     // screen and the sentence VoiceOver hears are one tested decision.
                     Text(window.spendableUnit)
-                        .appFont(13, weight: .bold)
+                        .appFont(14, weight: .bold)
+                        .foregroundStyle(NewLook.ink2)
                 }
                 // The numeral and its unit are one sentence, so VoiceOver says "3 strikes to
                 // spend" rather than "3" and then a caption of its own (W-R7).
@@ -162,8 +170,8 @@ struct StrikesWindowView: View {
                 .accessibilityFocused($figuresFocused)
 
                 Text(window.runLine)
-                    .appFont(11.5, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(13, weight: .medium)
+                    .foregroundStyle(NewLook.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -219,15 +227,13 @@ struct StrikesWindowView: View {
             // here — and nothing that could leave a window floating over the Shop.
             router.open(.shop, baseURL: session.client.config.baseURL) { openURL($0) }
         } label: {
-            Text("Spend in the Shop")
-                .appFont(13, weight: .bold)
-                .foregroundStyle(Theme.strike)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            Label("Spend in the Shop", systemImage: "bag.fill")
+                .appFont(16, weight: .bold)
+                .foregroundStyle(NewLook.orangeInk)
+                .frame(maxWidth: .infinity, minHeight: 48)
                 .padding(.horizontal, 12)
-                // The mockup's warm surface, as the tint rather than as a hex pair: in dark mode
-                // `Theme.strike` is the lighter orange and this fill follows it, where #fff4e6
-                // would be a slab of cream.
-                .background(Theme.strike.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                // The new look's warm pill (`.btn` on `--orange-50`), dark-aware.
+                .background(NewLook.orange50, in: Capsule())
         }
         .buttonStyle(PressBounce())
         .accessibilityHint("Opens the Shop, where strikes are spent")

@@ -36,12 +36,14 @@ struct EventInviteSheet: View {
                     actions
                 }
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
+            .padding(.horizontal, 16)
+            .padding(.top, 30)
             .padding(.bottom, 18)
             .frame(maxWidth: .infinity, alignment: .leading)
             .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
+        // The new look's sheet ground (mockup 15).
+        .background(NewLook.sheet.ignoresSafeArea())
         // No rubber band while everything fits: at the ordinary sizes this is still a card.
         .scrollBounceBehavior(.basedOnSize)
         .presentationDetents([.height(detentHeight)])
@@ -63,35 +65,50 @@ struct EventInviteSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("There's an event coming up")
-                .appFont(19, weight: .heavy, design: .rounded)
+                .appDisplayFont(22)
+                .tracking(-0.4)
+                .foregroundStyle(NewLook.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityAddTraits(.isHeader)
             Text("Take a seat now — there are only so many.")
-                .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(14, weight: .medium)
+                .foregroundStyle(NewLook.muted)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var card: some View {
         HStack(alignment: .top, spacing: 12) {
-            IconTile(systemName: "calendar", size: 44)
+            // The date shield, as on the Daily Challenge card (mockup 15); the calendar tile when
+            // the event carries no date.
+            if let start = event.startDate {
+                DateShield(date: start)
+            } else {
+                NewLookTile(systemName: "calendar")
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.title)
-                    .appFont(15, weight: .heavy)
+                    .appDisplayFont(17)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 // When, and where when the learning center said where — the web's
                 // "Tue, Sep 25 · 15:00 · Room 204", on the same formatter the Events page uses.
                 Text(whenWhere)
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(14, weight: .medium)
+                    .foregroundStyle(NewLook.ink4)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(CommunityFormat.count(event.seatsLeft, "seat left", "seats left"))
-                    .appFont(14, weight: .bold)
-                    .padding(.top, 6)
+                NewLookChip(
+                    text: CommunityFormat.count(event.seatsLeft, "seat left", "seats left"),
+                    systemImage: "chair.fill",
+                    style: .orange,
+                    small: false
+                )
+                .padding(.top, 6)
             }
             Spacer(minLength: 0)
         }
+        .newLookCard(padding: 16)
     }
 
     private var whenWhere: String {
@@ -109,13 +126,23 @@ struct EventInviteSheet: View {
     /// and a half is one that gets read out halfway and then disappears mid-sentence.
     private var confirmation: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(Self.confirmed, systemImage: "checkmark.circle.fill")
-                .appFont(14, weight: .heavy)
-                .foregroundStyle(Theme.success)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(NewLook.green)
+                    .accessibilityHidden(true)
+                Text(Self.confirmed)
+                    .appFont(16, weight: .bold)
+                    .foregroundStyle(NewLook.greenInk)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
+            .background(NewLook.green50, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .accessibilityElement(children: .combine)
             if voiceOver {
                 Button("Done") { onClose() }
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             }
         }
         // Said out loud, because the buttons that were focused have just been replaced by this
@@ -134,7 +161,7 @@ struct EventInviteSheet: View {
     private func refusal(_ message: String) -> some View {
         Text(message)
             .appFont(13, weight: .semibold)
-            .foregroundStyle(Theme.danger)
+            .foregroundStyle(NewLook.redInk)
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -145,7 +172,7 @@ struct EventInviteSheet: View {
         VStack(spacing: 4) {
             AdaptiveStack(spacing: 10, columnSpacing: 8) {
                 Button("Later") { onClose() }
-                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .light, size: .large))
                     .disabled(isSigningUp)
                     .accessibilityLabel("Later — close this")
 
@@ -157,14 +184,14 @@ struct EventInviteSheet: View {
                         Text("Sign up")
                     }
                 }
-                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
                 .disabled(isSigningUp)
                 .accessibilityLabel("Sign up for \(event.title)")
             }
 
             Button("See all events") { onSeeAllEvents() }
-                .appFont(13, weight: .heavy, design: .rounded)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(14, weight: .bold)
+                .foregroundStyle(NewLook.ink4)
                 // 44 pt of tappable height, whatever the type size does to the words.
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .contentShape(Rectangle())

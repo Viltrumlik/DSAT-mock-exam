@@ -72,6 +72,7 @@ struct EventInvitePrompt: View {
         !router.showingMe
             && router.certificate == nil
             && router.eventInvite == nil
+            && !router.showingLeaderboard
             && !celebrations.isCovered
             && !prompts.isTourShowing
             && !EventsScreenPresence.shared.isOpen

@@ -189,26 +189,37 @@ struct ReminderPromptCard: View {
     let onDismiss: @MainActor () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 13) {
-                IconTile(systemName: "bell.badge", tone: Theme.accent, size: 42)
+        // The new look's soft card (`.card.soft`, mockup 17): a white bell tile, Light + Blue.
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(NewLook.card)
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(NewLook.blueText)
+                    }
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Never miss a deadline")
-                        .appFont(16, weight: .heavy)
+                        .appDisplayFont(17)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
                     Text("Get a nudge before homework is due and before a midterm starts.")
-                        .appFont(13, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(14, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: 10) {
+            AdaptiveStack(spacing: 10) {
                 Button("Not now", action: onDismiss)
-                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .light, size: .block))
                 Button("Turn on", action: onEnable)
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
             }
         }
-        .cardStyle()
+        .newLookCard(padding: 16, radius: 24, fill: NewLook.blue50, shadow: .tile)
     }
 }

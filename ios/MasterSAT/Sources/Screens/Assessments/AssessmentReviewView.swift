@@ -71,16 +71,14 @@ struct AssessmentReviewView: View {
 
     /// In `Filter.chipOrder`: the chips are built from it, so the order the student sees and the
     /// order the card turns by cannot differ.
-    private var tabs: [PillTabs<Filter>.Item] {
+    private var chips: [NewLookFilterChips<Filter>.Option] {
         Filter.chipOrder.map { filter in
-            let count = matching(filter).count
-            switch filter {
-            case .all: return .init(tab: filter, title: "All", icon: "square.stack", count: count)
-            case .toImprove: return .init(tab: filter, title: "To improve", icon: "arrow.up.forward", count: count)
-            case .correct: return .init(tab: filter, title: "Correct", icon: "checkmark.circle", count: count)
-            case .skipped: return .init(tab: filter, title: "Skipped", icon: "circle.dashed", count: count)
-            }
+            NewLookFilterChips<Filter>.Option(value: filter, title: filter.rawValue, count: matching(filter).count)
         }
+    }
+
+    private var setTitle: String? {
+        review?.meta?.setTitle?.nilIfBlank ?? review?.meta?.assignmentTitle?.nilIfBlank
     }
 
     var body: some View {
@@ -92,6 +90,11 @@ struct AssessmentReviewView: View {
             if let review {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            NewLookPageTitle(title: "Review", subtitle: setTitle)
+                            NewLookFilterChips(options: chips, selection: filterSelection)
+                        }
+
                         ScoreHero(review: review, questions: questions, improvedFrom: improvedFrom)
 
                         // Offered once the attempt is marked, as the web's result page offers
@@ -123,17 +126,11 @@ struct AssessmentReviewView: View {
                             )
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
+                    .padding(.bottom, 16)
                 }
-                .background(Theme.background)
-                // Pinned under the navigation bar, inside the safe area: scrolled with the page, the
-                // chips slid under the back button. The material is what the content passes behind.
-                .safeAreaInset(edge: .top, spacing: 0) {
-                    PillTabs(items: tabs, selection: filterSelection, focusZone: true)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(.bar)
-                }
+                .background(NewLook.page)
             } else if let loadError {
                 RetryNotice(message: loadError) { await load() }
             } else {
@@ -142,10 +139,12 @@ struct AssessmentReviewView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(NewLook.page.ignoresSafeArea())
         // An outcome's confetti, drawn by the page itself so it is seen wherever the page is.
         .overlay { OutcomeConfetti(trigger: outcomeTicks) }
         .sensoryFeedback(.success, trigger: outcomeTicks)
-        .navigationTitle("Review")
+        // The page's own title is in the page (`.h-page`); the bar keeps only the back button.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task { await load() }
         .fullScreenCover(item: $retryAttemptId) { id in
@@ -183,7 +182,7 @@ struct AssessmentReviewView: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+        .buttonStyle(NewLookButtonStyle(kind: .light, size: .block))
         .disabled(isRetrying)
     }
 
@@ -214,19 +213,25 @@ struct AssessmentReviewView: View {
 
     private func teacherNote(_ feedback: TeacherFeedback) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("From your teacher", systemImage: "text.bubble.fill")
-                .appFont(12, weight: .heavy)
-                .foregroundStyle(Theme.warning)
-            Text(feedback.body).appFont(15)
+            HStack(spacing: 6) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(NewLook.orange)
+                    .accessibilityHidden(true)
+                Text("From your teacher").newLookCaps(NewLook.orangeInk)
+            }
+            Text(feedback.body)
+                .appFont(16, weight: .medium)
+                .foregroundStyle(NewLook.ink)
+                .fixedSize(horizontal: false, vertical: true)
             if let name = feedback.teacherName, !name.isEmpty {
-                Text(name).appFont(12, weight: .semibold).foregroundStyle(Theme.textSecondary)
+                Text(name).appFont(13, weight: .semibold).foregroundStyle(NewLook.ink4)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.warningSoft)
-        )
+        .background(NewLook.orange50, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     /// The filter, turning the card the way the chips run: a chip to the right brings its first
@@ -253,19 +258,19 @@ struct AssessmentReviewView: View {
             } label: {
                 Label("Previous", systemImage: "chevron.left").frame(maxWidth: .infinity)
             }
-            .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .light, size: .block))
             .disabled(index == 0)
-            .opacity(index == 0 ? 0.4 : 1)
 
             Button {
                 turn = .forward
                 withAnimation(Motion.focus) { index = min(shown.count - 1, index + 1) }
             } label: {
-                Label("Next", systemImage: "chevron.right").frame(maxWidth: .infinity)
+                Label("Next", systemImage: "chevron.right")
+                    .labelStyle(TrailingIconLabelStyle())
+                    .frame(maxWidth: .infinity)
             }
-            .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .light, size: .block))
             .disabled(index >= shown.count - 1)
-            .opacity(index >= shown.count - 1 ? 0.4 : 1)
         }
     }
 
@@ -352,8 +357,7 @@ enum Outcome {
 
 // MARK: - Hero
 
-/// The site's score banner: the percentage, big, on the brand gradient, with the three
-/// counts under it.
+/// The score card in the band's blue (mockup 33): class, set, the percentage, the counts.
 struct ScoreHero: View {
     let review: AssessmentReview
     let questions: [AssessmentReviewQuestion]
@@ -370,36 +374,39 @@ struct ScoreHero: View {
         VStack(spacing: 0) {
             if let classroom = review.meta?.classroomName?.nilIfBlank {
                 Text(classroom.uppercased())
-                    .appFont(11, weight: .heavy)
-                    .tracking(1.6)
+                    .appFont(10.5, weight: .heavy)
+                    .tracking(1.5)
                     .foregroundStyle(.white.opacity(0.7))
-                    .padding(.bottom, 6)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 4)
             }
             Text(title.uppercased())
-                .appFont(14, weight: .heavy)
-                .tracking(1.2)
-                .foregroundStyle(.white.opacity(0.9))
+                .appFont(13, weight: .heavy)
+                .tracking(1.3)
+                .foregroundStyle(.white.opacity(0.92))
                 .multilineTextAlignment(.center)
 
             if let result = review.result {
                 // The whole percent "Up from X%" below is weighed in, so the two never disagree at x.5.
-                RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)), suffix: "%")
-                    .appFont(56, weight: .black, monospacedDigits: true)
-                    .tracking(-2)
-                    .foregroundStyle(.white)
-                    .padding(.top, 12)
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    RollingNumber(value: Double(CelebrationRule.wholePercent(result.percent)))
+                        .appDisplayFont(60, monospacedDigits: true)
+                        .tracking(-2)
+                    Text("%")
+                        .appDisplayFont(30)
+                        .tracking(-1)
+                        .accessibilityHidden(true)
+                }
+                .foregroundStyle(.white)
+                .padding(.top, 10)
+                .accessibilityElement(children: .combine)
                 Text("\(ScoreText.string(result.correctCount)) of \(ScoreText.string(result.totalQuestions)) correct · \(ScoreText.string(result.scorePoints)) of \(ScoreText.string(result.maxPoints)) pts")
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(.white.opacity(0.8))
+                    .appFont(13.5, weight: .semibold)
+                    .foregroundStyle(.white.opacity(0.82))
                     .multilineTextAlignment(.center)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
                 if let improvedFrom {
-                    Label("Up from \(ScoreText.wholePercent(improvedFrom))%", systemImage: "arrow.up.right")
-                        .appFont(12, weight: .heavy)
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 5)
-                        .background(Capsule().fill(.white.opacity(0.2)))
+                    NewLookBlueChip(text: "Up from \(ScoreText.wholePercent(improvedFrom))%", systemImage: "chart.line.uptrend.xyaxis")
                         .padding(.top, 10)
                 }
             } else {
@@ -412,50 +419,18 @@ struct ScoreHero: View {
                     .padding(.top, 14)
             }
 
-            HStack(spacing: 12) {
-                stat(count(.correct), "Correct").focusEntrance(0)
-                stat(count(.incorrect), "To improve").focusEntrance(1)
-                stat(count(.unanswered), "Skipped").focusEntrance(2)
+            HStack(spacing: 8) {
+                NewLookBlueTile(value: ScoreText.string(count(.correct)), label: "Correct").focusEntrance(0)
+                NewLookBlueTile(value: ScoreText.string(count(.incorrect)), label: "To improve").focusEntrance(1)
+                NewLookBlueTile(value: ScoreText.string(count(.unanswered)), label: "Skipped").focusEntrance(2)
             }
-            .padding(.top, 24)
+            .padding(.top, 18)
         }
-        .padding(24)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [Theme.accent, Theme.accentHover],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(Theme.accent)
-        .overlay(alignment: .topTrailing) {
-            Circle().fill(.white.opacity(0.06))
-                .frame(width: 200, height: 200)
-                .offset(x: 60, y: -60)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+        .newLookBlueCard()
     }
 
     private func count(_ outcome: Outcome) -> Int {
         questions.filter { Outcome.of($0) == outcome }.count
-    }
-
-    private func stat(_ value: Int, _ label: String) -> some View {
-        VStack(spacing: 3) {
-            Text(ScoreText.string(value))
-                .appFont(26, weight: .heavy, monospacedDigits: true)
-                .foregroundStyle(.white)
-            Text(label)
-                .appFont(11, weight: .bold)
-                .foregroundStyle(.white.opacity(0.75))
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.12)))
     }
 }
 
@@ -463,7 +438,8 @@ struct ScoreHero: View {
 
 /// One question in full: what was asked, what every option was, which one was right, and
 /// why. Green for the right answer, red only for a wrong one the student actually chose —
-/// the other two options stay neutral rather than being painted as failures.
+/// the other options fade rather than being painted as failures. The only place right and
+/// wrong colours appear.
 struct ReviewQuestionCard: View {
     let question: AssessmentReviewQuestion
     let index: Int
@@ -478,80 +454,77 @@ struct ReviewQuestionCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
-            Divider()
+            Rectangle().fill(NewLook.line).frame(height: 1)
 
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 16) {
                 // Stem first — in Reading that is the passage; in Maths it is the question.
                 RichText(text: question.prompt, serif: true, weight: .medium)
-                    .padding(16)
+                    .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                            .fill(Theme.background)
-                    )
+                    .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
                 if let image = question.questionImage, !image.isEmpty, let url = URL(string: image) {
                     AsyncImage(url: url) { $0.resizable().scaledToFit() } placeholder: { ProgressView() }
                         .frame(maxWidth: .infinity)
                         .frame(maxHeight: 380)
-                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
                 // The instruction comes AFTER the stem — in Reading it is the actual
                 // question being asked about the passage above.
                 if let instruction = question.questionPrompt, !instruction.isEmpty {
                     HStack(alignment: .top, spacing: 0) {
-                        Rectangle().fill(Theme.accent.opacity(0.5)).frame(width: 4)
+                        Rectangle().fill(NewLook.blue.opacity(0.45)).frame(width: 4)
                         RichText(text: instruction, serif: true, weight: .medium)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
                     }
-                    .background(Theme.background)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(NewLook.sheet)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Overline("Answer analysis")
-                    if question.choices.isEmpty {
-                        typedAnswers.focusEntrance(0)
-                    } else {
-                        ForEach(Array(question.choices.enumerated()), id: \.element.id) { position, choice in
-                            ReviewChoiceRow(
-                                choice: choice,
-                                isCorrectAnswer: matches(question.correctAnswer, choice.id),
-                                isStudentAnswer: matches(question.studentAnswer, choice.id)
-                            )
-                            .focusEntrance(position)
-                        }
+                    Text("Answer analysis").newLookCaps()
+                    // The pair heads every question now — on a choice question too, so the
+                    // student reads the two answers before finding the green and red rows.
+                    answerPair.focusEntrance(0)
+                    ForEach(Array(question.choices.enumerated()), id: \.element.id) { position, choice in
+                        ReviewChoiceRow(
+                            choice: choice,
+                            isCorrectAnswer: matches(question.correctAnswer, choice.id),
+                            isStudentAnswer: matches(question.studentAnswer, choice.id)
+                        )
+                        .focusEntrance(position + 1)
                     }
                 }
 
                 if let explanation = question.explanation, !explanation.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        Label("Why this answer works", systemImage: "lightbulb.fill")
-                            .appFont(11, weight: .heavy)
-                            .tracking(1.2)
-                            .foregroundStyle(Theme.accent)
+                        HStack(spacing: 6) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(NewLook.blueText)
+                                .accessibilityHidden(true)
+                            Text("Why this answer works").newLookCaps(NewLook.blueText)
+                        }
                         RichText(text: explanation, serif: true)
                     }
-                    .padding(18)
+                    .padding(16)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                            .fill(Theme.accentSoft)
-                    )
+                    .background(NewLook.blue50, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                            .stroke(Theme.accent.opacity(0.15), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .strokeBorder(NewLook.blue.opacity(0.15), lineWidth: 1)
                     )
                     // Open, as the web has it — it settles in last, after the answers.
-                    .focusEntrance(max(question.choices.count, 1))
+                    .focusEntrance(max(question.choices.count, 1) + 1)
                 }
             }
-            .padding(18)
+            .padding(16)
         }
         // Plain, as a focus zone's card is: the header and the body keep their own padding.
-        .cardStyle(padding: 0)
+        .newLookCard(padding: 0, radius: 24)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         // No attempt id, exactly as the website's review page sends none: this report is about
         // the question itself, not about the sitting it was last seen in.
         .sheet(item: $reporting) { target in
@@ -563,30 +536,42 @@ struct ReviewQuestionCard: View {
         }
     }
 
+    private var tone: (fill: Color, ink: Color, glyph: Color) {
+        switch outcome {
+        case .correct: (NewLook.green50, NewLook.greenInk, NewLook.green)
+        case .incorrect: (NewLook.red50, NewLook.redInk, NewLook.red)
+        case .unanswered: (NewLook.orange50, NewLook.orangeInk, NewLook.orange)
+        }
+    }
+
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: outcome.icon)
-                .appFont(18)
-                .foregroundStyle(outcome.tone)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(tone.glyph)
                 .accessibilityHidden(true)
             Text("Question \(ScoreText.string(index + 1))")
-                .appFont(14, weight: .heavy)
+                .appFont(16, weight: .heavy)
+                .foregroundStyle(NewLook.ink)
             Text("of \(ScoreText.string(total))")
-                .appFont(12, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(13, weight: .semibold)
+                .foregroundStyle(NewLook.muted)
             Spacer(minLength: 0)
-            Text(outcome.label.uppercased())
-                .appFont(10, weight: .heavy)
-                .tracking(0.8)
-                .foregroundStyle(outcome.tone)
+            Text(outcome.label)
+                .appFont(10.5, weight: .heavy)
+                .tracking(1.05)
+                .textCase(.uppercase)
+                .foregroundStyle(tone.ink)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(Capsule().fill(outcome.tone.opacity(0.12)))
-                .overlay(Capsule().stroke(outcome.tone.opacity(0.3), lineWidth: 1))
+                .frame(minHeight: 24)
+                .background(tone.fill, in: Capsule())
             reportButton
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.vertical, 10)
     }
 
     /// One per question, as the website puts one on every review card: the student is reading
@@ -596,11 +581,10 @@ struct ReviewQuestionCard: View {
             reporting = ReportedQuestion(questionId: question.id, number: index + 1)
         } label: {
             Image(systemName: "exclamationmark.bubble")
-                .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(Theme.surface2))
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(NewLook.ink4)
+                .frame(width: 34, height: 34)
+                .background(NewLook.line, in: Circle())
                 .hitTarget(44)
         }
         .buttonStyle(.plain)
@@ -610,50 +594,70 @@ struct ReviewQuestionCard: View {
         .capDynamicType(label: "Report a problem", systemImage: "exclamationmark.bubble")
     }
 
-    /// Grid-ins and short text: the two answers side by side, the correct one in the
-    /// inverted panel the site uses so it reads as the fact, not as an opinion.
-    private var typedAnswers: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("YOUR ANSWER")
-                    .appFont(10, weight: .heavy).tracking(0.9)
-                    .foregroundStyle(Theme.textSecondary)
+    /// The student's answer beside the correct one, the correct one in the ink panel so it
+    /// reads as the fact, not an opinion. A choice question names the letter (and the words,
+    /// when they are plain and short); a typed one, what was typed.
+    private var answerPair: some View {
+        let studentText: String
+        let correctText: String
+        if question.choices.isEmpty {
+            studentText = question.studentAnswer.displayText
+            correctText = question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText
+        } else {
+            let mine = question.choices.first { matches(question.studentAnswer, $0.id) }
+            let key = question.choices.first { matches(question.correctAnswer, $0.id) }
+            studentText = mine.map { ReviewAnswerLabel.text(letter: $0.id, choiceText: $0.text) }
+                ?? question.studentAnswer.displayText
+            correctText = key.map { ReviewAnswerLabel.text(letter: $0.id, choiceText: $0.text) }
+                ?? (question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
+        }
+        let mineTone: (fill: Color, ring: Color, ink: Color, label: Color) = switch outcome {
+        case .correct: (NewLook.green50, NewLook.green, NewLook.green, NewLook.greenInk)
+        case .incorrect: (NewLook.red50, NewLook.red, NewLook.red, NewLook.redInk)
+        case .unanswered: (NewLook.sheet, NewLook.field, NewLook.muted, NewLook.muted)
+        }
+
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Your answer").appFont(10, weight: .heavy).tracking(1).textCase(.uppercase)
+                    .foregroundStyle(mineTone.label)
                 if question.wasAnswered {
-                    Text(question.studentAnswer.displayText)
-                        .appFont(18, weight: .bold)
-                        .foregroundStyle(outcome == .correct ? Theme.success : Theme.danger)
+                    Text(studentText)
+                        .appFont(17, weight: .bold)
+                        .foregroundStyle(mineTone.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Omitted").appFont(18, weight: .bold).italic()
-                        .foregroundStyle(Theme.textSecondary)
+                    Text("Omitted").appFont(17, weight: .bold).italic()
+                        .foregroundStyle(NewLook.muted)
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(outcome == .correct ? Theme.successSoft : (question.wasAnswered ? Theme.dangerSoft : Theme.background))
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(mineTone.fill, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(outcome == .correct ? Theme.success : (question.wasAnswered ? Theme.danger : Theme.separator), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(mineTone.ring, lineWidth: 2)
             )
+            .accessibilityElement(children: .combine)
 
-            // An ink panel with its own text colour: dark with white text in light mode, light
-            // with dark text in dark mode — never white on white.
-            VStack(alignment: .leading, spacing: 6) {
-                Text("CORRECT ANSWER")
-                    .appFont(10, weight: .heavy).tracking(0.9)
-                    .foregroundStyle(Theme.onInk.opacity(0.7))
-                Text(question.correctAnswer.displayText.isEmpty ? "—" : question.correctAnswer.displayText)
-                    .appFont(18, weight: .bold)
-                    .foregroundStyle(Theme.onInk)
+            // The ink panel keeps its own text colour: white on ink by day, navy on the light
+            // ink at night — never white on white.
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Correct answer").appFont(10, weight: .heavy).tracking(1).textCase(.uppercase)
+                    .foregroundStyle(NewLook.card.opacity(0.65))
+                Text(correctText)
+                    .appFont(17, weight: .bold)
+                    .foregroundStyle(NewLook.card)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.ink)
-            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(NewLook.ink, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .combine)
         }
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// The server may send a choice id ("B"), a zero-based index ("1"), or a number. Match
@@ -669,34 +673,25 @@ struct ReviewQuestionCard: View {
     }
 }
 
+/// One marked option, the kit's `.opt.right` / `.opt.wrong` / faded.
 struct ReviewChoiceRow: View {
     let choice: AssessmentChoice
     let isCorrectAnswer: Bool
     let isStudentAnswer: Bool
 
-    private var tone: Color? {
-        if isCorrectAnswer { return Theme.success }
-        if isStudentAnswer { return Theme.danger }
-        return nil
+    private var state: NewLookOptionState {
+        if isCorrectAnswer { return .right }
+        if isStudentAnswer { return .wrong }
+        return .faded
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
-            Text(choice.id)
-                .appFont(12, weight: .heavy)
+        HStack(alignment: .center, spacing: 12) {
+            NewLookOptionMark(letter: choice.id, state: state)
                 .capDynamicType()
-                .frame(width: 28, height: 28)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(tone ?? Theme.card)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .stroke(tone ?? Theme.separator, lineWidth: 2)
-                )
-                .foregroundStyle(tone == nil ? Color.primary : .white)
 
             RichText(text: choice.text, serif: true)
+                .opacity(state == .faded ? 0.62 : 1)
 
             Spacer(minLength: 0)
 
@@ -704,24 +699,18 @@ struct ReviewChoiceRow: View {
             // gets it in words — "Your answer", never a verdict on the student.
             if isCorrectAnswer {
                 Image(systemName: "checkmark.circle.fill")
-                    .appFont(16).foregroundStyle(Theme.success)
+                    .font(.system(size: 20)).foregroundStyle(NewLook.green)
                     .accessibilityLabel("Correct answer")
             } else if isStudentAnswer {
                 Image(systemName: "xmark.circle.fill")
-                    .appFont(16).foregroundStyle(Theme.danger)
+                    .font(.system(size: 20)).foregroundStyle(NewLook.red)
                     .accessibilityLabel("Your answer")
             }
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(tone.map { $0.opacity(0.10) } ?? Theme.background)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(tone ?? Theme.separator.opacity(0.7), lineWidth: 2)
-        )
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .newLookOptionSurface(state)
     }
 }
 

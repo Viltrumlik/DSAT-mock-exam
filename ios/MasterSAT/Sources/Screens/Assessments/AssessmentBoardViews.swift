@@ -544,6 +544,8 @@ struct AssessmentLoadError: View {
 
     var body: some View {
         ErrorState(title: "Couldn't load your assessments", style: .page, retry: retry)
+            // The kit's `.card.state`: the failure in a card where the board would be.
+            .newLookCard(padding: 0)
     }
 }
 

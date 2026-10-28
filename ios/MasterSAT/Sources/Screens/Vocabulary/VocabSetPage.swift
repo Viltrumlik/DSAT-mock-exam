@@ -30,16 +30,20 @@ struct VocabSetView: View {
                 content(detail)
             } else if loadError != nil {
                 ScrollView {
-                    VocabErrorNotice(
-                        title: "This set isn't available",
-                        message: "It may have been removed, or it belongs to another student. Pick another set from the hub."
-                    ) { await load() }
-                    .padding(16)
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !title.isEmpty { NewLookPageHeading(title: title) }
+                        VocabErrorNotice(
+                            title: "This set isn't available",
+                            message: "It may have been removed, or it belongs to another student. Pick another set from the hub."
+                        ) { await load() }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 4)
                 }
-                .background(Theme.background)
+                .background(NewLook.page)
             } else {
                 // The header, then the words.
-                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(Theme.background)
+                LoadingSkeleton(rows: 3, height: 110, style: .cards).skeletonPage().background(NewLook.page)
             }
         }
         .navigationTitle("")
@@ -78,22 +82,28 @@ struct VocabSetView: View {
     private func content(_ detail: VocabSetDetail) -> some View {
         let tone = detail.section.map { VocabPalette.section(id: $0.id) } ?? VocabPalette.custom
         let glyph = detail.section.map { VocabPalette.glyph(sectionId: $0.id) } ?? VocabPalette.customGlyph
+        let words = "\(ScoreText.string(detail.wordCount)) \(detail.wordCount == 1 ? "word" : "words")"
         return ScrollView {
             VStack(alignment: .leading, spacing: 22) {
+                // The set's name is the page's heading; the section it belongs to is the line under it.
+                NewLookPageHeading(title: detail.title, subtitle: "\(detail.section?.title ?? "My set") · \(words)")
+                    .padding(.bottom, -8)
                 hero(detail, tone: tone, glyph: glyph)
                 launcher(detail)
                 VocabWordList(words: detail.words, tone: tone, filter: $filter)
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 24)
         }
-        .background(Theme.background)
+        .background(NewLook.page)
     }
 
     private func hero(_ detail: VocabSetDetail, tone: VocabPalette.Tone, glyph: String) -> some View {
         let mastery = detail.mastery
         let counts = VocabWordFilter.counts(detail.words)
-        return VStack(alignment: .leading, spacing: 20) {
-            HStack(alignment: .top, spacing: 14) {
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .center, spacing: 14) {
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
                     .fill(tone.tile)
                     .frame(width: 56, height: 56)
@@ -104,58 +114,51 @@ struct VocabSetView: View {
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
-                VStack(alignment: .leading, spacing: 10) {
-                    FlowLayout(spacing: 6) {
-                        Text(detail.section?.title ?? "My set")
-                            .appFont(12, weight: .heavy)
-                            .foregroundStyle(tone.ink)
-                            .lineLimit(1)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 4)
-                            .background(Capsule().fill(tone.chip))
-                        if mastery.isMastered {
-                            Chip(text: "Mastered", icon: "checkmark.circle.fill", tone: .success)
-                        }
+                FlowLayout(spacing: 6) {
+                    Text(detail.section?.title ?? "My set")
+                        .appFont(12.5, weight: .heavy)
+                        .foregroundStyle(tone.ink)
+                        .lineLimit(1)
+                        .padding(.horizontal, 11)
+                        .frame(minHeight: 26)
+                        .background(Capsule().fill(tone.chip))
+                    if mastery.isMastered {
+                        NewLookChip(text: "Mastered", systemImage: "checkmark.circle", style: .green, small: false)
                     }
-                    Text(detail.title)
-                        .appFont(28, weight: .heavy)
-                        .tracking(-0.7)
-                        .fixedSize(horizontal: false, vertical: true)
+                    if detail.isCustom {
+                        Button { isEditing = true } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "pencil").appFont(12, weight: .bold)
+                                    .accessibilityHidden(true)
+                                Text("Edit words").appFont(13, weight: .bold)
+                            }
+                            .foregroundStyle(NewLook.blueDeep)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 30)
+                            .background(Capsule().fill(NewLook.blue50))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(PressBounce())
+                    }
                 }
                 Spacer(minLength: 0)
             }
 
-            if detail.isCustom {
-                Button { isEditing = true } label: {
-                    Label("Edit words", systemImage: "pencil")
-                        .appFont(13, weight: .heavy)
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Capsule().fill(Theme.surface2))
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-
             // "Games" leads: it is what the bar below measures and what homework is paid on.
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                factTile("Games mastered", icon: "gamecontroller.fill",
-                         value: "\(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes))",
-                         ink: tone.ink)
-                factTile("Words", icon: "textformat", value: ScoreText.string(detail.wordCount))
-                factTile("Mastered", icon: "checkmark.circle", value: ScoreText.string(counts[.mastered] ?? 0))
-                factTile("New", icon: "circle", value: ScoreText.string(counts[.new] ?? 0))
+                NewLookFactTile(label: "Games mastered",
+                                value: "\(ScoreText.string(mastery.masteredModes))/\(ScoreText.string(mastery.totalModes))",
+                                valueColor: tone.ink, carve: "gamecontroller")
+                NewLookFactTile(label: "Words", value: ScoreText.string(detail.wordCount), carve: "textformat")
+                NewLookFactTile(label: "Mastered", value: ScoreText.string(counts[.mastered] ?? 0), carve: "checkmark.circle")
+                NewLookFactTile(label: "New", value: ScoreText.string(counts[.new] ?? 0), carve: "circle")
             }
 
             // One segment per game in that game's own colour — the bar the set cards use, so a
             // colour means the same game on both.
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("MASTERY")
-                        .appFont(11, weight: .bold)
-                        .tracking(1.0)
-                        .foregroundStyle(Theme.textSecondary)
+                    Text("Mastery").newLookCaps()
                     Spacer()
                     Text("\(ScoreText.string(mastery.percent))%")
                         .appFont(13, weight: .heavy, monospacedDigits: true)
@@ -163,52 +166,10 @@ struct VocabSetView: View {
                 }
                 VocabMasteryBar(mastery: mastery, legend: true)
             }
+            .padding(.top, 4)
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.card)
-        .overlay(alignment: .top) { VocabTopEdge(colour: tone.solid, height: 4) }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
-    }
-
-    private func factTile(_ label: String, icon: String, value: String, ink: Color = .primary) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .appFont(10.5, weight: .bold)
-                .tracking(0.9)
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(value)
-                .appFont(24, weight: .heavy, monospacedDigits: true)
-                .tracking(-0.5)
-                .foregroundStyle(ink)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.background)
-        )
-        .overlay(alignment: .bottomTrailing) {
-            // The glyph is carved into the block rather than printed on it.
-            Image(systemName: icon)
-                .appFont(44, weight: .light)
-                .foregroundStyle(Color.primary.opacity(0.05))
-                .offset(x: 6, y: 8)
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
+        .padding(.top, 4)
+        .newLookEdgedCard(tone.solid, padding: 16, radius: 24)
     }
 
     // MARK: - The games
@@ -218,27 +179,30 @@ struct VocabSetView: View {
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Study this set")
-                    .appFont(20, weight: .heavy)
+                    .appDisplayFont(19)
                     .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
+                    .accessibilityAddTraits(.isHeader)
                 Text("Play a game with every word right and it is mastered — a quarter of the bar each. All four, and the set is done.")
                     .appFont(13, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .padding(.horizontal, 2)
             if empty {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("Nothing to study yet", systemImage: "exclamationmark.triangle.fill")
                         .appFont(14, weight: .heavy)
-                        .foregroundStyle(Theme.warning)
+                        .foregroundStyle(NewLook.orangeInk)
                     Text("This set has no words, so the study modes stay locked."
                          + (detail.isCustom ? " Add a few words and they will unlock straight away." : ""))
                         .appFont(13, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.ink4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.warningSoft))
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(NewLook.orange50))
             }
             ForEach(StudyMode.allCases) { mode in
                 VocabModeCard(
@@ -281,7 +245,7 @@ struct VocabModeCard: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: 14) {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
                     .fill(tone.tile)
                     .frame(width: 48, height: 48)
                     .overlay(
@@ -294,14 +258,15 @@ struct VocabModeCard: View {
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
                         Text(VocabPalette.gameName(mode.kitMode))
-                            .appFont(17, weight: .heavy)
-                            .foregroundStyle(.primary)
+                            .appDisplayFont(17)
+                            .tracking(-0.2)
+                            .foregroundStyle(NewLook.ink)
                         Spacer(minLength: 0)
                         score
                     }
                     Text(VocabPalette.gameBlurb(mode.kitMode))
                         .appFont(13)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.muted)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if isEnabled {
@@ -312,31 +277,15 @@ struct VocabModeCard: View {
                         }
                         .foregroundStyle(tone.ink)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
+                        .frame(minHeight: 30)
                         .background(Capsule().fill(tone.track))
                         .padding(.top, 6)
                     }
                 }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.card)
-            // The accent edge is the only thing that tells the four apart at a glance.
-            .overlay(alignment: .top) {
-                LinearGradient(
-                    colors: [tone.solid.opacity(0.7), tone.solid.opacity(0.25), .clear],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-                .frame(height: 4)
-                .allowsHitTesting(false)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.04), radius: 6, x: 0, y: 2)
+            .padding(.top, 2)
+            // The tone edge is the only thing that tells the four apart at a glance.
+            .newLookEdgedCard(tone.solid, padding: 16)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -345,15 +294,15 @@ struct VocabModeCard: View {
     }
 
     private var score: some View {
-        HStack(spacing: 4) {
-            if mastered { Image(systemName: "checkmark.circle.fill").appFont(11, weight: .bold) }
+        HStack(spacing: 3) {
+            if mastered { Image(systemName: "checkmark.circle.fill").appFont(12, weight: .bold) }
             Text(mastered ? "1/1" : "0/1").appFont(12, weight: .heavy, monospacedDigits: true)
         }
         // Unearned reads in the game's own tint, not a grey badge.
-        .foregroundStyle(mastered ? VocabPalette.mastered.ink : tone.ink)
+        .foregroundStyle(mastered ? NewLook.greenInk : tone.ink)
         .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(Capsule().fill(mastered ? Theme.successSoft : tone.track))
+        .frame(minHeight: 22)
+        .background(Capsule().fill(mastered ? NewLook.green50 : tone.track))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(mastered ? "Mastered — one clean run" : "Not mastered yet")
     }
@@ -373,7 +322,7 @@ struct VocabWordList: View {
             HStack(spacing: 12) {
                 RoundedRectangle(cornerRadius: 13, style: .continuous)
                     .fill(tone.tile)
-                    .frame(width: 44, height: 44)
+                    .frame(width: 42, height: 42)
                     .overlay(
                         Image(systemName: "textformat")
                             .appFont(18, weight: .semibold)
@@ -381,20 +330,24 @@ struct VocabWordList: View {
                             .foregroundStyle(tone.solid)
                             .accessibilityHidden(true)
                     )
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Words").appFont(20, weight: .heavy).tracking(-0.3)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Words")
+                        .appDisplayFont(19)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
+                        .accessibilityAddTraits(.isHeader)
                     Text(filter == .all
                          ? "\(ScoreText.string(shown.count)) in this set"
                          : "\(ScoreText.string(shown.count)) of \(ScoreText.string(words.count)) shown")
                         .appFont(13, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.muted)
                 }
                 Spacer(minLength: 0)
             }
 
-            PillTabs(
-                items: VocabWordFilter.allCases.map {
-                    PillTabs<VocabWordFilter>.Item(tab: $0, title: $0.label, icon: icon($0), count: counts[$0] ?? 0)
+            NewLookFilterChips(
+                options: VocabWordFilter.allCases.map {
+                    NewLookFilterChips<VocabWordFilter>.Option(value: $0, title: $0.label, systemImage: icon($0), count: counts[$0] ?? 0)
                 },
                 selection: $filter
             )
@@ -407,7 +360,7 @@ struct VocabWordList: View {
                         : "A word is mastered once every game has had it right."
                 )
             } else {
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     ForEach(shown) { VocabWordRow(word: $0) }
                 }
             }
@@ -427,49 +380,53 @@ struct VocabWordRow: View {
     let word: VocabWord
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(word.word)
-                        .appFont(18, weight: .heavy)
+                        .appDisplayFont(19)
                         .tracking(-0.2)
-                    if let part = word.partOfSpeech, !part.isEmpty {
-                        Overline(part)
-                    }
-                }
-                Text(word.definition)
-                    .appFont(14.5)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let example = word.example, !example.isEmpty {
-                    Text(verbatim: "“\(example)”")
-                        .appFont(13.5).italic()
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.ink)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 9)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.surface2))
-                        .padding(.top, 4)
-                }
-                if !word.synonyms.isEmpty {
-                    FlowLayout(spacing: 6) {
-                        Overline("Synonyms")
-                            .padding(.vertical, 4)
-                        ForEach(Array(word.synonyms.enumerated()), id: \.offset) { _, synonym in
-                            Text(synonym)
-                                .appFont(12, weight: .semibold)
-                                .foregroundStyle(Theme.textSecondary)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 3)
-                                .background(Capsule().fill(Theme.surface2))
-                        }
+                    if let part = word.partOfSpeech, !part.isEmpty {
+                        Text(part).newLookCaps()
                     }
-                    .padding(.top, 4)
                 }
+                Spacer(minLength: 0)
+                VocabWordStatusPill(status: word.status)
             }
-            Spacer(minLength: 0)
-            VocabWordStatusPill(status: word.status)
+            Text(word.definition)
+                .appFont(15)
+                .foregroundStyle(NewLook.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            if let example = word.example, !example.isEmpty {
+                Text(verbatim: "“\(example)”")
+                    .appFont(14).italic()
+                    .foregroundStyle(NewLook.ink4)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NewLook.sheet))
+                    .padding(.top, 4)
+            }
+            if !word.synonyms.isEmpty {
+                FlowLayout(spacing: 6) {
+                    Text("Synonyms")
+                        .newLookCaps()
+                        .padding(.vertical, 5)
+                    ForEach(Array(word.synonyms.enumerated()), id: \.offset) { _, synonym in
+                        Text(synonym)
+                            .appFont(12.5, weight: .semibold)
+                            .foregroundStyle(NewLook.ink4)
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 24)
+                            .background(Capsule().fill(NewLook.line))
+                    }
+                }
+                .padding(.top, 4)
+            }
         }
-        .cardStyle(padding: 16)
+        .newLookCard(padding: 16)
     }
 }

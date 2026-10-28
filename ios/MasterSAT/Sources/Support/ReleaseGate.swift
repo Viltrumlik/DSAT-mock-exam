@@ -97,76 +97,51 @@ struct UpdateRequiredView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 40)
-            Image("BrandMark")
-                .renderingMode(.template)
-                .resizable()
-                .scaledToFit()
-                .frame(width: 64, height: 64)
-                .foregroundStyle(Theme.accent)
-                .padding(.bottom, 24)
-                // The asset's own name would be read; the title below says what this is.
-                .accessibilityHidden(true)
-
-            Text("Time to update")
-                .appFont(28, weight: .heavy)
-                .tracking(-0.7)
-                .multilineTextAlignment(.center)
-
-            Text(message)
-                .appFont(15, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .padding(.top, 10)
-                .padding(.horizontal, 12)
-
+        // The front-door look (mockup 94, right): the sign-in's blue top, the update glyph on the
+        // band's edge, the version line only when the server gives a minimum.
+        StateScreen(
+            medal: StateMedal.blue("arrow.down.app.fill"),
+            title: "Time to update",
+            message: message
+        ) {
             if let minimum = config?.minimumVersion, !minimum.isEmpty {
                 Text("You have \(AppInfo.version). You need \(minimum) or newer.")
                     .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textLabel)
-                    .padding(.top, 14)
+                    .foregroundStyle(NewLook.muted)
+                    .multilineTextAlignment(.center)
             }
-
-            Spacer(minLength: 32)
-
-            VStack(spacing: 10) {
-                if let url = config?.storeURL {
-                    Button {
-                        openURL(url)
-                    } label: {
-                        Label("Update", systemImage: "arrow.down.app.fill").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
-                } else {
-                    Text("Open the App Store and search for MasterSAT.")
-                        .appFont(14, weight: .semibold)
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
-
+        } actions: {
+            if let url = config?.storeURL {
                 Button {
-                    checking = true
-                    Task {
-                        await onCheckAgain()
-                        checking = false
-                    }
+                    openURL(url)
                 } label: {
-                    Group {
-                        if checking { ProgressView() } else { Text("Check again") }
-                    }
-                    .frame(maxWidth: .infinity)
+                    Label("Update", systemImage: "arrow.down.to.line").frame(maxWidth: .infinity)
                 }
-                .buttonStyle(SecondaryButtonStyle(fullWidth: true))
-                .disabled(checking)
-                .accessibilityLabel(checking ? "Checking again" : "Check again")
+                .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
+            } else {
+                Text("Open the App Store and search for MasterSAT.")
+                    .appFont(14, weight: .semibold)
+                    .foregroundStyle(NewLook.ink4)
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 4)
             }
-            .padding(.bottom, 24)
+
+            Button {
+                checking = true
+                Task {
+                    await onCheckAgain()
+                    checking = false
+                }
+            } label: {
+                Group {
+                    if checking { ProgressView().tint(NewLook.blueDeep) } else { Text("Check again") }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(NewLookButtonStyle(kind: .tint, size: .large))
+            .disabled(checking)
+            .accessibilityLabel(checking ? "Checking again" : "Check again")
         }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: 460)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.background.ignoresSafeArea())
     }
 }
 
@@ -186,27 +161,30 @@ struct UpdateNudgeCard: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 13) {
-            IconTile(systemName: "sparkles", tone: Theme.accent)
+        // A card on Today in the new look (mockup 94's note): a tile, Archivo, the kit's buttons.
+        HStack(alignment: .top, spacing: 12) {
+            NewLookTile(systemName: "sparkles")
             VStack(alignment: .leading, spacing: 6) {
                 Text("A new version is out")
-                    .appFont(16, weight: .heavy)
+                    .appDisplayFont(17)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
                 Text(message)
                     .appFont(13, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 10) {
                     if let url = config?.storeURL {
                         Button("Update") { openURL(url) }
-                            .buttonStyle(PrimaryButtonStyle())
+                            .buttonStyle(NewLookButtonStyle(kind: .primary))
                     }
                     Button("Not now", action: onDismiss)
-                        .buttonStyle(SecondaryButtonStyle())
+                        .buttonStyle(NewLookButtonStyle(kind: .tint))
                 }
                 .padding(.top, 4)
             }
             Spacer(minLength: 0)
         }
-        .cardStyle()
+        .newLookCard(padding: 16)
     }
 }

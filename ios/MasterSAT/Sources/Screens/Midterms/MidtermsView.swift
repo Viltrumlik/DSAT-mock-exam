@@ -58,12 +58,13 @@ struct MidtermsView: View {
         midterms.filter { $0.bucket == .past && $0.releasedScore != nil }.count
     }
 
-    private var tabs: [PillTabs<Filter>.Item] {
+    /// Counts only when there are some, as the site's chips have them.
+    private var chips: [NewLookFilterChips<Filter>.Option] {
         [
-            .init(tab: .all, title: "All", icon: "square.stack"),
-            .init(tab: .available, title: "Available now", icon: "dot.radiowaves.left.and.right", count: countOrNil(.available)),
-            .init(tab: .scheduled, title: "Scheduled", icon: "clock", count: countOrNil(.scheduled)),
-            .init(tab: .past, title: "Past", icon: "checkmark.seal", count: countOrNil(.past)),
+            .init(value: .all, title: "All"),
+            .init(value: .available, title: "Available now", count: countOrNil(.available)),
+            .init(value: .scheduled, title: "Scheduled", count: countOrNil(.scheduled)),
+            .init(value: .past, title: "Past", count: countOrNil(.past)),
         ]
     }
 
@@ -74,19 +75,18 @@ struct MidtermsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                HeroHeader(
-                    eyebrow: "Midterm",
-                    eyebrowIcon: "calendar.badge.clock",
-                    title: "Midterm",
-                    blurb: "Papers are sat in the centre. Here you can see when the next one opens and how the last one went.",
-                    tiles: [
-                        HeroTile("Available now", icon: "dot.radiowaves.left.and.right", value: rows(.available).count),
-                        HeroTile("Scheduled", icon: "clock", value: rows(.scheduled).count),
-                        HeroTile("Sat", icon: "checkmark.seal", value: rows(.past).count),
-                        HeroTile("Scores out", icon: "chart.bar.fill", value: published),
-                    ]
+            VStack(alignment: .leading, spacing: 16) {
+                NewLookPageTitle(
+                    title: "Midterms",
+                    subtitle: "Papers are sat in the centre. Here you can see when the next one opens and how the last one went."
                 )
+                // The hero's four tiles, as one white card of counts.
+                MidtermCountsCard(counts: [
+                    (rows(.available).count, "Available now"),
+                    (rows(.scheduled).count, "Scheduled"),
+                    (rows(.past).count, "Sat"),
+                    (published, "Scores out"),
+                ])
 
                 if isLoading && !hasLoaded {
                     LoadingSkeleton(rows: 3, height: 84, style: .cards)
@@ -102,10 +102,10 @@ struct MidtermsView: View {
                     if let loadError {
                         Label("Could not refresh just now — this is the last list we had. \(loadError)", systemImage: "exclamationmark.triangle")
                             .appFont(12, weight: .semibold)
-                            .foregroundStyle(Theme.textSecondary)
+                            .foregroundStyle(NewLook.ink4)
                     }
 
-                    PillTabs(items: tabs, selection: $filter)
+                    NewLookFilterChips(options: chips, selection: $filter)
 
                     if filter == .all || filter == .scheduled, let next {
                         MidtermCountdownCard(midterm: next.midterm, opensAt: next.opensAt)
@@ -120,9 +120,11 @@ struct MidtermsView: View {
                     }
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 16)
         }
-        .background(Theme.background)
+        .background(NewLook.page.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .detachedRefresh { await load() }
@@ -140,18 +142,19 @@ struct MidtermsView: View {
 
     private func tone(_ bucket: MidtermBucket) -> Color {
         switch bucket {
-        case .available: return Theme.accent
-        case .scheduled: return Theme.textLabel
-        case .closed: return Theme.warning
-        case .past: return Theme.success
+        case .available: return NewLook.blue
+        case .scheduled: return NewLook.chevron
+        case .closed: return NewLook.orange
+        case .past: return NewLook.green
         }
     }
 
     @ViewBuilder
     private func section(_ bucket: MidtermBucket) -> some View {
         let items = rows(bucket)
-        VStack(alignment: .leading, spacing: 10) {
-            DotHeading(title: bucket.title, count: items.count, tone: tone(bucket))
+        VStack(alignment: .leading, spacing: 12) {
+            MidtermSectionHeading(title: bucket.title, count: items.count, tone: tone(bucket))
+                .padding(.top, 6)
             ForEach(items) { midterm in
                 if bucket == .past, let attemptId = midterm.attemptId {
                     NavigationLink {
@@ -206,16 +209,16 @@ struct MidtermCountdownCard: View {
     let opensAt: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
-                Image(systemName: "calendar.badge.clock").appFont(12, weight: .bold)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 7) {
+                Image(systemName: "calendar.badge.clock").font(.system(size: 13, weight: .bold))
                     .accessibilityHidden(true)
-                Text("NEXT MIDTERM").appFont(12, weight: .heavy).tracking(1.1)
+                Text("Next midterm").appFont(11.5, weight: .heavy).tracking(1.4).textCase(.uppercase)
             }
             .foregroundStyle(.white.opacity(0.85))
 
             Text(midterm.title)
-                .appFont(20, weight: .heavy)
+                .appDisplayFont(22)
                 .tracking(-0.4)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
@@ -230,28 +233,19 @@ struct MidtermCountdownCard: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "clock").appFont(11, weight: .bold)
+            HStack(spacing: 7) {
+                Image(systemName: "clock").font(.system(size: 13, weight: .bold))
                     .accessibilityHidden(true)
                 Text(Countdown.fullDate(opensAt))
-                    .appFont(13, weight: .semibold)
+                    .appFont(14, weight: .bold)
             }
-            .foregroundStyle(.white.opacity(0.9))
+            .foregroundStyle(.white.opacity(0.95))
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.14)))
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+            .background(.white.opacity(0.14), in: Capsule())
         }
-        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.accentDeep)
-        .overlay(alignment: .topTrailing) {
-            Circle().fill(.white.opacity(0.07))
-                .frame(width: 190, height: 190)
-                .offset(x: 60, y: -70)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+        .newLookBlueCard(padding: EdgeInsets(top: 18, leading: 18, bottom: 18, trailing: 18))
     }
 }
 
@@ -260,20 +254,75 @@ private struct CountdownCell: View {
     let label: String
 
     var body: some View {
-        VStack(spacing: 3) {
+        VStack(spacing: 2) {
             Text(ScoreText.string(value))
-                .appFont(25, weight: .heavy, monospacedDigits: true)
+                .appDisplayFont(26, monospacedDigits: true)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(label)
-                .appFont(9, weight: .heavy)
-                .tracking(0.8)
+                .appFont(9.5, weight: .heavy)
+                .tracking(1)
                 .foregroundStyle(.white.opacity(0.72))
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.16)))
+        .padding(.vertical, 10)
+        .background(.white.opacity(0.14), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// The hero's four numbers in one white card, split by hairlines (mockup 36).
+private struct MidtermCountsCard: View {
+    let counts: [(value: Int, label: String)]
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(counts.enumerated()), id: \.offset) { index, item in
+                if index > 0 {
+                    Rectangle().fill(NewLook.line).frame(width: 1, height: 36)
+                }
+                VStack(spacing: 2) {
+                    Text(ScoreText.string(item.value))
+                        .appDisplayFont(24, monospacedDigits: true)
+                        .foregroundStyle(NewLook.ink)
+                    Text(item.label)
+                        .appFont(12, weight: .medium)
+                        .foregroundStyle(NewLook.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, 6)
+        .frame(maxWidth: .infinity)
+        .newLookSurface(NewLook.card, radius: 20, shadow: .card)
+    }
+}
+
+/// A list's heading: a coloured dot, the bucket in Archivo 22 and its count.
+private struct MidtermSectionHeading: View {
+    let title: String
+    let count: Int
+    let tone: Color
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Circle().fill(tone).frame(width: 8, height: 8)
+                .accessibilityHidden(true)
+            Text(title)
+                .appDisplayFont(22)
+                .tracking(-0.4)
+                .foregroundStyle(NewLook.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(ScoreText.string(count))
+                .appFont(14, weight: .heavy, monospacedDigits: true)
+                .foregroundStyle(NewLook.muted)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 2)
     }
 }
 
@@ -311,37 +360,41 @@ private struct MidtermRow: View {
 
     private var bucket: MidtermBucket { midterm.bucket }
 
-    private var badgeTone: Chip.Tone {
+    private var badgeStyle: NewLookChip.Style {
         switch bucket {
-        case .available: return midterm.resitOpen ? .warning : .accent
-        case .scheduled: return .neutral
-        case .closed: return .warning
-        case .past: return .success
+        case .available: return midterm.resitOpen ? .orange : .blue
+        case .scheduled: return .gray
+        case .closed: return .orange
+        case .past: return .green
         }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                IconTile(systemName: "doc.text", tone: bucket == .past ? Theme.success : Theme.accent, size: 40)
-                VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                NewLookTile(systemName: "doc.text.fill", tone: bucket == .past ? .green : .blue)
+                VStack(alignment: .leading, spacing: 6) {
                     Text(midterm.title)
-                        .appFont(15, weight: .heavy)
-                        .foregroundStyle(.primary)
+                        .appFont(16, weight: .bold)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.leading)
-                    Chip(text: midterm.badge, tone: badgeTone)
+                        .fixedSize(horizontal: false, vertical: true)
+                    NewLookChip(text: midterm.badge, style: badgeStyle)
                     if !midterm.metaLine.isEmpty {
                         Text(midterm.metaLine)
-                            .appFont(12, weight: .semibold)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(14, weight: .medium)
+                            .foregroundStyle(NewLook.ink4)
                     }
                 }
                 Spacer(minLength: 0)
                 if bucket == .past { pastTrailing }
             }
+            .padding(.bottom, 12)
+            Rectangle().fill(NewLook.line).frame(height: 1)
             status
+                .padding(.top, 12)
         }
-        .cardStyle(padding: 14)
+        .newLookCard(padding: 16)
     }
 
     // MARK: Past
@@ -352,20 +405,20 @@ private struct MidtermRow: View {
             if let score = midterm.releasedScore {
                 VStack(alignment: .trailing, spacing: 0) {
                     Text(ScoreText.string(score))
-                        .appFont(22, weight: .heavy, monospacedDigits: true)
+                        .appDisplayFont(24, monospacedDigits: true)
                         .tracking(-0.5)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(NewLook.blueText)
                     if let ceiling = midterm.scoreCeiling {
-                        Text("/\(ScoreText.string(ceiling))")
-                            .appFont(11, weight: .semibold)
-                            .foregroundStyle(Theme.textSecondary)
+                        Text("/ \(ScoreText.string(ceiling))")
+                            .appFont(12, weight: .bold)
+                            .foregroundStyle(NewLook.muted)
                     }
                 }
             }
             if midterm.attemptId != nil {
                 Image(systemName: "chevron.right")
-                    .appFont(12, weight: .bold)
-                    .foregroundStyle(Theme.textLabel)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(NewLook.chevron)
                     .accessibilityHidden(true)
             }
         }
@@ -412,7 +465,7 @@ private struct MidtermRow: View {
                 HStack(spacing: 8) {
                     StatusLine(icon: "chart.bar.fill", text: "View result")
                     if midterm.certificate?.available == true {
-                        Chip(text: "Certificate", icon: "rosette", tone: .success)
+                        NewLookChip(text: "Certificate", systemImage: "rosette", style: .green, small: false)
                     }
                 }
             } else {
@@ -429,19 +482,17 @@ private struct StatusLine: View {
     var detail: String?
 
     var body: some View {
-        HStack(spacing: 7) {
-            Image(systemName: icon).appFont(11, weight: .bold)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(icon == "chart.bar.fill" ? NewLook.blueText : NewLook.ink4)
                 .accessibilityHidden(true)
-            Text(text).appFont(13, weight: .bold)
-            if let detail {
-                Text("· \(detail)")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Theme.textLabel)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
-            }
+            // One run of text, so a long detail wraps under the words instead of squeezing them.
+            (Text(text).foregroundStyle(NewLook.ink2)
+                + Text(detail.map { " · \($0)" } ?? "").fontWeight(.medium).foregroundStyle(NewLook.muted))
+                .appFont(14, weight: .bold)
+                .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
-        .foregroundStyle(Theme.textSecondary)
     }
 }

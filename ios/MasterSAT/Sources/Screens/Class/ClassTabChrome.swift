@@ -140,14 +140,17 @@ struct ClassTabBackground: View {
 /// The page fading out behind the floating tab bar: the bottom 130 pt, clear → 92 % of the
 /// page's last colour from 60 % of the way down. It takes no touch.
 struct ClassTabBottomFade: View {
+    /// The page's last colour: the Class tab's peach, or the new look's grey-blue on Today.
+    var color: Color = ClassTabPalette.pageBottom
+
     var body: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
             LinearGradient(
                 stops: [
-                    .init(color: ClassTabPalette.pageBottom.opacity(0), location: 0),
-                    .init(color: ClassTabPalette.pageBottom.opacity(0.92), location: 0.6),
-                    .init(color: ClassTabPalette.pageBottom.opacity(0.92), location: 1),
+                    .init(color: color.opacity(0), location: 0),
+                    .init(color: color.opacity(0.92), location: 0.6),
+                    .init(color: color.opacity(0.92), location: 1),
                 ],
                 startPoint: .top,
                 endPoint: .bottom
@@ -170,15 +173,8 @@ struct ClassBandHeader: View {
     /// The tab has appeared: the row has faded and dropped into place.
     let shown: Bool
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    /// The band's top is the safe area's; the design measures from the phone's top edge, under
-    /// a 54-pt status bar. So its 72 pt above the row is 18 here, and the shield's 26 is -28.
-    private static let rowTop: CGFloat = 18
-    private static let rowBottom: CGFloat = 76
-
     var body: some View {
-        HStack(spacing: 10) {
+        TabBand(shown: shown) {
             Text("Class")
                 .appDisplayFont(32)
                 .tracking(-0.8)
@@ -188,24 +184,56 @@ struct ClassBandHeader: View {
                 .padding(.leading, 4)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilitySortPriority(1)
-            Spacer(minLength: 8)
-            // RootTabView routes what the inbox opens, the same way it routes a push.
-            NotificationBell(onOpen: { NotificationRouter.shared.open($0) }, look: .glass(band: ClassTabPalette.band))
-            ClassBandAvatar()
         }
-        .frame(minHeight: 44)
-        .padding(.horizontal, 16)
-        // The design's entrance: the row fades in and drops 12 pt into place, 60 ms in.
-        .animation(reduceMotion ? ClassTabMotion.calmFade : ClassTabMotion.fade(0.6).delay(0.06)) {
-            $0.opacity(shown ? 1 : 0)
+    }
+}
+
+/// A tab root's blue band (the kit's `.band`): what leads the row (the page's title, or Today's
+/// wordmark), the bell and the avatar on the right, a big shield floating behind them, and the
+/// bottom corners rounded 34. `below` sits under the row inside the band — Today's stories — and
+/// what follows the band rides up over its lower edge (`bottomPadding` is the room left for it).
+struct TabBand<Leading: View, Below: View>: View {
+    /// The tab has appeared: the row has faded and dropped into place.
+    let shown: Bool
+    var bottomPadding: CGFloat = TabBandMetrics.rowBottom
+    @ViewBuilder let leading: () -> Leading
+    @ViewBuilder let below: () -> Below
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Optional, so a band drawn without a session (a preview) still renders, never offline.
+    @Environment(Session.self) private var session: Session?
+
+    /// Offline, the band grows a row for the strip (mockup 92): the strip sits in it, under the
+    /// status bar, instead of floating over the wordmark and the bell.
+    private var offline: Bool { session?.connectivity.isOnline == false }
+
+    var body: some View {
+        // `SlotStack`: a `below` that has nothing to show is zero points tall, and leaves no gap.
+        SlotStack(spacing: 16) {
+            HStack(spacing: 10) {
+                leading()
+                Spacer(minLength: 8)
+                // RootTabView routes what the inbox opens, the same way it routes a push.
+                NotificationBell(onOpen: { NotificationRouter.shared.open($0) }, look: .glass(band: ClassTabPalette.band))
+                BandAvatar()
+            }
+            .frame(minHeight: 44)
+            .padding(.horizontal, 16)
+            // The design's entrance: the row fades in and drops 12 pt into place, 60 ms in.
+            .animation(reduceMotion ? ClassTabMotion.calmFade : ClassTabMotion.fade(0.6).delay(0.06)) {
+                $0.opacity(shown ? 1 : 0)
+            }
+            .animation(ClassTabMotion.glide(0.8).delay(0.06)) {
+                $0.offset(y: reduceMotion || shown ? 0 : -12)
+            }
+            below()
         }
-        .animation(ClassTabMotion.glide(0.8).delay(0.06)) {
-            $0.offset(y: reduceMotion || shown ? 0 : -12)
-        }
-        .padding(.top, Self.rowTop)
-        .padding(.bottom, Self.rowBottom)
+        .padding(.top, TabBandMetrics.rowTop + (offline ? TabBandMetrics.offlineRow : 0))
+        .padding(.bottom, bottomPadding)
         .frame(maxWidth: .infinity)
         .background { band }
+        // The strip's own fade is 250 ms (`OfflineOverlay`); the band makes room in step.
+        .animation(reduceMotion ? Motion.focus : .easeInOut(duration: 0.25), value: offline)
         .accessibilityElement(children: .contain)
     }
 
@@ -223,10 +251,27 @@ struct ClassBandHeader: View {
     }
 }
 
+extension TabBand where Below == EmptyView {
+    init(shown: Bool, bottomPadding: CGFloat = TabBandMetrics.rowBottom, @ViewBuilder leading: @escaping () -> Leading) {
+        self.init(shown: shown, bottomPadding: bottomPadding, leading: leading, below: { EmptyView() })
+    }
+}
+
+/// The band's top is the safe area's; the design measures from the phone's top edge, under a
+/// 54-pt status bar. So its 72 pt above the row is 18 here, and the shield's 26 is -28.
+enum TabBandMetrics {
+    static let rowTop: CGFloat = 18
+    /// The room under the row the cards overlapping the band's edge ride up into.
+    static let rowBottom: CGFloat = 76
+    /// The row the band grows for the offline strip: the strip's 32 pt and its 4 pt top margin,
+    /// and a little air under it.
+    static let offlineRow: CGFloat = 40
+}
+
 /// The MasterSAT shield, white at 9 %, 270 pt tall, drifting: up 10 pt and 3° to the left and
 /// back over nine seconds. Still under Reduce Motion and in Low Power, as every endless loop
 /// in the app is (`MotionBudget.allowsLoopingLottie`).
-private struct ShieldWatermark: View {
+struct ShieldWatermark: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drifting = false
 
@@ -257,7 +302,7 @@ private struct ShieldWatermark: View {
 
 /// The avatar on the band: a white 42-pt disc with the initials in the band's blue. Opens Me,
 /// the same way every other header's avatar does.
-private struct ClassBandAvatar: View {
+struct BandAvatar: View {
     @Environment(Session.self) private var session
     @Environment(AppRouter.self) private var router
 

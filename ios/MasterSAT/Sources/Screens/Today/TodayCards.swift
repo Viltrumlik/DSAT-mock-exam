@@ -17,7 +17,10 @@ struct TodayHero: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var drawn = 0.0
 
-    private var tone: Color { progress.isComplete ? Theme.success : Theme.accent }
+    private var tone: Color { progress.isComplete ? NewLook.green : NewLook.blue }
+
+    /// Neither loaded nor failed: the week is on its way.
+    private var pending: Bool { !loaded && !failed }
 
     private var headline: String {
         if failed { return "This week" }
@@ -37,7 +40,7 @@ struct TodayHero: View {
         // The ring beside the week's words; above them at the accessibility sizes.
         AdaptiveStack(spacing: 18) {
             ZStack {
-                Circle().stroke(tone.opacity(0.14), lineWidth: 11)
+                Circle().stroke(NewLook.blue50, lineWidth: 11)
                 Circle()
                     .trim(from: 0, to: drawn)
                     .stroke(tone, style: StrokeStyle(lineWidth: 11, lineCap: .round))
@@ -49,7 +52,9 @@ struct TodayHero: View {
                         .foregroundStyle(tone)
                 } else {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
-                        .appFont(20, weight: .heavy, design: .rounded, monospacedDigits: true)
+                        .appDisplayFont(20, monospacedDigits: true)
+                        // The dash of a week not known yet is quiet (the kit's `--faint`).
+                        .foregroundStyle(loaded && !failed ? NewLook.ink : NewLook.muted)
                         .capDynamicType()
                         .contentTransition(.numericText())
                         // A fixed ring: "12/12" at a large text size shrinks to fit inside the
@@ -70,20 +75,33 @@ struct TodayHero: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("THIS WEEK")
-                    .appFont(11, weight: .heavy)
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.textLabel)
+                Text("This week")
+                    .newLookCaps()
                 Text(headline)
-                    .appFont(20, weight: .heavy, design: .rounded)
+                    .appDisplayFont(20)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(subline)
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(14, weight: .medium)
+                    .foregroundStyle(NewLook.ink4)
+            }
+            // On its way (mockup 90): two lines' worth of shape where the words will land. The
+            // words stay in place underneath, hidden, so the card is already its full height.
+            .opacity(pending ? 0 : 1)
+            .overlay(alignment: .leading) {
+                SkeletonClock(running: pending) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("This week").newLookCaps()
+                        SkeletonLine(fraction: 0.8, height: 18)
+                        SkeletonLine(fraction: 0.58, height: 12)
+                    }
+                }
+                .opacity(pending ? 1 : 0)
             }
             AdaptiveSpacer()
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18)
         .onAppear { draw(progress.fraction) }
         .onChange(of: progress) { _, now in draw(now.fraction) }
         .accessibilityElement(children: .ignore)
@@ -111,14 +129,15 @@ struct AllDoneCard: View {
         VStack(spacing: 10) {
             StateArt(.allDone)
             Text("You're all caught up")
-                .appFont(17, weight: .heavy, design: .rounded)
+                .appDisplayFont(17)
+                .foregroundStyle(NewLook.ink)
             Text("New work from your teachers shows up here.")
                 .appFont(13, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.muted)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .cardStyle(padding: 20)
+        .newLookCard(padding: 20, radius: 22)
     }
 }
 
@@ -160,27 +179,40 @@ struct FreshResultCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            CardHeading(icon: "rosette", title: "Your result is in", subtitle: midterm.title, tone: Theme.success)
+            HStack(spacing: 12) {
+                NewLookTile(systemName: "rosette", tone: .green)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Your result is in")
+                        .appDisplayFont(17)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
+                    Text(midterm.title)
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
+                }
+                Spacer(minLength: 0)
+            }
             if let score = midterm.score {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(ScoreText.string(score))
-                        .appFont(32, weight: .heavy, design: .rounded, monospacedDigits: true)
-                        .foregroundStyle(Theme.accent)
+                        .appDisplayFont(40, monospacedDigits: true)
+                        .tracking(-1)
+                        .foregroundStyle(NewLook.blueText)
                     if let ceiling = midterm.scoreCeiling {
                         Text("of \(ScoreText.string(ceiling))")
-                            .appFont(13, weight: .semibold)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(14, weight: .semibold)
+                            .foregroundStyle(NewLook.ink4)
                     }
                 }
             }
             AdaptiveStack(spacing: 10) {
                 Button("See your report", action: onOpen)
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .primary, size: .block))
                 Button("Later", action: onLater)
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(NewLookButtonStyle(kind: .tint))
             }
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18, radius: 22)
     }
 }
 
@@ -200,22 +232,23 @@ struct SATCountdownRow: View {
     var body: some View {
         Button(action: onOpen) {
             HStack(spacing: 12) {
-                IconTile(systemName: "calendar", tone: Theme.accentDeep, size: 38)
+                NewLookTile(systemName: "calendar", tone: .blue)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .appFont(15, weight: .heavy, design: .rounded)
-                        .foregroundStyle(.primary)
+                        .appDisplayFont(17)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
                     Text(day.detail)
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
-                    .appFont(12, weight: .bold)
-                    .foregroundStyle(Theme.textLabel)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(NewLook.chevron)
                     .accessibilityHidden(true)
             }
-            .cardStyle(padding: 14)
+            .newLookCard(padding: 14)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressBounce())

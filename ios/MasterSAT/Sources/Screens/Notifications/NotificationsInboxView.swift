@@ -13,12 +13,9 @@ struct NotificationsInboxSheet: View {
 
     var body: some View {
         NavigationStack {
+            // The new look draws its own header with the Done (mockup 14), so the bar is hidden.
             NotificationsInboxView(onOpen: onOpen)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { dismiss() }
-                    }
-                }
+                .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
@@ -72,8 +69,17 @@ struct NotificationsInboxView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
+                NewLookSheetHeader(
+                    title: "Notifications",
+                    subtitle: counts.unreadTotal > 0 ? "\(counts.unreadTotal) unread" : nil,
+                    closeTitle: "Done",
+                    onClose: { dismiss() }
+                ) {
+                    NewLookTile(systemName: "bell.fill")
+                }
+                .padding(.top, 8)
                 if !sections.isEmpty {
-                    PillTabs(items: chipItems, selection: $filter)
+                    NewLookFilterChips(options: chipItems, selection: $filter)
                 }
                 // Only when there is something to mark: on the web the button also shows on a
                 // section with nothing unread, where pressing it does nothing at all.
@@ -84,7 +90,7 @@ struct NotificationsInboxView: View {
             }
             .padding(16)
         }
-        .background(Theme.background)
+        .background(NewLook.sheet.ignoresSafeArea())
         .navigationTitle("Notifications")
         .navigationBarTitleDisplayMode(.inline)
         .task(id: filter) { await load() }
@@ -93,16 +99,20 @@ struct NotificationsInboxView: View {
 
     // MARK: - Pieces
 
-    private var chipItems: [PillTabs<Filter>.Item] {
-        var items = [PillTabs<Filter>.Item(tab: .all, title: "All", icon: "tray.full")]
+    /// All, then the server's sections; a section with unread items carries its count.
+    private var chipItems: [NewLookFilterChips<Filter>.Option] {
+        let total = counts.unreadTotal
+        var items = [NewLookFilterChips<Filter>.Option(
+            value: .all, title: "All", systemImage: "tray", count: total > 0 ? total : nil
+        )]
         for section in sections {
             let unread = counts.unreadByCategory[section.value] ?? 0
-            items.append(PillTabs<Filter>.Item(
-                tab: .section(section.value),
+            items.append(NewLookFilterChips<Filter>.Option(
+                value: .section(section.value),
                 title: section.label,
-                icon: NotificationCategoryLook.icon(for: section.value),
+                systemImage: NotificationCategoryLook.icon(for: section.value),
                 count: unread > 0 ? unread : nil,
-                highlighted: unread > 0
+                tone: NotificationCategoryLook.newLookTone(for: section.value).glyph
             ))
         }
         return items
@@ -114,10 +124,11 @@ struct NotificationsInboxView: View {
         } label: {
             Label(
                 filter.category == nil ? "Mark all as read" : "Mark this section as read",
-                systemImage: "checkmark"
+                systemImage: "checkmark.circle"
             )
-            .appFont(13, weight: .heavy)
-            .foregroundStyle(Theme.accent)
+            .appFont(15, weight: .bold)
+            .foregroundStyle(NewLook.blueText)
+            .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
         .disabled(markingShown)
@@ -144,14 +155,14 @@ struct NotificationsInboxView: View {
     private func list(_ rows: [AppNotification]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
-                if index > 0 { Divider().padding(.leading, 36) }
+                if index > 0 { Rectangle().fill(NewLook.line).frame(height: 1).padding(.leading, 72) }
                 Button { open(row) } label: {
                     NotificationRow(notification: row)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .cardStyle(padding: 0)
+        .newLookCard(padding: 0, radius: 22, shadow: .tile)
     }
 
     /// Nothing loaded, and the load failed.
@@ -185,13 +196,13 @@ struct NotificationsInboxView: View {
     private var placeholder: some View {
         VStack(spacing: 0) {
             ForEach(0..<3, id: \.self) { index in
-                if index > 0 { Divider().padding(.leading, 36) }
+                if index > 0 { Rectangle().fill(NewLook.line).frame(height: 1).padding(.leading, 72) }
                 NotificationRow(notification: .placeholder)
             }
         }
         .redacted(reason: .placeholder)
         .allowsHitTesting(false)
-        .cardStyle(padding: 0)
+        .newLookCard(padding: 0, radius: 22, shadow: .tile)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading notifications")
     }
@@ -282,31 +293,40 @@ private struct NotificationRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Circle()
-                .fill(notification.isRead ? Color.clear : Theme.accent)
-                .frame(width: 8, height: 8)
-                .padding(.top, 6)
+            // The section's tile, with the unread dot on its corner (mockup 14).
+            NewLookTile(
+                systemName: NotificationCategoryLook.icon(for: notification.category),
+                tone: NotificationCategoryLook.newLookTone(for: notification.category)
+            )
+            .overlay(alignment: .topTrailing) {
+                Circle()
+                    .fill(NewLook.blue)
+                    .overlay(Circle().stroke(NewLook.card, lineWidth: 2))
+                    .frame(width: 11, height: 11)
+                    .offset(x: 3, y: -3)
+                    .opacity(notification.isRead ? 0 : 1)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text(notification.title)
-                    .appFont(15, weight: notification.isRead ? .semibold : .heavy)
-                    .foregroundStyle(.primary)
+                    .appFont(16, weight: notification.isRead ? .semibold : .bold)
+                    .foregroundStyle(NewLook.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 if !notification.body.isEmpty {
                     Text(notification.body)
-                        .appFont(13, weight: notification.isRead ? .medium : .bold)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(14, weight: notification.isRead ? .regular : .semibold)
+                        .foregroundStyle(NewLook.ink4)
                         .lineLimit(1)
                 }
                 Text(meta)
-                    .appFont(11, weight: notification.isRead ? .semibold : .heavy)
-                    .foregroundStyle(Theme.textLabel)
+                    .appFont(12, weight: .semibold)
+                    .foregroundStyle(NewLook.muted)
             }
             Spacer(minLength: 0)
             if notification.link != nil {
                 Image(systemName: "chevron.right")
-                    .appFont(12, weight: .bold)
-                    .foregroundStyle(Theme.textLabel)
-                    .padding(.top, 4)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(NewLook.chevron)
+                    .padding(.top, 14)
                     .accessibilityHidden(true)
             }
         }
