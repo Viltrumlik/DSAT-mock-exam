@@ -323,3 +323,72 @@ struct TrailingIconLabelStyle: LabelStyle {
         }
     }
 }
+
+// MARK: - The focus shell
+
+/// A full-screen focus shell in the new look (the live quiz, mockup 39): a glass "Back" pill, the
+/// title and one line centred, an optional blue counter pill — and nothing else. No tab bar, no
+/// status bar, no home indicator, and the screen kept awake while it is up.
+struct NewLookFocusShell<Content: View>: View {
+    let title: String
+    let subtitle: String
+    var counter: String?
+    let onExit: @MainActor () -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            content()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(NewLook.page.ignoresSafeArea())
+        // Nothing to swipe away to, nothing to peek at.
+        .persistentSystemOverlays(.hidden)
+        .statusBarHidden(true)
+        .onAppear { UIApplication.shared.isIdleTimerDisabled = true }
+        .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Button(action: onExit) {
+                NewLookPillLabel(title: "Back", systemImage: "chevron.left", tint: NewLook.ink2)
+            }
+            .buttonStyle(PressBounce())
+            .frame(minWidth: 96, alignment: .leading)
+
+            VStack(spacing: 1) {
+                Text(title)
+                    .appFont(16, weight: .bold)
+                    .foregroundStyle(NewLook.ink)
+                    .lineLimit(1)
+                Text(subtitle)
+                    .appFont(13, weight: .medium)
+                    .foregroundStyle(NewLook.muted)
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+
+            Group {
+                if let counter {
+                    Text(counter)
+                        .appFont(15, weight: .heavy, monospacedDigits: true)
+                        .foregroundStyle(NewLook.blueText)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 44)
+                        .background(NewLook.blue50, in: Capsule())
+                } else {
+                    Color.clear.frame(width: 1, height: 1)
+                }
+            }
+            // Balances the back pill so the title stays optically centred.
+            .frame(minWidth: 96, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 6)
+    }
+}
