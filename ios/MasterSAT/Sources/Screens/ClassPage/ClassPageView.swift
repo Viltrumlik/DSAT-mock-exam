@@ -310,7 +310,7 @@ struct ClassPageHeaderCard: View {
         .padding(.trailing, 16)
         .padding(.vertical, 12)
         .frame(minHeight: 100)
-        .background(shape.fill(.white.opacity(0.12)))
+        .background(ClassGlass(shape: shape, tint: 0.12))
         .overlay(shape.strokeBorder(.white.opacity(0.22), lineWidth: 1))
         .background(GlassShadow(shape: shape, color: ClassPageInk.shade.opacity(0.35), radius: 17, y: 14))
         .accessibilityElement(children: .combine)
@@ -495,8 +495,7 @@ private struct ClassPageSkeleton: View {
     var body: some View {
         VStack(spacing: 28) {
             ForEach(0..<2, id: \.self) { _ in
-                RoundedRectangle(cornerRadius: 24, style: .continuous)
-                    .fill(.white.opacity(0.07))
+                ClassGlass(shape: RoundedRectangle(cornerRadius: 24, style: .continuous), tint: 0.07)
                     .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(.white.opacity(0.12), lineWidth: 1))
                     .frame(height: 260)
             }
@@ -571,7 +570,7 @@ private struct ClassPageMessage: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 28)
         .padding(.horizontal, 20)
-        .background(shape.fill(.white.opacity(0.08)))
+        .background(ClassGlass(shape: shape, tint: 0.08))
         .overlay(shape.strokeBorder(.white.opacity(0.14), lineWidth: 1))
     }
 }

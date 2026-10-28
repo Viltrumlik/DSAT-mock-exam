@@ -54,6 +54,26 @@ struct GlassShadow<S: Shape>: View {
     }
 }
 
+/// The design's frosted glass (`backdrop-filter: blur(16–20px)` under a white tint): what is behind
+/// — the dots, the gradient, the strip's rim — blurred by a material, with the white on top. The
+/// material is the dark one whatever the phone's setting, as the page is: a light one would wash the
+/// level's colour out to grey.
+struct ClassGlass<S: Shape>: View {
+    let shape: S
+    /// The white on top: 0.05–0.12 as the card's state says.
+    let tint: Double
+
+    var body: some View {
+        ZStack {
+            shape.fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+            shape.fill(.white.opacity(tint))
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// The page behind everything: the level's dark gradient with a white dot every 16 pt at 7 %. It
 /// stays put while the sessions scroll over it, as in the design.
 struct ClassPageBackdrop: View {
@@ -108,8 +128,7 @@ struct ClassPageTopStrip: View {
         GeometryReader { proxy in
             let top = max(0, proxy.frame(in: .global).minY)
             let shape = UnevenRoundedRectangle(bottomLeadingRadius: 34, bottomTrailingRadius: 34, style: .continuous)
-            shape
-                .fill(.white.opacity(0.07))
+            ClassGlass(shape: shape, tint: 0.07)
                 .overlay(alignment: .bottom) {
                     // `inset 0 -1px 0 rgba(255,255,255,0.14)`: a hairline of light on the rim.
                     shape.stroke(.white.opacity(0.14), lineWidth: 1).mask(alignment: .bottom) {

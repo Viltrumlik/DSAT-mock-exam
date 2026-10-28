@@ -118,7 +118,7 @@ struct ClassSessionCard: View {
         .padding(.top, 16)
         .padding(.horizontal, 14)
         .padding(.bottom, 8)
-        .background(cardShape.fill(.white.opacity(cardFill)))
+        .background(ClassGlass(shape: cardShape, tint: cardFill))
         .overlay(cardShape.strokeBorder(cardRing, lineWidth: 1))
         .background {
             GlassShadow(shape: cardShape, color: ClassPageInk.shade.opacity(shadowOpacity), radius: shadowRadius, y: shadowY)
@@ -664,7 +664,7 @@ struct ClassMidtermCard: View {
             }
         }
         .padding(14)
-        .background(shape.fill(.white.opacity(midterm.state == .locked ? 0.05 : 0.08)))
+        .background(ClassGlass(shape: shape, tint: midterm.state == .locked ? 0.05 : 0.08))
         .overlay(shape.strokeBorder(.white.opacity(midterm.state == .locked ? 0.10 : 0.16), lineWidth: 1))
         .background(GlassShadow(shape: shape, color: ClassPageInk.shade.opacity(midterm.state == .locked ? 0 : 0.22), radius: 15, y: 12))
         .contentShape(Rectangle())
