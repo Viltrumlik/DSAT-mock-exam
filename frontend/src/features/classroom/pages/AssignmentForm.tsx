@@ -278,7 +278,11 @@ export default function AssignmentForm({ classId, editingAssignment = null, kind
   const [savedId, setSavedId] = useState<number | null>(null);
 
   const domainSubject = classroomSubject === "MATH" ? "math" : classroomSubject === "ENGLISH" ? "english" : "";
-  const allowedSources = useMemo(() => allowedSourcesForSubject(domainSubject), [domainSubject]);
+  // Foundation homework topics only in a Foundation class (an untagged class sees all).
+  const allowedSources = useMemo(
+    () => allowedSourcesForSubject(domainSubject, classroomLevel ? [classroomLevel] : undefined),
+    [domainSubject, classroomLevel]
+  );
   const classSubjectLabel = classroomSubject === "MATH" ? "Math" : classroomSubject === "ENGLISH" ? "English" : "";
 
   const pastpaperCards = useMemo(

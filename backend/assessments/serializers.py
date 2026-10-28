@@ -465,12 +465,9 @@ class AssessmentSetAdminWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"source": "Source is required when creating an assessment set."}
             )
-        if source:
-            allowed = AssessmentSet.allowed_sources_for_subject(subject)
-            if source not in allowed:
-                raise serializers.ValidationError(
-                    {"source": f"'{source}' is not a valid source for {subject} sets."}
-                )
+        source_problem = AssessmentSet.source_problem(subject, source, level or "", secondary)
+        if source_problem:
+            raise serializers.ValidationError({"source": source_problem})
         # Level is required in the authoring UI but not hard-blocked here (blank =
         # legacy/untagged, valid for existing sets). If provided it must fit the subject.
         if level:
