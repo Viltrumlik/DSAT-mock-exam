@@ -23,14 +23,15 @@ struct MatchingView: View {
         StudyShell(
             title: "Matching",
             subtitle: set.title,
-            tone: Theme.info,
+            tone: StudyMode.matching.tone,
             progress: rounds.isEmpty ? 0 : Double(roundIndex) / Double(rounds.count),
             trailing: AnyView(
                 HStack(spacing: 6) {
                     if rounds.count > 1 {
-                        StudyPill(text: "\(roundIndex + 1)/\(rounds.count)", icon: "square.stack", tone: Theme.info)
+                        StudyPill(text: "\(roundIndex + 1)/\(rounds.count)", icon: "square.3.layers.3d",
+                                  tone: StudyMode.matching.tone, ink: StudyMode.matching.ink)
                     }
-                    StudyPill(text: formatClock(elapsed), icon: "timer")
+                    StudyPill(text: formatClock(elapsed), icon: "timer", ink: NewLook.ink4)
                 }
             ),
             onExit: onExit
@@ -126,18 +127,20 @@ private struct MatchingRound: View {
         VStack(spacing: 14) {
             HStack {
                 Text("Tap a word, then its meaning.")
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(14, weight: .semibold)
+                    .foregroundStyle(NewLook.ink4)
                 Spacer()
                 StudyPill(
                     text: "\(remaining) of \(total) pair\(total == 1 ? "" : "s") left",
-                    tone: remaining == 0 ? Theme.success : Theme.info
+                    tone: remaining == 0 ? VocabPalette.mastered.solid : StudyMode.matching.tone,
+                    ink: remaining == 0 ? VocabPalette.mastered.ink : StudyMode.matching.ink
                 )
             }
             .padding(.horizontal, 16)
+            .padding(.top, 14)
 
             ScrollView {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
                     ForEach(cards) { card in
                         MatchCardTile(
                             card: card,
@@ -151,6 +154,7 @@ private struct MatchingRound: View {
                     }
                 }
                 .padding(.horizontal, 16)
+                .padding(.top, 4)
                 .padding(.bottom, 24)
             }
         }
@@ -223,36 +227,48 @@ private struct MatchCardTile: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var border: Color {
-        if isWrong { return Theme.danger }
-        if isSelected { return Theme.info }
-        return Theme.separator
+        if isWrong { return NewLook.red }
+        if isSelected { return NewLook.sky }
+        return .clear
     }
 
     private var fill: Color {
-        if isWrong { return Theme.dangerSoft }
-        if isSelected { return Theme.infoSoft }
-        return Theme.card
+        if isWrong { return NewLook.red50 }
+        if isSelected { return NewLook.sky50 }
+        // A found pair recedes onto the sheet grey before it fades.
+        if isMatched { return NewLook.sheet }
+        return NewLook.card
+    }
+
+    /// A word is the thing being learned, so it gets the display face, big; a definition is a
+    /// sentence and has to fit.
+    @ViewBuilder private var label: some View {
+        if card.face == .word {
+            Text(card.text).appDisplayFont(20).tracking(-0.3)
+        } else {
+            Text(card.text).appFont(15, weight: .medium)
+        }
     }
 
     var body: some View {
         // Read here: the animator's content closure is Sendable and may not touch the environment.
         let calm = reduceMotion
         return Button(action: onTap) {
-            Text(card.text)
-                // A word is the thing being learned, so it gets the big type; a
-                // definition is a sentence and has to fit.
-                .appFont(card.face == .word ? 21 : 15, weight: card.face == .word ? .bold : .medium)
+            label
+                .foregroundStyle(NewLook.ink)
                 .multilineTextAlignment(.center)
                 .lineLimit(4)
                 .minimumScaleFactor(0.7)
                 .frame(maxWidth: .infinity, minHeight: 112)
                 .padding(10)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(fill)
-                )
+                .background {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(fill)
+                        .newLookShadow(isMatched ? .shop : .tile)
+                }
                 .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                        .stroke(border, lineWidth: isSelected || isWrong ? 2 : 1)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(border, lineWidth: 2)
                 )
                 // A button's label is only hit-testable where it draws.
                 .contentShape(Rectangle())
@@ -273,7 +289,7 @@ private struct MatchCardTile: View {
         .opacity(isMatched ? 0.25 : 1)
         .scaleEffect(isMatched ? 0.94 : (isSelected ? 1.02 : 1))
         // A pair that is not one shakes with its red edge (a red pulse under Reduce Motion).
-        .focusShake(misses, cornerRadius: Theme.Radius.card)
+        .focusShake(misses, cornerRadius: 20)
         // Innermost, so it wins when a pair is found: the card that was selected stops being
         // selected in the same update, and both cards of the pair fade together, after the pop.
         .animation(.easeOut(duration: 0.2).delay(calm ? 0 : 0.22), value: isMatched)

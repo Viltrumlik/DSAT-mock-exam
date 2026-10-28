@@ -109,7 +109,7 @@ struct VocabStudyView: View {
                 ProgressView().controlSize(.large)
                 Text("Dealing your words…")
                     .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -122,25 +122,26 @@ struct VocabStudyView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "exclamationmark.triangle")
                         .appFont(26)
-                        .foregroundStyle(Theme.warning)
+                        .foregroundStyle(NewLook.orange)
                         .capDynamicType()
                         .frame(width: 56, height: 56)
-                        .background(Circle().fill(Theme.warningSoft))
+                        .background(Circle().fill(NewLook.orange50))
                         .accessibilityHidden(true)
                     Text("Couldn't start this round")
-                        .appFont(18, weight: .heavy)
+                        .appDisplayFont(19)
+                        .foregroundStyle(NewLook.ink)
                     Text(error.errorDescription ?? ErrorState.nothingLost)
                         .appFont(14)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.ink4)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     VStack(spacing: 10) {
                         Button { Task { await restart() } } label: {
-                            Label("Try again", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                            Label("Try again", systemImage: "arrow.counterclockwise")
                         }
-                        .buttonStyle(PrimaryButtonStyle(tone: mode.tone, fullWidth: true))
+                        .buttonStyle(NewLookToneButtonStyle(tone: mode.tone))
                         Button("Back to vocabulary", action: onClose)
-                            .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                            .buttonStyle(NewLookButtonStyle(kind: .light, size: .large))
                     }
                     .padding(.top, 8)
                 }
@@ -280,7 +281,7 @@ struct FlashcardView: View {
             tone: StudyMode.flashcard.tone,
             progress: phase == .study && !deck.isEmpty ? Double(index) / Double(deck.count) : nil,
             trailing: phase == .study
-                ? AnyView(StudyPill(text: "\(index + 1) / \(deck.count)", tone: StudyMode.flashcard.tone))
+                ? AnyView(StudyPill(text: "\(index + 1) / \(deck.count)", tone: StudyMode.flashcard.tone, ink: StudyMode.flashcard.ink))
                 : nil,
             onExit: onExit
         ) {
@@ -313,8 +314,8 @@ struct FlashcardView: View {
         ScrollView {
             VStack(spacing: 14) {
                 if round > 1 {
-                    Chip(text: "Round \(ScoreText.string(round)) · still learning",
-                         icon: "arrow.counterclockwise", tone: .warning)
+                    NewLookChip(text: "Round \(ScoreText.string(round)) · still learning",
+                                systemImage: "arrow.counterclockwise", style: .orange, small: false)
                 }
 
                 if let word = current {
@@ -335,8 +336,8 @@ struct FlashcardView: View {
                         .padding(.horizontal, 16)
                 } else {
                     Text("Tap to flip — swipe right if you knew it, left to see it again.")
-                        .appFont(12, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(12.5, weight: .medium)
+                        .foregroundStyle(NewLook.muted)
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
                         .frame(minHeight: 20)
@@ -345,8 +346,8 @@ struct FlashcardView: View {
                 }
 
                 HStack(spacing: 12) {
-                    verdict("Still learning", icon: "arrow.counterclockwise", tone: Theme.warning, isCorrect: false)
-                    verdict("Correct", icon: "checkmark", tone: Theme.success, isCorrect: true)
+                    verdict("Still learning", icon: "arrow.counterclockwise", tone: FlashcardTone.amber, isCorrect: false)
+                    verdict("Correct", icon: "checkmark", tone: FlashcardTone.emerald, isCorrect: true)
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
@@ -355,27 +356,29 @@ struct FlashcardView: View {
         }
     }
 
-    private func verdict(_ label: String, icon: String, tone: Color, isCorrect: Bool) -> some View {
+    private func verdict(_ label: String, icon: String, tone: VocabPalette.Tone, isCorrect: Bool) -> some View {
         let chosen = hold?.correct == isCorrect
         let held = hold != nil
         return Button { answer(isCorrect) } label: {
-            HStack(spacing: 9) {
-                Image(systemName: icon).appFont(17, weight: .bold)
+            HStack(spacing: 8) {
+                Image(systemName: icon).font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(tone.solid)
                     .accessibilityHidden(true)
                 Text(label).appFont(16, weight: .heavy).lineLimit(1).minimumScaleFactor(0.8)
             }
-            .foregroundStyle(tone)
+            .foregroundStyle(tone.ink)
             .frame(maxWidth: .infinity, minHeight: 60)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(tone.opacity(0.12))
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(tone.solid.opacity(0.12))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(tone.opacity(chosen ? 0.9 : 0.28), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(tone.solid.opacity(chosen ? 0.9 : 0.28), lineWidth: 2)
             )
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        // Not `.plain`: it greys a disabled label, and the verdict just given must stay lit.
+        .buttonStyle(FocusPress())
         .disabled(held)
         // The verdict just given stays readable; the other one recedes for the hold.
         .opacity(held && !chosen ? 0.4 : 1)
@@ -390,31 +393,40 @@ struct FlashcardView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 14) {
-                    CardHeading(
-                        icon: "flag.fill",
-                        title: "Round \(ScoreText.string(round)) done",
-                        subtitle: "Keep going — the pile shrinks every round."
-                    )
+                    HStack(spacing: 12) {
+                        NewLookTile(systemName: "flag.fill", tone: .blue)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Round \(ScoreText.string(round)) done")
+                                .appDisplayFont(19)
+                                .tracking(-0.3)
+                                .foregroundStyle(NewLook.ink)
+                                .accessibilityAddTraits(.isHeader)
+                            Text("Keep going — the pile shrinks every round.")
+                                .appFont(13, weight: .medium)
+                                .foregroundStyle(NewLook.ink4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
                     // Two segments, not a bar with a gap: what stuck and what is coming
                     // back are the whole story of the round.
                     GeometryReader { geometry in
                         HStack(spacing: 2) {
-                            Rectangle().fill(Theme.success)
+                            Rectangle().fill(FlashcardTone.emerald.solid)
                                 .frame(width: max(0, geometry.size.width * cleared))
-                            Rectangle().fill(Theme.warning)
+                            Rectangle().fill(FlashcardTone.amber.solid)
                         }
                     }
                     .frame(height: 10)
                     .clipShape(Capsule())
                     Text("\(ScoreText.string(learned.count)) of \(ScoreText.string(deck.count)) cards cleared this round")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(13, weight: .semibold)
+                        .foregroundStyle(NewLook.ink4)
                 }
-                .cardStyle(padding: 18)
+                .newLookCard(padding: 18)
 
-                reviewColumn("You know these", words: learned, tone: Theme.success, icon: "sparkles",
+                reviewColumn("You know these", words: learned, tone: FlashcardTone.emerald, icon: "sparkles",
                              emptyText: "Nothing landed this round — that's what the next one is for.")
-                reviewColumn("Keep practising these", words: missed, tone: Theme.warning,
+                reviewColumn("Keep practising these", words: missed, tone: FlashcardTone.amber,
                              icon: "arrow.counterclockwise", emptyText: nil)
 
                 Button {
@@ -422,9 +434,8 @@ struct FlashcardView: View {
                 } label: {
                     Label("Practice \(ScoreText.string(missed.count)) word\(missed.count == 1 ? "" : "s") again",
                           systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
             }
             .padding(16)
         }
@@ -433,31 +444,41 @@ struct FlashcardView: View {
     private func reviewColumn(
         _ title: String,
         words: [VocabWord],
-        tone: Color,
+        tone: VocabPalette.Tone,
         icon: String,
         emptyText: String?
     ) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
-                IconTile(systemName: icon, tone: tone, size: 34)
-                Text(title).appFont(15, weight: .heavy)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(tone.tile)
+                    .frame(width: 34, height: 34)
+                    .overlay(
+                        Image(systemName: icon)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(tone.solid)
+                    )
+                    .accessibilityHidden(true)
+                Text(title)
+                    .appFont(16, weight: .heavy)
+                    .foregroundStyle(NewLook.ink)
                 Spacer(minLength: 0)
                 Text(ScoreText.string(words.count))
                     .appFont(13, weight: .heavy, monospacedDigits: true)
-                    .foregroundStyle(tone)
+                    .foregroundStyle(tone.ink)
                     .padding(.horizontal, 9)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(tone.opacity(0.14)))
+                    .frame(minHeight: 22)
+                    .background(Capsule().fill(tone.solid.opacity(0.14)))
             }
             if words.isEmpty {
                 if let emptyText {
-                    Text(emptyText).appFont(13).foregroundStyle(Theme.textSecondary)
+                    Text(emptyText).appFont(13).foregroundStyle(NewLook.ink4)
                 }
             } else {
-                WrappingChips(words: words.map(\.word), tone: tone)
+                WrappingChips(words: words.map(\.word), tone: tone.solid, ink: tone.ink)
             }
         }
-        .cardStyle(padding: 16)
+        .newLookCard(padding: 16)
     }
 
     @MainActor
@@ -539,37 +560,39 @@ private struct FlashcardHoldStrip: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            let tone = correct ? FlashcardTone.emerald : FlashcardTone.amber
             RoundedRectangle(cornerRadius: 11, style: .continuous)
-                .fill(correct ? Theme.successSoft : Theme.warningSoft)
+                .fill(tone.tile)
                 .frame(width: 36, height: 36)
                 .overlay(
                     Image(systemName: correct ? "checkmark" : "arrow.counterclockwise")
-                        .appFont(15, weight: .bold)
+                        .appFont(16, weight: .bold)
                         .capDynamicType()
-                        .foregroundStyle(correct ? Theme.success : Theme.warning)
+                        .foregroundStyle(tone.solid)
                         .accessibilityHidden(true)
                 )
             VStack(alignment: .leading, spacing: 8) {
                 Text(correct
                      ? "Nice — sit with the definition for a beat."
                      : "Read it through — you'll see this one again.")
-                    .appFont(13, weight: .bold)
+                    .appFont(14, weight: .bold)
+                    .foregroundStyle(NewLook.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Theme.surface2)
+                        Capsule().fill(NewLook.line)
                         Capsule()
-                            .fill(Theme.accent)
+                            .fill(NewLook.blue)
                             .frame(width: geometry.size.width * CGFloat(secondsLeft) / CGFloat(max(total, 1)))
                             .animation(.linear(duration: 1), value: secondsLeft)
                     }
                 }
                 .frame(height: 6)
             }
-            StudyPill(text: "\(secondsLeft)s", icon: "timer", tone: Theme.accent)
+            StudyPill(text: "\(secondsLeft)s", icon: "timer", tone: NewLook.blue, ink: NewLook.blueText)
                 .accessibilityHidden(true)
         }
-        .cardStyle(padding: 12)
+        .newLookCard(padding: 12)
         .accessibilityElement(children: .combine)
     }
 }
@@ -742,7 +765,7 @@ struct FlipCard: View {
                 .foregroundStyle(Self.stampInk)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(Capsule().fill(leaning ? Theme.success : Theme.warning))
+                .background(Capsule().fill(leaning ? FlashcardTone.emerald.solid : FlashcardTone.amber.solid))
                 .padding(.top, 16)
                 .transition(.opacity)
                 .allowsHitTesting(false)
@@ -752,37 +775,45 @@ struct FlipCard: View {
 
     @ViewBuilder
     private func face(back: Bool) -> some View {
+        // Centred in the card while it fits (the kit's card centres its word); a long definition
+        // grows past the card's height and scrolls from its top.
+        GeometryReader { card in
         ScrollView {
             VStack(spacing: 12) {
-                Overline(back ? "Definition" : "Word")
+                Text(back ? "Definition" : "Word").newLookCaps()
                 if back {
                     Text(word.definition)
                         .appFont(21, weight: .bold)
+                        .tracking(-0.2)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.center)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
                     if let example = word.example, !example.isEmpty {
                         HStack(alignment: .top, spacing: 0) {
-                            Rectangle().fill(Theme.accent.opacity(0.4)).frame(width: 3)
+                            Rectangle().fill(NewLook.blue.opacity(0.4)).frame(width: 3)
                             Text("“\(example)”")
                                 .appFont(13).italic()
-                                .foregroundStyle(Theme.textSecondary)
+                                .foregroundStyle(NewLook.ink4)
                                 .multilineTextAlignment(.leading)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 8)
+                            Spacer(minLength: 0)
                         }
-                        .background(Theme.background)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .background(NewLook.sheet)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .padding(.top, 4)
                     }
                     if !word.synonyms.isEmpty {
-                        WrappingChips(words: word.synonyms, tone: Theme.accent)
+                        WrappingChips(words: word.synonyms, tone: NewLook.blue, ink: NewLook.blueText)
                             .padding(.top, 4)
                     }
                 } else {
                     Text(word.word)
                         // One word on an otherwise empty screen. It can afford to be big,
                         // and being big is the point.
-                        .appFont(42, weight: .heavy, design: .rounded)
+                        .appDisplayFont(42)
+                        .tracking(-1)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.4)
                     if let part = word.partOfSpeech, !part.isEmpty { partChip(part) }
@@ -791,37 +822,40 @@ struct FlipCard: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 24)
             .padding(.vertical, 28)
+            .frame(minHeight: card.size.height)
+        }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
-                .stroke(Theme.separator.opacity(0.6), lineWidth: 1)
-        )
+        .background(NewLook.card)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(alignment: .bottomTrailing) {
             HStack(spacing: 5) {
                 Image(systemName: "arrow.triangle.2.circlepath").appFont(10, weight: .bold)
                     .accessibilityHidden(true)
                 Text(back ? "Flip for word" : "Flip for definition").appFont(11, weight: .heavy)
             }
-            .foregroundStyle(Theme.textSecondary)
+            .foregroundStyle(NewLook.ink4)
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
-            .background(Capsule().fill(Theme.background))
+            .frame(minHeight: 26)
+            .background(Capsule().fill(NewLook.sheet))
             .padding(14)
             .allowsHitTesting(false)
         }
-        .shadow(color: .black.opacity(0.06), radius: 12, x: 0, y: 4)
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(NewLook.card)
+                .shadow(color: Color(RGB(hex: 0x0E2450)).opacity(0.05), radius: 1, y: 1)
+                .shadow(color: Color(RGB(hex: 0x0E2450)).opacity(0.12), radius: 17, y: 14)
+        }
     }
 
     private func partChip(_ part: String) -> some View {
         Text(part)
             .appFont(12, weight: .bold).italic()
-            .foregroundStyle(Theme.textSecondary)
+            .foregroundStyle(NewLook.ink4)
             .padding(.horizontal, 12)
             .padding(.vertical, 5)
-            .background(Capsule().fill(Theme.background))
+            .background(Capsule().fill(NewLook.sheet))
     }
 }
 
@@ -832,15 +866,17 @@ struct FlipCard: View {
 struct WrappingChips: View {
     let words: [String]
     var tone: Color = Theme.accent
+    /// The text's colour, when the tone itself is too light to read on its tint.
+    var ink: Color?
 
     var body: some View {
         FlowLayout(spacing: 6) {
             ForEach(Array(words.enumerated()), id: \.offset) { _, word in
                 Text(word)
-                    .appFont(13, weight: .bold)
-                    .foregroundStyle(tone)
+                    .appFont(13.5, weight: .bold)
+                    .foregroundStyle(ink ?? tone)
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
+                    .frame(minHeight: 28)
                     .background(Capsule().fill(tone.opacity(0.13)))
             }
         }
@@ -893,4 +929,11 @@ struct FlowLayout: Layout {
         if !row.indices.isEmpty { rows.append(row) }
         return rows
     }
+}
+
+/// The flashcards' two verdict colours — the student's own verdict on themselves, never the app's:
+/// the vocabulary palette's emerald for "Correct" and amber for "Still learning".
+enum FlashcardTone {
+    static let emerald = VocabPalette.mastered
+    static let amber = VocabPalette.section(.amber)
 }

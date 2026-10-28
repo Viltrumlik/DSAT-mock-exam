@@ -36,10 +36,10 @@ struct VocabTestView: View {
         StudyShell(
             title: "Test",
             subtitle: set.title,
-            tone: Theme.success,
+            tone: StudyMode.test.tone,
             progress: questions.isEmpty ? 0 : Double(index) / Double(questions.count),
             trailing: AnyView(
-                StudyPill(text: "\(index + 1) / \(max(questions.count, 1))", tone: Theme.success)
+                StudyPill(text: "\(index + 1) / \(max(questions.count, 1))", tone: StudyMode.test.tone, ink: StudyMode.test.ink)
             ),
             onExit: onExit
         ) {
@@ -114,22 +114,24 @@ struct VocabTestView: View {
                                 .capDynamicType()
                                 .frame(width: 32, height: 32)
                                 .background(
-                                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.background)
+                                    RoundedRectangle(cornerRadius: 9, style: .continuous).fill(NewLook.sheet)
                                 )
-                                .foregroundStyle(Theme.textSecondary)
+                                .foregroundStyle(NewLook.ink4)
                             Text(option)
-                                .appFont(15, weight: .semibold)
+                                .appFont(16, weight: .semibold)
+                                .foregroundStyle(NewLook.ink)
                                 .multilineTextAlignment(.leading)
                             Spacer(minLength: 0)
                         }
-                        .padding(14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
                         .background(
-                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.card)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous).fill(NewLook.card)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                                .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .strokeBorder(TestLook.optionLine, lineWidth: 1)
                         )
                         .contentShape(Rectangle())
                     }
@@ -151,7 +153,7 @@ struct VocabTestView: View {
             // filled red False would read as right-versus-wrong on a screen where nothing
             // has been graded yet; the glyph is what tells them apart.
             HStack(spacing: 12) {
-                verdictButton("True", icon: "checkmark.circle.fill", tone: Theme.success) {
+                verdictButton("True", icon: "checkmark.circle.fill", tone: VocabPalette.mastered.solid) {
                     submit(
                         question: question,
                         given: "True",
@@ -159,7 +161,7 @@ struct VocabTestView: View {
                         correct: question.isGenuine
                     )
                 }
-                verdictButton("False", icon: "xmark.circle.fill", tone: Theme.danger) {
+                verdictButton("False", icon: "xmark.circle.fill", tone: NewLook.red) {
                     submit(
                         question: question,
                         given: "False",
@@ -174,17 +176,17 @@ struct VocabTestView: View {
     private func verdictButton(_ label: String, icon: String, tone: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: icon).appFont(22).foregroundStyle(tone)
+                Image(systemName: icon).font(.system(size: 28)).foregroundStyle(tone)
                     .accessibilityHidden(true)
-                Text(label).appFont(15, weight: .heavy).foregroundStyle(.primary)
+                Text(label).appFont(16, weight: .heavy).foregroundStyle(NewLook.ink)
             }
             .frame(maxWidth: .infinity, minHeight: 88)
             .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.card)
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(NewLook.card)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(Theme.separator.opacity(0.7), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(TestLook.optionLine, lineWidth: 1)
             )
             .contentShape(Rectangle())
         }
@@ -193,7 +195,7 @@ struct VocabTestView: View {
 
     private func spelling(_ question: VocabGames.TestQuestion) -> some View {
         QuestionShell(
-            icon: "textformat.abc",
+            icon: "character.cursor.ibeam",
             kicker: "Spell the word that means…",
             prompt: question.definition,
             step: index + 1,
@@ -251,18 +253,20 @@ struct VocabTestView: View {
                         }
                         clampTyped(to: question.word)
                     }
+                    .foregroundStyle(NewLook.ink)
                     .background { PlainTyping(field: field) }
-                    .padding(14)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 58)
                     .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous).fill(Theme.background)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous).fill(NewLook.sheet)
                     )
                     .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                            .stroke(Theme.separator, lineWidth: 2)
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .strokeBorder(TestLook.wellLine, lineWidth: 2)
                     )
 
                 Button("Submit") { submitSpelling(question) }
-                    .buttonStyle(PrimaryButtonStyle(tone: Theme.success, fullWidth: true))
+                    .buttonStyle(NewLookToneButtonStyle(tone: VocabPalette.mastered.solid, size: .block))
                     .disabled(Self.answer(typed, for: question.word).isEmpty)
             }
             .onAppear { spellingFocused = true }
@@ -278,29 +282,29 @@ struct VocabTestView: View {
         if isStructure {
             // Bare: a faint placeholder until typed over, then what was typed — in the same slot,
             // shrunk to fit if it is a wide letter.
-            glyph(tile, tone: tile.kind == .typed ? Color.primary : Theme.textLabel)
+            glyph(tile, tone: tile.kind == .typed ? NewLook.ink : NewLook.muted)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
                 .frame(width: 16, height: 42)
         } else {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(tile.kind == .given ? Theme.successSoft : (tile.kind == .typed ? Theme.card : Theme.background))
+                .fill(tile.kind == .given ? NewLook.green50 : (tile.kind == .typed ? NewLook.card : NewLook.sheet))
                 .overlay {
                     switch tile.kind {
                     case .blank:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Theme.separator, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                            .strokeBorder(TestLook.blankLine, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     case .given:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                            .strokeBorder(VocabPalette.mastered.solid.opacity(0.4), lineWidth: 1)
                     case .typed, .structure:
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Theme.separator, lineWidth: 1)
+                            .strokeBorder(TestLook.wellLine, lineWidth: 1)
                     }
                 }
                 .overlay {
                     if !tile.character.isEmpty {
-                        glyph(tile, tone: tile.kind == .given ? Theme.success : Color.primary)
+                        glyph(tile, tone: tile.kind == .given ? VocabPalette.mastered.solid : NewLook.ink)
                     }
                 }
                 .frame(width: 34, height: 42)
@@ -525,42 +529,60 @@ struct TestReview: View {
     var body: some View {
         if !wrong.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                DotHeading(title: "Look at these again", count: wrong.count, tone: Theme.danger)
+                HStack(spacing: 8) {
+                    Circle().fill(NewLook.red).frame(width: 8, height: 8)
+                        .accessibilityHidden(true)
+                    Text("Look at these again")
+                        .appFont(16, weight: .heavy)
+                        .foregroundStyle(NewLook.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(ScoreText.string(wrong.count))
+                        .appFont(12, weight: .heavy, monospacedDigits: true)
+                        .foregroundStyle(NewLook.redInk)
+                        .padding(.horizontal, 8)
+                        .frame(minHeight: 22)
+                        .background(Capsule().fill(NewLook.red50))
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 2)
+                .padding(.top, 4)
+                .accessibilityElement(children: .combine)
                 ForEach(wrong) { answer in
                     VStack(alignment: .leading, spacing: 10) {
-                        Text(answer.word).appFont(16, weight: .heavy)
+                        Text(answer.word)
+                            .appFont(17, weight: .heavy)
+                            .foregroundStyle(NewLook.ink)
                         Text(answer.definition)
-                            .appFont(13, weight: .medium)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(14, weight: .medium)
+                            .foregroundStyle(NewLook.ink4)
                             .multilineTextAlignment(.leading)
                         HStack(spacing: 10) {
-                            answerBox("You said", answer.given.isEmpty ? "—" : answer.given, tone: Theme.danger)
-                            answerBox("Answer", answer.expected, tone: Theme.success)
+                            answerBox("You said", answer.given.isEmpty ? "—" : answer.given, tone: NewLook.red, fill: NewLook.red50)
+                            answerBox("Answer", answer.expected, tone: NewLook.green, fill: NewLook.green50)
                         }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .cardStyle(padding: 14)
+                    .newLookCard(padding: 16)
                 }
             }
         }
     }
 
-    private func answerBox(_ label: String, _ value: String, tone: Color) -> some View {
+    private func answerBox(_ label: String, _ value: String, tone: Color, fill: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label.uppercased())
                 .appFont(10, weight: .heavy)
                 .tracking(0.8)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.muted)
             Text(value)
-                .appFont(15, weight: .bold)
+                .appFont(16, weight: .bold)
                 .foregroundStyle(tone)
                 .multilineTextAlignment(.leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tone.opacity(0.10)))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(fill))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(tone.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(tone.opacity(0.3), lineWidth: 1)
         )
     }
 }
@@ -581,42 +603,58 @@ struct QuestionShell<Content: View>: View {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
                         .appFont(13, weight: .bold)
-                        .foregroundStyle(Theme.success)
+                        .foregroundStyle(VocabPalette.mastered.solid)
                         .capDynamicType()
                         .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.card))
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(NewLook.card))
                         .accessibilityHidden(true)
                     Text(kicker.uppercased())
                         .appFont(11, weight: .heavy)
                         .tracking(1.1)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.ink4)
                 }
                 Text(prompt)
                     .appFont(19, weight: .bold)
+                    .tracking(-0.2)
+                    .foregroundStyle(NewLook.ink)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
                 Text("QUESTION \(ScoreText.string(step)) OF \(ScoreText.string(total))")
                     .appFont(10, weight: .heavy)
                     .tracking(0.9)
-                    .foregroundStyle(Theme.textLabel)
+                    .foregroundStyle(NewLook.muted)
                     .padding(.top, 12)
             }
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 20)
             .padding(.vertical, 22)
-            .background(Theme.successSoft)
+            .background(VocabPalette.mastered.solid.opacity(0.10))
 
-            Divider()
+            Rectangle().fill(NewLook.line).frame(height: 1)
 
             content().padding(16)
         }
-        .background(Theme.card)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 3)
+        .background(NewLook.card)
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(NewLook.card)
+                .newLookShadow(.card)
+        }
     }
+}
+
+/// The test's hairlines — the kit's option border, the spelling well's and its blanks' — kept a
+/// step darker than the card's own line so a white option still reads on white.
+enum TestLook {
+    static let optionLine = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0x33 / 255, green: 0x3D / 255, blue: 0x56 / 255, alpha: 1)
+        : UIColor(red: 0xE1 / 255, green: 0xE6 / 255, blue: 0xEF / 255, alpha: 1) })
+    static let wellLine = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0x3A / 255, green: 0x44 / 255, blue: 0x5E / 255, alpha: 1)
+        : UIColor(red: 0xDC / 255, green: 0xE2 / 255, blue: 0xEC / 255, alpha: 1) })
+    static let blankLine = Color(uiColor: UIColor { $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0x4A / 255, green: 0x54 / 255, blue: 0x70 / 255, alpha: 1)
+        : UIColor(red: 0xC9 / 255, green: 0xD0 / 255, blue: 0xDC / 255, alpha: 1) })
 }

@@ -37,12 +37,16 @@ enum StudyMode: String, CaseIterable, Identifiable {
     /// Each mode keeps the colour the web gives it — the one its quarter of every set's bar
     /// is painted in — so the mode a student picked is the mode they land in.
     var tone: Color { VocabPalette.game(kitMode).solid }
+
+    /// Text in the mode's colour — a counter, a pill — where the solid reads too light.
+    var ink: Color { VocabPalette.game(kitMode).ink }
 }
 
 /// The shell every study mode runs inside — the site's `ModeFrame`.
 ///
-/// The progress rail rides the very top edge, and an empty rail stands in when a mode has
-/// no progress to report, so the header never jumps by four points between modes.
+/// The header is glass pills on the page colour — Back, the game and the set, the counters — and
+/// the progress rail sits just under it, inset and rounded, in the game's colour. An empty rail
+/// stands in when a mode has no progress to report, so the content never jumps between modes.
 ///
 /// This is also the anti-distraction part, and it is deliberate: no tab bar, no navigation
 /// title, no home indicator, and the screen kept awake. The only chrome is a way out and a
@@ -58,13 +62,12 @@ struct StudyShell<Content: View>: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            rail
             header
-            Divider()
+            rail
             content()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Theme.background)
+        .background(NewLook.page)
         // Nothing to swipe away to, nothing to peek at.
         .persistentSystemOverlays(.hidden)
         .statusBarHidden(true)
@@ -72,75 +75,92 @@ struct StudyShell<Content: View>: View {
         .onDisappear { UIApplication.shared.isIdleTimerDisabled = false }
     }
 
-    @ViewBuilder
+    /// `.rail`: 6 pt, inset 16, the game's colour over its own tint — grey while idle.
     private var rail: some View {
-        if let progress {
-            Bar(fraction: progress, tone: tone, height: 4)
-        } else {
-            Rectangle().fill(Theme.surface2).frame(height: 4)
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule().fill(progress == nil ? NewLook.line : tone.opacity(0.15))
+                if let progress {
+                    Capsule()
+                        .fill(tone)
+                        .frame(width: max(0, min(1, progress)) * geometry.size.width)
+                        .animation(.easeOut(duration: 0.25), value: progress)
+                }
+            }
         }
+        .frame(height: 6)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .accessibilityHidden(true)
     }
 
     private var header: some View {
         HStack(spacing: 10) {
             Button(action: onExit) {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.left").appFont(12, weight: .bold)
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold))
                         .accessibilityHidden(true)
-                    Text("Back").appFont(13, weight: .bold)
+                    Text("Back")
                 }
-                .foregroundStyle(Theme.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(Theme.surface2))
-                .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(NewLookPillButtonStyle())
 
             VStack(spacing: 1) {
                 Text(title)
-                    .appFont(13, weight: .heavy)
+                    .appDisplayFont(16)
+                    .tracking(-0.2)
+                    .foregroundStyle(NewLook.ink)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
                 Text(subtitle)
-                    .appFont(11, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(12, weight: .semibold)
+                    .foregroundStyle(NewLook.muted)
                     .lineLimit(1)
             }
             .frame(maxWidth: .infinity)
 
             if let trailing {
-                trailing
+                // At least the back pill's width, so a mode with nothing to count yet (Speed's
+                // lead-in) keeps the title centred.
+                trailing.frame(minWidth: 78, alignment: .trailing)
             } else {
                 // Balances the back pill so the title stays optically centred.
-                Color.clear.frame(width: 66, height: 1)
+                Color.clear.frame(width: 78, height: 1)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(Theme.card)
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 }
 
-/// The pill the modes use for a clock or a counter — the web's `ModePill`.
+/// The pill the modes use for a clock or a counter — the web's `ModePill`, the kit's `.spill`:
+/// the colour at 12 % over white, a hairline of it, the count in its ink.
 struct StudyPill: View {
     let text: String
     var icon: String?
-    var tone: Color = Theme.textSecondary
+    var tone: Color = NewLook.muted
+    /// The text's colour, when the tone's own reads too light on its tint (amber, sky, emerald).
+    var ink: Color?
 
     var body: some View {
         HStack(spacing: 5) {
-            if let icon { Image(systemName: icon).appFont(11, weight: .bold).accessibilityHidden(true) }
+            if let icon { Image(systemName: icon).appFont(12, weight: .bold).accessibilityHidden(true) }
             Text(text).appFont(13, weight: .heavy, monospacedDigits: true)
         }
-        .foregroundStyle(tone)
+        .foregroundStyle(ink ?? tone)
         .lineLimit(1)
         // Speed shows two pills beside the back button and the title, and without this the
         // counter wraps "1/25" onto two lines rather than the row giving up its own space.
         .fixedSize()
         .padding(.horizontal, 11)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(tone.opacity(0.12)))
-        .overlay(Capsule().stroke(tone.opacity(0.22), lineWidth: 1))
+        .frame(minHeight: 32)
+        .background {
+            ZStack {
+                Capsule().fill(NewLook.card)
+                Capsule().fill(tone.opacity(0.12))
+                Capsule().strokeBorder(tone.opacity(0.22), lineWidth: 1)
+            }
+        }
     }
 }
 
@@ -240,21 +260,23 @@ struct ModeOutcomeView: View {
                 statusLine
                 if let extra { extra }
 
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     Button(action: onRestart) {
-                        Label(restartLabel, systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                        Label(restartLabel, systemImage: "arrow.counterclockwise")
                     }
-                    .buttonStyle(PrimaryButtonStyle(tone: mode.tone, fullWidth: true))
+                    // In the game's own colour: amber Race again, green Take it again.
+                    .buttonStyle(NewLookToneButtonStyle(tone: mode.tone))
                     .disabled(isSaving)
 
                     Button("Back to vocabulary", action: onExit)
-                        .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                        .buttonStyle(NewLookButtonStyle(kind: .light, size: .large))
                 }
                 .padding(.top, 4)
             }
-            .padding(18)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
         }
-        .background(Theme.background)
+        .background(NewLook.page)
         .overlay {
             if partying { VocabCelebration() }
         }
@@ -284,10 +306,11 @@ struct ModeOutcomeView: View {
                         .accessibilityHidden(true)
                 )
             Text(title)
-                .appFont(27, weight: .heavy)
+                .appDisplayFont(27)
                 .tracking(-0.7)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 16)
             if let description {
                 Text(description)
@@ -299,21 +322,25 @@ struct ModeOutcomeView: View {
         }
         .padding(28)
         .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [Theme.accent, Theme.accentHover],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(Theme.accent)
-        .overlay(alignment: .topTrailing) {
-            Circle().fill(.white.opacity(0.07))
-                .frame(width: 200, height: 200)
-                .offset(x: 50, y: -70)
-                .allowsHitTesting(false)
+        // The band's blue, deepening to the corner, with the band's shield in it.
+        .background {
+            ZStack(alignment: .topTrailing) {
+                LinearGradient(
+                    colors: [ClassTabPalette.band, Color(RGB(hex: 0x1F57A8))],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                ShieldWatermark()
+                    .scaleEffect(0.9, anchor: .topTrailing)
+                    .offset(x: 70, y: -36)
+            }
         }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(ClassTabPalette.band)
+                .shadow(color: Color(RGB(hex: 0x1F57A8)).opacity(0.28), radius: 14, y: 10)
+        }
     }
 
     private var statGrid: some View {
@@ -321,7 +348,7 @@ struct ModeOutcomeView: View {
             ForEach(stats) { stat in
                 VStack(spacing: 6) {
                     ModeStatValue(stat: stat)
-                        .appFont(25, weight: .heavy, monospacedDigits: true)
+                        .appDisplayFont(25, monospacedDigits: true)
                         .tracking(-0.6)
                         .foregroundStyle(colour(stat.tone))
                         .lineLimit(1)
@@ -329,20 +356,21 @@ struct ModeOutcomeView: View {
                     Text(stat.label.uppercased())
                         .appFont(10, weight: .heavy)
                         .tracking(0.6)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.muted)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 16)
                 .padding(.horizontal, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                .background {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .fill(fill(stat.tone))
-                )
+                        .newLookShadow(stat.tone == .neutral ? .tile : .shop)
+                }
                 .overlay(
-                    RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                        .stroke(border(stat.tone), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(border(stat.tone), lineWidth: 1)
                 )
             }
         }
@@ -355,7 +383,7 @@ struct ModeOutcomeView: View {
                 ProgressView().controlSize(.small)
                 Text("Saving your progress…")
                     .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
             }
         } else if let errorText {
             // Named rather than swallowed: a run that did not save is a run the student
@@ -363,54 +391,55 @@ struct ModeOutcomeView: View {
             VStack(spacing: 8) {
                 Text(errorText)
                     .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.danger)
+                    .foregroundStyle(NewLook.redInk)
                     .multilineTextAlignment(.center)
                 if let onRetrySave {
                     Button(action: onRetrySave) {
                         Label("Retry save", systemImage: "arrow.counterclockwise")
                     }
-                    .buttonStyle(SecondaryButtonStyle())
+                    .buttonStyle(NewLookButtonStyle(kind: .tint))
                 }
             }
         } else if let summary {
             let tally = "\(ScoreText.string(summary.mastery.masteredModes))/\(ScoreText.string(summary.mastery.totalModes))"
             if summary.mastery.isMastered {
-                Chip(text: "Set mastered — all four games", icon: "sparkles", tone: .success)
+                NewLookChip(text: "Set mastered — all four games", systemImage: "sparkles", style: .green, small: false)
             } else if summary.modeMastered {
-                Chip(text: "Game mastered · \(tally)", icon: "sparkles", tone: .success)
+                NewLookChip(text: "Game mastered · \(tally)", systemImage: "sparkles", style: .green, small: false)
             } else {
                 // Not mastered is not a failure, and it is not silence either: the student
                 // should leave knowing exactly what the clean run they need looks like.
-                let so = Text(verbatim: tally).fontWeight(.bold).foregroundStyle(Color.primary)
+                let so = Text(verbatim: tally).fontWeight(.heavy).foregroundStyle(NewLook.ink)
                 Text("Every word right in one round masters this game — \(so) so far.")
                     .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
                     .multilineTextAlignment(.center)
+                    .padding(.horizontal, 8)
             }
         }
     }
 
     private func colour(_ tone: ModeStat.Tone) -> Color {
         switch tone {
-        case .neutral: return .primary
-        case .success: return Theme.success
-        case .danger: return Theme.danger
+        case .neutral: return NewLook.ink
+        case .success: return NewLook.green
+        case .danger: return NewLook.red
         }
     }
 
     private func fill(_ tone: ModeStat.Tone) -> Color {
         switch tone {
-        case .neutral: return Theme.card
-        case .success: return Theme.successSoft
-        case .danger: return Theme.dangerSoft
+        case .neutral: return NewLook.card
+        case .success: return NewLook.green50
+        case .danger: return NewLook.red50
         }
     }
 
     private func border(_ tone: ModeStat.Tone) -> Color {
         switch tone {
-        case .neutral: return Theme.separator.opacity(0.5)
-        case .success: return Theme.success.opacity(0.25)
-        case .danger: return Theme.danger.opacity(0.25)
+        case .neutral: return .clear
+        case .success: return NewLook.green.opacity(0.25)
+        case .danger: return NewLook.red.opacity(0.25)
         }
     }
 }
