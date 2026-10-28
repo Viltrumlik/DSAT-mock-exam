@@ -11,12 +11,6 @@ import MasterSATKit
 ///
 /// A tab root: every page it opens is a VALUE pushed onto `path`, so re-tapping the tab pops it.
 struct ClassView: View {
-    /// Pages this root pushes that no `AppLink` names. Kept for the pages that still push them.
-    enum Route: Hashable {
-        case assessmentReview(attemptId: Int, homeworkId: Int)
-        case midtermReport(attemptId: Int, title: String)
-    }
-
     @Binding var path: NavigationPath
 
     @Environment(Session.self) private var session
@@ -109,14 +103,6 @@ struct ClassView: View {
             .onChange(of: router.wantsClassToDo) { showToDoIfAsked() }
             .navigationDestination(for: ClassPageRoute.self) { ClassPageView(route: $0) }
             .navigationDestination(for: AssignmentListing.self) { HomeworkDetailView(assignment: $0) }
-            .navigationDestination(for: Route.self) { route in
-                switch route {
-                case .assessmentReview(let attemptId, let homeworkId):
-                    AssessmentReviewView(attemptId: attemptId, homeworkId: homeworkId)
-                case .midtermReport(let attemptId, let title):
-                    MidtermReportView(attemptId: attemptId, title: title)
-                }
-            }
             .navigationDestination(for: AppLink.self) { AppLinkPage(link: $0) }
             .sheet(isPresented: $joining) {
                 JoinClassSheet { _ in Task { await load() } }
