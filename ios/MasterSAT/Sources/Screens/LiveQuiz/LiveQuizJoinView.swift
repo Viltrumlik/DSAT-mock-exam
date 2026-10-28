@@ -15,10 +15,10 @@ struct LiveQuizJoinView: View {
             if let model {
                 LiveQuizJoinScreen(model: model)
             } else {
-                Theme.background
+                NewLook.page
             }
         }
-        .background(Theme.background)
+        .background(NewLook.page.ignoresSafeArea())
         .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -121,13 +121,8 @@ private struct LiveQuizJoinScreen: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 6) {
-                    PageTitle("Live quiz")
-                    Text("Enter the code your teacher is showing.")
-                        .appFont(15, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
-                }
-                .padding(.bottom, 4)
+                NewLookPageTitle(title: "Live quiz", subtitle: "Enter the code your teacher is showing.")
+                    .padding(.bottom, 4)
 
                 if model.running == .featureOff {
                     featureOff
@@ -136,11 +131,13 @@ private struct LiveQuizJoinScreen: View {
                     runningCard
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 16)
             .frame(maxWidth: 620)
             .frame(maxWidth: .infinity)
         }
-        .background(Theme.background)
+        .background(NewLook.page)
         .detachedRefresh { await model.loadRunning() }
         // The web re-reads the list every 15 s; so does this, while the screen is up and no
         // game is open over it.
@@ -168,14 +165,15 @@ private struct LiveQuizJoinScreen: View {
 
     private var codeCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Overline("Game code")
+            Text("Game code").newLookCaps()
             TextField(
                 "",
                 text: Binding(get: { model.code }, set: { model.setCode($0) }),
-                prompt: Text(verbatim: "ABC234").foregroundStyle(Theme.textLabel)
+                prompt: Text(verbatim: "ABC234").foregroundStyle(NewLook.chevron)
             )
-            .appFont(30, weight: .heavy, design: .monospaced)
+            .appFont(32, weight: .heavy, design: .monospaced)
             .tracking(8)
+            .foregroundStyle(NewLook.ink)
             .multilineTextAlignment(.center)
             .keyboardType(.asciiCapable)
             .textInputAutocapitalization(.characters)
@@ -183,18 +181,26 @@ private struct LiveQuizJoinScreen: View {
             .submitLabel(.join)
             .focused($codeFocused)
             .onSubmit { Task { await model.join() } }
-            .padding(.vertical, 14)
-            .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.background))
+            .padding(.vertical, 16)
+            .background(NewLook.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .stroke(codeFocused ? Theme.accent : Theme.separator, lineWidth: codeFocused ? 2 : 1)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(codeFocused ? NewLook.blue : NewLook.field, lineWidth: codeFocused ? 2.5 : 1.5)
             )
+            // The kit's focus glow: a soft blue ring outside the field while typing.
+            .background(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(NewLook.blue50)
+                    .padding(-4)
+                    .opacity(codeFocused ? 1 : 0)
+            )
+            .animation(Motion.focus, value: codeFocused)
             .accessibilityLabel("Game code")
 
             if let error = model.joinError {
                 Text(error)
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.danger)
+                    .appFont(14, weight: .semibold)
+                    .foregroundStyle(NewLook.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -207,25 +213,32 @@ private struct LiveQuizJoinScreen: View {
                     Text("Join")
                 }
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(size: .large))
             .disabled(!model.canJoin)
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18, radius: 24)
     }
 
     // MARK: - Running now
 
     private var runningCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CardHeading(icon: "dot.radiowaves.left.and.right", title: "Running in your classes")
-                .padding(.bottom, 6)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                NewLookTile(systemName: "dot.radiowaves.left.and.right")
+                Text("Running in your classes")
+                    .appDisplayFont(19)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 0)
+            }
             switch model.running {
             case .loading:
                 VStack(spacing: 10) {
                     ForEach(0..<2, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 13, style: .continuous)
-                            .fill(Theme.surface2)
-                            .frame(height: 56)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(NewLook.sheet)
+                            .frame(height: 60)
                     }
                 }
                 .accessibilityLabel("Loading")
@@ -249,7 +262,7 @@ private struct LiveQuizJoinScreen: View {
                 EmptyView()
             }
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18, radius: 24)
     }
 
     private func runningRow(_ room: LiveQuizSummary) -> some View {
@@ -257,28 +270,31 @@ private struct LiveQuizJoinScreen: View {
             model.open(room)
         } label: {
             HStack(spacing: 12) {
+                // Live: the red dot the board shows beside a room that is running.
+                Circle().fill(NewLook.red).frame(width: 9, height: 9)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(room.title.isEmpty ? "Live quiz" : room.title)
-                        .appFont(15, weight: .bold)
-                        .foregroundStyle(Color.primary)
+                        .appFont(16, weight: .bold)
+                        .foregroundStyle(NewLook.ink)
                         .lineLimit(1)
                     if !room.classroomName.isEmpty {
                         Text(room.classroomName)
-                            .appFont(13, weight: .medium)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(14, weight: .medium)
+                            .foregroundStyle(NewLook.ink4)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "dot.radiowaves.left.and.right")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Theme.accent)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(NewLook.blueText)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
+            .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -291,10 +307,10 @@ private struct LiveQuizJoinScreen: View {
         LiveQuizStateCard(
             icon: "antenna.radiowaves.left.and.right.slash",
             title: "Live quizzes are not switched on yet.",
-            tone: Theme.textSecondary
+            tone: NewLook.ink4
         ) {
             Button("Check again") { Task { await model.loadRunning() } }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(NewLookButtonStyle(kind: .tint))
                 .padding(.top, 4)
         }
     }

@@ -38,13 +38,7 @@ struct MidtermReportView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Overline("Midterm result")
-                    Text(heading)
-                        .appFont(26, weight: .heavy)
-                        .tracking(-0.6)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                NewLookPageTitle(title: heading, eyebrow: "Midterm result")
 
                 if isLoading && result == nil && report == nil {
                     // The score card, then the report.
@@ -62,9 +56,11 @@ struct MidtermReportView: View {
                     )
                 }
             }
-            .padding(16)
+            .padding(.horizontal, 16)
+            .padding(.top, 4)
+            .padding(.bottom, 16)
         }
-        .background(Theme.background)
+        .background(NewLook.page.ignoresSafeArea())
         // The page's own confetti: this report is also opened inside the Me sheet, which the
         // root overlay sits under.
         .overlay { OutcomeConfetti(trigger: outcomeTicks) }
@@ -95,10 +91,11 @@ struct MidtermReportView: View {
     private var certificate: CertificateInfo? { result?.certificate }
 
     private var scoreHero: some View {
-        VStack(spacing: 12) {
-            Text("YOUR SCORE")
+        VStack(spacing: 10) {
+            Text("Your score")
                 .appFont(11, weight: .heavy)
-                .tracking(1.2)
+                .tracking(1.6)
+                .textCase(.uppercase)
                 .foregroundStyle(.white.opacity(0.8))
 
             HStack(alignment: .lastTextBaseline, spacing: 6) {
@@ -106,14 +103,14 @@ struct MidtermReportView: View {
                 Group {
                     if let score { RollingNumber(value: score) } else { Text(ScoreText.string(score)) }
                 }
-                .appFont(60, weight: .heavy, monospacedDigits: true)
-                .tracking(-1.5)
+                .appDisplayFont(72, monospacedDigits: true)
+                .tracking(-2)
                 .foregroundStyle(.white)
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
                 if let ceiling {
                     Text("/ \(ScoreText.string(ceiling))")
-                        .appFont(18, weight: .bold)
+                        .appDisplayFont(22)
                         .foregroundStyle(.white.opacity(0.75))
                 }
             }
@@ -121,55 +118,35 @@ struct MidtermReportView: View {
             if let rank = certificate?.rank {
                 Text(certificate?.cohortSize.map { "Class rank \(ScoreText.string(rank)) of \(ScoreText.string($0))" }
                      ?? "Class rank \(ScoreText.string(rank))")
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(.white.opacity(0.9))
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(.white.opacity(0.92))
             }
 
             HStack(spacing: 8) {
                 if let subject = report?.midterm.subjectLabel ?? result?.subject.map(MidtermWording.subjectLabel),
                    !subject.isEmpty {
-                    heroChip(subject, icon: "book.closed")
+                    NewLookBlueChip(text: subject, systemImage: "book.fill")
                 }
                 // A pre-midterm is a diagnostic: scored, never judged. Showing a pass mark
                 // on one would invent a verdict the centre never issued.
                 if let report, report.isGraded, let passed = report.passed {
-                    heroChip(
-                        passed ? "Passed" : "Keep going",
-                        icon: passed ? "checkmark.seal.fill" : "arrow.up.forward"
+                    NewLookBlueChip(
+                        text: passed ? "Passed" : "Keep going",
+                        systemImage: passed ? "checkmark.seal.fill" : "arrow.up.forward"
                     )
                 }
             }
 
             if certificate?.available == true {
                 Button { pdf = .certificate } label: {
-                    Label("Download certificate", systemImage: "arrow.down.doc.fill")
-                        .appFont(15, weight: .bold)
-                        .foregroundStyle(Theme.accent)
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 11)
-                        .background(Capsule().fill(.white))
+                    Label("Download certificate", systemImage: "arrow.down.to.line")
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
+                .buttonStyle(NewLookButtonStyle(kind: .light, size: .block))
+                .fixedSize()
+                .padding(.top, 6)
             }
         }
-        .padding(26)
-        .frame(maxWidth: .infinity)
-        .background(
-            LinearGradient(
-                colors: [Theme.accent, Theme.accentHover],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
-        .background(Theme.accent)
-        .overlay(alignment: .topTrailing) {
-            Circle().fill(.white.opacity(0.08))
-                .frame(width: 200, height: 200)
-                .offset(x: 60, y: -80)
-                .allowsHitTesting(false)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous))
+        .newLookBlueCard(padding: EdgeInsets(top: 24, leading: 18, bottom: 22, trailing: 18))
     }
 
     /// The certificate by its `download_url`, falling back to its code.
@@ -182,18 +159,6 @@ struct MidtermReportView: View {
             throw APIError.http(status: 404, detail: "This certificate is not available.")
         }
         return try await api.midtermCertificate(code: code)
-    }
-
-    private func heroChip(_ text: String, icon: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon).appFont(10, weight: .bold)
-                .accessibilityHidden(true)
-            Text(text).appFont(12, weight: .heavy)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 5)
-        .background(Capsule().fill(.white.opacity(0.2)))
     }
 
     // MARK: - The error report
@@ -225,61 +190,70 @@ struct MidtermReportView: View {
     @ViewBuilder
     private func breakdown(_ report: MidtermErrorReport) -> some View {
         let noun = report.noun
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Overline("Error report")
+                    Text("Error report").newLookCaps()
                     Text(
                         [report.studentName, report.midterm.subjectLabel, report.date]
                             .filter { !$0.isEmpty }
                             .joined(separator: " · ")
                     )
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(14, weight: .medium)
+                    .foregroundStyle(NewLook.ink2)
                     .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
+                // "Report", not "Download report": it fits beside the header on a phone.
                 Button { pdf = .report } label: {
-                    Label("Download report", systemImage: "arrow.down.doc")
-                        .appFont(13, weight: .bold)
+                    Label("Report", systemImage: "doc.text")
                 }
-                .buttonStyle(SecondaryButtonStyle())
+                .buttonStyle(NewLookButtonStyle(kind: .tint))
+                .accessibilityLabel("Download the error report")
             }
 
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 if report.isGraded, let score = report.score {
-                    MidtermStatTile(
-                        label: "Score",
+                    NewLookCountBox(
                         value: ScoreText.string(score),
-                        sub: report.passMark.map { "Pass mark \(ScoreText.string($0))" }
-                            ?? report.midterm.scoreCeiling.map { "of \(ScoreText.string($0))" }
+                        label: "Score",
+                        caption: report.passMark.map { "Pass mark \(ScoreText.string($0))" }
+                            ?? report.midterm.scoreCeiling.map { "of \(ScoreText.string($0))" },
+                        alignment: .leading
                     )
                     .focusEntrance(0)
                 }
-                MidtermStatTile(
-                    label: "Correct",
+                NewLookCountBox(
                     value: "\(ScoreText.string(report.correctCount))/\(ScoreText.string(report.totalCount))",
-                    sub: "\(report.accuracyPercent)% accuracy"
+                    label: "Correct",
+                    caption: "\(report.accuracyPercent)% accuracy",
+                    alignment: .leading
                 )
                 .focusEntrance(1)
-                MidtermStatTile(label: "To improve", value: ScoreText.string(report.wrongCount), sub: nil)
-                    .focusEntrance(2)
-                MidtermStatTile(
-                    label: "Focus \(noun)s",
+                NewLookCountBox(
+                    value: ScoreText.string(report.wrongCount),
+                    label: "To improve",
+                    caption: "questions to revisit",
+                    alignment: .leading
+                )
+                .focusEntrance(2)
+                NewLookCountBox(
                     value: ScoreText.string(report.skills.count),
-                    sub: report.skills.count == 1 ? "\(noun) to work on" : "\(noun)s to work on"
+                    label: "Focus \(noun)s",
+                    caption: report.skills.count == 1 ? "\(noun) to work on" : "\(noun)s to work on",
+                    alignment: .leading
                 )
                 .focusEntrance(3)
             }
         }
-        .cardStyle()
+        .newLookCard(padding: 16, radius: 24)
 
-        VStack(alignment: .leading, spacing: 10) {
-            CardHeading(
-                icon: "target",
+        VStack(alignment: .leading, spacing: 12) {
+            MidtermReportHeading(
+                systemName: "scope",
+                tone: .orange,
                 title: "\(report.nounPluralTitle) to work on",
-                subtitle: "Only \(noun)s with questions to revisit, from most to least.",
-                tone: Theme.warning
+                subtitle: "Only \(noun)s with questions to revisit, from most to least."
             )
 
             if report.skills.isEmpty {
@@ -307,47 +281,49 @@ struct MidtermReportView: View {
                     "\(ScoreText.string(report.unclassifiedWrong)) of your \(ScoreText.string(report.wrongCount)) mistakes came from questions that are not tagged to a \(noun) yet, so they are not in the list above.",
                     systemImage: "info.circle"
                 )
-                .appFont(12, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(13, weight: .medium)
+                .foregroundStyle(NewLook.ink4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
             }
         }
+        .padding(.top, 6)
 
         if !report.covered.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                CardHeading(
-                    icon: "checklist",
+            VStack(alignment: .leading, spacing: 12) {
+                MidtermReportHeading(
+                    systemName: "checklist",
+                    tone: .green,
                     title: "\(report.nounPluralTitle) in this paper",
-                    subtitle: "Every \(noun) this midterm tested, and how many of its questions you got right.",
-                    tone: Theme.success
+                    subtitle: "Every \(noun) this midterm tested, and how many of its questions you got right."
                 )
                 VStack(spacing: 0) {
                     ForEach(Array(report.covered.enumerated()), id: \.element.id) { index, skill in
-                        if index > 0 { Divider() }
+                        if index > 0 { Rectangle().fill(NewLook.line).frame(height: 1) }
                         CoveredRow(skill: skill).focusEntrance(index)
                     }
                 }
-                .cardStyle(padding: 12)
+                .newLookCard(padding: 14, radius: 24)
             }
+            .padding(.top, 6)
         }
     }
 
     private func notice(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: icon)
-                .appFont(30)
-                .foregroundStyle(Theme.warning)
-                .accessibilityHidden(true)
-            Text(title).appFont(17, weight: .bold)
+            NewLookTile(systemName: icon, tone: .orange)
+            Text(title)
+                .appDisplayFont(19)
+                .foregroundStyle(NewLook.ink)
             Text(message)
-                .appFont(14, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(15, weight: .medium)
+                .foregroundStyle(NewLook.ink4)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
-        .cardStyle(padding: 28)
+        .padding(.vertical, 10)
+        .newLookCard(padding: 22, radius: 24)
     }
 
     // MARK: - Loading
@@ -412,39 +388,31 @@ struct MidtermReportView: View {
     }
 }
 
-/// One box of the report's numbers: an overline, the value, and a line under it.
-private struct MidtermStatTile: View {
-    let label: String
-    let value: String
-    let sub: String?
+/// A section's heading on the report: a tinted tile, the name in Archivo 20, one line under it.
+private struct MidtermReportHeading: View {
+    let systemName: String
+    let tone: NewLook.Tone
+    let title: String
+    let subtitle: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .appFont(10, weight: .heavy)
-                .tracking(1.1)
-                .foregroundStyle(Theme.textLabel)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-            Text(value)
-                .appFont(24, weight: .heavy, monospacedDigits: true)
-                .tracking(-0.6)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-            if let sub {
-                Text(sub)
-                    .appFont(11, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(2)
+        HStack(alignment: .top, spacing: 12) {
+            NewLookTile(systemName: systemName, tone: tone)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .appDisplayFont(20)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                Text(subtitle)
+                    .appFont(14, weight: .medium)
+                    .foregroundStyle(NewLook.muted)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(13)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Theme.background))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Theme.separator.opacity(0.5), lineWidth: 0.5)
-        )
+        .padding(.horizontal, 2)
     }
 }
 
@@ -455,35 +423,49 @@ private struct MidtermStatTile: View {
 private struct SkillRow: View {
     let skill: MidtermErrorReport.SkillRow
 
-    private var tone: Color {
-        // Under half right is where revision genuinely has to start.
-        skill.accuracy < 0.5 ? Theme.danger : Theme.warning
-    }
+    /// Under half right is where revision genuinely has to start.
+    private var low: Bool { skill.accuracy < 0.5 }
+    private var tone: Color { low ? NewLook.red : NewLook.orange }
+    private var tint: Color { low ? NewLook.red50 : NewLook.orange50 }
+    private var ink: Color { low ? NewLook.redInk : NewLook.orangeInk }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(skill.skill)
-                        .appFont(14, weight: .bold)
+                        .appFont(16, weight: .bold)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.leading)
                     if let domain = skill.domain, !domain.isEmpty {
                         Text(domain)
-                            .appFont(11, weight: .medium)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(13, weight: .medium)
+                            .foregroundStyle(NewLook.ink4)
                     }
                 }
                 Spacer(minLength: 0)
                 Text("\(ScoreText.string(skill.wrong)) of \(ScoreText.string(skill.total))")
-                    .appFont(12, weight: .heavy, monospacedDigits: true)
-                    .foregroundStyle(tone)
+                    .appFont(13, weight: .heavy, monospacedDigits: true)
+                    .foregroundStyle(ink)
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(Capsule().fill(tone.opacity(0.13)))
+                    .frame(minHeight: 24)
+                    .background(tint, in: Capsule())
             }
-            Bar(fraction: skill.accuracy, tone: tone, height: 6)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(tint)
+                    Capsule()
+                        .fill(tone)
+                        .frame(width: geometry.size.width * min(max(skill.accuracy.isFinite ? skill.accuracy : 0, 0), 1))
+                }
+            }
+            .frame(height: 6)
+            .accessibilityHidden(true)
         }
-        .cardStyle(padding: 14)
+        .newLookCard(padding: 16)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -494,28 +476,29 @@ private struct CoveredRow: View {
     private var full: Bool { skill.wrong == 0 }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Image(systemName: full ? "checkmark.circle.fill" : "circle.fill")
-                .appFont(full ? 15 : 7)
-                .foregroundStyle(full ? Theme.success : Theme.warning)
+                .font(.system(size: full ? 17 : 7))
+                .foregroundStyle(full ? NewLook.green : NewLook.orange)
                 .capDynamicType()
-                .frame(width: 18)
+                .frame(width: 20)
             VStack(alignment: .leading, spacing: 1) {
                 Text(skill.skill)
-                    .appFont(14, weight: .semibold)
+                    .appFont(15, weight: .bold)
+                    .foregroundStyle(NewLook.ink)
                     .multilineTextAlignment(.leading)
                 if let domain = skill.domain, !domain.isEmpty {
                     Text(domain)
-                        .appFont(11, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(12.5, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                 }
             }
             Spacer(minLength: 0)
             Text("\(ScoreText.string(skill.correct))/\(ScoreText.string(skill.total))")
-                .appFont(13, weight: .heavy, monospacedDigits: true)
-                .foregroundStyle(full ? Theme.success : Theme.textSecondary)
+                .appFont(14, weight: .heavy, monospacedDigits: true)
+                .foregroundStyle(full ? NewLook.green : NewLook.ink4)
         }
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(skill.skill): \(skill.correct) of \(skill.total) correct")
     }

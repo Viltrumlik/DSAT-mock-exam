@@ -24,7 +24,7 @@ struct LiveQuizGameView: View {
             if let model {
                 LiveQuizGameScreen(model: model, onExit: close)
             } else {
-                Theme.background.ignoresSafeArea()
+                NewLook.page.ignoresSafeArea()
             }
         }
         .task {
@@ -54,16 +54,14 @@ private struct LiveQuizGameScreen: View {
     private var game: LiveQuizGame { model.game }
 
     var body: some View {
-        StudyShell(
+        NewLookFocusShell(
             title: "Live quiz",
             subtitle: model.title.isEmpty ? game.joinCode : model.title,
-            tone: Theme.accent,
-            progress: nil,
-            trailing: trailingPill,
+            counter: counter,
             onExit: requestExit
         ) {
             ScrollView {
-                VStack(spacing: 14) {
+                VStack(spacing: 12) {
                     if let banner = bannerText {
                         LiveQuizConnectionBanner(text: banner)
                     }
@@ -93,10 +91,10 @@ private struct LiveQuizGameScreen: View {
     // MARK: - Chrome
 
     /// "3 / 10" once the game has a question to count.
-    private var trailingPill: AnyView? {
+    private var counter: String? {
         guard !game.phase.isFinal, model.denial == nil, game.currentIndex >= 0, game.questionTotal > 0 else { return nil }
         let number = min(game.currentIndex + 1, game.questionTotal)
-        return AnyView(StudyPill(text: "\(ScoreText.string(number)) / \(ScoreText.string(game.questionTotal))", tone: Theme.accent))
+        return "\(ScoreText.string(number)) / \(ScoreText.string(game.questionTotal))"
     }
 
     /// The web's connection banner: only while the line is down, and never over a final screen.
@@ -149,7 +147,7 @@ private struct LiveQuizGameScreen: View {
             case .paused:
                 LiveQuizStateCard(
                     icon: "pause.circle", title: "Paused",
-                    message: "Your teacher has paused the quiz. The clock is stopped.", tone: Theme.warning
+                    message: "Your teacher has paused the quiz. The clock is stopped.", tone: NewLook.orange
                 )
             case .finished, .terminated, .removed:
                 EmptyView()
@@ -162,7 +160,7 @@ private struct LiveQuizGameScreen: View {
             ProgressView()
             Text("Joining the quiz…")
                 .appFont(15, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 64)
@@ -189,10 +187,11 @@ private struct LiveQuizGameScreen: View {
         if game.config.showLeaderboardBetween, !game.standings.isEmpty {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Standings")
-                    .appFont(16, weight: .heavy)
+                    .appDisplayFont(19)
+                    .foregroundStyle(NewLook.ink)
                 LiveQuizStandingsList(rows: game.standings, isMe: game.isMe, limit: 10)
             }
-            .cardStyle(padding: 16)
+            .newLookCard(padding: 16, radius: 24)
         }
     }
 
@@ -205,7 +204,7 @@ private struct LiveQuizGameScreen: View {
         case .terminated:
             LiveQuizStateCard(
                 icon: "stop.circle", title: "The quiz was stopped",
-                message: "Your teacher ended this session.", tone: Theme.textSecondary
+                message: "Your teacher ended this session.", tone: NewLook.ink4
             ) { doneButton }
         case .removed:
             removedCard
@@ -216,7 +215,7 @@ private struct LiveQuizGameScreen: View {
 
     private var finished: some View {
         VStack(spacing: 14) {
-            LiveQuizStateCard(icon: "trophy.fill", title: "That is the quiz", tone: Theme.amber) {
+            LiveQuizStateCard(icon: "trophy.fill", title: "That is the quiz", tone: NewLook.orange) {
                 if let mine = game.myStanding {
                     HStack(spacing: 8) {
                         LiveQuizStatBox(label: "Place", value: ScoreText.string(game.myPlace))
@@ -231,10 +230,11 @@ private struct LiveQuizGameScreen: View {
             }
             VStack(alignment: .leading, spacing: 12) {
                 Text("Final standings")
-                    .appFont(16, weight: .heavy)
+                    .appDisplayFont(19)
+                    .foregroundStyle(NewLook.ink)
                 LiveQuizStandingsList(rows: game.standings, isMe: game.isMe)
             }
-            .cardStyle(padding: 16)
+            .newLookCard(padding: 16, radius: 24)
             doneButton
         }
     }
@@ -242,13 +242,13 @@ private struct LiveQuizGameScreen: View {
     private var removedCard: some View {
         LiveQuizStateCard(
             icon: "person.crop.circle.badge.xmark", title: "You are no longer in this quiz",
-            message: "Your teacher removed you from the room. Ask them if this was a mistake.", tone: Theme.textSecondary
+            message: "Your teacher removed you from the room. Ask them if this was a mistake.", tone: NewLook.ink4
         ) { doneButton }
     }
 
     private var doneButton: some View {
         Button("Done") { onExit() }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(size: .large))
             .padding(.top, 4)
     }
 
@@ -264,41 +264,41 @@ private struct LiveQuizGameScreen: View {
                 message: "Enter the code your teacher is showing."
             ) {
                 Button("Enter the code") { onExit() }
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(size: .large))
                     .padding(.top, 4)
             }
         case .unknown:
-            LiveQuizStateCard(icon: "wifi.exclamationmark", title: "Lost contact with the quiz.", tone: Theme.warning) {
+            LiveQuizStateCard(icon: "wifi.exclamationmark", title: "Lost contact with the quiz.", tone: NewLook.orange) {
                 VStack(spacing: 10) {
                     Button("Try again") { model.retry() }
-                        .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                        .buttonStyle(NewLookButtonStyle(size: .large))
                     Button("Leave") { onExit() }
-                        .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                        .buttonStyle(NewLookButtonStyle(kind: .tint, size: .large))
                 }
                 .padding(.top, 4)
             }
         case .featureOff:
             LiveQuizStateCard(
                 icon: "antenna.radiowaves.left.and.right.slash", title: "Live quizzes are not switched on yet.",
-                tone: Theme.textSecondary
+                tone: NewLook.ink4
             ) { doneButton }
         case .notInClass:
             LiveQuizStateCard(
-                icon: "person.2.slash", title: "This live quiz belongs to a class you are not in.", tone: Theme.textSecondary
+                icon: "person.2.slash", title: "This live quiz belongs to a class you are not in.", tone: NewLook.ink4
             ) { doneButton }
         case .stopped:
             LiveQuizStateCard(
                 icon: "stop.circle", title: "The quiz was stopped",
-                message: "Your teacher ended this session.", tone: Theme.textSecondary
+                message: "Your teacher ended this session.", tone: NewLook.ink4
             ) { doneButton }
         case .over:
-            LiveQuizStateCard(icon: "flag.checkered", title: "That quiz is no longer running.", tone: Theme.textSecondary) {
+            LiveQuizStateCard(icon: "flag.checkered", title: "That quiz is no longer running.", tone: NewLook.ink4) {
                 doneButton
             }
         case .signedOut:
             LiveQuizStateCard(
                 icon: "person.crop.circle.badge.exclamationmark", title: "Your session has expired. Sign in again to rejoin.",
-                tone: Theme.textSecondary
+                tone: NewLook.ink4
             ) { doneButton }
         }
     }
@@ -357,40 +357,50 @@ private struct LiveQuizQuestionPanel: View {
     /// red at the five-second warning.
     private func countdown(left: TimeInterval, warning: Bool) -> some View {
         let seconds = Int(left.rounded(.up))
-        return HStack(alignment: .firstTextBaseline) {
+        return HStack(alignment: .lastTextBaseline) {
             Text("Time left")
-                .appFont(13, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(16, weight: .medium)
+                .foregroundStyle(NewLook.ink4)
             Spacer()
             Text(ScoreText.string(seconds) + "s")
-                .appFont(32, weight: .heavy, monospacedDigits: true)
-                .foregroundStyle(warning ? Theme.danger : Color.primary)
+                .appDisplayFont(44, monospacedDigits: true)
+                .tracking(-1)
+                .foregroundStyle(warning ? NewLook.red : NewLook.ink)
                 .contentTransition(.numericText(countsDown: true))
                 .animation(.default, value: seconds)
         }
-        .cardStyle(padding: 14)
+        .padding(.horizontal, 4)
+        .newLookCard(padding: 16, radius: 24)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(ScoreText.string(seconds)) seconds left")
     }
 
     private func prompt(_ question: LiveQuizQuestion, total: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Overline("Question \(ScoreText.string(question.number)) of \(ScoreText.string(total))")
+            Text("Question \(ScoreText.string(question.number)) of \(ScoreText.string(total))")
+                .newLookCaps()
             if !question.questionPrompt.isEmpty {
                 Text(question.questionPrompt)
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(NewLook.ink4)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             // A single word is the thing to read at arm's length; a definition is a sentence.
             let isWord = question.form == "word_to_definition"
-            Text(question.prompt)
-                .appFont(isWord ? 30 : 20, weight: isWord ? .heavy : .bold)
-                .fixedSize(horizontal: false, vertical: true)
+            Group {
+                if isWord {
+                    Text(question.prompt).appDisplayFont(36).tracking(-0.8)
+                } else {
+                    Text(question.prompt).appFont(20, weight: .bold)
+                }
+            }
+            .foregroundStyle(NewLook.ink)
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18, radius: 24)
     }
 
     @ViewBuilder private func footer(game: LiveQuizGame, canSubmit: Bool, outOfTime: Bool) -> some View {
@@ -409,7 +419,7 @@ private struct LiveQuizQuestionPanel: View {
                     Text(counted ? "Change my answer" : "Submit")
                 }
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(size: .large))
             .disabled(!sendable || !canSubmit)
             .sensoryFeedback(.impact(weight: .medium), trigger: model.isSending) { _, sending in sending }
         }
@@ -419,18 +429,18 @@ private struct LiveQuizQuestionPanel: View {
             // teacher's connection: if that has dropped, the question waits for them.
             Text("Waiting for your teacher…")
                 .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
         } else if counted {
             Text("Answer locked in. Waiting for the others…")
                 .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
                 .multilineTextAlignment(.center)
         }
 
         if let notice = game.notice {
             Text(notice.detail)
                 .appFont(14, weight: .semibold)
-                .foregroundStyle(Theme.danger)
+                .foregroundStyle(NewLook.red)
                 .multilineTextAlignment(.center)
         }
     }
@@ -447,28 +457,32 @@ private struct LiveQuizOutcomeCard: View {
         VStack(spacing: 10) {
             switch outcome {
             case .correct(let points):
-                symbol("checkmark.circle.fill", Theme.success)
+                symbol("checkmark.circle.fill", NewLook.green)
                 Text("Correct")
-                    .appFont(21, weight: .heavy)
-                    .foregroundStyle(Theme.success)
+                    .appDisplayFont(22)
+                    .foregroundStyle(NewLook.green)
                 if let points {
                     Text("+" + ScoreText.string(points))
-                        .appFont(30, weight: .heavy, monospacedDigits: true)
+                        .appDisplayFont(32, monospacedDigits: true)
+                        .foregroundStyle(NewLook.ink)
                 }
             case .notThisTime(let answer):
-                symbol("xmark.circle", Theme.textSecondary)
+                symbol("xmark.circle", NewLook.ink4)
                 Text("Not this time")
-                    .appFont(21, weight: .heavy)
+                    .appDisplayFont(22)
+                    .foregroundStyle(NewLook.ink)
                 answerLine(answer)
             case .timeRanOut(let answer):
-                symbol("clock", Theme.textSecondary)
+                symbol("clock", NewLook.ink4)
                 Text("Time ran out")
-                    .appFont(21, weight: .heavy)
+                    .appDisplayFont(22)
+                    .foregroundStyle(NewLook.ink)
                 answerLine(answer)
             case .answerIn:
-                symbol("checkmark.seal", Theme.accent)
+                symbol("checkmark.seal", NewLook.blue)
                 Text("Answer locked in")
-                    .appFont(21, weight: .heavy)
+                    .appDisplayFont(22)
+                    .foregroundStyle(NewLook.ink)
             }
 
             if !reveal.explanation.isEmpty {
@@ -477,12 +491,12 @@ private struct LiveQuizOutcomeCard: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(12)
-                    .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
+                        .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .padding(.top, 6)
             }
         }
         .frame(maxWidth: .infinity)
-        .cardStyle(padding: 20)
+        .newLookCard(padding: 20, radius: 24)
     }
 
     private func symbol(_ name: String, _ tone: Color) -> some View {
@@ -496,9 +510,9 @@ private struct LiveQuizOutcomeCard: View {
     /// screen by now, and a letter alone makes the student remember which word it was.
     private func answerLine(_ answer: String) -> some View {
         VStack(spacing: 4) {
-            Text("The answer was \(Text(answer).fontWeight(.heavy).foregroundStyle(Color.primary))")
+            Text("The answer was \(Text(answer).fontWeight(.heavy).foregroundStyle(NewLook.ink))")
                 .appFont(15, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
             if let text = reveal.correctChoiceText, !text.isEmpty {
                 Text(text)
                     .appFont(16, weight: .bold)

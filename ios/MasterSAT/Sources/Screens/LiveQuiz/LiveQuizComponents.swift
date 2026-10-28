@@ -4,25 +4,13 @@ import MasterSATKit
 // Pieces the live-quiz screens share — the web's `features/liveQuiz/ui.tsx`. Prefixed
 // `LiveQuiz` so they cannot collide with anything another screen defines.
 
-/// Podium colours, the web's `MEDAL` (`ui.tsx`): the text colour of places 1–3.
-enum LiveQuizMedal {
-    static func colour(forPlace place: Int) -> Color? {
-        switch place {
-        case 1: return Color(red: 0xd4 / 255, green: 0xa0 / 255, blue: 0x17 / 255)
-        case 2: return Color(red: 0x9a / 255, green: 0xa4 / 255, blue: 0xb2 / 255)
-        case 3: return Color(red: 0xb4 / 255, green: 0x70 / 255, blue: 0x3a / 255)
-        default: return nil
-        }
-    }
-}
-
 /// A whole-screen state — lobby, "Get ready…", paused, the end — as the web's centred card:
 /// an icon, a headline, a sentence, and whatever belongs under them.
 struct LiveQuizStateCard<Extra: View>: View {
     let icon: String
     let title: String
     var message: String?
-    var tone: Color = Theme.accent
+    var tone: Color = NewLook.blue
     @ViewBuilder var extra: () -> Extra
 
     var body: some View {
@@ -30,12 +18,13 @@ struct LiveQuizStateCard<Extra: View>: View {
             IconTile(systemName: icon, tone: tone, size: 60)
             VStack(spacing: 6) {
                 Text(title)
-                    .appFont(19, weight: .heavy)
-                    .tracking(-0.2)
+                    .appDisplayFont(21)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.ink)
                 if let message {
                     Text(message)
-                        .appFont(14, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(15, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                 }
             }
             .multilineTextAlignment(.center)
@@ -44,12 +33,12 @@ struct LiveQuizStateCard<Extra: View>: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 24)
-        .cardStyle(padding: 20)
+        .newLookCard(padding: 20, radius: 24)
     }
 }
 
 extension LiveQuizStateCard where Extra == EmptyView {
-    init(icon: String, title: String, message: String? = nil, tone: Color = Theme.accent) {
+    init(icon: String, title: String, message: String? = nil, tone: Color = NewLook.blue) {
         self.init(icon: icon, title: title, message: message, tone: tone, extra: { EmptyView() })
     }
 }
@@ -69,10 +58,10 @@ struct LiveQuizConnectionBanner: View {
             Spacer(minLength: 0)
             ProgressView().controlSize(.small)
         }
-        .foregroundStyle(Theme.warning)
+        .foregroundStyle(NewLook.orangeInk)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.warningSoft))
+        .background(NewLook.orange50, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -90,14 +79,14 @@ struct LiveQuizChoiceRow: View {
         Button(action: onTap) {
             HStack(alignment: .center, spacing: 14) {
                 Text(choice.id)
-                    .appFont(16, weight: .heavy)
+                    .appFont(17, weight: .heavy)
                     .capDynamicType()
-                    .frame(width: 38, height: 38)
-                    .background(Circle().fill(isSelected ? Theme.accent : Theme.card))
-                    .overlay(Circle().stroke(isSelected ? Theme.accent : Theme.separator, lineWidth: 2))
-                    .foregroundStyle(isSelected ? .white : Color.primary)
+                    .foregroundStyle(isSelected ? .white : NewLook.blueText)
+                    .frame(width: 40, height: 40)
+                    .background(isSelected ? NewLook.blue : NewLook.blue50, in: Circle())
                 Text(choice.text)
-                    .appFont(17, weight: .semibold)
+                    .appFont(18, weight: .semibold)
+                    .foregroundStyle(NewLook.ink)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -105,16 +94,20 @@ struct LiveQuizChoiceRow: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .frame(maxWidth: .infinity, minHeight: 68, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .fill(isSelected ? Theme.accentSoft : Theme.card)
-            )
+            // The kit's `.opt` at a thumb's size: white, a 2-pt blue ring once picked — the only
+            // state while the question is open; right and wrong wait for the results step.
+            .background {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(isSelected ? NewLook.optionPicked : NewLook.card)
+                    .newLookShadow(.tile)
+            }
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(isSelected ? Theme.accent : Theme.separator.opacity(0.9), lineWidth: 2)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(isSelected ? NewLook.blue : .clear, lineWidth: 2)
             )
             // A button's label is only hit-testable where it draws.
             .contentShape(Rectangle())
+            .animation(Motion.focus, value: isSelected)
         }
         .buttonStyle(.plain)
         .disabled(isDisabled)
@@ -136,7 +129,7 @@ struct LiveQuizStandingsList: View {
         if shown.isEmpty {
             Text("Nobody has scored yet.")
                 .appFont(14, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
         } else {
@@ -148,37 +141,29 @@ struct LiveQuizStandingsList: View {
         }
     }
 
+    /// The kit's `.lrow`: a rank pill, the name, the score; the student's own row in blue.
     private func standingRow(_ row: LiveQuizParticipant, place: Int, mine: Bool) -> some View {
         HStack(spacing: 12) {
-            Text(ScoreText.string(place))
-                .appFont(15, weight: .heavy, monospacedDigits: true)
-                .foregroundStyle(LiveQuizMedal.colour(forPlace: place) ?? Theme.textSecondary)
-                .capDynamicType()
-                .frame(width: 30)
+            RankPill(rank: place)
             HStack(spacing: 6) {
                 Text(row.displayName.isEmpty ? "Student" : row.displayName)
                     .appFont(15, weight: .semibold)
+                    .foregroundStyle(NewLook.ink)
                     .lineLimit(1)
                 if mine {
                     Text("you")
                         .appFont(12, weight: .bold)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(NewLook.blueText)
                 }
             }
             Spacer(minLength: 8)
             Text(ScoreText.string(row.score))
                 .appFont(15, weight: .heavy, monospacedDigits: true)
+                .foregroundStyle(NewLook.ink)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                .fill(mine ? Theme.accentSoft : Theme.surface2)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                .stroke(mine ? Theme.accent.opacity(0.3) : .clear, lineWidth: 1)
-        )
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(mine ? NewLook.blue50 : NewLook.sheet, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -189,19 +174,7 @@ struct LiveQuizStatBox: View {
     let value: String
 
     var body: some View {
-        VStack(spacing: 4) {
-            Text(label)
-                .appFont(12, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
-            Text(value)
-                .appFont(24, weight: .heavy, monospacedDigits: true)
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.surface2))
-        .accessibilityElement(children: .combine)
+        NewLookCountBox(value: value, label: label)
     }
 }
 

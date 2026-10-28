@@ -75,18 +75,9 @@ struct ReportProblemSheet: View {
         }
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            if sent == nil {
-                ServicesSheetButtons(
-                    secondaryTitle: "Cancel",
-                    primaryTitle: "Send report",
-                    primaryEnabled: true,
-                    inFlight: inFlight,
-                    secondary: { dismiss() },
-                    primary: { Task { await submit() } }
-                )
-            }
+            if sent == nil { buttons }
         }
-        .background(Theme.background)
+        .background(NewLook.sheet)
         .presentationDetents([.medium, .large], selection: $detent)
         .presentationDragIndicator(.visible)
         // A report half-sent is a report sent twice: the sheet stays put until the request
@@ -101,23 +92,14 @@ struct ReportProblemSheet: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .top, spacing: 12) {
-                IconTile(systemName: "exclamationmark.bubble.fill", tone: Theme.accent)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Report a problem")
-                        .appFont(17, weight: .heavy)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(subtitle)
-                        .appFont(13.5, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
+            NewLookSheetHeader(title: "Report a problem", subtitle: subtitle, onClose: nil) {
+                NewLookTile(systemName: "exclamationmark.bubble.fill")
             }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("What's the issue?")
-                    .appFont(14, weight: .bold)
+                    .appFont(15, weight: .bold)
+                    .foregroundStyle(NewLook.ink2)
                 // Rows rather than a menu: five short lines a thumb can hit without a second
                 // tap, and every option readable at once — the web's `<select>` is a phone's
                 // worst control.
@@ -130,11 +112,12 @@ struct ReportProblemSheet: View {
 
             VStack(alignment: .leading, spacing: 7) {
                 Text("Details (optional)")
-                    .appFont(14, weight: .bold)
+                    .appFont(15, weight: .bold)
+                    .foregroundStyle(NewLook.ink2)
                 TextField(
                     "",
                     text: $message,
-                    prompt: Text(verbatim: "e.g. The correct answer should be B, not C."),
+                    prompt: Text(verbatim: "e.g. The correct answer should be B, not C.").foregroundStyle(NewLook.muted),
                     axis: .vertical
                 )
                 .lineLimit(3...6)
@@ -147,15 +130,44 @@ struct ReportProblemSheet: View {
                     if clamped != value { message = clamped }
                 }
                 Text("Anything that helps us find and fix it.")
-                    .appFont(12, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(13, weight: .medium)
+                    .foregroundStyle(NewLook.muted)
             }
 
             // The server's own sentence, and the sheet stays open on it: the student's words
             // are still in the box and the next tap sends them.
             if let error { ReportSheetError(message: error) }
         }
-        .padding(20)
+        .padding(.horizontal, 16)
+        .padding(.top, 22)
+        .padding(.bottom, 12)
+    }
+
+    /// Cancel · Send report, pinned under the form.
+    private var buttons: some View {
+        HStack(spacing: 10) {
+            Button("Cancel") { dismiss() }
+                .buttonStyle(NewLookButtonStyle(kind: .tint, size: .large))
+                .disabled(inFlight)
+            Button {
+                Task { await submit() }
+            } label: {
+                ZStack {
+                    // The title keeps its width while the spinner shows, so the button does not
+                    // jump under the student's thumb.
+                    Label("Send report", systemImage: "paperplane")
+                        .opacity(inFlight ? 0 : 1)
+                    if inFlight { ProgressView().tint(.white) }
+                }
+            }
+            .buttonStyle(NewLookButtonStyle(size: .large))
+            .disabled(inFlight)
+            .accessibilityLabel(inFlight ? "Sending report" : "Send report")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.bottom, 8)
+        .background(NewLook.sheet)
     }
 
     private func categoryRow(_ option: QuestionReportCategory) -> some View {
@@ -163,28 +175,22 @@ struct ReportProblemSheet: View {
         return Button {
             category = option
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 12) {
                 Image(systemName: chosen ? "largecircle.fill.circle" : "circle")
-                    .appFont(17)
-                    .foregroundStyle(chosen ? Theme.accent : Theme.textLabel)
+                    .font(.system(size: 20, weight: chosen ? .semibold : .regular))
+                    .foregroundStyle(chosen ? NewLook.blue : NewLook.chevron)
                     .accessibilityHidden(true)
                 Text(option.label)
-                    .appFont(14.5, weight: chosen ? .bold : .medium)
+                    .appFont(16, weight: chosen ? .bold : .medium)
+                    .foregroundStyle(NewLook.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .fill(chosen ? Theme.accentSoft : Theme.card)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .stroke(chosen ? Theme.accent : Theme.separator.opacity(0.7), lineWidth: chosen ? 1.5 : 0.5)
-            )
-            .hitTarget(44)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+            .newLookOptionSurface(chosen ? .picked : .idle, idleFill: NewLook.card)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
@@ -195,18 +201,24 @@ struct ReportProblemSheet: View {
 
     private func thanks(_ sent: Sent) -> some View {
         VStack(spacing: 14) {
-            Image(systemName: "checkmark.circle.fill")
-                .appFont(44)
-                .foregroundStyle(Theme.success)
+            Circle()
+                .fill(NewLook.green50)
+                .frame(width: 76, height: 76)
+                .overlay {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 44))
+                        .foregroundStyle(NewLook.green)
+                }
                 .accessibilityHidden(true)
             Text(sent.title)
-                .appFont(16, weight: .bold)
+                .appDisplayFont(19)
+                .foregroundStyle(NewLook.ink)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityFocused($thanksFocused)
             Button("Done") { dismiss() }
-                .buttonStyle(PrimaryButtonStyle())
-                .padding(.top, 2)
+                .buttonStyle(NewLookButtonStyle(size: .large))
+                .padding(.top, 6)
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 24)
@@ -261,37 +273,35 @@ private struct ReportSheetError: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle.fill")
-                .appFont(14)
-                .foregroundStyle(Theme.danger)
+                .font(.system(size: 15))
+                .foregroundStyle(NewLook.red)
                 .padding(.top, 1)
                 .accessibilityHidden(true)
             Text(message)
-                .appFont(13.5, weight: .semibold)
-                .foregroundStyle(Theme.danger)
+                .appFont(14, weight: .semibold)
+                .foregroundStyle(NewLook.redInk)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.dangerSoft)
-        )
+        .background(NewLook.red50, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
 
 private extension View {
-    /// The site's input: a card-coloured field with a hairline that turns blue while typing.
+    /// The kit's field: white, r16, a hairline that turns blue while typing.
     func reportFieldStyle(focused: Bool) -> some View {
         self
-            .appFont(15)
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous).fill(Theme.card)
-            )
+            .appFont(16)
+            .foregroundStyle(NewLook.ink)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 13)
+            .frame(minHeight: 96, alignment: .topLeading)
+            .background(NewLook.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
-                RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                    .stroke(focused ? Theme.accent : Theme.separator.opacity(0.7), lineWidth: focused ? 1.5 : 0.5)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(focused ? NewLook.blue : NewLook.field, lineWidth: focused ? 2 : 1)
             )
     }
 }
