@@ -15,6 +15,17 @@ public struct TodayStatFigure: Sendable, Equatable {
     /// "Coins", "XP", "Strike", "Leaderboard" — drawn in caps.
     public let caption: String
     public let spoken: String
+    /// The figure has not been read yet: the card draws the loading block where the number will
+    /// land (mockup 90), not the dash. A read board without the student on it is NOT loading —
+    /// its dash is the answer.
+    public let isLoading: Bool
+
+    public init(value: String, caption: String, spoken: String, isLoading: Bool = false) {
+        self.value = value
+        self.caption = caption
+        self.spoken = spoken
+        self.isLoading = isLoading
+    }
 }
 
 /// The four cards: Coins · XP · Strike · Leaderboard rank.
@@ -28,14 +39,14 @@ public enum TodayStats {
 
     public static func coins(_ coins: Int?) -> TodayStatFigure {
         guard let coins else {
-            return TodayStatFigure(value: unknown, caption: "Coins", spoken: "Coins, loading")
+            return TodayStatFigure(value: unknown, caption: "Coins", spoken: "Coins, loading", isLoading: true)
         }
         return TodayStatFigure(value: String(coins), caption: "Coins", spoken: RewardsFormat.count(coins, "coin"))
     }
 
     public static func xp(_ xp: Int?) -> TodayStatFigure {
         guard let xp else {
-            return TodayStatFigure(value: unknown, caption: "XP", spoken: "XP, loading")
+            return TodayStatFigure(value: unknown, caption: "XP", spoken: "XP, loading", isLoading: true)
         }
         return TodayStatFigure(value: String(xp), caption: "XP", spoken: "\(xp) XP")
     }
@@ -48,7 +59,7 @@ public enum TodayStats {
     /// failure, and the student is one lesson away from a run (`StrikesWindow.runLine`).
     public static func strike(_ run: Int?) -> TodayStatFigure {
         guard let run else {
-            return TodayStatFigure(value: unknown, caption: "Strike", spoken: "Strike, loading")
+            return TodayStatFigure(value: unknown, caption: "Strike", spoken: "Strike, loading", isLoading: true)
         }
         let spoken = run > 0
             ? "\(RewardsFormat.count(run, "strike")), \(RewardsFormat.count(run, "lesson")) in a row"
@@ -67,7 +78,8 @@ public enum TodayStats {
         return TodayStatFigure(
             value: unknown,
             caption: "Leaderboard",
-            spoken: read ? "Not on the leaderboard yet" : "Leaderboard place, loading"
+            spoken: read ? "Not on the leaderboard yet" : "Leaderboard place, loading",
+            isLoading: !read
         )
     }
 }

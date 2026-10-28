@@ -234,14 +234,8 @@ private struct LiveQuizJoinScreen: View {
             }
             switch model.running {
             case .loading:
-                VStack(spacing: 10) {
-                    ForEach(0..<2, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .fill(NewLook.sheet)
-                            .frame(height: 60)
-                    }
-                }
-                .accessibilityLabel("Loading")
+                // The rows' own shape, with the kit's shimmer (mockup 90).
+                LoadingSkeleton(rows: 2, height: 60, style: .cards)
             case .failed:
                 // Not "nothing running": a failed read says so, and a quiz may be waiting.
                 RetryNotice(message: "Couldn't check for quizzes running in your classes.") {

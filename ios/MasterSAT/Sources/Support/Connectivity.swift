@@ -67,8 +67,9 @@ struct OfflineBanner: View {
         }
         .foregroundStyle(Theme.onInk)
         .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .background(Capsule().fill(Theme.ink))
+        .frame(minHeight: 32)
+        // The kit's `.offline`: the ink capsule with its own shadow, so it stands off the band.
+        .background(Capsule().fill(Theme.ink).shadow(color: .black.opacity(0.22), radius: 8, y: 6))
         .padding(.top, 4)
         // Reduce Motion picks the transition's value: it fades in place instead of sliding in.
         .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))

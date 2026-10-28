@@ -24,6 +24,12 @@ enum NewLook {
     /// `--field` #E6EAF2: an input's border.
     static let field = dynamic(light: 0xE6EAF2, dark: 0x2C354D)
     static let grabber = dynamic(light: 0xCFD5E0, dark: 0x3A4459)
+    /// A thumb or a chip raised above a track: the card's white on paper; at night a step
+    /// lighter than the card, so it stands off a track that is itself near the card's navy.
+    static let raised = dynamic(light: 0xFFFFFF, dark: 0x343F5C)
+    /// `.skel`: a loading block's ground and the sheen that sweeps over it.
+    static let skeleton = dynamic(light: 0xE9EDF4, dark: 0x222A3D)
+    static let skeletonSheen = dynamic(light: 0xF6F8FB, dark: 0x2E3852)
     /// `--dots` #C6CDDA: the three dots between two runs of a board.
     static let dots = dynamic(light: 0xC6CDDA, dark: 0x4A5470)
 
@@ -373,7 +379,9 @@ struct ShieldShape: Shape {
 
 /// The kit's `.btn`: a blue pill with its shadow, and the variants every screen uses.
 struct NewLookButtonStyle: ButtonStyle {
-    enum Kind { case primary, light, tint, ghost, green, danger }
+    /// `ink` is the kit's `.btn.ink`: the near-black pill (pale at night) a way out wears —
+    /// "Sign out" on a frozen account.
+    enum Kind { case primary, light, tint, ghost, green, danger, ink }
     enum Size {
         /// `.btn`: 40 pt.
         case regular
@@ -405,6 +413,7 @@ struct NewLookButtonStyle: ButtonStyle {
         case .ghost: return .clear
         case .green: return NewLook.green
         case .danger: return NewLook.red50
+        case .ink: return NewLook.ink
         }
     }
 
@@ -415,6 +424,7 @@ struct NewLookButtonStyle: ButtonStyle {
         case .light, .ghost: return NewLook.blueText
         case .tint: return NewLook.blueDeep
         case .danger: return NewLook.red
+        case .ink: return NewLook.card
         }
     }
 
@@ -447,6 +457,8 @@ private struct ButtonShadow: ViewModifier {
             content.shadow(color: NewLook.green.opacity(0.28), radius: 6, y: 4)
         case .light where enabled:
             content.shadow(color: shadowNavy.opacity(0.08), radius: 1, y: 1)
+        case .ink where enabled:
+            content.shadow(color: Color(.sRGB, red: 14 / 255, green: 20 / 255, blue: 36 / 255).opacity(0.25), radius: 6, y: 4)
         default:
             content
         }

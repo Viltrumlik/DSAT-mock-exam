@@ -238,12 +238,19 @@ struct TodayShopRail: View {
         switch phase {
         case .loading where items.isEmpty:
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(0..<3, id: \.self) { _ in
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .fill(NewLook.card)
-                            .frame(width: 138, height: 176)
-                            .newLookShadow(.shop)
+                // The cards' own shape — the picture, a name, a price — with the kit's shimmer.
+                SkeletonClock {
+                    HStack(spacing: 10) {
+                        ForEach(0..<3, id: \.self) { _ in
+                            VStack(alignment: .leading, spacing: 10) {
+                                SkeletonBlock(height: 92, radius: 14)
+                                SkeletonLine(fraction: 0.8, height: 13)
+                                SkeletonLine(fraction: 0.5, height: 11)
+                            }
+                            .padding(12)
+                            .frame(width: 138, height: 176, alignment: .top)
+                            .newLookSurface(NewLook.card, radius: 20, shadow: .shop)
+                        }
                     }
                 }
                 .padding(.horizontal, 16)
@@ -251,7 +258,7 @@ struct TodayShopRail: View {
             }
             .scrollDisabled(true)
             .padding(.horizontal, -16)
-            .redacted(reason: .placeholder)
+            .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading the Shop")
         case .failed where items.isEmpty:
             // A failure is not an empty shop.

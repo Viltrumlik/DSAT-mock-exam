@@ -27,33 +27,31 @@ struct FrozenAccountView: View {
 
     var body: some View {
         StateScreen(
-            icon: "snowflake",
-            tone: Theme.info,
+            medal: StateMedal.blue("snowflake"),
             title: "Your account is frozen",
             message: forDebt
                 ? "This month’s payment hasn’t been made, so your access is paused."
                 : "Your access has been temporarily frozen by an administrator. You can’t use the platform right now. Please contact your administrator to restore your access."
         ) {
             if let owed {
+                // The kit's `.owe`: Archivo on the red tint.
                 Text(verbatim: "You owe \(UZS.format(owed))")
-                    .appFont(17, weight: .heavy, monospacedDigits: true)
-                    .foregroundStyle(Theme.danger)
+                    .appDisplayFont(19, monospacedDigits: true)
+                    .tracking(-0.3)
+                    .foregroundStyle(NewLook.red)
                     .multilineTextAlignment(.center)
                     // The amount is what this screen exists to say, and it is the most
                     // compressible thing on it: without this, the largest text sizes truncate it
                     // in preference to the paragraphs around it.
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 18)
                     .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.Radius.control, style: .continuous)
-                            .fill(Theme.dangerSoft)
-                    )
+                    .background(NewLook.red50, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             if forDebt {
                 Text("Pay at your learning center. Your account unlocks by itself within 15 minutes of the payment being recorded.")
                     .appFont(14, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -66,10 +64,10 @@ struct FrozenAccountView: View {
                     checking = false
                 }
             } label: {
-                Group { if checking { ProgressView() } else { Text("Check again") } }
+                Group { if checking { ProgressView().tint(NewLook.blueDeep) } else { Text("Check again") } }
                     .frame(maxWidth: .infinity)
             }
-            .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .tint, size: .large))
             .disabled(checking)
             .accessibilityLabel(checking ? "Checking again" : "Check again")
 
@@ -78,9 +76,8 @@ struct FrozenAccountView: View {
             } label: {
                 Text("Sign out").frame(maxWidth: .infinity)
             }
-            // The ink pair: black with white text in light mode, white with black text in dark —
-            // the label colour alone left white text on a white button there.
-            .buttonStyle(PrimaryButtonStyle(tone: Theme.ink, text: Theme.onInk, fullWidth: true))
+            // The ink pair: near-black with white words by day, pale with navy words at night.
+            .buttonStyle(NewLookButtonStyle(kind: .ink, size: .large))
         }
         .task { await loadFinance() }
     }
@@ -113,10 +110,16 @@ struct UnreachableView: View {
                     retrying = false
                 }
             } label: {
-                Group { if retrying { ProgressView().tint(.white) } else { Text("Try again") } }
-                    .frame(maxWidth: .infinity)
+                Group {
+                    if retrying {
+                        ProgressView().tint(.white)
+                    } else {
+                        Label("Try again", systemImage: "arrow.clockwise")
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
-            .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+            .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
             .disabled(retrying)
             // The spinner says nothing to VoiceOver; the label does (as `ErrorState`'s retry does).
             .accessibilityLabel(retrying ? "Trying again" : "Try again")
@@ -124,32 +127,28 @@ struct UnreachableView: View {
     }
 }
 
-/// The shared layout of a whole-screen state: a mark, a headline, a sentence, anything the
-/// state has to add under it, and the actions.
+/// The shared layout of a whole-screen state — the "front door" look (mockups 93–94): the
+/// sign-in's blue top with the wordmark, a white icon tile on the band's edge, a headline, a
+/// sentence, anything the state has to add under it, and the actions at the bottom.
 ///
-/// Most states are the four without the fifth — `detail` exists for the one that carries a
-/// figure (the debt on a frozen account), which belongs with the sentence rather than among
-/// the buttons.
+/// Most states are the four without the fifth — `detail` exists for what a state carries beside
+/// its sentence: the debt on a frozen account, the version line on the update screen.
 struct StateScreen<Detail: View, Actions: View>: View {
-    /// What stands above the title: an icon tile, or — where the state is a failure the student
-    /// can do something about — its art, which is the screen's one animation.
-    private enum Mark {
-        case icon(String, tone: Color)
-        case art(LottieAsset)
-    }
-
-    private let mark: Mark
+    private let medal: StateMedal.Look
     let title: String
     let message: String
     @ViewBuilder let detail: () -> Detail
     @ViewBuilder let actions: () -> Actions
 
+    /// Optional, so a screen drawn without a session (a preview) still renders, never offline.
+    @Environment(Session.self) private var session: Session?
+
     init(
-        icon: String, tone: Color, title: String, message: String,
+        medal: StateMedal.Look, title: String, message: String,
         @ViewBuilder detail: @escaping () -> Detail,
         @ViewBuilder actions: @escaping () -> Actions
     ) {
-        mark = .icon(icon, tone: tone)
+        self.medal = medal
         self.title = title
         self.message = message
         self.detail = detail
@@ -161,47 +160,62 @@ struct StateScreen<Detail: View, Actions: View>: View {
         @ViewBuilder detail: @escaping () -> Detail,
         @ViewBuilder actions: @escaping () -> Actions
     ) {
-        mark = .art(art)
-        self.title = title
-        self.message = message
-        self.detail = detail
-        self.actions = actions
+        self.init(medal: StateMedal.look(for: art), title: title, message: message, detail: detail, actions: actions)
     }
+
+    /// The offline strip sits over the band's top (mockup 93, middle): the wordmark drops a row.
+    private var offline: Bool { session?.connectivity.isOnline == false }
 
     var body: some View {
         // Scrollable, because at the accessibility text sizes a title, a message, an amount, a
         // paragraph and two full-width buttons are taller than a phone: without this the buttons
         // — the only way off a frozen account — go off the bottom with no way to reach them.
-        // The minimum height keeps the screen centred when it does fit, which is every other
-        // size: a bare ScrollView would collapse the Spacers and sit it all under the status bar.
-        GeometryReader { proxy in
+        // The minimum height keeps the actions at the bottom when it does fit, which is every
+        // other size: a bare ScrollView would collapse the Spacer and float them mid-page.
+        GeometryReader { screen in
+            let total = screen.size.height + screen.safeAreaInsets.top
             ScrollView {
-                content.frame(minWidth: proxy.size.width, minHeight: proxy.size.height)
+                VStack(spacing: 0) {
+                    // The sign-in's band, shorter, under the status bar too.
+                    AuthBand(height: min(262, total * 0.3), markTop: offline ? 40 : 6)
+                    content
+                }
+                .frame(minHeight: total)
+                .frame(maxWidth: .infinity)
             }
+            .ignoresSafeArea(.container, edges: .top)
             .scrollBounceBehavior(.basedOnSize)
         }
-        .background(Theme.background.ignoresSafeArea())
+        .background(NewLook.page.ignoresSafeArea())
+        // The band is blue in either appearance: the clock over it is white.
+        .background(LightStatusBar())
+        .animation(.easeInOut(duration: 0.25), value: offline)
     }
 
     private var content: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 40)
-            switch mark {
-            case .icon(let icon, let tone):
-                IconTile(systemName: icon, tone: tone, size: 72)
-                    .padding(.bottom, 22)
-            case .art(let asset):
-                StateArt(asset, size: 128)
-                    .padding(.bottom, 14)
-            }
+            // The kit's `.door-tile`: 96 pt, r30, white, astride the band's edge.
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(NewLook.card)
+                .newLookShadow(.card)
+                .frame(width: 96, height: 96)
+                .overlay { StateMedal(look: medal, diameter: 60) }
+                .padding(.top, -48)
+                .accessibilityHidden(true)
             Text(title)
-                .appFont(26, weight: .heavy)
+                .appDisplayFont(28)
                 .tracking(-0.6)
+                .foregroundStyle(NewLook.ink)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.top, 26)
             Text(message)
                 .appFont(15, weight: .medium)
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(NewLook.ink4)
+                .lineSpacing(3)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 10)
             // The gap belongs to the detail, not to the sentence: a state without one must
             // sit exactly where it always has.
@@ -213,18 +227,15 @@ struct StateScreen<Detail: View, Actions: View>: View {
         }
         .padding(.horizontal, 24)
         .frame(maxWidth: 460)
-        // The height and the background belong to the scroll view above, not to its content.
-        .frame(maxWidth: .infinity)
+        // Takes the height the band leaves, so the actions sit at the bottom of the screen.
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
 /// The usual state: a mark, a headline, a sentence and the actions.
 extension StateScreen where Detail == EmptyView {
-    init(
-        icon: String, tone: Color, title: String, message: String,
-        @ViewBuilder actions: @escaping () -> Actions
-    ) {
-        self.init(icon: icon, tone: tone, title: title, message: message, detail: { EmptyView() }, actions: actions)
+    init(medal: StateMedal.Look, title: String, message: String, @ViewBuilder actions: @escaping () -> Actions) {
+        self.init(medal: medal, title: title, message: message, detail: { EmptyView() }, actions: actions)
     }
 
     init(art: LottieAsset, title: String, message: String, @ViewBuilder actions: @escaping () -> Actions) {

@@ -275,6 +275,8 @@ struct TodayView: View {
                 // A failed load is never "all caught up". The week card above says it too, in a
                 // line; this is the page's one piece of art.
                 ErrorState(title: "Today's work didn't load") { await load() }
+                    // In its own card, where the rows would be (mockup 92).
+                    .newLookCard(padding: 0)
             } else if plan.isAllClear && lessonsFailed {
                 // Nothing owed, but tonight's lessons are unknown: not "all caught up" either.
                 RetryNotice(message: "Couldn't load today's lessons.") { await load() }

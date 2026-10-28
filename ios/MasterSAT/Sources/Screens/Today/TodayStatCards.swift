@@ -88,6 +88,16 @@ struct TodayStatCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .animation(hasShownNumber && !reduceMotion ? ClassTabMotion.count : nil, value: number)
+                    // Not read yet: a block where the number will land (mockup 90), never a zero.
+                    // Laid over the figure, which stays in place and only fades — the card's
+                    // height and the tree are the same before and after.
+                    .opacity(figure.isLoading ? 0 : 1)
+                    .overlay(alignment: .leading) {
+                        SkeletonClock(running: figure.isLoading) {
+                            SkeletonBlock(width: 78, height: 20)
+                        }
+                        .opacity(figure.isLoading ? 1 : 0)
+                    }
                     Text(figure.caption)
                         .newLookCaps()
                         .lineLimit(1)

@@ -90,7 +90,8 @@ struct AssessmentRunnerView: View {
         ZStack {
             if let runner {
                 if runner.isLoading {
-                    ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The question's shape where it will land, never a spinner mid-page (mockup 90).
+                    LoadingSkeleton(rows: 2, height: 160, style: .cards, label: "Loading the questions").skeletonPage()
                 } else if didSubmit {
                     AssessmentSubmittedView(
                         setTitle: runner.bundle?.set?.title,
@@ -100,18 +101,22 @@ struct AssessmentRunnerView: View {
                 } else if let question = runner.currentQuestion {
                     runnerBody(runner, question)
                 } else if let error = runner.lastError {
-                    RetryNotice(message: error.errorDescription ?? "Could not load this assessment.") {
+                    // The whole page failed: the page form, in its card, with the art (mockup 92).
+                    ErrorState(title: error.errorDescription ?? "Could not load this assessment.") {
                         await runner.load()
                     }
+                    .newLookCard(padding: 0)
+                    .skeletonPage()
                 } else {
-                    ContentUnavailableView(
-                        "Nothing to answer",
-                        systemImage: "questionmark.circle",
-                        description: Text("This assessment has no questions yet.")
+                    EmptyState(
+                        art: .noTasks,
+                        title: "Nothing to answer",
+                        message: "This assessment has no questions yet."
                     )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                LoadingSkeleton(rows: 2, height: 160, style: .cards, label: "Loading the questions").skeletonPage()
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

@@ -129,6 +129,8 @@ struct CompleteProfileView: View {
             .scrollDismissesKeyboard(.interactively)
         }
         .background(NewLook.page.ignoresSafeArea())
+        // The compact band is blue under the status bar: the clock over it is white.
+        .background(LightStatusBar())
         // A refusal is spoken once — it changed, so it is news. The same sentence set twice
         // does not re-announce, which is what a student retrying the same wrong number hears.
         .onChange(of: error) { _, now in

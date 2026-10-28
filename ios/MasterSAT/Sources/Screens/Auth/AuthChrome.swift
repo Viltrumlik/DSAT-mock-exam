@@ -229,6 +229,9 @@ enum AuthFocus: Hashable {
 /// the shields hold still (`ShieldWatermark`).
 struct AuthBand: View {
     var height: CGFloat = 330
+    /// How far the wordmark sits below the band's middle. The front-door states lift it (their
+    /// icon tile takes the band's bottom edge) and drop it again for the offline strip.
+    var markTop: CGFloat = 40
 
     var body: some View {
         ZStack {
@@ -250,7 +253,7 @@ struct AuthBand: View {
                 .foregroundStyle(.white)
                 .dynamicTypeSize(...DynamicTypeSize.large)
             }
-            .padding(.top, 40)
+            .padding(.top, markTop)
             .modifier(LogoArrival())
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Master SAT")

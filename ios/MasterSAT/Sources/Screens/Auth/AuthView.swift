@@ -69,6 +69,8 @@ struct AuthView: View {
         // Not `Theme.background`: the mockup's page is white, where the grouped background is
         // the grey a page of cards sits on. In dark mode this is the same near-black.
         .background(NewLook.page.ignoresSafeArea())
+        // The band is blue under the status bar in either appearance: the clock over it is white.
+        .background(LightStatusBar())
         .sensoryFeedback(.warning, trigger: refusals)
         .onDisappear { attempt?.cancel() }
     }
@@ -95,10 +97,10 @@ struct AuthView: View {
                     if retryable {
                         Button(action: submit) {
                             Label("Retry", systemImage: "arrow.clockwise")
-                                .appFont(12, weight: .bold)
+                                .appFont(13, weight: .bold)
                         }
                         .buttonStyle(.plain)
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(NewLook.blueText)
                         .disabled(session.isWorking)
                     }
                 }

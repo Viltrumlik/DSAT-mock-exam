@@ -200,6 +200,12 @@ struct TabBand<Leading: View, Below: View>: View {
     @ViewBuilder let below: () -> Below
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// Optional, so a band drawn without a session (a preview) still renders, never offline.
+    @Environment(Session.self) private var session: Session?
+
+    /// Offline, the band grows a row for the strip (mockup 92): the strip sits in it, under the
+    /// status bar, instead of floating over the wordmark and the bell.
+    private var offline: Bool { session?.connectivity.isOnline == false }
 
     var body: some View {
         // `SlotStack`: a `below` that has nothing to show is zero points tall, and leaves no gap.
@@ -222,10 +228,12 @@ struct TabBand<Leading: View, Below: View>: View {
             }
             below()
         }
-        .padding(.top, TabBandMetrics.rowTop)
+        .padding(.top, TabBandMetrics.rowTop + (offline ? TabBandMetrics.offlineRow : 0))
         .padding(.bottom, bottomPadding)
         .frame(maxWidth: .infinity)
         .background { band }
+        // The strip's own fade is 250 ms (`OfflineOverlay`); the band makes room in step.
+        .animation(reduceMotion ? Motion.focus : .easeInOut(duration: 0.25), value: offline)
         .accessibilityElement(children: .contain)
     }
 
@@ -255,6 +263,9 @@ enum TabBandMetrics {
     static let rowTop: CGFloat = 18
     /// The room under the row the cards overlapping the band's edge ride up into.
     static let rowBottom: CGFloat = 76
+    /// The row the band grows for the offline strip: the strip's 32 pt and its 4 pt top margin,
+    /// and a little air under it.
+    static let offlineRow: CGFloat = 40
 }
 
 /// The MasterSAT shield, white at 9 %, 270 pt tall, drifting: up 10 pt and 3° to the left and

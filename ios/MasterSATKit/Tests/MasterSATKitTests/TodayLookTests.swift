@@ -53,6 +53,18 @@ import Testing
 
     // MARK: Up next, compact
 
+    @Test("An unread figure is loading — the card draws a block; a read board without the student is not")
+    func loadingFigures() {
+        #expect(TodayStats.coins(nil).isLoading)
+        #expect(TodayStats.xp(nil).isLoading)
+        #expect(TodayStats.strike(nil).isLoading)
+        #expect(TodayStats.rank(nil, read: false).isLoading)
+        #expect(!TodayStats.rank(nil, read: true).isLoading)
+        #expect(!TodayStats.coins(0).isLoading)
+        #expect(!TodayStats.strike(0).isLoading)
+        #expect(!TodayStats.rank(3, read: true).isLoading)
+    }
+
     @Test("At most three rows across homework and lessons, and what is left over is counted")
     func compactLimit() throws {
         let homework = try (1...3).map { try W.homework($0, due: F.at(Double($0))) }

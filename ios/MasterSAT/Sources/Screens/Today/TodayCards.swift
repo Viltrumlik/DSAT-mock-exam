@@ -19,6 +19,9 @@ struct TodayHero: View {
 
     private var tone: Color { progress.isComplete ? NewLook.green : NewLook.blue }
 
+    /// Neither loaded nor failed: the week is on its way.
+    private var pending: Bool { !loaded && !failed }
+
     private var headline: String {
         if failed { return "This week" }
         if !loaded { return "This week" }
@@ -50,7 +53,8 @@ struct TodayHero: View {
                 } else {
                     Text(loaded && !failed && progress.total > 0 ? "\(progress.done)/\(progress.total)" : "—")
                         .appDisplayFont(20, monospacedDigits: true)
-                        .foregroundStyle(NewLook.ink)
+                        // The dash of a week not known yet is quiet (the kit's `--faint`).
+                        .foregroundStyle(loaded && !failed ? NewLook.ink : NewLook.muted)
                         .capDynamicType()
                         .contentTransition(.numericText())
                         // A fixed ring: "12/12" at a large text size shrinks to fit inside the
@@ -81,6 +85,19 @@ struct TodayHero: View {
                 Text(subline)
                     .appFont(14, weight: .medium)
                     .foregroundStyle(NewLook.ink4)
+            }
+            // On its way (mockup 90): two lines' worth of shape where the words will land. The
+            // words stay in place underneath, hidden, so the card is already its full height.
+            .opacity(pending ? 0 : 1)
+            .overlay(alignment: .leading) {
+                SkeletonClock(running: pending) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("This week").newLookCaps()
+                        SkeletonLine(fraction: 0.8, height: 18)
+                        SkeletonLine(fraction: 0.58, height: 12)
+                    }
+                }
+                .opacity(pending ? 1 : 0)
             }
             AdaptiveSpacer()
         }

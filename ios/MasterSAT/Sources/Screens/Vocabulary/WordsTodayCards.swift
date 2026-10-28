@@ -52,13 +52,12 @@ struct ReviewTodayCard: View {
     @ViewBuilder private var content: some View {
         switch state {
         case .loading:
-            VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: "000 words still to master")
-                    .appDisplayFont(24)
-                    .redacted(reason: .placeholder)
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(NewLook.sheet)
-                    .frame(height: 64)
+            // The count and the Next up box's shape, with the kit's shimmer (mockup 90).
+            SkeletonClock {
+                VStack(alignment: .leading, spacing: 12) {
+                    SkeletonLine(fraction: 0.7, height: 24)
+                    SkeletonBlock(height: 64, radius: 16)
+                }
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Loading today's review")
