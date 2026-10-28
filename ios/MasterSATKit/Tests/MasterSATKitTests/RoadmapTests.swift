@@ -209,6 +209,41 @@ private func decode<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
         #expect(roadmap.monthsToSat == 0)
     }
 
+    @Test("The classwork step decodes; an older server's silence reads as none handed out")
+    func classworkKeys() throws {
+        let body: [String: Any] = [
+            "tracks": [[
+                "subject": "math", "subject_label": "Math",
+                "levels": [[
+                    "level": "junior", "level_label": "Junior", "is_own_level": true, "journal_published": true,
+                    "lessons": [
+                        [
+                            "lesson_number": 1, "title": "Done", "state": "completed", "assignment_id": 11,
+                            "delivery_id": 21, "classwork_assignment_id": 31, "classwork_done": true,
+                        ],
+                        [
+                            "lesson_number": 2, "title": "Handed out", "state": "available", "assignment_id": 12,
+                            "delivery_id": 22, "classwork_assignment_id": "32", "classwork_done": 0,
+                        ],
+                        [
+                            "lesson_number": 3, "title": "Not yet", "state": "upcoming",
+                            "classwork_assignment_id": NSNull(), "classwork_done": NSNull(),
+                        ],
+                        // The server before the classwork keys: both absent.
+                        ["lesson_number": 4, "title": "Older server", "state": "available", "assignment_id": 14, "delivery_id": 24],
+                    ],
+                ]],
+            ]],
+        ]
+        let lessons = try #require(try decode(RoadmapResponse.self, body).tracks.first?.levels.first?.lessons)
+        #expect(lessons.map(\.classworkAssignmentId) == [31, 32, nil, nil])
+        #expect(lessons.map(\.classworkDone) == [true, false, false, false])
+
+        // The fixture above predates the keys, as every locked rung's outline always will.
+        let math = try #require(try decode(RoadmapResponse.self, roadmapPayload()).tracks.first)
+        #expect(math.levels.flatMap(\.lessons).allSatisfy { $0.classworkAssignmentId == nil && !$0.classworkDone })
+    }
+
     @Test("Reading: GET decodes the page, POST marks it read on the same path")
     func readingRoundTrip() async throws {
         server.handler = { request in

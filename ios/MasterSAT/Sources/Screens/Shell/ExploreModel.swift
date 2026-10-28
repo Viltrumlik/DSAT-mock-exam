@@ -1,7 +1,7 @@
 import SwiftUI
 import MasterSATKit
 
-/// What Explore's four cards say: the six reads behind them, and the line each card gets from
+/// What Explore's three cards say: the five reads behind them, and the line each card gets from
 /// `ExploreDigest`.
 ///
 /// Every read stands alone. One that fails keeps the last answer it had, so a blink never trades
@@ -14,7 +14,6 @@ import MasterSATKit
 @MainActor
 @Observable
 final class ExploreModel {
-    private(set) var roadmap = ProfileLoad<RoadmapResponse>()
     private(set) var bookings = ProfileLoad<[SupportBooking]>()
     private(set) var calendar = ProfileLoad<SupportCalendar>()
     private(set) var examDates = ProfileLoad<[ExamDateOption]>()
@@ -33,10 +32,6 @@ final class ExploreModel {
 
     // Read at draw time: the page redraws when a slot changes, and "today" and "in 2 hours" are
     // worded against the clock of that moment.
-
-    var roadmapLine: ExploreLine? {
-        roadmap.value.map { ExploreDigest.roadmap($0, when: CommunityFormat.dayMonth) }
-    }
 
     /// Nil until the bookings and the calendar have each answered or failed; then the line words
     /// the parts that arrived (`ExploreDigest.services`). Worded from whichever landed first,
@@ -61,21 +56,15 @@ final class ExploreModel {
 
     // MARK: - Loading
 
-    /// All six reads at once, each landing on its own as it arrives. The tab calls it every time
+    /// All five reads at once, each landing on its own as it arrives. The tab calls it every time
     /// it comes back to the front, and a pull calls it again.
     func load(_ session: Session) async {
-        async let road: Void = loadRoadmap(session)
         async let booked: Void = loadBookings(session)
         async let hours: Void = loadCalendar(session)
         async let sat: Void = loadExamDates(session)
         async let upcoming: Void = loadEvents(session)
         async let waiting: Void = loadSurveys(session)
-        _ = await (road, booked, hours, sat, upcoming, waiting)
-    }
-
-    private func loadRoadmap(_ session: Session) async {
-        let api = RoadmapAPI(client: session.client)
-        await read(\.roadmap) { try await api.roadmap() }
+        _ = await (booked, hours, sat, upcoming, waiting)
     }
 
     private func loadBookings(_ session: Session) async {
@@ -109,7 +98,7 @@ final class ExploreModel {
     /// On a task of its own the request always lands with its real result.
     ///
     /// Every write is guarded: each one notifies the page whether or not the value changed, and
-    /// a tab that comes back to an unchanged answer should not redraw four cards for it.
+    /// a tab that comes back to an unchanged answer should not redraw three cards for it.
     private func read<Value: Equatable & Sendable>(
         _ slot: ReferenceWritableKeyPath<ExploreModel, ProfileLoad<Value>>,
         _ fetch: @escaping @Sendable () async throws -> Value

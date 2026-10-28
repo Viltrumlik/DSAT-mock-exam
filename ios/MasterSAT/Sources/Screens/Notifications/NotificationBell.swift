@@ -16,8 +16,18 @@ import MasterSATKit
 /// bell is on the first screen a signed-in student sees, and activation is a no-op when
 /// nothing changed.
 struct NotificationBell: View {
+    /// How the disc is drawn.
+    enum Look {
+        /// On a card-coloured disc — every header that sits on the page.
+        case card
+        /// White glass over a coloured band (the Class tab's blue): the disc is white at 14 %
+        /// with a 22 % rim, the glyph white, and the badge's ring the band's own colour.
+        case glass(band: Color)
+    }
+
     /// Where a tapped notification should go. Called after the inbox sheet has fully closed.
     let onOpen: @MainActor (AppLink) -> Void
+    var look: Look = .card
 
     @Environment(Session.self) private var session
     @Environment(\.scenePhase) private var scenePhase
@@ -36,16 +46,42 @@ struct NotificationBell: View {
     private var count: Int { session.notifications.unreadTotal }
     private var router: NotificationRouter { .shared }
 
+    private var glyph: AnyShapeStyle {
+        if case .glass = look { return AnyShapeStyle(.white) }
+        return AnyShapeStyle(.primary)
+    }
+
+    private var disc: Color {
+        if case .glass = look { return .white.opacity(0.14) }
+        return Theme.card
+    }
+
+    private var rim: Color {
+        if case .glass = look { return .white.opacity(0.22) }
+        return Theme.separator.opacity(0.5)
+    }
+
+    private var rimWidth: CGFloat {
+        if case .glass = look { return 1 }
+        return 0.5
+    }
+
+    /// The ring that keeps the badge off the bell's outline is whatever the bell sits on.
+    private var badgeRing: Color {
+        if case .glass(let band) = look { return band }
+        return Theme.background
+    }
+
     var body: some View {
         Button {
             showingInbox = true
         } label: {
             Image(systemName: "bell")
                 .appFont(17, weight: .semibold)
-                .foregroundStyle(.primary)
+                .foregroundStyle(glyph)
                 .frame(width: 42, height: 42)
-                .background(Circle().fill(Theme.card))
-                .overlay(Circle().stroke(Theme.separator.opacity(0.5), lineWidth: 0.5))
+                .background(Circle().fill(disc))
+                .overlay(Circle().stroke(rim, lineWidth: rimWidth))
                 .overlay(alignment: .topTrailing) {
                     if let text = NotificationBadge.text(for: count) {
                         Text(text)
@@ -55,7 +91,7 @@ struct NotificationBell: View {
                             .frame(minWidth: 17, minHeight: 17)
                             .background(Capsule().fill(Theme.dangerFill))
                             // A ring in the page colour keeps the badge off the bell's outline.
-                            .overlay(Capsule().stroke(Theme.background, lineWidth: 2))
+                            .overlay(Capsule().stroke(badgeRing, lineWidth: 2))
                             .offset(x: 4, y: -3)
                             .allowsHitTesting(false)
                     }

@@ -22,6 +22,12 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- The design's display face (Resources/Fonts, SIL OFL 1.1 — see OFL.txt there). Bundled flat,
+	     so the name is the file's own. Drawn by `appDisplayFont`. -->
+	<key>UIAppFonts</key>
+	<array>
+		<string>ArchivoDisplay-ExtraBold.ttf</string>
+	</array>
 	<!-- HTTPS only, which is exempt: without this, every upload stops at the export-compliance
 	     question in App Store Connect. -->
 	<key>ITSAppUsesNonExemptEncryption</key>

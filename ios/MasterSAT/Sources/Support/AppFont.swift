@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 extension View {
     /// `.font(.system(size:weight:design:))` that follows the phone's text-size setting.
@@ -18,6 +19,20 @@ extension View {
         _ size: CGFloat, weight: Font.Weight? = nil, design: Font.Design? = nil, monospacedDigits: Bool = false
     ) -> some View {
         modifier(ScaledFont(size: size, weight: weight, design: design, monospacedDigits: monospacedDigits))
+    }
+}
+
+extension View {
+    /// The design's display face — Archivo at weight 800, width 112% (`ArchivoDisplay-ExtraBold`,
+    /// bundled in Resources/Fonts) — for the new Class screens' headings and big numbers.
+    ///
+    /// It scales exactly as `appFont` does: the size is kept at the default setting and grows along
+    /// the curve of the nearest text style (`ScaledFont.textStyle(for:)`), through the same
+    /// `@ScaledMetric` (`UIFontMetrics`), so a `.dynamicTypeSize(...)` cap above it holds it too.
+    /// Should the face ever fail to load, it falls back to the heavy rounded system font those
+    /// headings used before, at the same size.
+    nonisolated func appDisplayFont(_ size: CGFloat, monospacedDigits: Bool = false) -> some View {
+        modifier(ScaledDisplayFont(size: size, monospacedDigits: monospacedDigits))
     }
 }
 
@@ -100,5 +115,27 @@ struct ScaledFont: ViewModifier {
         case 12...: .caption
         default: .caption2
         }
+    }
+}
+
+struct ScaledDisplayFont: ViewModifier {
+    /// The PostScript name of the bundled face.
+    nonisolated static let faceName = "ArchivoDisplay-ExtraBold"
+    /// Looked up once: whether `UIAppFonts` registered the face.
+    nonisolated static let isAvailable = UIFont(name: faceName, size: 12) != nil
+
+    @ScaledMetric private var size: CGFloat
+    private let monospacedDigits: Bool
+
+    nonisolated init(size: CGFloat, monospacedDigits: Bool = false) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: ScaledFont.textStyle(for: size))
+        self.monospacedDigits = monospacedDigits
+    }
+
+    func body(content: Content) -> some View {
+        let font = Self.isAvailable
+            ? Font.custom(Self.faceName, fixedSize: size)
+            : Font.system(size: size, weight: .heavy, design: .rounded)
+        content.font(monospacedDigits ? font.monospacedDigit() : font)
     }
 }

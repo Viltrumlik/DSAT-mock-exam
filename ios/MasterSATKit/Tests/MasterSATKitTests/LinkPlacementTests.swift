@@ -14,6 +14,8 @@ import Testing
         #expect(AppLink.home.placement == .tab(.today))
         #expect(AppLink.classes.placement == .tab(.classes))
         #expect(AppLink.vocabulary.placement == .tab(.words))
+        // The roadmap IS the Class tab's level cards now.
+        #expect(AppLink.roadmap.placement == .tab(.classes))
     }
 
     @Test("Class work is pushed onto the Class tab")
@@ -21,6 +23,8 @@ import Testing
         let links: [AppLink] = [
             .classroom(id: 3), .homework(classroomId: 3, assignmentId: 9), .assessments,
             .midterms, .midtermResult(attemptId: 4), .examReview(attemptId: 4), .liveQuiz(sessionId: nil),
+            // A session's reading — the class page's Topic.
+            .roadmapDelivery(id: 5),
         ]
         for link in links { #expect(link.placement == .push(.classes, link)) }
     }
@@ -38,9 +42,9 @@ import Testing
         }
     }
 
-    @Test("Roadmap, services, events and surveys are pushed onto Explore")
+    @Test("Services, events and surveys are pushed onto Explore")
     func explore() {
-        let links: [AppLink] = [.roadmap, .roadmapDelivery(id: 5), .services, .support, .events, .surveys, .survey(id: 8)]
+        let links: [AppLink] = [.services, .support, .events, .surveys, .survey(id: 8)]
         for link in links { #expect(link.placement == .push(.explore, link)) }
     }
 

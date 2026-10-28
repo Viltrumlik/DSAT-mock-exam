@@ -5,8 +5,9 @@ import MasterSATKit
 /// up next (catching up first, then by deadline, then today's lessons), and the few things the
 /// learning center wants seen today — stories, a live quiz, a fresh result, a survey.
 ///
-/// The goal and the SAT date are set in the Me sheet (the countdown here opens it); the full
-/// lesson calendar is Class → Schedule. A tab root: every push is a value resolved here.
+/// The goal and the SAT date are set in the Me sheet (the countdown here opens it); a lesson opens
+/// its class page, where every session carries its date. A tab root: every push is a value
+/// resolved here.
 struct TodayView: View {
     /// Pages this root pushes that no `AppLink` names.
     enum Route: Hashable {
@@ -250,8 +251,13 @@ struct TodayView: View {
             NavigationLink(value: assignment) { WorkRow(item: item) }
                 .buttonStyle(PressBounce())
                 .zoomSource(id: assignment.id, in: zoom)
+        } else if case .lesson(let event) = item.source, let classroomId = event.classroomId {
+            // A lesson opens its class: the class page at the class's level (`ClassroomLinkPage`).
+            NavigationLink(value: AppLink.classroom(id: classroomId)) { WorkRow(item: item) }
+                .buttonStyle(PressBounce())
+                .accessibilityHint("Opens the class")
         } else {
-            // A lesson is information: there is nothing deeper to open on a phone.
+            // A lesson with no class to name is information only.
             WorkRow(item: item)
         }
     }
