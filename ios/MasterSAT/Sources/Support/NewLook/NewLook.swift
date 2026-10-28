@@ -162,6 +162,16 @@ extension View {
             .shadow(color: tone.opacity(layers.far.0), radius: layers.far.1, y: layers.far.2)
     }
 
+    /// A rounded surface with one of the kit's shadows — the shadow on the SHAPE only. A
+    /// `.shadow` on the whole card would also shadow every piece of text and every tile inside it.
+    func newLookSurface(_ fill: Color, radius: CGFloat, shadow: NewLookShadow) -> some View {
+        background {
+            RoundedRectangle(cornerRadius: radius, style: .continuous)
+                .fill(fill)
+                .newLookShadow(shadow)
+        }
+    }
+
     /// The kit's `.card`: white, r20, p14, `--sh-card`, the full width. `radius` 24 is `.card.lg`
     /// and `.card.soft`; `fill` picks the soft blue for the latter.
     func newLookCard(
@@ -173,8 +183,7 @@ extension View {
         self
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(fill, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-            .newLookShadow(shadow)
+            .newLookSurface(fill, radius: radius, shadow: shadow)
     }
 }
 
@@ -415,8 +424,12 @@ struct NewLookButtonStyle: ButtonStyle {
             .foregroundStyle(text)
             .padding(.horizontal, size == .large ? 22 : 18)
             .frame(maxWidth: size == .regular ? nil : .infinity, minHeight: height)
-            .background(fill.opacity(configuration.isPressed ? 0.85 : 1), in: Capsule())
-            .modifier(ButtonShadow(kind: kind, enabled: isEnabled))
+            // The shadow on the capsule, not on the label.
+            .background {
+                Capsule()
+                    .fill(fill.opacity(configuration.isPressed ? 0.85 : 1))
+                    .modifier(ButtonShadow(kind: kind, enabled: isEnabled))
+            }
             .contentShape(Capsule())
             .pressFeedback(isPressed: configuration.isPressed, scale: 0.96)
     }

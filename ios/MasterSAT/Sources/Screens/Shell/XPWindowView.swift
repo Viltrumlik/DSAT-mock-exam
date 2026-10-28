@@ -132,13 +132,20 @@ struct XPWindowView: View {
     private var coinAngle: Double { breathes && coinTurning ? 360 : 0 }
 
     var body: some View {
-        VStack(spacing: 4) {
-            bolt
+        // The new look (mockup 12): the title, the bolt medallion beside the figure, the climb
+        // chip, the points box, Leaderboard and Shop, the two explainers.
+        VStack(alignment: .leading, spacing: 4) {
+            Text("XP and points")
+                .appDisplayFont(22)
+                .tracking(-0.4)
+                .foregroundStyle(NewLook.ink)
+                .accessibilityAddTraits(.isHeader)
+                .padding(.bottom, 10)
             figures
             pointsBox
-                .padding(.top, 10)
+                .padding(.top, 14)
             waysOn
-                .padding(.top, 10)
+                .padding(.top, 12)
             // One above the other at the accessibility sizes, as the Leaderboard/Shop pair below
             // is: two full titles cannot share the ~300 pt an SE leaves inside this card at AX5.
             AdaptiveStack(columnAlignment: .center, spacing: 2) {
@@ -249,18 +256,30 @@ struct XPWindowView: View {
 
     @ViewBuilder private var figures: some View {
         if let window {
-            VStack(spacing: 4) {
-                VStack(spacing: 2) {
-                    Text(ScoreText.string(window.xp))
-                        .appFont(42, weight: .black, design: .rounded)
-                        .foregroundStyle(Theme.accent)
-                        .contentTransition(.numericText(value: Double(window.xp)))
-                    // "XP · #4 in the centre" while the board is in; the unit alone otherwise, so
-                    // no half-sentence is left hanging after a "·".
-                    Text(placeState == .shown ? "XP · \(window.placeLine)" : "XP")
-                        .appFont(13, weight: .bold)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    // The medallion floats and glints (and holds still under Reduce Motion).
+                    RewardMedallion(kind: .xp, size: 64)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 4) {
+                            Text(ScoreText.string(window.xp))
+                                .appDisplayFont(44, monospacedDigits: true)
+                                .tracking(-1)
+                                .foregroundStyle(NewLook.blueText)
+                                .contentTransition(.numericText(value: Double(window.xp)))
+                            Text("XP")
+                                .appDisplayFont(17)
+                                .foregroundStyle(NewLook.blueText)
+                        }
+                        // The place while the board is in; nothing hangs there otherwise.
+                        if placeState == .shown {
+                            Text(window.placeLine)
+                                .appFont(16, weight: .semibold)
+                                .foregroundStyle(NewLook.ink2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    Spacer(minLength: 0)
                 }
                 // One sentence rather than a numeral followed by a caption of its own (W-R7). The
                 // place rides with it because "455 XP" and "·" read as two fragments apart.
@@ -331,10 +350,12 @@ struct XPWindowView: View {
         switch placeState {
         case .shown:
             if let climb = window.climbLine {
-                Text(climb)
-                    .appFont(11.5, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
-                    .multilineTextAlignment(.center)
+                Label(climb, systemImage: "arrow.up.right")
+                    .appFont(14, weight: .bold)
+                    .foregroundStyle(NewLook.blueDeep)
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 32)
+                    .background(NewLook.blue50, in: Capsule())
                     .fixedSize(horizontal: false, vertical: true)
             }
         case .loading:
@@ -373,10 +394,11 @@ struct XPWindowView: View {
                 coin
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: "\(ScoreText.string(window.points)) points")
-                        .appFont(15, weight: .heavy)
+                        .appDisplayFont(17)
+                        .foregroundStyle(NewLook.ink)
                     Text(window.coinsLine)
-                        .appFont(11, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(14, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 // The count and what it is worth are one thing to VoiceOver: "125 points, 29
@@ -387,9 +409,9 @@ struct XPWindowView: View {
                 AdaptiveSpacer()
                 convertControl(window)
             }
-            .padding(10)
+            .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Theme.surface2, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(NewLook.page, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { pointsSpot.rect = $0 }
             // Contain, not combine: Convert must stay its own VoiceOver target.
             .accessibilityElement(children: .contain)
@@ -417,7 +439,8 @@ struct XPWindowView: View {
     /// property it drives, so that a closed budget actually stops the loop rather than discarding
     /// its output frame by frame.
     private var coin: some View {
-        RewardsCoinArt(kind: .coin, size: 34)
+        // Our own point coin: this box counts points.
+        RewardsCoinArt(kind: .point, size: 42)
             .animation(breathes ? .linear(duration: 2.4).repeatForever(autoreverses: false) : nil) {
                 $0.rotation3DEffect(
                     .degrees(coinAngle),
@@ -449,11 +472,11 @@ struct XPWindowView: View {
                     }
                     Text(converting ? "Converting…" : "Convert")
                 }
-                .appFont(12, weight: .heavy)
-                .foregroundStyle(Theme.accent)
-                .padding(.horizontal, 10)
-                .frame(minHeight: 30)
-                .background(Theme.accent.opacity(0.12), in: Capsule())
+                .appFont(15, weight: .bold)
+                .foregroundStyle(NewLook.blueDeep)
+                .padding(.horizontal, 16)
+                .frame(minHeight: 40)
+                .background(NewLook.blue50, in: Capsule())
                 .hitTarget(44)
             }
             .buttonStyle(PressBounce())
@@ -488,10 +511,11 @@ struct XPWindowView: View {
     /// the window has something left to say.
     private var waysOn: some View {
         AdaptiveStack(spacing: 8, columnSpacing: 8) {
-            wayOn("Leaderboard", tint: Theme.accent, hint: "Opens the leaderboard") {
-                router.open(.leaderboard, baseURL: session.client.config.baseURL) { openURL($0) }
+            // The leaderboard sheet (mockup 13), the same short board Today's rank card opens.
+            wayOn("Leaderboard", icon: "trophy", tint: NewLook.blueDeep, fill: NewLook.blue50, hint: "Opens the leaderboard") {
+                router.openLeaderboardSheet()
             }
-            wayOn("Shop", tint: Theme.amber, hint: "Opens the Shop, where coins are spent") {
+            wayOn("Shop", icon: "bag", tint: NewLook.bronzeInk, fill: NewLook.bronze50, hint: "Opens the Shop, where coins are spent") {
                 router.open(.shop, baseURL: session.client.config.baseURL) { openURL($0) }
             }
         }
@@ -500,19 +524,20 @@ struct XPWindowView: View {
 
     private func wayOn(
         _ title: String,
+        icon: String,
         tint: Color,
+        fill: Color,
         hint: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Text(title)
-                .appFont(12, weight: .bold)
+            Label(title, systemImage: icon)
+                .appFont(16, weight: .bold)
                 .foregroundStyle(tint)
-                .frame(maxWidth: .infinity, minHeight: 40)
+                .frame(maxWidth: .infinity, minHeight: 48)
                 .padding(.horizontal, 10)
-                // The mockup's two soft slabs as tints, so dark mode follows the brand rather
-                // than printing #e8f0fd and #fff8e1 as slabs of paper.
-                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                // The kit's two soft pills — blue and bronze — dark-aware.
+                .background(fill, in: Capsule())
         }
         .buttonStyle(PressBounce())
         .accessibilityHint(hint)

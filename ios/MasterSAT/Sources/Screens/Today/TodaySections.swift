@@ -62,8 +62,7 @@ struct CompactUpNextList<Row: View>: View {
         }
         .padding(6)
         .frame(maxWidth: .infinity)
-        .background(NewLook.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .newLookShadow(.tile)
+        .newLookSurface(NewLook.card, radius: 22, shadow: .tile)
     }
 }
 
@@ -184,8 +183,7 @@ struct ServiceTile: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(NewLook.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .newLookShadow(.tile)
+            .newLookSurface(NewLook.card, radius: 20, shadow: .tile)
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(PressBounce())
@@ -323,8 +321,7 @@ struct ShopRailCard: View {
         }
         .padding(10)
         .frame(width: 138)
-        .background(NewLook.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .newLookShadow(.shop)
+        .newLookSurface(NewLook.card, radius: 20, shadow: .shop)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(item.name), \(item.priceText)")
     }

@@ -97,8 +97,7 @@ struct TodayStatCard: View {
             }
             .padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(NewLook.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .newLookShadow(.card)
+            .newLookSurface(NewLook.card, radius: 20, shadow: .card)
             .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
         .buttonStyle(PressBounce())

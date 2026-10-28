@@ -33,6 +33,18 @@ enum NotificationCategoryLook {
 
     /// Why a student might want the section — copy the server does not own. Word for word from
     /// the web, so a switch reads the same on the phone as in the browser.
+    /// The same colours in the new look's tile tints (mockup 14): Grades and Support green,
+    /// Homework and Rewards orange, Classroom sky, System violet, the rest blue.
+    static func newLookTone(for category: String) -> NewLook.Tone {
+        switch category.uppercased() {
+        case "GRADES", "SUPPORT": return .green
+        case "HOMEWORK", "REWARDS": return .orange
+        case "CLASSROOM": return .sky
+        case "SYSTEM": return .violet
+        default: return .blue
+        }
+    }
+
     static func hint(for category: String) -> String? {
         switch category.uppercased() {
         case "GRADES": return "When your work has been marked, and when results are ready."

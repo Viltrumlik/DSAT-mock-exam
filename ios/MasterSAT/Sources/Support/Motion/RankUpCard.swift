@@ -14,7 +14,8 @@ struct RankUpOverlay: View {
     var body: some View {
         ZStack(alignment: .bottom) {
             if let rise = celebrations.rankUp {
-                Color.black.opacity(0.3)
+                // The kit's `.dim`: navy at 36 %.
+                Color(.sRGB, red: 10 / 255, green: 22 / 255, blue: 50 / 255, opacity: 0.36)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { celebrations.dismissRankUp() }
@@ -73,11 +74,13 @@ struct RankUpCard: View {
                 // A place is an identifier, not a quantity: never "#1,204". Its own words are the
                 // announcement — the cursor lands here and reads them (see the task below).
                 Text(verbatim: "You moved up to #\(rise.to)")
-                    .appFont(24, weight: .heavy, design: .rounded)
+                    .appDisplayFont(24)
+                    .tracking(-0.5)
+                    .foregroundStyle(NewLook.ink)
                     .accessibilityFocused($newsFocused)
                 Text(verbatim: "Overall · all time · up from #\(rise.from)")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(15, weight: .medium)
+                    .foregroundStyle(NewLook.muted)
                     // The dots are pauses, not words.
                     .accessibilityLabel("Overall, all time, up from #\(rise.from)")
             }
@@ -85,14 +88,16 @@ struct RankUpCard: View {
 
             HStack(spacing: 10) {
                 Button("Nice!", action: onClose)
-                    .buttonStyle(SecondaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .tint, size: .large))
                 Button("See the board", action: onBoard)
-                    .buttonStyle(PrimaryButtonStyle(fullWidth: true))
+                    .buttonStyle(NewLookButtonStyle(kind: .primary, size: .large))
             }
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-        .chunky(Theme.amber)
+        // The new look's floating card (mockup 16): white, r26, `--sh-pop` — the chunky amber
+        // edge is gone.
+        .newLookSurface(NewLook.card, radius: 26, shadow: .pop)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
         // VoiceOver's two-finger scrub puts it away, as it does a sheet.

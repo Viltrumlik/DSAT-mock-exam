@@ -92,8 +92,7 @@ struct LeaderboardSheet: View {
                 }
                 .padding(6)
                 .frame(maxWidth: .infinity)
-                .background(NewLook.card, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                .newLookShadow(.tile)
+                .newLookSurface(NewLook.card, radius: 22, shadow: .tile)
             }
         } else if failed.contains(query) {
             // A board that did not load is never "nobody here".
