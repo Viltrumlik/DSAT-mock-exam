@@ -200,9 +200,17 @@ private struct StoryCircle: View {
                     Theme.surface2
                 }
             }
+        } else if onBand {
+            // Saved without a picture, which the Django admin allows. On the band a blank disc
+            // reads as an empty white hole, so it carries the rail's blue → pink inside the
+            // white ring instead — the colour the circle had before it moved up.
+            LinearGradient(
+                colors: [Theme.accent, StoryPalette.ringEnd],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
         } else {
-            // Saved without a picture, which the Django admin allows: a blank circle, not a
-            // broken rail.
+            // Off the band the ring is already the gradient: a blank circle, not a broken rail.
             Theme.surface2
         }
     }
