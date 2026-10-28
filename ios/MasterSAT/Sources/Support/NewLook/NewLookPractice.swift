@@ -313,3 +313,13 @@ struct NewLookPillLabel: View {
         .contentShape(Capsule())
     }
 }
+
+/// A label with its icon after the title — "Next ›".
+struct TrailingIconLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 6) {
+            configuration.title
+            configuration.icon
+        }
+    }
+}
