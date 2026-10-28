@@ -1055,6 +1055,8 @@ REST_FRAMEWORK = {
         'assessment_assign_global': os.getenv('ASSESSMENT_ASSIGN_GLOBAL_THROTTLE', '2000/hour'),
         # SPA auth client telemetry (batched; default allows ~1 flush/min + beacons + retries).
         'client_auth_telemetry': os.getenv('AUTH_CLIENT_TELEMETRY_THROTTLE', '120/hour'),
+        # The frontend crash screen's report (config.client_errors), per IP.
+        'client_error': os.getenv('CLIENT_ERROR_THROTTLE', '30/hour'),
         # iOS crash/error reports (mobile.views.DiagnosticsUploadView), per client address. A
         # class behind one school NAT uploads together after a bad build, hence the headroom.
         'mobile_diagnostics': os.getenv('MOBILE_DIAGNOSTICS_THROTTLE', '240/hour'),

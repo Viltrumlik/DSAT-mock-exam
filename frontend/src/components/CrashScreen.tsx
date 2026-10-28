@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { isStaleBuildError, reloadOnceForStaleBuild } from "@/lib/staleBuild";
+import { reportClientError } from "@/lib/clientErrorReport";
 
 /**
  * What a student sees instead of Next.js's bare "Application error: a client-side exception has
@@ -15,6 +16,7 @@ export function CrashScreen({ error, reset }: { error: Error & { digest?: string
 
   useEffect(() => {
     console.error(error);
+    reportClientError(error, stale ? "stale" : "crash");
     if (stale) reloadOnceForStaleBuild();
   }, [error, stale]);
 
