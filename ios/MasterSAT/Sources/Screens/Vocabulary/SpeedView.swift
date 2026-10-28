@@ -31,17 +31,14 @@ struct SpeedView: View {
         StudyShell(
             title: "Speed",
             subtitle: set.title,
-            tone: Theme.amber,
+            tone: StudyMode.speed.tone,
             progress: prompts.isEmpty ? 0 : Double(index) / Double(prompts.count),
             trailing: AnyView(
                 HStack(spacing: 6) {
                     if phase == .playing {
-                        StudyPill(text: "\(index + 1)/\(prompts.count)", icon: "bolt.fill", tone: Theme.amber)
-                        StudyPill(
-                            text: formatClock(secondsLeft),
-                            icon: "timer",
-                            tone: isUrgent ? Theme.danger : Theme.amber
-                        )
+                        StudyPill(text: "\(index + 1)/\(prompts.count)", icon: "bolt.fill",
+                                  tone: StudyMode.speed.tone, ink: StudyMode.speed.ink)
+                        clockPill
                     }
                 }
             ),
@@ -69,12 +66,12 @@ struct SpeedView: View {
     private var leadIn: some View {
         VStack(spacing: 26) {
             Spacer()
-            Overline("Get ready")
+            Text("Get ready").newLookCaps()
             ZStack {
-                Circle().fill(Theme.amberSoft).frame(width: 220, height: 220)
+                Circle().fill(StudyMode.speed.tone.opacity(0.14)).frame(width: 220, height: 220)
                 Text("\(max(1, tick))")
-                    .appFont(108, weight: .bold, design: .rounded, monospacedDigits: true)
-                    .foregroundStyle(Theme.amber)
+                    .appDisplayFont(108, monospacedDigits: true)
+                    .foregroundStyle(StudyMode.speed.tone)
                     // Re-mounted per tick, so each number comes in — 3 → 2 → 1 — without
                     // overshoot. Under Reduce Motion they crossfade.
                     .id(tick)
@@ -85,9 +82,10 @@ struct SpeedView: View {
             VStack(spacing: 6) {
                 Text("\(VocabGames.speedRoundSeconds) seconds. Pick the right meaning.")
                     .appFont(17, weight: .bold)
+                    .foregroundStyle(NewLook.ink)
                 Text("Answer as many as you can.")
                     .appFont(14)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
             }
             .multilineTextAlignment(.center)
             Spacer()
@@ -100,19 +98,17 @@ struct SpeedView: View {
         if let prompt = prompts.indices.contains(index) ? prompts[index] : nil {
             VStack(spacing: 18) {
                 VStack(spacing: 12) {
-                    Overline("Which meaning fits?")
+                    Text("Which meaning fits?").newLookCaps(NewLook.ink4)
                     Text(prompt.word)
-                        .appFont(46, weight: .bold, design: .rounded)
+                        .appDisplayFont(46)
+                        .tracking(-1)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.center)
                         .minimumScaleFactor(0.5)
                         .lineLimit(2)
                     // The clock repeats here on purpose: under time pressure a student's
                     // eyes are on the word, not on the header strip.
-                    StudyPill(
-                        text: formatClock(secondsLeft),
-                        icon: "timer",
-                        tone: isUrgent ? Theme.danger : Theme.amber
-                    )
+                    clockPill
                     // Under ten seconds the clock pulses once a second, with the second — not a
                     // loop breathing beside the word. It still pulses under Reduce Motion, as a
                     // colour only: it lights up instead of growing.
@@ -121,7 +117,7 @@ struct SpeedView: View {
                             .scaleEffect(calm ? 1 : 1 + 0.08 * pulse)
                             .overlay {
                                 Capsule()
-                                    .fill(Theme.danger.opacity(calm ? 0.25 * pulse : 0))
+                                    .fill(NewLook.red.opacity(calm ? 0.25 * pulse : 0))
                                     .allowsHitTesting(false)
                             }
                     } keyframes: { _ in
@@ -135,8 +131,8 @@ struct SpeedView: View {
                 .padding(.vertical, 30)
                 .padding(.horizontal, 18)
                 .background(
-                    RoundedRectangle(cornerRadius: Theme.Radius.hero, style: .continuous)
-                        .fill(isUrgent ? Theme.dangerSoft : Theme.amberSoft)
+                    RoundedRectangle(cornerRadius: 28, style: .continuous)
+                        .fill(isUrgent ? NewLook.red50 : StudyMode.speed.tone.opacity(0.14))
                 )
                 .id(index)
                 .transition(.scale(scale: 0.96).combined(with: .opacity))
@@ -151,26 +147,24 @@ struct SpeedView: View {
                                     .appFont(15, weight: .bold)
                                     .capDynamicType()
                                     .frame(width: 32, height: 32)
-                                    .background(Circle().fill(Theme.surface2))
-                                    .foregroundStyle(Theme.textSecondary)
+                                    .background(Circle().fill(NewLook.sheet))
+                                    .foregroundStyle(NewLook.ink4)
                                 Text(option.text)
                                     // Big type: this is the thing being read under time
                                     // pressure, on a phone, possibly on a bus.
                                     .appFont(19, weight: .semibold)
+                                    .foregroundStyle(NewLook.ink)
                                     .multilineTextAlignment(.leading)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)
                             }
                             .padding(16)
                             .frame(maxWidth: .infinity, minHeight: 96, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                                    .fill(Theme.card)
-                            )
-                            .overlay(
-                                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                                    .stroke(Theme.separator, lineWidth: 1)
-                            )
+                            .background {
+                                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                    .fill(NewLook.card)
+                                    .newLookShadow(.tile)
+                            }
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(FocusPress())
@@ -184,6 +178,16 @@ struct SpeedView: View {
         } else {
             ProgressView()
         }
+    }
+
+    /// The clock, in the header and under the word: amber, red under ten seconds.
+    private var clockPill: some View {
+        StudyPill(
+            text: formatClock(secondsLeft),
+            icon: "timer",
+            tone: isUrgent ? NewLook.red : StudyMode.speed.tone,
+            ink: isUrgent ? NewLook.redInk : StudyMode.speed.ink
+        )
     }
 
     @MainActor

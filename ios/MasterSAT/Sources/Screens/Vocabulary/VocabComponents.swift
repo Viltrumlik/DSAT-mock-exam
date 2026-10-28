@@ -23,10 +23,10 @@ struct VocabExplainButton: View {
         Button { shown.toggle() } label: {
             Text(verbatim: "!")
                 .appFont(12, weight: .black)
-                .foregroundStyle(shown ? Color.white : Theme.accent)
-                .frame(width: 20, height: 20)
-                .background(Circle().fill(shown ? Theme.accent : Theme.accent.opacity(0.10)))
-                .overlay(Circle().stroke(shown ? Color.clear : Theme.accent.opacity(0.35), lineWidth: 1))
+                .foregroundStyle(shown ? Color.white : NewLook.blueText)
+                .frame(width: 22, height: 22)
+                .background(Circle().fill(shown ? NewLook.blue : NewLook.blue.opacity(0.10)))
+                .overlay(Circle().strokeBorder(shown ? Color.clear : NewLook.blue.opacity(0.35), lineWidth: 1))
                 // A 20pt dot is too small to hit; the target is the size a thumb needs.
                 .frame(width: 34, height: 34)
                 .contentShape(Rectangle())
@@ -39,12 +39,13 @@ struct VocabExplainButton: View {
                 HStack(alignment: .top, spacing: 8) {
                     Text(title)
                         .appFont(14, weight: .heavy)
+                        .foregroundStyle(NewLook.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Button { shown = false } label: {
                         Image(systemName: "xmark")
                             .appFont(11, weight: .bold)
-                            .foregroundStyle(Theme.textSecondary)
+                            .foregroundStyle(NewLook.ink4)
                             .frame(width: 26, height: 26)
                             .contentShape(Rectangle())
                     }
@@ -54,7 +55,7 @@ struct VocabExplainButton: View {
                 }
                 Text(LocalizedStringKey(text))
                     .appFont(13, weight: .medium)
-                    .foregroundStyle(Theme.textSecondary)
+                    .foregroundStyle(NewLook.ink4)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
@@ -99,7 +100,7 @@ struct VocabMasteryBar: View {
                             Circle().fill(done ? tone.solid : tone.track).frame(width: 8, height: 8)
                             Text(VocabPalette.gameName(mode))
                                 .appFont(12, weight: .semibold)
-                                .foregroundStyle(done ? tone.ink : Theme.textSecondary)
+                                .foregroundStyle(done ? tone.ink : NewLook.ink4)
                         }
                     }
                 }
@@ -129,10 +130,10 @@ struct VocabSectionMasteryBar: View {
 
             let done = Text(verbatim: ScoreText.string(mastery.masteredSets))
                 .fontWeight(.bold)
-                .foregroundStyle(Color.primary)
+                .foregroundStyle(NewLook.ink)
             Text("\(done) of \(ScoreText.string(mastery.totalSets)) \(mastery.totalSets == 1 ? "set" : "sets") mastered")
-                .appFont(12, weight: .semibold)
-                .foregroundStyle(Theme.textSecondary)
+                .appFont(12.5, weight: .semibold)
+                .foregroundStyle(NewLook.ink4)
         }
     }
 }
@@ -156,6 +157,7 @@ struct VocabProgressRing: View {
                 .rotationEffect(.degrees(-90))
             Text("\(ScoreText.string(min(max(percent, 0), 100)))%")
                 .font(.system(size: size >= 60 ? 15 : 13, weight: .black).monospacedDigit())
+                .foregroundStyle(NewLook.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
                 .padding(.horizontal, lineWidth + 2)
@@ -168,16 +170,10 @@ struct VocabProgressRing: View {
 /// the card is scrolled to its title.
 struct VocabTopEdge: View {
     let colour: Color
-    var height: CGFloat = 3
+    var height: CGFloat = 4
 
     var body: some View {
-        LinearGradient(
-            colors: [colour, colour.opacity(0.4), colour.opacity(0)],
-            startPoint: .leading,
-            endPoint: .trailing
-        )
-        .frame(height: height)
-        .allowsHitTesting(false)
+        NewLookToneEdge(color: colour, height: height)
     }
 }
 
@@ -192,14 +188,15 @@ struct VocabMetaChip: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).appFont(10, weight: .bold)
+            Image(systemName: icon).appFont(11, weight: .bold)
                 .accessibilityHidden(true)
-            Text(text).appFont(12, weight: .bold, monospacedDigits: true)
+            Text(text).appFont(12, weight: .heavy, monospacedDigits: true)
         }
         .foregroundStyle(ink)
         .lineLimit(1)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
+        .padding(.leading, 8)
+        .padding(.trailing, 10)
+        .frame(minHeight: 24)
         .background(Capsule().fill(fill))
     }
 }
@@ -211,8 +208,8 @@ struct VocabWordStatusPill: View {
 
     var body: some View {
         switch status {
-        case .mastered: Chip(text: "Mastered", icon: "checkmark.circle.fill", tone: .success)
-        case .new: Chip(text: "New", icon: "circle", tone: .neutral)
+        case .mastered: NewLookChip(text: "Mastered", systemImage: "checkmark.circle", style: .green)
+        case .new: NewLookChip(text: "New", systemImage: "circle", style: .gray)
         }
     }
 }
@@ -225,6 +222,9 @@ struct VocabWordStatusPill: View {
 /// pill. Short of that the card shows how many games are left, which is the number a student
 /// can act on, in one quiet line under the title. It is the label of a link; the capsule inside
 /// is what the link looks like, not a second target.
+///
+/// Two surfaces: a white card of its own (a section's list, My sets), or a grey row inside the
+/// homework card that carries it (`inset`) — a card is never stacked on a card.
 struct VocabSetCard: View {
     let title: String
     let wordCount: Int
@@ -235,6 +235,11 @@ struct VocabSetCard: View {
     var actionLabel = "Practice"
     /// Room on the right for a control laid over the card (My sets' delete).
     var reservesTrailingControl = false
+    /// A grey row inside a homework card rather than a white card of its own.
+    var inset = false
+    /// The tile's tone and glyph short of mastery: words wear amber; a student's own set violet.
+    var tone: VocabPalette.Tone = VocabPalette.section(.amber)
+    var glyph = "character.book.closed.fill"
 
     private var mastered: Bool { mastery.isMastered }
 
@@ -251,36 +256,41 @@ struct VocabSetCard: View {
         "\(words), \(ScoreText.string(mastery.masteredModes)) of \(ScoreText.string(mastery.totalModes)) games mastered"
     }
 
+    private var shownTone: VocabPalette.Tone { mastered ? VocabPalette.mastered : tone }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let content = VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 12) {
-                // Words wear amber; a mastered set wears success.
-                IconTile(
-                    systemName: mastered ? "checkmark.circle.fill" : "character.book.closed.fill",
-                    tone: mastered ? Theme.success : Theme.amber,
-                    size: 40
-                )
-                VStack(alignment: .leading, spacing: 4) {
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .fill(shownTone.tile)
+                    .frame(width: 40, height: 40)
+                    .overlay(
+                        Image(systemName: mastered ? "checkmark.circle.fill" : glyph)
+                            .font(.system(size: 19, weight: .semibold))
+                            .foregroundStyle(shownTone.solid)
+                    )
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 3) {
                     Text(title)
-                        .appFont(16, weight: .heavy)
-                        .foregroundStyle(.primary)
+                        .appFont(17, weight: .bold)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                     Text(meta)
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(13, weight: .semibold)
+                        .foregroundStyle(NewLook.ink4)
                         .lineLimit(1)
                         .accessibilityLabel(spokenMeta)
                     if let subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .appFont(12, weight: .medium)
-                            .foregroundStyle(Theme.textLabel)
+                            .appFont(12.5, weight: .medium)
+                            .foregroundStyle(NewLook.muted)
                             .lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
                 if mastered {
-                    Chip(text: "Mastered", icon: "checkmark.circle.fill", tone: .success)
+                    NewLookChip(text: "Mastered", systemImage: "checkmark.circle", style: .green, small: false)
                 }
                 if reservesTrailingControl {
                     Color.clear.frame(width: 30, height: 30)
@@ -295,16 +305,31 @@ struct VocabSetCard: View {
                     Image(systemName: "play.fill").appFont(10, weight: .bold)
                         .accessibilityHidden(true)
                     Text(mastered ? "Play again" : (completed ? "Keep going" : actionLabel))
-                        .appFont(13, weight: .bold)
+                        .appFont(14, weight: .bold)
                 }
-                .foregroundStyle(mastered ? Theme.accent : Color.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 7)
-                .background(Capsule().fill(mastered ? Theme.surface2 : Theme.accent))
+                .foregroundStyle(mastered ? NewLook.blueDeep : Color.white)
+                .padding(.leading, 11)
+                .padding(.trailing, 13)
+                .frame(minHeight: 32)
+                .background {
+                    Capsule()
+                        .fill(mastered ? NewLook.blue50 : NewLook.blue)
+                        .newLookShadow(mastered ? .tile : .blue)
+                }
                 .fixedSize()
             }
         }
-        .cardStyle(padding: 16)
+
+        Group {
+            if inset {
+                content
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            } else {
+                content.newLookCard(padding: 16)
+            }
+        }
         .contentShape(Rectangle())
     }
 }
@@ -319,22 +344,31 @@ struct VocabEmptySetRow: View {
         HStack(alignment: .center, spacing: 12) {
             // Only the tile is dimmed: this row's words must stay at the contrast the secondary
             // text style gives them, and the whole row at 75% took them below it.
-            IconTile(systemName: "character.book.closed.fill", tone: Theme.textSecondary, size: 40)
-                .opacity(0.75)
-            VStack(alignment: .leading, spacing: 4) {
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .fill(NewLook.line)
+                .frame(width: 40, height: 40)
+                .overlay(
+                    Image(systemName: "character.book.closed.fill")
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundStyle(NewLook.muted)
+                )
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .appFont(16, weight: .heavy)
-                    .foregroundStyle(.primary)
+                    .appFont(17, weight: .bold)
+                    .foregroundStyle(NewLook.ink)
                     .multilineTextAlignment(.leading)
                     .lineLimit(2)
                 Text(subtitle.flatMap { $0.isEmpty ? nil : "No words yet · \($0)" } ?? "No words yet")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Theme.textSecondary)
+                    .appFont(13, weight: .semibold)
+                    .foregroundStyle(NewLook.ink4)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
-        .cardStyle(padding: 16)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(NewLook.sheet, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
@@ -353,7 +387,7 @@ struct VocabSectionCard: View {
     private var shown: VocabPalette.Tone { done ? VocabPalette.mastered : tone }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(shown.tile)
@@ -368,14 +402,15 @@ struct VocabSectionCard: View {
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(section.title)
-                        .appFont(17, weight: .heavy)
-                        .foregroundStyle(.primary)
+                        .appDisplayFont(19)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
                         .multilineTextAlignment(.leading)
                         .lineLimit(2)
                     if let description = section.description, !description.isEmpty {
                         Text(description)
-                            .appFont(13)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(14)
+                            .foregroundStyle(NewLook.ink4)
                             .multilineTextAlignment(.leading)
                             .lineLimit(2)
                     }
@@ -402,7 +437,7 @@ struct VocabSectionCard: View {
                     Text("WORDS")
                         .appFont(9.5, weight: .heavy)
                         .tracking(0.7)
-                        .foregroundStyle(Theme.textSecondary)
+                        .foregroundStyle(NewLook.muted)
                 }
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(ScoreText.string(section.progress.mastered)) of \(ScoreText.string(section.progress.total)) words mastered")
@@ -410,20 +445,20 @@ struct VocabSectionCard: View {
 
             VocabSectionMasteryBar(mastery: section.mastery, tone: shown)
 
-            HStack(spacing: 4) {
-                Text("Open section").appFont(13, weight: .bold)
+            HStack(spacing: 2) {
+                Text("Open section").appFont(14, weight: .bold)
                 Image(systemName: "chevron.right").appFont(11, weight: .bold)
                     .accessibilityHidden(true)
             }
             .foregroundStyle(tone.ink)
         }
-        // Look A: the shared card. The section's colour stays in its marks — tile, chips, ring,
-        // bar — and a finished section keeps its success edge.
-        .cardStyle(padding: 18)
+        // The kit's card. The section's colour stays in its marks — tile, chips, ring, bar — and
+        // a finished section keeps its success edge.
+        .newLookCard(padding: 18)
         .overlay {
             if done {
-                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                    .stroke(Theme.success.opacity(0.4), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(NewLook.green.opacity(0.4), lineWidth: 1)
                     .allowsHitTesting(false)
             }
         }
@@ -440,14 +475,17 @@ struct VocabGameGuide: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
-                IconTile(systemName: "gamecontroller.fill", tone: Theme.accent, size: 40)
+                NewLookTile(systemName: "gamecontroller.fill", tone: .blue)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Four ways to play every set")
-                        .appFont(17, weight: .heavy)
-                        .tracking(-0.2)
+                        .appDisplayFont(19)
+                        .tracking(-0.3)
+                        .foregroundStyle(NewLook.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                     Text("The coloured bar on every set card is these four — a quarter each.")
-                        .appFont(12.5, weight: .medium)
-                        .foregroundStyle(Theme.textSecondary)
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(NewLook.ink4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -472,12 +510,12 @@ struct VocabGameGuide: View {
                                     .accessibilityHidden(true)
                             )
                         Text(VocabPalette.gameName(mode))
-                            .appFont(14.5, weight: .heavy)
+                            .appFont(15, weight: .heavy)
                             .foregroundStyle(tone.ink)
                             .padding(.top, 12)
                         Text(VocabPalette.gameBlurb(mode))
-                            .appFont(12.5, weight: .medium)
-                            .foregroundStyle(Theme.textSecondary)
+                            .appFont(13, weight: .medium)
+                            .foregroundStyle(NewLook.ink4)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 4)
                         Spacer(minLength: 12)
@@ -486,17 +524,13 @@ struct VocabGameGuide: View {
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .background(Theme.card)
-                    .overlay(alignment: .top) { VocabTopEdge(colour: tone.solid, height: 4) }
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
-                            .stroke(Theme.separator.opacity(0.6), lineWidth: 0.5)
-                    )
+                    .background(NewLook.sheet)
+                    .overlay(alignment: .top) { NewLookToneEdge(color: tone.solid) }
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
             }
         }
-        .cardStyle(padding: 18)
+        .newLookCard(padding: 18)
     }
 }
 
@@ -544,9 +578,9 @@ struct VocabDueChip: View {
 
     var body: some View {
         if let due = DueLabel.text(dueAt) {
-            Chip(text: due.text, icon: "calendar.badge.clock", tone: due.late ? .warning : .neutral)
+            NewLookChip(text: due.text, systemImage: "calendar", style: due.late ? .orange : .gray)
         } else {
-            Chip(text: "No deadline", icon: "calendar.badge.clock", tone: .neutral)
+            NewLookChip(text: "No deadline", systemImage: "calendar", style: .gray)
         }
     }
 }
