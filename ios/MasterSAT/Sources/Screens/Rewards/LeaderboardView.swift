@@ -252,7 +252,8 @@ struct LeaderboardView: View {
             let offPage = board.showsYourPosition
             let inList = inlineMineID(board).flatMap { id in board.standings.first { $0.studentId == id } }
             if let row = offPage ? board.my : inList {
-                let below = inlineMine.map { $0.maxY > viewport.maxY - rowLift + 0.5 } ?? true
+                // Not pinned before the list's copy has been measured — it may well be on screen.
+                let below = inlineMine.map { $0.maxY > viewport.maxY - rowLift + 0.5 } ?? false
                 let pinned = offPage || below
                 LeaderboardMyRow(row: row, metric: board.metric, climb: board.climb)
                     .padding(.horizontal, 16)
@@ -319,9 +320,10 @@ struct LeaderboardView: View {
         stage.visible = false
         try? await Task.sleep(for: LeaderboardMotion.swapGap)
         guard !Task.isCancelled, asked == query else { return }
+        // `inlineMine` is kept: the row's geometry only reports a change, so a student who stays
+        // at the same place would never be measured again after a reset.
         board = fresh
         boardQuery = asked
-        inlineMine = nil
         try? await Task.sleep(for: .milliseconds(16))
         stage = LeaderboardStage(visible: true, swap: true)
     }
