@@ -1,9 +1,10 @@
 import SwiftUI
 import MasterSATKit
 
-/// A reward medallion in its tinted tile — the kit's `.tile-ic` + `.medal`: our own coin
-/// pictures (`RewardCoin`, `RewardPoint`) where the design shows a coin, a round blue medal with a
-/// glyph for XP, the strike and the leaderboard.
+/// A reward medallion in its tinted tile — the kit's `.tile-ic` + `.medal`: the mockup's bronze
+/// coin with the white MasterSAT shield (owner, 2026-10-29: back to the mockup's coin), our own
+/// `RewardPoint` picture for points, and a round medal with a glyph for XP, the strike and the
+/// leaderboard.
 ///
 /// **Motion (owner: "motion animation bering").** The medallion floats: up 1.5 pt and 4° over
 /// three and a half seconds and back. A glint — a soft white band — sweeps across it every few
@@ -15,7 +16,7 @@ import MasterSATKit
 /// only picks the values and drops the animation — nothing is swapped in or out.
 struct RewardMedallion: View {
     enum Kind: Sendable {
-        /// `RewardCoin`, on bronze.
+        /// The mockup's coin: a bronze medal with the white shield (`.medal.bronze` + `shield-coin`).
         case coin
         /// `RewardPoint`, on blue.
         case point
@@ -37,7 +38,6 @@ struct RewardMedallion: View {
 
         var asset: String? {
             switch self {
-            case .coin: "RewardCoin"
             case .point: "RewardPoint"
             default: nil
             }
@@ -112,9 +112,14 @@ struct RewardMedallion: View {
                     Circle().strokeBorder(kind.tone == .bronze ? NewLook.bronzeRing : NewLook.blueRing, lineWidth: 2)
                 }
                 .overlay {
-                    Image(systemName: kind.glyph)
-                        .font(.system(size: medalSide * 0.55, weight: .bold))
-                        .foregroundStyle(.white)
+                    if kind == .coin {
+                        // The kit's `.medal img`: the shield 18 pt tall on a 31-pt medal.
+                        ShieldMark(height: medalSide * 18 / 31)
+                    } else {
+                        Image(systemName: kind.glyph)
+                            .font(.system(size: medalSide * 0.55, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
                 }
                 .frame(width: medalSide, height: medalSide)
                 .shadow(color: .black.opacity(0.25), radius: 1, y: 1)
@@ -158,5 +163,37 @@ struct RewardMedallion: View {
             // at its far end is off the medal, so a late write here shows nothing either way.
             if !Task.isCancelled { sweeping = true }
         }
+    }
+}
+
+/// The white MasterSAT shield the mockup's coins carry (`kit/img/shield-coin.png` is the brand
+/// mark in white).
+struct ShieldMark: View {
+    let height: CGFloat
+
+    var body: some View {
+        Image("BrandMark")
+            .resizable()
+            .renderingMode(.template)
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
+            .frame(height: height)
+            .foregroundStyle(.white)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The mockup's small price coin (`.price .coin`): an 18-pt bronze disc in a 1.5-pt lighter ring,
+/// the shield 10 pt tall.
+struct ShieldCoin: View {
+    var size: CGFloat = 18
+
+    var body: some View {
+        Circle()
+            .fill(NewLook.bronze)
+            .overlay { Circle().strokeBorder(NewLook.bronzeRing, lineWidth: 1.5) }
+            .overlay { ShieldMark(height: size * 10 / 18) }
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
