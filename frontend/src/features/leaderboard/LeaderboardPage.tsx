@@ -150,6 +150,7 @@ function MetricTabs({
 const WINDOW_LABEL: Record<LeaderboardWindow, string> = {
   ALL: "All time",
   MONTH: "This month",
+  WEEK: "This week",
 };
 
 type Medal = {

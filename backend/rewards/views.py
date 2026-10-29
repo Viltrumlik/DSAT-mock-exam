@@ -292,14 +292,15 @@ class LeaderboardFiltersView(APIView):
             "levels": [
                 {"value": value, "label": label} for value, label in Classroom.LEVEL_CHOICES
             ],
-            # Two chips. The filter bar renders whatever is in this list and nothing else,
-            # so withdrawing "This week" and "This term" was a change here — the frontend
-            # only had to narrow its `LeaderboardWindow` union, not touch the bar. The
-            # retired values still parse (`leaderboard.BoardQuery.from_params` coerces
-            # anything it does not recognise); they just no longer have a chip to press.
+            # Three chips, in the order the app's Leaderboard shows them. The filter bar
+            # renders whatever is in this list and nothing else — withdrawing "This term" was a
+            # change here, and so was bringing "This week" back (2026-10-29). A retired value
+            # still parses (`leaderboard.BoardQuery.from_params` coerces anything it does not
+            # recognise); it just has no chip to press.
             "windows": [
-                {"value": leaderboard.WINDOW_ALL, "label": "All time"},
+                {"value": leaderboard.WINDOW_WEEK, "label": "This week"},
                 {"value": leaderboard.WINDOW_MONTH, "label": "This month"},
+                {"value": leaderboard.WINDOW_ALL, "label": "All time"},
             ],
             # So the client can label the "My Branch" tab with a name instead of the word
             # "mine", and can hide the tab entirely when there is no branch behind it.

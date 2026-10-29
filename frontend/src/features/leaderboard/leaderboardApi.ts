@@ -4,11 +4,11 @@ export type LeaderboardScope = "GLOBAL" | "BRANCH" | "GROUP";
 /** Which board: XP earned, or strikes — lessons attended in a row (the run, not the balance
  *  the shop spends). The strike board ignores the window and the subject: a run has neither. */
 export type LeaderboardMetric = "XP" | "STRIKES";
-/** Two windows. "WEEK" and "TERM" were withdrawn — a week ranked whoever had a lesson
- *  yesterday, and "term" meant nothing anybody could point at. The chips themselves come
- *  from the server (`LeaderboardFilters.windows`), so this union exists to stop the client
- *  inventing a value the board will silently coerce back to "ALL". */
-export type LeaderboardWindow = "ALL" | "MONTH";
+/** Three windows. "TERM" was withdrawn — "term" meant nothing anybody could point at — and
+ *  "WEEK", withdrawn with it, came back on 2026-10-29 for the app's Leaderboard. The chips
+ *  themselves come from the server (`LeaderboardFilters.windows`), so this union exists to stop
+ *  the client inventing a value the board will silently coerce back to "ALL". */
+export type LeaderboardWindow = "ALL" | "MONTH" | "WEEK";
 
 export interface LeaderboardRow {
   rank: number;
