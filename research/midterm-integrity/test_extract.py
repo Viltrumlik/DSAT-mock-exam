@@ -325,6 +325,43 @@ class GuardTest(unittest.TestCase):
             os.unlink(f.name)
 
 
+COPY_DSN = os.environ.get("STUDY_TEST_COPY_DSN", "")
+
+
+@unittest.skipUnless(DSN and COPY_DSN and "test" in urlparse(COPY_DSN).path,
+                     "set STUDY_TEST_DSN and STUDY_TEST_COPY_DSN to two throwaway *test* databases")
+class MinimalExportRoundTripTest(unittest.TestCase):
+    """export_minimal.sh -> load_copy.sh -> extract.py gives what extract.py gives on the source."""
+
+    def test_round_trip(self):
+        import subprocess
+
+        conn = psycopg2.connect(DSN)
+        with conn, conn.cursor() as cur:
+            seed(cur)
+        conn.close()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            salt = tmp / "s.salt"
+            salt.write_text("z" * 40)
+            export = tmp / "export"
+            subprocess.run(["bash", str(extract.SCRIPT_DIR / "export_minimal.sh"), str(export)],
+                           env={**os.environ, "DATABASE_URL": DSN}, check=True, capture_output=True)
+            exported = "".join(p.read_text() for p in export.glob("*.csv"))
+            for needle in ("Secret", "998901234567", "example.com", "Telegram"):
+                self.assertNotIn(needle, exported)
+            subprocess.run(["bash", str(extract.SCRIPT_DIR / "load_copy.sh"), str(export), COPY_DSN],
+                           check=True, capture_output=True)
+            outputs = {}
+            for name, dsn in (("source", DSN), ("copy", COPY_DSN)):
+                out = tmp / name
+                extract.run(extract.parse_args(["--dsn", dsn, "--salt-file", str(salt), "--out", str(out),
+                                                "--exclude-user-ids", str(TEST_ACCOUNT)]))
+                outputs[name] = {f: (out / f).read_text() for f in ("attempts.csv", "strikes.csv")}
+            self.assertEqual(outputs["source"], outputs["copy"])
+            self.assertGreater(outputs["copy"]["strikes.csv"].count("\n"), 1)
+
+
 @unittest.skipUnless(SCHEMA_DSN, "set SCHEMA_CHECK_DSN to a database migrated by Django")
 class DjangoSchemaTest(unittest.TestCase):
     def test_every_column_read_exists_in_the_django_schema(self):

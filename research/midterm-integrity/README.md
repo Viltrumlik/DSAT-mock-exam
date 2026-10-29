@@ -15,11 +15,22 @@ This folder holds the read-only, anonymized extract for the study comparing midt
 
 ## Running it
 
-```bash
-# 1. Restore the dump into a local Postgres (never into a server other people use).
-createdb -h 127.0.0.1 mastersat_copy
-pg_restore -h 127.0.0.1 -d mastersat_copy --no-owner --no-privileges /path/to/dump
+**1. Get a copy.** Use the minimal export (recommended), not a full dump. `export_minimal.sql` copies only the ~40 columns `extract.py` reads, in a read-only transaction. No names, emails, phones, answers, response bodies or free text leave the server; `users` contributes only id, role and the staff flags.
 
+```bash
+# On the server (as a user that can read backend.env), from a checkout of this folder:
+DATABASE_URL="$(grep -m1 '^DATABASE_URL=' /var/www/satapp/shared/backend.env | cut -d= -f2-)" \
+  bash export_minimal.sh /tmp/midterm-study-export          # writes /tmp/midterm-study-export.tar.gz
+
+# Locally: unpack, then rebuild it in a throwaway local database.
+mkdir export && tar -xzf midterm-study-export.tar.gz -C export
+createdb -h 127.0.0.1 midterm_copy
+bash load_copy.sh ./export postgresql://$USER@127.0.0.1:5432/midterm_copy
+```
+
+A full dump also works (`pg_restore -h 127.0.0.1 -d mastersat_copy --no-owner --no-privileges <dump>`), but it brings every student's personal data onto the machine.
+
+```bash
 # 2. Make a salt once, outside the repository, and keep it.
 head -c 48 /dev/urandom | base64 > ~/secrets/midterm-study.salt
 
@@ -40,7 +51,7 @@ SCHEMA_CHECK_DSN=postgresql://me@127.0.0.1:55432/schema_check \
 python3 -m unittest test_extract -v
 ```
 
-`STUDY_TEST_DSN` must be a throwaway database whose name contains `test`; it is wiped and filled with synthetic rows. `SCHEMA_CHECK_DSN` (optional) is an empty database migrated with `manage.py migrate`; that test proves every column the script reads exists in Django's schema.
+`STUDY_TEST_DSN` must be a throwaway database whose name contains `test`; it is wiped and filled with synthetic rows. Setting `STUDY_TEST_COPY_DSN` to a second one adds the round-trip test: export → load → extract must equal extracting the source directly, and the export must hold none of the seeded personal data. `SCHEMA_CHECK_DSN` (optional) is an empty database migrated with `manage.py migrate`; that test proves every column the script reads exists in Django's schema.
 
 ## Data dictionary
 
