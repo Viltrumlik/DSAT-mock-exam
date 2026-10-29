@@ -198,6 +198,20 @@ class FilterTests(OrgFixture):
             next(r["xp"] for r in this_month if r["student_id"] == self.bob.pk), 50
         )
 
+    def test_the_week_window_counts_the_last_seven_days(self):
+        ten_days_ago = timezone.now() - timedelta(days=10)
+        self._earn(self.bob, self.eng_north, 900, "b-ten", when=ten_days_ago)
+
+        this_month, _ = self._board(self.ann, scope="GLOBAL", window="MONTH")
+        this_week, meta = self._board(self.ann, scope="GLOBAL", window="WEEK")
+
+        self.assertEqual(this_month[0]["student_id"], self.bob.pk)    # 950 in 30 days
+        self.assertEqual(this_week[0]["student_id"], self.ann.pk)     # 100 in 7 days
+        self.assertEqual(
+            next(r["xp"] for r in this_week if r["student_id"] == self.bob.pk), 50
+        )
+        self.assertEqual(meta["window"], leaderboard.WINDOW_WEEK)
+
     def test_an_xp_less_award_never_appears(self):
         """A late arrival earns points and no XP. This board is XP."""
         late = _u("lb_late@t.com")
@@ -261,15 +275,15 @@ class QueryParsingTests(TestCase):
         self.assertEqual(q.window, leaderboard.WINDOW_MONTH)
 
     def test_a_retired_window_falls_back_instead_of_erroring(self):
-        """"This week" and "this term" were real chips, and a deploy does not reload open tabs.
+        """"This term" was a real chip, and a deploy does not reload open tabs.
 
         Withdrawing a chip removes it from the filter bar the *next* page load is served;
         a student who already had the board open keeps their old choice in component state
-        and goes on asking for `window=WEEK` until they reload. They must land on the
+        and goes on asking for `window=TERM` until they reload. They must land on the
         all-time board — the same forgiveness a typo gets, for the same reason — and must
         never be shown an error for a button this product used to offer them.
         """
-        for retired in ("WEEK", "TERM", "week", "term"):
+        for retired in ("TERM", "term"):
             with self.subTest(window=retired):
                 q = leaderboard.BoardQuery.from_params({"window": retired})
                 self.assertEqual(q.window, leaderboard.WINDOW_ALL)
@@ -332,12 +346,12 @@ class LeaderboardApiTests(OrgFixture):
         """
         self.client.force_authenticate(self.ann)
 
-        response = self.client.get("/api/rewards/leaderboard/?window=WEEK")
+        response = self.client.get("/api/rewards/leaderboard/?window=TERM")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["window"], leaderboard.WINDOW_ALL)
 
-    def test_the_filters_endpoint_offers_exactly_the_two_surviving_windows(self):
+    def test_the_filters_endpoint_offers_the_three_windows_in_order(self):
         """The chips are server-owned — this list *is* the filter bar the student sees."""
         self.client.force_authenticate(self.ann)
 
@@ -345,7 +359,7 @@ class LeaderboardApiTests(OrgFixture):
 
         self.assertEqual(
             [w["value"] for w in body["windows"]],
-            [leaderboard.WINDOW_ALL, leaderboard.WINDOW_MONTH],
+            [leaderboard.WINDOW_WEEK, leaderboard.WINDOW_MONTH, leaderboard.WINDOW_ALL],
         )
 
     def test_the_filters_endpoint_names_the_viewers_own_branch(self):
