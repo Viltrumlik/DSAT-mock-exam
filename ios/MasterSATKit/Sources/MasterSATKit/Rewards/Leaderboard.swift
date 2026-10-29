@@ -21,6 +21,8 @@ public enum LeaderboardMetric: String, Sendable, Hashable, CaseIterable {
 public struct LeaderboardQuery: Sendable, Hashable {
     public static let allTime = "ALL"
     public static let thisMonth = "MONTH"
+    /// The last seven days — back on the server since 2026-10-29 for the Leaderboard page.
+    public static let thisWeek = "WEEK"
 
     /// Global by default — the web's default tab.
     public var scope: LeaderboardScope
@@ -203,6 +205,11 @@ public struct LeaderboardRow: Decodable, Identifiable, Sendable, Equatable, Hash
     }
 
     public var profileImage: URL? { profileImageURL.flatMap(URL.init(string:)) }
+
+    /// The number this row is ranked on: its XP, or on the strike board its run.
+    public func value(on metric: LeaderboardMetric) -> Int {
+        metric == .strikes ? (strikes ?? 0) : xp
+    }
 }
 
 /// Names on a school-wide board.
@@ -262,6 +269,27 @@ public struct LeaderboardGoal: Sendable, Equatable {
     /// "120 XP to reach #4" — growth-oriented by construction: it names the next place, never
     /// the distance from the top.
     public var text: String { "\(xp) XP to reach #\(rank)" }
+}
+
+/// "30 XP to next rank" / "2 strikes to next rank" — the Leaderboard page's line under the
+/// student's own row. The same rule as `LeaderboardGoal`, on either board.
+public struct LeaderboardClimb: Sendable, Equatable {
+    public let amount: Int
+    public let rank: Int
+    public let metric: LeaderboardMetric
+
+    public init(amount: Int, rank: Int, metric: LeaderboardMetric) {
+        self.amount = amount
+        self.rank = rank
+        self.metric = metric
+    }
+
+    public var text: String {
+        switch metric {
+        case .xp: return "\(amount) XP to next rank"
+        case .strikes: return "\(amount) \(amount == 1 ? "strike" : "strikes") to next rank"
+        }
+    }
 }
 
 /// "120 XP to pass Malika" — the next student up, by name. Growth-oriented by construction: it
@@ -424,6 +452,25 @@ public struct LeaderboardBoard: Decodable, Sendable, Equatable {
         )
     }
 
+    /// The next place up on either board — `goal`'s rule, measured in what the board ranks: only
+    /// against the row directly above when it is in this answer (or, for a viewer past the page,
+    /// when the last row is the very next rank), and nil at #1 or beside a tie-mate above.
+    public var climb: LeaderboardClimb? {
+        guard let my else { return nil }
+        let mine = rows.first { $0.studentId == my.studentId } ?? my
+        let above: LeaderboardRow
+        if let index = rows.firstIndex(where: { $0.studentId == my.studentId }) {
+            guard index > 0 else { return nil }
+            above = rows[index - 1]
+            guard above.rank < mine.rank else { return nil }
+        } else {
+            guard let last = rows.last, last.rank == my.rank - 1 else { return nil }
+            above = last
+        }
+        let gap = above.value(on: metric) - mine.value(on: metric) + 1
+        return LeaderboardClimb(amount: max(1, gap), rank: above.rank, metric: metric)
+    }
+
     /// The goal, when the viewer is standing on the podium — it is shown under the podium then.
     public var podiumGoal: LeaderboardGoal? {
         guard let mine = myVisibleRow, podium.contains(where: { $0.studentId == mine.studentId }) else { return nil }
@@ -563,6 +610,7 @@ public struct LeaderboardFilters: Decodable, Sendable, Equatable {
         switch value {
         case LeaderboardQuery.allTime: return "All time"
         case LeaderboardQuery.thisMonth: return "This month"
+        case LeaderboardQuery.thisWeek: return "This week"
         default: return value
         }
     }

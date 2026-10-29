@@ -233,6 +233,43 @@ import Testing
         #expect(board.podiumGoal == LeaderboardGoal(xp: 21, rank: 1))
     }
 
+    @Test("The climb follows the goal on the XP board: the row above, plus one")
+    func climbOnXP() {
+        let me = row(5, 5, 150, me: true)
+        let board = LeaderboardBoard(rows: [row(1, 1, 400), row(2, 2, 300), row(3, 3, 250), row(4, 4, 200), me], my: me)
+        #expect(board.climb == LeaderboardClimb(amount: 51, rank: 4, metric: .xp))
+        #expect(board.climb?.text == "51 XP to next rank")
+
+        let top = row(1, 1, 400, me: true)
+        #expect(LeaderboardBoard(rows: [top, row(2, 2, 300)], my: top).climb == nil)
+        let far = row(40, 9, 10, me: true)
+        #expect(LeaderboardBoard(rows: [row(1, 1, 400), row(2, 2, 300)], my: far).climb == nil)
+    }
+
+    @Test("On the strike board the climb is counted in strikes, and a single one is singular")
+    func climbOnStrikes() {
+        func strikes(_ rank: Int, _ id: Int, _ run: Int, me: Bool = false) -> LeaderboardRow {
+            LeaderboardRow(rank: rank, studentId: id, name: "S\(id)", xp: 0, isMe: me, strikes: run)
+        }
+        let me = strikes(3, 3, 9, me: true)
+        let board = LeaderboardBoard(metric: .strikes, rows: [strikes(1, 1, 21), strikes(2, 2, 10), me], my: me)
+        #expect(me.value(on: .strikes) == 9)
+        #expect(board.goal == nil)
+        #expect(board.climb == LeaderboardClimb(amount: 2, rank: 2, metric: .strikes))
+        #expect(board.climb?.text == "2 strikes to next rank")
+
+        let close = strikes(2, 2, 20, me: true)
+        let one = LeaderboardBoard(metric: .strikes, rows: [strikes(1, 1, 20), close], my: close)
+        #expect(one.climb?.text == "1 strike to next rank")
+    }
+
+    @Test("The week has a label before the served chips arrive")
+    func weekLabel() {
+        #expect(LeaderboardFilters.fallbackWindowLabel(LeaderboardQuery.thisWeek) == "This week")
+        let query = LeaderboardQuery(window: LeaderboardQuery.thisWeek)
+        #expect(query.queryItems.contains(URLQueryItem(name: "window", value: "WEEK")))
+    }
+
     @Test("The visible row beats `my` for the hero, so one screen never shows two ranks")
     func standingPrefersVisibleRow() {
         // On main both number ties the same way, so this should not happen; but `my` is a separate
