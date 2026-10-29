@@ -1,12 +1,12 @@
 import SwiftUI
 import MasterSATKit
 
-/// Today — what to do now, across every class: how much of this week's homework is in, what is
-/// up next (catching up first, then by deadline, then today's lessons), and the few things the
-/// learning center wants seen today — stories, a live quiz, a fresh result, a survey.
+/// Today — the stories, the four stat cards, and the few things the learning center wants seen
+/// today: a live quiz, a fresh result, a survey, Services and the Shop.
 ///
-/// The goal and the SAT date are set in the Me sheet (the countdown here opens it); a lesson opens
-/// its class page, where every session carries its date. A tab root: every push is a value
+/// This week's homework ring, Up next and the SAT countdown are not on Today (owner, 2026-10-29):
+/// the class's To-do and the Me sheet carry them. The homework is still read here — it keeps the
+/// device's reminders in step and plays the week-done confetti. A tab root: every push is a value
 /// resolved here.
 struct TodayView: View {
     /// Pages this root pushes that no `AppLink` names.
@@ -30,22 +30,14 @@ struct TodayView: View {
     /// The midterms have loaded at least once in this view's life, so an empty `midterms` means
     /// the student has none rather than that the fetch failed.
     @State private var midtermsKnown = false
-    @State private var todayEvents: [ScheduleEvent] = []
     @State private var homeworkXP: Int?
     @State private var loadError: String?
-    /// Today's lessons could not be fetched — so an empty list says nothing about tonight.
-    @State private var lessonsFailed = false
     @State private var hasLoaded = false
     @State private var seenResults: Set<Int> = []
     /// Nothing is stored for this student yet, so Today has never loaded for them: the scores
     /// already out are old news and are marked seen without a card (`TodayPlan.freshResult`).
     @State private var isFirstRun = false
-    /// Each class's lesson length, so a three-hour lesson stays on Today for three hours.
-    @State private var lessonHours: [Int: Int] = [:]
-    /// The classes have answered at least once; until then the lengths are unknown, not absent.
-    @State private var classesKnown = false
     @State private var lastWeek: TodayPlan.Progress?
-    @State private var heroBounce = 0
     @State private var promptDismissed = false
     /// Bumped by pull-to-refresh, so the pieces that load themselves reload with the page.
     @State private var refreshTick = 0
@@ -59,20 +51,14 @@ struct TodayView: View {
     @State private var statusBarOwner = UUID()
     @Namespace private var zoom
 
-    /// Worked out on the learning center's calendar — Tashkent's Monday-to-Sunday week and
-    /// Tashkent's "today" — whatever time zone the phone is in.
+    /// Worked out on the learning center's calendar — Tashkent's Monday-to-Sunday week — whatever
+    /// time zone the phone is in. Homework only: today's lessons were for Up next.
     private var plan: TodayPlan {
         TodayPlan(
-            assignments: assignments, events: todayEvents, homeworkXP: homeworkXP,
-            lessonHours: lessonHours, calendar: ServicesTime.calendar
+            assignments: assignments, events: [], homeworkXP: homeworkXP,
+            lessonHours: [:], calendar: ServicesTime.calendar
         )
     }
-
-    /// The homework did not load and there is none from an earlier load to show instead.
-    private var homeworkFailed: Bool { loadError != nil && assignments.isEmpty }
-
-    /// The last refresh failed over homework an earlier load brought: the rows stay, and say so.
-    private var homeworkStale: Bool { loadError != nil && !assignments.isEmpty }
 
     private var freshResult: MidtermListing? {
         TodayPlan.freshResult(midterms, seen: seenResults, firstRun: isFirstRun)
@@ -98,8 +84,6 @@ struct TodayView: View {
         NavigationStack(path: $path) {
             TabRootScroll(tab: .today, onRefresh: {
                 refreshTick += 1
-                // A class joined or re-timed since the last look: ask for the lengths again.
-                classesKnown = false
                 await load()
             }) {
                 VStack(spacing: 0) {
@@ -128,13 +112,8 @@ struct TodayView: View {
                             }
                         }
 
-                        // 5: this week, then Up next, compact.
-                        TodayHero(progress: plan.week, loaded: hasLoaded, bounce: heroBounce, failed: homeworkFailed)
-                            .stagger(1, shown: shown)
-
-                        upNext.stagger(2, shown: shown)
-
-                        // 6: a fresh result, the SAT countdown, the reminder nudge.
+                        // 5: a fresh result, then the reminder nudge. This week, Up next and the SAT
+                        // countdown are gone from Today (owner, 2026-10-29).
                         if let result = freshResult, let attemptId = result.attemptId {
                             FreshResultCard(
                                 midterm: result,
@@ -151,9 +130,6 @@ struct TodayView: View {
 
                         SurveysWaitingCard(refreshID: refreshTick)
 
-                        SATCountdownRow(examDate: user.satExamDate) { router.openMe(on: .overview) }
-                            .stagger(3, shown: shown)
-
                         if showsReminderPrompt {
                             ReminderPromptCard(
                                 onEnable: {
@@ -166,7 +142,7 @@ struct TodayView: View {
                             )
                         }
 
-                        // 7: Services — each opens what the app already has.
+                        // 6: Services — each opens what the app already has.
                         TodayServicesRow(
                             onSupport: { open(.support) },
                             onRegistration: { showingChecklist = true },
@@ -174,9 +150,9 @@ struct TodayView: View {
                             // what each service is and how it works.
                             onFAQ: { open(.services) }
                         )
-                        .stagger(4, shown: shown)
+                        .stagger(1, shown: shown)
 
-                        // 8: the Shop rail.
+                        // 7: the Shop rail.
                         TodayShopRail(refreshID: refreshTick) { open(.shop) }
                     }
                     .padding(.horizontal, 16)
@@ -209,11 +185,6 @@ struct TodayView: View {
                 Task { await load() }
             }
             .onDisappear { statusBar?.release(owner: statusBarOwner) }
-            // The ring bounces WITH the double confetti, so a week finished under a sheet or a
-            // cover bounces when its confetti plays there, not unseen beneath it.
-            .onChange(of: celebrations.allDonePlays) { _, _ in
-                if !reduceMotion { heroBounce += 1 }
-            }
             .navigationDestination(for: AssignmentListing.self) { assignment in
                 HomeworkDetailView(assignment: assignment).zoomDestination(id: assignment.id, in: zoom)
             }
@@ -253,69 +224,6 @@ struct TodayView: View {
         }
     }
 
-    // MARK: - Up next
-
-    @ViewBuilder
-    private var upNext: some View {
-        let next = UpNextCompact.select(plan)
-        let owed = plan.homework.count + plan.lessons.count
-        VStack(alignment: .leading, spacing: 10) {
-            // No count over a failure: a zero beside "didn't load" would read as "nothing owed".
-            // And none at zero: the all-caught-up card below already says so.
-            NewLookSectionHeader(
-                title: "Up next",
-                count: hasLoaded && !homeworkFailed && owed > 0 ? owed : nil,
-                actionTitle: next.more > 0 ? "See all" : nil,
-                action: next.more > 0 ? { router.showClassToDo() } : nil
-            )
-            if !hasLoaded {
-                // The rows' own shape, so the page does not jump when they arrive.
-                LoadingSkeleton(rows: 3, height: 54, style: .cards)
-            } else if homeworkFailed {
-                // A failed load is never "all caught up". The week card above says it too, in a
-                // line; this is the page's one piece of art.
-                ErrorState(title: "Today's work didn't load") { await load() }
-                    // In its own card, where the rows would be (mockup 92).
-                    .newLookCard(padding: 0)
-            } else if plan.isAllClear && lessonsFailed {
-                // Nothing owed, but tonight's lessons are unknown: not "all caught up" either.
-                RetryNotice(message: "Couldn't load today's lessons.") { await load() }
-            } else if plan.isAllClear {
-                AllDoneCard()
-            } else {
-                CompactUpNextList(items: next.items) { item in
-                    row(item).transition(rowTransition)
-                }
-                // Only when no lesson is listed: beside lessons kept from the last load, "didn't
-                // load" contradicts the rows — the note below says they may be out of date.
-                if lessonsFailed && plan.lessons.isEmpty {
-                    LessonsUnavailableRow { await load() }
-                }
-            }
-            // One note for whatever is shown from an earlier load, homework or lessons. Not under
-            // the failure above, which already says the work did not load.
-            if homeworkStale || (lessonsFailed && !plan.lessons.isEmpty && !homeworkFailed) { StaleNote() }
-        }
-        .animation(rowAnimation, value: next.items.map(\.id))
-    }
-
-    @ViewBuilder
-    private func row(_ item: WorkItem) -> some View {
-        if let assignment = item.assignment {
-            NavigationLink(value: assignment) { CompactWorkRow(item: item) }
-                .buttonStyle(PressBounce())
-                .zoomSource(id: assignment.id, in: zoom)
-        } else if let classroomId = item.lessonClassroomId {
-            // A lesson opens its class: the class page at the class's level (`ClassroomLinkPage`).
-            NavigationLink(value: AppLink.classroom(id: classroomId)) { CompactWorkRow(item: item) }
-                .buttonStyle(PressBounce())
-                .accessibilityHint("Opens the class")
-        } else {
-            // A lesson with no class to name is information only.
-            CompactWorkRow(item: item)
-        }
-    }
-
     // MARK: - Fresh result
 
     private func loadSeen() {
@@ -347,19 +255,9 @@ struct TodayView: View {
     private func load() async {
         let student = session.student
         let rewardsAPI = session.rewards
-        let classroomsAPI = session.classrooms
-        let needsClasses = !classesKnown
-        let now = Date.now
-        // The endpoint reads its dates on the phone's calendar and the plan reads Tashkent's;
-        // a day either side covers both, and the plan keeps only the events of its own today.
-        let day: TimeInterval = 86_400
         async let homework = student.assignments()
         async let papers = student.midterms()
         async let rules = rewardsAPI.rules()
-        async let events = student.schedule(from: now.addingTimeInterval(-day), to: now.addingTimeInterval(day))
-        // Only the lesson lengths come from the classes, so they are asked for once, not on every
-        // return to the tab (a pull to refresh asks again).
-        async let rooms = needsClasses ? (try? await classroomsAPI.classrooms()) : nil
         // The Leaderboard card's place: the hero board, as the Rewards hero and the XP window ask it.
         async let board = try? await LeaderboardAPI(client: session.client).board(.heroBoard)
         var freshHomework: [AssignmentListing]?
@@ -398,24 +296,8 @@ struct TodayView: View {
             }
         }
         if let freshPapers { await session.notifications.announceResults(midterms: freshPapers) }
-        // The XP labels and today's lessons are extras: losing either never takes the page down.
-        // Losing the lessons is remembered, though: an empty list must not read as a free evening.
+        // The XP labels are an extra: losing them never takes the page down.
         if let fresh = try? await rules { homeworkXP = TodayPlan.homeworkXP(fresh) }
-        // A failed lookup leaves the lengths as they were (two hours, on a first look): losing
-        // them never takes the page down, and the next load asks again.
-        if let fresh = await rooms {
-            let hours = TodayPlan.lessonHours(of: ProfileClasses.memberships(fresh))
-            if hours != lessonHours { lessonHours = hours }
-            classesKnown = true
-        }
-        do {
-            todayEvents = try await events
-            lessonsFailed = false
-        } catch where !Task.isCancelled {
-            lessonsFailed = true
-        } catch {
-            // Cancelled: no answer about tonight's lessons, so the last word on them stands.
-        }
         if let fresh = await board, !Task.isCancelled { showRank(fresh) }
         hasLoaded = true
         celebrateIfWeekJustFinished()
@@ -440,8 +322,7 @@ struct TodayView: View {
         showRank(fresh)
     }
 
-    /// The week's last homework just went in: double confetti, and the ring bounces as it plays
-    /// (`allDonePlays`).
+    /// The week's last homework just went in: double confetti.
     private func celebrateIfWeekJustFinished() {
         let week = plan.week
         if TodayPlan.justFinished(previous: lastWeek, current: week) {

@@ -357,7 +357,7 @@ struct ShopRailCard: View {
     private var price: some View {
         HStack(spacing: 5) {
             if item.isCoin {
-                RewardsCoinArt(kind: .coin, size: 18)
+                ShieldCoin(size: 18)
             } else {
                 Image(systemName: "flame.fill")
                     .font(.system(size: 10, weight: .bold))
