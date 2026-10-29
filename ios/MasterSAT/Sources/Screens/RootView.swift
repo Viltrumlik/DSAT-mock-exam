@@ -245,6 +245,9 @@ struct RootTabView: View {
                 .tag(AppTab.explore)
                 .toolbar(.hidden, for: .tabBar)
         }
+        // The same room as a number, for a page that pins something over the bar's top edge
+        // (the Leaderboard's own row) rather than ending its scroll above it.
+        .environment(\.tabBarClearance, barClearance)
         .overlay(alignment: .bottom) {
             FloatingTabBar(selection: $router.selection) { router.reselect($0) }
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { barHeight = $0 }
@@ -333,6 +336,12 @@ struct RootTabView: View {
         router.sheetDismissed(baseURL: session.client.config.baseURL) { openURL($0) }
         celebrations.setSheetUp(router.anySheetUp)
     }
+}
+
+extension EnvironmentValues {
+    /// How far above the bottom safe area the floating tab bar's room ends — the margin every
+    /// tab's scroll views are given. 0 where there is no bar (a cover, a preview).
+    @Entry var tabBarClearance: CGFloat = 0
 }
 
 extension View {

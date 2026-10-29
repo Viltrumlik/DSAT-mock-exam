@@ -360,7 +360,7 @@ private struct ClassPageRise: ViewModifier {
 /// The design's back button: a 42-pt glass circle — white at 14 % in a 22 % white ring — with a white
 /// 28-pt chevron (`MS28 chevron_left`), in a 44-pt target. One look on every iOS: the system's button
 /// is a bare chevron before iOS 26 and a glass capsule of its own on it.
-private struct ClassPageBackButton: View {
+struct ClassPageBackButton: View {
     let action: () -> Void
 
     var body: some View {
@@ -395,7 +395,7 @@ private struct ClassPageBackButton: View {
 /// Scoped to this page: installed as it appears, and UIKit's delegates put back as it goes (a swipe
 /// already under way keeps running; a cancelled one brings the page back and installs again), so no
 /// other page and no other stack behaves any differently.
-private struct InteractivePopKeeper: UIViewControllerRepresentable {
+struct InteractivePopKeeper: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> Keeper { Keeper() }
     func updateUIViewController(_ keeper: Keeper, context: Context) {}
 
