@@ -39,7 +39,7 @@ python3 extract.py --dsn postgresql://$USER@127.0.0.1:5432/mastersat_copy \
   --salt-file ~/secrets/midterm-study.salt --exclude-user-ids <ids> --out ./data
 ```
 
-Needs Python 3.10+ and `psycopg2`. Defaults that can be changed: `--continuation-min-s 2.5`, `--continuation-max-s 5.0`, `--sync-gap-s 45`.
+Needs Python 3.10+ and `psycopg2`. Defaults that can be changed: `--continuation-min-s 2.5`, `--continuation-max-s 5.0`.
 
 **Who is included:** every midterm attempt that started (`started_at` set, state not `NOT_STARTED`) by a user whose role is `student` or `public_student` and who is neither staff nor superuser. The manifest counts the attempts left out.
 
@@ -89,7 +89,6 @@ Flags are `1`/`0`. An empty cell means **not applicable or not known**, never ze
 | `open_at_snapshot` | derived | Not completed and still `ACTIVE`, `MODULE_2_ACTIVE` or `SCORING` when the dump was taken. |
 | `stuck_incomplete` | derived | `swept_late` or `open_at_snapshot`. |
 | `post_close_saves` | **inferred** | Browser autosaves stored more than 15 s after `submitted_at`: a screen still running a paper the server had closed (a client–server mismatch). The app's late syncs are not stored, so this is browser-only. |
-| `app_sync_gaps`, `app_max_sync_gap_s` | **inferred** | App only. The app contacts the server every 15 s, even with no change. These count silences longer than `--sync-gap-s` (default 45 s) between its stored requests while a module ran, and give the longest one. A silence means no connection **or** the app was closed or blocked; the two can't be told apart. Empty for browser attempts (the browser saves only on change, so no equivalent exists). |
 | `state` | logged | `current_state`. |
 | `score`, `scoring_scale`, `pass_mark` | logged | The score and the scale/pass mark the sitting was pinned to. If it was never pinned, the midterm's current ones. |
 | `passed` | logged | From `midterms_outcome`. Empty when not judged (e.g. a pre-midterm). |
@@ -116,7 +115,7 @@ Generation time, the script's SHA-256, every parameter, row counts (attempts, st
 ## Not in the data (do not infer it)
 
 - **Time outside fullscreen.** The browser never reports the return. The app's `away_ms` is time away *so far* when it reports, and goes only to the server log (about 7 days). Only the 3 s boundary is recoverable, through `still_away_at_grace_end`.
-- **Connection drops in the browser era.** Neither online/offline events nor reconnects are sent to the server.
+- **Connection drops, in either era.** The browser sends no online/offline or reconnect events. The app syncs every 15 s, but its sync key carries the answer revision, so a heartbeat with no new answer replays the previous key and stores nothing: stored sync rows track answer changes, not connectivity. (Checked on prod 2026-10-27: one attempt logged 325 syncs and stored about 34.) Heartbeats appear only in the server log, which is kept about 7 days.
 - **What the student's screen showed.** A stuck screen that sent nothing leaves no trace. Crash reports and "late answers declined" go only to the server log.
 - **The date the app became required.** It is a server setting (`MIDTERM_DESKTOP_REQUIRED`), not data. `coverage_utc.first_required_app_session` gives the first sitting that was actually bound to the app.
 - **Midterms before 2026-07-08.** They lived in the older `exams` tables, with no strike data.

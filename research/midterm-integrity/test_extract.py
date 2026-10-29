@@ -267,11 +267,11 @@ class ExtractTest(unittest.TestCase):
                          ("3", "1", "640", "800", "1"))
         self.assertEqual((r["warnings"], r["warning_rows"], r["submit_source"], r["on_time_submission"]),
                          ("1", "1", "client_submit", "1"))
-        self.assertEqual((r["app_sync_gaps"], r["app_max_sync_gap_s"]), ("1", "135"))
         self.assertEqual(self.strikes_of(4)[0]["strike_client"], "app")
 
-    def test_browser_attempts_have_no_sync_gap_measure(self):
-        self.assertEqual(self.row(1)["app_sync_gaps"], "")
+    def test_no_connection_measure_is_exported(self):
+        # Stored app syncs track answer changes, not connectivity (see extract.py).
+        self.assertFalse(any("sync" in c for c in extract.ATTEMPT_COLUMNS))
 
     def test_open_attempt(self):
         r = self.row(5)

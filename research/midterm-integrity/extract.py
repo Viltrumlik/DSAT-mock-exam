@@ -72,9 +72,6 @@ def parse_args(argv=None):
                    help="Smallest gap after the previous strike that still reads as the same absence.")
     p.add_argument("--continuation-max-s", type=float, default=5.0,
                    help="Largest gap after the previous strike that still reads as the same absence.")
-    p.add_argument("--sync-gap-s", type=float, default=45.0,
-                   help="App only: a silence longer than this between server contacts counts as a sync gap "
-                        "(the app syncs every 15 s).")
     p.add_argument("--exclude-user-ids", default="",
                    help="Comma-separated user ids to drop (test accounts). They are never written anywhere.")
     args = p.parse_args(argv)
@@ -221,8 +218,6 @@ class Derived:
     swept_late: bool = False
     open_at_snapshot: bool = False
     post_close_saves: int = 0
-    app_sync_gaps: int | None = None
-    app_max_sync_gap_s: int | None = None
 
 
 def module_windows(row) -> list[tuple[datetime, datetime]]:
@@ -311,23 +306,9 @@ def derive_submission(row, requests, d: Derived) -> None:
     d.post_close_saves = sum(1 for r in requests if r.endpoint == "save_attempt" and r.at > late_cutoff)
 
 
-def derive_sync_gaps(row, requests, d: Derived, gap_s: float) -> None:
-    """App only: silences between the app's stored requests while a module was running."""
-    contacts = sorted(r.at for r in requests if r.endpoint in APP_ENDPOINTS)
-    if not contacts:
-        return
-    gaps, longest = 0, 0.0
-    for start, deadline in module_windows(row):
-        end = min(deadline, row["submitted_at"]) if row["submitted_at"] else deadline
-        if end <= start:
-            continue
-        points = [start] + [t for t in contacts if start < t < end] + [end]
-        for a, b in zip(points, points[1:]):
-            g = (b - a).total_seconds()
-            longest = max(longest, g)
-            if g > gap_s:
-                gaps += 1
-    d.app_sync_gaps, d.app_max_sync_gap_s = gaps, int(longest)
+# No connection measure is derived. The app's sync key carries its answer revision, so a
+# heartbeat with no new answer replays the previous key and stores nothing: stored sync rows
+# track answer changes, not connectivity (attempt 1103: 325 syncs logged, ~34 stored).
 
 
 # ── output ─────────────────────────────────────────────────────────────────────────────────
@@ -338,7 +319,7 @@ ATTEMPT_COLUMNS = [
     "app_lockdown_required", "browser_exempt_at_start",
     "warnings", "warning_rows", "absences_inferred", "forced_submit",
     "submit_source", "submit_delay_s", "on_time_submission", "swept_late", "open_at_snapshot",
-    "stuck_incomplete", "post_close_saves", "app_sync_gaps", "app_max_sync_gap_s",
+    "stuck_incomplete", "post_close_saves",
     "state", "score", "scoring_scale", "pass_mark", "passed",
 ]
 STRIKE_COLUMNS = [
@@ -392,8 +373,6 @@ def attempt_row(row, d: Derived, h: Hasher) -> dict:
         "open_at_snapshot": flag(d.open_at_snapshot),
         "stuck_incomplete": flag(d.swept_late or d.open_at_snapshot),
         "post_close_saves": d.post_close_saves,
-        "app_sync_gaps": blank(d.app_sync_gaps),
-        "app_max_sync_gap_s": blank(d.app_max_sync_gap_s),
         "state": row["current_state"],
         "score": blank(row["score"]),
         "scoring_scale": (row["paper_scale"] if pinned else row["scoring_scale"]) or "",
@@ -481,7 +460,6 @@ def run(args) -> dict:
         d.strikes = derive_strikes(reqs, audit.get(row["id"], []), forced=row["terminated_reason"] == "OFFSCREEN",
                                    cmin=args.continuation_min_s, cmax=args.continuation_max_s)
         derive_submission(row, reqs, d)
-        derive_sync_gaps(row, reqs, d, args.sync_gap_s)
         base = attempt_row(row, d, h)
         if base["warnings"] != base["warning_rows"]:
             mismatched += 1
@@ -498,7 +476,6 @@ def run(args) -> dict:
         "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "parameters": {
             "continuation_window_s": [args.continuation_min_s, args.continuation_max_s],
-            "app_sync_gap_s": args.sync_gap_s,
             "late_answer_grace_s": LATE_ANSWER_GRACE_S,
             "sweep_grace_s": SWEEP_GRACE_S,
             "submit_match_window_s": SUBMIT_MATCH_WINDOW_S,
