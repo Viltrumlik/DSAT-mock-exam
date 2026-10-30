@@ -278,9 +278,10 @@ public enum SupportSchedule {
     }
 
     /// Not while booking is paused: the server refuses a paused student's invitation, and the
-    /// picker would only fill with names to be turned down.
+    /// picker would only fill with names to be turned down. Nor on a full session — two
+    /// students is the most one holds, and the picker could only say "nobody".
     public static func canInvite(_ booking: SupportBooking, allowance: SupportAllowance?) -> Bool {
-        booking.status == .booked && !(allowance?.isPaused ?? false)
+        booking.status == .booked && booking.canAddMember && !(allowance?.isPaused ?? false)
     }
 
     /// The hero's first tile: "08:00–18:00".
