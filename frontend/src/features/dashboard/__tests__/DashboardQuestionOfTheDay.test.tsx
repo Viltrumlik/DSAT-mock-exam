@@ -13,6 +13,7 @@ vi.mock("@/lib/api", () => ({
 }));
 
 import { DashboardQuestionOfTheDay, formatAnswer } from "../DashboardQuestionOfTheDay";
+import { msUntilTashkentMidnight } from "@/features/dailyQuestions/dailyQuestionsHooks";
 
 const question = {
   id: 501,
@@ -165,5 +166,16 @@ describe("formatAnswer", () => {
     expect(formatAnswer(["0.5", "1/2"])).toBe("0.5 or 1/2");
     expect(formatAnswer(true)).toBe("True");
     expect(formatAnswer(null)).toBe("");
+  });
+});
+
+describe("msUntilTashkentMidnight", () => {
+  it("counts to midnight in Tashkent (UTC+5), not in UTC or the browser's zone", () => {
+    // 23:59:00 Tashkent = 18:59:00 UTC → one minute (plus the 5 s grace) to go.
+    expect(msUntilTashkentMidnight(Date.UTC(2026, 10, 2, 18, 59, 0))).toBe(60_000 + 5_000);
+    // 00:00:00 Tashkent exactly = 19:00 UTC → a whole day to the next one.
+    expect(msUntilTashkentMidnight(Date.UTC(2026, 10, 2, 19, 0, 0))).toBe(24 * 3600_000 + 5_000);
+    // 12:00 UTC = 17:00 Tashkent → seven hours.
+    expect(msUntilTashkentMidnight(Date.UTC(2026, 10, 2, 12, 0, 0))).toBe(7 * 3600_000 + 5_000);
   });
 });
