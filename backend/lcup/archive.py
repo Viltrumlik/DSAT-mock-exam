@@ -192,17 +192,19 @@ class Archiver:
         self._bump(entity, "changed", len(changed))
         return set(latest)
 
-    def mark_gone(self, entity: str, seen: set[str], scope, *, where: str) -> None:
+    def mark_gone(self, entity: str, seen: set[str], scope, *, where: str) -> bool:
         """Everything live in ``scope`` that a complete pull did not return. An empty pull where live
-        records exist marks nothing: lc-up answering "none" is far likelier a fault than an exodus."""
+        records exist marks nothing: lc-up answering "none" is far likelier a fault than an exodus. False
+        then — the pull is not to be trusted as complete."""
         live = list(scope.filter(gone_at__isnull=True).values_list("pk", "lcup_id"))
         if not seen and live:
             self.alerts.append(f"{where}: lc-up returned nothing where {len(live)} are archived; none marked gone")
-            return
+            return False
         gone = [pk for pk, key in live if key not in seen]
         for pks in _chunks(gone):
             LcupArchiveRecord.objects.filter(pk__in=pks).update(gone_at=self.now)
         self._bump(entity, "gone", len(gone))
+        return True
 
     # ── pulling ───────────────────────────────────────────────────────────
 
@@ -258,8 +260,8 @@ class Archiver:
         ]
         seen = self.store(entity, items)
         scope = LcupArchiveRecord.objects.filter(entity=entity, day__range=(start, end))
-        self.mark_gone(entity, seen, scope, where=f"{entity} {start}..{end}")
-        return True
+        # An empty answer over records we hold is suspect: the window stays due and is read again next run.
+        return self.mark_gone(entity, seen, scope, where=f"{entity} {start}..{end}")
 
     def pull_windows(self) -> None:
         since = conf.archive_since()

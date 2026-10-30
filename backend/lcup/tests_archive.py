@@ -166,6 +166,22 @@ class ArchiveTests(TestCase):
         self.assertIsNotNone(rec(E.ATTENDANCE, 100).gone_at)
         self.assertIsNone(rec(E.ATTENDANCE, 101).gone_at)
 
+    def test_an_old_window_answered_empty_over_held_records_stays_due(self):
+        start = SINCE
+        archiver = A.Archiver(lc_up(), today=TODAY)
+        archiver.pull_window(E.ATTENDANCE, f"{API}/attendance", None, start, start + timedelta(days=A.WINDOW_DAYS - 1))
+        archiver = A.Archiver(lc_up(**{f"{API}/attendance": windowed([])}), today=TODAY)
+        archiver.pull_windows()
+        self.assertTrue(any("returned nothing" in a for a in archiver.alerts))
+        self.assertFalse(LcupArchiveMark.objects.filter(key=A._window_key(E.ATTENDANCE, start)).exists())
+        self.assertIsNone(rec(E.ATTENDANCE, 101).gone_at)
+
+        client = lc_up()
+        A.Archiver(client, today=TODAY).pull_windows()
+        asked = [p["from"] for path, p in client.calls if path == f"{API}/attendance"]
+        self.assertIn(start.isoformat(), asked)
+        self.assertTrue(LcupArchiveMark.objects.filter(key=A._window_key(E.ATTENDANCE, start)).exists())
+
     def test_an_unlisted_student_is_fetched_by_id_and_not_marked_gone(self):
         client = lc_up(**{
             f"{API}/payments": windowed([{"id": 901, "date": "2026-10-02", "student_id": 55, "amount": 1}]),
