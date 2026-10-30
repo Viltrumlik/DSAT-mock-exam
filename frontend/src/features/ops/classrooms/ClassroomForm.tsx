@@ -1,13 +1,13 @@
 "use client";
 
-import { useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useId, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Lock, SquarePen } from "lucide-react";
 import { classesApi } from "@/lib/api";
 import { useToast } from "@/components/ToastProvider";
 import { levelsForSubject, levelLabel } from "@/lib/levels";
 import { useBranches, useRegions } from "@/features/org/orgHooks";
 import { Fieldset } from "@/features/ops/people/Fieldset";
-import { serverReason, type ClassroomCore } from "./classroomsApi";
+import { serverReason, telegramChatIdProblem, type ClassroomCore } from "./classroomsApi";
 
 /**
  * A class's own fields (`PATCH /classes/<id>/details/`), grouped the way an admin thinks of a
@@ -65,6 +65,7 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
   const [regionPick, setRegionPick] = useState<string | null>(null);
   const [branchId, setBranchId] = useState(room.branch ? String(room.branch.id) : "");
   const [chatId, setChatId] = useState(room.telegram_chat_id);
+  const chatRef = useRef<HTMLInputElement>(null);
   const [groupUrl, setGroupUrl] = useState(room.telegram_group_url);
   const [maxStudents, setMaxStudents] = useState(room.max_students == null ? "" : String(room.max_students));
   const [saving, setSaving] = useState(false);
@@ -85,10 +86,13 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
 
   const id = (field: string) => `${uid}-${field}`;
   const off = (field: string) => locked.has(field);
+  const chatIdProblem = telegramChatIdProblem(chatId);
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     if (!off("name") && !name.trim()) return setError("Give the classroom a name.");
+    // Already said under the field; take the admin there rather than send what the server refuses.
+    if (chatIdProblem) return chatRef.current?.focus();
     setSaving(true);
     setError(null);
     try {
@@ -243,7 +247,21 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
 
         <Group title="Telegram and notes">
           <Field id={id("chat")} label="Telegram chat id">
-            <input id={id("chat")} value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="-1001234567890" className={INPUT} />
+            <input
+              ref={chatRef}
+              id={id("chat")}
+              value={chatId}
+              onChange={(e) => setChatId(e.target.value)}
+              placeholder="-1001234567890"
+              aria-invalid={chatIdProblem ? true : undefined}
+              aria-describedby={chatIdProblem ? id("chat-problem") : undefined}
+              className={INPUT}
+            />
+            {chatIdProblem ? (
+              <p id={id("chat-problem")} className="text-[13px] font-medium text-danger-foreground">
+                {chatIdProblem}
+              </p>
+            ) : null}
           </Field>
           <Field id={id("url")} label="Telegram link">
             <input id={id("url")} value={groupUrl} onChange={(e) => setGroupUrl(e.target.value)} placeholder="https://t.me/…" className={INPUT} />
