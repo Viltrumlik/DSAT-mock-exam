@@ -64,3 +64,30 @@ def attendance_checks() -> dict:
     from .followups import send_lesson_checks
 
     return send_lesson_checks()
+
+
+#: The nightly archive runs alone; the sync goes on beside it — the client paces both to lc-up's limit.
+ARCHIVE_RUNNING_KEY = "lcup:archive-running"
+
+
+def archive_exclusive(dry_run: bool):
+    """One archive pass at a time (beat, the command): ``None`` while another is still going."""
+    from .archive import run_archive
+
+    if not cache.add(ARCHIVE_RUNNING_KEY, "1", timeout=3 * 60 * 60):
+        return None
+    try:
+        return run_archive(default_client(), dry_run=dry_run)
+    finally:
+        cache.delete(ARCHIVE_RUNNING_KEY)
+
+
+@shared_task(name="lcup.tasks.archive")
+def archive() -> dict:
+    """lcup.archive, nightly. Only reads lc-up."""
+    from .conf import archive_enabled
+
+    if not (lcup_enabled() and archive_enabled()):
+        return {"skipped": "disabled"}
+    run = archive_exclusive(dry_run=False)
+    return {"skipped": "already running"} if run is None else {"run": run.pk, "ok": run.ok}

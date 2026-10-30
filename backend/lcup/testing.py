@@ -17,7 +17,8 @@ class FakeLcupClient:
     """Answers from a dict keyed by path.
 
     A value may be a list (rows, for ``fetch_all`` or as a ``get`` body's ``data``), a dict (a
-    whole ``get`` body) or an ``Exception`` instance, which is raised. Every call is recorded in
+    whole ``get`` body), an ``Exception`` instance, which is raised, or a callable taking the params
+    and returning any of those. Every call is recorded in
     ``.calls`` as ``(path, params)``.
     """
 
@@ -29,6 +30,8 @@ class FakeLcupClient:
     def _lookup(self, path, params):
         self.calls.append((path, dict(params or {})))
         value = self.data.get(path, [])
+        if callable(value):  # answers by the params, e.g. a date window
+            value = value(dict(params or {}))
         if isinstance(value, Exception):
             raise value
         return value

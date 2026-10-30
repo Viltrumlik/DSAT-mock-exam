@@ -338,6 +338,11 @@ LCUP_FREE_TRIAL_LESSONS = int(os.getenv("LCUP_FREE_TRIAL_LESSONS", "1") or 1)
 # A linked learner's name and phone follow lc-up on every sync and are not edited here (lcup.profiles;
 # owner, 2026-10-28: "To'liq lc-up bo'yicha"). Off by default; literal "true" only.
 LCUP_PROFILE_SYNC_ENABLED = os.getenv("LCUP_PROFILE_SYNC_ENABLED", "False").lower() == "true"
+# The archive (backend/lcup/archive.py; owner, 2026-10-30: the centre is leaving lc-up, so everything its API
+# gives goes into our database first): every night a read-only copy of every lc-up record, with history.
+# Attendance and payments from SINCE. Off by default; literal "true" only.
+LCUP_ARCHIVE_ENABLED = os.getenv("LCUP_ARCHIVE_ENABLED", "False").lower() == "true"
+LCUP_ARCHIVE_SINCE = os.getenv("LCUP_ARCHIVE_SINCE", "2025-01-01").strip()
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.
@@ -693,6 +698,12 @@ CELERY_BEAT_SCHEDULE = {
     "lcup-attendance-checks": {
         "task": "lcup.tasks.attendance_checks",
         "schedule": crontab(minute="*/5"),
+    },
+    # The lc-up archive (lcup.archive): a read-only copy of everything lc-up's API serves, at 03:05 Tashkent,
+    # when nobody is marking attendance. Returns at once while LCUP_ENABLED or LCUP_ARCHIVE_ENABLED is off.
+    "lcup-archive": {
+        "task": "lcup.tasks.archive",
+        "schedule": crontab(hour=3, minute=5),
     },
     # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
     # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,

@@ -450,6 +450,19 @@ class AttendancePushListView(_AdminView):
 
 
 
+# ── archive ───────────────────────────────────────────────────────────────
+
+
+class ArchiveView(_AdminView):
+    """What the lc-up archive holds (lcup.archive): counts per kind of record, the backfill, the last runs.
+    Never the records themselves — they carry phones and balances."""
+
+    def get(self, request):
+        from .archive import summary
+
+        return Response(summary())
+
+
 # ── follow-ups (/ops/trials) ──────────────────────────────────────────────
 
 
