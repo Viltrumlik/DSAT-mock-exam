@@ -30,6 +30,7 @@ import { useDashboardData, type DashboardModel, type ExamDateOption } from "./us
 import { gridRange, isoDate, useStudentSchedule } from "./useStudentSchedule";
 import { DashboardStories } from "./DashboardStories";
 import { DashboardPulse } from "./DashboardPulse";
+import { DashboardQuestionOfTheDay } from "./DashboardQuestionOfTheDay";
 
 const WEEKDAYS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -125,6 +126,10 @@ function DashboardBody({
 
         {/* Level, XP, points and strikes, one fact per chip. */}
         <DashboardPulse />
+
+        {/* Question of the Day — one per subject, at the student's level. Renders nothing
+            when there is nothing to answer (flag off, no levelled class, empty list). */}
+        <DashboardQuestionOfTheDay />
 
         {/* Calendar + right column */}
         <ScheduleSection />

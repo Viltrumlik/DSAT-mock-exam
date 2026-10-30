@@ -28,6 +28,10 @@ EVENT_MANUAL = "MANUAL"                 # an admin adjustment, amount always exp
 #: One price for every event, so the learning center retunes one row rather than one per event.
 EVENT_ATTENDED = "EVENT_ATTENDED"
 
+#: The Question of the Day answered right, first time (daily_questions). Points, not coins —
+#: the owner's call (2026-10-30): coins come from points the way they always do.
+EVENT_DAILY_QUESTION = "DAILY_QUESTION"
+
 # ── The one event that SPENDS ─────────────────────────────────────────────────
 #
 # Every other event in this file adds points. This one takes them away, and it is in the same
@@ -65,6 +69,7 @@ EVENT_CHOICES = [
     (EVENT_CLASSWORK_MANUAL, "Classwork awarded by a teacher"),
     (EVENT_MANUAL, "Manual adjustment"),
     (EVENT_ATTENDED, "Attended an event"),
+    (EVENT_DAILY_QUESTION, "Question of the Day answered"),
     (EVENT_COIN_CONVERSION, "Turned into coins"),
     # Legacy — kept so historical rows still read. Never awarded.
     #
@@ -95,6 +100,7 @@ DEFAULT_POINTS = {
     EVENT_CLASSWORK_MANUAL: 0,   # the teacher names the amount; see EVENT_MANUAL
     EVENT_MANUAL: 0,        # always passed explicitly; a default would be a footgun
     EVENT_ATTENDED: 10,
+    EVENT_DAILY_QUESTION: 2,
     # Not a price. A conversion's amount is whatever the student chose to spend, negated;
     # this 0 exists only so a lookup by event never misses, and `services.award` must never
     # be handed this event in the first place.
@@ -302,3 +308,8 @@ def event_attendance_key(registration_id: int) -> str:
     same row, which keeps one identity at the door and one in the ledger.
     """
     return f"event:{registration_id}"
+
+
+def daily_question_key(assignment_id: int) -> str:
+    """One award per dealt question: the assignment row is the student's one try at it."""
+    return f"daily_question:{assignment_id}"

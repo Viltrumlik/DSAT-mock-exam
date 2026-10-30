@@ -222,6 +222,7 @@ INSTALLED_APPS = [
     'desktop.apps.DesktopConfig',
     'lcup.apps.LcupConfig',
     'sms.apps.SmsConfig',
+    'daily_questions.apps.DailyQuestionsConfig',
 ]
 
 MIDDLEWARE = [
@@ -359,6 +360,9 @@ SMS_PRICE_PER_PART = int(os.getenv("SMS_PRICE_PER_PART", "170") or 170)
 # Off: sign-ups are "student" and the lc-up sync changes no role. On: sign-ups are "public_student"
 # and the sync moves linked learners between the two roles (users.audience, lcup.audience).
 PUBLIC_SPLIT_ENABLED = os.getenv("PUBLIC_SPLIT_ENABLED", "False").lower() == "true"
+# Question of the Day (backend/daily_questions, owner 2026-10-30). Off: the card is hidden and the API
+# deals nothing. The month's lists are still built on the 1st, so turning it on mid-month has questions.
+DAILY_QUESTIONS_ENABLED = os.getenv("DAILY_QUESTIONS_ENABLED", "False").lower() == "true"
 # Past papers ship BOTH modules in the open response (no network wait at the module boundary,
 # fully offline sittings). Past papers are not adaptive and carry no answer key, so the only cost
 # is that a determined student could pre-read module 2 of a practice paper. Off: module 2 comes
@@ -727,6 +731,12 @@ CELERY_BEAT_SCHEDULE = {
     "sms-check-statuses": {
         "task": "sms.tasks.check_statuses",
         "schedule": crontab(minute=30),
+    },
+    # Question of the Day: this month's lists, from last month's assessment answers, just after midnight
+    # on the 1st (CELERY_TIMEZONE is Tashkent). The card builds them itself if this did not run.
+    "daily-questions-build-pools": {
+        "task": "daily_questions.tasks.build_pools",
+        "schedule": crontab(day_of_month=1, hour=0, minute=5),
     },
 }
 
