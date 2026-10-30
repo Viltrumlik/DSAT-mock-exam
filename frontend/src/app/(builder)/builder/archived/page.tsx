@@ -17,7 +17,7 @@ export default function ArchivedContentPage() {
       setLoading(true);
       setError(null);
       try {
-        const data = await assessmentsAdminApi.listSets({ limit: 200 });
+        const data = await assessmentsAdminApi.listAllSets();
         if (!cancelled) setSets(data.results);
       } catch {
         if (!cancelled) setError("Could not load assessment sets.");

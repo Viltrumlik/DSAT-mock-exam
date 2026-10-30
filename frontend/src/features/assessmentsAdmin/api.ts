@@ -7,6 +7,11 @@ import type {
   Subject,
 } from "@/features/assessments/types";
 
+/** The set list endpoint's largest page (`max_limit` in AdminAssessmentSetListCreateView). */
+const LIST_ALL_PAGE_SIZE = 200;
+/** A runaway guard, not a real bound: 50 pages is 10,000 sets. */
+const LIST_ALL_MAX_PAGES = 50;
+
 export type PaginatedSets = {
   count: number;
   next: string | null;
@@ -46,6 +51,27 @@ export const assessmentsAdminApi = {
     // Fallback for legacy flat-array response
     const arr = Array.isArray(data) ? (data as AssessmentSet[]) : [];
     return { count: arr.length, next: null, previous: null, results: arr };
+  },
+  /**
+   * EVERY set, page by page. The endpoint caps a page at 200 (`max_limit`), so a single
+   * `limit: 200` call silently drops the oldest sets once the catalogue passes 200 — which it
+   * did on 2026-10-28, when 76 sets (48 of the 51 Math Middle ones) vanished from the builder.
+   * Pages are read one after another until the server says there is no next one.
+   */
+  listAllSets: async (params?: { subject?: Subject; category?: string }): Promise<PaginatedSets> => {
+    const results: AssessmentSet[] = [];
+    let count = 0;
+    for (let page = 0; page < LIST_ALL_MAX_PAGES; page += 1) {
+      const chunk = await assessmentsAdminApi.listSets({
+        ...params,
+        limit: LIST_ALL_PAGE_SIZE,
+        offset: page * LIST_ALL_PAGE_SIZE,
+      });
+      results.push(...chunk.results);
+      count = chunk.count;
+      if (!chunk.next || chunk.results.length === 0) break;
+    }
+    return { count: Math.max(count, results.length), next: null, previous: null, results };
   },
   getSet: async (id: number): Promise<AssessmentSet> => {
     return (await assessmentsAdminClient.adminGetSet(id)) as AssessmentSet;
