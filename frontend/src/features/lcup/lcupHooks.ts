@@ -14,6 +14,7 @@ export const lcupKeys = {
   accounts: [...ROOT, "accounts"] as const,
   attendancePushes: [...ROOT, "attendance-pushes"] as const,
   followups: [...ROOT, "followups"] as const,
+  archive: [...ROOT, "archive"] as const,
 };
 
 /** Polled: a queued sync finishes in the worker, and the run list is where it shows up. */
@@ -49,6 +50,10 @@ export function useLcupFollowups(options: { enabled?: boolean } = {}) {
     refetchInterval: 60_000,
     enabled: options.enabled ?? true,
   });
+}
+
+export function useLcupArchive() {
+  return useQuery({ queryKey: lcupKeys.archive, queryFn: () => lcupApi.archive() });
 }
 
 export function useLcupAccounts() {

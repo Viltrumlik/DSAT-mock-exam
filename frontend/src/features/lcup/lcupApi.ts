@@ -129,6 +129,43 @@ export interface LcupAttendancePush {
   sent_at: string | null;
 }
 
+export type ArchiveEntityName =
+  | "filial" | "course" | "payment_method" | "absence_reason" | "teacher"
+  | "group" | "student" | "group_member" | "attendance" | "payment";
+
+/** One kind of lc-up record in the archive (lcup.archive): how many we hold, how many lc-up no longer serves. */
+export interface LcupArchiveEntity {
+  entity: ArchiveEntityName;
+  label: string;
+  total: number;
+  live: number;
+  gone: number;
+  versions: number;
+  first_day: string | null;
+  last_day: string | null;
+  last_seen_at: string | null;
+}
+
+export interface LcupArchiveRun {
+  id: number;
+  started_at: string;
+  finished_at: string | null;
+  dry_run: boolean;
+  ok: boolean;
+  counts: Record<string, Record<string, number>>;
+  errors: string[];
+  alerts: string[];
+}
+
+/** The copy of lc-up kept for the day the centre leaves it: counts only — never the records. */
+export interface LcupArchive {
+  enabled: boolean;
+  since: string;
+  entities: LcupArchiveEntity[];
+  backfill: Record<string, { done: number; total: number }>;
+  runs: LcupArchiveRun[];
+}
+
 export type TrialState = "not_yet" | "came" | "used";
 export type MissingReason = "needs_review" | "ignored" | "no_account" | "not_seated";
 
@@ -240,6 +277,10 @@ export const lcupApi = {
   },
   async attendancePushes(): Promise<LcupAttendancePush[]> {
     const { data } = await api.get<LcupAttendancePush[]>("/lcup/attendance/pushes/");
+    return data;
+  },
+  async archive(): Promise<LcupArchive> {
+    const { data } = await api.get<LcupArchive>("/lcup/archive/");
     return data;
   },
   async followups(): Promise<LcupFollowups> {
