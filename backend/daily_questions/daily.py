@@ -41,7 +41,10 @@ from rewards.services import award
 from users.permissions import is_frozen_for_access
 
 from .models import DailyQuestionAssignment
-from .pools import is_blank_answer, month_start, next_month, pool_for
+from .pools import dealable, is_blank_answer, month_start, next_month, pool_for
+
+#: Longest typed answer accepted. A grid-in or a word, never an essay.
+MAX_ANSWER_CHARS = 200
 
 #: English first, then Math — the order the card lists them in.
 SUBJECT_ORDER = (AssessmentSet.SUBJECT_ENGLISH, AssessmentSet.SUBJECT_MATH)
@@ -103,7 +106,9 @@ def tracks_for(user) -> list[Track]:
 
 def _deal(user, track: Track, day: date) -> DailyQuestionAssignment | None:
     pool = pool_for(month_start(day), track.subject, track.level)
-    question_ids = list(pool.items.order_by("rank").values_list("question_id", flat=True))
+    if pool is None:
+        return None  # another request is building the month's lists right now
+    question_ids = dealable(list(pool.items.order_by("rank").values_list("question_id", flat=True)))
     if not question_ids:
         return None
     dealt = Counter(
@@ -164,6 +169,8 @@ def answer(user, assignment_id: int, value: object) -> DailyQuestionAssignment:
         raise AnswerRefused("unavailable", "The Question of the Day is not available.")
     if is_blank_answer(value):
         raise AnswerRefused("blank", "Choose or type an answer first.")
+    if isinstance(value, (list, dict)) or (isinstance(value, str) and len(value) > MAX_ANSWER_CHARS):
+        raise AnswerRefused("invalid", "That answer can't be checked.")
     with transaction.atomic():
         assignment = (
             DailyQuestionAssignment.objects.select_for_update()
@@ -178,16 +185,23 @@ def answer(user, assignment_id: int, value: object) -> DailyQuestionAssignment:
             raise AnswerRefused("expired", "This question was for another day.")
         question = assignment.question
         assignment.answer = value
-        assignment.is_correct = grade_answer(
-            question_type=question.question_type,
-            correct_answer=question.correct_answer,
-            answer=value,
-            config=question.grading_config or {},
-        )
+        try:
+            assignment.is_correct = grade_answer(
+                question_type=question.question_type,
+                correct_answer=question.correct_answer,
+                answer=value,
+                config=question.grading_config or {},
+            )
+        except (ArithmeticError, ValueError, TypeError):
+            # "NaN" against a numeric tolerance, and the like: not a right answer.
+            assignment.is_correct = False
         assignment.answered_at = timezone.now()
         assignment.save(update_fields=["answer", "is_correct", "answered_at"])
         if assignment.is_correct:
-            award(
+            # `award` swallows its own failures and returns None. Taking the answer anyway
+            # would spend the student's one try and pay nothing, with no way back — so the
+            # whole answer is undone instead, and they can simply press the button again.
+            paid = award(
                 user,
                 reward_const.EVENT_DAILY_QUESTION,
                 idempotency_key=reward_const.daily_question_key(assignment.pk),
@@ -196,4 +210,6 @@ def answer(user, assignment_id: int, value: object) -> DailyQuestionAssignment:
                 source_id=assignment.pk,
                 reason=f"Question of the Day, {assignment.date:%Y-%m-%d}",
             )
+            if paid is None:  # raising out of the atomic block rolls the answer back
+                raise AnswerRefused("try_again", "Your answer could not be saved. Please try again.")
     return assignment

@@ -60,6 +60,9 @@ function isBlank(value: unknown): boolean {
 export function DashboardQuestionOfTheDay() {
   const today = useTodaysQuestions();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Drafts live here, not in the panel: the panel remounts on a subject switch, and a student
+  // who glances at Math must come back to the English answer they had already picked.
+  const [drafts, setDrafts] = useState<Record<number, unknown>>({});
 
   if (today.isPending) return null;
 
@@ -130,7 +133,13 @@ export function DashboardQuestionOfTheDay() {
         )}
       </div>
 
-      <QuestionPanel key={current.id} item={current} reward={reward} />
+      <QuestionPanel
+        key={current.id}
+        item={current}
+        reward={reward}
+        draft={drafts[current.id] ?? null}
+        onDraft={(value) => setDrafts((prev) => ({ ...prev, [current.id]: value }))}
+      />
 
       {allDone ? (
         <p className="mt-4 text-center text-[13px] font-semibold text-muted-foreground">
@@ -141,8 +150,17 @@ export function DashboardQuestionOfTheDay() {
   );
 }
 
-function QuestionPanel({ item, reward }: { item: DailyQuestion; reward: DailyQuestionReward }) {
-  const [draft, setDraft] = useState<unknown>(null);
+function QuestionPanel({
+  item,
+  reward,
+  draft,
+  onDraft,
+}: {
+  item: DailyQuestion;
+  reward: DailyQuestionReward;
+  draft: unknown;
+  onDraft: (value: unknown) => void;
+}) {
   const submit = useAnswerDailyQuestion();
   const q = item.question;
   const result = item.result;
@@ -175,7 +193,7 @@ function QuestionPanel({ item, reward }: { item: DailyQuestion; reward: DailyQue
           type={q.question_type}
           choices={parseChoices(q.choices)}
           value={result ? result.answer : draft}
-          onChange={setDraft}
+          onChange={onDraft}
           optionImages={optionImages}
         />
       </div>

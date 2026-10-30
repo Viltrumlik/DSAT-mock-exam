@@ -214,6 +214,22 @@ class RankingTests(TestCase):
         [only] = rank_questions(*OCTOBER)[("math", "junior")]
         self.assertEqual((only.question_id, only.answers, only.correct), (b.id, 5, 1))
 
+    def test_one_student_counts_once_for_a_bank_question_met_twice(self):
+        bank = BankQuestion.objects.create(
+            qb_id="QB-MATH-000002", subject="MATH", question_type="MULTIPLE_CHOICE",
+            question_text="twice", difficulty="HARD",
+        )
+        other_set = self.w.aset()
+        a = self.w.question(self.aset, bank_question=bank)
+        b = self.w.question(other_set, bank_question=bank)
+        other_hw = self.w.homework(self.cls, other_set)
+        for _ in range(5):
+            s = make_user()
+            self.w.sit(self.hw, {a: False}, student=s, when=at(date(2026, 10, 3)))
+            self.w.sit(other_hw, {b: True}, student=s, when=at(date(2026, 10, 9)))
+        [only] = rank_questions(*OCTOBER)[("math", "junior")]
+        self.assertEqual((only.answers, only.correct), (5, 0))  # each student's earlier answer
+
     def test_the_list_stops_at_thirty(self):
         questions = [self.w.question(self.aset) for _ in range(POOL_SIZE + 2)]
         students = [make_user() for _ in range(5)]
@@ -256,6 +272,13 @@ class BuildPoolsTests(TestCase):
         self.assertEqual(after.pk, before.pk)
         self.assertIsNotNone(after.rebuilt_at)
         self.assertEqual(list(after.items.values_list("question_id", flat=True)), [newer.id, self.q.id])
+
+    def test_while_one_request_builds_the_others_get_nothing(self):
+        from django.core.cache import cache
+        cache.add("daily_questions:build:2026-11", 1, timeout=60)
+        self.addCleanup(cache.delete, "daily_questions:build:2026-11")
+        self.assertIsNone(pool_for(NOVEMBER, "math", "junior"))
+        self.assertFalse(DailyQuestionPool.objects.exists())
 
     def test_pool_for_builds_the_month_when_nobody_has(self):
         self.assertFalse(DailyQuestionPool.objects.exists())
@@ -378,6 +401,23 @@ class DealTests(TestCase):
         self.w.enroll(self.student, junior)
         self.assertEqual(daily.todays_questions(self.student)[0].pk, today.pk)
 
+    def test_a_question_that_went_bad_mid_month_is_not_dealt(self):
+        self.w.enroll(self.student, self.math)
+        reported, off, good = self.math_qs
+        QuestionErrorReport.objects.create(
+            system=QuestionErrorReport.SYSTEM_ASSESSMENT, question_id=reported.id, reporter=make_user(),
+            category=QuestionErrorReport.CATEGORY_ANSWER_KEY, status=QuestionErrorReport.STATUS_NEW,
+        )
+        AssessmentQuestion.objects.filter(pk=off.pk).update(is_active=False)
+        for day in range(2, 5):
+            self.clock(date(2026, 11, day))
+            self.assertEqual(daily.todays_questions(self.student)[0].question_id, good.id)
+
+    def test_nothing_is_dealt_when_every_question_went_bad(self):
+        self.w.enroll(self.student, self.math)
+        AssessmentSet.objects.filter(pk=self.math_qs[0].assessment_set_id).update(is_active=False)
+        self.assertEqual(daily.todays_questions(self.student), [])
+
     def test_an_empty_list_deals_nothing_in_that_subject(self):
         self.w.enroll(self.student, self.english)
         self.w.enroll(self.student, self.w.classroom(Classroom.SUBJECT_MATH, Classroom.LEVEL_JUNIOR))
@@ -486,6 +526,34 @@ class ApiTests(TestCase):
             question=grid_in, rank=1, answers_count=10, correct_count=1)
         card = self.today()["questions"][0]
         self.assertTrue(self.answer(card["id"], "1/2").json()["result"]["is_correct"])
+
+    def test_a_reward_that_fails_to_write_undoes_the_answer(self):
+        card = self.today()["questions"][0]
+        with mock.patch("daily_questions.daily.award", return_value=None):
+            failed = self.answer(card["id"], "A")
+        self.assertEqual((failed.status_code, failed.json()["code"]), (503, "try_again"))
+        self.assertEqual(self.today()["questions"][0]["status"], "open")
+        self.assertEqual(self.answer(card["id"], "A").json()["result"]["earned"], {"points": 2, "xp": 2})
+
+    def test_answers_that_cannot_be_checked_are_refused(self):
+        card = self.today()["questions"][0]
+        for bad in (["A"], {"x": 1}, "A" * 201):
+            self.assertEqual(self.answer(card["id"], bad).status_code, 400, bad)
+        self.assertEqual(self.today()["questions"][0]["status"], "open")
+
+    def test_nan_against_a_tolerance_is_a_wrong_answer_not_a_crash(self):
+        aset = self.w.aset(AssessmentSet.SUBJECT_MATH, "senior")
+        grid_in = self.w.question(
+            aset, question_type=AssessmentQuestion.TYPE_NUMERIC, choices=[], correct_answer="2",
+            grading_config={"tolerance": "0.01"},
+        )
+        pool = DailyQuestionPool.objects.get(month=NOVEMBER, subject="math", level="senior")
+        pool.items.all().delete()
+        pool.items.create(question=grid_in, rank=1, answers_count=10, correct_count=1)
+        card = self.today()["questions"][0]
+        response = self.answer(card["id"], "NaN")
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertFalse(response.json()["result"]["is_correct"])
 
     @override_settings(DAILY_QUESTIONS_ENABLED=False)
     def test_flag_off_is_an_empty_card(self):

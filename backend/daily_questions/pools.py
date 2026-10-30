@@ -9,6 +9,8 @@ order the builder applies them (owner, 2026-10-30):
   rule as the teacher's item analysis, and for the same reason: the retry path re-serves the
   questions they got wrong, so a retake is a sample of their mistakes, not of the question.
   A first attempt made before the month began keeps its retakes inside the month out too.
+  And a student counts once per question: a bank question met in two homeworks is their
+  earlier answer, not two.
 - **Which answers.** Only questions the student actually answered. A blank is a student who
   ran out of time, not evidence that the question is hard; counting it would rank the last
   question of every long set as the hardest.
@@ -35,11 +37,12 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from fractions import Fraction
 
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from assessments.item_analysis import _first_counted_attempts
-from assessments.models import AssessmentAnswer, AssessmentAttempt, AssessmentSet
+from assessments.models import AssessmentAnswer, AssessmentAttempt, AssessmentQuestion, AssessmentSet
 from question_reports.models import QuestionErrorReport
 
 from .models import DailyQuestionPool, DailyQuestionPoolItem
@@ -50,6 +53,9 @@ POOL_SIZE = 30
 MIN_ANSWERS = 5
 
 OPEN_REPORT_STATUSES = (QuestionErrorReport.STATUS_NEW, QuestionErrorReport.STATUS_REVIEWING)
+
+#: Longest a month's build may hold the lock before another request may try again.
+BUILD_LOCK_SECONDS = 600
 
 #: Attempt ids per answers query — well under SQLite's bound-parameter limit.
 _ID_CHUNK = 900
@@ -126,11 +132,20 @@ def rank_questions(stats_from: date, stats_until: date) -> dict[tuple[str, str],
         submitted_at__gte=_local_midnight(stats_from),
         submitted_at__lt=_local_midnight(stats_until),
     )
-    homework_ids = list(in_month.values_list("homework_id", flat=True).distinct())
+    # `.order_by()` first: the model's default ordering would otherwise ride into the
+    # SELECT and make DISTINCT one row per attempt instead of one per homework.
+    homework_ids = list(in_month.order_by().values_list("homework_id", flat=True).distinct())
     first_ids = set(_first_counted_attempts(homework_ids))
-    attempt_ids = [pk for pk in in_month.values_list("id", flat=True) if pk in first_ids]
+    # Oldest first, so when one student meets the same bank question twice the earlier
+    # answer is the one that is kept.
+    attempt_ids = [
+        pk
+        for pk in in_month.order_by("submitted_at", "id").values_list("id", flat=True)
+        if pk in first_ids
+    ]
 
     tallies: dict[tuple[str, str], dict[tuple[str, int], _Tally]] = {}
+    counted: set[tuple[str, str, tuple[str, int], int]] = set()
     for start in range(0, len(attempt_ids), _ID_CHUNK):
         rows = (
             AssessmentAnswer.objects.filter(
@@ -140,21 +155,27 @@ def rank_questions(stats_from: date, stats_until: date) -> dict[tuple[str, str],
                 question__assessment_set__is_active=True,
             )
             .exclude(attempt__homework__classroom__level="")
+            .order_by("attempt__submitted_at", "attempt_id")
             .values_list(
                 "question_id",
                 "question__bank_question_id",
                 "question__assessment_set__subject",
                 "attempt__homework__classroom__level",
+                "attempt__student_id",
                 "answer",
                 "is_correct",
             )
         )
-        for question_id, bank_id, subject, level, answer, is_correct in rows:
+        for question_id, bank_id, subject, level, student_id, answer, is_correct in rows:
             if question_id in reported or is_blank_answer(answer):
                 continue
             if level not in AssessmentSet.allowed_levels_for_subject(subject):
                 continue
             key = ("bank", bank_id) if bank_id else ("question", question_id)
+            seen = (subject, level, key, student_id)
+            if seen in counted:
+                continue
+            counted.add(seen)
             bucket = tallies.setdefault((subject, level), {})
             bucket.setdefault(key, _Tally()).add(question_id, bool(is_correct))
 
@@ -228,15 +249,50 @@ def build_pools(month: date, *, rebuild: bool = False) -> list[DailyQuestionPool
     return list(existing.values())
 
 
-def pool_for(month: date, subject: str, level: str) -> DailyQuestionPool:
+def pool_for(month: date, subject: str, level: str) -> DailyQuestionPool | None:
     """The cohort's list for ``month``, building the month's lists first if nobody has yet.
 
     The 1st-of-the-month beat task is the intended builder. This is what keeps the card
     working when that task did not run — celery beat on this server has hung silently before.
+
+    Only ONE request builds. The ranking reads a whole month of answers, and a morning's worth
+    of students opening the dashboard at once must not each run it: whoever takes the lock
+    builds, and everyone else gets ``None`` (no question yet) until the rows are there. The
+    lock expires on its own, so a build that died with its worker is retried by a later card.
     """
     month = month_start(month)
     pool = DailyQuestionPool.objects.filter(month=month, subject=subject, level=level).first()
     if pool is not None:
         return pool
-    build_pools(month)
-    return DailyQuestionPool.objects.get(month=month, subject=subject, level=level)
+    lock = f"daily_questions:build:{month:%Y-%m}"
+    if not cache.add(lock, 1, timeout=BUILD_LOCK_SECONDS):
+        return None
+    try:
+        build_pools(month)
+    finally:
+        cache.delete(lock)
+    return DailyQuestionPool.objects.filter(month=month, subject=subject, level=level).first()
+
+
+def dealable(question_ids: list[int]) -> list[int]:
+    """The ids, in order, that may still be dealt today.
+
+    A list is fixed on the 1st, but a question can go bad after that: switched off, its set
+    archived, or reported as wrong. The question a whole cohort missed is the likeliest to
+    have a wrong key, and dealing it would tell a student who was right that they were wrong.
+    """
+    if not question_ids:
+        return []
+    reported = set(
+        QuestionErrorReport.objects.filter(
+            system=QuestionErrorReport.SYSTEM_ASSESSMENT,
+            status__in=OPEN_REPORT_STATUSES,
+            question_id__in=question_ids,
+        ).values_list("question_id", flat=True)
+    )
+    live = set(
+        AssessmentQuestion.objects.filter(
+            pk__in=question_ids, is_active=True, assessment_set__is_active=True
+        ).values_list("pk", flat=True)
+    )
+    return [qid for qid in question_ids if qid in live and qid not in reported]

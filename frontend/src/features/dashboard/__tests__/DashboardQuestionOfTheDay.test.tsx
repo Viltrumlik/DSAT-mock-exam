@@ -38,8 +38,14 @@ function today(questions: unknown[], extra: Record<string, unknown> = {}) {
   return { data: { date: "2026-11-02", enabled: true, reward: { points: 2, xp: 2 }, questions, ...extra } };
 }
 
+/** React Query hands results over on a timer (its notifyManager batches with setTimeout), so
+ *  draining microtasks alone is not enough — let a few macrotasks run too. */
 async function flush() {
-  for (let i = 0; i < 5; i++) await act(async () => { await Promise.resolve(); });
+  for (let i = 0; i < 5; i++) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  }
 }
 
 function button(match: (b: HTMLButtonElement) => boolean): HTMLButtonElement {
@@ -131,6 +137,18 @@ describe("DashboardQuestionOfTheDay", () => {
     })]));
     await mount();
     expect(host.textContent).toContain("Correct! +2 XP · +2 points");
+  });
+
+  it("keeps a picked answer across a subject switch", async () => {
+    get.mockResolvedValue(today([card({ id: 1, subject: "english", level: "junior" }), card({ id: 2 })]));
+    await mount();
+    const pick = () => button((b) => b.getAttribute("aria-pressed") !== null && (b.textContent ?? "").includes("beta"));
+    await act(async () => pick().click());
+    expect(pick().getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button((b) => (b.textContent ?? "").includes("Math · Senior")).click());
+    expect(pick().getAttribute("aria-pressed")).toBe("false");
+    await act(async () => button((b) => (b.textContent ?? "").includes("English · Junior")).click());
+    expect(pick().getAttribute("aria-pressed")).toBe("true");
   });
 
   it("lists two subjects side by side", async () => {

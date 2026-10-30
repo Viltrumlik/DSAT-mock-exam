@@ -23,6 +23,8 @@ _REFUSAL_STATUS = {
     "unavailable": http.HTTP_403_FORBIDDEN,
     "not_found": http.HTTP_404_NOT_FOUND,
     "blank": http.HTTP_400_BAD_REQUEST,
+    "invalid": http.HTTP_400_BAD_REQUEST,
+    "try_again": http.HTTP_503_SERVICE_UNAVAILABLE,
     "already_answered": http.HTTP_409_CONFLICT,
     "expired": http.HTTP_409_CONFLICT,
 }
