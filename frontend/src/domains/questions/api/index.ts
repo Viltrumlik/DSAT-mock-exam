@@ -20,11 +20,10 @@ import type { QuestionWithContext, QuestionBankFilters } from "../types";
  *
  * Implementation note: the backend's /assessments/admin/sets/ endpoint returns
  * sets with questions nested (AssessmentSetSerializer prefetches questions).
- * A single paginated call is sufficient for typical question bank sizes (<200 sets).
+ * Every page is read (`listAllSets`): the catalogue passed one page of 200 on 2026-10-28.
  *
  * Future: replace with a dedicated /assessments/admin/questions/ list endpoint
- * once the question bank grows beyond single-page capacity or requires
- * server-side text search.
+ * once the question bank needs server-side text search.
  *
  * @param filters Optional subject filter (applied server-side).
  */
@@ -32,11 +31,9 @@ export async function listAllQuestions(
   filters?: Pick<QuestionBankFilters, "subject">,
 ): Promise<QuestionWithContext[]> {
   const params =
-    filters?.subject && filters.subject !== "all"
-      ? { subject: filters.subject, limit: 200 }
-      : { limit: 200 };
+    filters?.subject && filters.subject !== "all" ? { subject: filters.subject } : undefined;
 
-  const data = await assessmentsAdminApi.listSets(params);
+  const data = await assessmentsAdminApi.listAllSets(params);
   const out: QuestionWithContext[] = [];
 
   for (const set of data.results) {

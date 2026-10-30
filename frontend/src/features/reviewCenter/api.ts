@@ -28,7 +28,8 @@ const byModuleOrder = <T extends { module_order?: number | null }>(a: T, b: T) =
 export async function listCatalog(type: ReviewContentType): Promise<ReviewCatalogItem[]> {
   switch (type) {
     case "assessment": {
-      const page = await assessmentsAdminApi.listSets({ limit: 500 });
+      // Every page: the endpoint caps one at 200, so `limit: 500` was quietly 200.
+      const page = await assessmentsAdminApi.listAllSets();
       return page.results.map((s) => ({
         id: s.id,
         title: s.title || `Set ${s.id}`,
