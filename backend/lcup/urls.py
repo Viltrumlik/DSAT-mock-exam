@@ -29,4 +29,5 @@ urlpatterns = [
     path("finance/exempt/<int:pk>/", views.FinanceExemptView.as_view(), name="lcup-finance-exempt"),
     path("attendance/pushes/", views.AttendancePushListView.as_view(), name="lcup-attendance-pushes"),
     path("followups/", views.FollowupsView.as_view(), name="lcup-followups"),
+    path("archive/", views.ArchiveView.as_view(), name="lcup-archive"),
 ]

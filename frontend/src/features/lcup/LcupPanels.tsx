@@ -20,6 +20,7 @@ import {
 } from "./lcupApi";
 import {
   useLcupAccounts,
+  useLcupArchive,
   useLcupAttendancePushes,
   useLcupAction,
   useLcupFollowups,
@@ -786,6 +787,92 @@ export function AttendancePushesPanel() {
         );
       })}
     </DenseTable>
+  );
+}
+
+// ── archive ──────────────────────────────────────────────────────────────
+
+/** A run's errors and alerts, or what it took in: "new" and "changed" summed over every kind of record. */
+function archiveRunNote(run: { counts: Record<string, Record<string, number>>; errors: string[]; alerts: string[] }) {
+  if (run.errors.length) return run.errors.join(" · ");
+  const sum = (key: string) => Object.values(run.counts).reduce((n, c) => n + (c[key] ?? 0), 0);
+  const note = `${sum("new")} new · ${sum("changed")} changed · ${sum("gone")} gone`;
+  return run.alerts.length ? `${note} · ${run.alerts.join(" · ")}` : note;
+}
+
+/**
+ * The copy of everything lc-up's API serves, kept for the day the centre leaves it. Read-only: the
+ * archive never writes to lc-up, and this panel shows counts, never the records (phones, balances).
+ */
+export function ArchivePanel() {
+  const q = useLcupArchive();
+  if (q.isLoading) return <Loading />;
+  if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
+  const { entities, backfill, runs, enabled, since } = q.data;
+  const held = entities.reduce((n, e) => n + e.total, 0);
+  return (
+    <div className="space-y-3">
+      <p className="text-[13px] text-muted-foreground">
+        {enabled ? "Copied every night at 03:05" : "The nightly copy is off (LCUP_ARCHIVE_ENABLED)"} — attendance and
+        payments from {since}.{" "}
+        {Object.entries(backfill)
+          .map(([entity, b]) => `${entity}: ${b.done} of ${b.total} older windows done`)
+          .join(" · ")}
+      </p>
+      {held === 0 ? (
+        <p className="text-[13px] text-muted-foreground">Nothing copied from lc-up yet.</p>
+      ) : (
+        <DenseTable
+          caption="lc-up records held"
+          head={
+            <>
+              <th scope="col" className={TH}>Record</th>
+              <th scope="col" className={TH_R}>Held</th>
+              <th scope="col" className={TH_R}>No longer in lc-up</th>
+              <th scope="col" className={TH_R}>Versions</th>
+              <th scope="col" className={TH}>Dates</th>
+              <th scope="col" className={TH}>Last seen</th>
+            </>
+          }
+        >
+          {entities.map((e) => (
+            <tr key={e.entity} className={TR}>
+              <td className={cn(TD, "font-medium")}>{e.label}</td>
+              <td className={TD_R}>{e.total}</td>
+              <td className={cn(TD_R, !e.gone && "text-muted-foreground")}>{e.gone}</td>
+              <td className={TD_R}>{e.versions}</td>
+              <td className={cn(TD, !e.first_day && "text-muted-foreground")}>
+                {e.first_day ? `${e.first_day} – ${e.last_day}` : "—"}
+              </td>
+              <td className={TD}>{when(e.last_seen_at)}</td>
+            </tr>
+          ))}
+        </DenseTable>
+      )}
+      {runs.length ? (
+        <DenseTable
+          caption="Archive runs"
+          head={
+            <>
+              <th scope="col" className={TH}>Started</th>
+              <th scope="col" className={TH}>Result</th>
+              <th scope="col" className={TH}>What it took in</th>
+            </>
+          }
+        >
+          {runs.map((run) => (
+            <tr key={run.id} className={TR}>
+              <td className={TD}>{when(run.started_at)}</td>
+              <td className={cn(TD, !run.ok && "text-danger")}>
+                {run.ok ? "OK" : "Failed"}
+                {run.dry_run ? " (dry run)" : ""}
+              </td>
+              <td className={cn(TD_WRAP, run.ok && "text-muted-foreground")}>{archiveRunNote(run)}</td>
+            </tr>
+          ))}
+        </DenseTable>
+      ) : null}
+    </div>
   );
 }
 

@@ -2,6 +2,7 @@
 ``settings.LCUP_*`` directly and a test can override them with ``override_settings``."""
 
 import re
+from datetime import date
 
 from django.conf import settings
 from django.utils.dateparse import parse_date
@@ -41,6 +42,20 @@ def debt_freeze_day() -> int:
     except (TypeError, ValueError):
         day = 6
     return min(max(day, 1), 28)
+
+
+def archive_enabled() -> bool:
+    return bool(getattr(settings, "LCUP_ARCHIVE_ENABLED", False))
+
+
+def archive_since():
+    """The first day of attendance and payments the archive copies. Before lc-up held anything, so a
+    window of nothing costs one request and is done."""
+    raw = str(getattr(settings, "LCUP_ARCHIVE_SINCE", "") or "").strip()
+    try:
+        return parse_date(raw) or date(2025, 1, 1)
+    except ValueError:
+        return date(2025, 1, 1)
 
 
 def credentials() -> dict:

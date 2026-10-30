@@ -308,3 +308,12 @@ class LcupSyncRun(models.Model):
 
     class Meta:
         ordering = ["-started_at"]
+
+
+from .models_archive import (  # noqa: E402,F401
+    ArchiveEntity,
+    LcupArchiveMark,
+    LcupArchiveRecord,
+    LcupArchiveRun,
+    LcupArchiveVersion,
+)
