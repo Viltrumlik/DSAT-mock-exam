@@ -12,6 +12,7 @@ import { publicStudentNav, studentNav, reviewNavSection } from "./navConfig";
 import { EventsHeaderButton, EventsMenuRow, StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
 import { StudentPrompts } from "./StudentPrompts";
+import { QOTD_PATH, QuestionOfTheDayPrompt } from "@/features/dailyQuestions/QuestionOfTheDayPrompt";
 
 /** Wires the generic AppShell with student auth, identity, and IA. */
 export default function StudentAppShell({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   const { isAuthenticated, me, globalInteractionBlockedHard } = useMe();
 
   const m = me as {
+    id?: number;
     first_name?: string;
     last_name?: string;
     profile_image_url?: string | null;
@@ -45,12 +47,14 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
   //  - the assignment creator/editor (/classes/<id>/assignments/new|.../edit) —
   //    full-window so the instructions + content library get the whole screen;
   //  - the vocabulary study modes (/vocabulary/sets/<id>/flashcards|matching|speed|test)
-  //    — timed, full-screen layers that must escape the shell's scroll container.
+  //    — timed, full-screen layers that must escape the shell's scroll container;
+  //  - the Question of the Day (/question-of-the-day) — the runner's own white sheet.
   const p = pathname || "";
   const isImmersiveRunner =
     /^\/assessments\/(attempt|result|review)\/[^/]+/.test(p) ||
     /^\/classes\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(p) ||
-    /^\/vocabulary\/sets\/\d+\/(flashcards|matching|speed|test)$/.test(p);
+    /^\/vocabulary\/sets\/\d+\/(flashcards|matching|speed|test)$/.test(p) ||
+    p === QOTD_PATH;
   if (isImmersiveRunner) {
     return (
       <AuthGuard>
@@ -97,6 +101,9 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
               Production put a number on it: twelve push subscriptions in the whole school.
               A modal interrupts once and is then remembered; see StudentPrompts. */}
           {isAuthenticated && !isReviewer ? <StudentPrompts surveys={!isPublic} /> : null}
+          {/* Today's Question of the Day, top right until the student solves it or says "Not
+              today". Centre learners only: a public learner is not dealt one. */}
+          {isAuthenticated && !isReviewer && !isPublic ? <QuestionOfTheDayPrompt userId={m?.id} /> : null}
           {children}
         </div>
       </AppShell>
