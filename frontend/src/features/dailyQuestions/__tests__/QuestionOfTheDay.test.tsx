@@ -198,6 +198,18 @@ describe("QuestionOfTheDayRunner", () => {
     expect(button(byText("Done for today"))).toBeTruthy();
   });
 
+  it("stays on the question just checked when both are open and no subject was asked for", async () => {
+    get.mockResolvedValue(today([card({ id: 1 }), card({ id: 2, subject: "english", level: "junior" })]));
+    post.mockResolvedValue({ data: card({ id: 1, status: "answered", result: wrongResult }) });
+    await mount(<QuestionOfTheDayRunner />);
+    await act(async () => button(choice("beta")).click());
+    await act(async () => button(byText("Check")).click());
+    await flush();
+    expect(post).toHaveBeenCalledWith("/daily-questions/1/answer/", { answer: "B" });
+    expect(host.textContent).toContain("Because alpha.");
+    expect(button(byText("Next: English question"))).toBeTruthy();
+  });
+
   it("shows what a right answer earned", async () => {
     get.mockResolvedValue(today([card({
       status: "answered",

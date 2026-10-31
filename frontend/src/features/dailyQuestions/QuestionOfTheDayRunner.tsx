@@ -227,7 +227,12 @@ export function QuestionOfTheDayRunner() {
               <button
                 type="button"
                 disabled={isBlank(draft) || submit.isPending}
-                onClick={() => submit.mutate({ id: current.id, answer: draft })}
+                onClick={() => {
+                  // Pin it: with no `?subject=` the fallback picks the first OPEN question, which
+                  // after this answer would be the other one — and the verdict would never show.
+                  setActiveId(current.id);
+                  submit.mutate({ id: current.id, answer: draft });
+                }}
                 className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-6 py-2 text-sm font-bold text-white transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {submit.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : null}
