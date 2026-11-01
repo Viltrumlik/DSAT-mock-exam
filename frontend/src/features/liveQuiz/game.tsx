@@ -16,7 +16,7 @@ import { Check, Clock, Flame, Snowflake, Trophy, Volume2, VolumeX, X } from "luc
 import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
-import type { LiveChoice, LiveParticipant, PowerUpKey } from "./api";
+import type { LiveChoice, LiveParticipant, PowerUpKey, TeamStanding } from "./api";
 import styles from "./game.module.css";
 import { GemIcon, PlayerAvatar } from "./avatars";
 import { POWERUPS, ordinal, tileColor } from "./theme";
@@ -675,6 +675,12 @@ export function PlayerLobby({ me, participants }: { me: LiveParticipant | null; 
           <GemIcon size={14} /> {me.avatar ? "Change your avatar" : "Pick an avatar in the shop"}
         </Link>
       )}
+      {me && typeof me.team === "number" && (
+        <p className="mt-1 inline-flex items-center gap-2 text-sm font-bold" style={{ color: tileColor(me.team) }}>
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: tileColor(me.team) }} />
+          You&apos;re on Team {TEAM_NAMES[me.team] ?? me.team + 1}
+        </p>
+      )}
       <p className="mt-2 text-sm text-white/60">{joined.length} in the room</p>
       <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
         {joined.slice(0, 40).map((p, i) => (
@@ -694,6 +700,68 @@ export function TrophyHeading({ title, subtitle }: { title: string; subtitle?: s
       <Trophy className={cn("mx-auto h-12 w-12 text-amber-300", styles.pop)} aria-hidden />
       <h1 className="mt-2 text-3xl font-extrabold">{title}</h1>
       {subtitle && <p className="mt-1 text-white/70">{subtitle}</p>}
+    </div>
+  );
+}
+
+export const TEAM_NAMES = ["Comets", "Falcons", "Tigers", "Waves", "Pixels", "Rockets"];
+
+/** Team mode: the teams as podium rows, so the same podium draws them. */
+export function teamRows(teams: TeamStanding[]): LiveParticipant[] {
+  return teams.map((team) => ({
+    id: team.team,
+    user_id: -1 - team.team,
+    display_name: `Team ${team.name}`,
+    status: "JOINED",
+    present: true,
+    score: team.score,
+    correct_count: 0,
+    answered_count: 0,
+    rank: team.rank,
+  }));
+}
+
+/** The projected lobby in team mode: one column per team; the host can move a player along. */
+export function TeamColumns({
+  participants,
+  teams,
+  onMove,
+}: {
+  participants: LiveParticipant[];
+  teams: number;
+  onMove?: (participant: LiveParticipant) => void;
+}) {
+  return (
+    <div className="grid w-full gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(teams, 3)}, minmax(0, 1fr))` }}>
+      {Array.from({ length: teams }, (_, team) => {
+        const members = participants.filter((p) => p.team === team);
+        return (
+          <div key={team} className={cn(styles.panel, "p-3")}>
+            <p className="mb-2 flex items-center gap-2 text-sm font-extrabold">
+              <span className="h-3 w-3 rounded-full" style={{ background: tileColor(team) }} />
+              Team {TEAM_NAMES[team] ?? team + 1}
+              <span className="ml-auto text-xs font-semibold text-white/60">{members.length}</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {members.map((p) => (
+                <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold">
+                  {p.display_name}
+                  {onMove && (
+                    <button
+                      type="button"
+                      onClick={() => onMove(p)}
+                      aria-label={`Move ${p.display_name} to the next team`}
+                      className="rounded-full px-1 text-white/60 hover:bg-white/15 hover:text-white"
+                    >
+                      ⇄
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

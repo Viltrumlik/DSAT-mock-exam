@@ -24,6 +24,7 @@ import type {
   LiveQuizMode,
   LiveQuizStatus,
   PowerUpKey,
+  TeamStanding,
 } from "./api";
 import {
   closeReasonText,
@@ -99,6 +100,8 @@ export interface LiveQuizRoom {
   frozen: boolean;
   /** Student-paced: this question is a second chance at one they missed. */
   secondTry: boolean;
+  /** Team mode: the teams' standings, best first. */
+  teams: TeamStanding[];
   inventory: PowerUpKey[];
   awarded: { key: PowerUpKey; at: number } | null;
   feedback: OwnFeedback | null;
@@ -136,6 +139,7 @@ const EMPTY: LiveQuizRoom = {
   armed: [],
   frozen: false,
   secondTry: false,
+  teams: [],
   inventory: [],
   awarded: null,
   feedback: null,
@@ -198,6 +202,8 @@ export function useLiveQuiz(sessionId: number | null) {
       submitAnswer: (questionId: number, answer: unknown) =>
         send("submit_answer", { question_id: questionId, answer }),
       usePowerUp: (key: PowerUpKey) => send("use_powerup", { powerup: key }),
+      moveTeam: (participantId: number, team: number) =>
+        send("move_team", { participant_id: participantId, team }),
     }),
     [send],
   );
@@ -264,6 +270,7 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
         armed: data.armed ?? [],
         frozen: Boolean(data.frozen),
         secondTry: Boolean(data.second_try),
+        teams: data.teams ?? [],
         inventory: data.me?.powerups ?? prev.inventory,
         board: data.board ? board : prev.board,
         participants: data.participants ?? [],
@@ -368,7 +375,7 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
       return { ...prev, tally: data as QuestionOutcome["tally"] };
 
     case "leaderboard_updated":
-      return { ...prev, leaderboard: data.rows ?? prev.leaderboard };
+      return { ...prev, leaderboard: data.rows ?? prev.leaderboard, teams: data.teams ?? prev.teams };
 
     case "player_progress": {
       const row = data.participant as LiveParticipant | undefined;
@@ -420,6 +427,7 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
         deadline: null,
         timeWarning: false,
         leaderboard: data.leaderboard?.rows ?? prev.leaderboard,
+        teams: data.leaderboard?.teams ?? prev.teams,
       };
 
     case "removed_from_session":

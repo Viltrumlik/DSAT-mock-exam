@@ -212,6 +212,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             const.CMD_REMOVE_PARTICIPANT: self._cmd_remove_participant,
             const.CMD_LEAVE_SESSION: self._cmd_leave,
             const.CMD_USE_POWERUP: self._cmd_use_powerup,
+            const.CMD_MOVE_TEAM: self._cmd_move_team,
         }
         handler = handlers.get(command)
         if handler is None:
@@ -308,6 +309,10 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         await self._broadcast(const.EV_LOBBY_UPDATED, await self._lobby())
         # Removing the last student still playing leaves nobody to wait for.
         await self._try_finish_now()
+
+    async def _cmd_move_team(self, content):
+        await self._move_team(content.get("participant_id"), content.get("team"))
+        await self._broadcast(const.EV_LOBBY_UPDATED, await self._lobby())
 
     async def _cmd_leave(self, _content):
         await self.close()
@@ -770,7 +775,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             ),
         }
         leaderboard = (
-            events.leaderboard(services.participants_of(session)) if move.finished else None
+            events.leaderboard(services.participants_of(session), teams=int(session.setting("teams") or 0)) if move.finished else None
         )
         return result, nxt, progress, leaderboard, services.standings_audience(session)
 
@@ -784,6 +789,11 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         ]
 
     @database_sync_to_async
+    def _move_team(self, participant_id, team):
+        session = LiveQuizSession.objects.get(pk=self.session_id)
+        services.move_team(session=session, participant_id=participant_id, team=team)
+
+    @database_sync_to_async
     def _finish_if_done(self) -> bool:
         session = LiveQuizSession.objects.select_related("classroom").get(pk=self.session_id)
         return services.finish_when_everyone_is_done(session=session)
@@ -795,7 +805,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         fingerprint = tuple((p.id, p.score, p.position, p.status) for p in players)
         return (
             session.status,
-            events.leaderboard(players),
+            events.leaderboard(players, teams=int(session.setting("teams") or 0)),
             fingerprint,
             services.standings_audience(session),
         )
@@ -811,7 +821,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _leaderboard_sync(self):
         session = LiveQuizSession.objects.get(pk=self.session_id)
-        return events.leaderboard(services.participants_of(session))
+        return events.leaderboard(services.participants_of(session), teams=int(session.setting("teams") or 0))
 
     async def _leaderboard(self):
         return await self._leaderboard_sync()

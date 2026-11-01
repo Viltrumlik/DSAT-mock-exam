@@ -100,5 +100,6 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 6. ~~Memes / music~~ — **answered: not needed.**
 7. ~~Question sources~~ — **answered: SAT questions too, from assessment sets** (the homework sets;
    copied into the room with images; 90 s default timer).
-8. iOS — update the app to the new look (separate PR)?
-9. Team mode — wanted?
+8. ~~iOS new look~~ — **answered: not now.**
+9. ~~Team mode~~ — **answered: yes, team score = SUM of members** → built: 2–6 teams, smallest-team
+   assignment at join, host moves players in the lobby, team podium.
