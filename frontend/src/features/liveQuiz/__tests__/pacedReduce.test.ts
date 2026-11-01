@@ -178,4 +178,12 @@ describe("team mode", () => {
     room = reduce(room, frame("game_finished", { leaderboard: { rows: [], teams: [team(0, 1200, 1), team(1, 900, 2)] } }));
     expect(room.teams[0].score).toBe(1200);
   });
+
+  it("follows the host moving this student to another team in the lobby", () => {
+    let room = reduce(EMPTY_ROOM, frame("session_state", { status: "LOBBY", config: { mode: "student_paced", teams: 2 }, participants: [{ ...ME, team: 0 }], me: { ...ME, team: 0 } }));
+    room = reduce(room, frame("lobby_updated", { participants: [{ ...ME, team: 1 }, { ...ME, id: 5, team: 0 }] }));
+    expect(room.me?.team).toBe(1);
+    room = reduce(room, frame("participant_left", { participants: [{ ...ME, id: 5, team: 0 }] }));
+    expect(room.me?.team).toBe(1);
+  });
 });

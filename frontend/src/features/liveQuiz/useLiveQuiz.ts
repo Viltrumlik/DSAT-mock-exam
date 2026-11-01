@@ -284,8 +284,14 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
 
     case "participant_joined":
     case "participant_left":
-    case "lobby_updated":
-      return { ...prev, participants: data.participants ?? prev.participants };
+    case "lobby_updated": {
+      const participants = data.participants ?? prev.participants;
+      // The host can move this student to another team in the lobby. Only the team comes from
+      // the room-wide row; the student's own frames keep everything else on `me`.
+      const mine = prev.me ? participants.find((p) => p.id === prev.me?.id) : undefined;
+      const me = prev.me && mine && mine.team !== prev.me.team ? { ...prev.me, team: mine.team } : prev.me;
+      return { ...prev, participants, me };
+    }
 
     case "game_started":
       return { ...prev, status: "STARTING", outcome: null, myAnswer: null, feedback: null };
