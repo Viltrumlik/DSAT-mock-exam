@@ -80,11 +80,11 @@ Frontend (`frontend/src/features/liveQuiz/`):
   returning `{"correct": int, "finish": int, "podium": int, "total": int}`
 - models: `GemWallet(user 1:1, balance)`, `GemTransaction(wallet, kind EARN|SPEND|ADJUST, amount, balance_after, session?, item_key, day, created_at)` with unique `(wallet, session)` where `kind=EARN`; `OwnedAvatarItem(user, item_key)` unique; `AvatarLook(user 1:1, character, skin)`.
 
-- [ ] Write failing tests: earnings (3 right + finished + 1st of 5 = 30+10+50 = 90; podium 0 with 2
+- [x] Write failing tests: earnings (3 right + finished + 1st of 5 = 30+10+50 = 90; podium 0 with 2
   players; tie at rank 2 both +30; not played to end → no +10); catalog (12 characters, 3 starters, every
   character has 3 skins, `parse` round-trips, unknown key → None).
-- [ ] Run → fail (module missing). Implement `avatars.py`, pure `earnings_for`, models; `makemigrations`.
-- [ ] Run → pass. Commit `feat(live-quiz): gems ledger, avatar catalog and earning rules`.
+- [x] Run → fail (module missing). Implement `avatars.py`, pure `earnings_for`, models; `makemigrations`.
+- [x] Run → pass. Commit `feat(live-quiz): gems ledger, avatar catalog and earning rules`.
 
 ### Task 2: Awarding a finished game
 
@@ -93,12 +93,12 @@ Frontend (`frontend/src/features/liveQuiz/`):
 **Interfaces — Produces:** `gems.award_for_game(session) -> dict[int, dict]` (participant_id →
 `{"earned", "balance", "capped"}`), idempotent; `gems.balance(user) -> int`; `gems.earned_in(session) -> dict[user_id, int]`.
 
-- [ ] Failing tests: finish awards correct×10 + 10 (+ podium when ≥3 players); calling twice awards once
+- [x] Failing tests: finish awards correct×10 + 10 (+ podium when ≥3 players); calling twice awards once
   (unique constraint); a TERMINATED game awards nothing; a KICKED player nothing; daily cap cuts the
   third game of the day (two 140-gem games then a third → only 20); staff/host never in it.
-- [ ] Implement: inside `finish_game` after `_write_ranks`, `gems.award_for_game(session)`; wallet row
+- [x] Implement: inside `finish_game` after `_write_ranks`, `gems.award_for_game(session)`; wallet row
   `select_for_update`, `get_or_create`; EARN row with `day=timezone.localdate()`; skip amount 0 rows.
-- [ ] Pass. Commit `feat(live-quiz): a finished game pays gems, capped per day`.
+- [x] Pass. Commit `feat(live-quiz): a finished game pays gems, capped per day`.
 
 ### Task 3: Shop moves + REST
 
@@ -110,12 +110,12 @@ Frontend (`frontend/src/features/liveQuiz/`):
 Errors: `Conflict` codes `not_enough_gems`, `already_owned`, `needs_character`, `not_owned`,
 `starter_used`, `NotFound` `no_such_item`.
 
-- [ ] Failing tests: buy deducts and records SPEND with balance_after; cannot afford → 409 and balance
+- [x] Failing tests: buy deducts and records SPEND with balance_after; cannot afford → 409 and balance
   unchanged; buy twice → `already_owned`; skin before character → `needs_character`; claim starter once,
   second claim → `starter_used`, non-starter claim refused; equip requires ownership; first claimed or
   bought character is auto-equipped; `GET shop/` shape (balance, today_earned, daily_cap, items with
   owned flags, look, can_claim_starter).
-- [ ] Implement with the wallet row locked for every spend. Pass. Commit `feat(live-quiz): the gem shop — buy, claim, equip`.
+- [x] Implement with the wallet row locked for every spend. Pass. Commit `feat(live-quiz): the gem shop — buy, claim, equip`.
 
 ### Task 4: Avatars on the wire + gems_awarded frame
 
@@ -126,25 +126,34 @@ Errors: `Conflict` codes `not_enough_gems`, `already_owned`, `needs_character`, 
 frame `gems_awarded {earned, balance, capped}` sent to each student's personal group after
 `game_finished`; report rows gain `gems`.
 
-- [ ] Failing tests: participant_row carries the equipped look; socket test — after `end_game` the
+- [x] Failing tests: participant_row carries the equipped look; socket test — after `end_game` the
   student receives `gems_awarded` with the right `earned`; report row `gems`.
-- [ ] Implement. Run the whole `livequiz` suite. Commit `feat(live-quiz): avatars travel with players; students hear what they earned`.
+- [x] Implement. Run the whole `livequiz` suite. Commit `feat(live-quiz): avatars travel with players; students hear what they earned`.
 
 ### Task 5: Frontend — art, shop, avatars in the game
 
 **Files:** Create `avatars.tsx`, `GemShop.tsx`, `app/(main)/live/shop/page.tsx`, `__tests__/gems.test.tsx`;
 modify `api.ts`, `useLiveQuiz.ts`, `game.tsx`, `HostGame.tsx`, `HostDashboard.tsx`, `PlayerSummary.tsx`, `JoinLiveQuiz.tsx`.
 
-- [ ] Failing tests: every catalog key × look renders an `<svg>` with its accessible name; reducer
+- [x] Failing tests: every catalog key × look renders an `<svg>` with its accessible name; reducer
   `gems_awarded` → `room.gems`; GemShop shows balance and calls `buy` then refetches.
-- [ ] Implement art (one creature renderer, per-species features, palettes per look; epic = galaxy
+- [x] Implement art (one creature renderer, per-species features, palettes per look; epic = galaxy
   gradient, legendary = gold gradient + shine), the shop (Characters / Skins tabs, preview, buy/equip,
   claim-a-starter banner), and avatars in lobby/standings/podium/dashboard.
-- [ ] tsc (after `rm -rf .next/dev/types`), eslint, vitest. Commit `feat(live-quiz): the avatar shop and avatars in the game`.
+- [x] tsc (after `rm -rf .next/dev/types`), eslint, vitest. Commit `feat(live-quiz): the avatar shop and avatars in the game`.
 
 ### Task 6: Verify end to end, PR
 
-- [ ] Real-wire + browser run (harness in memory `local-livequiz-probe-harness`): play a game, see gems
+- [x] Real-wire + browser run (harness in memory `local-livequiz-probe-harness`): play a game, see gems
   on the summary, buy a character and a skin, equip, start another game and see the avatar in the
   lobby, standings, podium and dashboard.
-- [ ] Push `HEAD:refs/heads/feat/live-quiz-gems`; PR to `main`, title "… (merge after #337)".
+- [x] Push `HEAD:refs/heads/feat/live-quiz-gems`; PR to `main`, title "… (merge after #337)".
+
+## Verified (2026-11-01)
+
+- Backend: `livequiz` 169 tests OK on SQLite; gems + student-paced + services 95 OK on Postgres 18.
+- Migrations 0002 + 0003 applied forward, back to 0001 and forward again on Postgres 18; the
+  one-payout-per-game rule is a partial unique index.
+- Frontend: tsc / eslint clean; Live Quiz vitest 33 green.
+- Real browsers on a local uvicorn: free starter, buy + wear a Golden skin, a 3-player game with
+  avatars in lobby / dashboard / podium, "+80 gems" on the end screen; 0 server tracebacks.
