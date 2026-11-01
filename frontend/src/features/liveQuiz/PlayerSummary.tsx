@@ -14,20 +14,23 @@ import { Check, Clock, Flame, X } from "lucide-react";
 import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
-import { liveQuizApi, type LiveParticipant } from "./api";
+import { liveQuizApi, type LiveParticipant, type TeamStanding } from "./api";
 import { Confetti, FinalStandings, GamePanel, Podium, TrophyHeading } from "./game";
-import { ordinal } from "./theme";
+import { ordinal, tileColor } from "./theme";
 
 export function PlayerSummary({
   sessionId,
   me,
   leaderboard,
   questionTotal,
+  teams = [],
 }: {
   sessionId: number;
   me: LiveParticipant | null;
   leaderboard: LiveParticipant[];
   questionTotal: number;
+  /** Team mode: the teams' final standings, so the student sees how their team did. */
+  teams?: TeamStanding[];
 }) {
   const results = useQuery({
     queryKey: ["livequiz", "results", sessionId, "mine"],
@@ -38,6 +41,7 @@ export function PlayerSummary({
   const myRow = results.data?.report.participants[0];
   const questions = results.data?.report.questions ?? [];
   const place = me?.rank ?? myRow?.rank ?? null;
+  const myTeam = typeof me?.team === "number" ? teams.find((t) => t.team === me.team) : undefined;
   const missed = myRow ? myRow.answers.filter((a) => a.timed_out).length : 0;
   const wrong = myRow ? myRow.answers.filter((a) => a.answered && !a.is_correct).length : 0;
   const accuracy =
@@ -70,6 +74,17 @@ export function PlayerSummary({
             }
           />
         </div>
+      )}
+
+      {myTeam && (
+        <GamePanel className="flex items-center gap-3 px-4 py-3">
+          <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: tileColor(myTeam.team) }} aria-hidden />
+          <p className="font-bold">
+            Team {myTeam.name} finished {ordinal(myTeam.rank)}
+            <span className="font-normal text-white/60"> of {teams.length} teams</span>
+          </p>
+          <span className="ml-auto font-mono font-bold tabular-nums">{myTeam.score.toLocaleString()}</span>
+        </GamePanel>
       )}
 
       {leaderboard.length >= 2 && (

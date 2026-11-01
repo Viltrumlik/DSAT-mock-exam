@@ -102,6 +102,7 @@ export function GameTopBar({
   score,
   streak,
   rank,
+  team,
   muted,
   onToggleMute,
   onExit,
@@ -112,6 +113,8 @@ export function GameTopBar({
   score?: number;
   streak?: number;
   rank?: number | null;
+  /** Team mode: this student's team, as a chip in its colour (the name from a laptop up). */
+  team?: number | null;
   muted: boolean;
   onToggleMute: () => void;
   onExit?: () => void;
@@ -133,6 +136,15 @@ export function GameTopBar({
       {typeof index === "number" && typeof total === "number" && total > 0 && (
         <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-sm font-bold tabular-nums">
           {Math.min(index + 1, total)}/{total}
+        </span>
+      )}
+      {typeof team === "number" && (
+        <span
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1.5 text-sm font-bold sm:py-1"
+          title={`Team ${TEAM_NAMES[team] ?? team + 1}`}
+        >
+          <span className="h-2.5 w-2.5 rounded-full" style={{ background: tileColor(team) }} aria-hidden />
+          <span className="sr-only sm:not-sr-only">Team {TEAM_NAMES[team] ?? team + 1}</span>
         </span>
       )}
       {/* The timer: inline on a laptop, its own full-width row on a phone, where the
