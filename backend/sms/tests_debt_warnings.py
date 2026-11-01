@@ -190,6 +190,56 @@ class DebtWarningTests(TestCase):
         self.assertEqual([phone for phone, _, _ in fake.sent], ["998901111111"])
         self.assertEqual(counts["sent"], 1)
 
+    def rejected_by_operator(self, *, eskiz_status="REJECTED", sent_at=None):
+        """What check_statuses records when the operator turns an accepted SMS down."""
+        SmsMessage.objects.filter(kind="debt_warning").update(
+            status=SmsMessage.STATUS_UNDELIVERED, eskiz_status=eskiz_status, sent_at=sent_at or at(1),
+        )
+
+    def test_an_operator_rejection_goes_once_more_in_the_retry_run(self):
+        # 2026-11-01: Uzmobile rejected 8 of the first 16 SMS of a burst, then took the slower ones.
+        self.learner(101, "aziz", balance=-150000)
+        debt_warnings.send(FakeEskiz(), at(1))
+        self.rejected_by_operator()
+        fake = FakeEskiz()
+        counts = debt_warnings.send(fake, at(1, hour=11), retry_only=True)
+        self.assertEqual(len(fake.sent), 1)
+        self.assertEqual(counts["sent"], 1)
+        msg = SmsMessage.objects.get()
+        self.assertEqual((msg.status, msg.attempts), (SmsMessage.STATUS_SENT, 2))
+
+    def test_a_second_operator_rejection_is_final(self):
+        self.learner(101, "aziz", balance=-150000)
+        debt_warnings.send(FakeEskiz(), at(1))
+        self.rejected_by_operator()
+        debt_warnings.send(FakeEskiz(), at(1, hour=11), retry_only=True)
+        self.rejected_by_operator(sent_at=at(1, hour=11))
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1, hour=12), retry_only=True)["blocked"], "nothing to retry")
+        self.assertEqual(fake.sent, [])
+
+    def test_only_an_operator_rejection_goes_again(self):
+        # Phone off for 24 h (EXPIRED) will not answer an hour later; eskiz's own refusal at send
+        # (REJECTED, e.g. "perfectum: Not allowed") is not the operator's and would only repeat.
+        self.learner(101, "aziz", balance=-150000, phone="998901111111")
+        self.learner(102, "malika", balance=-90000, phone="998902222222")
+        debt_warnings.send(FakeEskiz(), at(1))
+        SmsMessage.objects.filter(dedupe_key="student:101").update(
+            status=SmsMessage.STATUS_UNDELIVERED, eskiz_status="EXPIRED", sent_at=at(1)
+        )
+        SmsMessage.objects.filter(dedupe_key="student:102").update(status=SmsMessage.STATUS_REJECTED, sent_at=None)
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1, hour=11), retry_only=True)["blocked"], "nothing to retry")
+        self.assertEqual(fake.sent, [])
+
+    def test_a_fresh_operator_rejection_waits_for_a_later_run(self):
+        self.learner(101, "aziz", balance=-150000)
+        debt_warnings.send(FakeEskiz(), at(1))
+        self.rejected_by_operator(sent_at=at(1, hour=11) - timedelta(minutes=10))
+        fake = FakeEskiz()
+        self.assertEqual(debt_warnings.send(fake, at(1, hour=11), retry_only=True)["blocked"], "nothing to retry")
+        self.assertEqual(fake.sent, [])
+
     def test_the_retry_run_with_nothing_failed_sends_nothing(self):
         self.learner(101, "aziz", balance=-150000)
         debt_warnings.send(FakeEskiz(), at(1))

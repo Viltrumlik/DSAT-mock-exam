@@ -180,13 +180,33 @@ def plan(now, *, today=None) -> Plan:
     return result
 
 
+#: eskiz's word for an accepted SMS the mobile operator then turned down (``dlr_state``).
+OPERATOR_REJECTED = ("REJECTED", "REJECTD")
+#: An operator rejection waits this long before its one more try (the 10:30 status check finds it).
+RESEND_AFTER = timedelta(minutes=30)
+
+
+def give_operator_rejections_one_more_try(run_on, now) -> int:
+    """Owner, 2026-11-01 ("Faqat qayta urinish"): a warning the operator rejected goes once more in the
+    next retry run — that morning Uzmobile rejected 8 of the first 16 of a fast burst and took the
+    slower ones. The row is set back to FAILED, so deliver() re-claims it (attempts 2) and sends it;
+    a second rejection is final. Not a phone off for 24 h (EXPIRED), and not eskiz's own refusal at
+    send (REJECTED status, e.g. "perfectum: Not allowed"): those would only fail again."""
+    return SmsMessage.objects.filter(
+        kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, status=SmsMessage.STATUS_UNDELIVERED,
+        eskiz_status__in=OPERATOR_REJECTED, attempts=1, sent_at__lte=now - RESEND_AFTER,
+    ).update(status=SmsMessage.STATUS_FAILED, error="the operator rejected it; one more try")
+
+
 def send(client, now, *, retry_only: bool = False) -> dict:
     """``retry_only`` is the 11:00 and 12:00 runs: only the warnings an earlier run today could not
-    get out (FAILED — eskiz unreachable, a refused login) go again; never a new one, never one that
-    may have left. One student going wrong (the database, the cache) does not stop the rest."""
+    get out (FAILED — eskiz unreachable, a refused login) go again, and once each, an SMS the operator
+    rejected (``give_operator_rejections_one_more_try``); never a new one, never one that may have
+    left. One student going wrong (the database, the cache) does not stop the rest."""
     run_on = timezone.localdate(now)
     retry = None
     if retry_only:
+        give_operator_rejections_one_more_try(run_on, now)
         retry = set(
             SmsMessage.objects.filter(
                 kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, status=SmsMessage.STATUS_FAILED
