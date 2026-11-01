@@ -281,3 +281,29 @@ class ApprovedTextTests(TestCase):
     def test_a_long_name_keeps_four_words_and_the_comma(self):
         LcupStudentLink.objects.update(name="Abdulloh Ali o\u2019g\u2019li Karimov Bek")
         self.assertIn("yozyabmiz. Abdulloh Ali o'g'li Karimov, sizda", self.sent_text(1))
+
+
+@override_settings(LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6, SMS_DEBT_WARNINGS_ENABLED=True)
+class ForbiddenWordTests(TestCase):
+    """2026-11-01: eskiz refused "Shavkatova Xusnida" ("Text is forbidden", keyword "shavkat")."""
+
+    def setUp(self):
+        use(WARN)
+
+    def learner(self, lcup_id, name, phone):
+        user = User.objects.create_user(None, password=None, username=f"u{lcup_id}", role="student")
+        LcupStudentLink.objects.create(
+            lcup_student_id=lcup_id, name=name, user=user, status=LinkStatus.CONFIRMED, phone=phone,
+            balance=Decimal(-500000), balance_seen_at=at(1, hour=9),
+        )
+
+    def test_a_flagged_surname_is_dropped_and_the_warning_still_goes(self):
+        self.learner(101, "Shavkatova Xusnida", "998901111111")
+        self.learner(102, "Shavkat", "998902222222")
+        fake = FakeEskiz(forbidden={"shavkat"})
+        counts = debt_warnings.send(fake, at(1))
+        self.assertEqual([phone for phone, _, _ in fake.sent], ["998901111111"])
+        self.assertIn("Xusnida", fake.sent[0][1])
+        self.assertNotIn("Shavkat", fake.sent[0][1])
+        self.assertEqual(SmsMessage.objects.get().text, fake.sent[0][1])
+        self.assertEqual(counts["forbidden_text"], 1)

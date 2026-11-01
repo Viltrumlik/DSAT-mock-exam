@@ -42,7 +42,7 @@ from lcup.models import LcupStudentLink
 from lcup.phones import normalize_phone
 from users.models import User
 
-from . import switchboard
+from . import forbidden, switchboard
 from . import templates as T
 from .debt_warnings import STALE_AFTER
 from .delivery import deliver
@@ -469,9 +469,14 @@ def send_campaign(client, campaign, now=None) -> SmsCampaign:
         if i and i % HEARTBEAT_EVERY == 0:
             _heartbeat(campaign)
         try:
+            text, flagged = forbidden.scrub(client, r.text, r.link.name or r.user.get_full_name())
+            if text is None:
+                logger.warning("campaign %s to lc-up student %s: eskiz forbids the text (%s)", campaign.pk,
+                               r.link.lcup_student_id, flagged)
+                continue
             msg = deliver(
                 client, kind=SmsMessage.KIND_CAMPAIGN, run_on=day, dedupe_key=_key(campaign, r.link),
-                phone=r.phone, text=r.text, user=r.user, lcup_student_id=r.link.lcup_student_id,
+                phone=r.phone, text=text, user=r.user, lcup_student_id=r.link.lcup_student_id,
                 campaign=campaign, created_by=campaign.created_by,
             )
         except Exception as exc:

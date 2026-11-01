@@ -11,6 +11,7 @@ class FakeEskiz:
 
     def __init__(
         self, outcome=ACCEPTED, statuses=None, *, outcomes=(), template_rows=None, balance=125000, account_error="",
+        forbidden=(), check_error=False,
     ):
         self.outcome = outcome
         self.outcomes = list(outcomes)
@@ -21,6 +22,10 @@ class FakeEskiz:
         self.balance_value = balance
         self.account_error = account_error
         self.balance_calls = 0
+        #: eskiz's word list as this fake knows it: a text holding one of these (case-insensitive) is forbidden.
+        self.forbidden = {w.lower() for w in forbidden}
+        self.check_error = check_error
+        self.checked = []
 
     def send(self, phone, text, *, user_sms_id=""):
         self.sent.append((phone, text, user_sms_id))
@@ -28,6 +33,13 @@ class FakeEskiz:
         if outcome == ACCEPTED:
             return SendResult(ACCEPTED, request_id=f"req-{len(self.sent)}")
         return SendResult(outcome, error="refused by the fake")
+
+    def check(self, text):
+        self.checked.append(text)
+        if self.check_error:
+            return None
+        hits = sorted(w for w in self.forbidden if w in text.lower())
+        return {"forbidden": bool(hits), "keywords": hits}
 
     def status(self, request_id):
         status = self.statuses.get(request_id)

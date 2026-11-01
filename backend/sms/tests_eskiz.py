@@ -40,7 +40,9 @@ class StubSession:
         self.requests = []
 
     def request(self, method, url, data=None, json=None, params=None, headers=None, timeout=None):
-        self.requests.append({"method": method, "url": url, "data": dict(data or {}), "headers": dict(headers or {})})
+        self.requests.append(
+            {"method": method, "url": url, "data": dict(data or {}), "json": json, "headers": dict(headers or {})}
+        )
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
@@ -238,3 +240,29 @@ class SubmitTemplateTests(SimpleTestCase):
         with self.assertRaises(EskizError) as caught:
             eskiz.submit_template("")
         self.assertIn("template field is required", str(caught.exception))
+
+
+class CheckTests(SimpleTestCase):
+    def setUp(self):
+        self.cache = fresh_cache()
+        self.cache.set(TOKEN_KEY, "jwt-cached")
+
+    def test_a_forbidden_text_reports_its_keywords(self):
+        body = {"data": {"parts_count": 1, "can_send": False, "forbidden": True, "keywords": ["shavkat"]}}
+        eskiz, session = client([FakeResponse(200, body)], self.cache)
+        self.assertEqual(eskiz.check("Shavkatova"), {"forbidden": True, "keywords": ["shavkat"]})
+        self.assertTrue(session.requests[0]["url"].endswith("/message/sms/check"))
+        self.assertEqual(session.requests[0]["json"], {"message": "Shavkatova"})
+
+    def test_an_allowed_text(self):
+        body = {"data": {"parts_count": 1, "can_send": True, "forbidden": False, "keywords": None}}
+        eskiz, _ = client([FakeResponse(200, body)], self.cache)
+        self.assertEqual(eskiz.check("Karimova"), {"forbidden": False, "keywords": []})
+
+    def test_no_answer_is_none(self):
+        eskiz, _ = client([requests.ReadTimeout("slow")], self.cache)
+        self.assertIsNone(eskiz.check("x"))
+
+    def test_an_error_answer_is_none(self):
+        eskiz, _ = client([FakeResponse(500, {"message": "oops"})], self.cache)
+        self.assertIsNone(eskiz.check("x"))
