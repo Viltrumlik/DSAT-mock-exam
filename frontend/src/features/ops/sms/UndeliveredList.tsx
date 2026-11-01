@@ -18,6 +18,8 @@ import { useResendMessages, useSmsMessages } from "./smsHooks";
 export type UndeliveredFilter = { from?: string; to?: string; campaign?: number; automation?: number };
 
 const PAGE = { q: "", o: "", page: 1, pageSize: 50 };
+/** Why a debt warning that did not arrive has no Resend: its text names its day. */
+const NOT_NOW = "A debt warning goes again only on its own day, while the warning is switched on: its text names the day, and the student may have paid since.";
 
 /**
  * Resend with the panel's one rule for paid sends: ask first with the count and the price, never
@@ -59,7 +61,8 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
   const [picked, setPicked] = useState<Set<number>>(new Set());
 
   const rows = list.data?.results ?? [];
-  const chosen = rows.filter((m) => picked.has(m.id));
+  const open = rows.filter((m) => m.can_resend);
+  const chosen = open.filter((m) => picked.has(m.id));
   const send = (targets: SmsMessage[]) => resend.send(targets, () => setPicked(new Set()));
 
   const toggle = (id: number) =>
@@ -87,11 +90,13 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
                 <input
                   type="checkbox"
                   aria-label="Select all"
-                  checked={chosen.length === rows.length}
-                  onChange={() => setPicked(chosen.length === rows.length ? new Set() : new Set(rows.map((m) => m.id)))}
+                  disabled={!open.length}
+                  checked={open.length > 0 && chosen.length === open.length}
+                  onChange={() => setPicked(chosen.length === open.length ? new Set() : new Set(open.map((m) => m.id)))}
                 />
               </th>
               <th className={TH}>Student</th>
+              <th className={TH}>From</th>
               <th className={TH}>Phone</th>
               <th className={TH}>Why</th>
               <th className={TH}>Sent</th>
@@ -102,9 +107,16 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
             {rows.map((m) => (
               <tr key={m.id} className={TR}>
                 <td className={TD}>
-                  <input type="checkbox" aria-label={`Select ${m.user?.name || m.phone}`} checked={picked.has(m.id)} onChange={() => toggle(m.id)} />
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${m.user?.name || m.phone}`}
+                    disabled={!m.can_resend}
+                    checked={picked.has(m.id)}
+                    onChange={() => toggle(m.id)}
+                  />
                 </td>
                 <td className={TD}>{m.user?.name || <span className="text-muted-foreground">—</span>}</td>
+                <td className={`${TD} max-w-[14rem] truncate`}>{m.source.label}</td>
                 <td className={TD}>
                   <span className="inline-flex items-center gap-1.5 tabular-nums">
                     <OperatorDot operator={m.operator} />
@@ -114,9 +126,15 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
                 <td className={TD}><StatusPill message={m} /></td>
                 <td className={`${TD} text-muted-foreground`}>{dateTime(m.created_at)}</td>
                 <td className={`${TD} text-right`}>
-                  <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => send([m])}>
-                    Resend
-                  </button>
+                  {m.can_resend ? (
+                    <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => send([m])}>
+                      Resend
+                    </button>
+                  ) : (
+                    <span className="text-[12px] text-muted-foreground" title={NOT_NOW}>
+                      Only on its day
+                    </span>
+                  )}
                 </td>
               </tr>
             ))}
@@ -125,13 +143,20 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
         <ul className="divide-y divide-border sm:hidden">
           {rows.map((m) => (
             <li key={m.id} className="flex items-start gap-2 px-3 py-2 text-[13px]">
-              <input type="checkbox" aria-label={`Select ${m.user?.name || m.phone} on a phone`} className="mt-1" checked={picked.has(m.id)} onChange={() => toggle(m.id)} />
+              <input
+                type="checkbox"
+                aria-label={`Select ${m.user?.name || m.phone} on a phone`}
+                className="mt-1"
+                disabled={!m.can_resend}
+                checked={picked.has(m.id)}
+                onChange={() => toggle(m.id)}
+              />
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="font-medium">{m.user?.name || m.phone}</div>
                 <div className="flex flex-wrap items-center gap-2">
                   <StatusPill message={m} />
                   <OperatorDot operator={m.operator} />
-                  <span className="text-muted-foreground">{m.operator}</span>
+                  <span className="text-muted-foreground">{m.source.label}</span>
                 </div>
               </div>
             </li>

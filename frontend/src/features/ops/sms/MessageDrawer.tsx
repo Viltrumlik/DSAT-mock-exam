@@ -7,7 +7,7 @@ import { Drawer } from "@/components/ui";
 import { dateTime, kindLabel, money } from "./format";
 import { OperatorDot, StatusPill, TONE_COLOR, toneOf } from "./look";
 import { CAPTION_TEXT, TEXT_BUTTON } from "./panelKit";
-import { RESENDABLE, type SmsMessage } from "./smsApi";
+import type { SmsMessage } from "./smsApi";
 import { campaignHref } from "./smsTabs";
 import { useConfirmedResend } from "./UndeliveredList";
 
@@ -66,7 +66,7 @@ export function MessageDrawer({ m, pricePerPart, onClose }: { m: SmsMessage; pri
 
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill message={m} />
-          {RESENDABLE.includes(m.status) ? (
+          {m.can_resend ? (
             <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => resend.send([m], onClose)}>
               Resend
             </button>

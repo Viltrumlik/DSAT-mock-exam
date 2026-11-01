@@ -43,7 +43,7 @@ from users.models import User
 
 from . import campaigns, conf
 from . import debt_warnings as warnings
-from . import eskiz, eskiz_templates, forecast, stats, switchboard
+from . import eskiz, eskiz_templates, forecast, resend, stats, switchboard
 from . import templates as T
 from .delivery import RESENDABLE, deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
@@ -134,14 +134,17 @@ def _cost(msg) -> int:
 
 
 def message_rows(msgs) -> list[dict]:
-    """``message_row`` for each, the campaigns' audience labels asked once."""
+    """``message_row`` for each, the campaigns' audience labels and the debt warning's switch asked once."""
     msgs = list(msgs)
     campaign_ids = {m.campaign_id for m in msgs if m.campaign_id}
     labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=campaign_ids)) if campaign_ids else {}
-    return [message_row(m, labels) for m in msgs]
+    today, debt_on = timezone.localdate(), warnings.switched_on()
+    return [message_row(m, labels, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs]
 
 
-def message_row(msg, campaign_labels=None) -> dict:
+def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
+    if can_resend is None:
+        can_resend = resend.refusal(msg, timezone.localdate()) is None
     return {
         "id": msg.pk,
         "created_at": _iso(msg.created_at),
@@ -169,6 +172,8 @@ def message_row(msg, campaign_labels=None) -> dict:
             "label": f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
         },
         "cost": _cost(msg),
+        # Whether Resend may take it now (``resend.refusal``): a debt warning only on its own day.
+        "can_resend": can_resend,
     }
 
 
@@ -596,7 +601,7 @@ def _queue_resend(ids: list[int]):
 
 
 class ResendView(_AdminView):
-    """POST ``{"ids": [...]}``: the RESENDABLE ones are queued to go once more; the rest are named back."""
+    """POST ``{"ids": [...]}``: those that may go again now (``resend.refusal``) are queued; the rest are named back."""
 
     def post(self, request):
         refused = _not_an_object(request)
@@ -605,7 +610,10 @@ class ResendView(_AdminView):
         ids = campaigns._ints(request.data.get("ids"))
         if not ids or len(ids) > RESEND_MAX:
             return _refused("ids", f"Send 1 to {RESEND_MAX} message ids.")
-        resendable = set(SmsMessage.objects.filter(pk__in=ids, status__in=RESENDABLE).values_list("pk", flat=True))
+        today = timezone.localdate()
+        resendable = {
+            m.pk for m in SmsMessage.objects.filter(pk__in=ids, status__in=RESENDABLE) if resend.refusal(m, today) is None
+        }
         queued = [pk for pk in ids if pk in resendable]
         if queued:
             _on_commit(_queue_resend(queued))

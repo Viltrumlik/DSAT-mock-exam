@@ -51,7 +51,7 @@ const PAGE: SmsMessagePage = {
     message({
       id: 4, created_at: "2026-11-02T10:00:00+05:00", kind: "debt_warning", status: "UNDELIVERED", eskiz_status: "REJECTED",
       user: null, phone: "998935550000", campaign_id: null, created_by_name: "", operator: "Ucell", groups: [],
-      source: { type: "debt_warning", id: null, label: "Debt warning" }, request_id: "",
+      source: { type: "debt_warning", id: null, label: "Debt warning" }, request_id: "", can_resend: true,
     }),
     message({ id: 5, created_at: "2026-10-30T10:00:00+05:00" }),
   ],

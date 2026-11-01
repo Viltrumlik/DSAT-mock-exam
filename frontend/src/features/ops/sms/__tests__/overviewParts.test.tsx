@@ -109,8 +109,8 @@ describe("BalanceBanner", () => {
 
 describe("UndeliveredList", () => {
   const page = (results = [
-    message({ id: 11, status: "UNDELIVERED", eskiz_status: "REJECTED", parts: 1, user: { id: 5, name: "Malika Karimova" } }),
-    message({ id: 12, status: "FAILED", parts: 2, user: { id: 6, name: "Aziz Valiyev" }, operator: "Uzmobile" }),
+    message({ id: 11, status: "UNDELIVERED", eskiz_status: "REJECTED", parts: 1, user: { id: 5, name: "Malika Karimova" }, can_resend: true }),
+    message({ id: 12, status: "FAILED", parts: 2, user: { id: 6, name: "Aziz Valiyev" }, operator: "Uzmobile", can_resend: true }),
   ]): SmsMessagePage => ({ count: results.length, page: 1, pages: 1, page_size: 50, results, filters: [] });
 
   it("asks the journal for what may be resent, in its range", async () => {
@@ -145,6 +145,19 @@ describe("UndeliveredList", () => {
     await act(async () => one.click());
     expect(resend).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+
+  it("names each SMS's source, and offers no Resend for one that may not go again now", async () => {
+    const stale = message({
+      id: 13, status: "UNDELIVERED", eskiz_status: "REJECTED", user: { id: 7, name: "Bekzod Rahimov" }, can_resend: false,
+      kind: "debt_warning", source: { type: "debt_warning", id: null, label: "Debt warning" },
+    });
+    messages.mockReturnValue({ data: page([stale]), isPending: false, isError: false, refetch: vi.fn() });
+    await render(<UndeliveredList filter={{}} pricePerPart={170} />);
+    expect(text()).toContain("Debt warning");
+    expect(text()).toContain("Only on its day");
+    expect([...document.querySelectorAll("button")].some((b) => b.textContent === "Resend")).toBe(false);
+    expect(document.querySelector<HTMLInputElement>("input[aria-label='Select Bekzod Rahimov']")?.disabled).toBe(true);
   });
 
   it("says when everything arrived", async () => {

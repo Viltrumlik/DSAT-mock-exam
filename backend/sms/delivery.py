@@ -15,9 +15,6 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from lcup.models import LcupStudentLink
-from lcup.phones import normalize_phone
-
 from . import eskiz, switchboard
 from . import templates as T
 from .models import SmsMessage
@@ -62,36 +59,6 @@ def deliver(
 #: What a person may send again by hand: it did not arrive and nothing says it might have.
 #: UNCERTAIN (it may have left), SENT and PENDING (still on their way) and DELIVERED never are.
 RESENDABLE = (SmsMessage.STATUS_UNDELIVERED, SmsMessage.STATUS_REJECTED, SmsMessage.STATUS_FAILED)
-
-
-def _current_phone(msg) -> str:
-    """The student's phone as lc-up has it now (it may have been corrected since), else the row's."""
-    links = LcupStudentLink.objects.all()
-    if msg.lcup_student_id:
-        links = links.filter(lcup_student_id=msg.lcup_student_id)
-    elif msg.user_id:
-        links = links.filter(user_id=msg.user_id)
-    else:
-        return msg.phone
-    phone = links.values_list("phone", flat=True).first()
-    return normalize_phone(phone) or msg.phone
-
-
-def resend(client, msg_id: int) -> SmsMessage | None:
-    """Send one SMS that did not arrive once more, under its own (kind, day, key): None when it is not
-    RESENDABLE (any more). The row is set FAILED in one conditional UPDATE and handed to ``deliver``,
-    whose claim lets exactly one of two concurrent resends through."""
-    flipped = SmsMessage.objects.filter(pk=msg_id, status__in=RESENDABLE).update(
-        status=SmsMessage.STATUS_FAILED, updated_at=timezone.now(),
-    )
-    if not flipped:
-        return None
-    msg = SmsMessage.objects.select_related("user", "campaign", "created_by").get(pk=msg_id)
-    return deliver(
-        client, kind=msg.kind, run_on=msg.run_on, dedupe_key=msg.dedupe_key, phone=_current_phone(msg), text=msg.text,
-        user=msg.user, lcup_student_id=msg.lcup_student_id, campaign=msg.campaign, created_by=msg.created_by,
-        template_eskiz_id=msg.template_eskiz_id,
-    )
 
 
 def _claim(

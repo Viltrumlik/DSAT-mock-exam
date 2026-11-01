@@ -86,6 +86,7 @@ export function message(over: Partial<SmsMessage> = {}): SmsMessage {
     source: { type: "campaign", id: 7, label: "Campaign #7 · Group: Junior G21 | Math" },
     template: { id: 64942, label: "#64942" },
     cost: 170,
+    can_resend: false,
     ...over,
   };
 }

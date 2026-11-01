@@ -119,6 +119,7 @@ class JournalFilterTests(ApiFixture):
         return len(ctx.captured_queries)
 
     def test_the_query_count_does_not_grow_with_classes(self):
+        self.count_queries()  # the first request creates the settings row (switchboard.current): a one-off
         few = self.count_queries()
         for i in range(27):
             room = self.classroom(f"Extra {i}")

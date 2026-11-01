@@ -181,6 +181,8 @@ export interface SmsMessage {
   template: MessageTemplateRef;
   /** so'm; FAILED and REJECTED cost nothing. */
   cost: number;
+  /** Resend may take it now: it did not arrive, and a debt warning only on its own day, switched on. */
+  can_resend: boolean;
 }
 
 export interface MessageSource {

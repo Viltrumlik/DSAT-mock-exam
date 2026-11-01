@@ -161,7 +161,7 @@ def resend_messages(ids: list) -> dict:
     import logging
 
     from . import eskiz
-    from .delivery import resend
+    from .resend import resend
 
     client = eskiz.default_client()
     counts: dict = {}

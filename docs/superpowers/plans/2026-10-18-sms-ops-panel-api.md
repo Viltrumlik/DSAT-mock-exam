@@ -110,7 +110,8 @@ A changelist, the same shape as `users/views_people`.
     "groups": ["Junior G21 | Math"],
     "source": { "type": "campaign", "id": 7, "label": "Campaign #7 · Debtors" },
     "template": { "id": 64942, "label": "#64942" },
-    "cost": 170
+    "cost": 170,
+    "can_resend": false
   }
   ```
 
@@ -121,6 +122,7 @@ A changelist, the same shape as `users/views_people`.
     - `source.type` is `debt_warning`, `campaign` or `test`. Its label is "Debt warning", "Campaign #<id> · <audience label>" or "Test".
     - `template.label` is `#<id>` (Part 2 replaces it with the alias), or "" when there is none.
     - `cost` is in so'm. FAILED and REJECTED cost 0, as in `GET stats/`.
+    - `can_resend` (review fix, 2026-11-02) says whether `POST messages/resend/` would take the SMS now. It must be UNDELIVERED, REJECTED or FAILED. A debt warning also needs to be from today, with the warning switched on (env, panel and freeze), because its text names its day and the student may have paid since.
 - **Filters**, in this order:
   - `kind` (Debt warning / Campaign / Test);
   - `status` (every status);
