@@ -19,21 +19,14 @@ export type UndeliveredFilter = { from?: string; to?: string; campaign?: number;
 
 const PAGE = { q: "", o: "", page: 1, pageSize: 50 };
 
-export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredFilter; pricePerPart: number }) {
-  const filters = useMemo(() => {
-    const out: Record<string, string> = { resendable: "1" };
-    for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== "") out[key] = String(value);
-    return out;
-  }, [filter]);
-  const list = useSmsMessages({ ...PAGE, filters });
+/**
+ * Resend with the panel's one rule for paid sends: ask first with the count and the price, never
+ * retry, and say how it went. The list and the journal's drawer both use it.
+ */
+export function useConfirmedResend(pricePerPart: number) {
   const resend = useResendMessages();
   const toast = useToast();
-  const [picked, setPicked] = useState<Set<number>>(new Set());
-
-  const rows = list.data?.results ?? [];
-  const chosen = rows.filter((m) => picked.has(m.id));
-
-  function send(targets: SmsMessage[]) {
+  const send = (targets: SmsMessage[], onDone?: () => void) => {
     if (!targets.length || resend.isPending) return;
     const cost = targets.reduce((sum, m) => sum + m.parts * pricePerPart, 0);
     if (!window.confirm(`Resend ${targets.length} SMS, ~${money(cost)}?`)) return;
@@ -41,7 +34,7 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
       targets.map((m) => m.id),
       {
         onSuccess: (result) => {
-          setPicked(new Set());
+          onDone?.();
           toast({
             tone: "success",
             title: `${result.queued.length} SMS going again`,
@@ -51,7 +44,23 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
         onError: (e) => toast({ tone: "danger", title: "Resend didn't go through", description: paidErrorText(e) }),
       },
     );
-  }
+  };
+  return { send, isPending: resend.isPending };
+}
+
+export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredFilter; pricePerPart: number }) {
+  const filters = useMemo(() => {
+    const out: Record<string, string> = { resendable: "1" };
+    for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== "") out[key] = String(value);
+    return out;
+  }, [filter]);
+  const list = useSmsMessages({ ...PAGE, filters });
+  const resend = useConfirmedResend(pricePerPart);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+
+  const rows = list.data?.results ?? [];
+  const chosen = rows.filter((m) => picked.has(m.id));
+  const send = (targets: SmsMessage[]) => resend.send(targets, () => setPicked(new Set()));
 
   const toggle = (id: number) =>
     setPicked((prev) => {

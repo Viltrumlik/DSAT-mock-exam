@@ -335,6 +335,31 @@ describe("ChangeList", () => {
   });
 });
 
+describe("ChangeList groups and cards", () => {
+  it("draws one header before the first row of each group, in order", () => {
+    render({ groupBy: (r) => (r.id < 3 ? "early" : "late"), groupLabel: (k) => `Group ${k}` });
+    const headers = [...host.querySelectorAll("[data-group-header]")].map((el) => el.textContent);
+    expect(headers).toEqual(["Group early", "Group late"]);
+    const cells = [...host.querySelectorAll("tbody tr")].map((tr) => tr.textContent);
+    expect(cells[0]).toBe("Group early");
+    expect(cells[3]).toBe("Group late");
+  });
+
+  it("draws no header without groupBy", () => {
+    render();
+    expect(host.querySelectorAll("[data-group-header]").length).toBe(0);
+  });
+
+  it("offers a card per row for narrow screens when given mobileCard", () => {
+    render({ mobileCard: (r) => <span>{`card ${r.name}`}</span> });
+    expect([...host.querySelectorAll("[data-mobile-card]")].map((el) => el.textContent)).toEqual([
+      "card Aziz Tursunov",
+      "card Malika Karimova",
+      "card Bekzod Rahimov",
+    ]);
+  });
+});
+
 describe("pageWindow", () => {
   it("lists every page when there are few, and the ends plus the neighbours otherwise", () => {
     expect(pageWindow(1, 5)).toEqual([1, 2, 3, 4, 5]);

@@ -1,124 +1,185 @@
 "use client";
 
 /**
- * The SMS journal: every SMS the platform has sent — debt warnings, campaigns, tests — as a
- * Django-admin changelist on `messages/`. The server searches (phone, text, the student's name,
- * the lc-up name), filters with counts (kind, status, when) and pages; the list's state sits in
- * the address beside `?tab=journal`, so a pasted link opens the same page of the same list.
+ * The SMS journal (plan 2026-11-01-sms-v2, Task 9): every SMS the platform has sent, as a
+ * Django-admin changelist on `messages/`, grouped by day. The server searches (phone, text, the
+ * student's name, the lc-up name), filters with counts (kind, status, when, operator, group,
+ * teacher, template, campaign) and pages; the dates and every filter sit in the address beside
+ * `?tab=journal`, so a pasted link opens the same list. The chosen filters show as chips above it.
  *
- * A row opens the whole message in a drawer: the full text, eskiz's request id (what eskiz's
- * support asks for), the error and the campaign it belonged to.
+ * Each SMS says where it stands in words ("Operator rejected"), and a row opens its story in a
+ * drawer — with Resend when it did not arrive. Export writes the whole filtered list as a CSV.
  */
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 
-import { Badge, Drawer } from "@/components/ui";
+import { useToast } from "@/components/ui";
 import { ChangeList, type ChangeListColumn } from "@/features/ops/changelist/ChangeList";
 import { useChangeListParams } from "@/features/ops/changelist/useChangeListParams";
-import { dateTime, kindLabel, statusBadge } from "./format";
-import { CAPTION_TEXT, TEXT_BUTTON } from "./panelKit";
-import { MESSAGE_FILTER_KEYS, type SmsMessage } from "./smsApi";
-import { useSmsMessages } from "./smsHooks";
-import { campaignHref } from "./smsTabs";
+import { downloadBlob } from "@/lib/download";
+import { DateRangeFilter } from "./DateRangeFilter";
+import { dayLabel, firstLine, todayInTashkent } from "./format";
+import { OperatorDot, StatusPill } from "./look";
+import { MessageDrawer } from "./MessageDrawer";
+import { TEXT_BUTTON } from "./panelKit";
+import { MESSAGE_FILTER_KEYS, smsApi, type SmsMessage } from "./smsApi";
+import { useSmsMessages, useSmsOverview } from "./smsHooks";
 
 const Muted = ({ children }: { children: ReactNode }) => <span className="text-muted-foreground">{children}</span>;
 
-function StatusCell({ m }: { m: SmsMessage }) {
-  const badge = statusBadge(m.status);
+const time = (iso: string) =>
+  new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+
+/** The Tashkent day an SMS was written on: the journal's groups. */
+const dayOf = (m: SmsMessage) => todayInTashkent(new Date(m.created_at));
+
+function dayHeading(day: string): string {
+  const today = todayInTashkent();
+  if (day === today) return "Today";
+  const yesterday = new Date(Date.parse(`${today}T12:00:00Z`) - 86_400_000).toISOString().slice(0, 10);
+  if (day === yesterday) return "Yesterday";
+  return dayLabel(day);
+}
+
+function Recipient({ m }: { m: SmsMessage }) {
   return (
-    <span title={m.eskiz_status ? `eskiz: ${m.eskiz_status}` : undefined}>
-      <Badge variant={badge.variant}>{badge.label}</Badge>
+    <span className="flex max-w-[16rem] flex-col leading-tight">
+      {m.user ? (
+        <Link
+          href={`/ops/students/${m.user.id}?tab=sms`}
+          onClick={(e) => e.stopPropagation()}
+          className="truncate font-medium text-foreground hover:underline"
+        >
+          {m.user.name}
+        </Link>
+      ) : (
+        <Muted>—</Muted>
+      )}
+      {m.groups.length ? <span className="truncate text-[12px] text-muted-foreground">{m.groups.join(", ")}</span> : null}
     </span>
   );
 }
 
 const COLUMNS: ChangeListColumn<SmsMessage>[] = [
-  { key: "time", label: "Time", render: (m) => dateTime(m.created_at) },
+  { key: "time", label: "Time", render: (m) => time(m.created_at) },
+  { key: "recipient", label: "Recipient", render: (m) => <Recipient m={m} /> },
   {
-    key: "recipient",
-    label: "Recipient",
+    key: "phone",
+    label: "Phone",
     render: (m) => (
-      <span className="inline-flex max-w-[18rem] items-baseline gap-1.5">
-        <span className="truncate">{m.user?.name || "—"}</span>
-        <span className="shrink-0 tabular-nums text-muted-foreground">{m.phone}</span>
+      <span className="inline-flex items-center gap-1.5 tabular-nums">
+        <OperatorDot operator={m.operator} />
+        {m.phone}
       </span>
     ),
   },
-  { key: "kind", label: "Kind", render: (m) => kindLabel(m.kind) },
-  { key: "status", label: "Status", render: (m) => <StatusCell m={m} /> },
-  { key: "parts", label: "Parts", className: "text-right", render: (m) => <span className="tabular-nums">{m.parts}</span> },
+  { key: "source", label: "Source", render: (m) => <span className="block max-w-[14rem] truncate">{m.source.label}</span> },
+  { key: "status", label: "Status", render: (m) => <StatusPill message={m} /> },
   {
     key: "text",
     label: "Text",
     render: (m) => (
-      <span title={m.text} className="block max-w-[24rem] truncate">
+      <span title={m.text} className="block max-w-[22rem] truncate text-muted-foreground">
         {m.text}
       </span>
     ),
   },
-  { key: "by", label: "By", render: (m) => m.created_by_name || <Muted>—</Muted> },
 ];
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Card({ m }: { m: SmsMessage }) {
   return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-2 border-b border-border py-1.5 text-[13px] last:border-b-0">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{children}</dd>
+    <span className="block space-y-1 text-[13px]">
+      <span className="flex items-baseline justify-between gap-2">
+        <span className="truncate font-medium">{m.user?.name || m.phone}</span>
+        <Muted>{time(m.created_at)}</Muted>
+      </span>
+      <span className="flex flex-wrap items-center gap-2">
+        <StatusPill message={m} />
+        <OperatorDot operator={m.operator} />
+        <Muted>{m.source.label}</Muted>
+      </span>
+      <span className="block truncate text-muted-foreground">{firstLine(m.text, 80)}</span>
+    </span>
+  );
+}
+
+/** The chosen filters, each with ✕, and "Clear all". */
+function FilterChips({
+  chips,
+  onRemove,
+  onClear,
+}: {
+  chips: { key: string; label: string }[];
+  onRemove: (key: string) => void;
+  onClear: () => void;
+}) {
+  if (!chips.length) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {chips.map((c) => (
+        <span key={c.key} className="inline-flex items-center gap-1 rounded-full bg-primary-soft py-0.5 pl-2.5 pr-1 text-[12px] text-foreground">
+          <span data-filter-chip>{c.label}</span>
+          <button
+            type="button"
+            aria-label={`Remove ${c.label}`}
+            onClick={() => onRemove(c.key)}
+            className="rounded-full px-1 text-muted-foreground hover:text-foreground"
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+      <button type="button" className={TEXT_BUTTON} onClick={onClear}>
+        Clear all
+      </button>
     </div>
   );
 }
 
-function MessageDrawer({ m, onClose }: { m: SmsMessage; onClose: () => void }) {
-  return (
-    <Drawer open onClose={onClose} title={`SMS #${m.id}`} width={480}>
-      <div className="space-y-4">
-        <div>
-          <p className={`${CAPTION_TEXT} mb-1`}>The text</p>
-          <p className="whitespace-pre-wrap border border-border bg-surface-2 px-3 py-2 text-[13px]">{m.text}</p>
-        </div>
-        <dl>
-          <Row label="Status">
-            <StatusCell m={m} />
-            {m.eskiz_status ? <Muted> eskiz: {m.eskiz_status}</Muted> : null}
-          </Row>
-          <Row label="To">
-            {m.user?.name || "—"} <Muted>{m.phone}</Muted>
-            {m.lcup_student_id ? <Muted> · lc-up #{m.lcup_student_id}</Muted> : null}
-          </Row>
-          <Row label="Kind">{kindLabel(m.kind)}</Row>
-          <Row label="Created">{dateTime(m.created_at)}</Row>
-          <Row label="Sent">{dateTime(m.sent_at)}</Row>
-          <Row label="Parts">{m.parts}</Row>
-          <Row label="Request id">
-            {m.request_id ? <span className="font-mono text-[12px]">{m.request_id}</span> : <Muted>—</Muted>}
-          </Row>
-          <Row label="By">{m.created_by_name || <Muted>The system</Muted>}</Row>
-          {m.campaign_id ? (
-            <Row label="Campaign">
-              <Link href={campaignHref(m.campaign_id)} className={TEXT_BUTTON}>
-                Campaign #{m.campaign_id}
-              </Link>
-            </Row>
-          ) : null}
-          {m.error ? (
-            <Row label="Error">
-              <span className="text-danger-foreground">{m.error}</span>
-            </Row>
-          ) : null}
-        </dl>
-      </div>
-    </Drawer>
-  );
-}
-
 export function JournalPanel() {
-  const { params } = useChangeListParams(MESSAGE_FILTER_KEYS);
+  const { params, update } = useChangeListParams(MESSAGE_FILTER_KEYS);
   const query = useSmsMessages(params);
+  const price = useSmsOverview().data?.price_per_part ?? 0;
+  const toast = useToast();
   const [open, setOpen] = useState<SmsMessage | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const from = params.filters.from ?? "";
+  const to = params.filters.to ?? "";
+  const facets = query.data?.filters ?? [];
+  const chips: { key: string; label: string }[] = [];
+  for (const key of MESSAGE_FILTER_KEYS) {
+    const value = params.filters[key];
+    if (!value || key === "resendable") continue;
+    if (key === "from") chips.push({ key, label: `From ${dayLabel(value)}` });
+    else if (key === "to") chips.push({ key, label: `To ${dayLabel(value)}` });
+    else {
+      const facet = facets.find((f) => f.key === key);
+      const option = facet?.options.find((o) => o.value === value);
+      chips.push({ key, label: `${facet?.label ?? key}: ${option?.label ?? value}` });
+    }
+  }
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const blob = await smsApi.exportMessages(params);
+      downloadBlob(blob, `sms-journal-${todayInTashkent()}.csv`);
+    } catch {
+      toast({ tone: "danger", title: "The export didn't download", description: "Try again in a moment." });
+    } finally {
+      setExporting(false);
+    }
+  }
 
   return (
-    <>
+    <div className="space-y-2">
+      <FilterChips
+        chips={chips}
+        onRemove={(key) => update({ [key]: null })}
+        onClear={() => update(Object.fromEntries(chips.map((c) => [c.key, null])))}
+      />
       <ChangeList<SmsMessage>
         title="Journal"
         noun={{ singular: "SMS", plural: "SMS" }}
@@ -131,9 +192,20 @@ export function JournalPanel() {
         filterKeys={MESSAGE_FILTER_KEYS}
         onRowClick={setOpen}
         searchPlaceholder="Search phone, name or text"
-        rowLabel={(m) => `${m.user?.name || m.phone} ${dateTime(m.created_at)}`}
+        rowLabel={(m) => `${m.user?.name || m.phone} ${m.created_at}`}
+        groupBy={dayOf}
+        groupLabel={dayHeading}
+        mobileCard={(m) => <Card m={m} />}
+        headerAction={
+          <span className="flex flex-wrap items-center gap-2">
+            <DateRangeFilter from={from} to={to} onChange={(range) => update(range)} />
+            <button type="button" className={TEXT_BUTTON} disabled={exporting} onClick={() => void exportCsv()}>
+              {exporting ? "Exporting…" : "Export"}
+            </button>
+          </span>
+        }
       />
-      {open ? <MessageDrawer m={open} onClose={() => setOpen(null)} /> : null}
-    </>
+      {open ? <MessageDrawer m={open} pricePerPart={price} onClose={() => setOpen(null)} /> : null}
+    </div>
   );
 }
