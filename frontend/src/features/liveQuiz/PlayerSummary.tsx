@@ -140,6 +140,11 @@ export function PlayerSummary({
                       <p className="mt-1 text-emerald-300">
                         <AssessmentText text={textOf(question.correct_answer)} />
                       </p>
+                      {question.explanation && (
+                        <p className="mt-1 text-xs leading-relaxed text-white/60">
+                          <AssessmentText text={question.explanation} />
+                        </p>
+                      )}
                       {state === "wrong" && (
                         <p className="mt-0.5 text-rose-300 line-through decoration-rose-300/60">
                           <AssessmentText text={textOf(mine?.answer)} />

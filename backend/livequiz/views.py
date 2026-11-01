@@ -20,6 +20,7 @@ from rest_framework.views import APIView
 
 from classes.capabilities import classroom_capabilities
 from classes.models import Classroom, ClassroomMembership
+from assessments.models import AssessmentSet
 from vocabulary.models import VocabSet
 from core.errors.api import Conflict, Forbidden, NotFound
 from users.permissions import IsAuthenticatedAndNotFrozen
@@ -53,7 +54,7 @@ def _summary(session) -> dict:
 
 def _load_for_host(pk, user) -> LiveQuizSession:
     session = (
-        LiveQuizSession.objects.select_related("classroom", "vocab_set").filter(pk=pk).first()
+        LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set").filter(pk=pk).first()
     )
     if session is None:
         raise NotFound("No such live quiz.", code="not_found")
@@ -69,7 +70,7 @@ class SessionListCreateView(APIView):
 
     def get(self, request):
         _require_enabled()
-        queryset = LiveQuizSession.objects.select_related("classroom", "vocab_set")
+        queryset = LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set")
 
         classroom_id = request.query_params.get("classroom")
         if classroom_id:
@@ -104,16 +105,25 @@ class SessionListCreateView(APIView):
         if classroom is None:
             raise NotFound("No such class.", code="classroom_not_found")
 
-        vocab_set = VocabSet.objects.filter(pk=data["vocab_set_id"], owner__isnull=True).first()
-        if vocab_set is None:
-            # owner__isnull: a student's own custom set is theirs to study, not something a
-            # teacher can put on the board for the whole class.
-            raise NotFound("No such word set.", code="set_not_found")
+        vocab_set = assessment_set = None
+        if data.get("assessment_set_id"):
+            assessment_set = AssessmentSet.objects.filter(
+                pk=data["assessment_set_id"], is_active=True
+            ).first()
+            if assessment_set is None:
+                raise NotFound("No such SAT set.", code="set_not_found")
+        else:
+            vocab_set = VocabSet.objects.filter(pk=data["vocab_set_id"], owner__isnull=True).first()
+            if vocab_set is None:
+                # owner__isnull: a student's own custom set is theirs to study, not something
+                # a teacher can put on the board for the whole class.
+                raise NotFound("No such word set.", code="set_not_found")
 
         session = services.create_session(
             host=request.user,
             classroom=classroom,
             vocab_set=vocab_set,
+            assessment_set=assessment_set,
             config=data.get("config") or {},
         )
         return Response(_summary(session), status=201)
@@ -147,7 +157,7 @@ class SessionResultsView(APIView):
     def get(self, request, pk):
         _require_enabled()
         session = (
-            LiveQuizSession.objects.select_related("classroom", "vocab_set")
+            LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set")
             .filter(pk=pk)
             .first()
         )
@@ -218,7 +228,7 @@ class SessionJoinByIdView(APIView):
     def post(self, request, pk):
         _require_enabled()
         session = (
-            LiveQuizSession.objects.select_related("classroom", "vocab_set").filter(pk=pk).first()
+            LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set").filter(pk=pk).first()
         )
         if session is None:
             raise NotFound("No such live quiz.", code="not_found")
@@ -256,7 +266,7 @@ class MyLiveSessionsView(APIView):
             .values_list("classroom_id", flat=True)
         )
         sessions = (
-            LiveQuizSession.objects.select_related("classroom", "vocab_set")
+            LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set")
             .filter(classroom_id__in=list(classroom_ids), status__in=list(const.LIVE_STATUSES))
             .order_by("-created_at")[:20]
         )
@@ -308,5 +318,34 @@ class HostOptionsView(APIView):
                     for row in queryset[:300]
                     if row.word_total >= question_builder.MIN_WORDS
                 ],
+                "assessment_sets": _sat_sets_for(classroom),
             }
         )
+
+
+def _sat_sets_for(classroom) -> list[dict]:
+    """The SAT sets this class can be given — the homework picker's own rule.
+
+    Active sets in the class's subject and, for a levelled class, its level; sets with no
+    active question are left out rather than offered and then refused at creation.
+    """
+    queryset = AssessmentSet.objects.filter(is_active=True)
+    if classroom.domain_subject:
+        queryset = queryset.filter(subject=classroom.domain_subject)
+    if classroom.level:
+        queryset = queryset.filter(AssessmentSet.level_q(classroom.level))
+    queryset = queryset.annotate(
+        active_total=Count("questions", filter=Q(questions__is_active=True))
+    ).order_by("-created_at")
+    return [
+        {
+            "id": row.id,
+            "title": row.title,
+            "subject": row.subject,
+            "category": row.category or "",
+            "question_count": row.active_total,
+            "is_approved": row.review_status == AssessmentSet.STATUS_APPROVED,
+        }
+        for row in queryset[:300]
+        if row.active_total > 0
+    ]

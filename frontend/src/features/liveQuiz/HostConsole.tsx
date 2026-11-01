@@ -93,7 +93,7 @@ const PRESETS: Record<Preset, { title: string; blurb: string; icon: React.Elemen
   },
 };
 
-const SECONDS_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120];
+const SECONDS_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120, 180];
 
 export function HostConsole() {
   const router = useRouter();
@@ -102,6 +102,8 @@ export function HostConsole() {
   const classrooms = useClassrooms();
   const [classroomId, setClassroomId] = useState<number | null>(null);
   const [setId, setSetId] = useState<number | null>(null);
+  // What the paper is made from: a word set, or an SAT assessment set.
+  const [source, setSource] = useState<"vocab" | "sat">("vocab");
   const [preset, setPreset] = useState<Preset>("student");
   const [config, setConfig] = useState<Partial<LiveQuizConfig>>(PRESETS.student.config);
 
@@ -127,7 +129,7 @@ export function HostConsole() {
     mutationFn: () =>
       liveQuizApi.createSession({
         classroom_id: classroomId as number,
-        vocab_set_id: setId as number,
+        ...(source === "sat" ? { assessment_set_id: setId as number } : { vocab_set_id: setId as number }),
         config,
       }),
     onSuccess: (session) => {
@@ -225,20 +227,55 @@ export function HostConsole() {
                 </Select>
               </Field>
 
-              {options.data && options.data.vocab_sets.length > 0 ? (
-                <Field label="Word set">
-                  <Select
-                    value={setId ?? ""}
-                    onChange={(event) => setSetId(Number(event.target.value) || null)}
-                  >
-                    <option value="">Choose a word set…</option>
-                    {options.data.vocab_sets.map((row) => (
-                      <option key={row.id} value={row.id}>
-                        {row.section ? `${row.section} — ` : ""}
-                        {row.title} · {row.word_count} words
-                      </option>
-                    ))}
-                  </Select>
+              {options.data && (options.data.vocab_sets.length > 0 || (options.data.assessment_sets ?? []).length > 0) ? (
+                <Field label="What to play">
+                  <div className="space-y-2">
+                    <div className="inline-flex rounded-xl bg-surface-2 p-1" role="tablist" aria-label="Question source">
+                      {(["vocab", "sat"] as const).map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={source === key}
+                          onClick={() => {
+                            setSource(key);
+                            setSetId(null);
+                            // SAT questions are long; a word question's half-minute is not enough.
+                            const seconds = config.question_seconds ?? 30;
+                            if (key === "sat" && seconds !== 0 && seconds < 90) {
+                              setConfig((prev) => ({ ...prev, question_seconds: 90 }));
+                            }
+                          }}
+                          className={cn(
+                            "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+                            source === key ? "bg-card shadow-sm" : "text-muted-foreground",
+                          )}
+                        >
+                          {key === "vocab" ? "Word set" : "SAT set"}
+                        </button>
+                      ))}
+                    </div>
+                    <Select
+                      value={setId ?? ""}
+                      onChange={(event) => setSetId(Number(event.target.value) || null)}
+                    >
+                      <option value="">{source === "vocab" ? "Choose a word set…" : "Choose an SAT set…"}</option>
+                      {source === "vocab"
+                        ? options.data.vocab_sets.map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.section ? `${row.section} — ` : ""}
+                              {row.title} · {row.word_count} words
+                            </option>
+                          ))
+                        : (options.data.assessment_sets ?? []).map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.category ? `${row.category} — ` : ""}
+                              {row.title} · {row.question_count} questions
+                              {row.is_approved ? "" : " (not reviewed)"}
+                            </option>
+                          ))}
+                    </Select>
+                  </div>
                 </Field>
               ) : (
                 <div />
@@ -252,11 +289,11 @@ export function HostConsole() {
                 onRetry={() => options.refetch()}
               />
             )}
-            {options.data && options.data.vocab_sets.length === 0 && (
+            {options.data && options.data.vocab_sets.length === 0 && (options.data.assessment_sets ?? []).length === 0 && (
               <EmptyState
                 icon={Radio}
                 title="Nothing to play yet"
-                description="A live quiz needs a word set with at least four words, so every question can have four options."
+                description="A live quiz needs a word set with at least four words, or an SAT set with questions in it."
               />
             )}
 

@@ -155,7 +155,7 @@ def can_host_in(user, classroom) -> bool:
 # ─── Creating a room ──────────────────────────────────────────────────────────
 
 
-def _freeze_questions(*, session, vocab_set, config) -> int:
+def _freeze_vocab_questions(*, session, vocab_set, config) -> int:
     """Generate this session's questions from the set's words. Returns how many.
 
     Built once, here, and stored. The wrong options are chosen at random, so a question that
@@ -211,10 +211,65 @@ def _freeze_questions(*, session, vocab_set, config) -> int:
     return len(rows)
 
 
-def create_session(*, host, classroom, vocab_set, config: dict | None = None) -> LiveQuizSession:
-    """Mint a room: a code, a frozen paper, and an empty lobby."""
+def _image_paths(question) -> dict:
+    """The image file names one assessment question shows, as a compact dict."""
+    pairs = (
+        ("question", question.question_image),
+        ("A", question.option_a_image),
+        ("B", question.option_b_image),
+        ("C", question.option_c_image),
+        ("D", question.option_d_image),
+    )
+    return {key: field.name for key, field in pairs if field}
+
+
+def _freeze_set_questions(*, session, assessment_set, config) -> int:
+    """Copy an SAT set's active questions into this session. Returns how many.
+
+    The set is served live everywhere else, so without this copy an author fixing a question
+    mid-game would change it under the students answering it — and the report would show a
+    question nobody was asked.
+    """
+    source = list(assessment_set.questions.filter(is_active=True).order_by("order", "id"))
+    if not source:
+        raise BadRequest("That set has no questions to play.", code="empty_set")
+    if config["shuffle_questions"]:
+        random.shuffle(source)
+
+    LiveQuizQuestion.objects.bulk_create(
+        [
+            LiveQuizQuestion(
+                session=session,
+                order=index,
+                source_question=question,
+                prompt=question.prompt,
+                question_prompt=question.question_prompt or "",
+                question_type=question.question_type,
+                choices=list(question.choices or []),
+                correct_answer=question.correct_answer,
+                grading_config=question.grading_config or {},
+                points=question.points or 1,
+                explanation=question.explanation or "",
+                image_paths=_image_paths(question),
+                time_limit_seconds=config["question_seconds"],
+            )
+            for index, question in enumerate(source)
+        ]
+    )
+    return len(source)
+
+
+def create_session(
+    *, host, classroom, vocab_set=None, assessment_set=None, config: dict | None = None
+) -> LiveQuizSession:
+    """Mint a room: a code, a frozen paper, and an empty lobby.
+
+    The paper comes from a word set or an SAT assessment set — exactly one.
+    """
     if not can_host_in(host, classroom):
         raise Forbidden("You do not teach this class.", code="not_class_staff")
+    if (vocab_set is None) == (assessment_set is None):
+        raise BadRequest("Choose a word set or an SAT set.", code="bad_source")
 
     normalized = normalize_config(config)
 
@@ -228,13 +283,19 @@ def create_session(*, host, classroom, vocab_set, config: dict | None = None) ->
             with transaction.atomic():
                 session = LiveQuizSession.objects.create(
                     vocab_set=vocab_set,
+                    assessment_set=assessment_set,
                     classroom=classroom,
                     host=host,
                     join_code=code,
                     status=const.STATUS_LOBBY,
                     config=normalized,
                 )
-                _freeze_questions(session=session, vocab_set=vocab_set, config=normalized)
+                if assessment_set is not None:
+                    _freeze_set_questions(
+                        session=session, assessment_set=assessment_set, config=normalized
+                    )
+                else:
+                    _freeze_vocab_questions(session=session, vocab_set=vocab_set, config=normalized)
             return session
         except IntegrityError as exc:  # pragma: no cover - needs a real collision
             last_error = exc
@@ -252,7 +313,7 @@ def find_session_by_code(code: str) -> LiveQuizSession | None:
         return None
     return (
         LiveQuizSession.objects.filter(join_code=cleaned, status__in=const.LIVE_STATUSES)
-        .select_related("classroom", "vocab_set")
+        .select_related("classroom", "vocab_set", "assessment_set")
         .first()
     )
 

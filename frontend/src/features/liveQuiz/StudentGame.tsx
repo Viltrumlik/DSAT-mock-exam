@@ -152,10 +152,10 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
 
       {room.status === "QUESTION_ACTIVE" && question && (
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 pb-8 pt-2 sm:px-6">
-          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} />
+          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} />
 
           {question.question_type === "multiple_choice" && question.choices.length > 0 ? (
-            <AnswerTiles choices={question.choices} onPick={pick} picked={picked} disabled={locked} />
+            <AnswerTiles choices={question.choices} optionImages={question.option_images} onPick={pick} picked={picked} disabled={locked} />
           ) : (
             <GamePanel className="space-y-3 p-4 text-slate-900">
               <div className="rounded-xl bg-white p-3">
