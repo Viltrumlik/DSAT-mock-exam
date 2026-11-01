@@ -80,6 +80,11 @@ EV_SESSION_TERMINATED = "session_terminated"
 EV_REMOVED = "removed_from_session"  # to the one taken out of the room
 EV_ERROR = "error"
 EV_PONG = "pong"
+# Student-paced. `question_started` and `answer_result` are reused, sent to one student's own
+# sockets rather than the room — which is what keeps an app that predates the mode playable.
+EV_PLAYER_PROGRESS = "player_progress"      # to the host: one student just moved on
+EV_POWERUP_AWARDED = "powerup_awarded"      # to the student who earned it
+EV_POWERUP_APPLIED = "powerup_applied"      # to the student who used it
 
 
 # ─── Commands, client → server ────────────────────────────────────────────────
@@ -95,6 +100,14 @@ CMD_END_GAME = "end_game"
 CMD_REMOVE_PARTICIPANT = "remove_participant"
 CMD_LEAVE_SESSION = "leave_session"
 CMD_HEARTBEAT = "heartbeat"
+CMD_USE_POWERUP = "use_powerup"
+CMD_MOVE_TEAM = "move_team"
+
+# Commands that only make sense when the host drives the clock. In a student-paced game every
+# student has their own question, so "skip to the answer" has nothing to act on.
+INSTRUCTOR_PACED_COMMANDS = frozenset(
+    {CMD_START_QUESTION, CMD_REQUEST_NEXT_QUESTION, CMD_END_QUESTION}
+)
 
 # Commands only the host may send. A student sending one gets an error frame and is
 # otherwise ignored — the check is here, server-side, not in the UI that hides the button.
@@ -108,6 +121,7 @@ HOST_ONLY_COMMANDS = frozenset(
         CMD_RESUME_GAME,
         CMD_END_GAME,
         CMD_REMOVE_PARTICIPANT,
+        CMD_MOVE_TEAM,
     }
 )
 
@@ -122,6 +136,8 @@ ERR_ALREADY_ANSWERED = "already_answered"
 ERR_NOT_PARTICIPANT = "not_participant"
 ERR_UNKNOWN_QUESTION = "unknown_question"
 ERR_ACCOUNT_FROZEN = "account_frozen"
+ERR_NO_POWERUP = "no_powerup"
+ERR_WRONG_MODE = "wrong_mode"
 
 
 # ─── Join codes ───────────────────────────────────────────────────────────────
@@ -149,14 +165,80 @@ CONFIG_DEFAULTS: dict = {
     # The host advances by hand rather than the server rolling straight into the next
     # question. A classroom wants the pause for discussion; leave it on.
     "manual_advance": True,
+    # Who drives the clock — see MODES below. The fallback is teacher-paced because that is
+    # what every room created before modes existed IS: its config has no "mode" key, and it
+    # must keep playing the way it was created. New rooms get NEW_SESSION_DEFAULTS instead.
+    "mode": "instructor_paced",
+    # Student-paced extras. Each student sees the choices in their own order; after each
+    # answer they are shown the right one; streaks earn power-ups.
+    "shuffle_answers": False,
+    "show_answers": True,
+    "powerups": False,
+    # Student-paced: a missed question comes back once at the end ("second chance").
+    "redemption": False,
+    # Student-paced: 0 plays alone; 2–6 splits the room into teams whose score is the SUM of
+    # their members' (the owner's choice, as on the classroom-game platforms).
+    "teams": 0,
+    # What one question point is worth on the board. 100 for every room created before the
+    # rebuild; new rooms use the classroom-game scale below. Internal: not offered to the host.
+    "point_scale": 100,
 }
 
 CONFIG_KEYS = frozenset(CONFIG_DEFAULTS)
+
+# ─── Modes ────────────────────────────────────────────────────────────────────
+#
+# Student-paced is the classic classroom game: everyone starts together, then each student
+# answers at their own speed, sees right away how they did, and moves on. The session sits in
+# QUESTION_ACTIVE for the whole round — "in play" — and each student's own question and
+# deadline live on their participant row. Reusing that status rather than inventing one is
+# deliberate: an app built before this mode reads it as "a question is open", takes the
+# per-student `question_started` frames as they come, and stays playable.
+#
+# Teacher-paced is the original engine: one question for the whole room, the host moves on.
+MODE_STUDENT_PACED = "student_paced"
+MODE_INSTRUCTOR_PACED = "instructor_paced"
+MODES = (MODE_STUDENT_PACED, MODE_INSTRUCTOR_PACED)
+
+# What a room created today starts from when the host leaves something out.
+#
+# The score scale is the familiar classroom-game one: a right answer is worth 600, plus up to
+# 400 more for answering at once (a speed bonus of 400/600 of the base, decaying to nothing at
+# the deadline), so every right answer lands between 600 and 1000. No clock, no bonus: 600.
+NEW_SESSION_DEFAULTS: dict = {
+    **CONFIG_DEFAULTS,
+    "question_seconds": 30,
+    "mode": MODE_STUDENT_PACED,
+    "shuffle_questions": True,
+    "shuffle_answers": True,
+    "powerups": True,
+    "redemption": True,
+    "point_scale": 600,
+    "speed_bonus_ratio": round(400 / 600, 4),
+}
 
 # Bounds, enforced when a session is created. A 2-second question is not a quiz and a
 # 10-minute one is homework.
 MIN_QUESTION_SECONDS = 5
 MAX_QUESTION_SECONDS = 300
+
+# Student-paced only: 0 seconds means no clock at all — a test, not a race. There is no
+# speed bonus without a clock, so a room with no timer scores accuracy and streaks alone.
+NO_TIMER = 0
+
+# Student-paced: how long the "correct / incorrect" screen stays up before the next question
+# opens. The next question's clock starts when it appears, not when the last one was
+# answered, so reading the feedback never costs anybody time.
+FEEDBACK_SECONDS = 3
+
+# Second chance: one missed question comes back at the end of a paper this long or shorter,
+# two for a longer one.
+SECOND_TRY_LONG_PAPER = 15
+
+# Team mode.
+MIN_TEAMS = 2
+MAX_TEAMS = 6
+TEAM_NAMES = ("Comets", "Falcons", "Tigers", "Waves", "Pixels", "Rockets")
 
 # Answers that arrive within this many milliseconds after the deadline still count. The
 # deadline is the server's, so a student who tapped at 19.9s can easily arrive at 20.2s;

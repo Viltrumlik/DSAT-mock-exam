@@ -28,7 +28,7 @@ from classes.capabilities import classroom_capabilities
 from core.errors.api import BadRequest, Conflict, Forbidden, NotFound
 
 from . import constants as const
-from . import question_builder, scoring, state_machine
+from . import paced, question_builder, scoring, state_machine
 from .engine_db_guard import TransitionConflict, require_session_update
 from .models import (
     LiveQuizAnswer,
@@ -52,14 +52,23 @@ def normalize_config(raw: dict | None) -> dict:
     read as a setting that does something, and it would not.
     """
     raw = raw if isinstance(raw, dict) else {}
+    defaults = const.NEW_SESSION_DEFAULTS
     out: dict = {}
 
-    seconds = raw.get("question_seconds", const.CONFIG_DEFAULTS["question_seconds"])
+    mode = str(raw.get("mode") or defaults["mode"])
+    if mode not in const.MODES:
+        raise BadRequest("That is not a way to run a quiz.", code="bad_config")
+    out["mode"] = mode
+
+    seconds = raw.get("question_seconds", defaults["question_seconds"])
     try:
         seconds = int(seconds)
     except (TypeError, ValueError):
         raise BadRequest("Seconds per question must be a whole number.", code="bad_config")
-    if not (const.MIN_QUESTION_SECONDS <= seconds <= const.MAX_QUESTION_SECONDS):
+    # No clock at all is a student-paced test. A teacher-paced room needs one: the whole class
+    # waits on it.
+    no_timer = seconds == const.NO_TIMER and mode == const.MODE_STUDENT_PACED
+    if not no_timer and not (const.MIN_QUESTION_SECONDS <= seconds <= const.MAX_QUESTION_SECONDS):
         raise BadRequest(
             f"Seconds per question must be between {const.MIN_QUESTION_SECONDS} "
             f"and {const.MAX_QUESTION_SECONDS}.",
@@ -67,7 +76,7 @@ def normalize_config(raw: dict | None) -> dict:
         )
     out["question_seconds"] = seconds
 
-    ratio = raw.get("speed_bonus_ratio", const.CONFIG_DEFAULTS["speed_bonus_ratio"])
+    ratio = raw.get("speed_bonus_ratio", defaults["speed_bonus_ratio"])
     try:
         ratio = float(ratio)
     except (TypeError, ValueError):
@@ -80,9 +89,38 @@ def normalize_config(raw: dict | None) -> dict:
         "reveal_correctness",
         "shuffle_questions",
         "manual_advance",
+        "shuffle_answers",
+        "show_answers",
+        "powerups",
+        "redemption",
     ):
-        out[key] = bool(raw.get(key, const.CONFIG_DEFAULTS[key]))
+        out[key] = bool(raw.get(key, defaults[key]))
 
+    try:
+        teams = int(raw.get("teams", defaults["teams"]) or 0)
+    except (TypeError, ValueError):
+        raise BadRequest("The number of teams must be a whole number.", code="bad_config")
+    if teams and not (const.MIN_TEAMS <= teams <= const.MAX_TEAMS):
+        raise BadRequest(
+            f"Teams: off, or {const.MIN_TEAMS} to {const.MAX_TEAMS}.", code="bad_config"
+        )
+    out["teams"] = teams
+
+    # Showing the right answer while hiding whether you were right would make no sense — and
+    # neither would standings, which are only scores, and a score says how many you got right.
+    if not out["reveal_correctness"]:
+        out["show_answers"] = False
+        out["show_leaderboard_between"] = False
+        # A question coming back would tell them they missed it.
+        out["redemption"] = False
+    # Power-ups are a student-paced thing; a teacher-paced room keeps one clock for everybody.
+    if mode != const.MODE_STUDENT_PACED:
+        out["powerups"] = False
+        out["redemption"] = False
+        out["teams"] = 0
+
+    # Not the host's to choose: the scale every new room scores on.
+    out["point_scale"] = defaults["point_scale"]
     return out
 
 
@@ -128,7 +166,7 @@ def can_host_in(user, classroom) -> bool:
 # ─── Creating a room ──────────────────────────────────────────────────────────
 
 
-def _freeze_questions(*, session, vocab_set, config) -> int:
+def _freeze_vocab_questions(*, session, vocab_set, config) -> int:
     """Generate this session's questions from the set's words. Returns how many.
 
     Built once, here, and stored. The wrong options are chosen at random, so a question that
@@ -184,10 +222,65 @@ def _freeze_questions(*, session, vocab_set, config) -> int:
     return len(rows)
 
 
-def create_session(*, host, classroom, vocab_set, config: dict | None = None) -> LiveQuizSession:
-    """Mint a room: a code, a frozen paper, and an empty lobby."""
+def _image_paths(question) -> dict:
+    """The image file names one assessment question shows, as a compact dict."""
+    pairs = (
+        ("question", question.question_image),
+        ("A", question.option_a_image),
+        ("B", question.option_b_image),
+        ("C", question.option_c_image),
+        ("D", question.option_d_image),
+    )
+    return {key: field.name for key, field in pairs if field}
+
+
+def _freeze_set_questions(*, session, assessment_set, config) -> int:
+    """Copy an SAT set's active questions into this session. Returns how many.
+
+    The set is served live everywhere else, so without this copy an author fixing a question
+    mid-game would change it under the students answering it — and the report would show a
+    question nobody was asked.
+    """
+    source = list(assessment_set.questions.filter(is_active=True).order_by("order", "id"))
+    if not source:
+        raise BadRequest("That set has no questions to play.", code="empty_set")
+    if config["shuffle_questions"]:
+        random.shuffle(source)
+
+    LiveQuizQuestion.objects.bulk_create(
+        [
+            LiveQuizQuestion(
+                session=session,
+                order=index,
+                source_question=question,
+                prompt=question.prompt,
+                question_prompt=question.question_prompt or "",
+                question_type=question.question_type,
+                choices=list(question.choices or []),
+                correct_answer=question.correct_answer,
+                grading_config=question.grading_config or {},
+                points=question.points or 1,
+                explanation=question.explanation or "",
+                image_paths=_image_paths(question),
+                time_limit_seconds=config["question_seconds"],
+            )
+            for index, question in enumerate(source)
+        ]
+    )
+    return len(source)
+
+
+def create_session(
+    *, host, classroom, vocab_set=None, assessment_set=None, config: dict | None = None
+) -> LiveQuizSession:
+    """Mint a room: a code, a frozen paper, and an empty lobby.
+
+    The paper comes from a word set or an SAT assessment set — exactly one.
+    """
     if not can_host_in(host, classroom):
         raise Forbidden("You do not teach this class.", code="not_class_staff")
+    if (vocab_set is None) == (assessment_set is None):
+        raise BadRequest("Choose a word set or an SAT set.", code="bad_source")
 
     normalized = normalize_config(config)
 
@@ -201,13 +294,19 @@ def create_session(*, host, classroom, vocab_set, config: dict | None = None) ->
             with transaction.atomic():
                 session = LiveQuizSession.objects.create(
                     vocab_set=vocab_set,
+                    assessment_set=assessment_set,
                     classroom=classroom,
                     host=host,
                     join_code=code,
                     status=const.STATUS_LOBBY,
                     config=normalized,
                 )
-                _freeze_questions(session=session, vocab_set=vocab_set, config=normalized)
+                if assessment_set is not None:
+                    _freeze_set_questions(
+                        session=session, assessment_set=assessment_set, config=normalized
+                    )
+                else:
+                    _freeze_vocab_questions(session=session, vocab_set=vocab_set, config=normalized)
             return session
         except IntegrityError as exc:  # pragma: no cover - needs a real collision
             last_error = exc
@@ -225,7 +324,7 @@ def find_session_by_code(code: str) -> LiveQuizSession | None:
         return None
     return (
         LiveQuizSession.objects.filter(join_code=cleaned, status__in=const.LIVE_STATUSES)
-        .select_related("classroom", "vocab_set")
+        .select_related("classroom", "vocab_set", "assessment_set")
         .first()
     )
 
@@ -259,17 +358,66 @@ def join_session(*, session, user) -> LiveQuizParticipant:
             if participant.status != const.PARTICIPANT_JOINED:
                 participant.status = const.PARTICIPANT_JOINED
                 participant.save(update_fields=["status", "updated_at"])
-            return participant
+        else:
+            playing = LiveQuizParticipant.objects.filter(
+                session=session, status=const.PARTICIPANT_JOINED
+            ).count()
+            if playing >= const.MAX_PARTICIPANTS:
+                raise Conflict("This live quiz is full.", code="room_full")
 
-        playing = LiveQuizParticipant.objects.filter(
-            session=session, status=const.PARTICIPANT_JOINED
-        ).count()
-        if playing >= const.MAX_PARTICIPANTS:
-            raise Conflict("This live quiz is full.", code="room_full")
+            try:
+                with transaction.atomic():
+                    participant = LiveQuizParticipant.objects.create(
+                        session=session, user=user, display_name=display_name_for(user)
+                    )
+            except IntegrityError:
+                # Two requests for the same place at once — a double tap, or a page that
+                # asks twice as it mounts. There was no row to lock, so both got here; the
+                # other one made the place, and it is this student's place too.
+                participant = LiveQuizParticipant.objects.get(session=session, user=user)
 
-        return LiveQuizParticipant.objects.create(
-            session=session, user=user, display_name=display_name_for(user)
-        )
+    # A student-paced room deals every student their own order through the paper the moment
+    # they take a place — latecomers included.
+    participant = _assign_team(session, participant)
+    return paced.ensure_sequence(session=session, participant=participant)
+
+
+def _assign_team(session, participant) -> LiveQuizParticipant:
+    """Team mode: put a new player in the smallest team (the lowest-numbered on a tie)."""
+    teams = int(session.setting("teams") or 0)
+    if not teams or participant.team is not None:
+        return participant
+    counts = {index: 0 for index in range(teams)}
+    for team in session.participants.filter(
+        status=const.PARTICIPANT_JOINED, team__isnull=False
+    ).values_list("team", flat=True):
+        if team in counts:
+            counts[team] += 1
+    smallest = min(counts, key=lambda index: (counts[index], index))
+    LiveQuizParticipant.objects.filter(pk=participant.pk, team__isnull=True).update(team=smallest)
+    participant.refresh_from_db()
+    return participant
+
+
+def move_team(*, session, participant_id: int, team: int) -> LiveQuizParticipant:
+    """The host moves a player to another team — in the lobby, before anyone has scored."""
+    if session.status != const.STATUS_LOBBY:
+        raise Conflict("Teams are set before the game starts.", code=const.ERR_BAD_STATE)
+    teams = int(session.setting("teams") or 0)
+    try:
+        team = int(team)
+    except (TypeError, ValueError):
+        team = -1
+    if not teams or not (0 <= team < teams):
+        raise BadRequest("There is no such team.", code="bad_team")
+    participant = LiveQuizParticipant.objects.filter(
+        session=session, pk=int(participant_id), status=const.PARTICIPANT_JOINED
+    ).first()
+    if participant is None:
+        raise NotFound("There is no such player in this room.", code=const.ERR_NOT_PARTICIPANT)
+    LiveQuizParticipant.objects.filter(pk=participant.pk).update(team=team)
+    participant.refresh_from_db()
+    return participant
 
 
 def mark_connected(participant) -> LiveQuizParticipant:
@@ -296,6 +444,15 @@ def mark_disconnected(participant) -> LiveQuizParticipant:
 def touch(participant) -> None:
     """Heartbeat. Cheap: one column, no read."""
     LiveQuizParticipant.objects.filter(pk=participant.pk).update(last_seen_at=timezone.now())
+
+
+def standings_audience(session) -> str | None:
+    """Who may see the standings while the game runs: everyone, or only the host.
+
+    The final standings at ``game_finished`` go to everyone regardless — this is about the
+    game in progress, where a room with the leaderboard off keeps it to the teacher.
+    """
+    return None if session.setting("show_leaderboard_between") else ROLE_HOST
 
 
 def participants_of(session):
@@ -334,6 +491,9 @@ def open_question(*, session, index: int) -> tuple[LiveQuizSession, LiveQuizQues
     The deadline is computed here, server-side, and stored. That single fact is what makes
     every later "was this in time?" answerable without trusting anybody's clock.
     """
+    if paced.is_student_paced(session):
+        # Each student opens their own questions; one question for the room does not exist.
+        raise Conflict("Students move through this quiz at their own pace.", code=const.ERR_WRONG_MODE)
     state_machine.assert_transition(session.status, const.STATUS_QUESTION_ACTIVE)
 
     question = session.questions.filter(order=int(index)).first()
@@ -376,7 +536,30 @@ def close_question(*, session) -> bool:
     except TransitionConflict:
         return False
     session.refresh_from_db()
+    if not paced.is_student_paced(session):
+        _settle_streaks(session)
     return True
+
+
+def _settle_streaks(session) -> None:
+    """Teacher-paced: the question just closed, so every streak is decided.
+
+    Done here rather than as each answer lands, because an answer can still change while the
+    question is open, and a student who never answered breaks their run too.
+    """
+    question = session.current_question()
+    if question is None:
+        return
+    right = set(
+        LiveQuizAnswer.objects.filter(session=session, question=question, is_correct=True)
+        .values_list("participant_id", flat=True)
+    )
+    playing = session.participants.filter(status=const.PARTICIPANT_JOINED)
+    playing.filter(pk__in=right).update(streak=F("streak") + 1)
+    playing.exclude(pk__in=right).update(streak=0)
+    for participant in playing.filter(pk__in=right).only("pk", "streak", "best_streak"):
+        if participant.streak > participant.best_streak:
+            LiveQuizParticipant.objects.filter(pk=participant.pk).update(best_streak=participant.streak)
 
 
 def advance(*, session) -> tuple[LiveQuizSession, LiveQuizQuestion | None]:
@@ -452,8 +635,9 @@ def resume_game(*, session) -> LiveQuizSession:
     state_machine.assert_transition(session.status, back_to)
 
     updates: dict = {"status": back_to, "paused_at": None, "paused_from": ""}
-    if back_to == const.STATUS_QUESTION_ACTIVE and session.question_ends_at and session.paused_at:
-        updates["question_ends_at"] = session.question_ends_at + (timezone.now() - session.paused_at)
+    paused_for = (timezone.now() - session.paused_at) if session.paused_at else None
+    if back_to == const.STATUS_QUESTION_ACTIVE and session.question_ends_at and paused_for:
+        updates["question_ends_at"] = session.question_ends_at + paused_for
 
     require_session_update(
         pk=session.pk,
@@ -462,6 +646,9 @@ def resume_game(*, session) -> LiveQuizSession:
         updates=updates,
     )
     session.refresh_from_db()
+    if paused_for and paced.is_student_paced(session) and back_to == const.STATUS_QUESTION_ACTIVE:
+        # Every student is on their own clock, and every one of them gets the pause back.
+        paced.shift_clocks(session=session, by=paused_for)
     return session
 
 
@@ -535,6 +722,25 @@ def end_game(*, session) -> LiveQuizSession:
     return finish_game(session=session)
 
 
+def finish_when_everyone_is_done(*, session) -> bool:
+    """Student-paced: end the game once every student still in the room has finished.
+
+    The owner's choice (2026-11-01): nobody waits for the teacher to press End when there is
+    nothing left to play. True only for the call that actually ended it — the last answer, a
+    student leaving and the host removing someone can all arrive at once, and the closing
+    compare-and-set lets exactly one of them through, so the room hears one podium.
+    """
+    if not paced.is_student_paced(session) or session.status != const.STATUS_QUESTION_ACTIVE:
+        return False
+    if not paced.everyone_finished(session):
+        return False
+    if not close_question(session=session):
+        return False
+    session.refresh_from_db()
+    finish_game(session=session)
+    return True
+
+
 # ─── Answers ──────────────────────────────────────────────────────────────────
 
 
@@ -546,6 +752,8 @@ def submit_answer(*, session, participant, question_id, answer, now=None) -> Liv
     """
     now = now or timezone.now()
 
+    if paced.is_student_paced(session):
+        raise Conflict("Answers in this quiz go to your own question.", code=const.ERR_WRONG_MODE)
     if not state_machine.accepts_answers(session.status):
         raise Conflict("That question is not taking answers.", code=const.ERR_BAD_STATE)
 
@@ -578,6 +786,7 @@ def submit_answer(*, session, participant, question_id, answer, now=None) -> Liv
         response_time_ms=elapsed_ms,
         limit_ms=int(question.time_limit_seconds) * 1000,
         speed_bonus_ratio=float(session.setting("speed_bonus_ratio") or 0.0),
+        point_scale=int(session.setting("point_scale") or const.BASE_POINT_SCALE),
     )
 
     with transaction.atomic():
@@ -637,10 +846,10 @@ def question_tally(*, session, question) -> dict:
     The per-choice breakdown is what the host projects after the timer; naming the students
     who got it wrong on a screen in front of the class is not something this will do.
     """
+    # A student-paced question that ran out is in the table as a fact, not as an answer.
     answers = list(
-        LiveQuizAnswer.objects.filter(session=session, question=question).values_list(
-            "answer", "is_correct"
-        )
+        LiveQuizAnswer.objects.filter(session=session, question=question, timed_out=False)
+        .values_list("answer", "is_correct")
     )
     by_choice: dict[str, int] = {}
     for value, _ in answers:
@@ -683,16 +892,21 @@ def results_report(session) -> dict:
         per_question = []
         for question in questions:
             answer = answers.get((player.id, question.id))
+            timed_out = bool(answer and answer.timed_out)
             per_question.append(
                 {
                     "question_id": question.id,
                     "order": question.order,
-                    "answered": answer is not None,
+                    "answered": answer is not None and not timed_out,
+                    "timed_out": timed_out,
+                    "second_try": answer.second_try_correct if answer else None,
+                    "answer": answer.answer if answer else None,
                     "is_correct": bool(answer.is_correct) if answer else False,
                     "points_awarded": int(answer.points_awarded) if answer else 0,
                     "response_time_ms": int(answer.response_time_ms) if answer else None,
                 }
             )
+        seen = player.answered_count + sum(1 for cell in per_question if cell["timed_out"])
         rows.append(
             {
                 "participant_id": player.id,
@@ -702,6 +916,10 @@ def results_report(session) -> dict:
                 "rank": player.rank,
                 "correct_count": player.correct_count,
                 "answered_count": player.answered_count,
+                "best_streak": player.best_streak,
+                # Out of the questions they actually met — a student who joined late or left
+                # early is judged on what was in front of them.
+                "accuracy": round(100 * player.correct_count / seen) if seen else None,
                 "answers": per_question,
             }
         )
@@ -714,9 +932,18 @@ def results_report(session) -> dict:
                 "question_id": question.id,
                 "order": question.order,
                 "prompt": question.prompt,
+                "question_prompt": question.question_prompt,
+                "form": question.form,
+                "choices": question.choices or [],
                 "correct_answer": question.correct_answer,
+                "explanation": question.explanation,
                 "answered": stats["answered"],
                 "correct": stats["correct"],
+                "missed": sum(
+                    1
+                    for (_, qid), row in answers.items()
+                    if qid == question.id and row.timed_out
+                ),
                 "by_choice": stats["by_choice"],
             }
         )

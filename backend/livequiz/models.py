@@ -48,11 +48,22 @@ class LiveQuizSession(TimestampedModel):
     the host pressing skip — and exactly one of them must win.
     """
 
+    # The paper's source: a word set, or an SAT assessment set — exactly one (see Meta).
     vocab_set = models.ForeignKey(
         "vocabulary.VocabSet",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="live_quiz_sessions",
         help_text="The words this game was built from. PROTECT: a played session must stay readable.",
+    )
+    assessment_set = models.ForeignKey(
+        "assessments.AssessmentSet",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="live_quiz_sessions",
+        help_text="The SAT questions this game was copied from.",
     )
     # Required, unlike a mock sitting. The room IS a classroom: only its roster may join.
     classroom = models.ForeignKey(
@@ -111,6 +122,13 @@ class LiveQuizSession(TimestampedModel):
                 condition=Q(status__in=list(const.LIVE_STATUSES)),
                 name="uniq_livequiz_active_join_code",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(vocab_set__isnull=False, assessment_set__isnull=True)
+                    | Q(vocab_set__isnull=True, assessment_set__isnull=False)
+                ),
+                name="livequiz_one_source",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -162,6 +180,18 @@ class LiveQuizQuestion(TimestampedModel):
         blank=True,
         related_name="live_quiz_questions",
     )
+
+    # An SAT room's question remembers the assessment question it was copied from (for the
+    # report), and the image files it showed — names, not copies: an image is not edited in
+    # place, it is replaced, so a name keeps pointing at what was shown.
+    source_question = models.ForeignKey(
+        "assessments.AssessmentQuestion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="live_quiz_copies",
+    )
+    image_paths = models.JSONField(default=dict, blank=True)
 
     # Which way round this one was asked — see question_builder.FORMS. Kept so a review
     # screen can say "you were shown the definition" rather than leaving it to be guessed.
@@ -223,6 +253,37 @@ class LiveQuizParticipant(TimestampedModel):
     answered_count = models.PositiveIntegerField(default=0)
     rank = models.PositiveIntegerField(null=True, blank=True, help_text="Final placing, set at finish.")
 
+    # Right answers in a row. Both modes keep it; a wrong answer or a missed question resets
+    # it unless a streak saver was armed.
+    streak = models.PositiveIntegerField(default=0)
+    best_streak = models.PositiveIntegerField(default=0)
+
+    # ── Student-paced only. In a teacher-paced game the session's own pointer is the clock. ──
+    #
+    # Each student walks their own sequence: ``question_order`` holds the session question
+    # ``order`` values in the order THIS student meets them (shuffled per student when the
+    # host asked for it), ``position`` is how many of them are behind them. The deadline is
+    # theirs alone and, like the session's, it is the only clock that counts.
+    question_order = models.JSONField(default=list, blank=True)
+    position = models.PositiveIntegerField(default=0)
+    question_started_at = models.DateTimeField(null=True, blank=True)
+    question_ends_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(
+        null=True, blank=True, help_text="Student-paced: when they answered their last question."
+    )
+    # Second chance: the position at which the missed questions brought back at the end begin.
+    # None until the paper is done and something was missed; a question at or past it is a
+    # second try, scored by its own rules (``paced``).
+    redemption_from = models.PositiveIntegerField(null=True, blank=True)
+    # Team mode: 0-based team, set when they take a place (the smallest team), movable by the
+    # host until the game starts. None in a room without teams.
+    team = models.PositiveSmallIntegerField(null=True, blank=True)
+
+    # Power-ups held (a list of keys, duplicates allowed) and the ones armed for the question
+    # in front of them — see ``powerups``.
+    powerups = models.JSONField(default=list, blank=True)
+    armed = models.JSONField(default=dict, blank=True)
+
     class Meta:
         db_table = "livequiz_participant"
         ordering = ["-score", "joined_at"]
@@ -262,6 +323,15 @@ class LiveQuizAnswer(TimestampedModel):
     )
     points_awarded = models.IntegerField(default=0)
     submitted_at = models.DateTimeField(auto_now_add=True)
+
+    # Student-paced: the clock ran out before they answered. The row is still written, so a
+    # missed question is a fact in the report rather than a gap, but it is not an answer —
+    # tallies leave it out of "answered".
+    timed_out = models.BooleanField(default=False)
+    powerups_used = models.JSONField(default=list, blank=True)
+    # Second chance: None if the question never came back; True/False for how the retry went.
+    # A right retry also turns ``is_correct`` on, so the paper reads as right from then on.
+    second_try_correct = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = "livequiz_answer"

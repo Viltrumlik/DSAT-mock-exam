@@ -36,6 +36,28 @@ export interface LiveQuizConfig {
   reveal_correctness: boolean;
   shuffle_questions: boolean;
   manual_advance: boolean;
+  /** Absent on rooms created before modes existed — those are teacher-paced. */
+  mode?: LiveQuizMode;
+  shuffle_answers?: boolean;
+  show_answers?: boolean;
+  powerups?: boolean;
+  redemption?: boolean;
+  /** Team mode: 0 plays alone; 2–6 teams, scored as the sum of their members. */
+  teams?: number;
+  point_scale?: number;
+}
+
+export type LiveQuizMode = "student_paced" | "instructor_paced";
+
+export type PowerUpKey = "double" | "fifty_fifty" | "eraser" | "streak_saver" | "time_freeze";
+
+/** One square on the host's live dashboard: how one student did on one question. */
+export interface BoardCell {
+  /** The question's place in the paper — a column means the same question for everyone. */
+  order: number;
+  correct: boolean;
+  timed_out: boolean;
+  points: number;
 }
 
 export interface LiveSession {
@@ -45,7 +67,10 @@ export interface LiveSession {
   status: LiveQuizStatus;
   classroom_id: number;
   classroom_name: string;
-  vocab_set_id: number;
+  vocab_set_id: number | null;
+  /** An SAT room's set; null for a word-set room. */
+  assessment_set_id?: number | null;
+  source?: "vocab" | "sat";
   title: string;
   host_id: number | null;
   current_index: number;
@@ -67,6 +92,16 @@ export interface LiveParticipant {
   correct_count: number;
   answered_count: number;
   rank: number | null;
+  /** Team mode: 0-based team. */
+  team?: number | null;
+  streak?: number;
+  best_streak?: number;
+  /** Student-paced: questions behind them, and whether that was the last one. */
+  progress?: number;
+  finished?: boolean;
+  /** Only on your own row. */
+  powerups?: PowerUpKey[];
+  question_total?: number;
 }
 
 export interface LiveChoice {
@@ -91,6 +126,18 @@ export interface LiveQuestion {
   points: number;
   time_limit_seconds: number;
   form: "definition_to_word" | "word_to_definition" | "";
+  /** SAT questions: a figure for the question, and pictures for options, keyed by choice id. */
+  question_image?: string | null;
+  option_images?: Record<string, string>;
+}
+
+export interface SatSetOption {
+  id: number;
+  title: string;
+  subject: string;
+  category: string;
+  question_count: number;
+  is_approved: boolean;
 }
 
 export interface LiveQuizOption {
@@ -110,10 +157,17 @@ export interface LiveResultsReport {
     rank: number | null;
     correct_count: number;
     answered_count: number;
+    best_streak?: number;
+    /** Out of the questions they actually met; null when they met none. */
+    accuracy?: number | null;
     answers: Array<{
       question_id: number;
       order: number;
       answered: boolean;
+      timed_out?: boolean;
+      /** Asked again at the end: null if never, else how the retry went. */
+      second_try?: boolean | null;
+      answer?: unknown;
       is_correct: boolean;
       points_awarded: number;
       response_time_ms: number | null;
@@ -123,9 +177,14 @@ export interface LiveResultsReport {
     question_id: number;
     order: number;
     prompt: string;
+    question_prompt?: string;
+    form?: LiveQuestion["form"];
+    choices?: LiveChoice[];
     correct_answer: unknown;
+    explanation?: string;
     answered: number;
     correct: number;
+    missed?: number;
     by_choice: Record<string, number>;
   }>;
 }
@@ -143,7 +202,9 @@ export const liveQuizApi = {
 
   async createSession(body: {
     classroom_id: number;
-    vocab_set_id: number;
+    /** Exactly one of the two. */
+    vocab_set_id?: number;
+    assessment_set_id?: number;
     config?: Partial<LiveQuizConfig>;
   }): Promise<LiveSession> {
     const { data } = await api.post("/livequiz/sessions/", body);
@@ -196,8 +257,18 @@ export const liveQuizApi = {
   async options(classroomId: number): Promise<{
     classroom: { id: number; name: string; level: string };
     vocab_sets: LiveQuizOption[];
+    assessment_sets?: SatSetOption[];
   }> {
     const { data } = await api.get("/livequiz/options/", { params: { classroom: classroomId } });
     return data;
   },
 };
+
+/** One team's place in a team-mode game. */
+export interface TeamStanding {
+  team: number;
+  name: string;
+  score: number;
+  members: number;
+  rank: number;
+}

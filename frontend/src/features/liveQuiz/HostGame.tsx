@@ -1,242 +1,359 @@
 "use client";
 
 /**
- * The host's screen — usually a projector, with the teacher's laptop driving it.
+ * The host's side of a live quiz.
  *
- * It shows the room what it needs at each moment and gives the teacher the controls. Every
- * control sends a command and waits for the server's answer; none of them changes what is
- * on screen by itself, so the projector and thirty phones never disagree.
+ * The lobby, the countdown and the podium are full-screen — they are what goes on the
+ * projector. In between it depends on the mode: a student-paced game hands over to the live
+ * dashboard (the teacher's laptop: it names who is getting what wrong), and a teacher-paced
+ * game stays on the projector with the question, the tiles and the host's controls.
+ *
+ * Every control sends a command and waits for the server's answer; none of them changes what
+ * is on screen by itself, so the projector and thirty phones never disagree.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Pause, Play, Square, Trophy, Users } from "lucide-react";
+import { ArrowLeft, ChevronRight, Pause, Play, Rocket, SkipForward, Square, Users, X } from "lucide-react";
 
-import { Button, Card, ConfirmDialog, LoadingState } from "@/features/classroom/ui";
-import { AssessmentText } from "@/lib/assessmentText";
-
-import { useLiveQuiz, useSecondsLeft } from "./useLiveQuiz";
+import { HostDashboard } from "./HostDashboard";
 import {
-  ConnectionBanner,
-  CountdownBar,
-  JoinCode,
-  LeaderboardList,
-  LobbyGrid,
-  ScoreCard,
-  StatusPill,
-  TallyBars,
-} from "./ui";
+  AnswerTiles,
+  CenterMessage,
+  Confetti,
+  FinalStandings,
+  GameCanvas,
+  GameConfirm,
+  GamePanel,
+  GameTopBar,
+  Podium,
+  QuestionCard,
+  TeamColumns,
+  TimerBar,
+  TrophyHeading,
+  teamRows,
+} from "./game";
+import type { LiveParticipant } from "./api";
+import { useGameSounds } from "./sounds";
+import { initials, tileColor } from "./theme";
+import { useLiveQuiz, useSecondsLeft, type LiveQuizRoom } from "./useLiveQuiz";
+import { ConnectionBanner } from "./ui";
+
+type Actions = ReturnType<typeof useLiveQuiz>["actions"];
 
 export function HostGame({ sessionId }: { sessionId: number }) {
-  const router = useRouter();
   const { room, actions } = useLiveQuiz(sessionId);
+  const paced = room.mode === "student_paced";
+
+  if (paced && (room.status === "QUESTION_ACTIVE" || room.status === "PAUSED")) {
+    return <HostDashboard room={room} actions={actions} />;
+  }
+  return <HostScreen room={room} actions={actions} />;
+}
+
+function settingsLine(room: LiveQuizRoom): string {
+  const c = room.config;
+  const parts = [
+    room.mode === "student_paced" ? "Student-paced" : "Teacher-paced",
+    c.question_seconds ? `${c.question_seconds}s per question` : "no timer",
+  ];
+  if (room.mode === "student_paced" && c.powerups) parts.push("power-ups on");
+  if (c.show_answers) parts.push("answers shown");
+  if (!c.show_leaderboard_between) parts.push("no leaderboard");
+  return parts.join(" · ");
+}
+
+function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions }) {
+  const router = useRouter();
+  const sounds = useGameSounds();
   const secondsLeft = useSecondsLeft(room.endsAt);
   const [confirmEnd, setConfirmEnd] = useState(false);
+  const [removing, setRemoving] = useState<LiveParticipant | null>(null);
 
   const playing = room.participants.filter((p) => p.status === "JOINED");
+  const teamCount = room.config.teams ?? 0;
   const isLast = room.currentIndex + 1 >= room.questionTotal;
+  const question = room.question;
+  const inGame = !room.finished && !["LOBBY", "CONNECTING", "TERMINATED"].includes(room.status);
+
+  useEffect(() => {
+    if (room.status === "STARTING") sounds.play("start");
+    if (room.status === "FINISHED") sounds.play("finish");
+    // Only on the change of status.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.status]);
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-4 px-4 py-6">
-      <ConnectionBanner connection={room.connection} refusedReason={room.refusedReason} />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <StatusPill status={room.status === "CONNECTING" ? "LOBBY" : room.status} />
-          <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
-            <Users className="h-4 w-4" aria-hidden />
-            {playing.length}
+    <GameCanvas>
+      <GameTopBar
+        index={inGame && question ? question.index : undefined}
+        total={inGame ? room.questionTotal : undefined}
+        muted={sounds.muted}
+        onToggleMute={sounds.toggle}
+      >
+        <div className="flex w-full items-center gap-3">
+          <button
+            type="button"
+            onClick={() => router.push("/teacher/live")}
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden /> Live quizzes
+          </button>
+          {room.status === "QUESTION_ACTIVE" && question && (
+            <TimerBar secondsLeft={secondsLeft} totalSeconds={question.time_limit_seconds} />
+          )}
+          <span className="ml-auto inline-flex items-center gap-1.5 text-sm text-white/80">
+            <Users className="h-4 w-4" aria-hidden /> {playing.length}
           </span>
+          {inGame && (
+            <>
+              {room.status === "PAUSED" ? (
+                <HostButton icon={Play} onClick={actions.resume}>Resume</HostButton>
+              ) : (
+                <HostButton icon={Pause} onClick={actions.pause}>Pause</HostButton>
+              )}
+              <HostButton icon={Square} tone="danger" onClick={() => setConfirmEnd(true)}>End</HostButton>
+            </>
+          )}
         </div>
+      </GameTopBar>
 
-        {!room.finished && room.status !== "TERMINATED" && (
-          <div className="flex gap-2">
-            {room.status === "PAUSED" ? (
-              <Button variant="secondary" size="sm" icon={Play} onClick={actions.resume}>
-                Resume
-              </Button>
-            ) : (
-              room.status !== "LOBBY" && (
-                <Button variant="secondary" size="sm" icon={Pause} onClick={actions.pause}>
-                  Pause
-                </Button>
-              )
-            )}
-            <Button variant="danger" size="sm" icon={Square} onClick={() => setConfirmEnd(true)}>
-              End
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {room.status === "CONNECTING" && room.connection !== "refused" && (
-        <LoadingState label="Opening the room…" />
+      {room.connection !== "open" && (
+        <div className="mx-auto w-full max-w-xl px-4">
+          <ConnectionBanner connection={room.connection} refusedReason={room.refusedReason} />
+        </div>
       )}
 
+      {room.status === "CONNECTING" && room.connection !== "refused" && <CenterMessage title="Opening the room…" />}
+
       {room.status === "LOBBY" && (
-        <Card pad="lg" className="space-y-6">
-          <JoinCode code={room.joinCode} />
-          <LobbyGrid participants={room.participants} onRemove={(p) => actions.removePlayer(p.id)} />
-          <Button block size="lg" disabled={playing.length === 0} onClick={actions.startGame}>
-            {playing.length === 0 ? "Waiting for players…" : `Start with ${playing.length}`}
-          </Button>
-        </Card>
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-8 px-4 pb-10 pt-4">
+          <div className="w-full max-w-2xl rounded-3xl bg-white px-6 py-6 text-center text-slate-900 shadow-2xl sm:py-8">
+            <p className="text-sm font-semibold uppercase tracking-widest text-slate-500">
+              Join at <span className="text-violet-700">mastersat.uz/live</span>
+            </p>
+            <p className="mt-2 font-mono text-6xl font-black tracking-[0.18em] sm:text-8xl">{room.joinCode}</p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <span className="rounded-full bg-white/10 px-4 py-2 text-lg font-bold">
+              {playing.length} {playing.length === 1 ? "player" : "players"}
+            </span>
+            <button
+              type="button"
+              disabled={playing.length === 0}
+              onClick={actions.startGame}
+              className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-lg font-extrabold text-violet-700 shadow-[inset_0_-5px_0_rgba(0,0,0,0.15)] transition hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0"
+            >
+              <Rocket className="h-5 w-5" aria-hidden />
+              {playing.length === 0 ? "Waiting for players…" : "Start"}
+            </button>
+          </div>
+          <p className="text-sm text-white/60">{settingsLine(room)}</p>
+
+          {teamCount > 0 && (
+            <TeamColumns
+              participants={playing}
+              teams={teamCount}
+              onMove={(p) => actions.moveTeam(p.id, ((p.team ?? 0) + 1) % teamCount)}
+            />
+          )}
+          <div className={teamCount > 0 ? "hidden" : "flex w-full flex-wrap justify-center gap-2.5"}>
+            {playing.length === 0 && (
+              <p className="py-8 text-white/60">Names appear here as students join.</p>
+            )}
+            {playing.map((person, i) => (
+              <span
+                key={person.id}
+                className="group inline-flex items-center gap-2 rounded-full bg-white/10 py-1.5 pl-1.5 pr-2 text-sm font-semibold"
+                style={{ opacity: person.present ? 1 : 0.5 }}
+              >
+                <span
+                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-black"
+                  style={{ background: tileColor(i) }}
+                  aria-hidden
+                >
+                  {initials(person.display_name)}
+                </span>
+                {person.display_name}
+                <button
+                  type="button"
+                  onClick={() => setRemoving(person)}
+                  aria-label={`Remove ${person.display_name}`}
+                  className="rounded-full p-0.5 text-white/50 hover:bg-white/15 hover:text-white"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       {room.status === "STARTING" && (
-        <Card pad="lg" className="py-16 text-center">
-          <p className="text-4xl font-bold">Get ready…</p>
-        </Card>
+        <CenterMessage title="Get ready…" icon={<Rocket className="h-16 w-16 text-amber-300" aria-hidden />} />
       )}
 
       {room.status === "PAUSED" && (
-        <Card pad="lg" className="py-12 text-center">
-          <p className="text-2xl font-bold">Paused</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            The clock is stopped. Resuming gives back the time this took.
-          </p>
-        </Card>
+        <CenterMessage
+          title="Paused"
+          subtitle="The clock is stopped. Resuming gives back the time this took."
+          icon={<Pause className="h-16 w-16 text-white/80" aria-hidden />}
+        />
       )}
 
-      {room.status === "QUESTION_ACTIVE" && room.question && (
-        <>
-          <Card pad="sm">
-            <CountdownBar
-              secondsLeft={secondsLeft}
-              total={room.question.time_limit_seconds}
-              warning={room.timeWarning}
-            />
-          </Card>
-
-          <Card pad="lg">
-            <p className="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Question {room.question.index + 1} of {room.question.total}
+      {room.status === "QUESTION_ACTIVE" && question && (
+        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pb-8 pt-2 sm:px-6">
+          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} large />
+          {question.choices.length > 0 && (
+            <AnswerTiles choices={question.choices} optionImages={question.option_images} large />
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-lg">
+              <span className="font-mono text-3xl font-black tabular-nums">{room.tally?.answered ?? 0}</span>
+              <span className="text-white/70"> of {playing.length} answered</span>
             </p>
-            {room.question.question_prompt && (
-              <div className="mb-4 rounded-xl bg-surface-2 p-4">
-                <AssessmentText text={room.question.question_prompt} block preserveNewlines />
-              </div>
-            )}
-            <div className="text-xl font-semibold sm:text-2xl">
-              <AssessmentText text={room.question.prompt} block />
-            </div>
-
-
-            {room.question.choices.length > 0 && (
-              <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                {room.question.choices.map((choice) => (
-                  <div
-                    key={choice.id}
-                    className="flex items-start gap-3 rounded-xl border border-border p-3"
-                  >
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-bold">
-                      {choice.id}
-                    </span>
-                    <div className="min-w-0 pt-0.5 text-sm">
-                      <AssessmentText text={choice.text} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card pad="sm" className="flex items-center justify-between gap-4">
-            <p className="text-sm">
-              <span className="font-mono text-xl font-bold tabular-nums">
-                {room.tally?.answered ?? 0}
-              </span>
-              <span className="text-muted-foreground"> of {playing.length} answered</span>
-            </p>
-            <Button variant="secondary" size="sm" onClick={actions.endQuestion}>
-              Skip to the answer
-            </Button>
-          </Card>
-        </>
+            <HostButton icon={SkipForward} onClick={actions.endQuestion}>Skip to the answer</HostButton>
+          </div>
+        </div>
       )}
 
       {room.status === "QUESTION_RESULTS" && room.outcome && (
-        <>
-          <Card pad="lg">
-            <p className="text-sm font-semibold">
-              The answer:{" "}
-              <span className="text-emerald-600 dark:text-emerald-400">
-                {String(room.outcome.correct_answer)}
-              </span>
-            </p>
-            {room.question && room.question.choices.length > 0 && (
-              <div className="mt-4">
-                <TallyBars
-                  byChoice={room.outcome.tally.by_choice}
-                  choices={room.question.choices}
-                  correctAnswer={room.outcome.correct_answer}
-                  answered={room.outcome.tally.answered}
-                />
-              </div>
+        <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pb-8 pt-2 sm:px-6">
+          {question && (
+            <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} />
+          )}
+          {question && question.choices.length > 0 && (
+            <AnswerTiles
+              choices={question.choices}
+              optionImages={question.option_images}
+              correctId={String(room.outcome.correct_answer ?? "")}
+              counts={room.outcome.tally.by_choice}
+              large
+            />
+          )}
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
+            {room.config.show_leaderboard_between !== false && room.leaderboard.length > 0 ? (
+              <GamePanel className="p-4">
+                <p className="mb-3 text-sm font-semibold text-white/80">Standings</p>
+                <FinalStandings rows={room.leaderboard} limit={5} />
+              </GamePanel>
+            ) : (
+              <div />
             )}
-            {room.outcome.explanation && (
-              <div className="mt-4 rounded-xl bg-surface-2 p-4 text-sm">
-                <AssessmentText text={room.outcome.explanation} block preserveNewlines />
-              </div>
-            )}
-          </Card>
-
-          <Card>
-            <p className="mb-3 text-sm font-semibold">Standings</p>
-            <LeaderboardList rows={room.leaderboard} limit={10} />
-          </Card>
-
-          <Button block size="lg" iconRight={ChevronRight} onClick={actions.nextQuestion}>
-            {isLast ? "Finish and show the results" : "Next question"}
-          </Button>
-        </>
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={actions.nextQuestion}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-8 py-4 text-lg font-extrabold text-violet-700 shadow-[inset_0_-5px_0_rgba(0,0,0,0.15)] transition hover:-translate-y-0.5 lg:w-auto"
+              >
+                {isLast ? "Finish and show the podium" : "Next question"}
+                <ChevronRight className="h-5 w-5" aria-hidden />
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {room.finished && (
-        <>
-          <Card pad="lg" className="text-center">
-            <Trophy className="mx-auto h-12 w-12 text-amber-500" aria-hidden />
-            <p className="mt-2 text-2xl font-bold">That is the quiz</p>
-            <div className="mx-auto mt-5 grid max-w-md grid-cols-3 gap-2">
-              <ScoreCard label="Players" value={playing.length} />
-              <ScoreCard label="Questions" value={room.questionTotal} />
-              <ScoreCard label="Top score" value={room.leaderboard[0]?.score ?? 0} />
-            </div>
-          </Card>
-          <Card>
-            <p className="mb-3 text-sm font-semibold">Final standings</p>
-            <LeaderboardList rows={room.leaderboard} />
-          </Card>
-
-          <Button
-            block
-            variant="secondary"
-            size="lg"
-            onClick={() => router.push(`/teacher/live/${sessionId}/results`)}
-          >
-            See which questions to go over
-          </Button>
-        </>
+        <div className="relative mx-auto w-full max-w-4xl flex-1 space-y-8 px-4 pb-12 pt-4">
+          <Confetti />
+          <TrophyHeading
+            title="Game over"
+            subtitle={`${playing.length} players · ${room.questionTotal} questions`}
+          />
+          {room.teams.length > 0 && (
+            <>
+              <p className="text-center text-sm font-bold uppercase tracking-widest text-white/60">Teams</p>
+              <Podium rows={teamRows(room.teams)} />
+            </>
+          )}
+          {room.leaderboard.length > 0 && <Podium rows={room.leaderboard} />}
+          {room.leaderboard.length > 3 && (
+            <GamePanel className="p-4">
+              <FinalStandings rows={room.leaderboard.slice(3)} limit={20} />
+            </GamePanel>
+          )}
+          <div className="flex flex-wrap justify-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push(`/teacher/live/${room.sessionId}/results`)}
+              className="rounded-2xl bg-white px-6 py-3 font-extrabold text-violet-700"
+            >
+              Open the report
+            </button>
+            <button
+              type="button"
+              onClick={() => router.push("/teacher/live")}
+              className="rounded-2xl bg-white/10 px-6 py-3 font-bold text-white hover:bg-white/20"
+            >
+              Back to live quizzes
+            </button>
+          </div>
+        </div>
       )}
 
       {room.status === "TERMINATED" && (
-        <Card pad="lg" className="py-12 text-center">
-          <p className="text-xl font-bold">This quiz was stopped</p>
-        </Card>
+        <CenterMessage title="This game was stopped">
+          <button
+            type="button"
+            onClick={() => router.push("/teacher/live")}
+            className="mt-6 rounded-2xl bg-white px-6 py-3 font-extrabold text-violet-700"
+          >
+            Back to live quizzes
+          </button>
+        </CenterMessage>
       )}
 
-      <ConfirmDialog
+      <GameConfirm
         open={confirmEnd}
+        title="End the game now?"
+        description="The class sees the podium straight away. Any question still open is closed and cannot be reopened."
+        confirmLabel="End the game"
         onCancel={() => setConfirmEnd(false)}
         onConfirm={() => {
           actions.endGame();
           setConfirmEnd(false);
         }}
-        tone="danger"
-        title="End the quiz now?"
-        description="The class sees the final standings straight away. Any question still open is closed and cannot be reopened."
-        confirmLabel="End the quiz"
       />
-    </div>
+      <GameConfirm
+        open={removing !== null}
+        title={`Remove ${removing?.display_name ?? "this student"}?`}
+        description="They leave the room and cannot rejoin this game."
+        confirmLabel="Remove"
+        onCancel={() => setRemoving(null)}
+        onConfirm={() => {
+          if (removing) actions.removePlayer(removing.id);
+          setRemoving(null);
+        }}
+      />
+    </GameCanvas>
+  );
+}
+
+function HostButton({
+  icon: Icon,
+  onClick,
+  tone,
+  children,
+}: {
+  icon: React.ElementType;
+  onClick: () => void;
+  tone?: "danger";
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        tone === "danger"
+          ? "inline-flex items-center gap-1.5 rounded-full bg-rose-500/90 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-rose-500"
+          : "inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3.5 py-1.5 text-sm font-bold text-white hover:bg-white/20"
+      }
+    >
+      <Icon className="h-4 w-4" aria-hidden />
+      {children}
+    </button>
   );
 }

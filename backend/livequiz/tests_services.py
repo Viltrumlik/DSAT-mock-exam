@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
@@ -14,7 +15,7 @@ from core.errors.api import AppError
 
 from . import constants as const
 from . import services
-from .models import LiveQuizAnswer, LiveQuizSession
+from .models import LiveQuizAnswer, LiveQuizParticipant, LiveQuizSession
 
 
 def _make_user(email, role, **extra):
@@ -68,7 +69,8 @@ class LiveQuizBase(TestCase):
             host=self.teacher,
             classroom=self.classroom,
             vocab_set=self.vocab_set,
-            config=config or {},
+            # These tests are the teacher-paced engine; student-paced has its own suite.
+            config={"mode": const.MODE_INSTRUCTOR_PACED, **config},
         )
 
     def _playing(self, session):
@@ -161,6 +163,18 @@ class CreatingARoomTests(LiveQuizBase):
 
 
 class JoiningTests(LiveQuizBase):
+    def test_two_joins_at_once_both_get_the_same_place(self):
+        # The second of two simultaneous requests: its locked lookup ran before the first one
+        # committed, so it saw no row — and the create then meets the unique constraint.
+        session = self._session()
+        first = services.join_session(session=session, user=self.student)
+        nothing = mock.MagicMock()
+        nothing.filter.return_value.first.return_value = None
+        with mock.patch.object(LiveQuizParticipant.objects, "select_for_update", return_value=nothing):
+            second = services.join_session(session=session, user=self.student)
+        self.assertEqual(second.pk, first.pk)
+        self.assertEqual(LiveQuizParticipant.objects.filter(session=session).count(), 1)
+
     def test_a_student_on_the_roster_can_join_by_code(self):
         session = self._session()
         found = services.find_session_by_code(session.join_code.lower())

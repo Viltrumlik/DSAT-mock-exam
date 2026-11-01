@@ -14,7 +14,14 @@ from . import constants as const
 
 class CreateSessionSerializer(serializers.Serializer):
     classroom_id = serializers.IntegerField()
-    vocab_set_id = serializers.IntegerField()
+    # Exactly one of the two: the paper is a word set or an SAT set.
+    vocab_set_id = serializers.IntegerField(required=False, allow_null=True)
+    assessment_set_id = serializers.IntegerField(required=False, allow_null=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get("vocab_set_id")) == bool(attrs.get("assessment_set_id")):
+            raise serializers.ValidationError("Choose a word set or an SAT set.")
+        return attrs
     config = serializers.DictField(required=False, default=dict)
 
 
@@ -31,7 +38,9 @@ def session_summary(session, *, question_total: int | None = None, counts: dict 
         "classroom_id": session.classroom_id,
         "classroom_name": getattr(session.classroom, "name", ""),
         "vocab_set_id": session.vocab_set_id,
-        "title": getattr(session.vocab_set, "title", ""),
+        "assessment_set_id": session.assessment_set_id,
+        "source": "sat" if session.assessment_set_id else "vocab",
+        "title": getattr(session.assessment_set or session.vocab_set, "title", ""),
         "host_id": session.host_id,
         "current_index": session.current_index,
         "question_total": question_total,

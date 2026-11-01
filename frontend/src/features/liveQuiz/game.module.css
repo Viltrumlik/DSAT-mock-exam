@@ -1,0 +1,261 @@
+/*
+ * The game canvas and its motion. Everything here is decoration over a state the server
+ * already decided; with reduced motion asked for, it all holds still.
+ */
+
+.canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  color: #fff;
+  /* Drawn on <body>, which is set in the reading serif; the app shell's face is Geist. */
+  font-family: var(--font-sans);
+  background:
+    radial-gradient(1200px 600px at 15% -10%, rgba(124, 58, 237, 0.35), transparent 60%),
+    radial-gradient(900px 500px at 110% 110%, rgba(37, 99, 235, 0.3), transparent 60%),
+    #120d26;
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  backdrop-filter: blur(6px);
+}
+
+.tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 92px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  font-weight: 700;
+  text-align: center;
+  color: #fff;
+  box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.22);
+  transition:
+    transform 120ms ease,
+    opacity 160ms ease,
+    filter 160ms ease;
+  animation: tileIn 260ms cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+
+.tile:not(:disabled):hover {
+  transform: translateY(-3px);
+  filter: brightness(1.08);
+}
+
+.tile:not(:disabled):active {
+  transform: translateY(2px) scale(0.98);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
+}
+
+/* Set here, not as utilities: this file is unlayered, so its `.tile` padding and min-height
+   outrank any Tailwind class placed beside it. */
+.tileLarge {
+  min-height: 140px;
+}
+
+.tileCounts {
+  padding-bottom: 40px;
+}
+
+.tilePicked {
+  outline: 4px solid #fff;
+  outline-offset: 3px;
+  transform: scale(1.02);
+}
+
+.tileDim {
+  opacity: 0.35;
+  filter: saturate(0.5);
+}
+
+.tileGone {
+  opacity: 0.12;
+  filter: grayscale(1);
+}
+
+.timerBar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.timerFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 200ms linear, background-color 300ms ease;
+}
+
+.splash {
+  animation: splashIn 320ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+
+.shake {
+  animation: shake 420ms ease both;
+}
+
+.pop {
+  animation: pop 420ms cubic-bezier(0.2, 0.9, 0.3, 1.4) both;
+}
+
+.rise {
+  animation: rise 520ms cubic-bezier(0.2, 0.9, 0.3, 1.1) both;
+}
+
+.flame {
+  display: inline-block;
+  animation: flicker 900ms ease-in-out infinite;
+}
+
+.podiumBar {
+  transform-origin: bottom;
+  animation: grow 900ms cubic-bezier(0.2, 0.9, 0.3, 1.05) both;
+}
+
+.drain {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  transform-origin: left;
+  animation-name: drain;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+.confetti {
+  position: absolute;
+  top: -12px;
+  width: 8px;
+  height: 14px;
+  border-radius: 2px;
+  animation: fall linear forwards;
+}
+
+@keyframes tileIn {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes splashIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-10px);
+  }
+  40% {
+    transform: translateX(9px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}
+
+@keyframes pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  70% {
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes flicker {
+  0%,
+  100% {
+    transform: scale(1) rotate(-3deg);
+  }
+  50% {
+    transform: scale(1.15) rotate(3deg);
+  }
+}
+
+@keyframes grow {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+@keyframes fall {
+  to {
+    transform: translateY(105vh) rotate(720deg);
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile,
+  .splash,
+  .shake,
+  .pop,
+  .rise,
+  .flame,
+  .podiumBar,
+  .confetti {
+    animation: none !important;
+  }
+  .drain {
+    animation: none !important;
+    transform: scaleX(0.5);
+  }
+  .tile:not(:disabled):hover {
+    transform: none;
+  }
+}

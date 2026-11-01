@@ -11,6 +11,41 @@ from __future__ import annotations
 from . import constants as const
 
 
+def score_answer(
+    *,
+    question_points: int,
+    is_correct: bool,
+    response_time_ms: int,
+    limit_ms: int,
+    speed_bonus_ratio: float,
+    point_scale: int = const.BASE_POINT_SCALE,
+    double: bool = False,
+) -> dict:
+    """The same score as :func:`points_for`, in parts, for the "you scored" screen.
+
+    ``base`` is what a right answer is worth at all, ``speed`` what answering quickly added,
+    and ``multiplier`` is 2 when a double power-up was armed. ``total`` is what is written to
+    the answer and the board — always ``(base + speed) * multiplier``, so the parts on screen
+    add up to the number beside them.
+    """
+    total = points_for(
+        question_points=question_points,
+        is_correct=is_correct,
+        response_time_ms=response_time_ms,
+        limit_ms=limit_ms,
+        speed_bonus_ratio=speed_bonus_ratio,
+        point_scale=point_scale,
+    )
+    base = max(0, int(question_points)) * int(point_scale) if is_correct else 0
+    multiplier = 2 if (double and total > 0) else 1
+    return {
+        "base": base,
+        "speed": max(0, total - base),
+        "multiplier": multiplier,
+        "total": total * multiplier,
+    }
+
+
 def points_for(
     *,
     question_points: int,
@@ -18,6 +53,7 @@ def points_for(
     response_time_ms: int,
     limit_ms: int,
     speed_bonus_ratio: float,
+    point_scale: int = const.BASE_POINT_SCALE,
 ) -> int:
     """Base score for a right answer, plus a bonus that decays to zero at the deadline.
 
@@ -30,7 +66,7 @@ def points_for(
     if not is_correct:
         return 0
 
-    base = max(0, int(question_points)) * const.BASE_POINT_SCALE
+    base = max(0, int(question_points)) * int(point_scale)
     if base == 0:
         return 0
 

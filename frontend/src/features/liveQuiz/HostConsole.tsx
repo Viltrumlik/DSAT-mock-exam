@@ -3,6 +3,12 @@
 /**
  * Where a teacher starts a live quiz and picks up one already running.
  *
+ * Three ways to run it, as cards: student-paced (each student at their own speed, with
+ * instant feedback and power-ups — the default), teacher-paced (one question at a time for
+ * the whole class), and a test (student-paced with no clock, no leaderboard and nothing
+ * revealed until the end). The settings below the cards are the same knobs every way; the
+ * cards are only presets for them.
+ *
  * The sets are the vocabulary bank's own — the same word sets a teacher already assigns as
  * vocabulary homework. A student's private custom set is never offered: it is theirs to
  * study, not something to put on the board.
@@ -11,7 +17,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Radio } from "lucide-react";
+import { ClipboardCheck, Gauge, Radio, Users } from "lucide-react";
 
 import {
   Button,
@@ -24,11 +30,70 @@ import {
 } from "@/features/classroom/ui";
 import { useClassrooms } from "@/features/classroom/hooks";
 import { normalizeApiError } from "@/lib/apiError";
+import { cn } from "@/lib/cn";
 
 import { liveQuizApi, type LiveQuizConfig } from "./api";
 import { StatusPill } from "./ui";
 
-const SECONDS_CHOICES = [10, 15, 20, 30, 45, 60, 90];
+type Preset = "student" | "teacher" | "test";
+
+const SPEED_BONUS = 0.6667;
+
+const PRESETS: Record<Preset, { title: string; blurb: string; icon: React.ElementType; config: Partial<LiveQuizConfig> }> = {
+  student: {
+    title: "Student-paced",
+    blurb: "Everyone starts together, then each student answers at their own speed, sees right away how they did, and earns power-ups.",
+    icon: Users,
+    config: {
+      mode: "student_paced",
+      question_seconds: 30,
+      speed_bonus_ratio: SPEED_BONUS,
+      show_leaderboard_between: true,
+      reveal_correctness: true,
+      show_answers: true,
+      shuffle_questions: true,
+      shuffle_answers: true,
+      powerups: true,
+      redemption: true,
+    },
+  },
+  teacher: {
+    title: "Teacher-paced",
+    blurb: "One question at a time for the whole class. You reveal the answer and move everyone on together.",
+    icon: Gauge,
+    config: {
+      mode: "instructor_paced",
+      question_seconds: 20,
+      speed_bonus_ratio: SPEED_BONUS,
+      show_leaderboard_between: true,
+      reveal_correctness: true,
+      show_answers: true,
+      shuffle_questions: false,
+      shuffle_answers: false,
+      powerups: false,
+      redemption: false,
+    },
+  },
+  test: {
+    title: "Test",
+    blurb: "Student-paced with no clock, no leaderboard and no answers shown until the end. Accuracy is what counts.",
+    icon: ClipboardCheck,
+    config: {
+      mode: "student_paced",
+      question_seconds: 0,
+      speed_bonus_ratio: 0,
+      show_leaderboard_between: false,
+      reveal_correctness: false,
+      show_answers: false,
+      shuffle_questions: true,
+      shuffle_answers: true,
+      powerups: false,
+      redemption: false,
+    },
+  },
+};
+
+const SECONDS_CHOICES = [10, 15, 20, 30, 45, 60, 90, 120, 180];
 
 export function HostConsole() {
   const router = useRouter();
@@ -37,12 +102,10 @@ export function HostConsole() {
   const classrooms = useClassrooms();
   const [classroomId, setClassroomId] = useState<number | null>(null);
   const [setId, setSetId] = useState<number | null>(null);
-  const [config, setConfig] = useState<Partial<LiveQuizConfig>>({
-    question_seconds: 20,
-    speed_bonus_ratio: 0.5,
-    show_leaderboard_between: true,
-    shuffle_questions: false,
-  });
+  // What the paper is made from: a word set, or an SAT assessment set.
+  const [source, setSource] = useState<"vocab" | "sat">("vocab");
+  const [preset, setPreset] = useState<Preset>("student");
+  const [config, setConfig] = useState<Partial<LiveQuizConfig>>(PRESETS.student.config);
 
   // `classesApi.list()` has already flattened whatever the server sent — a bare array or
   // DRF's `{ results }` — into one envelope, so `items` is the only shape there is. Read it
@@ -66,7 +129,7 @@ export function HostConsole() {
     mutationFn: () =>
       liveQuizApi.createSession({
         classroom_id: classroomId as number,
-        vocab_set_id: setId as number,
+        ...(source === "sat" ? { assessment_set_id: setId as number } : { vocab_set_id: setId as number }),
         config,
       }),
     onSuccess: (session) => {
@@ -75,8 +138,17 @@ export function HostConsole() {
     },
   });
 
+  const paced = config.mode === "student_paced";
+  const set = <K extends keyof LiveQuizConfig>(key: K, value: LiveQuizConfig[K]) =>
+    setConfig((prev) => ({ ...prev, [key]: value }));
+
+  const choosePreset = (next: Preset) => {
+    setPreset(next);
+    setConfig(PRESETS[next].config);
+  };
+
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-5 px-4 py-6">
+    <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6">
       <div>
         <h1 className="text-xl font-bold">Live quiz</h1>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -96,7 +168,8 @@ export function HostConsole() {
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{session.title}</p>
                   <p className="text-xs text-muted-foreground">
-                    {session.classroom_name} · {session.counts?.participants ?? 0} joined
+                    {session.classroom_name} · {session.counts?.participants ?? 0} joined ·{" "}
+                    {session.config?.mode === "student_paced" ? "student-paced" : "teacher-paced"}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -115,7 +188,7 @@ export function HostConsole() {
         </Card>
       )}
 
-      <Card className="space-y-4">
+      <Card className="space-y-5">
         <p className="text-sm font-semibold">Start a new one</p>
 
         {classrooms.isLoading && <LoadingState label="Loading your classes…" />}
@@ -136,118 +209,213 @@ export function HostConsole() {
 
         {rows.length > 0 && (
           <>
-            <Field label="Class">
-              <Select
-                value={classroomId ?? ""}
-                onChange={(event) => {
-                  setClassroomId(Number(event.target.value) || null);
-                  setSetId(null);
-                }}
-              >
-                <option value="">Choose a class…</option>
-                {rows.map((row) => (
-                  <option key={row.id} value={row.id}>
-                    {row.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Class">
+                <Select
+                  value={classroomId ?? ""}
+                  onChange={(event) => {
+                    setClassroomId(Number(event.target.value) || null);
+                    setSetId(null);
+                  }}
+                >
+                  <option value="">Choose a class…</option>
+                  {rows.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
 
-            {classroomId && options.isLoading && <LoadingState label="Loading quizzes…" />}
+              {options.data && (options.data.vocab_sets.length > 0 || (options.data.assessment_sets ?? []).length > 0) ? (
+                <Field label="What to play">
+                  <div className="space-y-2">
+                    <div className="inline-flex rounded-xl bg-surface-2 p-1" role="tablist" aria-label="Question source">
+                      {(["vocab", "sat"] as const).map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          role="tab"
+                          aria-selected={source === key}
+                          onClick={() => {
+                            setSource(key);
+                            setSetId(null);
+                            // SAT questions are long; a word question's half-minute is not enough.
+                            const seconds = config.question_seconds ?? 30;
+                            if (key === "sat" && seconds !== 0 && seconds < 90) {
+                              setConfig((prev) => ({ ...prev, question_seconds: 90 }));
+                            }
+                          }}
+                          className={cn(
+                            "rounded-lg px-3 py-1.5 text-sm font-semibold transition",
+                            source === key ? "bg-card shadow-sm" : "text-muted-foreground",
+                          )}
+                        >
+                          {key === "vocab" ? "Word set" : "SAT set"}
+                        </button>
+                      ))}
+                    </div>
+                    <Select
+                      value={setId ?? ""}
+                      onChange={(event) => setSetId(Number(event.target.value) || null)}
+                    >
+                      <option value="">{source === "vocab" ? "Choose a word set…" : "Choose an SAT set…"}</option>
+                      {source === "vocab"
+                        ? options.data.vocab_sets.map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.section ? `${row.section} — ` : ""}
+                              {row.title} · {row.word_count} words
+                            </option>
+                          ))
+                        : (options.data.assessment_sets ?? []).map((row) => (
+                            <option key={row.id} value={row.id}>
+                              {row.category ? `${row.category} — ` : ""}
+                              {row.title} · {row.question_count} questions
+                              {row.is_approved ? "" : " (not reviewed)"}
+                            </option>
+                          ))}
+                    </Select>
+                  </div>
+                </Field>
+              ) : (
+                <div />
+              )}
+            </div>
+
+            {classroomId && options.isLoading && <LoadingState label="Loading word sets…" />}
             {classroomId && options.isError && (
               <ErrorState
-                message="The quizzes for this class could not be loaded."
+                message="The word sets for this class could not be loaded."
                 onRetry={() => options.refetch()}
               />
             )}
-
-            {options.data && options.data.vocab_sets.length === 0 && (
+            {options.data && options.data.vocab_sets.length === 0 && (options.data.assessment_sets ?? []).length === 0 && (
               <EmptyState
                 icon={Radio}
                 title="Nothing to play yet"
-                description="A live quiz needs a word set with at least four words, so every question can have four options."
+                description="A live quiz needs a word set with at least four words, or an SAT set with questions in it."
               />
             )}
 
-            {options.data && options.data.vocab_sets.length > 0 && (
-              <Field label="Word set">
-                <Select
-                  value={setId ?? ""}
-                  onChange={(event) => setSetId(Number(event.target.value) || null)}
-                >
-                  <option value="">Choose a word set…</option>
-                  {options.data.vocab_sets.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.section ? `${row.section} — ` : ""}
-                      {row.title} · {row.word_count} words
-                    </option>
-                  ))}
-                </Select>
-              </Field>
-            )}
+            <div>
+              <p className="mb-2 text-sm font-medium">How to play</p>
+              <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="How to play">
+                {(Object.keys(PRESETS) as Preset[]).map((key) => {
+                  const item = PRESETS[key];
+                  const Icon = item.icon;
+                  const chosen = preset === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      role="radio"
+                      aria-checked={chosen}
+                      onClick={() => choosePreset(key)}
+                      className={cn(
+                        "rounded-2xl border p-4 text-left transition",
+                        chosen
+                          ? "border-primary bg-primary/5 ring-2 ring-primary/30"
+                          : "border-border hover:border-primary/40 hover:bg-surface-2",
+                      )}
+                    >
+                      <span className="flex items-center gap-2 font-semibold">
+                        <Icon className={cn("h-5 w-5", chosen ? "text-primary" : "text-muted-foreground")} aria-hidden />
+                        {item.title}
+                      </span>
+                      <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{item.blurb}</span>
+                      {key === "student" && (
+                        <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                          Recommended
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Seconds per question">
+              <Field label="Time per question">
                 <Select
-                  value={config.question_seconds ?? 20}
-                  onChange={(event) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      question_seconds: Number(event.target.value),
-                    }))
-                  }
+                  value={config.question_seconds ?? 30}
+                  onChange={(event) => set("question_seconds", Number(event.target.value))}
                 >
+                  {paced && <option value={0}>No timer</option>}
                   {SECONDS_CHOICES.map((value) => (
                     <option key={value} value={value}>
-                      {value}s
+                      {value} seconds
                     </option>
                   ))}
                 </Select>
               </Field>
-
-              <Field label="Speed bonus">
+              <Field label="Scoring">
                 <Select
-                  value={String(config.speed_bonus_ratio ?? 0.5)}
-                  onChange={(event) =>
-                    setConfig((prev) => ({
-                      ...prev,
-                      speed_bonus_ratio: Number(event.target.value),
-                    }))
-                  }
+                  value={(config.speed_bonus_ratio ?? 0) > 0 && (config.question_seconds ?? 0) > 0 ? "speed" : "flat"}
+                  disabled={(config.question_seconds ?? 0) === 0}
+                  onChange={(event) => set("speed_bonus_ratio", event.target.value === "speed" ? SPEED_BONUS : 0)}
                 >
-                  <option value="0">None — every right answer scores the same</option>
-                  <option value="0.5">Normal — faster answers score more</option>
-                  <option value="1">Big — speed matters a lot</option>
+                  <option value="speed">Faster right answers score more (600–1000)</option>
+                  <option value="flat">Every right answer scores 600</option>
                 </Select>
               </Field>
             </div>
 
-            <label className="flex items-center gap-2.5 text-sm">
-              <input
-                type="checkbox"
-                checked={config.show_leaderboard_between ?? true}
-                onChange={(event) =>
-                  setConfig((prev) => ({
-                    ...prev,
-                    show_leaderboard_between: event.target.checked,
-                  }))
-                }
-                className="h-4 w-4 rounded border-border"
-              />
-              Show the standings after each question
-            </label>
+            {paced && (
+              <Field label="Teams">
+                <Select value={config.teams ?? 0} onChange={(event) => set("teams", Number(event.target.value))}>
+                  <option value={0}>Off — everyone plays for themselves</option>
+                  {[2, 3, 4, 5, 6].map((count) => (
+                    <option key={count} value={count}>
+                      {count} teams — a team scores everyone&apos;s points added up
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
 
-            <label className="flex items-center gap-2.5 text-sm">
-              <input
-                type="checkbox"
-                checked={config.shuffle_questions ?? false}
-                onChange={(event) =>
-                  setConfig((prev) => ({ ...prev, shuffle_questions: event.target.checked }))
-                }
-                className="h-4 w-4 rounded border-border"
+            <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+              <Toggle
+                label="Show the right answer after each question"
+                checked={Boolean(config.show_answers)}
+                onChange={(v) => setConfig((prev) => ({ ...prev, show_answers: v, reveal_correctness: v ? true : prev.reveal_correctness }))}
               />
-              Shuffle the order of the words
-            </label>
+              <Toggle
+                label="Tell students if they were right"
+                checked={config.reveal_correctness !== false}
+                onChange={(v) => setConfig((prev) => ({ ...prev, reveal_correctness: v, show_answers: v ? prev.show_answers : false, show_leaderboard_between: v ? prev.show_leaderboard_between : false, redemption: v ? prev.redemption : false }))}
+              />
+              <Toggle
+                label="Show the leaderboard during the game"
+                checked={config.show_leaderboard_between !== false}
+                onChange={(v) => set("show_leaderboard_between", v)}
+              />
+              <Toggle
+                label={paced ? "Shuffle the questions for each student" : "Shuffle the order of the words"}
+                checked={Boolean(config.shuffle_questions)}
+                onChange={(v) => set("shuffle_questions", v)}
+              />
+              {paced && (
+                <Toggle
+                  label="Shuffle the options for each student"
+                  checked={Boolean(config.shuffle_answers)}
+                  onChange={(v) => set("shuffle_answers", v)}
+                />
+              )}
+              {paced && (
+                <Toggle
+                  label="Power-ups (earned with 3 right in a row)"
+                  checked={Boolean(config.powerups)}
+                  onChange={(v) => set("powerups", v)}
+                />
+              )}
+              {paced && (
+                <Toggle
+                  label="Second chance on a missed question at the end"
+                  checked={Boolean(config.redemption)}
+                  onChange={(v) => setConfig((prev) => ({ ...prev, redemption: v, reveal_correctness: v ? true : prev.reveal_correctness }))}
+                />
+              )}
+            </div>
 
             {create.isError && (
               <p className="text-sm text-rose-600 dark:text-rose-400">
@@ -263,11 +431,45 @@ export function HostConsole() {
               disabled={!classroomId || !setId}
               onClick={() => create.mutate()}
             >
-              Create the room
+              Open the lobby
             </Button>
           </>
         )}
       </Card>
     </div>
+  );
+}
+
+function Toggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+      <span>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative h-6 w-11 shrink-0 rounded-full transition-colors",
+          checked ? "bg-primary" : "bg-border",
+        )}
+      >
+        <span
+          className={cn(
+            "absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+            checked ? "translate-x-[22px]" : "translate-x-0.5",
+          )}
+        />
+      </button>
+    </label>
   );
 }
