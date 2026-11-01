@@ -7,6 +7,7 @@ from . import views
 
 urlpatterns = [
     path("admin/overview/", views.OverviewView.as_view(), name="sms-admin-overview"),
+    path("admin/stats/", views.StatsView.as_view(), name="sms-admin-stats"),
     path("admin/messages/", views.MessageListView.as_view(), name="sms-admin-messages"),
     path("admin/campaigns/", views.CampaignListView.as_view(), name="sms-admin-campaigns"),
     path("admin/campaigns/preview/", views.CampaignPreviewView.as_view(), name="sms-admin-campaign-preview"),

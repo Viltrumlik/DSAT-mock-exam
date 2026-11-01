@@ -39,7 +39,7 @@ from users.models import User
 
 from . import campaigns, conf
 from . import debt_warnings as warnings
-from . import eskiz, eskiz_templates, switchboard
+from . import eskiz, eskiz_templates, stats, switchboard
 from . import templates as T
 from .delivery import deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
@@ -283,6 +283,23 @@ class OverviewView(_AdminView):
             },
             "today": _by_status(SmsMessage.objects.filter(created_at__gte=_start_of_today(now))),
             "last7": _by_status(SmsMessage.objects.filter(created_at__gte=now - timedelta(days=7))),
+        })
+
+
+class StatsView(_AdminView):
+    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``)."""
+
+    def get(self, request):
+        params = request.query_params
+        try:
+            start, end = stats.parse_range(params.get("from"), params.get("to"), today=timezone.localdate())
+        except ValueError as exc:
+            return _refused("range", str(exc))
+        return Response({
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            **stats.summary(start, end),
+            "debt_effect": stats.debt_effect(3, today=end),
         })
 
 
