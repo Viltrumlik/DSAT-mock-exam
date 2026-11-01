@@ -41,6 +41,7 @@ export interface LiveQuizConfig {
   shuffle_answers?: boolean;
   show_answers?: boolean;
   powerups?: boolean;
+  redemption?: boolean;
   point_scale?: number;
 }
 
@@ -177,6 +178,8 @@ export interface LiveResultsReport {
       order: number;
       answered: boolean;
       timed_out?: boolean;
+      /** Asked again at the end: null if never, else how the retry went. */
+      second_try?: boolean | null;
       answer?: unknown;
       is_correct: boolean;
       points_awarded: number;

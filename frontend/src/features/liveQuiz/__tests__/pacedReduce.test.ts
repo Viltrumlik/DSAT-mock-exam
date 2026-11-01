@@ -154,3 +154,16 @@ describe("the option shuffle", () => {
     expect([...shuffled].sort((a, b) => a.id.localeCompare(b.id))).toEqual(choices);
   });
 });
+
+describe("student-paced: second chance", () => {
+  it("marks a question that came back, and clears the mark on the next", () => {
+    let room = reduce(
+      inPlay(),
+      frame("question_started", { question: question(13, 5), starts_in_ms: 3_000, ends_in_ms: 33_000, second_try: true }),
+      1_000,
+    );
+    expect(room.secondTry).toBe(true);
+    room = reduce(room, frame("question_started", { question: question(14, 0), starts_in_ms: 0, ends_in_ms: 30_000 }), 2_000);
+    expect(room.secondTry).toBe(false);
+  });
+});

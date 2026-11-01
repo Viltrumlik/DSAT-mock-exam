@@ -173,6 +173,8 @@ CONFIG_DEFAULTS: dict = {
     "shuffle_answers": False,
     "show_answers": True,
     "powerups": False,
+    # Student-paced: a missed question comes back once at the end ("second chance").
+    "redemption": False,
     # What one question point is worth on the board. 100 for every room created before the
     # rebuild; new rooms use the classroom-game scale below. Internal: not offered to the host.
     "point_scale": 100,
@@ -206,6 +208,7 @@ NEW_SESSION_DEFAULTS: dict = {
     "shuffle_questions": True,
     "shuffle_answers": True,
     "powerups": True,
+    "redemption": True,
     "point_scale": 600,
     "speed_bonus_ratio": round(400 / 600, 4),
 }
@@ -223,6 +226,10 @@ NO_TIMER = 0
 # opens. The next question's clock starts when it appears, not when the last one was
 # answered, so reading the feedback never costs anybody time.
 FEEDBACK_SECONDS = 3
+
+# Second chance: one missed question comes back at the end of a paper this long or shorter,
+# two for a longer one.
+SECOND_TRY_LONG_PAPER = 15
 
 # Answers that arrive within this many milliseconds after the deadline still count. The
 # deadline is the server's, so a student who tapped at 19.9s can easily arrive at 20.2s;

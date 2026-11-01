@@ -54,6 +54,7 @@ const PRESETS: Record<Preset, { title: string; blurb: string; icon: React.Elemen
       shuffle_questions: true,
       shuffle_answers: true,
       powerups: true,
+      redemption: true,
     },
   },
   teacher: {
@@ -70,6 +71,7 @@ const PRESETS: Record<Preset, { title: string; blurb: string; icon: React.Elemen
       shuffle_questions: false,
       shuffle_answers: false,
       powerups: false,
+      redemption: false,
     },
   },
   test: {
@@ -86,6 +88,7 @@ const PRESETS: Record<Preset, { title: string; blurb: string; icon: React.Elemen
       shuffle_questions: true,
       shuffle_answers: true,
       powerups: false,
+      redemption: false,
     },
   },
 };
@@ -329,7 +332,7 @@ export function HostConsole() {
               <Toggle
                 label="Tell students if they were right"
                 checked={config.reveal_correctness !== false}
-                onChange={(v) => setConfig((prev) => ({ ...prev, reveal_correctness: v, show_answers: v ? prev.show_answers : false, show_leaderboard_between: v ? prev.show_leaderboard_between : false }))}
+                onChange={(v) => setConfig((prev) => ({ ...prev, reveal_correctness: v, show_answers: v ? prev.show_answers : false, show_leaderboard_between: v ? prev.show_leaderboard_between : false, redemption: v ? prev.redemption : false }))}
               />
               <Toggle
                 label="Show the leaderboard during the game"
@@ -353,6 +356,13 @@ export function HostConsole() {
                   label="Power-ups (earned with 3 right in a row)"
                   checked={Boolean(config.powerups)}
                   onChange={(v) => set("powerups", v)}
+                />
+              )}
+              {paced && (
+                <Toggle
+                  label="Second chance on a missed question at the end"
+                  checked={Boolean(config.redemption)}
+                  onChange={(v) => setConfig((prev) => ({ ...prev, redemption: v, reveal_correctness: v ? true : prev.reveal_correctness }))}
                 />
               )}
             </div>

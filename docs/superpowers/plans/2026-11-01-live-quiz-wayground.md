@@ -94,7 +94,9 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 2. ~~★ XP/coins?~~ — **answered: neither — a currency of its own (Gems) and an avatar shop** → PR #338.
 3. ~~Power-ups~~ — **answered: keep all five.**
 4. ~~Auto-end~~ — **answered: the game ends itself when everyone is done** (built in this PR).
-5. Redemption question (re-ask one missed question at the end) — want it?
+5. ~~Redemption question~~ — **answered: yes** → built as "second chance": one missed question
+   (two on a paper over 15) comes back at the end; right = base points and counts as right; off in
+   test rooms and teacher-paced rooms.
 6. Memes / music — want our own set (we would need images/audio we own)?
 7. Question sources — vocabulary sets only (today), or also Question Bank / SAT questions?
 8. iOS — update the app to the new look (separate PR)?

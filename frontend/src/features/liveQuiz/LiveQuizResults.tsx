@@ -200,7 +200,7 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
                         {player.answers.map((answer) => (
                           <span
                             key={answer.question_id}
-                            title={`Question ${answer.order + 1}`}
+                            title={`Question ${answer.order + 1}${answer.second_try ? " — right on the second chance" : ""}`}
                             className={cn(
                               "flex h-5 w-5 items-center justify-center rounded",
                               answer.timed_out
