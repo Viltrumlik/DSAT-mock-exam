@@ -151,7 +151,12 @@ describe("OverviewPanel", () => {
     expect(text()).toContain("Next: 2 Nov 2026 · 195 students");
   });
 
-  it("says nothing about today before its run", async () => {
+  it("shows what is left when every warning so far failed", async () => {
+    await render({ data: data({ debt: { ...data().debt, today_sent: 0, today_left: 5 } }) });
+    expect(text()).toContain("Today: 0 sent · 5 left");
+  });
+
+  it("says nothing about today on a day without warnings", async () => {
     await render({ data: data() });
     expect(text()).not.toContain("Today:");
   });
