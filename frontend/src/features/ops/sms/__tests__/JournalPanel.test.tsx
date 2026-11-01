@@ -17,6 +17,7 @@ const messages = vi.fn();
 const resend = vi.fn();
 const exportMessages = vi.fn();
 const downloadBlob = vi.fn();
+const overview = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
@@ -31,7 +32,7 @@ vi.mock("next/link", () => ({
 vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsMessages: (params: unknown) => messages(params),
   useResendMessages: () => ({ mutate: resend, isPending: false }),
-  useSmsOverview: () => ({ data: { price_per_part: 170 } }),
+  useSmsOverview: () => overview(),
 }));
 vi.mock("@/features/ops/sms/smsApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/features/ops/sms/smsApi")>()),
@@ -86,6 +87,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-11-03T08:00:00Z"));
   replace.mockReset();
   resend.mockReset();
+  overview.mockReset().mockReturnValue({ data: { price_per_part: 170 } });
   downloadBlob.mockReset();
   exportMessages.mockReset().mockResolvedValue(new Blob(["x"]));
   messages.mockReset().mockReturnValue({
@@ -100,6 +102,15 @@ afterEach(async () => {
 });
 
 describe("JournalPanel", () => {
+  it("offers no Resend in the drawer until it knows the price", async () => {
+    overview.mockReturnValue({ data: undefined });
+    await render();
+    const openers = container.querySelectorAll<HTMLButtonElement>("tbody tr td:first-child button");
+    await act(async () => openers[1].click());
+    const button = [...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Resend")!;
+    expect(button.disabled).toBe(true);
+  });
+
   it("lists each SMS under its day: time, who and their class, phone, source, status in words, text", async () => {
     await render();
     const heads = [...container.querySelectorAll("thead th")].map((th) => th.textContent?.trim());

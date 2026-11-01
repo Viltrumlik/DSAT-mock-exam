@@ -29,7 +29,8 @@ export function useConfirmedResend(pricePerPart: number) {
   const resend = useResendMessages();
   const toast = useToast();
   const send = (targets: SmsMessage[], onDone?: () => void) => {
-    if (!targets.length || resend.isPending) return;
+    // Never a paid send without its price in the question.
+    if (!targets.length || resend.isPending || pricePerPart <= 0) return;
     const cost = targets.reduce((sum, m) => sum + m.parts * pricePerPart, 0);
     if (!window.confirm(`Resend ${targets.length} SMS, ~${money(cost)}?`)) return;
     resend.mutate(

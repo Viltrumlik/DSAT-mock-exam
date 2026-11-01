@@ -467,6 +467,11 @@ export function ChangeList<R extends { id: number }>({
               </table>
             </div>
           )}
+          {mobileCard && !error && (!rows || rows.length === 0) ? (
+            <p data-mobile-state className="border border-border bg-card px-3 py-6 text-[13px] text-muted-foreground sm:hidden">
+              {loading && !rows ? "Loading…" : `No ${noun.plural} match.`}
+            </p>
+          ) : null}
           {mobileCard && rows && rows.length > 0 && !error ? (
             <ul className={cn("divide-y divide-border border border-border bg-card sm:hidden", fetching && "opacity-60")}>
               {rows.map((row, index) => {

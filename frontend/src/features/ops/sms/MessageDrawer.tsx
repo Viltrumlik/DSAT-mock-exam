@@ -67,7 +67,14 @@ export function MessageDrawer({ m, pricePerPart, onClose }: { m: SmsMessage; pri
         <div className="flex flex-wrap items-center gap-2">
           <StatusPill message={m} />
           {m.can_resend ? (
-            <button type="button" className={TEXT_BUTTON} disabled={resend.isPending} onClick={() => resend.send([m], onClose)}>
+            <button
+              type="button"
+              className={TEXT_BUTTON}
+              // A paid send asks with its price first: no price yet, no Resend.
+              disabled={resend.isPending || pricePerPart <= 0}
+              title={pricePerPart <= 0 ? "Waiting for the price per SMS…" : undefined}
+              onClick={() => resend.send([m], onClose)}
+            >
               Resend
             </button>
           ) : null}

@@ -358,6 +358,13 @@ describe("ChangeList groups and cards", () => {
       "card Bekzod Rahimov",
     ]);
   });
+
+  it("says it is loading, or that nothing matches, on narrow screens too", () => {
+    render({ mobileCard: (r) => <span>{r.name}</span>, data: undefined, loading: true });
+    expect(host.querySelector("[data-mobile-state]")?.textContent).toBe("Loading…");
+    render({ mobileCard: (r) => <span>{r.name}</span>, data: data({ count: 0, results: [] }) });
+    expect(host.querySelector("[data-mobile-state]")?.textContent).toBe("No students match.");
+  });
 });
 
 describe("pageWindow", () => {
