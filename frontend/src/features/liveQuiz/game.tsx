@@ -255,9 +255,9 @@ export function AnswerTiles({
             aria-pressed={isPicked || undefined}
             className={cn(
               styles.tile,
-              large ? "min-h-[140px] text-2xl" : "text-lg",
+              large ? cn(styles.tileLarge, "text-2xl") : "text-lg",
               // Room for the count bar along the bottom, clear of a two-line option.
-              counts && "pb-9",
+              counts && styles.tileCounts,
               isPicked && styles.tilePicked,
               dim && styles.tileDim,
               isGone && styles.tileGone,

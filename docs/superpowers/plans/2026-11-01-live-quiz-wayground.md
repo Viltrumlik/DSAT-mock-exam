@@ -71,13 +71,22 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 
 - [x] Backend: config, modes, scoring scale, `paced.py`, `powerups.py`, events, consumer, migration
 - [x] Backend tests (`tests_paced.py`) — full `livequiz` suite green
-- [ ] Frontend: game theme + answer tiles + top bar + feedback splash + power-up bar
-- [ ] Frontend: student-paced player screen; teacher-paced player restyled
-- [ ] Frontend: host console (mode cards + settings), lobby, live dashboard, podium
-- [ ] Frontend: student end summary + review; results page uses new fields
-- [ ] Reducer tests; tsc / eslint / vitest green
-- [ ] Browser check of both modes end to end
-- [ ] PR (no deploy — deploy needs owner's OK and the open-attempts census)
+- [x] Frontend: game theme + answer tiles + top bar + feedback splash + power-up bar
+- [x] Frontend: student-paced player screen; teacher-paced player restyled
+- [x] Frontend: host console (mode cards + settings), lobby, live dashboard, podium
+- [x] Frontend: student end summary + review; results page uses new fields
+- [x] Reducer tests; tsc / eslint / vitest green
+- [x] Browser check of both modes end to end
+- [x] PR #337 (draft) — **no deploy**: deploying needs the owner's OK and the open-attempts census
+
+## Verified (2026-11-01)
+
+- Backend `livequiz` suite 142 OK; frontend 2123 tests green; tsc / eslint / api-layer clean.
+- Real-wire probe against real uvicorn (JWT auth, REST + WebSocket): 25/25 — own questions,
+  server time-outs, power-ups, latecomer, pause/resume clocks, podium, results privacy.
+- Real browsers (Playwright, 3 users, both modes) against that uvicorn: every screen shot, 0 server
+  tracebacks. Found and fixed: join race (500), host stuck on "Get ready…", canvas under the shell,
+  stale correct count, toggles, tile padding.
 
 ## Parked questions for the owner (ask after the exam, one at a time)
 

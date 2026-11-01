@@ -55,6 +55,16 @@
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
 }
 
+/* Set here, not as utilities: this file is unlayered, so its `.tile` padding and min-height
+   outrank any Tailwind class placed beside it. */
+.tileLarge {
+  min-height: 140px;
+}
+
+.tileCounts {
+  padding-bottom: 40px;
+}
+
 .tilePicked {
   outline: 4px solid #fff;
   outline-offset: 3px;
