@@ -135,6 +135,8 @@ export interface DebtEffectMonth {
   paid_1: number;
   paid_3: number;
   paid_5: number;
+  /** Not paid yet, but their 5 days are not over: not counted as unpaid. */
+  open: number;
   unpaid: number;
 }
 

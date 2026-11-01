@@ -63,7 +63,7 @@ Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-
   "by_day": [{"day": "2026-11-01", "sent": 190, "delivered": 178, "undelivered": 11, "rejected": 1, "failed": 0, "pending": 0, "rate": 0.937, "cost": 32300}],
   "by_operator": [{"operator": "Uzmobile", "total": 60, "delivered": 51, "rate": 0.85}],
   "cost_by_month": [{"month": "2026-11", "debt_warning": 32300, "campaign": 0, "automation": 0, "test": 340, "total": 32640}],
-  "debt_effect": [{"month": "2026-11", "warned": 194, "paid_1": 40, "paid_3": 88, "paid_5": 120, "unpaid": 74}]
+  "debt_effect": [{"month": "2026-11", "warned": 194, "paid_1": 40, "paid_3": 88, "paid_5": 120, "open": 0, "unpaid": 74}]
 }
 ```
 
@@ -75,7 +75,8 @@ Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-
 - `debt_effect` covers the last 3 months up to `to`, oldest first, and only months that had warnings:
   - `warned` counts distinct lc-up students with a debt warning eskiz took;
   - `paid_N` counts those with an lc-up `payment` within N days of their first warning that month, where the first day counts as day 1;
-  - `unpaid` = `warned − paid_5`.
+  - `open` (review fix) counts those not paid yet whose 5 days are not over at `to`;
+  - `unpaid` = `warned − paid_5 − open`, so it holds only those whose 5 days ran out.
 
 ## GET messages/
 

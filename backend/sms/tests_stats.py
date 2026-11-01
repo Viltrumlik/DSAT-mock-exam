@@ -121,8 +121,19 @@ class DebtEffectTests(TestCase):
         self.pay(4, date(2026, 10, 30))  # before the warning
         self.assertEqual(
             stats.debt_effect(3, today=date(2026, 11, 8)),
-            [{"month": "2026-11", "warned": 4, "paid_1": 1, "paid_3": 2, "paid_5": 3, "unpaid": 1}],
+            [{"month": "2026-11", "warned": 4, "paid_1": 1, "paid_3": 2, "paid_5": 3, "open": 0, "unpaid": 1}],
         )
+
+    def test_a_window_still_open_is_not_counted_as_unpaid(self):
+        """On 2 Nov, a student first warned on 1 Nov still has until 5 Nov: not "did not pay" yet."""
+        sms(S.STATUS_DELIVERED, lcup_student_id=1, run_on=NOV1)
+        sms(S.STATUS_DELIVERED, lcup_student_id=2, run_on=NOV1)
+        self.pay(1, NOV1)
+        self.assertEqual(
+            stats.debt_effect(3, today=date(2026, 11, 2)),
+            [{"month": "2026-11", "warned": 2, "paid_1": 1, "paid_3": 1, "paid_5": 1, "open": 1, "unpaid": 0}],
+        )
+        self.assertEqual(stats.debt_effect(3, today=date(2026, 11, 6))[0]["unpaid"], 1)
 
 
 class StatsApiTests(ApiFixture):

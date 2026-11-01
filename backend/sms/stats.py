@@ -162,7 +162,9 @@ def _month_start(day: date, back: int) -> date:
 def debt_effect(months: int = 3, *, today: date) -> list[dict]:
     """Per month (oldest first, only months with warnings, the last ``months`` up to ``today``): how
     many students the debt warning reached (eskiz took it), and how many of them paid within 1, 3 and
-    5 days of their first warning that month. Refunds and extras are not payments."""
+    5 days of their first warning that month. Refunds and extras are not payments. ``open`` counts
+    those not paid yet whose 5 days are not over on ``today`` (the 2026-11-02 review): they are not
+    in ``unpaid``, which is only those whose days ran out."""
     firsts = list(
         SmsMessage.objects.filter(
             kind=S.KIND_DEBT_WARNING, status__in=ACCEPTED_STATUSES, lcup_student_id__isnull=False,
@@ -187,15 +189,15 @@ def debt_effect(months: int = 3, *, today: date) -> list[dict]:
     out: dict[str, dict] = {}
     for f in firsts:
         key = f["month"].strftime("%Y-%m")
-        row = out.setdefault(key, {"month": key, "warned": 0, **{f"paid_{d}": 0 for d in PAID_WITHIN}})
+        row = out.setdefault(key, {"month": key, "warned": 0, **{f"paid_{d}": 0 for d in PAID_WITHIN}, "open": 0})
         row["warned"] += 1
         days = [p for p in paid_on.get(f["lcup_student_id"], ()) if p >= f["first"]]
-        if not days:
-            continue
-        waited = (min(days) - f["first"]).days + 1
+        waited = (min(days) - f["first"]).days + 1 if days else None
         for d in PAID_WITHIN:
-            if waited <= d:
+            if waited is not None and waited <= d:
                 row[f"paid_{d}"] += 1
+        if (waited is None or waited > longest) and f["first"] + timedelta(days=longest - 1) >= today:
+            row["open"] += 1  # not paid yet, but their days are not over: not "did not pay"
     for row in out.values():
-        row["unpaid"] = row["warned"] - row[f"paid_{longest}"]
+        row["unpaid"] = row["warned"] - row[f"paid_{longest}"] - row["open"]
     return [out[key] for key in sorted(out)]

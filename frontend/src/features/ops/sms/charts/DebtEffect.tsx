@@ -7,7 +7,8 @@ import type { DebtEffectMonth } from "../smsApi";
 /**
  * What the debt warning makes people do, per month: of the students it reached, how many had paid
  * by the end of day 1, 3 and 5 of their first warning — and how many had not by then (the freeze
- * takes them on day 6). Each bar is that share of the warned; the figures are counts.
+ * takes them on day 6). Each bar is that share of the warned; the figures are counts. During the
+ * warning days some still have time: they are shown apart, never as "did not pay".
  */
 
 const STEPS: { key: "paid_1" | "paid_3" | "paid_5"; label: string }[] = [
@@ -26,7 +27,11 @@ function Step({ label, count, warned, color, strong }: { label: string; count: n
     <li className="grid grid-cols-[8rem_1fr_3rem] items-center gap-2">
       <span className="text-muted-foreground">{label}</span>
       <span className="h-2.5 overflow-hidden rounded-full bg-surface-2">
-        <span className="block h-full rounded-full transition-[width] duration-500" style={{ width: warned ? `${(count / warned) * 100}%` : "0%", background: color }} />
+        <span
+          data-debt-bar
+          className="block h-full rounded-full motion-safe:transition-[width] motion-safe:duration-500"
+          style={{ width: warned ? `${(count / warned) * 100}%` : "0%", background: color }}
+        />
       </span>
       <span className={`text-right font-semibold tabular-nums ${strong ?? ""}`}>{count}</span>
     </li>
@@ -64,9 +69,16 @@ export function DebtEffect({ months }: { months: DebtEffectMonth[] }) {
         {STEPS.map((s) => (
           <Step key={s.key} label={s.label} count={month[s.key]} warned={month.warned} color="var(--success)" />
         ))}
+        {month.open > 0 ? (
+          <Step label="Still have time" count={month.open} warned={month.warned} color="var(--text-secondary)" />
+        ) : null}
         <Step label="Did not pay" count={month.unpaid} warned={month.warned} color="var(--danger)" strong="text-danger" />
       </ul>
-      <p className="text-muted-foreground">{`${month.unpaid} did not pay within 5 days of the first warning.`}</p>
+      <p className="text-muted-foreground">
+        {month.open > 0
+          ? `${month.open} still have time · ${month.unpaid} did not pay within their 5 days so far.`
+          : `${month.unpaid} did not pay within 5 days of the first warning.`}
+      </p>
     </div>
   );
 }

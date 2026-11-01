@@ -85,7 +85,7 @@ function statsData(over: Partial<SmsStats> = {}): SmsStats {
       { operator: "Uzmobile", total: 60, delivered: 51, rate: 0.85 },
     ],
     cost_by_month: [{ month: "2026-11", debt_warning: 32300, campaign: 0, automation: 0, test: 340, total: 32640 }],
-    debt_effect: [{ month: "2026-11", warned: 194, paid_1: 40, paid_3: 88, paid_5: 120, unpaid: 74 }],
+    debt_effect: [{ month: "2026-11", warned: 194, paid_1: 40, paid_3: 88, paid_5: 120, open: 0, unpaid: 74 }],
     ...over,
   };
 }
@@ -180,6 +180,25 @@ describe("OverviewPanel: the charts", () => {
     expect(text()).toContain("88");
     expect(text()).toContain("120");
     expect(text()).toContain("74 did not pay");
+  });
+
+  it("keeps those whose 5 days are not over apart from those who did not pay", async () => {
+    await render(
+      { data: data() },
+      { data: statsData({ debt_effect: [{ month: "2026-11", warned: 194, paid_1: 40, paid_3: 40, paid_5: 40, open: 150, unpaid: 4 }] }) },
+    );
+    expect(text()).toContain("150 still have time");
+    expect(text()).toContain("4 did not pay");
+  });
+
+  it("grows the debt bars only for a viewer who allows motion", async () => {
+    await render({ data: data() });
+    const bars = [...document.querySelectorAll("[data-debt-bar]")];
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) {
+      expect(bar.className).toContain("motion-safe:transition-[width]");
+      expect(bar.className).not.toMatch(/(^| )transition-\[width\]/);
+    }
   });
 
   it("lists what did not arrive in the range", async () => {
