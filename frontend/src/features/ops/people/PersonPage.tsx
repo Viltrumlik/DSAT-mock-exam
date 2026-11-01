@@ -26,6 +26,7 @@ import { AttendanceSection } from "./sections/AttendanceSection";
 import { ResultsSection } from "./sections/ResultsSection";
 import { SecuritySection } from "./sections/SecuritySection";
 import { HistorySection } from "./sections/HistorySection";
+import { SmsSection } from "./sections/SmsSection";
 
 /**
  * One person's page. Close to Django admin's change form, made to be read: a header with their
@@ -227,6 +228,7 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
         {tab === "security" ? (
           <SecuritySection id={id} person={person} onOneTimePassword={() => setDialog("otp")} />
         ) : null}
+        {tab === "sms" ? <SmsSection id={id} /> : null}
         {tab === "history" ? <HistorySection id={id} /> : null}
         {tab === "classes" && person.staff ? <StaffClassesSection staff={person.staff} /> : null}
       </div>

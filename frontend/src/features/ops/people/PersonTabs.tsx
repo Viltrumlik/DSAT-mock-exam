@@ -8,7 +8,7 @@ import {
   tabId as tabOf,
   type Tab as AnyTab,
 } from "@/features/ops/detail/tabs";
-import { CalendarCheck, History, School, ShieldCheck, Trophy, UserRound, Users, Wallet } from "lucide-react";
+import { CalendarCheck, History, MessageSquare, School, ShieldCheck, Trophy, UserRound, Users, Wallet } from "lucide-react";
 import type { PersonCore } from "./personApi";
 
 /**
@@ -18,7 +18,8 @@ import type { PersonCore } from "./personApi";
  * person has.
  */
 
-export type TabKey = "overview" | "groups" | "payments" | "attendance" | "results" | "security" | "history" | "classes";
+export type TabKey =
+  | "overview" | "groups" | "payments" | "attendance" | "results" | "sms" | "security" | "history" | "classes";
 export type Tab = AnyTab<TabKey>;
 
 export { TAB_PARAM } from "@/features/ops/detail/tabs";
@@ -29,6 +30,7 @@ const TAB: Record<TabKey, Tab> = {
   payments: { key: "payments", label: "Payments", icon: Wallet },
   attendance: { key: "attendance", label: "Attendance", icon: CalendarCheck },
   results: { key: "results", label: "Results", icon: Trophy },
+  sms: { key: "sms", label: "SMS", icon: MessageSquare },
   security: { key: "security", label: "Security", icon: ShieldCheck },
   history: { key: "history", label: "History", icon: History },
   classes: { key: "classes", label: "Classes", icon: School },
@@ -49,6 +51,8 @@ export function tabsFor(person: PersonCore): Tab[] {
     if (person.lcup) keys.push("payments");
     if (person.past_groups.length > 0 || person.groups.length > 0) keys.push("groups");
   }
+  // SMS go to lc-up's phone: a centre student, or anyone lc-up knows.
+  if (person.section === "students" || person.lcup) keys.push("sms");
   keys.push("security", "history");
   return keys.map((k) => TAB[k]);
 }

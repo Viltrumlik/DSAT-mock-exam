@@ -234,7 +234,7 @@ describe("the person page's tabs", () => {
   it("gives a student every subject, Payments only with lc-up", async () => {
     route(core());
     await renderPage();
-    expect(tabLabels()).toEqual(["Overview", "Groups", "Payments", "Attendance", "Results", "Security", "History"]);
+    expect(tabLabels()).toEqual(["Overview", "Groups", "Payments", "Attendance", "Results", "SMS", "Security", "History"]);
     expect(tab("Overview")?.getAttribute("aria-selected")).toBe("true");
 
     remount();
@@ -251,7 +251,7 @@ describe("the person page's tabs", () => {
     remount();
     route(core({ section: "public", status: "public", groups: [], past_groups: [{ id: 2, name: "Old", left_at: null }] }));
     await renderPage("public");
-    expect(tabLabels()).toEqual(["Overview", "Results", "Payments", "Groups", "Security", "History"]);
+    expect(tabLabels()).toEqual(["Overview", "Results", "Payments", "Groups", "SMS", "Security", "History"]);
   });
 
   it("gives a staff member Overview, Classes, Security and History", async () => {
