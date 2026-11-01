@@ -43,6 +43,7 @@ LOGIN_REFUSED_KEY = "eskiz:login-refused"
 #: After eskiz refuses our login (or a token it has just issued) nobody asks again for this long.
 LOGIN_BACKOFF = 10 * 60
 SEND_PATH = "/message/sms/send"
+CHECK_PATH = "/message/sms/check"
 _REQUEST_ID = re.compile(r"^[A-Za-z0-9-]{1,64}$")
 
 ACCEPTED = "accepted"
@@ -199,6 +200,28 @@ class EskizClient:
         body = self._read("POST", "/user/template", data={"template": text})
         return body if isinstance(body, dict) else {}
 
+    def check(self, text: str) -> dict | None:
+        """eskiz's verdict on a text before it goes (free; nothing is sent): ``{"forbidden", "keywords"}``.
+        None when eskiz did not answer — the caller then sends the text as it is (``sms.forbidden``)."""
+        if not (self.email and self.secret):
+            return None
+        try:
+            token = None
+            for _ in range(2):
+                token = self._token(stale=token)
+                resp = self._send("POST", CHECK_PATH, token=token, json={"message": text})
+                if not _expired(resp):
+                    break
+            else:
+                return None
+        except EskizError:
+            return None
+        data = _body(resp).get("data") if resp.status_code < 400 else None
+        if not isinstance(data, dict):
+            return None
+        keywords = [str(k) for k in (data.get("keywords") or []) if str(k).strip()]
+        return {"forbidden": bool(data.get("forbidden")), "keywords": keywords}
+
     def _read(self, method: str, path: str, *, data=None):
         if not (self.email and self.secret):
             raise EskizError("eskiz is not configured")
@@ -256,12 +279,14 @@ class EskizClient:
 
     # ── transport ─────────────────────────────────────────────────────────
 
-    def _send(self, method, path, *, token, data=None):
+    def _send(self, method, path, *, token, data=None, json=None):
         headers = {"Accept": "application/json"}
         if token:
             headers["Authorization"] = f"Bearer {token}"
         try:
-            return self.session.request(method, self.base_url + path, data=data, headers=headers, timeout=TIMEOUT)
+            return self.session.request(
+                method, self.base_url + path, data=data, json=json, headers=headers, timeout=TIMEOUT
+            )
         except requests.ConnectTimeout:
             raise _Unreached("eskiz unreachable: ConnectTimeout") from None
         except requests.RequestException as exc:

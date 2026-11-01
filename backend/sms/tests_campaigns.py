@@ -575,3 +575,13 @@ class AudienceLabelTests(Fixture):
         self.assertEqual(label("group", [self.room.pk]), "Group: Junior G21 | Math")
         self.assertEqual(label("student", [malika.pk]), "Student: Malika Karimova")
         self.assertEqual(label("student", [malika.pk, aziza.pk]), "2 students")
+
+
+class ForbiddenWordTests(Fixture):
+    def test_a_flagged_surname_is_dropped_from_a_campaign_sms(self):
+        self.learner(101, "malika", name="Shavkatova Malika")
+        self.create()
+        fake = FakeEskiz(forbidden={"shavkat"})
+        campaigns.dispatch_due(fake, NOW)
+        self.assertEqual(len(fake.sent), 1)
+        self.assertEqual(fake.sent[0][1], MALIKA_64942.replace("Karimova Malika,", "Malika,"))

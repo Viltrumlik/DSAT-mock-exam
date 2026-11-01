@@ -38,7 +38,7 @@ from lcup.finance import freezable
 from lcup.models import LcupStudentLink
 from lcup.phones import normalize_phone
 
-from . import switchboard
+from . import forbidden, switchboard
 from . import templates as T
 from .delivery import deliver
 from .models import SmsMessage
@@ -195,9 +195,16 @@ def send(client, now, *, retry_only: bool = False) -> dict:
         if retry is not None and warning.dedupe_key not in retry:
             continue
         try:
+            text, flagged = forbidden.scrub(client, warning.text, warning.link.name or warning.link.user.get_full_name())
+            if text is None:
+                logger.warning(
+                    "debt warning for lc-up student %s: eskiz forbids the text (%s)", warning.link.lcup_student_id, flagged
+                )
+                counts["forbidden_text"] = counts.get("forbidden_text", 0) + 1
+                continue
             msg = deliver(
                 client, kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, dedupe_key=warning.dedupe_key,
-                phone=warning.phone, text=warning.text, user=warning.link.user,
+                phone=warning.phone, text=text, user=warning.link.user,
                 lcup_student_id=warning.link.lcup_student_id,
             )
         except Exception as exc:  # the type only: the message may quote the phone
