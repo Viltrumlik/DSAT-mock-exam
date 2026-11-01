@@ -29,7 +29,11 @@ export type LiveQuizEvent =
   | "session_terminated"
   | "removed_from_session"
   | "error"
-  | "pong";
+  | "pong"
+  // Student-paced.
+  | "player_progress"
+  | "powerup_awarded"
+  | "powerup_applied";
 
 export type LiveQuizFrame = { type: LiveQuizEvent; data: Record<string, unknown> };
 

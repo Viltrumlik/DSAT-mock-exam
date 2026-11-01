@@ -10,13 +10,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Check, Minus, X } from "lucide-react";
+import { ArrowLeft, Check, Clock, Flame, Minus, X } from "lucide-react";
 
 import { Button, Card, ErrorState, LoadingState } from "@/features/classroom/ui";
 import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
-import { liveQuizApi } from "./api";
+import { liveQuizApi, type LiveResultsReport } from "./api";
 
 /** Podium colours, the same three the school leaderboard uses. */
 const MEDAL = ["#d4a017", "#9aa4b2", "#b4703a"];
@@ -26,6 +26,18 @@ function percent(correct: number, answered: number): number | null {
   // rather than painting the question red.
   if (answered <= 0) return null;
   return Math.round((correct / answered) * 100);
+}
+
+type ReportQuestion = LiveResultsReport["questions"][number];
+
+/** Everybody who met the question — a student-paced clock running out counts as a miss. */
+function seen(question: ReportQuestion): number {
+  return question.answered + (question.missed ?? 0);
+}
+
+function answerText(question: ReportQuestion): string {
+  const key = String(question.correct_answer ?? "").toUpperCase();
+  return (question.choices ?? []).find((c) => c.id.toUpperCase() === key)?.text ?? String(question.correct_answer ?? "");
 }
 
 export function LiveQuizResults({ sessionId }: { sessionId: number }) {
@@ -51,11 +63,9 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
   const players = report.participants;
 
   // The question the room did worst on, ignoring any nobody reached.
-  const attempted = questions.filter((q) => q.answered > 0);
+  const attempted = questions.filter((q) => seen(q) > 0);
   const weakest = attempted.length
-    ? attempted.reduce((worst, q) =>
-        q.correct / q.answered < worst.correct / worst.answered ? q : worst,
-      )
+    ? attempted.reduce((worst, q) => (q.correct / seen(q) < worst.correct / seen(worst) ? q : worst))
     : null;
 
   return (
@@ -79,7 +89,7 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
         </div>
       </div>
 
-      {weakest && percent(weakest.correct, weakest.answered) !== null && (
+      {weakest && percent(weakest.correct, seen(weakest)) !== null && (
         <Card className="border-amber-500/30 bg-amber-500/5">
           <p className="text-xs font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
             Worth going over again
@@ -88,11 +98,11 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
             <AssessmentText text={weakest.prompt} />
           </div>
           <p className="mt-2 text-sm text-muted-foreground">
-            {percent(weakest.correct, weakest.answered)}% got it right
+            {percent(weakest.correct, seen(weakest))}% got it right
             {" — "}
             the answer was{" "}
             <span className="font-semibold text-foreground">
-              {String(weakest.correct_answer)}
+              <AssessmentText text={answerText(weakest)} />
             </span>
           </p>
         </Card>
@@ -102,7 +112,7 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
         <p className="mb-3 text-sm font-semibold">Question by question</p>
         <ul className="space-y-2">
           {questions.map((question) => {
-            const share = percent(question.correct, question.answered);
+            const share = percent(question.correct, seen(question));
             return (
               <li key={question.question_id} className="flex items-center gap-3">
                 <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">
@@ -129,7 +139,7 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
                   </div>
                 </div>
                 <span className="w-24 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
-                  {share === null ? "not reached" : `${share}% · ${question.answered}`}
+                  {share === null ? "not reached" : `${share}% · ${seen(question)}`}
                 </span>
               </li>
             );
@@ -149,6 +159,8 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
                 <th className="px-3 py-2 font-medium">Name</th>
                 <th className="px-3 py-2 text-right font-medium">Score</th>
                 <th className="px-3 py-2 text-right font-medium">Right</th>
+                <th className="px-3 py-2 text-right font-medium">Accuracy</th>
+                <th className="px-3 py-2 text-right font-medium">Best streak</th>
                 <th className="px-3 py-2 font-medium">Answers</th>
               </tr>
             </thead>
@@ -170,6 +182,19 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
                     <td className="px-3 py-2 text-right font-mono text-muted-foreground tabular-nums">
                       {player.correct_count}/{questions.length}
                     </td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums">
+                      {player.accuracy == null ? "—" : `${player.accuracy}%`}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono tabular-nums text-muted-foreground">
+                      {(player.best_streak ?? 0) >= 2 ? (
+                        <span className="inline-flex items-center gap-0.5 text-orange-600">
+                          <Flame className="h-3.5 w-3.5" aria-hidden />
+                          {player.best_streak}
+                        </span>
+                      ) : (
+                        player.best_streak ?? 0
+                      )}
+                    </td>
                     <td className="px-3 py-2">
                       <div className="flex gap-1">
                         {player.answers.map((answer) => (
@@ -178,14 +203,18 @@ export function LiveQuizResults({ sessionId }: { sessionId: number }) {
                             title={`Question ${answer.order + 1}`}
                             className={cn(
                               "flex h-5 w-5 items-center justify-center rounded",
-                              !answer.answered
-                                ? "bg-surface-2 text-muted-foreground"
-                                : answer.is_correct
-                                  ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
-                                  : "bg-rose-500/10 text-rose-600 dark:text-rose-400",
+                              answer.timed_out
+                                ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                : !answer.answered
+                                  ? "bg-surface-2 text-muted-foreground"
+                                  : answer.is_correct
+                                    ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+                                    : "bg-rose-500/10 text-rose-600 dark:text-rose-400",
                             )}
                           >
-                            {!answer.answered ? (
+                            {answer.timed_out ? (
+                              <Clock className="h-3 w-3" aria-hidden />
+                            ) : !answer.answered ? (
                               <Minus className="h-3 w-3" aria-hidden />
                             ) : answer.is_correct ? (
                               <Check className="h-3 w-3" aria-hidden />

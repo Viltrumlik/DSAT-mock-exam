@@ -36,6 +36,25 @@ export interface LiveQuizConfig {
   reveal_correctness: boolean;
   shuffle_questions: boolean;
   manual_advance: boolean;
+  /** Absent on rooms created before modes existed — those are teacher-paced. */
+  mode?: LiveQuizMode;
+  shuffle_answers?: boolean;
+  show_answers?: boolean;
+  powerups?: boolean;
+  point_scale?: number;
+}
+
+export type LiveQuizMode = "student_paced" | "instructor_paced";
+
+export type PowerUpKey = "double" | "fifty_fifty" | "eraser" | "streak_saver" | "time_freeze";
+
+/** One square on the host's live dashboard: how one student did on one question. */
+export interface BoardCell {
+  /** The question's place in the paper — a column means the same question for everyone. */
+  order: number;
+  correct: boolean;
+  timed_out: boolean;
+  points: number;
 }
 
 export interface LiveSession {
@@ -67,6 +86,14 @@ export interface LiveParticipant {
   correct_count: number;
   answered_count: number;
   rank: number | null;
+  streak?: number;
+  best_streak?: number;
+  /** Student-paced: questions behind them, and whether that was the last one. */
+  progress?: number;
+  finished?: boolean;
+  /** Only on your own row. */
+  powerups?: PowerUpKey[];
+  question_total?: number;
 }
 
 export interface LiveChoice {
@@ -110,10 +137,15 @@ export interface LiveResultsReport {
     rank: number | null;
     correct_count: number;
     answered_count: number;
+    best_streak?: number;
+    /** Out of the questions they actually met; null when they met none. */
+    accuracy?: number | null;
     answers: Array<{
       question_id: number;
       order: number;
       answered: boolean;
+      timed_out?: boolean;
+      answer?: unknown;
       is_correct: boolean;
       points_awarded: number;
       response_time_ms: number | null;
@@ -123,9 +155,14 @@ export interface LiveResultsReport {
     question_id: number;
     order: number;
     prompt: string;
+    question_prompt?: string;
+    form?: LiveQuestion["form"];
+    choices?: LiveChoice[];
     correct_answer: unknown;
+    explanation?: string;
     answered: number;
     correct: number;
+    missed?: number;
     by_choice: Record<string, number>;
   }>;
 }
