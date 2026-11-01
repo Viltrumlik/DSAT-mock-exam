@@ -225,6 +225,15 @@ def _today():
     return timezone.localdate()
 
 
+def _done_keys(day) -> set:
+    """The debt warnings that day's runs already did: a key with a row that is not FAILED never goes again."""
+    return set(
+        SmsMessage.objects.filter(kind=SmsMessage.KIND_DEBT_WARNING, run_on=day)
+        .exclude(status=SmsMessage.STATUS_FAILED)
+        .values_list("dedupe_key", flat=True)
+    )
+
+
 def _start_of_today(now):
     return timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -233,9 +242,19 @@ class OverviewView(_AdminView):
     def get(self, request):
         now = timezone.now()
         row = switchboard.current()
-        # The next run that will really happen (today, when today is a warning day); none while the
-        # warning cannot run at all — switched off here, in the env, or the freeze itself off.
-        next_day = warnings.next_warning_day(_today()) if warnings.switched_on() else None
+        # The next run that will really happen: today while a warning day still has someone left to
+        # warn, else the warning day after it; none while the warning cannot run at all (switched off
+        # here, in the env, or the freeze itself off). 2026-11-01 showed why "left": after all 195
+        # had gone, the card still read "Next: 1 Nov · 195 students".
+        today, next_day, today_sent, today_left = _today(), None, 0, 0
+        if warnings.switched_on():
+            next_day = warnings.next_warning_day(today)
+            if next_day == today:
+                done = _done_keys(today)
+                today_sent = len(done)
+                today_left = sum(1 for w in warnings.plan(now, today=today).warnings if w.dedupe_key not in done)
+                if not today_left:
+                    next_day = warnings.following_warning_day(today)
         next_count = len(warnings.plan(now, today=next_day).warnings) if next_day else 0
         last_error = (
             SmsMessage.objects.exclude(error="").order_by("-updated_at", "-id").values_list("error", flat=True).first()
@@ -259,6 +278,8 @@ class OverviewView(_AdminView):
                 "hour": row.debt_hour,
                 "next_day": next_day.isoformat() if next_day else None,
                 "next_count": next_count,
+                "today_sent": today_sent,
+                "today_left": today_left,
             },
             "today": _by_status(SmsMessage.objects.filter(created_at__gte=_start_of_today(now))),
             "last7": _by_status(SmsMessage.objects.filter(created_at__gte=now - timedelta(days=7))),
@@ -480,12 +501,7 @@ class DebtPreviewView(_AdminView):
         else:
             day = warnings.next_warning_day(_today()) or _today()
         planned = warnings.plan(now, today=day)
-        # What that day's runs already did: a key with a row that is not FAILED never goes again.
-        out = set(
-            SmsMessage.objects.filter(kind=SmsMessage.KIND_DEBT_WARNING, run_on=day)
-            .exclude(status=SmsMessage.STATUS_FAILED)
-            .values_list("dedupe_key", flat=True)
-        )
+        out = _done_keys(day)
         rows = [
             {
                 "lcup_student_id": w.link.lcup_student_id,

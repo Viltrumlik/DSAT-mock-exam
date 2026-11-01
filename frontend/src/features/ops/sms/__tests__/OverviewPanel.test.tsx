@@ -37,6 +37,8 @@ function data(over: Partial<SmsOverview> = {}): SmsOverview {
     debt: {
       enabled: true, env_enabled: true, db_enabled: true, freeze_enabled: true, hour: 10, next_day: "2026-11-01",
       next_count: 12,
+      today_sent: 0,
+      today_left: 0,
     },
     today: { total: 2, by_status: { DELIVERED: 2 } },
     last7: { total: 9, by_status: { DELIVERED: 6, UNDELIVERED: 1, FAILED: 1, SENT: 1 } },
@@ -139,5 +141,18 @@ describe("OverviewPanel", () => {
   it("shows it is loading", async () => {
     await render({ isPending: true, data: undefined });
     expect(text()).toContain("Loading…");
+  });
+
+  it("shows what today's warning run did, and moves Next on once it is done", async () => {
+    await render({
+      data: data({ debt: { ...data().debt, next_day: "2026-11-02", next_count: 195, today_sent: 195, today_left: 0 } }),
+    });
+    expect(text()).toContain("Today: 195 sent · 0 left");
+    expect(text()).toContain("Next: 2 Nov 2026 · 195 students");
+  });
+
+  it("says nothing about today before its run", async () => {
+    await render({ data: data() });
+    expect(text()).not.toContain("Today:");
   });
 });
