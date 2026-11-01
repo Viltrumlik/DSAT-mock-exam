@@ -1816,3 +1816,27 @@ mark.ts-annot {
     border-radius: calc(var(--sq, 22px) * 1.8);
   }
 }
+
+/* ── SMS panel (/ops/sms, plan 2026-11-01-sms-v2) ─────────────────────────
+   One accent (the chart ramp's sky, so it follows the theme), a rise when a tab opens, and a
+   live dot on what is going out now. No fill-mode: a held transform would kill :hover ones. */
+:root {
+  --sms-accent: var(--chart-2);
+}
+
+@keyframes sms-rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes sms-pulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0; transform: scale(2.2); }
+}
+
+.sms-rise { animation: sms-rise 180ms ease-out; }
+.sms-pulse { animation: sms-pulse 1.6s ease-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sms-rise, .sms-pulse { animation: none; }
+}
