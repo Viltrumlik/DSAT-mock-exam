@@ -101,6 +101,7 @@ CMD_REMOVE_PARTICIPANT = "remove_participant"
 CMD_LEAVE_SESSION = "leave_session"
 CMD_HEARTBEAT = "heartbeat"
 CMD_USE_POWERUP = "use_powerup"
+CMD_MOVE_TEAM = "move_team"
 
 # Commands that only make sense when the host drives the clock. In a student-paced game every
 # student has their own question, so "skip to the answer" has nothing to act on.
@@ -120,6 +121,7 @@ HOST_ONLY_COMMANDS = frozenset(
         CMD_RESUME_GAME,
         CMD_END_GAME,
         CMD_REMOVE_PARTICIPANT,
+        CMD_MOVE_TEAM,
     }
 )
 
@@ -174,6 +176,9 @@ CONFIG_DEFAULTS: dict = {
     "powerups": False,
     # Student-paced: a missed question comes back once at the end ("second chance").
     "redemption": False,
+    # Student-paced: 0 plays alone; 2–6 splits the room into teams whose score is the SUM of
+    # their members' (the owner's choice, as on the classroom-game platforms).
+    "teams": 0,
     # What one question point is worth on the board. 100 for every room created before the
     # rebuild; new rooms use the classroom-game scale below. Internal: not offered to the host.
     "point_scale": 100,
@@ -229,6 +234,11 @@ FEEDBACK_SECONDS = 3
 # Second chance: one missed question comes back at the end of a paper this long or shorter,
 # two for a longer one.
 SECOND_TRY_LONG_PAPER = 15
+
+# Team mode.
+MIN_TEAMS = 2
+MAX_TEAMS = 6
+TEAM_NAMES = ("Comets", "Falcons", "Tigers", "Waves", "Pixels", "Rockets")
 
 # Answers that arrive within this many milliseconds after the deadline still count. The
 # deadline is the server's, so a student who tapped at 19.9s can easily arrive at 20.2s;

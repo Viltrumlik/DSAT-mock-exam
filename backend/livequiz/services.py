@@ -96,6 +96,16 @@ def normalize_config(raw: dict | None) -> dict:
     ):
         out[key] = bool(raw.get(key, defaults[key]))
 
+    try:
+        teams = int(raw.get("teams", defaults["teams"]) or 0)
+    except (TypeError, ValueError):
+        raise BadRequest("The number of teams must be a whole number.", code="bad_config")
+    if teams and not (const.MIN_TEAMS <= teams <= const.MAX_TEAMS):
+        raise BadRequest(
+            f"Teams: off, or {const.MIN_TEAMS} to {const.MAX_TEAMS}.", code="bad_config"
+        )
+    out["teams"] = teams
+
     # Showing the right answer while hiding whether you were right would make no sense — and
     # neither would standings, which are only scores, and a score says how many you got right.
     if not out["reveal_correctness"]:
@@ -107,6 +117,7 @@ def normalize_config(raw: dict | None) -> dict:
     if mode != const.MODE_STUDENT_PACED:
         out["powerups"] = False
         out["redemption"] = False
+        out["teams"] = 0
 
     # Not the host's to choose: the scale every new room scores on.
     out["point_scale"] = defaults["point_scale"]
@@ -367,7 +378,46 @@ def join_session(*, session, user) -> LiveQuizParticipant:
 
     # A student-paced room deals every student their own order through the paper the moment
     # they take a place — latecomers included.
+    participant = _assign_team(session, participant)
     return paced.ensure_sequence(session=session, participant=participant)
+
+
+def _assign_team(session, participant) -> LiveQuizParticipant:
+    """Team mode: put a new player in the smallest team (the lowest-numbered on a tie)."""
+    teams = int(session.setting("teams") or 0)
+    if not teams or participant.team is not None:
+        return participant
+    counts = {index: 0 for index in range(teams)}
+    for team in session.participants.filter(
+        status=const.PARTICIPANT_JOINED, team__isnull=False
+    ).values_list("team", flat=True):
+        if team in counts:
+            counts[team] += 1
+    smallest = min(counts, key=lambda index: (counts[index], index))
+    LiveQuizParticipant.objects.filter(pk=participant.pk, team__isnull=True).update(team=smallest)
+    participant.refresh_from_db()
+    return participant
+
+
+def move_team(*, session, participant_id: int, team: int) -> LiveQuizParticipant:
+    """The host moves a player to another team — in the lobby, before anyone has scored."""
+    if session.status != const.STATUS_LOBBY:
+        raise Conflict("Teams are set before the game starts.", code=const.ERR_BAD_STATE)
+    teams = int(session.setting("teams") or 0)
+    try:
+        team = int(team)
+    except (TypeError, ValueError):
+        team = -1
+    if not teams or not (0 <= team < teams):
+        raise BadRequest("There is no such team.", code="bad_team")
+    participant = LiveQuizParticipant.objects.filter(
+        session=session, pk=int(participant_id), status=const.PARTICIPANT_JOINED
+    ).first()
+    if participant is None:
+        raise NotFound("There is no such player in this room.", code=const.ERR_NOT_PARTICIPANT)
+    LiveQuizParticipant.objects.filter(pk=participant.pk).update(team=team)
+    participant.refresh_from_db()
+    return participant
 
 
 def mark_connected(participant) -> LiveQuizParticipant:

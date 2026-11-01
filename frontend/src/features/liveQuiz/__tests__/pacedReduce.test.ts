@@ -167,3 +167,15 @@ describe("student-paced: second chance", () => {
     expect(room.secondTry).toBe(false);
   });
 });
+
+describe("team mode", () => {
+  it("keeps the teams' standings from snapshots, refreshes and the finish", () => {
+    const team = (t: number, score: number, rank: number) => ({ team: t, name: `T${t}`, score, members: 2, rank });
+    let room = reduce(EMPTY_ROOM, frame("session_state", { status: "LOBBY", config: { mode: "student_paced", teams: 2 }, teams: [team(0, 0, 1), team(1, 0, 1)] }));
+    expect(room.teams).toHaveLength(2);
+    room = reduce(room, frame("leaderboard_updated", { rows: [], teams: [team(1, 900, 1), team(0, 300, 2)] }));
+    expect(room.teams[0].team).toBe(1);
+    room = reduce(room, frame("game_finished", { leaderboard: { rows: [], teams: [team(0, 1200, 1), team(1, 900, 2)] } }));
+    expect(room.teams[0].score).toBe(1200);
+  });
+});

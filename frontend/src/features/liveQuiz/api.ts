@@ -42,6 +42,8 @@ export interface LiveQuizConfig {
   show_answers?: boolean;
   powerups?: boolean;
   redemption?: boolean;
+  /** Team mode: 0 plays alone; 2–6 teams, scored as the sum of their members. */
+  teams?: number;
   point_scale?: number;
 }
 
@@ -90,6 +92,8 @@ export interface LiveParticipant {
   correct_count: number;
   answered_count: number;
   rank: number | null;
+  /** Team mode: 0-based team. */
+  team?: number | null;
   streak?: number;
   best_streak?: number;
   /** Student-paced: questions behind them, and whether that was the last one. */
@@ -259,3 +263,12 @@ export const liveQuizApi = {
     return data;
   },
 };
+
+/** One team's place in a team-mode game. */
+export interface TeamStanding {
+  team: number;
+  name: string;
+  score: number;
+  members: number;
+  rank: number;
+}

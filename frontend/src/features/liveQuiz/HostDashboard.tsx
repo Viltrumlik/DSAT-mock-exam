@@ -20,6 +20,7 @@ import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
 import { liveQuizApi, type BoardCell, type LiveParticipant } from "./api";
+import { tileColor } from "./theme";
 import { ConnectionBanner } from "./ui";
 import type { LiveQuizRoom, useLiveQuiz } from "./useLiveQuiz";
 
@@ -126,6 +127,24 @@ export function HostDashboard({ room, actions }: { room: LiveQuizRoom; actions: 
           )}
         </div>
       </Card>
+
+      {room.teams.length > 0 && (
+        <Card pad="sm">
+          <p className="mb-2 text-sm font-semibold">Teams</p>
+          <ol className="grid gap-2 sm:grid-cols-3">
+            {room.teams.map((team) => (
+              <li key={team.team} className="flex items-center gap-2 rounded-xl bg-surface-2 px-3 py-2">
+                <span className="w-5 text-sm font-black tabular-nums text-muted-foreground">{team.rank}</span>
+                <span className="h-3 w-3 shrink-0 rounded-full" style={{ background: tileColor(team.team) }} />
+                <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+                  {team.name} <span className="text-xs font-normal text-muted-foreground">· {team.members}</span>
+                </span>
+                <span className="font-mono text-sm font-bold tabular-nums">{team.score.toLocaleString()}</span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatCard label="Players" value={players.length} sub={`${present} connected`} icon={Users} />

@@ -360,6 +360,19 @@ export function HostConsole() {
               </Field>
             </div>
 
+            {paced && (
+              <Field label="Teams">
+                <Select value={config.teams ?? 0} onChange={(event) => set("teams", Number(event.target.value))}>
+                  <option value={0}>Off — everyone plays for themselves</option>
+                  {[2, 3, 4, 5, 6].map((count) => (
+                    <option key={count} value={count}>
+                      {count} teams — a team scores everyone&apos;s points added up
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+
             <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
               <Toggle
                 label="Show the right answer after each question"

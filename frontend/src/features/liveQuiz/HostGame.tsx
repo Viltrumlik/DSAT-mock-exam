@@ -28,8 +28,10 @@ import {
   GameTopBar,
   Podium,
   QuestionCard,
+  TeamColumns,
   TimerBar,
   TrophyHeading,
+  teamRows,
 } from "./game";
 import type { LiveParticipant } from "./api";
 import { useGameSounds } from "./sounds";
@@ -69,6 +71,7 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
   const [removing, setRemoving] = useState<LiveParticipant | null>(null);
 
   const playing = room.participants.filter((p) => p.status === "JOINED");
+  const teamCount = room.config.teams ?? 0;
   const isLast = room.currentIndex + 1 >= room.questionTotal;
   const question = room.question;
   const inGame = !room.finished && !["LOBBY", "CONNECTING", "TERMINATED"].includes(room.status);
@@ -148,7 +151,14 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
           </div>
           <p className="text-sm text-white/60">{settingsLine(room)}</p>
 
-          <div className="flex w-full flex-wrap justify-center gap-2.5">
+          {teamCount > 0 && (
+            <TeamColumns
+              participants={playing}
+              teams={teamCount}
+              onMove={(p) => actions.moveTeam(p.id, ((p.team ?? 0) + 1) % teamCount)}
+            />
+          )}
+          <div className={teamCount > 0 ? "hidden" : "flex w-full flex-wrap justify-center gap-2.5"}>
             {playing.length === 0 && (
               <p className="py-8 text-white/60">Names appear here as students join.</p>
             )}
@@ -252,6 +262,12 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
             title="Game over"
             subtitle={`${playing.length} players · ${room.questionTotal} questions`}
           />
+          {room.teams.length > 0 && (
+            <>
+              <p className="text-center text-sm font-bold uppercase tracking-widest text-white/60">Teams</p>
+              <Podium rows={teamRows(room.teams)} />
+            </>
+          )}
           {room.leaderboard.length > 0 && <Podium rows={room.leaderboard} />}
           {room.leaderboard.length > 3 && (
             <GamePanel className="p-4">

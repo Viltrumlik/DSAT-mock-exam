@@ -275,6 +275,9 @@ class LiveQuizParticipant(TimestampedModel):
     # None until the paper is done and something was missed; a question at or past it is a
     # second try, scored by its own rules (``paced``).
     redemption_from = models.PositiveIntegerField(null=True, blank=True)
+    # Team mode: 0-based team, set when they take a place (the smallest team), movable by the
+    # host until the game starts. None in a room without teams.
+    team = models.PositiveSmallIntegerField(null=True, blank=True)
 
     # Power-ups held (a list of keys, duplicates allowed) and the ones armed for the question
     # in front of them — see ``powerups``.

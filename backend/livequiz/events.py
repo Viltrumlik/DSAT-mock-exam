@@ -92,6 +92,7 @@ def participant_row(participant) -> dict:
         # Student-paced: how many of their questions are behind them, and whether that is all.
         "progress": participant.position,
         "finished": participant.finished_at is not None,
+        "team": participant.team,
     }
 
 
@@ -117,6 +118,8 @@ def without_scores(data: dict) -> dict:
             out[key] = [_blind_row(row) for row in out[key]]
     if isinstance(out.get("me"), dict):
         out["me"] = _blind_row(out["me"])
+    if isinstance(out.get("teams"), list):
+        out["teams"] = [{**row, "score": 0} for row in out["teams"]]
     return out
 
 
@@ -145,12 +148,35 @@ def lobby(session, participants) -> dict:
     }
 
 
-def leaderboard(participants, *, limit: int | None = None) -> dict:
+def team_standings(participants, teams: int) -> list[dict]:
+    """Team mode: each team's score — the SUM of its members' — best first, ties sharing a place."""
+    totals = {
+        index: {"team": index, "name": const.TEAM_NAMES[index], "score": 0, "members": 0}
+        for index in range(int(teams or 0))
+    }
+    for p in participants:
+        if p.status == const.PARTICIPANT_KICKED or p.team not in totals:
+            continue
+        totals[p.team]["score"] += int(p.score)
+        totals[p.team]["members"] += 1
+    ordered = sorted(totals.values(), key=lambda row: (-row["score"], row["team"]))
+    place, previous = 0, None
+    for position, row in enumerate(ordered, start=1):
+        if row["score"] != previous:
+            place, previous = position, row["score"]
+        row["rank"] = place
+    return ordered
+
+
+def leaderboard(participants, *, limit: int | None = None, teams: int = 0) -> dict:
     ordered = sorted(participants, key=lambda p: (-int(p.score), p.joined_at))
     rows = [participant_row(p) for p in ordered]
     if limit is not None:
         rows = rows[:limit]
-    return {"rows": rows}
+    payload = {"rows": rows}
+    if teams:
+        payload["teams"] = team_standings(participants, teams)
+    return payload
 
 
 # ─── The whole room, for a client that has just (re)connected ─────────────────
@@ -198,6 +224,9 @@ def session_state(
         payload["me"] = me_row(me)
     if board is not None:
         payload["board"] = board
+    teams = int(session.setting("teams") or 0)
+    if teams:
+        payload["teams"] = team_standings(participants, teams)
     return payload
 
 
