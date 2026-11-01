@@ -103,6 +103,7 @@ A changelist, the same shape as `users/views_people`.
     "lcup_student_id": 101,
     "campaign_id": 7,
     "created_by_name": "Admin Name|''",
+    "attempts": 1,
     "checked_at": "…|null",
     "operator": "Uzmobile",
     "groups": ["Junior G21 | Math"],
@@ -113,7 +114,7 @@ A changelist, the same shape as `users/views_people`.
   ```
 
   - `user` is null when the message has no user.
-  - Added 2026-11-01 (plan sms-v2, Task 4): the six fields from `checked_at` to `cost`.
+  - Added 2026-11-01 (plan sms-v2, Task 4): the seven fields from `attempts` to `cost`.
     - `operator` comes from the two digits after 998; an unlisted code is "Other".
     - `groups` are the student's active classes NOW, by name.
     - `source.type` is `debt_warning`, `campaign` or `test`. Its label is "Debt warning", "Campaign #<id> · <audience label>" or "Test".

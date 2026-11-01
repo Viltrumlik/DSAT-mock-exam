@@ -9,6 +9,7 @@ import {
   type CampaignDraft,
   type CampaignStatus,
   type SmsSettingsPatch,
+  type StatsRange,
   type TestSmsBody,
 } from "./smsApi";
 
@@ -49,6 +50,8 @@ export const smsKeys = {
   templates: ["sms", "templates"] as const,
   classrooms: ["sms", "audience", "classrooms"] as const,
   students: (q: string) => ["sms", "audience", "students", q] as const,
+  stats: (range: StatsRange) => ["sms", "stats", range.from, range.to] as const,
+  student: (userId: number) => ["sms", "student", userId] as const,
 };
 
 /** The fewest letters a student search needs before it asks. */
@@ -72,6 +75,20 @@ export function useSmsMessages(params: ChangeListParams) {
     queryFn: () => smsApi.messages(params),
     placeholderData: keepPreviousData,
   });
+}
+
+/** Delivery, cost and the debt warning's effect over a range; the previous range stays up while the next loads. */
+export function useSmsStats(range: StatsRange) {
+  return useQuery({
+    queryKey: smsKeys.stats(range),
+    queryFn: () => smsApi.stats(range),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** One student's SMS (the person page's SMS tab). */
+export function useStudentSms(userId: number) {
+  return useQuery({ queryKey: smsKeys.student(userId), queryFn: () => smsApi.studentMessages(userId) });
 }
 
 export function useSmsCampaigns() {
@@ -199,6 +216,18 @@ export function useSyncTemplates() {
 export function useSubmitTemplate() {
   const invalidate = useInvalidateSms();
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: (text: string) => smsApi.submitTemplate(text), onSuccess: invalidate });
+}
+
+/** Send again what did not arrive: paid, so never retried, and the panel is asked again on no answer. */
+export function useResendMessages() {
+  const invalidate = useInvalidateSms();
+  const onError = useRefreshIfMaybeSent();
+  return useMutation({
+    ...MUTATION_DEFAULTS,
+    mutationFn: (ids: number[]) => smsApi.resend(ids),
+    onSuccess: invalidate,
+    onError,
+  });
 }
 
 export function useSendTestSms() {

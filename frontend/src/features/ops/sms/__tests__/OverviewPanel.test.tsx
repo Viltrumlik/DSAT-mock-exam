@@ -42,6 +42,8 @@ function data(over: Partial<SmsOverview> = {}): SmsOverview {
     },
     today: { total: 2, by_status: { DELIVERED: 2 } },
     last7: { total: 9, by_status: { DELIVERED: 6, UNDELIVERED: 1, FAILED: 1, SENT: 1 } },
+    forecast: { debt: 2040, campaigns: 0, automations: 0, total: 2040, balance: 63460, short: false },
+    month: { sent: 9, rate: 0.75, cost: 1530 },
     ...over,
   };
 }

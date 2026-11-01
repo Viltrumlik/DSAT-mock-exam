@@ -159,6 +159,7 @@ def message_row(msg, campaign_labels=None) -> dict:
         "lcup_student_id": msg.lcup_student_id,
         "campaign_id": msg.campaign_id,
         "created_by_name": _name(msg.created_by),
+        "attempts": msg.attempts,
         "checked_at": _iso(msg.checked_at),
         "operator": operator_of(msg.phone),
         "groups": _groups(msg),

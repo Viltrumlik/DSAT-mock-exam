@@ -42,7 +42,7 @@ TEMPLATE_ROWS = [
 ]
 MESSAGE_KEYS = {
     "id", "created_at", "sent_at", "kind", "status", "eskiz_status", "phone", "text", "parts", "request_id", "error",
-    "user", "lcup_student_id", "campaign_id", "created_by_name", "checked_at", "operator", "groups", "source", "template",
+    "user", "lcup_student_id", "campaign_id", "created_by_name", "attempts", "checked_at", "operator", "groups", "source", "template",
     "cost",
 }
 CAMPAIGN_KEYS = {

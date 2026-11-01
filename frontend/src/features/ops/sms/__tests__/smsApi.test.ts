@@ -40,6 +40,34 @@ describe("messagesQuery", () => {
   it("leaves page 1 and the empty search out", () => {
     expect(messagesQuery({ q: "", o: "", page: 1, pageSize: 50, filters: {} })).toEqual({ page_size: 50 });
   });
+
+  it("sends the v2 filters and the date range", () => {
+    const filters = {
+      operator: "Uzmobile", group: "4", teacher: "9", template: "64942", campaign: "7", from: "2026-11-01", to: "2026-11-02",
+    };
+    expect(messagesQuery({ q: "", o: "", page: 1, pageSize: 50, filters })).toEqual({ ...filters, page_size: 50 });
+  });
+});
+
+describe("smsApi, v2", () => {
+  it("reads statistics, one student's SMS and the export", async () => {
+    get.mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: {} }).mockResolvedValueOnce({ data: new Blob(["x"]) });
+    await smsApi.stats({ from: "2026-10-03", to: "2026-11-01" });
+    await smsApi.studentMessages(5);
+    const blob = await smsApi.exportMessages({ q: "Ali", o: "", page: 3, pageSize: 25, filters: { operator: "Beeline" } });
+    expect(blob).toBeInstanceOf(Blob);
+    expect(get.mock.calls).toEqual([
+      ["/sms/admin/stats/", { params: { from: "2026-10-03", to: "2026-11-01" } }],
+      ["/sms/admin/students/5/messages/"],
+      ["/sms/admin/messages/export/", { params: { q: "Ali", operator: "Beeline" }, responseType: "blob" }],
+    ]);
+  });
+
+  it("asks to resend by id", async () => {
+    post.mockResolvedValueOnce({ data: { queued: [1], not_resendable: [2] } });
+    expect(await smsApi.resend([1, 2])).toEqual({ queued: [1], not_resendable: [2] });
+    expect(post.mock.calls).toEqual([["/sms/admin/messages/resend/", { ids: [1, 2] }]]);
+  });
 });
 
 describe("smsApi", () => {
