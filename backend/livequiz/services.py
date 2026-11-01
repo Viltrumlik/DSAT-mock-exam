@@ -607,6 +607,25 @@ def end_game(*, session) -> LiveQuizSession:
     return finish_game(session=session)
 
 
+def finish_when_everyone_is_done(*, session) -> bool:
+    """Student-paced: end the game once every student still in the room has finished.
+
+    The owner's choice (2026-11-01): nobody waits for the teacher to press End when there is
+    nothing left to play. True only for the call that actually ended it — the last answer, a
+    student leaving and the host removing someone can all arrive at once, and the closing
+    compare-and-set lets exactly one of them through, so the room hears one podium.
+    """
+    if not paced.is_student_paced(session) or session.status != const.STATUS_QUESTION_ACTIVE:
+        return False
+    if not paced.everyone_finished(session):
+        return False
+    if not close_question(session=session):
+        return False
+    session.refresh_from_db()
+    finish_game(session=session)
+    return True
+
+
 # ─── Answers ──────────────────────────────────────────────────────────────────
 
 

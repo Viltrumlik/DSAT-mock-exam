@@ -41,8 +41,8 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 5. **Feedback pause** of 3 s after each answer; the next question's clock starts when it appears.
 6. **Per-student shuffle** of question order (server) and option order (client display only;
    choice ids unchanged, so grading and tallies are untouched).
-7. **The host ends the game** (no auto-finish when everyone is done); the dashboard shows who has
-   finished.
+7. **The game ends itself** once every student still in the room has finished (owner, 2026-11-01:
+   "O'zi tugasin"), 3 s after the last answer so its result shows; the host can still end it early.
 8. **Missed questions** (clock ran out) are written as `timed_out` rows: in the report, not counted
    as answered. A student away when their clock ran out has one question marked missed on return,
    then the next opens fresh.
@@ -91,9 +91,9 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 ## Parked questions for the owner (asked one at a time after the exam)
 
 1. ~~★ Default mode for a new room~~ — **answered 2026-11-01: student-paced stays the default** (as built).
-2. ★ Should the game give XP/coins now? (v1 said no.)
-3. Power-ups — keep all five, fewer, or off by default?
-4. Should the game end by itself when every student has finished, or only when the teacher ends it (built)?
+2. ~~★ XP/coins?~~ — **answered: neither — a currency of its own (Gems) and an avatar shop** → PR #338.
+3. ~~Power-ups~~ — **answered: keep all five.**
+4. ~~Auto-end~~ — **answered: the game ends itself when everyone is done** (built in this PR).
 5. Redemption question (re-ask one missed question at the end) — want it?
 6. Memes / music — want our own set (we would need images/audio we own)?
 7. Question sources — vocabulary sets only (today), or also Question Bank / SAT questions?

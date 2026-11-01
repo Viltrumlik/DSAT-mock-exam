@@ -471,6 +471,19 @@ def use_powerup(*, session, participant, key: str, now=None) -> dict:
 # ─── Where everybody stands ───────────────────────────────────────────────────
 
 
+def everyone_finished(session) -> bool:
+    """True once every student still in the room has answered their last question.
+
+    "In the room" means joined AND connected: a student whose phone died halfway does not hold
+    the game open for everybody else — what they answered still counts. At least one student
+    must have finished, so an empty room never "finishes".
+    """
+    playing = session.participants.filter(status=const.PARTICIPANT_JOINED)
+    finished = playing.filter(finished_at__isnull=False).count()
+    still_going = playing.filter(finished_at__isnull=True, connections__gt=0).count()
+    return finished > 0 and still_going == 0
+
+
 def standing(*, session, participant, top: int = 3) -> dict:
     """The student's place right now, and the top of the board, for their feedback screen.
 
