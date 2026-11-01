@@ -28,12 +28,16 @@ def operator_of(phone) -> str:
     return _BY_CODE.get(str(phone or "")[3:5], OTHER)
 
 
-def operator_q(name: str) -> Q | None:
-    """The rows whose phone is ``name``'s; None for a name not in OPERATORS."""
-    codes = OPERATORS.get(name)
-    if not codes:
-        return None
+def _prefixes(codes) -> Q:
     q = Q()
     for code in codes:
         q |= Q(phone__startswith=f"998{code}")
     return q
+
+
+def operator_q(name: str) -> Q | None:
+    """The rows whose phone is ``name``'s ("Other": no listed operator's); None for any other name."""
+    if name == OTHER:
+        return ~_prefixes(_BY_CODE)
+    codes = OPERATORS.get(name)
+    return _prefixes(codes) if codes else None

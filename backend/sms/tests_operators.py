@@ -35,3 +35,10 @@ class OperatorQTests(TestCase):
 
     def test_an_unknown_name_is_none(self):
         self.assertIsNone(operator_q("Nokia"))
+
+    def test_other_is_every_phone_no_operator_claims(self):
+        for i, phone in enumerate(("998901234567", "998201234567", "")):
+            SmsMessage.objects.create(kind="test", run_on=date(2026, 11, 1), dedupe_key=f"o{i}", phone=phone, text="x")
+        self.assertEqual(
+            set(SmsMessage.objects.filter(operator_q("Other")).values_list("phone", flat=True)), {"998201234567", ""}
+        )

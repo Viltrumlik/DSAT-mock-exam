@@ -81,7 +81,8 @@ Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-
 
 A changelist, the same shape as `users/views_people`.
 
-- **Query:** `q`, `kind`, `status`, `when` (`today|7d|30d`), `page`, `page_size` (25/50/100).
+- **Query:** `q`, `kind`, `status`, `when` (`today|7d|30d`), `operator`, `group`, `teacher`, `template`, `campaign`, `from`, `to`, `page` and `page_size` (25/50/100).
+  - `from` and `to` are `YYYY-MM-DD` Tashkent days, inclusive. They narrow the rows before the facets are counted. An unreadable date is ignored.
 - **Response:** `{count, page, pages, page_size, results: [Message], filters: [ChangeListFilter]}`.
 - **Message:**
 
@@ -101,12 +102,33 @@ A changelist, the same shape as `users/views_people`.
     "user": { "id": 5, "name": "Malika Karimova" },
     "lcup_student_id": 101,
     "campaign_id": 7,
-    "created_by_name": "Admin Name|''"
+    "created_by_name": "Admin Name|''",
+    "checked_at": "…|null",
+    "operator": "Uzmobile",
+    "groups": ["Junior G21 | Math"],
+    "source": { "type": "campaign", "id": 7, "label": "Campaign #7 · Debtors" },
+    "template": { "id": 64942, "label": "#64942" },
+    "cost": 170
   }
   ```
 
-  `user` is null when the message has no user.
-- **Filters:** `kind` (Debt warning / Campaign / Test), `status` (every status), `when` (Today / Last 7 days / Last 30 days).
+  - `user` is null when the message has no user.
+  - Added 2026-11-01 (plan sms-v2, Task 4): the six fields from `checked_at` to `cost`.
+    - `operator` comes from the two digits after 998; an unlisted code is "Other".
+    - `groups` are the student's active classes NOW, by name.
+    - `source.type` is `debt_warning`, `campaign` or `test`. Its label is "Debt warning", "Campaign #<id> · <audience label>" or "Test".
+    - `template.label` is `#<id>` (Part 2 replaces it with the alias), or "" when there is none.
+    - `cost` is in so'm. FAILED and REJECTED cost 0, as in `GET stats/`.
+- **Filters**, in this order:
+  - `kind` (Debt warning / Campaign / Test);
+  - `status` (every status);
+  - `when` (Today / Last 7 days / Last 30 days);
+  - `operator`: the operator names that have rows, Other last;
+  - `group`: active classes holding a matching message's student in an active seat now, by class id and name;
+  - `teacher`: the teachers of those classes, by user id and name;
+  - `template`: by eskiz id, label `#<id>`;
+  - `campaign`: by id, label `#<id> · <audience label>`.
+  The group and teacher filters list a message once, even when its student sits in several matching classes.
 
 ## Campaigns
 

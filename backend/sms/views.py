@@ -16,11 +16,12 @@ A body that is not a JSON object (a list, a string, null) is a 400 with code ``b
 from __future__ import annotations
 
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Prefetch, Q
+from django.db.models.functions import Substr
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
@@ -34,7 +35,7 @@ from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
 from lcup.phones import normalize_phone
-from users.changelist import apply_search, facets, paginate
+from users.changelist import apply_search, facets, paginate, to_int
 from users.models import User
 
 from . import campaigns, conf
@@ -43,6 +44,9 @@ from . import eskiz, eskiz_templates, forecast, stats, switchboard
 from . import templates as T
 from .delivery import deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
+from .operators import NAMES as OPERATOR_NAMES
+from .operators import OTHER as OTHER_OPERATOR
+from .operators import operator_of, operator_q
 
 BALANCE_KEY = "sms:balance"
 BALANCE_TTL = 5 * 60
@@ -98,7 +102,43 @@ def _on_commit(fn) -> None:
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
-def message_row(msg) -> dict:
+_SOURCE_LABELS = {SmsMessage.KIND_DEBT_WARNING: "Debt warning", SmsMessage.KIND_TEST: "Test"}
+
+
+def _source(msg, campaign_labels) -> dict:
+    if msg.campaign_id:
+        label = f"Campaign #{msg.campaign_id}"
+        if msg.campaign_id in campaign_labels:
+            label += f" · {campaign_labels[msg.campaign_id]}"
+        return {"type": SmsMessage.KIND_CAMPAIGN, "id": msg.campaign_id, "label": label}
+    return {"type": msg.kind, "id": None, "label": _SOURCE_LABELS.get(msg.kind, msg.kind)}
+
+
+def _groups(msg) -> list[str]:
+    """The student's active classes now (``_messages`` prefetches them as ``active_seats``)."""
+    if not msg.user_id:
+        return []
+    seats = getattr(msg.user, "active_seats", None)
+    if seats is None:
+        seats = _active_seats().filter(user_id=msg.user_id)
+    return [seat.classroom.name for seat in seats]
+
+
+def _cost(msg) -> int:
+    if msg.status not in stats.CHARGED:
+        return 0
+    return (msg.parts or T.parts(msg.text)) * (msg.unit_price or switchboard.price_per_part())
+
+
+def message_rows(msgs) -> list[dict]:
+    """``message_row`` for each, the campaigns' audience labels asked once."""
+    msgs = list(msgs)
+    campaign_ids = {m.campaign_id for m in msgs if m.campaign_id}
+    labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=campaign_ids)) if campaign_ids else {}
+    return [message_row(m, labels) for m in msgs]
+
+
+def message_row(msg, campaign_labels=None) -> dict:
     return {
         "id": msg.pk,
         "created_at": _iso(msg.created_at),
@@ -116,11 +156,32 @@ def message_row(msg) -> dict:
         "lcup_student_id": msg.lcup_student_id,
         "campaign_id": msg.campaign_id,
         "created_by_name": _name(msg.created_by),
+        "checked_at": _iso(msg.checked_at),
+        "operator": operator_of(msg.phone),
+        "groups": _groups(msg),
+        "source": _source(msg, campaign_labels or {}),
+        "template": {
+            "id": msg.template_eskiz_id,
+            "label": f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+        },
+        "cost": _cost(msg),
     }
 
 
+def _active_seats():
+    return (
+        ClassroomMembership.objects.filter(
+            role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE, classroom__is_active=True,
+        )
+        .select_related("classroom")
+        .order_by("classroom__name", "classroom_id")
+    )
+
+
 def _messages(qs):
-    return qs.select_related("user", "created_by")
+    return qs.select_related("user", "created_by").prefetch_related(
+        Prefetch("user__class_memberships", queryset=_active_seats(), to_attr="active_seats")
+    )
 
 
 def campaign_row(campaign, labels, live) -> dict:
@@ -338,16 +399,108 @@ MESSAGE_FILTERS = {
     "when": ("When", lambda qs: _fixed(qs, _WHEN, _when_q), _when_q),
 }
 
+#: A message whose student holds an active seat now; the joins of one filter() call stay one row each.
+_SEAT = {
+    "user__class_memberships__role": ClassroomMembership.ROLE_STUDENT,
+    "user__class_memberships__status": ClassroomMembership.STATUS_ACTIVE,
+    "user__class_memberships__classroom__is_active": True,
+}
+
+
+def _seat_users(**where):
+    return _active_seats().filter(**where).values("user_id")
+
+
+def _by_id(to_q):
+    """A to_q for an integer value; anything else is not a filter."""
+    def q(value):
+        number = to_int(value)
+        return to_q(number) if number is not None else None
+    return q
+
+
+def _operator_choices(qs):
+    tally = Counter()
+    for row in qs.annotate(code=Substr("phone", 4, 2)).values("code").annotate(n=Count("id")).order_by():
+        tally[operator_of(f"998{row['code']}")] += row["n"]
+    return [(name, name, tally[name]) for name in (*OPERATOR_NAMES, OTHER_OPERATOR) if tally[name]]
+
+
+def _group_choices(qs):
+    rows = (
+        qs.filter(**_SEAT)
+        .values("user__class_memberships__classroom_id", "user__class_memberships__classroom__name")
+        .annotate(n=Count("id", distinct=True))
+        .order_by("user__class_memberships__classroom__name")
+    )
+    return [
+        (str(r["user__class_memberships__classroom_id"]), r["user__class_memberships__classroom__name"], r["n"])
+        for r in rows
+    ]
+
+
+def _teacher_choices(qs):
+    rows = list(
+        qs.filter(**_SEAT, user__class_memberships__classroom__teacher__isnull=False)
+        .values("user__class_memberships__classroom__teacher_id")
+        .annotate(n=Count("id", distinct=True))
+        .order_by()
+    )
+    people = User.objects.in_bulk([r["user__class_memberships__classroom__teacher_id"] for r in rows])
+    choices = [
+        (str(pk), _name(people.get(pk)), r["n"])
+        for r in rows
+        if (pk := r["user__class_memberships__classroom__teacher_id"]) in people
+    ]
+    return sorted(choices, key=lambda c: c[1].lower())
+
+
+def _template_choices(qs):
+    rows = qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
+    return [(str(r["template_eskiz_id"]), f"#{r['template_eskiz_id']}", r["n"]) for r in rows]
+
+
+def _campaign_choices(qs):
+    rows = list(qs.exclude(campaign=None).values("campaign_id").annotate(n=Count("id")).order_by("-campaign_id"))
+    labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=[r["campaign_id"] for r in rows]))
+    return [(str(r["campaign_id"]), f"#{r['campaign_id']} · {labels.get(r['campaign_id'], '')}", r["n"]) for r in rows]
+
+
+MESSAGE_FILTERS.update({
+    "operator": ("Operator", _operator_choices, operator_q),
+    "group": ("Group", _group_choices, _by_id(lambda pk: Q(user_id__in=_seat_users(classroom_id=pk)))),
+    "teacher": ("Teacher", _teacher_choices, _by_id(lambda pk: Q(user_id__in=_seat_users(classroom__teacher_id=pk)))),
+    "template": ("Template", _template_choices, _by_id(lambda pk: Q(template_eskiz_id=pk))),
+    "campaign": ("Campaign", _campaign_choices, _by_id(lambda pk: Q(campaign_id=pk))),
+})
+
+
+def _day(raw):
+    try:
+        return date.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _date_range_q(params) -> Q:
+    """``from``/``to``: Tashkent days, inclusive; a date that cannot be read is ignored, like any filter value."""
+    q, start, end = Q(), _day(params.get("from")), _day(params.get("to"))
+    if start:
+        q &= Q(created_at__gte=timezone.make_aware(datetime.combine(start, time.min)))
+    if end:
+        q &= Q(created_at__lt=timezone.make_aware(datetime.combine(end + timedelta(days=1), time.min)))
+    return q
+
 
 class MessageListView(_AdminView):
     def get(self, request):
         params = request.query_params
         qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH)
-        qs, filters = facets(qs, MESSAGE_FILTERS, params)
+        qs, filters = facets(qs.filter(_date_range_q(params)), MESSAGE_FILTERS, params)
         window, meta = paginate(_messages(qs).order_by("-created_at", "-id"), params)
         return Response({
             **meta,
-            "results": [message_row(m) for m in window],
+            "results": message_rows(window),
             "filters": filters,
         })
 
@@ -401,7 +554,7 @@ class CampaignDetailView(_AdminView):
     def get(self, request, pk):
         campaign = _campaign(pk)
         messages = _messages(campaign.messages.order_by("id"))
-        return Response({"campaign": _campaign_rows([campaign])[0], "messages": [message_row(m) for m in messages]})
+        return Response({"campaign": _campaign_rows([campaign])[0], "messages": message_rows(messages)})
 
 
 class CampaignCancelView(_AdminView):
