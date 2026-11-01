@@ -213,7 +213,7 @@ export type SmsMessagePage = ChangeListData<SmsMessage>;
 
 /** The filter keys the journal understands; anything else in the address is not sent. */
 export const MESSAGE_FILTER_KEYS = [
-  "kind", "status", "when", "operator", "group", "teacher", "template", "campaign", "from", "to",
+  "kind", "status", "when", "operator", "group", "teacher", "template", "campaign", "from", "to", "resendable",
 ] as const;
 
 /** The query string `messages/` takes, from the journal's address state. */

@@ -498,8 +498,10 @@ def _date_range_q(params) -> Q:
 
 def _journal(params):
     """(the journal's rows as the address filters them, newest first; the filters payload)."""
-    qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH)
-    qs, filters = facets(qs.filter(_date_range_q(params)), MESSAGE_FILTERS, params)
+    qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH).filter(_date_range_q(params))
+    if params.get("resendable") == "1":  # the overview's "did not arrive" list: every status Resend may take
+        qs = qs.filter(status__in=RESENDABLE)
+    qs, filters = facets(qs, MESSAGE_FILTERS, params)
     return qs.order_by("-created_at", "-id"), filters
 
 

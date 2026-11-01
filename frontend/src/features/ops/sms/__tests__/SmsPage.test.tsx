@@ -21,7 +21,12 @@ vi.mock("@/features/ops/sms/CampaignsPanel", () => ({ CampaignsPanel: () => <p>c
 vi.mock("@/features/ops/sms/DebtPanel", () => ({ DebtPanel: () => <p>debt-panel</p> }));
 vi.mock("@/features/ops/sms/TemplatesPanel", () => ({ TemplatesPanel: () => <p>templates-panel</p> }));
 
+const overview = vi.fn();
+vi.mock("@/features/ops/sms/smsHooks", () => ({ useSmsOverview: () => overview() }));
+
 const { SmsPage } = await import("@/features/ops/sms/SmsPage");
+
+const SHORT = { debt: 2040, campaigns: 0, automations: 0, total: 2040, balance: 50, short: true };
 
 let container: HTMLDivElement;
 let root: Root;
@@ -40,6 +45,7 @@ async function render(query = "") {
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
   replace.mockReset();
+  overview.mockReturnValue({ data: undefined });
 });
 
 afterEach(async () => {
@@ -67,6 +73,17 @@ describe("SmsPage", () => {
     await render(query);
     expect(text()).toContain(panel);
     expect(text()).not.toContain("overview-panel");
+  });
+
+  it("shows the balance banner above every tab while the balance is short", async () => {
+    overview.mockReturnValue({ data: { forecast: SHORT } });
+    await render("tab=journal");
+    expect(text()).toContain("does not cover the next 24 hours");
+    overview.mockReturnValue({ data: { forecast: { ...SHORT, short: false } } });
+    await act(async () => root.unmount());
+    container.remove();
+    await render("tab=journal");
+    expect(text()).not.toContain("does not cover the next 24 hours");
   });
 
   it("treats an unknown tab as the Overview", async () => {

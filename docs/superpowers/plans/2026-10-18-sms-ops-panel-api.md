@@ -82,6 +82,7 @@ Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-
 A changelist, the same shape as `users/views_people`.
 
 - **Query:** `q`, `kind`, `status`, `when` (`today|7d|30d`), `operator`, `group`, `teacher`, `template`, `campaign`, `from`, `to`, `page` and `page_size` (25/50/100).
+  - `resendable=1` (Task 8) keeps only UNDELIVERED, REJECTED and FAILED, before the facets are counted. The overview's "Did not arrive" list uses it.
   - `from` and `to` are `YYYY-MM-DD` Tashkent days, inclusive. They narrow the rows before the facets are counted. An unreadable date is ignored.
 - **Response:** `{count, page, pages, page_size, results: [Message], filters: [ChangeListFilter]}`.
 - **Message:**

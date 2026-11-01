@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * The SMS Overview: what the eskiz account has left, whether eskiz is answering, whether and when
- * the debt warning goes out next, and how the last days went — with a test SMS underneath, the
- * one way to see the whole chain work end to end.
+ * The SMS Overview (plan 2026-11-01-sms-v2, Task 8). Four figures lead — what the balance holds,
+ * today, this month's delivery and its cost — then, over a range kept in the address: delivery by
+ * day and by operator, the cost by kind, what the debt warning makes people do, and what did not
+ * arrive, with Resend. Below them, as before, the account itself (sender, eskiz's health, the debt
+ * warning's next run) and a test SMS, the one way to see the whole chain work end to end.
  *
  * Two states mean nothing at all goes out, and each gets a warning above everything: eskiz has
  * no keys on this server, or the server's master switch holds the debt warning off whatever the
@@ -11,15 +13,30 @@
  */
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 
 import { Alert, Badge } from "@/components/ui";
-import { dayLabel, hourLabel, money, plural, splitCounts } from "./format";
+import { LineChart, StackedBarChart } from "@/components/ui/charts";
+import { DebtEffect } from "./charts/DebtEffect";
+import { DeliveryChart } from "./charts/DeliveryChart";
+import { OperatorChart } from "./charts/OperatorChart";
+import { dayLabel, hourLabel, money, plural, splitCounts, todayInTashkent } from "./format";
+import { StatTile } from "./look";
 import { LoadError, Loading, Section, TEXT_BUTTON } from "./panelKit";
-import type { SmsOverview } from "./smsApi";
-import { useSmsOverview } from "./smsHooks";
-import { smsTabHref } from "./smsTabs";
+import { parseRange, rangeDates, RangePicker, serializeRange, type RangeValue } from "./RangePicker";
+import type { SmsOverview, SmsStats } from "./smsApi";
+import { useSmsOverview, useSmsStats } from "./smsHooks";
+import { SMS_PATH, smsTabHref } from "./smsTabs";
 import { TestSmsForm } from "./TestSmsForm";
+import { UndeliveredList } from "./UndeliveredList";
+
+const COST_SERIES = [
+  { key: "debt_warning", label: "Debt warnings", color: "var(--chart-1)" },
+  { key: "campaign", label: "Campaigns", color: "var(--chart-2)" },
+  { key: "automation", label: "Automations", color: "var(--chart-6)" },
+  { key: "test", label: "Tests", color: "var(--text-secondary)" },
+];
 
 function Card({ title, children, foot }: { title: string; children: ReactNode; foot?: ReactNode }) {
   return (
@@ -50,8 +67,77 @@ function eskizBadge(eskiz: SmsOverview["eskiz"]) {
   return <Badge variant="neutral">Signs in on the next send</Badge>;
 }
 
+const percent = (rate: number | null) => (rate === null ? null : Math.round(rate * 100));
+
+function Tiles({ o }: { o: SmsOverview }) {
+  const today = splitCounts(o.today.total, o.today.by_status);
+  const covers = o.balance !== null && o.price_per_part > 0 ? Math.floor(o.balance / o.price_per_part) : null;
+  return (
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <StatTile
+        label="Balance"
+        value={o.balance}
+        format={money}
+        tone={o.forecast.short ? "bad" : "default"}
+        hint={o.balance === null ? "Couldn't ask eskiz just now." : `≈ ${covers} SMS · ${money(o.price_per_part)} a part`}
+      />
+      <StatTile
+        label="Today"
+        value={o.today.total}
+        hint={`${today.delivered} delivered${o.debt.today_left > 0 ? ` · ${o.debt.today_left} left` : ""}`}
+      />
+      <StatTile
+        label="Delivered this month"
+        value={percent(o.month.rate)}
+        format={(n) => `${n}%`}
+        tone={o.month.rate === null ? "default" : o.month.rate >= 0.9 ? "good" : "warn"}
+        hint={`${o.month.sent} sent`}
+      />
+      <StatTile label="Cost this month" value={o.month.cost} format={money} hint="An estimate" />
+    </div>
+  );
+}
+
+function Charts({ stats }: { stats: SmsStats }) {
+  if (!stats.by_day.length) {
+    return <p className="border border-border bg-card px-3 py-6 text-center text-[13px] text-muted-foreground">No SMS in this range.</p>;
+  }
+  const costByDay = stats.by_day.map((d) => ({ day: dayLabel(d.day).replace(/ \d{4}$/, ""), cost: d.cost }));
+  return (
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+      <Section title={`Delivery by day · ${percent(stats.totals.rate) ?? "—"}% delivered`} className="xl:col-span-2">
+        <div className="px-2 py-3">
+          <DeliveryChart data={stats.by_day} />
+        </div>
+      </Section>
+      <Section title="By operator">
+        <div className="px-2 py-3">
+          <OperatorChart data={stats.by_operator} />
+        </div>
+      </Section>
+      <Section title={`Cost · ${money(stats.totals.cost)}`}>
+        <div className="space-y-2 px-2 py-3">
+          <StackedBarChart data={stats.cost_by_month.map((m) => ({ ...m }))} xKey="month" series={COST_SERIES} height={160} valueFormatter={money} />
+          <LineChart data={costByDay} xKey="day" series={[{ key: "cost", label: "Per day", color: "var(--sms-accent)" }]} height={110} valueFormatter={money} />
+        </div>
+      </Section>
+    </div>
+  );
+}
+
 export function OverviewPanel() {
   const overview = useSmsOverview();
+  const search = useSearchParams();
+  const router = useRouter();
+  const range = parseRange(search.get("range"));
+  const dates = rangeDates(range, todayInTashkent());
+  const stats = useSmsStats(dates);
+
+  const pickRange = (value: RangeValue) => {
+    const params = new URLSearchParams(search.toString());
+    params.set("range", serializeRange(value));
+    router.replace(`${SMS_PATH}?${params.toString()}`, { scroll: false });
+  };
 
   if (overview.isPending) return <Loading />;
   if (overview.isError || !overview.data) {
@@ -59,8 +145,6 @@ export function OverviewPanel() {
   }
 
   const o = overview.data;
-  const week = splitCounts(o.last7.total, o.last7.by_status);
-  const today = splitCounts(o.today.total, o.today.by_status);
   const off = debtOffReason(o.debt);
 
   return (
@@ -77,15 +161,26 @@ export function OverviewPanel() {
         </Alert>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Card title="Balance" foot={`${money(o.price_per_part)} per SMS part`}>
-          {o.balance === null ? (
-            <p className="text-muted-foreground">Couldn&apos;t ask eskiz just now.</p>
-          ) : (
-            <Figure>{money(o.balance)}</Figure>
-          )}
-        </Card>
+      <Tiles o={o} />
 
+      <RangePicker value={range} onChange={pickRange} />
+
+      {stats.isPending ? (
+        <Loading />
+      ) : stats.isError || !stats.data ? (
+        <LoadError what="statistics" onRetry={() => void stats.refetch()} />
+      ) : (
+        <>
+          <Charts stats={stats.data} />
+          <Section title="Debt warning: who paid">
+            <DebtEffect months={stats.data.debt_effect} />
+          </Section>
+        </>
+      )}
+
+      <UndeliveredList filter={dates} pricePerPart={o.price_per_part} />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         <Card title="Sender" foot="The name the SMS arrive from.">
           <Figure>{o.sender || "—"}</Figure>
         </Card>
@@ -117,14 +212,6 @@ export function OverviewPanel() {
                 ? "No warning day ahead."
                 : "Switched off — no warning day ahead until it is on."}
           </p>
-        </Card>
-
-        <Card title="Last 7 days" foot={`${week.delivered} delivered · ${week.notDelivered} not delivered · ${week.other} other`}>
-          <Figure>{plural(o.last7.total, "SMS", "SMS")}</Figure>
-        </Card>
-
-        <Card title="Today" foot={`${today.delivered} delivered · ${today.notDelivered} not delivered`}>
-          <Figure>{plural(o.today.total, "SMS", "SMS")}</Figure>
         </Card>
       </div>
 

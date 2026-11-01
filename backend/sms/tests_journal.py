@@ -90,6 +90,14 @@ class JournalFilterTests(ApiFixture):
         self.assertEqual(self.ids(to="2026-10-31"), [])
         self.assertEqual(len(self.ids(**{"from": "yesterday"})), 3)
 
+    def test_resendable_keeps_only_what_may_go_again(self):
+        failed = self.sms("f1", self.aziz, "998991112233", kind=S.KIND_TEST, status=S.STATUS_FAILED,
+                          at=datetime(2026, 11, 3, 9, 0, tzinfo=dt_timezone.utc))
+        undelivered = self.sms("u1", self.aziz, "998991112233", kind=S.KIND_TEST, status=S.STATUS_UNDELIVERED,
+                               at=datetime(2026, 11, 3, 9, 5, tzinfo=dt_timezone.utc))
+        self.assertEqual(self.ids(resendable="1"), [undelivered.pk, failed.pk])
+        self.assertEqual(len(self.ids(resendable="0")), 5)
+
     def test_the_rows_new_fields(self):
         rows = {r["id"]: r for r in self.get("messages/").json()["results"]}
         m1, m2, m3 = rows[self.m1.pk], rows[self.m2.pk], rows[self.m3.pk]
