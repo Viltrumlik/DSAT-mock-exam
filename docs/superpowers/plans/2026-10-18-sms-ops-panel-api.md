@@ -42,6 +42,12 @@ This file is binding for both lanes of `2026-10-18-sms-ops-panel.md`.
 - `balance` is null when eskiz could not be asked. It is cached for 5 min. One request at a time asks eskiz (cache lock `sms:balance-lock`, 30 s); another request meanwhile answers from the cache, or null.
 - `last_error` is the newest non-empty `SmsMessage.error`, or `""`.
 - `debt.enabled` = `env_enabled` AND `db_enabled` AND `freeze_enabled`.
+- `forecast` (plan 2026-11-01-sms-v2, Task 3) is `{"debt", "campaigns", "automations", "total", "balance", "short"}`, all in so'm. It is what the next 24 hours will spend:
+  - `debt`: today's warnings not yet sent while today's runs are on (up to hour + 2), plus tomorrow's list once today's hour has passed;
+  - `campaigns`: SCHEDULED campaigns due within 24 h;
+  - `automations`: 0 until the builder.
+  `short` = `balance` is known AND `balance < total`. The panel shows the red banner on every tab when it is true.
+- `month` (Task 3) is `{"sent", "rate", "cost"}` for the current Tashkent month, with the same meanings as `GET stats/` totals.
 
 ## GET stats/
 

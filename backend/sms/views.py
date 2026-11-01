@@ -39,7 +39,7 @@ from users.models import User
 
 from . import campaigns, conf
 from . import debt_warnings as warnings
-from . import eskiz, eskiz_templates, stats, switchboard
+from . import eskiz, eskiz_templates, forecast, stats, switchboard
 from . import templates as T
 from .delivery import deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
@@ -260,9 +260,14 @@ class OverviewView(_AdminView):
             SmsMessage.objects.exclude(error="").order_by("-updated_at", "-id").values_list("error", flat=True).first()
         )
         env_on, db_on, freeze_on = switchboard.env_enabled(), row.debt_enabled, debt_freeze_enabled()
+        balance = _balance()
+        need = forecast.need_next_24h(now)
+        month = stats.summary(timezone.localdate().replace(day=1), timezone.localdate())["totals"]
         return Response({
             "configured": conf.is_configured(),
-            "balance": _balance(),
+            "balance": balance,
+            "forecast": {**need, "balance": balance, "short": balance is not None and balance < need["total"]},
+            "month": {"sent": month["sent"], "rate": month["rate"], "cost": month["cost"]},
             "price_per_part": switchboard.price_per_part(),
             "sender": conf.credentials()["sender"],
             "eskiz": {

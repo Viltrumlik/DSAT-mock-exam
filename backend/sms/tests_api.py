@@ -230,7 +230,10 @@ class OverviewTests(ApiFixture):
         )
         with mock.patch("sms.views._today", return_value=date(2026, 10, 18)):
             data = self.get("overview/").json()
-        self.assertEqual(set(data), {"configured", "balance", "price_per_part", "sender", "eskiz", "debt", "today", "last7"})
+        self.assertEqual(
+            set(data),
+            {"configured", "balance", "forecast", "month", "price_per_part", "sender", "eskiz", "debt", "today", "last7"},
+        )
         self.assertEqual((data["configured"], data["balance"], data["price_per_part"], data["sender"]), (True, 125000, 170, "4546"))
         self.assertEqual(data["eskiz"], {"token_cached": False, "login_refused": False, "last_error": "HTTP 422: mobile_phone: …"})
         self.assertEqual(data["debt"], {
