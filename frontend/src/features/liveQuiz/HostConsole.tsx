@@ -329,7 +329,7 @@ export function HostConsole() {
               <Toggle
                 label="Tell students if they were right"
                 checked={config.reveal_correctness !== false}
-                onChange={(v) => setConfig((prev) => ({ ...prev, reveal_correctness: v, show_answers: v ? prev.show_answers : false }))}
+                onChange={(v) => setConfig((prev) => ({ ...prev, reveal_correctness: v, show_answers: v ? prev.show_answers : false, show_leaderboard_between: v ? prev.show_leaderboard_between : false }))}
               />
               <Toggle
                 label="Show the leaderboard during the game"

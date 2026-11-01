@@ -94,6 +94,36 @@ def avatar_of(participant) -> dict | None:
     return look.as_wire()
 
 
+# What a score gives away. In a room that hides correctness (the Test preset), every one of
+# these says how a student is doing, so a student is sent zeros until the game is over. Zeros
+# rather than nulls: an app that predates this decodes them as numbers.
+SCORE_FIELDS = ("score", "correct_count", "answered_count", "streak", "best_streak")
+
+
+def _blind_row(row):
+    if not isinstance(row, dict):
+        return row
+    return {**row, **{field: 0 for field in SCORE_FIELDS if field in row}}
+
+
+def without_scores(data: dict) -> dict:
+    """A copy of a frame with every player's score fields zeroed — rows, lists and ``me``."""
+    if not isinstance(data, dict):
+        return data
+    out = dict(data)
+    for key in ("participants", "rows"):
+        if isinstance(out.get(key), list):
+            out[key] = [_blind_row(row) for row in out[key]]
+    if isinstance(out.get("me"), dict):
+        out["me"] = _blind_row(out["me"])
+    return out
+
+
+def without_key(data: dict) -> dict:
+    """A question's close for students in a room that keeps the answers to itself."""
+    return {**data, "correct_answer": None, "explanation": ""}
+
+
 def gems_awarded(payout: dict) -> dict:
     """What one student earned from a game that just finished."""
     return {

@@ -89,6 +89,17 @@ class ConfigTests(PacedBase):
         config = services.normalize_config({"reveal_correctness": False, "show_answers": True})
         self.assertFalse(config["show_answers"])
 
+    def test_hiding_correctness_turns_the_leaderboard_off(self):
+        config = services.normalize_config({"reveal_correctness": False, "show_leaderboard_between": True})
+        self.assertFalse(config["show_leaderboard_between"])
+
+    def test_standings_stay_with_the_host_when_the_leaderboard_is_off(self):
+        # Review finding: the board refresher broadcast standings whatever the setting said.
+        self.assertIsNone(services.standings_audience(self._paced()))
+        self.assertEqual(
+            services.standings_audience(self._paced(show_leaderboard_between=False)), services.ROLE_HOST
+        )
+
 
 class SequenceTests(PacedBase):
     def test_joining_deals_the_whole_paper(self):
@@ -481,6 +492,74 @@ class PacedSocketTests(TransactionTestCase):
             await host.disconnect()
 
         async_to_sync(run)()
+
+    def test_a_test_room_sends_a_student_no_scores_until_it_ends(self):
+        # Review finding: a reconnect snapshot carried every score while correctness was hidden.
+        session = PacedBase._paced(self._base(), reveal_correctness=False)
+        participant = services.join_session(session=session, user=self.student)
+        session = services.start_game(session=session)
+        session, _ = paced.begin_play(session=session)
+        participant.refresh_from_db()
+        question = paced.current_question(session, participant)
+        paced.submit(
+            session=session,
+            participant=participant,
+            question_id=question.id,
+            answer=question.correct_answer,
+            now=participant.question_started_at,
+        )
+        self.assertGreater(LiveQuizParticipant.objects.get(pk=participant.pk).score, 0)
+
+        async def run():
+            player = WebsocketClient(URLRouter(websocket_urlpatterns), f"/ws/livequiz/{session.pk}/", self.student)
+            await player.connect()
+            state = (await player.receive_json_from())["data"]
+            self.assertEqual(state["me"]["score"], 0)
+            self.assertEqual(state["me"]["correct_count"], 0)
+            self.assertTrue(all(row["score"] == 0 for row in state["participants"]))
+            await player.disconnect()
+
+        async_to_sync(run)()
+
+    def test_a_teacher_who_keeps_the_answers_sends_students_no_key(self):
+        # Review finding: question_ended carried the key whatever "show answers" said.
+        session = services.create_session(
+            host=self.teacher,
+            classroom=self._base().classroom,
+            vocab_set=self._base().vocab_set,
+            config={"mode": const.MODE_INSTRUCTOR_PACED, "show_answers": False},
+        )
+        services.join_session(session=session, user=self.student)
+        session = services.start_game(session=session)
+        services.open_question(session=session, index=0)
+
+        async def run():
+            room = f"/ws/livequiz/{session.pk}/"
+            host = WebsocketClient(URLRouter(websocket_urlpatterns), room, self.teacher)
+            player = WebsocketClient(URLRouter(websocket_urlpatterns), room, self.student)
+            await host.connect()
+            await host.receive_json_from()
+            await player.connect()
+            await player.receive_json_from()
+            await host.send_json_to({"type": const.CMD_END_QUESTION})
+            mine = await await_frame(player, const.EV_QUESTION_ENDED)
+            theirs = await await_frame(host, const.EV_QUESTION_ENDED)
+            self.assertIsNone(mine["data"]["correct_answer"])
+            self.assertTrue(theirs["data"]["correct_answer"])
+            await player.disconnect()
+            await host.disconnect()
+
+        async_to_sync(run)()
+
+    def _base(self):
+        base = getattr(self, "_paced_base", None)
+        if base is None:
+            base = PacedBase(methodName="setUp")
+            base.teacher, base.student = self.teacher, self.student
+            base.classroom = self.session.classroom
+            base.vocab_set = self.session.vocab_set
+            self._paced_base = base
+        return base
 
     @staticmethod
     async def _key(question_id):

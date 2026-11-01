@@ -110,8 +110,8 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
       <GameTopBar
         index={room.finished ? undefined : question?.index}
         total={room.questionTotal}
-        score={mine?.score}
-        streak={mine?.streak}
+        score={room.config.reveal_correctness === false ? undefined : mine?.score}
+        streak={room.config.reveal_correctness === false ? undefined : mine?.streak}
         rank={room.config.show_leaderboard_between && place > 0 ? place : null}
         muted={sounds.muted}
         onToggleMute={sounds.toggle}
