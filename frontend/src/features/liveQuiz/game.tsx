@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { Check, Clock, Flame, Snowflake, Trophy, Volume2, VolumeX, X } from "lucide-react";
 
 import { AssessmentText } from "@/lib/assessmentText";
@@ -17,6 +18,7 @@ import { cn } from "@/lib/cn";
 
 import type { LiveChoice, LiveParticipant, PowerUpKey, TeamStanding } from "./api";
 import styles from "./game.module.css";
+import { GemIcon, PlayerAvatar } from "./avatars";
 import { POWERUPS, ordinal, tileColor } from "./theme";
 import type { OwnFeedback } from "./useLiveQuiz";
 
@@ -509,6 +511,7 @@ export function Podium({ rows }: { rows: LiveParticipant[] }) {
           <div key={row.id} className={cn("flex w-28 flex-col items-center sm:w-36", styles.rise)}
             style={{ animationDelay: `${[400, 800, 0][i]}ms` }}
           >
+            <PlayerAvatar avatar={row.avatar} name={row.display_name} size={i === 1 ? 72 : 56} colorIndex={row.team ?? 0} className="mb-1" />
             <p className="mb-2 line-clamp-2 text-center text-sm font-bold sm:text-base">{row.display_name}</p>
             <p className="mb-2 font-mono text-sm tabular-nums text-white/80">{row.score.toLocaleString()}</p>
             <div
@@ -580,6 +583,7 @@ export function FinalStandings({
             <span className="w-7 shrink-0 text-center text-sm font-black tabular-nums" style={{ color: place <= 3 ? PODIUM_COLORS[place - 1] : undefined }}>
               {place}
             </span>
+            <PlayerAvatar avatar={row.avatar} name={row.display_name} size={28} colorIndex={index} />
             <span className="min-w-0 flex-1 truncate text-sm font-semibold">
               {row.display_name}
               {isMe && <span className="ml-1.5 text-xs text-white/70">you</span>}
@@ -666,12 +670,23 @@ export function PlayerLobby({ me, participants }: { me: LiveParticipant | null; 
       title="You're in!"
       subtitle="Waiting for your teacher to start. Keep this screen open."
       icon={
-        <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-3xl font-black text-violet-700">
-          {me ? me.display_name.slice(0, 1).toUpperCase() : "★"}
-        </span>
+        me?.avatar ? (
+          <span className="flex h-28 w-28 items-center justify-center rounded-full bg-white/10">
+            <PlayerAvatar avatar={me.avatar} name={me.display_name} size={96} />
+          </span>
+        ) : (
+          <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white text-3xl font-black text-violet-700">
+            {me ? me.display_name.slice(0, 1).toUpperCase() : "★"}
+          </span>
+        )
       }
     >
       {me && <p className="mt-6 text-xl font-bold">{me.display_name}</p>}
+      {me && (
+        <Link href="/live/shop" className="mt-1 inline-flex items-center gap-1 text-sm text-cyan-200 hover:underline">
+          <GemIcon size={14} /> {me.avatar ? "Change your avatar" : "Pick an avatar in the shop"}
+        </Link>
+      )}
       {me && typeof me.team === "number" && (
         <p className="mt-1 inline-flex items-center gap-2 text-sm font-bold" style={{ color: tileColor(me.team) }}>
           <span className="h-2.5 w-2.5 rounded-full" style={{ background: tileColor(me.team) }} />
@@ -680,8 +695,9 @@ export function PlayerLobby({ me, participants }: { me: LiveParticipant | null; 
       )}
       <p className="mt-2 text-sm text-white/60">{joined.length} in the room</p>
       <div className="mt-6 flex max-w-xl flex-wrap justify-center gap-2">
-        {joined.slice(0, 40).map((p) => (
-          <span key={p.id} className={cn("rounded-full bg-white/10 px-3 py-1 text-sm", styles.pop)}>
+        {joined.slice(0, 40).map((p, i) => (
+          <span key={p.id} className={cn("inline-flex items-center gap-1.5 rounded-full bg-white/10 py-1 pl-1 pr-3 text-sm", styles.pop)}>
+            <PlayerAvatar avatar={p.avatar} name={p.display_name} size={24} colorIndex={i} />
             {p.display_name}
           </span>
         ))}
@@ -714,6 +730,7 @@ export function teamRows(teams: TeamStanding[]): LiveParticipant[] {
     correct_count: 0,
     answered_count: 0,
     rank: team.rank,
+    team: team.team,
   }));
 }
 
@@ -740,7 +757,8 @@ export function TeamColumns({
             </p>
             <div className="flex flex-wrap gap-1.5">
               {members.map((p) => (
-                <span key={p.id} className="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-xs font-semibold">
+                <span key={p.id} className="inline-flex items-center gap-1.5 rounded-full bg-white/10 py-0.5 pl-0.5 pr-2 text-xs font-semibold">
+                  <PlayerAvatar avatar={p.avatar} name={p.display_name} size={22} colorIndex={team} />
                   {p.display_name}
                   {onMove && (
                     <button

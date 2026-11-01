@@ -14,21 +14,28 @@ import { Check, Clock, Flame, X } from "lucide-react";
 import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
+import Link from "next/link";
+
 import { liveQuizApi, type LiveParticipant, type TeamStanding } from "./api";
+import { GemIcon } from "./avatars";
 import { Confetti, FinalStandings, GamePanel, Podium, TrophyHeading } from "./game";
 import { ordinal, tileColor } from "./theme";
+import type { GemsAwarded } from "./useLiveQuiz";
 
 export function PlayerSummary({
   sessionId,
   me,
   leaderboard,
   questionTotal,
+  gems = null,
   teams = [],
 }: {
   sessionId: number;
   me: LiveParticipant | null;
   leaderboard: LiveParticipant[];
   questionTotal: number;
+  /** From the `gems_awarded` frame; after a refresh the report row says the same. */
+  gems?: GemsAwarded | null;
   /** Team mode: the teams' final standings, so the student sees how their team did. */
   teams?: TeamStanding[];
 }) {
@@ -39,6 +46,7 @@ export function PlayerSummary({
   });
 
   const myRow = results.data?.report.participants[0];
+  const earned = gems?.earned ?? myRow?.gems ?? null;
   const questions = results.data?.report.questions ?? [];
   const place = me?.rank ?? myRow?.rank ?? null;
   const myTeam = typeof me?.team === "number" ? teams.find((t) => t.team === me.team) : undefined;
@@ -84,6 +92,21 @@ export function PlayerSummary({
             <span className="font-normal text-white/60"> of {teams.length} teams</span>
           </p>
           <span className="ml-auto font-mono font-bold tabular-nums">{myTeam.score.toLocaleString()}</span>
+        </GamePanel>
+      )}
+
+      {earned !== null && (
+        <GamePanel className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <p className="inline-flex items-center gap-2 text-lg font-extrabold">
+            <GemIcon size={24} /> +{earned} gems
+            {gems?.capped && <span className="text-xs font-semibold text-white/60">· today&apos;s limit reached</span>}
+          </p>
+          <Link
+            href="/live/shop"
+            className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-violet-700 transition hover:-translate-y-0.5"
+          >
+            Spend them in the shop
+          </Link>
         </GamePanel>
       )}
 

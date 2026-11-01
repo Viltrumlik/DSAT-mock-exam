@@ -33,7 +33,8 @@ export type LiveQuizEvent =
   // Student-paced.
   | "player_progress"
   | "powerup_awarded"
-  | "powerup_applied";
+  | "powerup_applied"
+  | "gems_awarded";
 
 export type LiveQuizFrame = { type: LiveQuizEvent; data: Record<string, unknown> };
 

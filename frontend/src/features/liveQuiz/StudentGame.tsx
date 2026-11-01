@@ -208,6 +208,7 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
           me={mine ?? null}
           leaderboard={room.leaderboard}
           questionTotal={room.questionTotal}
+          gems={room.gems}
         />
       )}
 

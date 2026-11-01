@@ -9,6 +9,10 @@ from .views import (
     SessionListCreateView,
     SessionResultsView,
     SessionTerminateView,
+    ShopBuyView,
+    ShopClaimView,
+    ShopEquipView,
+    ShopView,
 )
 
 urlpatterns = [
@@ -16,6 +20,10 @@ urlpatterns = [
     path("join/", JoinView.as_view(), name="livequiz-join"),
     path("mine/", MyLiveSessionsView.as_view(), name="livequiz-mine"),
     path("options/", HostOptionsView.as_view(), name="livequiz-options"),
+    path("shop/", ShopView.as_view(), name="livequiz-shop"),
+    path("shop/buy/", ShopBuyView.as_view(), name="livequiz-shop-buy"),
+    path("shop/claim/", ShopClaimView.as_view(), name="livequiz-shop-claim"),
+    path("shop/equip/", ShopEquipView.as_view(), name="livequiz-shop-equip"),
     path("sessions/", SessionListCreateView.as_view(), name="livequiz-sessions"),
     path("sessions/<int:pk>/", SessionDetailView.as_view(), name="livequiz-session-detail"),
     path(
