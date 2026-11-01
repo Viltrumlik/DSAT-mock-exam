@@ -77,6 +77,44 @@ class NeedTests(ApiFixture):
         self.assertEqual(need["automations"], 0)
 
 
+class FirstOfMonthTests(ApiFixture):
+    def test_the_run_on_the_1st_counts_at_least_this_months_first_run(self):
+        """lc-up charges the month on the 1st: on the 31st the balances do not show it yet, so the 1st's
+        run is reckoned at least as big as the one that went out on this month's 1st."""
+        now = timezone.make_aware(datetime(2026, 10, 31, 12, 0))
+        LcupStudentLink.objects.update(balance_seen_at=now)
+        for i in range(3):
+            SmsMessage.objects.create(
+                kind=SmsMessage.KIND_DEBT_WARNING, run_on=now.date().replace(day=1), dedupe_key=f"student:{900 + i}",
+                phone="998901234567", text="x", status=SmsMessage.STATUS_DELIVERED, parts=1,
+            )
+        SmsMessage.objects.create(
+            kind=SmsMessage.KIND_DEBT_WARNING, run_on=now.date().replace(day=1), dedupe_key="student:999",
+            phone="998901234567", text="x", status=SmsMessage.STATUS_FAILED, parts=1,
+        )
+        from_balances = cost_of(w.text for w in debt_warnings.plan(now, today=now.date() + timedelta(days=1)).warnings)
+        self.assertLess(from_balances, 3 * PRICE)
+        self.assertEqual(forecast.need_next_24h(now)["debt"], 3 * PRICE)
+
+
+class BadCampaignTests(ApiFixture):
+    def test_one_campaign_that_cannot_be_resolved_does_not_break_the_overview(self):
+        now = timezone.make_aware(datetime(2026, 11, 10, 12, 0))
+        LcupStudentLink.objects.update(balance_seen_at=now)
+        good = NeedTests.campaign(self, now + timedelta(hours=2))
+        bad = NeedTests.campaign(self, now + timedelta(hours=3))
+        real = campaigns.resolve
+
+        def resolve(campaign, **kw):
+            if campaign.pk == bad.pk:
+                raise RuntimeError("a broken campaign")
+            return real(campaign, **kw)
+
+        with mock.patch("sms.campaigns.resolve", side_effect=resolve):
+            need = forecast.need_next_24h(now)
+        self.assertEqual(need["campaigns"], cost_of(r.text for r in real(good, now=now)[0]))
+
+
 class OverviewForecastTests(ApiFixture):
     def overview(self):
         with mock.patch("sms.views._today", return_value=timezone.localdate()):
