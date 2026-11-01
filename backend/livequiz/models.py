@@ -48,11 +48,22 @@ class LiveQuizSession(TimestampedModel):
     the host pressing skip — and exactly one of them must win.
     """
 
+    # The paper's source: a word set, or an SAT assessment set — exactly one (see Meta).
     vocab_set = models.ForeignKey(
         "vocabulary.VocabSet",
         on_delete=models.PROTECT,
+        null=True,
+        blank=True,
         related_name="live_quiz_sessions",
         help_text="The words this game was built from. PROTECT: a played session must stay readable.",
+    )
+    assessment_set = models.ForeignKey(
+        "assessments.AssessmentSet",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="live_quiz_sessions",
+        help_text="The SAT questions this game was copied from.",
     )
     # Required, unlike a mock sitting. The room IS a classroom: only its roster may join.
     classroom = models.ForeignKey(
@@ -111,6 +122,13 @@ class LiveQuizSession(TimestampedModel):
                 condition=Q(status__in=list(const.LIVE_STATUSES)),
                 name="uniq_livequiz_active_join_code",
             ),
+            models.CheckConstraint(
+                condition=(
+                    Q(vocab_set__isnull=False, assessment_set__isnull=True)
+                    | Q(vocab_set__isnull=True, assessment_set__isnull=False)
+                ),
+                name="livequiz_one_source",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -162,6 +180,18 @@ class LiveQuizQuestion(TimestampedModel):
         blank=True,
         related_name="live_quiz_questions",
     )
+
+    # An SAT room's question remembers the assessment question it was copied from (for the
+    # report), and the image files it showed — names, not copies: an image is not edited in
+    # place, it is replaced, so a name keeps pointing at what was shown.
+    source_question = models.ForeignKey(
+        "assessments.AssessmentQuestion",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="live_quiz_copies",
+    )
+    image_paths = models.JSONField(default=dict, blank=True)
 
     # Which way round this one was asked — see question_builder.FORMS. Kept so a review
     # screen can say "you were shown the definition" rather than leaving it to be guessed.

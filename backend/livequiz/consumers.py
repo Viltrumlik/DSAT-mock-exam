@@ -659,7 +659,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def _load_session(self):
         return (
-            LiveQuizSession.objects.select_related("classroom", "vocab_set")
+            LiveQuizSession.objects.select_related("classroom", "vocab_set", "assessment_set")
             .filter(pk=self.session_id)
             .first()
         )

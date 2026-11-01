@@ -97,7 +97,8 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
 5. ~~Redemption question~~ — **answered: yes** → built as "second chance": one missed question
    (two on a paper over 15) comes back at the end; right = base points and counts as right; off in
    test rooms and teacher-paced rooms.
-6. Memes / music — want our own set (we would need images/audio we own)?
-7. Question sources — vocabulary sets only (today), or also Question Bank / SAT questions?
+6. ~~Memes / music~~ — **answered: not needed.**
+7. ~~Question sources~~ — **answered: SAT questions too, from assessment sets** (the homework sets;
+   copied into the room with images; 90 s default timer).
 8. iOS — update the app to the new look (separate PR)?
 9. Team mode — wanted?

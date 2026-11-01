@@ -190,11 +190,12 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
               Second chance — you missed this one. Get it right now and it counts.
             </p>
           )}
-          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} />
+          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} />
 
           {question.question_type === "multiple_choice" && choices.length > 0 ? (
             <AnswerTiles
               choices={choices}
+              optionImages={question.option_images}
               onPick={pick}
               picked={picked}
               hidden={room.hidden}

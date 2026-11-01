@@ -188,8 +188,10 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
 
       {room.status === "QUESTION_ACTIVE" && question && (
         <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pb-8 pt-2 sm:px-6">
-          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} large />
-          {question.choices.length > 0 && <AnswerTiles choices={question.choices} large />}
+          <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} large />
+          {question.choices.length > 0 && (
+            <AnswerTiles choices={question.choices} optionImages={question.option_images} large />
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-lg">
               <span className="font-mono text-3xl font-black tabular-nums">{room.tally?.answered ?? 0}</span>
@@ -202,10 +204,13 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
 
       {room.status === "QUESTION_RESULTS" && room.outcome && (
         <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 pb-8 pt-2 sm:px-6">
-          {question && <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} />}
+          {question && (
+            <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} image={question.question_image} />
+          )}
           {question && question.choices.length > 0 && (
             <AnswerTiles
               choices={question.choices}
+              optionImages={question.option_images}
               correctId={String(room.outcome.correct_answer ?? "")}
               counts={room.outcome.tally.by_choice}
               large

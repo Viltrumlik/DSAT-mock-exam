@@ -65,7 +65,10 @@ export interface LiveSession {
   status: LiveQuizStatus;
   classroom_id: number;
   classroom_name: string;
-  vocab_set_id: number;
+  vocab_set_id: number | null;
+  /** An SAT room's set; null for a word-set room. */
+  assessment_set_id?: number | null;
+  source?: "vocab" | "sat";
   title: string;
   host_id: number | null;
   current_index: number;
@@ -149,6 +152,18 @@ export interface LiveQuestion {
   points: number;
   time_limit_seconds: number;
   form: "definition_to_word" | "word_to_definition" | "";
+  /** SAT questions: a figure for the question, and pictures for options, keyed by choice id. */
+  question_image?: string | null;
+  option_images?: Record<string, string>;
+}
+
+export interface SatSetOption {
+  id: number;
+  title: string;
+  subject: string;
+  category: string;
+  question_count: number;
+  is_approved: boolean;
 }
 
 export interface LiveQuizOption {
@@ -215,7 +230,9 @@ export const liveQuizApi = {
 
   async createSession(body: {
     classroom_id: number;
-    vocab_set_id: number;
+    /** Exactly one of the two. */
+    vocab_set_id?: number;
+    assessment_set_id?: number;
     config?: Partial<LiveQuizConfig>;
   }): Promise<LiveSession> {
     const { data } = await api.post("/livequiz/sessions/", body);
@@ -268,6 +285,7 @@ export const liveQuizApi = {
   async options(classroomId: number): Promise<{
     classroom: { id: number; name: string; level: string };
     vocab_sets: LiveQuizOption[];
+    assessment_sets?: SatSetOption[];
   }> {
     const { data } = await api.get("/livequiz/options/", { params: { classroom: classroomId } });
     return data;

@@ -170,18 +170,33 @@ export function GameTopBar({
 export function QuestionCard({
   prompt,
   questionPrompt,
+  image,
   large,
 }: {
   prompt: string;
   questionPrompt?: string;
+  /** An SAT question's figure. */
+  image?: string | null;
   large?: boolean;
 }) {
+  // A word question's "question prompt" is a one-line instruction; an SAT one's is a passage,
+  // which reads as a passage — left-aligned, and scrolling on its own if it is long.
+  const passage = Boolean(questionPrompt && questionPrompt.length > 120);
   return (
-    <div className={cn(styles.panel, "px-5 py-6 text-center sm:px-8 sm:py-8")}>
-      {questionPrompt && (
-        <p className="mb-3 text-sm font-medium uppercase tracking-wide text-white/60">
-          <AssessmentText text={questionPrompt} />
-        </p>
+    <div className={cn(styles.panel, "px-5 py-6 sm:px-8 sm:py-8", passage ? "text-left" : "text-center")}>
+      {questionPrompt &&
+        (passage ? (
+          <div className="mb-4 max-h-[40vh] overflow-y-auto rounded-2xl bg-black/20 p-4 text-base leading-relaxed text-white/90">
+            <AssessmentText text={questionPrompt} block preserveNewlines />
+          </div>
+        ) : (
+          <p className="mb-3 text-sm font-medium uppercase tracking-wide text-white/60">
+            <AssessmentText text={questionPrompt} />
+          </p>
+        ))}
+      {image && (
+        // eslint-disable-next-line @next/next/no-img-element -- a question figure from media storage
+        <img src={image} alt="" className="mx-auto mb-4 max-h-[36vh] rounded-xl bg-white object-contain p-2" />
       )}
       <div className={cn("font-semibold leading-snug", large ? "text-3xl sm:text-4xl" : "text-xl sm:text-2xl")}>
         <AssessmentText text={prompt} block />
@@ -199,7 +214,10 @@ export function AnswerTiles({
   counts,
   disabled,
   large,
+  optionImages,
 }: {
+  /** SAT options that are pictures, keyed by choice id. */
+  optionImages?: Record<string, string>;
   /** Already in display order. Colours follow position, so a shuffled student sees their own colours. */
   choices: LiveChoice[];
   onPick?: (choiceId: string) => void;
@@ -267,7 +285,11 @@ export function AnswerTiles({
             style={{ background: tileColor(position), animationDelay: `${position * 45}ms` }}
           >
             <span className="absolute left-3 top-2 font-mono text-xs font-bold text-white/60">{position + 1}</span>
-            <span className="min-w-0 break-words">
+            <span className="flex min-w-0 flex-col items-center break-words">
+              {optionImages?.[choice.id] && (
+                // eslint-disable-next-line @next/next/no-img-element -- an option picture from media storage
+                <img src={optionImages[choice.id]} alt="" className="mb-2 max-h-24 rounded-lg bg-white object-contain p-1" />
+              )}
               <AssessmentText text={choice.text} />
             </span>
             {isRight && (

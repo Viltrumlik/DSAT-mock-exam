@@ -11,9 +11,17 @@ student reading the socket in devtools sees exactly what a student is meant to s
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 
 from . import constants as const
+
+
+def _media_url(path: str | None) -> str | None:
+    if not path:
+        return None
+    base = str(getattr(settings, "MEDIA_URL", "/media/") or "/media/")
+    return f"{base if base.endswith('/') else base + '/'}{path}"
 
 
 def _iso(value):
@@ -30,6 +38,7 @@ def public_question(question, *, index: int, total: int) -> dict:
     already speaks is what the live client receives too — which is why its answer widgets
     can be reused unchanged.
     """
+    images = question.image_paths if isinstance(question.image_paths, dict) else {}
     return {
         "id": question.id,
         "index": index,
@@ -41,6 +50,9 @@ def public_question(question, *, index: int, total: int) -> dict:
         "points": question.points,
         "time_limit_seconds": question.time_limit_seconds,
         "form": question.form,
+        # SAT questions can carry a figure, and options can be pictures.
+        "question_image": _media_url(images.get("question")),
+        "option_images": {key: _media_url(name) for key, name in images.items() if key != "question"},
     }
 
 
