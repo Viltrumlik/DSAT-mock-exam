@@ -119,7 +119,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
   return (
     <GameCanvas>
       <GameTopBar
-        index={question?.index}
+        index={room.finished ? undefined : question?.index}
         total={room.questionTotal}
         score={room.me?.score}
         streak={room.me?.streak}

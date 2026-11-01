@@ -56,7 +56,10 @@ export function PlayerSummary({
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Score" value={me.score.toLocaleString()} />
           <Stat label="Accuracy" value={accuracy !== null ? `${accuracy}%` : "—"} />
-          <Stat label="Correct" value={`${me.correct_count}/${questionTotal || me.correct_count}`} />
+          <Stat
+            label="Correct"
+            value={`${myRow?.correct_count ?? me.correct_count}/${questionTotal || me.correct_count}`}
+          />
           <Stat
             label="Best streak"
             value={

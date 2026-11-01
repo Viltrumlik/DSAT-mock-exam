@@ -419,6 +419,10 @@ class PacedSocketTests(TransactionTestCase):
             with mock.patch.object(const, "COUNTDOWN_SECONDS", 0):
                 await host.send_json_to({"type": const.CMD_START_GAME})
                 first = await await_frame(player, const.EV_QUESTION_STARTED)
+                # The host's screen must learn the round is in play — nothing room-wide says so.
+                in_play = await await_frame(host, const.EV_SESSION_STATE)
+                self.assertEqual(in_play["data"]["status"], const.STATUS_QUESTION_ACTIVE)
+                self.assertIn("board", in_play["data"])
 
             question = first["data"]["question"]
             self.assertNotIn("correct_answer", question)

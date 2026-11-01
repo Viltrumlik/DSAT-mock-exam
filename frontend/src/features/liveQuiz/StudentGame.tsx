@@ -108,7 +108,7 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
   return (
     <GameCanvas>
       <GameTopBar
-        index={question?.index}
+        index={room.finished ? undefined : question?.index}
         total={room.questionTotal}
         score={mine?.score}
         streak={mine?.streak}

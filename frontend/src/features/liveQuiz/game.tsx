@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, Clock, Flame, Snowflake, Trophy, Volume2, VolumeX, X } from "lucide-react";
 
 import { AssessmentText } from "@/lib/assessmentText";
@@ -21,11 +22,32 @@ import type { OwnFeedback } from "./useLiveQuiz";
 
 // ─── Canvas and top bar ───────────────────────────────────────────────────────
 
+/**
+ * The full-screen game, drawn on `document.body` rather than where it is rendered.
+ *
+ * The app shell animates its page area with a transform, and a transformed ancestor becomes
+ * the box a `position: fixed` child is fixed to — so in place, the "full screen" filled only
+ * the content column, under the shell's own header and sidebar. A portal puts it above both.
+ */
 export function GameCanvas({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    // The page behind must not scroll under a thumb that meant to scroll the game.
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  if (!mounted) return null;
+  return createPortal(
     <div className={cn(styles.canvas, className)} data-testid="live-game-canvas">
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -97,7 +119,7 @@ export function GameTopBar({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 sm:px-6">
+    <div className="sticky top-0 z-10 flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:px-6">
       {onExit && (
         <button
           type="button"
@@ -113,24 +135,30 @@ export function GameTopBar({
           {Math.min(index + 1, total)}/{total}
         </span>
       )}
-      <div className="flex min-w-0 flex-1 justify-center">{children}</div>
-      <StreakBadge streak={streak ?? 0} />
-      {typeof rank === "number" && rank > 0 && (
-        <span className="hidden shrink-0 text-sm font-semibold text-white/80 sm:inline">{ordinal(rank)}</span>
-      )}
-      {typeof score === "number" && (
-        <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 font-mono text-sm font-bold tabular-nums">
-          {score.toLocaleString()}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={onToggleMute}
-        aria-label={muted ? "Turn sound on" : "Turn sound off"}
-        className="rounded-full p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
-      >
-        {muted ? <VolumeX className="h-5 w-5" aria-hidden /> : <Volume2 className="h-5 w-5" aria-hidden />}
-      </button>
+      {/* The timer: inline on a laptop, its own full-width row on a phone, where the
+          counters would otherwise squeeze it to a sliver. */}
+      <div className="order-last flex w-full min-w-0 justify-center empty:hidden sm:order-none sm:w-auto sm:flex-1">
+        {children}
+      </div>
+      <div className="ml-auto flex shrink-0 items-center gap-3">
+        <StreakBadge streak={streak ?? 0} />
+        {typeof rank === "number" && rank > 0 && (
+          <span className="hidden shrink-0 text-sm font-semibold text-white/80 sm:inline">{ordinal(rank)}</span>
+        )}
+        {typeof score === "number" && (
+          <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 font-mono text-sm font-bold tabular-nums">
+            {score.toLocaleString()}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={onToggleMute}
+          aria-label={muted ? "Turn sound on" : "Turn sound off"}
+          className="rounded-full p-2 text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          {muted ? <VolumeX className="h-5 w-5" aria-hidden /> : <Volume2 className="h-5 w-5" aria-hidden />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -228,6 +256,8 @@ export function AnswerTiles({
             className={cn(
               styles.tile,
               large ? "min-h-[140px] text-2xl" : "text-lg",
+              // Room for the count bar along the bottom, clear of a two-line option.
+              counts && "pb-9",
               isPicked && styles.tilePicked,
               dim && styles.tileDim,
               isGone && styles.tileGone,

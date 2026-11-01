@@ -328,6 +328,8 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
         ? {
             ...prev.me,
             score: data.score ?? prev.me.score,
+            correct_count: data.correct_count ?? prev.me.correct_count,
+            answered_count: data.answered_count ?? prev.me.answered_count,
             streak: data.streak ?? prev.me.streak,
             best_streak: data.best_streak ?? prev.me.best_streak,
             progress: data.progress ?? prev.me.progress,

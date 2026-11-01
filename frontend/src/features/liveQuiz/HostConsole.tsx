@@ -281,13 +281,13 @@ export function HostConsole() {
                       <span className="flex items-center gap-2 font-semibold">
                         <Icon className={cn("h-5 w-5", chosen ? "text-primary" : "text-muted-foreground")} aria-hidden />
                         {item.title}
-                        {key === "student" && (
-                          <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                            Recommended
-                          </span>
-                        )}
                       </span>
                       <span className="mt-1.5 block text-xs leading-relaxed text-muted-foreground">{item.blurb}</span>
+                      {key === "student" && (
+                        <span className="mt-2 inline-block rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                          Recommended
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -405,7 +405,7 @@ function Toggle({
       >
         <span
           className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+            "absolute left-0 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
             checked ? "translate-x-[22px]" : "translate-x-0.5",
           )}
         />

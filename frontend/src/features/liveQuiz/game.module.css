@@ -11,6 +11,8 @@
   flex-direction: column;
   overflow-y: auto;
   color: #fff;
+  /* Drawn on <body>, which is set in the reading serif; the app shell's face is Geist. */
+  font-family: var(--font-sans);
   background:
     radial-gradient(1200px 600px at 15% -10%, rgba(124, 58, 237, 0.35), transparent 60%),
     radial-gradient(900px 500px at 110% 110%, rgba(37, 99, 235, 0.3), transparent 60%),

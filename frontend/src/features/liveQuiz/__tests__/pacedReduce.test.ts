@@ -57,12 +57,13 @@ describe("student-paced: the student's own clock", () => {
     let room = inPlay(1_000);
     room = reduce(
       room,
-      frame("answer_result", { question_id: 11, accepted: true, is_correct: true, points_awarded: 1000, score: 1000, streak: 1, rank: 1 }),
+      frame("answer_result", { question_id: 11, accepted: true, is_correct: true, points_awarded: 1000, score: 1000, streak: 1, rank: 1, correct_count: 1 }),
       5_000,
     );
     expect(room.feedback?.question_id).toBe(11);
     expect(room.feedback?.question?.id).toBe(11);
     expect(room.me?.score).toBe(1000);
+    expect(room.me?.correct_count).toBe(1);
 
     room = reduce(
       room,

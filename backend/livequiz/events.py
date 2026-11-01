@@ -217,6 +217,8 @@ def own_answer_result(move, *, session, standing: dict | None) -> dict:
                 "streak": move.participant.streak,
                 "best_streak": move.participant.best_streak,
                 "score": move.participant.score,
+                "correct_count": move.participant.correct_count,
+                "answered_count": move.participant.answered_count,
                 "awarded": move.awarded,
                 "powerups_used": list(move.used or []),
             }

@@ -233,6 +233,12 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             # student's socket keeps its own clock.
             for participant_id, frame in await self._begin_play():
                 await self._send_personal(participant_id, const.EV_QUESTION_STARTED, frame)
+            # No room-wide frame says "in play" — every student got their own question
+            # instead — so the host's screens are told directly, with the board, which is
+            # why this goes to hosts only.
+            await self._broadcast(
+                const.EV_SESSION_STATE, await self._state(), audience=services.ROLE_HOST
+            )
             self._start_ticker()
             return
         await self._open_question(0)

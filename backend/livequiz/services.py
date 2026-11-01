@@ -287,9 +287,16 @@ def join_session(*, session, user) -> LiveQuizParticipant:
             if playing >= const.MAX_PARTICIPANTS:
                 raise Conflict("This live quiz is full.", code="room_full")
 
-            participant = LiveQuizParticipant.objects.create(
-                session=session, user=user, display_name=display_name_for(user)
-            )
+            try:
+                with transaction.atomic():
+                    participant = LiveQuizParticipant.objects.create(
+                        session=session, user=user, display_name=display_name_for(user)
+                    )
+            except IntegrityError:
+                # Two requests for the same place at once — a double tap, or a page that
+                # asks twice as it mounts. There was no row to lock, so both got here; the
+                # other one made the place, and it is this student's place too.
+                participant = LiveQuizParticipant.objects.get(session=session, user=user)
 
     # A student-paced room deals every student their own order through the paper the moment
     # they take a place — latecomers included.
