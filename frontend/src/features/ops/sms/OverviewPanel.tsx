@@ -106,7 +106,8 @@ export function OverviewPanel() {
             {o.debt.enabled ? <Badge variant="success">On</Badge> : <Badge variant="neutral">Off</Badge>}
             <span>{o.debt.enabled ? `Sends at ${hourLabel(o.debt.hour)}` : off}</span>
           </p>
-          {o.debt.today_sent > 0 ? (
+          {/* Either count: when every warning so far FAILED, nothing is "sent" yet some are still to go. */}
+          {o.debt.today_sent > 0 || o.debt.today_left > 0 ? (
             <p className="text-foreground">{`Today: ${o.debt.today_sent} sent · ${o.debt.today_left} left`}</p>
           ) : null}
           <p className="text-foreground">
