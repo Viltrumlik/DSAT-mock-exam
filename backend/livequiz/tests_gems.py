@@ -156,6 +156,21 @@ class AwardTests(GemsBase):
         self.assertEqual(first.detail["podium"], 50)
         self.assertEqual(first.amount, 30 + 50)
 
+    def test_a_game_that_paid_nothing_under_the_cap_still_counts_as_paid(self):
+        # Review finding: with no row written for a zero share, asking again on a later day —
+        # under a fresh cap — paid the same game.
+        gems.grant(self.student, 300, kind=GemTransaction.KIND_EARN, note="earlier games today")
+        session, participant = self._in_play()
+        self._answer(session, participant)
+        session = self._end(session)
+        row = GemTransaction.objects.get(session=session)
+        self.assertEqual((row.amount, row.detail["capped"]), (0, True))
+
+        GemTransaction.objects.update(day=timezone.localdate() - timezone.timedelta(days=1))
+        gems.award_for_game(session)
+        self.assertEqual(self._balance(self.student), 300)
+        self.assertEqual(GemTransaction.objects.filter(session=session).count(), 1)
+
     def test_teacher_paced_present_at_the_end_gets_the_finish_bonus(self):
         session = self._session()
         participant = self._playing(session)

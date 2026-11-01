@@ -119,20 +119,22 @@ def award_for_game(session) -> dict[int, dict]:
             room = max(0, DAILY_CAP - earned_today(wallet, today))
             amount = min(breakdown["total"], room)
             detail = {**breakdown, "capped": amount < breakdown["total"]}
-            if amount > 0:
-                try:
-                    with transaction.atomic():
-                        _record(
-                            wallet,
-                            kind=GemTransaction.KIND_EARN,
-                            amount=amount,
-                            session=session,
-                            day=today,
-                            detail=detail,
-                        )
-                except IntegrityError:
-                    # Another payout for this game landed first; theirs stands.
-                    wallet.refresh_from_db()
+            # Written even when it comes to nothing. The row IS the record that this game has
+            # paid this student; without it a later call — tomorrow, under a fresh cap — would
+            # find nothing and pay the same game again.
+            try:
+                with transaction.atomic():
+                    _record(
+                        wallet,
+                        kind=GemTransaction.KIND_EARN,
+                        amount=amount,
+                        session=session,
+                        day=today,
+                        detail=detail,
+                    )
+            except IntegrityError:
+                # Another payout for this game landed first; theirs stands.
+                wallet.refresh_from_db()
             paid[participant.id] = _payout(amount, wallet.balance, detail)
     return paid
 
