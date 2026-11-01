@@ -15,7 +15,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from . import eskiz
+from . import eskiz, switchboard
+from . import templates as T
 from .models import SmsMessage
 
 #: eskiz keeps a request's status readable by its UUID for 30 days; two are enough to see an SMS arrive.
@@ -38,10 +39,12 @@ def mask_phone(phone) -> str:
 
 def deliver(
     client, *, kind, run_on, dedupe_key, phone, text, user=None, lcup_student_id=None, campaign=None, created_by=None,
+    template_eskiz_id=None,
 ) -> SmsMessage | None:
     """The SMS, once. None when today's row for this key is already there and is not FAILED.
-    ``campaign`` and ``created_by`` are recorded on a new row (a FAILED one re-claimed keeps its own)."""
-    msg = _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by)
+    ``campaign``, ``created_by``, the template and today's price per part are recorded on a new row
+    (a FAILED one re-claimed keeps its own)."""
+    msg = _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by, template_eskiz_id)
     if msg is None:
         return None
     result = client.send(phone, text, user_sms_id=f"m{msg.pk}")
@@ -53,12 +56,21 @@ def deliver(
     return msg
 
 
-def _claim(kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by) -> SmsMessage | None:
+#: What a person may send again by hand: it did not arrive and nothing says it might have.
+#: UNCERTAIN (it may have left), SENT and PENDING (still on their way) and DELIVERED never are.
+RESENDABLE = (SmsMessage.STATUS_UNDELIVERED, SmsMessage.STATUS_REJECTED, SmsMessage.STATUS_FAILED)
+
+
+def _claim(
+    kind, run_on, dedupe_key, phone, text, user, lcup_student_id, campaign, created_by, template_eskiz_id
+) -> SmsMessage | None:
     try:
         with transaction.atomic():
+            # ``parts`` is the GSM/UCS-2 estimate until check_statuses writes eskiz's own count.
             return SmsMessage.objects.create(
                 kind=kind, run_on=run_on, dedupe_key=dedupe_key, phone=phone, text=text,
                 user=user, lcup_student_id=lcup_student_id, campaign=campaign, created_by=created_by,
+                template_eskiz_id=template_eskiz_id, unit_price=switchboard.price_per_part(), parts=T.parts(text),
             )
     except IntegrityError:
         pass

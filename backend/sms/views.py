@@ -15,12 +15,15 @@ A body that is not a JSON object (a list, a string, null) is a 400 with code ``b
 
 from __future__ import annotations
 
+import csv
+import io
 from collections import Counter
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.core.cache import cache
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Prefetch, Q
+from django.db.models.functions import Substr
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers
@@ -32,17 +35,21 @@ from rest_framework.views import APIView
 from access import constants as C
 from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership
+from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
 from lcup.phones import normalize_phone
-from users.changelist import apply_search, facets, paginate
+from users.changelist import apply_search, facets, paginate, to_int
 from users.models import User
 
 from . import campaigns, conf
 from . import debt_warnings as warnings
-from . import eskiz, eskiz_templates, switchboard
+from . import eskiz, eskiz_templates, forecast, resend, stats, switchboard
 from . import templates as T
-from .delivery import deliver
+from .delivery import RESENDABLE, deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
+from .operators import NAMES as OPERATOR_NAMES
+from .operators import OTHER as OTHER_OPERATOR
+from .operators import operator_of, operator_q
 
 BALANCE_KEY = "sms:balance"
 BALANCE_TTL = 5 * 60
@@ -98,7 +105,46 @@ def _on_commit(fn) -> None:
 # ── rows ──────────────────────────────────────────────────────────────────
 
 
-def message_row(msg) -> dict:
+_SOURCE_LABELS = {SmsMessage.KIND_DEBT_WARNING: "Debt warning", SmsMessage.KIND_TEST: "Test"}
+
+
+def _source(msg, campaign_labels) -> dict:
+    if msg.campaign_id:
+        label = f"Campaign #{msg.campaign_id}"
+        if msg.campaign_id in campaign_labels:
+            label += f" · {campaign_labels[msg.campaign_id]}"
+        return {"type": SmsMessage.KIND_CAMPAIGN, "id": msg.campaign_id, "label": label}
+    return {"type": msg.kind, "id": None, "label": _SOURCE_LABELS.get(msg.kind, msg.kind)}
+
+
+def _groups(msg) -> list[str]:
+    """The student's active classes now (``_messages`` prefetches them as ``active_seats``)."""
+    if not msg.user_id:
+        return []
+    seats = getattr(msg.user, "active_seats", None)
+    if seats is None:
+        seats = _active_seats().filter(user_id=msg.user_id)
+    return [seat.classroom.name for seat in seats]
+
+
+def _cost(msg) -> int:
+    if msg.status not in stats.CHARGED:
+        return 0
+    return (msg.parts or T.parts(msg.text)) * (msg.unit_price or switchboard.price_per_part())
+
+
+def message_rows(msgs) -> list[dict]:
+    """``message_row`` for each, the campaigns' audience labels and the debt warning's switch asked once."""
+    msgs = list(msgs)
+    campaign_ids = {m.campaign_id for m in msgs if m.campaign_id}
+    labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=campaign_ids)) if campaign_ids else {}
+    today, debt_on = timezone.localdate(), warnings.switched_on()
+    return [message_row(m, labels, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs]
+
+
+def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
+    if can_resend is None:
+        can_resend = resend.refusal(msg, timezone.localdate()) is None
     return {
         "id": msg.pk,
         "created_at": _iso(msg.created_at),
@@ -116,11 +162,35 @@ def message_row(msg) -> dict:
         "lcup_student_id": msg.lcup_student_id,
         "campaign_id": msg.campaign_id,
         "created_by_name": _name(msg.created_by),
+        "attempts": msg.attempts,
+        "checked_at": _iso(msg.checked_at),
+        "operator": operator_of(msg.phone),
+        "groups": _groups(msg),
+        "source": _source(msg, campaign_labels or {}),
+        "template": {
+            "id": msg.template_eskiz_id,
+            "label": f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+        },
+        "cost": _cost(msg),
+        # Whether Resend may take it now (``resend.refusal``): a debt warning only on its own day.
+        "can_resend": can_resend,
     }
 
 
+def _active_seats():
+    return (
+        ClassroomMembership.objects.filter(
+            role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE, classroom__is_active=True,
+        )
+        .select_related("classroom")
+        .order_by("classroom__name", "classroom_id")
+    )
+
+
 def _messages(qs):
-    return qs.select_related("user", "created_by")
+    return qs.select_related("user", "created_by").prefetch_related(
+        Prefetch("user__class_memberships", queryset=_active_seats(), to_attr="active_seats")
+    )
 
 
 def campaign_row(campaign, labels, live) -> dict:
@@ -260,9 +330,14 @@ class OverviewView(_AdminView):
             SmsMessage.objects.exclude(error="").order_by("-updated_at", "-id").values_list("error", flat=True).first()
         )
         env_on, db_on, freeze_on = switchboard.env_enabled(), row.debt_enabled, debt_freeze_enabled()
+        balance = _balance()
+        need = forecast.need_next_24h(now)
+        month = stats.summary(timezone.localdate().replace(day=1), timezone.localdate())["totals"]
         return Response({
             "configured": conf.is_configured(),
-            "balance": _balance(),
+            "balance": balance,
+            "forecast": {**need, "balance": balance, "short": balance is not None and balance < need["total"]},
+            "month": {"sent": month["sent"], "rate": month["rate"], "cost": month["cost"]},
             "price_per_part": switchboard.price_per_part(),
             "sender": conf.credentials()["sender"],
             "eskiz": {
@@ -283,6 +358,23 @@ class OverviewView(_AdminView):
             },
             "today": _by_status(SmsMessage.objects.filter(created_at__gte=_start_of_today(now))),
             "last7": _by_status(SmsMessage.objects.filter(created_at__gte=now - timedelta(days=7))),
+        })
+
+
+class StatsView(_AdminView):
+    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``)."""
+
+    def get(self, request):
+        params = request.query_params
+        try:
+            start, end = stats.parse_range(params.get("from"), params.get("to"), today=timezone.localdate())
+        except ValueError as exc:
+            return _refused("range", str(exc))
+        return Response({
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            **stats.summary(start, end),
+            "debt_effect": stats.debt_effect(3, today=end),
         })
 
 
@@ -316,18 +408,229 @@ MESSAGE_FILTERS = {
     "when": ("When", lambda qs: _fixed(qs, _WHEN, _when_q), _when_q),
 }
 
+#: A message whose student holds an active seat now; the joins of one filter() call stay one row each.
+_SEAT = {
+    "user__class_memberships__role": ClassroomMembership.ROLE_STUDENT,
+    "user__class_memberships__status": ClassroomMembership.STATUS_ACTIVE,
+    "user__class_memberships__classroom__is_active": True,
+}
+
+
+def _seat_users(**where):
+    return _active_seats().filter(**where).values("user_id")
+
+
+def _by_id(to_q):
+    """A to_q for an integer value; anything else is not a filter."""
+    def q(value):
+        number = to_int(value)
+        return to_q(number) if number is not None else None
+    return q
+
+
+def _operator_choices(qs):
+    tally = Counter()
+    for row in qs.annotate(code=Substr("phone", 4, 2)).values("code").annotate(n=Count("id")).order_by():
+        tally[operator_of(f"998{row['code']}")] += row["n"]
+    return [(name, name, tally[name]) for name in (*OPERATOR_NAMES, OTHER_OPERATOR) if tally[name]]
+
+
+def _group_choices(qs):
+    rows = (
+        qs.filter(**_SEAT)
+        .values("user__class_memberships__classroom_id", "user__class_memberships__classroom__name")
+        .annotate(n=Count("id", distinct=True))
+        .order_by("user__class_memberships__classroom__name")
+    )
+    return [
+        (str(r["user__class_memberships__classroom_id"]), r["user__class_memberships__classroom__name"], r["n"])
+        for r in rows
+    ]
+
+
+def _teacher_choices(qs):
+    rows = list(
+        qs.filter(**_SEAT, user__class_memberships__classroom__teacher__isnull=False)
+        .values("user__class_memberships__classroom__teacher_id")
+        .annotate(n=Count("id", distinct=True))
+        .order_by()
+    )
+    people = User.objects.in_bulk([r["user__class_memberships__classroom__teacher_id"] for r in rows])
+    choices = [
+        (str(pk), _name(people.get(pk)), r["n"])
+        for r in rows
+        if (pk := r["user__class_memberships__classroom__teacher_id"]) in people
+    ]
+    return sorted(choices, key=lambda c: c[1].lower())
+
+
+def _template_choices(qs):
+    rows = qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
+    return [(str(r["template_eskiz_id"]), f"#{r['template_eskiz_id']}", r["n"]) for r in rows]
+
+
+def _campaign_choices(qs):
+    rows = list(qs.exclude(campaign=None).values("campaign_id").annotate(n=Count("id")).order_by("-campaign_id"))
+    labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=[r["campaign_id"] for r in rows]))
+    return [(str(r["campaign_id"]), f"#{r['campaign_id']} · {labels.get(r['campaign_id'], '')}", r["n"]) for r in rows]
+
+
+MESSAGE_FILTERS.update({
+    "operator": ("Operator", _operator_choices, operator_q),
+    "group": ("Group", _group_choices, _by_id(lambda pk: Q(user_id__in=_seat_users(classroom_id=pk)))),
+    "teacher": ("Teacher", _teacher_choices, _by_id(lambda pk: Q(user_id__in=_seat_users(classroom__teacher_id=pk)))),
+    "template": ("Template", _template_choices, _by_id(lambda pk: Q(template_eskiz_id=pk))),
+    "campaign": ("Campaign", _campaign_choices, _by_id(lambda pk: Q(campaign_id=pk))),
+})
+
+
+def _day(raw):
+    try:
+        return date.fromisoformat(raw) if raw else None
+    except ValueError:
+        return None
+
+
+def _date_range_q(params) -> Q:
+    """``from``/``to``: Tashkent days, inclusive; a date that cannot be read is ignored, like any filter value."""
+    q, start, end = Q(), _day(params.get("from")), _day(params.get("to"))
+    if start:
+        q &= Q(created_at__gte=timezone.make_aware(datetime.combine(start, time.min)))
+    if end:
+        q &= Q(created_at__lt=timezone.make_aware(datetime.combine(end + timedelta(days=1), time.min)))
+    return q
+
+
+def _journal(params):
+    """(the journal's rows as the address filters them, newest first; the filters payload)."""
+    qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH).filter(_date_range_q(params))
+    if params.get("resendable") == "1":  # the overview's "did not arrive" list: every status Resend may take
+        qs = qs.filter(status__in=RESENDABLE)
+    qs, filters = facets(qs, MESSAGE_FILTERS, params)
+    return qs.order_by("-created_at", "-id"), filters
+
 
 class MessageListView(_AdminView):
     def get(self, request):
         params = request.query_params
-        qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH)
-        qs, filters = facets(qs, MESSAGE_FILTERS, params)
-        window, meta = paginate(_messages(qs).order_by("-created_at", "-id"), params)
+        qs, filters = _journal(params)
+        window, meta = paginate(_messages(qs), params)
         return Response({
             **meta,
-            "results": [message_row(m) for m in window],
+            "results": message_rows(window),
             "filters": filters,
         })
+
+
+#: The most rows one export writes (a year of every SMS is far below it).
+EXPORT_MAX = 50_000
+EXPORT_CHUNK = 2_000
+EXPORT_COLUMNS = ("Date", "Name", "Phone", "Groups", "Operator", "Kind", "Source", "Template", "Status", "Reason",
+                  "Parts", "Cost", "Text")
+_OPERATOR_REJECTED = frozenset({"REJECTED", "REJECTD"})
+
+
+def _reason(msg) -> str:
+    """Why it stands where it does, in the words the panel uses (frontend ``reasonOf``)."""
+    eskiz_status = (msg.eskiz_status or "").upper()
+    if msg.status == SmsMessage.STATUS_DELIVERED:
+        text = "Delivered"
+    elif msg.status == SmsMessage.STATUS_UNDELIVERED:
+        if eskiz_status in _OPERATOR_REJECTED:
+            text = "Operator rejected"
+        elif eskiz_status == "EXPIRED":
+            text = "Phone off or out of reach"
+        else:
+            text = "Not delivered"
+    elif msg.status == SmsMessage.STATUS_REJECTED:
+        text = "Forbidden word" if "forbidden" in (msg.error or "").lower() else "eskiz refused"
+    elif msg.status == SmsMessage.STATUS_FAILED:
+        text = "eskiz not reached"
+    elif msg.status == SmsMessage.STATUS_UNCERTAIN:
+        text = "Unknown — may have gone"
+    else:
+        text = "Waiting for the operator"
+    return f"{text} · try {msg.attempts}" if msg.attempts > 1 else text
+
+
+class MessageExportView(_AdminView):
+    """The journal as the address filters it — every page, at most EXPORT_MAX rows — as a CSV Excel opens."""
+
+    def get(self, request):
+        qs, _ = _journal(request.query_params)
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(EXPORT_COLUMNS)
+        for start in range(0, EXPORT_MAX, EXPORT_CHUNK):
+            chunk = list(_messages(qs)[start: start + EXPORT_CHUNK])
+            if not chunk:
+                break
+            labels = {}
+            ids = {m.campaign_id for m in chunk if m.campaign_id}
+            if ids:
+                labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=ids))
+            for msg in chunk:
+                writer.writerow([
+                    timezone.localtime(msg.created_at).strftime("%Y-%m-%d %H:%M"),
+                    _name(msg.user),
+                    msg.phone,
+                    "; ".join(_groups(msg)),
+                    operator_of(msg.phone),
+                    _KINDS.get(msg.kind, msg.kind),
+                    _source(msg, labels)["label"],
+                    f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+                    msg.status,
+                    _reason(msg),
+                    msg.parts or T.parts(msg.text),
+                    _cost(msg),
+                    msg.text,
+                ])
+        return csv_download_response(out.getvalue(), f"sms-journal-{timezone.localdate().isoformat()}")
+
+
+RESEND_MAX = 300
+
+
+def _queue_resend(ids: list[int]):
+    def queue():
+        from . import tasks
+
+        tasks.resend_messages.delay(ids)
+
+    return queue
+
+
+class ResendView(_AdminView):
+    """POST ``{"ids": [...]}``: those that may go again now (``resend.refusal``) are queued; the rest are named back."""
+
+    def post(self, request):
+        refused = _not_an_object(request)
+        if refused:
+            return refused
+        ids = campaigns._ints(request.data.get("ids"))
+        if not ids or len(ids) > RESEND_MAX:
+            return _refused("ids", f"Send 1 to {RESEND_MAX} message ids.")
+        today = timezone.localdate()
+        resendable = {
+            m.pk for m in SmsMessage.objects.filter(pk__in=ids, status__in=RESENDABLE) if resend.refusal(m, today) is None
+        }
+        queued = [pk for pk in ids if pk in resendable]
+        if queued:
+            _on_commit(_queue_resend(queued))
+        return Response({"queued": queued, "not_resendable": [pk for pk in ids if pk not in resendable]})
+
+
+STUDENT_MESSAGES_MAX = 200
+
+
+class StudentMessagesView(_AdminView):
+    """One student's SMS, newest first (the person page's SMS tab), with a count by status of all of them."""
+
+    def get(self, request, user_id):
+        qs = SmsMessage.objects.filter(user_id=user_id)
+        summary = dict(Counter(qs.values_list("status", flat=True)))
+        rows = _messages(qs.order_by("-created_at", "-id"))[:STUDENT_MESSAGES_MAX]
+        return Response({"summary": summary, "results": message_rows(rows)})
 
 
 # ── campaigns ─────────────────────────────────────────────────────────────
@@ -379,7 +682,7 @@ class CampaignDetailView(_AdminView):
     def get(self, request, pk):
         campaign = _campaign(pk)
         messages = _messages(campaign.messages.order_by("id"))
-        return Response({"campaign": _campaign_rows([campaign])[0], "messages": [message_row(m) for m in messages]})
+        return Response({"campaign": _campaign_rows([campaign])[0], "messages": message_rows(messages)})
 
 
 class CampaignCancelView(_AdminView):
@@ -625,7 +928,7 @@ class TestSmsView(_AdminView):
         msg = deliver(
             eskiz.default_client(), kind=SmsMessage.KIND_TEST, run_on=now.date(),
             dedupe_key=f"test:{phone}:{template.eskiz_id}:{now:%Y%m%d%H%M}", phone=phone, text=text,
-            created_by=request.user,
+            created_by=request.user, template_eskiz_id=template.eskiz_id,
         )
         if msg is None:
             return _refused("duplicate", "This test SMS was just sent: check the journal before sending it again.")

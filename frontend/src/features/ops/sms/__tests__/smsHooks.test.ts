@@ -39,6 +39,7 @@ const MUTATIONS: [string, () => unknown][] = [
   ["submit template", () => hooks.useSubmitTemplate()],
   ["settings PATCH", () => hooks.useUpdateSmsSettings()],
   ["templates sync", () => hooks.useSyncTemplates()],
+  ["resend", () => hooks.useResendMessages()],
 ];
 
 beforeEach(() => invalidateQueries.mockReset());
@@ -52,6 +53,7 @@ describe("SMS mutations", () => {
     ["create campaign", () => hooks.useCreateCampaign()],
     ["debt send now", () => hooks.useDebtSendNow()],
     ["test SMS", () => hooks.useSendTestSms()],
+    ["resend", () => hooks.useResendMessages()],
   ] as [string, () => unknown][])("%s refreshes the panel when it failed with no answer", (_name, hook) => {
     const { onError } = options(hook());
     onError?.(new Error("Network Error"));

@@ -4,6 +4,7 @@ import type {
   EskizTemplate,
   SlotRole,
   SmsKind,
+  SmsMessage,
   SmsStatus,
   StatusCounts,
   TemplateSlot,
@@ -136,6 +137,46 @@ export const STATUS_BADGE: Record<SmsStatus, Badge> = {
 
 export function statusBadge(status: string): Badge {
   return STATUS_BADGE[status as SmsStatus] ?? { variant: "neutral", label: status };
+}
+
+const OPERATOR_REJECTED = new Set(["REJECTED", "REJECTD"]);
+
+/** "10:02" in Tashkent, where the server counts its days. */
+function tashkentTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(d);
+}
+
+/**
+ * Where an SMS stands, in the words an admin would tell a parent — never only eskiz's code. The
+ * journal's CSV writes the same words (`views._reason` on the server), so keep the two together.
+ */
+export function reasonOf(m: Pick<SmsMessage, "status" | "eskiz_status" | "error" | "attempts" | "checked_at">): string {
+  const eskiz = (m.eskiz_status || "").toUpperCase();
+  let text: string;
+  switch (m.status) {
+    case "DELIVERED":
+      text = m.checked_at ? `Delivered ${tashkentTime(m.checked_at)}`.trim() : "Delivered";
+      break;
+    case "UNDELIVERED":
+      if (OPERATOR_REJECTED.has(eskiz)) text = "Operator rejected";
+      else if (eskiz === "EXPIRED") text = "Phone off or out of reach";
+      else text = "Not delivered";
+      break;
+    case "REJECTED":
+      text = (m.error || "").toLowerCase().includes("forbidden") ? "Forbidden word" : "eskiz refused";
+      break;
+    case "FAILED":
+      text = "eskiz not reached";
+      break;
+    case "UNCERTAIN":
+      text = "Unknown — may have gone";
+      break;
+    default:
+      text = "Waiting for the operator";
+  }
+  return m.attempts > 1 ? `${text} · try ${m.attempts}` : text;
 }
 
 const KIND_LABEL: Record<SmsKind, string> = {

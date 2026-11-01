@@ -42,12 +42,49 @@ This file is binding for both lanes of `2026-10-18-sms-ops-panel.md`.
 - `balance` is null when eskiz could not be asked. It is cached for 5 min. One request at a time asks eskiz (cache lock `sms:balance-lock`, 30 s); another request meanwhile answers from the cache, or null.
 - `last_error` is the newest non-empty `SmsMessage.error`, or `""`.
 - `debt.enabled` = `env_enabled` AND `db_enabled` AND `freeze_enabled`.
+- `forecast` (plan 2026-11-01-sms-v2, Task 3) is `{"debt", "campaigns", "automations", "total", "balance", "short"}`, all in so'm. It is what the next 24 hours will spend:
+  - `debt`: today's warnings not yet sent while today's runs are on (up to hour + 2), plus tomorrow's list once today's hour has passed;
+  - `campaigns`: SCHEDULED campaigns due within 24 h;
+  - `automations`: 0 until the builder.
+  `short` = `balance` is known AND `balance < total`. The panel shows the red banner on every tab when it is true.
+- `month` (Task 3) is `{"sent", "rate", "cost"}` for the current Tashkent month, with the same meanings as `GET stats/` totals.
+
+## GET stats/
+
+Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-MM-DD`, inclusive, on Tashkent days of `created_at`.
+- No `to` means today.
+- No `from` means 30 days ending at `to`.
+- `to` before `from`, more than 366 days, or a date it cannot read: **400** with `code: "range"`.
+
+```json
+{
+  "from": "2026-10-03", "to": "2026-11-01",
+  "totals": {"sent": 190, "delivered": 178, "undelivered": 11, "rejected": 1, "failed": 0, "pending": 0, "rate": 0.937, "cost": 32300},
+  "by_day": [{"day": "2026-11-01", "sent": 190, "delivered": 178, "undelivered": 11, "rejected": 1, "failed": 0, "pending": 0, "rate": 0.937, "cost": 32300}],
+  "by_operator": [{"operator": "Uzmobile", "total": 60, "delivered": 51, "rate": 0.85}],
+  "cost_by_month": [{"month": "2026-11", "debt_warning": 32300, "campaign": 0, "automation": 0, "test": 340, "total": 32640}],
+  "debt_effect": [{"month": "2026-11", "warned": 194, "paid_1": 40, "paid_3": 88, "paid_5": 120, "open": 0, "unpaid": 74}]
+}
+```
+
+- `sent` counts what eskiz took: SENT, DELIVERED and UNDELIVERED.
+- `pending` counts what has not reached its end: SENT, PENDING and UNCERTAIN.
+- `rate` = delivered ÷ (delivered + undelivered + rejected), or null when that sum is 0.
+- `cost` is in so'm: parts × the row's `unit_price`, or today's price for rows from before prices were kept. FAILED and REJECTED cost 0. The panel labels it an estimate.
+- `by_operator` lists, in this order, Beeline, Ucell, Uzmobile, Mobiuz, Perfectum, Humans, then Other. It names the operator from the two digits after 998 and omits any operator with no rows.
+- `debt_effect` covers the last 3 months up to `to`, oldest first, and only months that had warnings:
+  - `warned` counts distinct lc-up students with a debt warning eskiz took;
+  - `paid_N` counts those with an lc-up `payment` within N days of their first warning that month, where the first day counts as day 1;
+  - `open` (review fix) counts those not paid yet whose 5 days are not over at `to`;
+  - `unpaid` = `warned − paid_5 − open`, so it holds only those whose 5 days ran out.
 
 ## GET messages/
 
 A changelist, the same shape as `users/views_people`.
 
-- **Query:** `q`, `kind`, `status`, `when` (`today|7d|30d`), `page`, `page_size` (25/50/100).
+- **Query:** `q`, `kind`, `status`, `when` (`today|7d|30d`), `operator`, `group`, `teacher`, `template`, `campaign`, `from`, `to`, `page` and `page_size` (25/50/100).
+  - `resendable=1` (Task 8) keeps only UNDELIVERED, REJECTED and FAILED, before the facets are counted. The overview's "Did not arrive" list uses it.
+  - `from` and `to` are `YYYY-MM-DD` Tashkent days, inclusive. They narrow the rows before the facets are counted. An unreadable date is ignored.
 - **Response:** `{count, page, pages, page_size, results: [Message], filters: [ChangeListFilter]}`.
 - **Message:**
 
@@ -67,12 +104,65 @@ A changelist, the same shape as `users/views_people`.
     "user": { "id": 5, "name": "Malika Karimova" },
     "lcup_student_id": 101,
     "campaign_id": 7,
-    "created_by_name": "Admin Name|''"
+    "created_by_name": "Admin Name|''",
+    "attempts": 1,
+    "checked_at": "…|null",
+    "operator": "Uzmobile",
+    "groups": ["Junior G21 | Math"],
+    "source": { "type": "campaign", "id": 7, "label": "Campaign #7 · Debtors" },
+    "template": { "id": 64942, "label": "#64942" },
+    "cost": 170,
+    "can_resend": false
   }
   ```
 
-  `user` is null when the message has no user.
-- **Filters:** `kind` (Debt warning / Campaign / Test), `status` (every status), `when` (Today / Last 7 days / Last 30 days).
+  - `user` is null when the message has no user.
+  - Added 2026-11-01 (plan sms-v2, Task 4): the seven fields from `attempts` to `cost`.
+    - `operator` comes from the two digits after 998; an unlisted code is "Other".
+    - `groups` are the student's active classes NOW, by name.
+    - `source.type` is `debt_warning`, `campaign` or `test`. Its label is "Debt warning", "Campaign #<id> · <audience label>" or "Test".
+    - `template.label` is `#<id>` (Part 2 replaces it with the alias), or "" when there is none.
+    - `cost` is in so'm. FAILED and REJECTED cost 0, as in `GET stats/`.
+    - `can_resend` (review fix, 2026-11-02) says whether `POST messages/resend/` would take the SMS now. It must be UNDELIVERED, REJECTED or FAILED. A debt warning also needs to be from today, with the warning switched on (env, panel and freeze), because its text names its day and the student may have paid since.
+- **Filters**, in this order:
+  - `kind` (Debt warning / Campaign / Test);
+  - `status` (every status);
+  - `when` (Today / Last 7 days / Last 30 days);
+  - `operator`: the operator names that have rows, Other last;
+  - `group`: active classes holding a matching message's student in an active seat now, by class id and name;
+  - `teacher`: the teachers of those classes, by user id and name;
+  - `template`: by eskiz id, label `#<id>`;
+  - `campaign`: by id, label `#<id> · <audience label>`.
+  The group and teacher filters list a message once, even when its student sits in several matching classes.
+
+## GET messages/export/
+
+Added by plan 2026-11-01-sms-v2, Task 5. It takes the same query as `GET messages/`, without `page`/`page_size`. It returns every matching row, newest first, at most 50 000, as `text/csv` in UTF-8 with a BOM, so Excel reads Uzbek letters. The file is named `sms-journal-YYYY-MM-DD.csv`.
+
+Columns, in this order: `Date` (Tashkent, `YYYY-MM-DD HH:MM`), `Name`, `Phone`, `Groups` (joined by `; `), `Operator`, `Kind`, `Source`, `Template`, `Status`, `Reason`, `Parts`, `Cost`, `Text`. `Reason` uses the same words as the panel's status text:
+- Delivered;
+- Operator rejected;
+- Phone off or out of reach;
+- Not delivered;
+- Forbidden word;
+- eskiz refused;
+- eskiz not reached;
+- Unknown — may have gone;
+- Waiting for the operator.
+
+` · try N` is added when attempts > 1.
+
+## POST messages/resend/
+
+Added by Task 5. Body: `{"ids": [int]}`, 1–300 ids. Anything else: **400** with `code: "ids"`. Response: `{"queued": [ids], "not_resendable": [ids]}`.
+- Only UNDELIVERED, REJECTED and FAILED (`RESENDABLE`) are queued. An unknown id counts as not resendable.
+- The queued ones go to `sms.tasks.resend_messages` after the commit. Each one goes once more under its own (kind, day, key), to the student's CURRENT lc-up phone; `attempts` + 1.
+- A row that has changed status in the meantime is skipped. Two resends at once send one SMS.
+- The panel confirms the count and price first, and never retries the request.
+
+## GET students/<user_id>/messages/
+
+Added by Task 5. Response: `{"summary": {"DELIVERED": 3, …}, "results": [Message]}`. `results` holds that student's SMS, newest first, at most 200. `summary` counts all of them by status.
 
 ## Campaigns
 

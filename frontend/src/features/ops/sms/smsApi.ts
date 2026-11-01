@@ -63,6 +63,91 @@ export interface SmsOverview {
   };
   today: { total: number; by_status: StatusCounts };
   last7: { total: number; by_status: StatusCounts };
+  /** What the next 24 hours will spend, against the balance (plan sms-v2, Task 3). */
+  forecast: Forecast;
+  /** The current Tashkent month at a glance. */
+  month: MonthGlance;
+}
+
+/** so'm the next 24 hours will spend; `short` = the balance is known and below `total`. */
+export interface Forecast {
+  debt: number;
+  campaigns: number;
+  automations: number;
+  total: number;
+  balance: number | null;
+  short: boolean;
+}
+
+export interface MonthGlance {
+  sent: number;
+  /** delivered ÷ (delivered + undelivered + rejected); null before anything reached its end. */
+  rate: number | null;
+  cost: number;
+}
+
+// ── statistics ───────────────────────────────────────────────────────────
+
+/** Inclusive Tashkent days, "YYYY-MM-DD". */
+export interface StatsRange {
+  from: string;
+  to: string;
+}
+
+export interface SmsStatsTotals {
+  /** What eskiz took: SENT + DELIVERED + UNDELIVERED. */
+  sent: number;
+  delivered: number;
+  undelivered: number;
+  rejected: number;
+  failed: number;
+  /** Not at its end yet: SENT + PENDING + UNCERTAIN. */
+  pending: number;
+  rate: number | null;
+  /** so'm, an estimate: FAILED and REJECTED cost nothing. */
+  cost: number;
+}
+
+export interface SmsStatsDay extends SmsStatsTotals {
+  day: string;
+}
+
+export interface SmsStatsOperator {
+  operator: string;
+  total: number;
+  delivered: number;
+  rate: number | null;
+}
+
+export interface SmsStatsCostMonth {
+  month: string;
+  debt_warning: number;
+  campaign: number;
+  automation: number;
+  test: number;
+  total: number;
+}
+
+/** Of the students a month's debt warning reached, how many paid within 1, 3 and 5 days. */
+export interface DebtEffectMonth {
+  month: string;
+  warned: number;
+  paid_1: number;
+  paid_3: number;
+  paid_5: number;
+  /** Not paid yet, but their 5 days are not over: not counted as unpaid. */
+  open: number;
+  unpaid: number;
+}
+
+export interface SmsStats {
+  from: string;
+  to: string;
+  totals: SmsStatsTotals;
+  by_day: SmsStatsDay[];
+  by_operator: SmsStatsOperator[];
+  cost_by_month: SmsStatsCostMonth[];
+  debt_effect: DebtEffectMonth[];
 }
 
 // ── messages ─────────────────────────────────────────────────────────────
@@ -86,23 +171,71 @@ export interface SmsMessage {
   campaign_id: number | null;
   /** "" for what the system sent by itself (the debt warning). */
   created_by_name: string;
+  /** 1, plus one for each time it was sent again. */
+  attempts: number;
+  /** When eskiz last said where it stands. */
+  checked_at: string | null;
+  /** From the two digits after 998; "Other" when no listed operator claims it. */
+  operator: string;
+  /** The student's active classes now, by name. */
+  groups: string[];
+  source: MessageSource;
+  template: MessageTemplateRef;
+  /** so'm; FAILED and REJECTED cost nothing. */
+  cost: number;
+  /** Resend may take it now: it did not arrive, and a debt warning only on its own day, switched on. */
+  can_resend: boolean;
+}
+
+export interface MessageSource {
+  type: SmsKind | "automation";
+  id: number | null;
+  /** "Debt warning", "Campaign #7 · Debtors", "Test". */
+  label: string;
+}
+
+export interface MessageTemplateRef {
+  id: number | null;
+  /** "#64942" (its name once it has one), "" when none. */
+  label: string;
+}
+
+/** What may be sent again by hand: it did not arrive, and nothing says it might have. */
+export const RESENDABLE: readonly SmsStatus[] = ["UNDELIVERED", "REJECTED", "FAILED"];
+
+export interface ResendResult {
+  queued: number[];
+  not_resendable: number[];
+}
+
+export interface StudentSms {
+  summary: StatusCounts;
+  results: SmsMessage[];
 }
 
 export type SmsMessagePage = ChangeListData<SmsMessage>;
 
 /** The filter keys the journal understands; anything else in the address is not sent. */
-export const MESSAGE_FILTER_KEYS = ["kind", "status", "when"] as const;
+export const MESSAGE_FILTER_KEYS = [
+  "kind", "status", "when", "operator", "group", "teacher", "template", "campaign", "from", "to", "resendable",
+] as const;
 
 /** The query string `messages/` takes, from the journal's address state. */
 export function messagesQuery(params: ChangeListParams): Record<string, string | number> {
+  const out = exportQuery(params);
+  if (params.page > 1) out.page = params.page;
+  out.page_size = params.pageSize;
+  return out;
+}
+
+/** The journal's search and filters without its page: what `messages/export/` takes. */
+export function exportQuery(params: ChangeListParams): Record<string, string | number> {
   const out: Record<string, string | number> = {};
   if (params.q) out.q = params.q;
   for (const key of MESSAGE_FILTER_KEYS) {
     const value = params.filters[key];
     if (value) out[key] = value;
   }
-  if (params.page > 1) out.page = params.page;
-  out.page_size = params.pageSize;
   return out;
 }
 
@@ -313,6 +446,23 @@ export const smsApi = {
   },
   async messages(params: ChangeListParams): Promise<SmsMessagePage> {
     const { data } = await api.get<SmsMessagePage>(`${BASE}/messages/`, { params: messagesQuery(params) });
+    return data;
+  },
+  async stats(range: StatsRange): Promise<SmsStats> {
+    const { data } = await api.get<SmsStats>(`${BASE}/stats/`, { params: { from: range.from, to: range.to } });
+    return data;
+  },
+  async studentMessages(userId: number): Promise<StudentSms> {
+    const { data } = await api.get<StudentSms>(`${BASE}/students/${userId}/messages/`);
+    return data;
+  },
+  /** The filtered journal, every page, as the CSV the server writes. */
+  async exportMessages(params: ChangeListParams): Promise<Blob> {
+    const { data } = await api.get<Blob>(`${BASE}/messages/export/`, { params: exportQuery(params), responseType: "blob" });
+    return data;
+  },
+  async resend(ids: number[]): Promise<ResendResult> {
+    const { data } = await api.post<ResendResult>(`${BASE}/messages/resend/`, { ids });
     return data;
   },
 

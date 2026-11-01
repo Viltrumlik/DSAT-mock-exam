@@ -69,6 +69,8 @@ class Plan:
     warnings: list = field(default_factory=list)
     skipped: dict = field(default_factory=dict)
     blocked: str = ""
+    #: The eskiz template the day's warnings are filled from; recorded on each SMS.
+    template_id: int | None = None
 
 
 def is_warning_day(day) -> bool:
@@ -172,7 +174,7 @@ def plan(now, *, today=None) -> Plan:
             continue
         taken.add(key)
         warnings.append(Warning(link, phone, text, key))
-    result = Plan(warnings, dict(skipped))
+    result = Plan(warnings, dict(skipped), template_id=template_id)
     if not switchboard.debt_enabled(row):
         result.blocked = SWITCHED_OFF
     elif len(warnings) > MAX_PER_RUN:
@@ -235,7 +237,7 @@ def send(client, now, *, retry_only: bool = False) -> dict:
             msg = deliver(
                 client, kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, dedupe_key=warning.dedupe_key,
                 phone=warning.phone, text=text, user=warning.link.user,
-                lcup_student_id=warning.link.lcup_student_id,
+                lcup_student_id=warning.link.lcup_student_id, template_eskiz_id=planned.template_id,
             )
         except Exception as exc:  # the type only: the message may quote the phone
             logger.warning(

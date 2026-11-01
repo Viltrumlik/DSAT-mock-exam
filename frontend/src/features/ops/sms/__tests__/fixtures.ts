@@ -79,6 +79,14 @@ export function message(over: Partial<SmsMessage> = {}): SmsMessage {
     lcup_student_id: 101,
     campaign_id: 7,
     created_by_name: "Admin Aliyev",
+    attempts: 1,
+    checked_at: "2026-10-20T10:02:00+05:00",
+    operator: "Beeline",
+    groups: ["Junior G21 | Math"],
+    source: { type: "campaign", id: 7, label: "Campaign #7 · Group: Junior G21 | Math" },
+    template: { id: 64942, label: "#64942" },
+    cost: 170,
+    can_resend: false,
     ...over,
   };
 }

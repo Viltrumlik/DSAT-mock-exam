@@ -17,10 +17,12 @@ import { BellRing, FileText, Gauge, ScrollText, Send } from "lucide-react";
 
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
 import { TabBar, activeTab, panelId, tabId, type Tab } from "@/features/ops/detail/tabs";
+import { BalanceBanner } from "./BalanceBanner";
 import { CampaignsPanel } from "./CampaignsPanel";
 import { DebtPanel } from "./DebtPanel";
 import { JournalPanel } from "./JournalPanel";
 import { OverviewPanel } from "./OverviewPanel";
+import { useSmsOverview } from "./smsHooks";
 import { smsTabHref, type SmsTab } from "./smsTabs";
 import { TemplatesPanel } from "./TemplatesPanel";
 
@@ -45,6 +47,8 @@ function SmsPageInner() {
   const search = useSearchParams();
   const router = useRouter();
   const tab = activeTab(new URLSearchParams(search.toString()), TABS);
+  // The overview is one cached query: every tab reads it for the balance banner at no extra cost.
+  const forecast = useSmsOverview().data?.forecast;
 
   return (
     <div className="space-y-4">
@@ -53,6 +57,7 @@ function SmsPageInner() {
         title="SMS"
         description="The eskiz account: balance, every SMS sent, campaigns, the automatic debt warning and the approved templates."
       />
+      {forecast ? <BalanceBanner forecast={forecast} /> : null}
       <TabBar
         scope="sms"
         label="SMS sections"
@@ -60,7 +65,8 @@ function SmsPageInner() {
         active={tab}
         onSelect={(key) => router.replace(smsTabHref(key), { scroll: false })}
       />
-      <div role="tabpanel" id={panelId("sms", tab)} aria-labelledby={tabId("sms", tab)}>
+      {/* key={tab}: a new tab mounts afresh, so it eases in (sms-rise; still under reduced motion). */}
+      <div key={tab} className="sms-rise" role="tabpanel" id={panelId("sms", tab)} aria-labelledby={tabId("sms", tab)}>
         {tab === "overview" ? <OverviewPanel /> : null}
         {tab === "journal" ? <JournalPanel /> : null}
         {tab === "campaigns" ? <CampaignsPanel /> : null}

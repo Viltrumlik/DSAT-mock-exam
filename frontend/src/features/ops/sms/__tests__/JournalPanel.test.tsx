@@ -2,16 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
-import type { SmsMessage, SmsMessagePage } from "../smsApi";
+import { money } from "../format";
+import type { SmsMessagePage } from "../smsApi";
+import { message } from "./fixtures";
 
 /**
- * The journal: every SMS as a changelist on `messages/`. Its state lives in the address next to
- * `?tab=journal`, a filter click keeps the tab, and a row opens the whole message.
+ * The journal (plan 2026-11-01-sms-v2, Task 9): every SMS, grouped by day, said in plain words, with
+ * the filters as chips, the whole filtered list as a CSV, and each SMS's story in a drawer.
  */
 
 let search = "";
 const replace = vi.fn();
 const messages = vi.fn();
+const resend = vi.fn();
+const exportMessages = vi.fn();
+const downloadBlob = vi.fn();
+const overview = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
@@ -25,51 +31,38 @@ vi.mock("next/link", () => ({
 }));
 vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsMessages: (params: unknown) => messages(params),
+  useResendMessages: () => ({ mutate: resend, isPending: false }),
+  useSmsOverview: () => overview(),
 }));
+vi.mock("@/features/ops/sms/smsApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/features/ops/sms/smsApi")>()),
+  smsApi: { exportMessages: (p: unknown) => exportMessages(p) },
+}));
+vi.mock("@/lib/download", () => ({ downloadBlob: (...a: unknown[]) => downloadBlob(...a) }));
 
 const { JournalPanel } = await import("@/features/ops/sms/JournalPanel");
 
-function message(over: Partial<SmsMessage> = {}): SmsMessage {
-  return {
-    id: 3,
-    created_at: "2026-10-18T10:00:00+05:00",
-    sent_at: "2026-10-18T10:00:02+05:00",
-    kind: "campaign",
-    status: "DELIVERED",
-    eskiz_status: "DELIVRD",
-    phone: "998901234567",
-    text: "MASTER SAT'dan yozyabmiz. Karimova Malika, sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
-    parts: 1,
-    request_id: "5f1c2a9e-uuid",
-    error: "",
-    user: { id: 5, name: "Malika Karimova" },
-    lcup_student_id: 101,
-    campaign_id: 7,
-    created_by_name: "Admin Aliyev",
-    ...over,
-  };
-}
-
 const PAGE: SmsMessagePage = {
-  count: 2,
+  count: 3,
   page: 1,
   pages: 1,
   page_size: 50,
   results: [
-    message(),
+    message({ id: 3, created_at: "2026-11-03T09:00:00+05:00", sent_at: "2026-11-03T09:00:02+05:00", checked_at: "2026-11-03T09:05:00+05:00" }),
     message({
-      id: 4, kind: "debt_warning", status: "FAILED", eskiz_status: "", user: null, phone: "998935550000",
-      campaign_id: null, created_by_name: "", error: "HTTP 422: mobile_phone is invalid", request_id: "",
+      id: 4, created_at: "2026-11-02T10:00:00+05:00", kind: "debt_warning", status: "UNDELIVERED", eskiz_status: "REJECTED",
+      user: null, phone: "998935550000", campaign_id: null, created_by_name: "", operator: "Ucell", groups: [],
+      source: { type: "debt_warning", id: null, label: "Debt warning" }, request_id: "", can_resend: true,
     }),
+    message({ id: 5, created_at: "2026-10-30T10:00:00+05:00" }),
   ],
   filters: [
     {
-      key: "kind",
-      label: "Kind",
+      key: "operator",
+      label: "Operator",
       options: [
-        { value: "debt_warning", label: "Debt warning", count: 1 },
-        { value: "campaign", label: "Campaign", count: 1 },
-        { value: "test", label: "Test", count: 0 },
+        { value: "Beeline", label: "Beeline", count: 2 },
+        { value: "Ucell", label: "Ucell", count: 1 },
       ],
       selected: null,
     },
@@ -78,6 +71,7 @@ const PAGE: SmsMessagePage = {
 
 let container: HTMLDivElement;
 let root: Root;
+const dialog = () => document.body.querySelector('[role="dialog"]');
 
 async function render(query = "tab=journal") {
   search = query;
@@ -89,59 +83,108 @@ async function render(query = "tab=journal") {
 
 beforeEach(() => {
   (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-03T08:00:00Z"));
   replace.mockReset();
+  resend.mockReset();
+  overview.mockReset().mockReturnValue({ data: { price_per_part: 170 } });
+  downloadBlob.mockReset();
+  exportMessages.mockReset().mockResolvedValue(new Blob(["x"]));
   messages.mockReset().mockReturnValue({
     data: PAGE, isPending: false, isError: false, isFetching: false, isPlaceholderData: false, refetch: vi.fn(),
   });
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   await act(async () => root.unmount());
   container.remove();
 });
 
 describe("JournalPanel", () => {
-  it("shows each SMS: when, to whom, what kind, how it went, its parts, its text and who sent it", async () => {
+  it("offers no Resend in the drawer until it knows the price", async () => {
+    overview.mockReturnValue({ data: undefined });
     await render();
-    const heads = [...container.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
-    expect(heads).toEqual(["Time", "Recipient", "Kind", "Status", "Parts", "Text", "By"]);
-    const [first, second] = [...container.querySelectorAll("tbody tr")];
-    expect(first.textContent).toContain("Malika Karimova");
-    expect(first.textContent).toContain("998901234567");
-    expect(first.textContent).toContain("Campaign");
-    expect(first.textContent).toContain("Delivered");
-    expect(first.textContent).toContain("Admin Aliyev");
-    expect(first.querySelector('[title="eskiz: DELIVRD"]')).not.toBeNull();
-    expect(second.textContent).toContain("Debt warning");
-    expect(second.textContent).toContain("Failed");
-    expect(second.textContent).toContain("998935550000");
+    const openers = container.querySelectorAll<HTMLButtonElement>("tbody tr td:first-child button");
+    await act(async () => openers[1].click());
+    const button = [...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Resend")!;
+    expect(button.disabled).toBe(true);
   });
 
-  it("asks with the journal's state from the address, not the tab", async () => {
-    await render("tab=journal&status=FAILED&q=998&p=2&ps=25");
+  it("lists each SMS under its day: time, who and their class, phone, source, status in words, text", async () => {
+    await render();
+    const heads = [...container.querySelectorAll("thead th")].map((th) => th.textContent?.trim());
+    expect(heads).toEqual(["Time", "Recipient", "Phone", "Source", "Status", "Text"]);
+    const headers = [...container.querySelectorAll("table [data-group-header]")].map((el) => el.textContent);
+    expect(headers).toEqual(["Today", "Yesterday", "30 Oct 2026"]);
+    const rows = [...container.querySelectorAll("tbody tr")].filter((tr) => !tr.querySelector("[data-group-header]"));
+    expect(rows[0].textContent).toContain("Malika Karimova");
+    expect(rows[0].textContent).toContain("Junior G21 | Math");
+    expect(rows[0].textContent).toContain("Delivered 09:05");
+    expect(rows[1].textContent).toContain("Debt warning");
+    expect(rows[1].textContent).toContain("Operator rejected");
+    expect(rows[1].querySelector("[aria-label='Ucell']")).not.toBeNull();
+  });
+
+  it("links a name to that student's SMS", async () => {
+    await render();
+    expect(container.querySelector('a[href="/ops/students/5?tab=sms"]')).not.toBeNull();
+  });
+
+  it("asks with the journal's state from the address, the new filters and dates included", async () => {
+    await render("tab=journal&status=FAILED&operator=Ucell&from=2026-11-01&to=2026-11-03&q=998&p=2&ps=25");
     const params = messages.mock.calls[0][0];
-    expect(params).toMatchObject({ q: "998", page: 2, pageSize: 25, filters: { status: "FAILED" } });
+    expect(params).toMatchObject({
+      q: "998", page: 2, pageSize: 25, filters: { status: "FAILED", operator: "Ucell", from: "2026-11-01", to: "2026-11-03" },
+    });
     expect(params.filters).not.toHaveProperty("tab");
   });
 
-  it("keeps the tab when a filter is clicked", async () => {
-    await render();
-    const link = [...container.querySelectorAll("aside a")].find((a) => a.textContent?.startsWith("Campaign"))!;
-    await act(async () => (link as HTMLAnchorElement).click());
-    expect(replace).toHaveBeenCalledWith("/ops/sms?tab=journal&kind=campaign", { scroll: false });
+  it("shows the chosen filters as chips that clear one by one, or all at once", async () => {
+    await render("tab=journal&operator=Ucell&from=2026-11-01");
+    const chips = [...container.querySelectorAll("[data-filter-chip]")].map((c) => c.textContent);
+    expect(chips).toEqual(["Operator: Ucell", "From 1 Nov 2026"]);
+    const clear = container.querySelector<HTMLButtonElement>("button[aria-label='Remove Operator: Ucell']")!;
+    await act(async () => clear.click());
+    expect(replace).toHaveBeenLastCalledWith("/ops/sms?tab=journal&from=2026-11-01", { scroll: false });
+    const all = [...container.querySelectorAll("button")].find((b) => b.textContent === "Clear all")!;
+    await act(async () => all.click());
+    expect(replace).toHaveBeenLastCalledWith("/ops/sms?tab=journal", { scroll: false });
   });
 
-  it("opens the whole message with its request id, error and campaign", async () => {
+  it("sets the dates from the quick buttons", async () => {
     await render();
-    const open = container.querySelector("tbody tr button") as HTMLButtonElement;
-    await act(async () => open.click());
-    const dialog = document.body.querySelector('[role="dialog"]')!;
-    expect(dialog.textContent).toContain("administratsiyaga uchrang!");
-    expect(dialog.textContent).toContain("5f1c2a9e-uuid");
-    expect(dialog.querySelector('a[href="/ops/sms/campaigns/7"]')).not.toBeNull();
+    const week = [...container.querySelectorAll("button")].find((b) => b.textContent === "7 days")!;
+    await act(async () => week.click());
+    expect(replace).toHaveBeenLastCalledWith("/ops/sms?tab=journal&from=2026-10-28&to=2026-11-03", { scroll: false });
+  });
 
-    await act(async () => (dialog.querySelector('button[aria-label="Close"]') as HTMLButtonElement).click());
-    await act(async () => (container.querySelectorAll("tbody tr button")[1] as HTMLButtonElement).click());
-    expect(document.body.querySelector('[role="dialog"]')!.textContent).toContain("HTTP 422: mobile_phone is invalid");
+  it("exports the filtered list as a CSV", async () => {
+    await render("tab=journal&operator=Ucell");
+    const button = [...container.querySelectorAll("button")].find((b) => b.textContent === "Export")!;
+    await act(async () => button.click());
+    expect(exportMessages.mock.calls[0][0]).toMatchObject({ filters: { operator: "Ucell" } });
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), "sms-journal-2026-11-03.csv");
+  });
+
+  it("opens an SMS's story: the text, the timeline and the request id; Resend only when it did not arrive", async () => {
+    await render();
+    const openers = container.querySelectorAll<HTMLButtonElement>("tbody tr td:first-child button");
+    await act(async () => openers[0].click());
+    expect(dialog()!.textContent).toContain("Created");
+    expect(dialog()!.textContent).toContain("Sent to eskiz");
+    expect(dialog()!.textContent).toContain("Delivered");
+    expect(dialog()!.textContent).toContain("5f1c2a9e");
+    expect([...dialog()!.querySelectorAll("button")].some((b) => b.textContent === "Resend")).toBe(false);
+
+    await act(async () => (dialog()!.querySelector('button[aria-label="Close"]') as HTMLButtonElement).click());
+    await act(async () => openers[1].click());
+    expect(dialog()!.textContent).toContain("Not delivered");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const button = [...dialog()!.querySelectorAll("button")].find((b) => b.textContent === "Resend")!;
+    await act(async () => button.click());
+    expect(confirm).toHaveBeenCalledWith(`Resend 1 SMS, ~${money(170)}?`);
+    expect(resend.mock.calls[0][0]).toEqual([4]);
+    confirm.mockRestore();
   });
 });

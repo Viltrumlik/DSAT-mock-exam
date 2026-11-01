@@ -42,7 +42,8 @@ TEMPLATE_ROWS = [
 ]
 MESSAGE_KEYS = {
     "id", "created_at", "sent_at", "kind", "status", "eskiz_status", "phone", "text", "parts", "request_id", "error",
-    "user", "lcup_student_id", "campaign_id", "created_by_name",
+    "user", "lcup_student_id", "campaign_id", "created_by_name", "attempts", "checked_at", "operator", "groups", "source", "template",
+    "cost", "can_resend",
 }
 CAMPAIGN_KEYS = {
     "id", "status", "template_eskiz_id", "pattern", "original", "slot_roles", "slot_texts", "audience", "audience_ids",
@@ -182,7 +183,7 @@ class EveryRouteIsGuardedTests(ApiFixture):
             self.assertIsInstance(pattern, URLPattern)
             view = pattern.callback.view_class
             pk = self.scheduled.pk if pattern.name == "sms-admin-campaign-cancel" else self.done.pk
-            path = "/api/sms/" + re.sub(r"<int:pk>", str(pk), str(pattern.pattern))
+            path = "/api/sms/" + re.sub(r"<int:\w+>", str(pk), str(pattern.pattern))
             for method in ("get", "post", "patch", "put", "delete"):
                 if hasattr(view, method):
                     body = self.BODIES.get(pattern.name) or (self.draft() if "campaign" in pattern.name else {})
@@ -230,7 +231,10 @@ class OverviewTests(ApiFixture):
         )
         with mock.patch("sms.views._today", return_value=date(2026, 10, 18)):
             data = self.get("overview/").json()
-        self.assertEqual(set(data), {"configured", "balance", "price_per_part", "sender", "eskiz", "debt", "today", "last7"})
+        self.assertEqual(
+            set(data),
+            {"configured", "balance", "forecast", "month", "price_per_part", "sender", "eskiz", "debt", "today", "last7"},
+        )
         self.assertEqual((data["configured"], data["balance"], data["price_per_part"], data["sender"]), (True, 125000, 170, "4546"))
         self.assertEqual(data["eskiz"], {"token_cached": False, "login_refused": False, "last_error": "HTTP 422: mobile_phone: …"})
         self.assertEqual(data["debt"], {
@@ -357,7 +361,10 @@ class MessagesTests(ApiFixture):
         kind = next(f for f in data["filters"] if f["key"] == "kind")
         self.assertEqual(kind["selected"], "test")
         self.assertEqual({o["value"]: o["count"] for o in kind["options"]}, {"debt_warning": 1, "campaign": 0, "test": 1})
-        self.assertEqual([f["key"] for f in data["filters"]], ["kind", "status", "when"])
+        self.assertEqual(
+            [f["key"] for f in data["filters"]],
+            ["kind", "status", "when", "operator", "group", "teacher", "template", "campaign"],
+        )
         self.assertEqual(self.get("messages/", when="30d").json()["count"], 1)
         self.assertEqual(self.get("messages/", status="DELIVERED").json()["count"], 1)
 

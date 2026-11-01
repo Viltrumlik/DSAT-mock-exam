@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, X } from "lucide-react";
@@ -77,6 +77,11 @@ export type ChangeListProps<R extends { id: number }> = {
   searchPlaceholder?: string;
   /** Names a row for its checkbox's label; defaults to the id. */
   rowLabel?: (row: R) => string;
+  /** Rows with the same key share a header row, drawn before the first of them (the SMS journal's days). */
+  groupBy?: (row: R) => string;
+  groupLabel?: (key: string) => ReactNode;
+  /** A card per row below the `sm` breakpoint, instead of the table (under the same group headers). */
+  mobileCard?: (row: R) => ReactNode;
 };
 
 function sortKeysOf<R>(col: ChangeListColumn<R>): { asc?: string; desc?: string } | null {
@@ -129,6 +134,9 @@ export function ChangeList<R extends { id: number }>({
   headerAction,
   searchPlaceholder,
   rowLabel,
+  groupBy,
+  groupLabel,
+  mobileCard,
 }: ChangeListProps<R>) {
   const router = useRouter();
   const { params, queryString, hrefFor, update } = useChangeListParams(filterKeys);
@@ -292,6 +300,7 @@ export function ChangeList<R extends { id: number }>({
                 // (a sticky header cannot stick to the page through a horizontal-scroll wrapper).
                 "overflow-x-auto border border-border bg-card transition-opacity md:max-h-[calc(100dvh-15rem)] md:overflow-y-auto",
                 fetching && "opacity-60",
+                mobileCard && "hidden sm:block",
               )}
               aria-busy={loading || fetching || undefined}
             >
@@ -366,7 +375,9 @@ export function ChangeList<R extends { id: number }>({
                       </td>
                     </tr>
                   ) : (
-                    rows.map((row) => {
+                    rows.map((row, index) => {
+                      const group = groupBy?.(row);
+                      const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
                       const isSelected = selected.has(row.id);
                       const href = rowHref?.(row);
                       const openRow = href
@@ -380,8 +391,19 @@ export function ChangeList<R extends { id: number }>({
                           ? () => onRowClick(row)
                           : undefined;
                       return (
+                        <Fragment key={row.id}>
+                        {newGroup ? (
+                          <tr>
+                            <td
+                              colSpan={colSpan}
+                              data-group-header
+                              className="sticky top-8 z-[1] border-b border-border bg-surface-2 px-2 py-1 text-[12px] font-semibold text-muted-foreground"
+                            >
+                              {groupLabel ? groupLabel(group!) : group}
+                            </td>
+                          </tr>
+                        ) : null}
                         <tr
-                          key={row.id}
                           onClick={openRow}
                           className={cn(
                             "[&:last-child>td]:border-b-0",
@@ -437,6 +459,7 @@ export function ChangeList<R extends { id: number }>({
                             </td>
                           ))}
                         </tr>
+                        </Fragment>
                       );
                     })
                   )}
@@ -444,6 +467,37 @@ export function ChangeList<R extends { id: number }>({
               </table>
             </div>
           )}
+          {mobileCard && !error && (!rows || rows.length === 0) ? (
+            <p data-mobile-state className="border border-border bg-card px-3 py-6 text-[13px] text-muted-foreground sm:hidden">
+              {loading && !rows ? "Loading…" : `No ${noun.plural} match.`}
+            </p>
+          ) : null}
+          {mobileCard && rows && rows.length > 0 && !error ? (
+            <ul className={cn("divide-y divide-border border border-border bg-card sm:hidden", fetching && "opacity-60")}>
+              {rows.map((row, index) => {
+                const group = groupBy?.(row);
+                const newGroup = group !== undefined && (index === 0 || groupBy?.(rows[index - 1]) !== group);
+                return (
+                  <Fragment key={row.id}>
+                    {newGroup ? (
+                      <li className="sticky top-0 z-[1] bg-surface-2 px-3 py-1 text-[12px] font-semibold text-muted-foreground">
+                        {groupLabel ? groupLabel(group!) : group}
+                      </li>
+                    ) : null}
+                    <li data-mobile-card>
+                      {onRowClick ? (
+                        <button type="button" onClick={() => onRowClick(row)} className="block w-full px-3 py-2 text-left">
+                          {mobileCard(row)}
+                        </button>
+                      ) : (
+                        <div className="px-3 py-2">{mobileCard(row)}</div>
+                      )}
+                    </li>
+                  </Fragment>
+                );
+              })}
+            </ul>
+          ) : null}
 
           {data && !error ? (
             <Pagination
