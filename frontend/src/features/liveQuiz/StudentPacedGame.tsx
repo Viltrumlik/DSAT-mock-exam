@@ -126,6 +126,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
         score={blind ? undefined : room.me?.score}
         streak={blind ? undefined : room.me?.streak}
         rank={blind ? null : rank}
+        team={room.me?.team}
         muted={sounds.muted}
         onToggleMute={sounds.toggle}
         onExit={exit}
@@ -255,6 +256,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
           leaderboard={room.leaderboard}
           questionTotal={room.questionTotal}
           gems={room.gems}
+          teams={room.teams}
         />
       )}
 
