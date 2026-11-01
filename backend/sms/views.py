@@ -625,7 +625,7 @@ class TestSmsView(_AdminView):
         msg = deliver(
             eskiz.default_client(), kind=SmsMessage.KIND_TEST, run_on=now.date(),
             dedupe_key=f"test:{phone}:{template.eskiz_id}:{now:%Y%m%d%H%M}", phone=phone, text=text,
-            created_by=request.user,
+            created_by=request.user, template_eskiz_id=template.eskiz_id,
         )
         if msg is None:
             return _refused("duplicate", "This test SMS was just sent: check the journal before sending it again.")

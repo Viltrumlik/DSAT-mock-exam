@@ -194,6 +194,10 @@ class SmsMessage(models.Model):
     #: eskiz's own last word on delivery (DELIVERED, EXPIRED, ACCEPTED, …).
     eskiz_status = models.CharField(max_length=32, blank=True, default="")
     parts = models.PositiveSmallIntegerField(null=True, blank=True)
+    #: The eskiz template the text was filled from (null on rows from before 2026-11, and a test of free text).
+    template_eskiz_id = models.PositiveIntegerField(null=True, blank=True, db_index=True)
+    #: so'm per part when it was claimed (``switchboard.price_per_part``), so a later price leaves past costs alone.
+    unit_price = models.PositiveIntegerField(null=True, blank=True)
     error = models.CharField(max_length=400, blank=True, default="")
     #: 1, plus one for every later run that sent a FAILED one (it never left) again.
     attempts = models.PositiveSmallIntegerField(default=1)

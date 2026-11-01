@@ -477,7 +477,7 @@ def send_campaign(client, campaign, now=None) -> SmsCampaign:
             msg = deliver(
                 client, kind=SmsMessage.KIND_CAMPAIGN, run_on=day, dedupe_key=_key(campaign, r.link),
                 phone=r.phone, text=text, user=r.user, lcup_student_id=r.link.lcup_student_id,
-                campaign=campaign, created_by=campaign.created_by,
+                campaign=campaign, created_by=campaign.created_by, template_eskiz_id=campaign.template_eskiz_id,
             )
         except Exception as exc:
             logger.warning(

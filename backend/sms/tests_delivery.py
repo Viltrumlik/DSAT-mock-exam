@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
+from sms import switchboard
 from sms.delivery import check_statuses, deliver, mask_phone
 from sms.eskiz import FAILED, REJECTED, UNCERTAIN
 from sms.models import SmsMessage
@@ -33,6 +34,21 @@ class DeliverTests(TestCase):
         send(fake)
         self.assertIsNone(send(fake))
         self.assertEqual(len(fake.sent), 1)
+
+    def test_a_new_row_records_its_price_parts_and_template(self):
+        msg = deliver(
+            FakeEskiz(), kind=SmsMessage.KIND_TEST, run_on=DAY, dedupe_key="k", phone="998901234567",
+            text="Salom", template_eskiz_id=64942,
+        )
+        msg.refresh_from_db()
+        self.assertEqual((msg.unit_price, msg.parts, msg.template_eskiz_id), (switchboard.price_per_part(), 1, 64942))
+
+    def test_a_reclaimed_failed_row_keeps_its_price(self):
+        first = send(FakeEskiz(FAILED))
+        SmsMessage.objects.filter(pk=first.pk).update(unit_price=150)
+        again = send(FakeEskiz())
+        again.refresh_from_db()
+        self.assertEqual((again.pk, again.unit_price, again.attempts), (first.pk, 150, 2))
 
     def test_outcomes_map_to_statuses(self):
         for outcome, status in (
