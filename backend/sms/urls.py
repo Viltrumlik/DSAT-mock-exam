@@ -9,6 +9,11 @@ urlpatterns = [
     path("admin/overview/", views.OverviewView.as_view(), name="sms-admin-overview"),
     path("admin/stats/", views.StatsView.as_view(), name="sms-admin-stats"),
     path("admin/messages/", views.MessageListView.as_view(), name="sms-admin-messages"),
+    path("admin/messages/export/", views.MessageExportView.as_view(), name="sms-admin-messages-export"),
+    path("admin/messages/resend/", views.ResendView.as_view(), name="sms-admin-messages-resend"),
+    path(
+        "admin/students/<int:user_id>/messages/", views.StudentMessagesView.as_view(), name="sms-admin-student-messages"
+    ),
     path("admin/campaigns/", views.CampaignListView.as_view(), name="sms-admin-campaigns"),
     path("admin/campaigns/preview/", views.CampaignPreviewView.as_view(), name="sms-admin-campaign-preview"),
     path("admin/campaigns/<int:pk>/", views.CampaignDetailView.as_view(), name="sms-admin-campaign"),

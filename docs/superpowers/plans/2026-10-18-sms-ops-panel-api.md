@@ -130,6 +130,35 @@ A changelist, the same shape as `users/views_people`.
   - `campaign`: by id, label `#<id> · <audience label>`.
   The group and teacher filters list a message once, even when its student sits in several matching classes.
 
+## GET messages/export/
+
+Added by plan 2026-11-01-sms-v2, Task 5. It takes the same query as `GET messages/`, without `page`/`page_size`. It returns every matching row, newest first, at most 50 000, as `text/csv` in UTF-8 with a BOM, so Excel reads Uzbek letters. The file is named `sms-journal-YYYY-MM-DD.csv`.
+
+Columns, in this order: `Date` (Tashkent, `YYYY-MM-DD HH:MM`), `Name`, `Phone`, `Groups` (joined by `; `), `Operator`, `Kind`, `Source`, `Template`, `Status`, `Reason`, `Parts`, `Cost`, `Text`. `Reason` uses the same words as the panel's status text:
+- Delivered;
+- Operator rejected;
+- Phone off or out of reach;
+- Not delivered;
+- Forbidden word;
+- eskiz refused;
+- eskiz not reached;
+- Unknown — may have gone;
+- Waiting for the operator.
+
+` · try N` is added when attempts > 1.
+
+## POST messages/resend/
+
+Added by Task 5. Body: `{"ids": [int]}`, 1–300 ids. Anything else: **400** with `code: "ids"`. Response: `{"queued": [ids], "not_resendable": [ids]}`.
+- Only UNDELIVERED, REJECTED and FAILED (`RESENDABLE`) are queued. An unknown id counts as not resendable.
+- The queued ones go to `sms.tasks.resend_messages` after the commit. Each one goes once more under its own (kind, day, key), to the student's CURRENT lc-up phone; `attempts` + 1.
+- A row that has changed status in the meantime is skipped. Two resends at once send one SMS.
+- The panel confirms the count and price first, and never retries the request.
+
+## GET students/<user_id>/messages/
+
+Added by Task 5. Response: `{"summary": {"DELIVERED": 3, …}, "results": [Message]}`. `results` holds that student's SMS, newest first, at most 200. `summary` counts all of them by status.
+
 ## Campaigns
 
 ### Campaign object

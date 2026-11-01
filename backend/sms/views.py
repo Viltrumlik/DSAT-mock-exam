@@ -15,6 +15,8 @@ A body that is not a JSON object (a list, a string, null) is a 400 with code ``b
 
 from __future__ import annotations
 
+import csv
+import io
 from collections import Counter
 from datetime import date, datetime, time, timedelta
 
@@ -33,6 +35,7 @@ from rest_framework.views import APIView
 from access import constants as C
 from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership
+from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
 from lcup.phones import normalize_phone
 from users.changelist import apply_search, facets, paginate, to_int
@@ -42,7 +45,7 @@ from . import campaigns, conf
 from . import debt_warnings as warnings
 from . import eskiz, eskiz_templates, forecast, stats, switchboard
 from . import templates as T
-from .delivery import deliver
+from .delivery import RESENDABLE, deliver
 from .models import EskizTemplate, SmsCampaign, SmsMessage, SmsSettings
 from .operators import NAMES as OPERATOR_NAMES
 from .operators import OTHER as OTHER_OPERATOR
@@ -492,17 +495,131 @@ def _date_range_q(params) -> Q:
     return q
 
 
+def _journal(params):
+    """(the journal's rows as the address filters them, newest first; the filters payload)."""
+    qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH)
+    qs, filters = facets(qs.filter(_date_range_q(params)), MESSAGE_FILTERS, params)
+    return qs.order_by("-created_at", "-id"), filters
+
+
 class MessageListView(_AdminView):
     def get(self, request):
         params = request.query_params
-        qs = apply_search(SmsMessage.objects.all(), params.get("q") or "", MESSAGE_SEARCH)
-        qs, filters = facets(qs.filter(_date_range_q(params)), MESSAGE_FILTERS, params)
-        window, meta = paginate(_messages(qs).order_by("-created_at", "-id"), params)
+        qs, filters = _journal(params)
+        window, meta = paginate(_messages(qs), params)
         return Response({
             **meta,
             "results": message_rows(window),
             "filters": filters,
         })
+
+
+#: The most rows one export writes (a year of every SMS is far below it).
+EXPORT_MAX = 50_000
+EXPORT_CHUNK = 2_000
+EXPORT_COLUMNS = ("Date", "Name", "Phone", "Groups", "Operator", "Kind", "Source", "Template", "Status", "Reason",
+                  "Parts", "Cost", "Text")
+_OPERATOR_REJECTED = frozenset({"REJECTED", "REJECTD"})
+
+
+def _reason(msg) -> str:
+    """Why it stands where it does, in the words the panel uses (frontend ``reasonOf``)."""
+    eskiz_status = (msg.eskiz_status or "").upper()
+    if msg.status == SmsMessage.STATUS_DELIVERED:
+        text = "Delivered"
+    elif msg.status == SmsMessage.STATUS_UNDELIVERED:
+        if eskiz_status in _OPERATOR_REJECTED:
+            text = "Operator rejected"
+        elif eskiz_status == "EXPIRED":
+            text = "Phone off or out of reach"
+        else:
+            text = "Not delivered"
+    elif msg.status == SmsMessage.STATUS_REJECTED:
+        text = "Forbidden word" if "forbidden" in (msg.error or "").lower() else "eskiz refused"
+    elif msg.status == SmsMessage.STATUS_FAILED:
+        text = "eskiz not reached"
+    elif msg.status == SmsMessage.STATUS_UNCERTAIN:
+        text = "Unknown — may have gone"
+    else:
+        text = "Waiting for the operator"
+    return f"{text} · try {msg.attempts}" if msg.attempts > 1 else text
+
+
+class MessageExportView(_AdminView):
+    """The journal as the address filters it — every page, at most EXPORT_MAX rows — as a CSV Excel opens."""
+
+    def get(self, request):
+        qs, _ = _journal(request.query_params)
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(EXPORT_COLUMNS)
+        for start in range(0, EXPORT_MAX, EXPORT_CHUNK):
+            chunk = list(_messages(qs)[start: start + EXPORT_CHUNK])
+            if not chunk:
+                break
+            labels = {}
+            ids = {m.campaign_id for m in chunk if m.campaign_id}
+            if ids:
+                labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=ids))
+            for msg in chunk:
+                writer.writerow([
+                    timezone.localtime(msg.created_at).strftime("%Y-%m-%d %H:%M"),
+                    _name(msg.user),
+                    msg.phone,
+                    "; ".join(_groups(msg)),
+                    operator_of(msg.phone),
+                    _KINDS.get(msg.kind, msg.kind),
+                    _source(msg, labels)["label"],
+                    f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+                    msg.status,
+                    _reason(msg),
+                    msg.parts or T.parts(msg.text),
+                    _cost(msg),
+                    msg.text,
+                ])
+        return csv_download_response(out.getvalue(), f"sms-journal-{timezone.localdate().isoformat()}")
+
+
+RESEND_MAX = 300
+
+
+def _queue_resend(ids: list[int]):
+    def queue():
+        from . import tasks
+
+        tasks.resend_messages.delay(ids)
+
+    return queue
+
+
+class ResendView(_AdminView):
+    """POST ``{"ids": [...]}``: the RESENDABLE ones are queued to go once more; the rest are named back."""
+
+    def post(self, request):
+        refused = _not_an_object(request)
+        if refused:
+            return refused
+        ids = campaigns._ints(request.data.get("ids"))
+        if not ids or len(ids) > RESEND_MAX:
+            return _refused("ids", f"Send 1 to {RESEND_MAX} message ids.")
+        resendable = set(SmsMessage.objects.filter(pk__in=ids, status__in=RESENDABLE).values_list("pk", flat=True))
+        queued = [pk for pk in ids if pk in resendable]
+        if queued:
+            _on_commit(_queue_resend(queued))
+        return Response({"queued": queued, "not_resendable": [pk for pk in ids if pk not in resendable]})
+
+
+STUDENT_MESSAGES_MAX = 200
+
+
+class StudentMessagesView(_AdminView):
+    """One student's SMS, newest first (the person page's SMS tab), with a count by status of all of them."""
+
+    def get(self, request, user_id):
+        qs = SmsMessage.objects.filter(user_id=user_id)
+        summary = dict(Counter(qs.values_list("status", flat=True)))
+        rows = _messages(qs.order_by("-created_at", "-id"))[:STUDENT_MESSAGES_MAX]
+        return Response({"summary": summary, "results": message_rows(rows)})
 
 
 # ── campaigns ─────────────────────────────────────────────────────────────

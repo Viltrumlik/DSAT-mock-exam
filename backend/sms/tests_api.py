@@ -183,7 +183,7 @@ class EveryRouteIsGuardedTests(ApiFixture):
             self.assertIsInstance(pattern, URLPattern)
             view = pattern.callback.view_class
             pk = self.scheduled.pk if pattern.name == "sms-admin-campaign-cancel" else self.done.pk
-            path = "/api/sms/" + re.sub(r"<int:pk>", str(pk), str(pattern.pattern))
+            path = "/api/sms/" + re.sub(r"<int:\w+>", str(pk), str(pattern.pattern))
             for method in ("get", "post", "patch", "put", "delete"):
                 if hasattr(view, method):
                     body = self.BODIES.get(pattern.name) or (self.draft() if "campaign" in pattern.name else {})

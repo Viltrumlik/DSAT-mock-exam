@@ -149,3 +149,29 @@ def check_statuses() -> dict:
     if not SmsMessage.objects.filter(status=SmsMessage.STATUS_SENT, sent_at__gte=now - CHECK_WINDOW).exists():
         return {"skipped": "nothing to check"}
     return check(eskiz.default_client(), now)
+
+
+@shared_task(name="sms.tasks.resend_messages")
+def resend_messages(ids: list) -> dict:
+    """Resend from the panel (the overview's undelivered list, the journal's drawer), queued after the
+    request committed: each id once more through ``delivery.resend`` — only what is still RESENDABLE.
+    One SMS going wrong does not stop the rest."""
+    if not conf.is_configured():
+        return {"skipped": "eskiz is not configured"}
+    import logging
+
+    from . import eskiz
+    from .delivery import resend
+
+    client = eskiz.default_client()
+    counts: dict = {}
+    for pk in ids:
+        try:
+            msg = resend(client, pk)
+        except Exception as exc:  # the type only: the message may quote the phone
+            logging.getLogger("sms.tasks").warning("resend of SMS %s went wrong: %s", pk, type(exc).__name__)
+            outcome = "error"
+        else:
+            outcome = "not_resendable" if msg is None else msg.status.lower()
+        counts[outcome] = counts.get(outcome, 0) + 1
+    return counts
