@@ -1,0 +1,92 @@
+# Live Quiz, rebuilt to play like Wayground — plan
+
+Owner's ask (2026-11-01, before an exam, no questions allowed): *study Wayground and rebuild our
+Live Quiz to work like it.* Questions were parked (bottom of this file); every open choice below
+was made with the recommended default so the work could proceed.
+
+## What Wayground does that we did not
+
+Researched from the Wayground help centre (help.wayground.com):
+
+| Wayground | Our Live Quiz before |
+|---|---|
+| **Student-paced by default** ("Classic"): everyone starts together, then each student answers at their own speed with instant feedback | Teacher-paced only: one question for the room, the host advances |
+| Score = **600 + up to 400 for speed** (600–1000); no timer = flat 600 | 100 + up to 50 |
+| **Show answer after each question**: Off / Validate only / On | Correct/incorrect only after the room's question closes |
+| **Power-ups** (≤3 held, one use each, current question only): 2X, 50-50, Eraser, Streak Saver, Time Freeze, … | None |
+| Streak counter; rank shown after every question | None |
+| Shuffle questions **and answers** per student | Shuffle questions once for the room |
+| Live dashboard: class accuracy meter, per-student score/accuracy, per-question accuracy, colour grid (green/red) | Answer count only |
+| Podium + per-student summary (accuracy %, rank, streak, review of questions) | Final table |
+| Teacher-led mode still exists | (that was all we had) |
+
+Not taken (parked or out of scope): Team mode, Mastery Peak, Strike & Shield / attacks on other
+players (Glitch, Gift…), memes (image sets), music tracks, nicknames/avatars (we are roster-only
+and names are real), redemption question, AI explanations, paper mode.
+
+We copy **mechanics**, not branding: our own colours, words and visuals.
+
+## Decisions made without asking (defaults; each is reversible)
+
+1. **Two modes.** `student_paced` (new default) and `instructor_paced` (the existing engine, kept
+   unchanged in behaviour). A "Test" preset in the host console = student-paced, no timer, no
+   leaderboard, no answers shown, no power-ups.
+2. **Rooms created before this ship stay teacher-paced** — config without a `mode` key falls back
+   to `instructor_paced` and the old 100-point scale. New rooms get `NEW_SESSION_DEFAULTS`.
+3. **Scale** 600 + up to 400 (`point_scale` 600, `speed_bonus_ratio` 2/3). No streak *bonus points*
+   (Wayground publishes none); streak is a counter that earns power-ups.
+4. **Power-ups**: five that only touch the student's own question — double, fifty_fifty, eraser,
+   streak_saver, time_freeze. Earned one per 3-in-a-row, max 3 held, random. Student-paced only.
+   No attacks on classmates.
+5. **Feedback pause** of 3 s after each answer; the next question's clock starts when it appears.
+6. **Per-student shuffle** of question order (server) and option order (client display only;
+   choice ids unchanged, so grading and tallies are untouched).
+7. **The host ends the game** (no auto-finish when everyone is done); the dashboard shows who has
+   finished.
+8. **Missed questions** (clock ran out) are written as `timed_out` rows: in the report, not counted
+   as answered. A student away when their clock ran out has one question marked missed on return,
+   then the next opens fresh.
+9. **No XP/coins** — the owner's original v1 decision stands until they say otherwise.
+10. **iOS untouched.** The protocol is additive; a student-paced room reuses `QUESTION_ACTIVE`,
+    `question_started` and `answer_result`, sent per student, so the current app keeps playing
+    (without the new feedback screens).
+
+## Architecture
+
+- Session row: `status` = `QUESTION_ACTIVE` means "in play" for the whole student-paced round.
+- Participant row gains: `question_order`, `position`, own `question_started_at/ends_at`,
+  `finished_at`, `streak/best_streak`, `powerups`, `armed`. Answer row gains `timed_out`,
+  `powerups_used`. Migration `0002_per_student_play` is additive only.
+- `livequiz/paced.py`: every student move under `select_for_update` on that student's row
+  (answer, time-out, power-up) — whoever locks second finds them moved on.
+- Socket: each student's sockets join `livequiz.<session>.p<participant>`; personal frames go there.
+  Each socket arms its own timer from `ends_in_ms`; the first to fire times out, the rest no-op.
+  Host socket refreshes the room's leaderboard every 3 s when it changed. Room-wide frames never
+  carry the host's answer board.
+- Frames carry `starts_in_ms` / `ends_in_ms` so phone clock skew does not matter.
+- Fixed on the way: a student could read every answer key via `GET …/results/` mid-game; now
+  409 until the quiz is over.
+
+## Tasks
+
+- [x] Backend: config, modes, scoring scale, `paced.py`, `powerups.py`, events, consumer, migration
+- [x] Backend tests (`tests_paced.py`) — full `livequiz` suite green
+- [ ] Frontend: game theme + answer tiles + top bar + feedback splash + power-up bar
+- [ ] Frontend: student-paced player screen; teacher-paced player restyled
+- [ ] Frontend: host console (mode cards + settings), lobby, live dashboard, podium
+- [ ] Frontend: student end summary + review; results page uses new fields
+- [ ] Reducer tests; tsc / eslint / vitest green
+- [ ] Browser check of both modes end to end
+- [ ] PR (no deploy — deploy needs owner's OK and the open-attempts census)
+
+## Parked questions for the owner (ask after the exam, one at a time)
+
+1. ★ Default mode for a new room — student-paced (built as default) or teacher-led?
+2. ★ Should the game give XP/coins now? (v1 said no.)
+3. Power-ups — keep all five, fewer, or off by default?
+4. Should the game end by itself when every student has finished, or only when the teacher ends it (built)?
+5. Redemption question (re-ask one missed question at the end) — want it?
+6. Memes / music — want our own set (we would need images/audio we own)?
+7. Question sources — vocabulary sets only (today), or also Question Bank / SAT questions?
+8. iOS — update the app to the new look (separate PR)?
+9. Team mode — wanted?

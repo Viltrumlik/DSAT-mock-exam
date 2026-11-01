@@ -160,7 +160,11 @@ class LiveQuizSocketTests(TransactionTestCase):
             host=self.teacher,
             classroom=self.classroom,
             vocab_set=self.vocab_set,
-            config={"question_seconds": 30, "manual_advance": True},
+            config={
+                "question_seconds": 30,
+                "manual_advance": True,
+                "mode": const.MODE_INSTRUCTOR_PACED,
+            },
         )
 
     def tearDown(self):

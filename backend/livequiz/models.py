@@ -223,6 +223,30 @@ class LiveQuizParticipant(TimestampedModel):
     answered_count = models.PositiveIntegerField(default=0)
     rank = models.PositiveIntegerField(null=True, blank=True, help_text="Final placing, set at finish.")
 
+    # Right answers in a row. Both modes keep it; a wrong answer or a missed question resets
+    # it unless a streak saver was armed.
+    streak = models.PositiveIntegerField(default=0)
+    best_streak = models.PositiveIntegerField(default=0)
+
+    # ── Student-paced only. In a teacher-paced game the session's own pointer is the clock. ──
+    #
+    # Each student walks their own sequence: ``question_order`` holds the session question
+    # ``order`` values in the order THIS student meets them (shuffled per student when the
+    # host asked for it), ``position`` is how many of them are behind them. The deadline is
+    # theirs alone and, like the session's, it is the only clock that counts.
+    question_order = models.JSONField(default=list, blank=True)
+    position = models.PositiveIntegerField(default=0)
+    question_started_at = models.DateTimeField(null=True, blank=True)
+    question_ends_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(
+        null=True, blank=True, help_text="Student-paced: when they answered their last question."
+    )
+
+    # Power-ups held (a list of keys, duplicates allowed) and the ones armed for the question
+    # in front of them — see ``powerups``.
+    powerups = models.JSONField(default=list, blank=True)
+    armed = models.JSONField(default=dict, blank=True)
+
     class Meta:
         db_table = "livequiz_participant"
         ordering = ["-score", "joined_at"]
@@ -262,6 +286,12 @@ class LiveQuizAnswer(TimestampedModel):
     )
     points_awarded = models.IntegerField(default=0)
     submitted_at = models.DateTimeField(auto_now_add=True)
+
+    # Student-paced: the clock ran out before they answered. The row is still written, so a
+    # missed question is a fact in the report rather than a gap, but it is not an answer —
+    # tallies leave it out of "answered".
+    timed_out = models.BooleanField(default=False)
+    powerups_used = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = "livequiz_answer"

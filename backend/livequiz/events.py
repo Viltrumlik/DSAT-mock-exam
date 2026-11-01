@@ -74,6 +74,20 @@ def participant_row(participant) -> dict:
         "correct_count": participant.correct_count,
         "answered_count": participant.answered_count,
         "rank": participant.rank,
+        "streak": participant.streak,
+        "best_streak": participant.best_streak,
+        # Student-paced: how many of their questions are behind them, and whether that is all.
+        "progress": participant.position,
+        "finished": participant.finished_at is not None,
+    }
+
+
+def me_row(participant) -> dict:
+    """The student's own row: the public one plus what only they may see."""
+    return {
+        **participant_row(participant),
+        "powerups": list(participant.powerups or []),
+        "question_total": len(participant.question_order or []),
     }
 
 
@@ -99,11 +113,25 @@ def leaderboard(participants, *, limit: int | None = None) -> dict:
 # ─── The whole room, for a client that has just (re)connected ─────────────────
 
 
-def session_state(session, *, participants, question=None, total: int = 0, me=None) -> dict:
+def session_state(
+    session,
+    *,
+    participants,
+    question=None,
+    total: int = 0,
+    me=None,
+    own_question: dict | None = None,
+    board: list | None = None,
+) -> dict:
     """Everything a client needs to render the room from cold.
 
     Sent on every connect, which is what makes a refresh, a locked phone or a dropped
     connection recoverable: the client never has to have seen an earlier frame.
+
+    Student-paced rooms add two things. A student gets ``own_question`` — their own question
+    and their own deadline, in the same keys a teacher-paced room uses for the room's — so an
+    app that predates the mode renders it as "the question". The host gets ``board``: every
+    student's answers so far, for the live dashboard.
     """
     payload = {
         "session_id": session.id,
@@ -119,10 +147,85 @@ def session_state(session, *, participants, question=None, total: int = 0, me=No
     }
     # The open question travels only while it is open. In QUESTION_RESULTS the client has
     # already had `question_ended`, which carried the key.
-    if question is not None and session.status == const.STATUS_QUESTION_ACTIVE:
+    if own_question is not None and session.status == const.STATUS_QUESTION_ACTIVE:
+        payload.update(own_question)
+    elif question is not None and session.status == const.STATUS_QUESTION_ACTIVE:
         payload["question"] = public_question(question, index=session.current_index, total=total)
     if me is not None:
-        payload["me"] = participant_row(me)
+        payload["me"] = me_row(me)
+    if board is not None:
+        payload["board"] = board
+    return payload
+
+
+# ─── Student-paced frames ─────────────────────────────────────────────────────
+
+
+def _ms_until(value, now) -> int | None:
+    if value is None:
+        return None
+    return max(0, int((value - now).total_seconds() * 1000))
+
+
+def own_question(participant, question, *, now) -> dict:
+    """One student's question, with their clock.
+
+    ``starts_in_ms`` and ``ends_in_ms`` are durations from the moment the frame was built, so
+    a phone whose clock is minutes out still shows the right countdown: it adds them to the
+    moment the frame arrived instead of comparing the server's timestamps with its own.
+    A question opened behind a feedback screen has ``starts_in_ms`` > 0.
+    """
+    armed = participant.armed or {}
+    return {
+        "question": public_question(
+            question, index=participant.position, total=len(participant.question_order or [])
+        ),
+        "started_at": _iso(participant.question_started_at),
+        "ends_at": _iso(participant.question_ends_at),
+        "starts_in_ms": _ms_until(participant.question_started_at, now) or 0,
+        "ends_in_ms": _ms_until(participant.question_ends_at, now),
+        "hidden_choices": list(armed.get("hidden", [])),
+        "armed": sorted(key for key in armed if key not in ("hidden", "frozen_ms")),
+        "frozen": "frozen_ms" in armed,
+    }
+
+
+def own_answer_result(move, *, session, standing: dict | None) -> dict:
+    """What a student is told the moment they leave a question — answered or out of time.
+
+    The first three keys are the teacher-paced frame's, so an older app reads it as it always
+    has. Everything after is for the feedback screen. With correctness hidden, the student
+    learns that their answer landed and how far through they are, and nothing that would give
+    the answer away — not even their score, which moves only when they are right.
+    """
+    answer = move.answer
+    payload = {
+        "question_id": answer.question_id,
+        "accepted": not answer.timed_out,
+        "response_time_ms": answer.response_time_ms,
+        "timed_out": answer.timed_out,
+        "progress": move.participant.position,
+        "question_total": len(move.participant.question_order or []),
+        "finished": move.finished,
+    }
+    if session.setting("reveal_correctness"):
+        payload.update(
+            {
+                "is_correct": answer.is_correct,
+                "points_awarded": answer.points_awarded,
+                "breakdown": move.breakdown,
+                "streak": move.participant.streak,
+                "best_streak": move.participant.best_streak,
+                "score": move.participant.score,
+                "awarded": move.awarded,
+                "powerups_used": list(move.used or []),
+            }
+        )
+    if session.setting("show_answers"):
+        payload["correct_answer"] = move.question.correct_answer
+        payload["explanation"] = move.question.explanation
+    if standing is not None:
+        payload.update(standing)
     return payload
 
 

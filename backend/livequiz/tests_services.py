@@ -68,7 +68,8 @@ class LiveQuizBase(TestCase):
             host=self.teacher,
             classroom=self.classroom,
             vocab_set=self.vocab_set,
-            config=config or {},
+            # These tests are the teacher-paced engine; student-paced has its own suite.
+            config={"mode": const.MODE_INSTRUCTOR_PACED, **config},
         )
 
     def _playing(self, session):

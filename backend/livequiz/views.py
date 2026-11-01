@@ -21,7 +21,7 @@ from rest_framework.views import APIView
 from classes.capabilities import classroom_capabilities
 from classes.models import Classroom, ClassroomMembership
 from vocabulary.models import VocabSet
-from core.errors.api import Forbidden, NotFound
+from core.errors.api import Conflict, Forbidden, NotFound
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import constants as const
@@ -157,6 +157,10 @@ class SessionResultsView(APIView):
         role = services.role_in_session(request.user, session)
         if role is None:
             raise Forbidden("This live quiz belongs to a class you are not in.", code="not_in_class")
+        if role != services.ROLE_HOST and not session.is_over:
+            # The report carries every question's answer key. Mid-game, that is the answer
+            # sheet for the questions a classmate has not reached yet.
+            raise Conflict("Your results open when the quiz ends.", code=const.ERR_BAD_STATE)
 
         report = services.results_report(session)
         if role != services.ROLE_HOST:
