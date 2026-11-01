@@ -94,6 +94,16 @@ def avatar_of(participant) -> dict | None:
     return look.as_wire()
 
 
+def gems_awarded(payout: dict) -> dict:
+    """What one student earned from a game that just finished."""
+    return {
+        "earned": payout.get("earned", 0),
+        "balance": payout.get("balance", 0),
+        "capped": bool(payout.get("capped")),
+        "breakdown": payout.get("breakdown", {}),
+    }
+
+
 # What a score gives away. In a room that hides correctness (the Test preset), every one of
 # these says how a student is doing, so a student is sent zeros until the game is over. Zeros
 # rather than nulls: an app that predates this decodes them as numbers.
@@ -122,16 +132,6 @@ def without_scores(data: dict) -> dict:
 def without_key(data: dict) -> dict:
     """A question's close for students in a room that keeps the answers to itself."""
     return {**data, "correct_answer": None, "explanation": ""}
-
-
-def gems_awarded(payout: dict) -> dict:
-    """What one student earned from a game that just finished."""
-    return {
-        "earned": payout.get("earned", 0),
-        "balance": payout.get("balance", 0),
-        "capped": bool(payout.get("capped")),
-        "breakdown": payout.get("breakdown", {}),
-    }
 
 
 def me_row(participant) -> dict:
