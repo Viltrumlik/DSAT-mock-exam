@@ -137,7 +137,7 @@ export function HostDashboard({ room, actions }: { room: LiveQuizRoom; actions: 
 
       {players.length > 0 && finishedCount === players.length && (
         <Card pad="sm" className="flex flex-wrap items-center justify-between gap-3 bg-emerald-500/10">
-          <p className="text-sm font-semibold">Everyone has finished.</p>
+          <p className="text-sm font-semibold">Everyone has finished — the podium goes up in a moment.</p>
           <Button size="sm" onClick={actions.endGame}>
             Show the podium
           </Button>

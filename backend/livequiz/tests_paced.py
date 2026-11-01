@@ -8,10 +8,12 @@ from unittest import mock
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 from channels.routing import URLRouter
+from django.contrib.auth import get_user_model
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from classes.models import ClassroomMembership
 from core.errors.api import AppError
 
 from . import constants as const
@@ -252,6 +254,70 @@ class TimeOutTests(PacedBase):
         self.assertEqual(LiveQuizAnswer.objects.filter(participant=participant).count(), 1)
 
 
+class AutoEndTests(PacedBase):
+    """Owner, 2026-11-01: a student-paced game ends itself once everybody has finished."""
+
+    def _second_student(self):
+        user = get_user_model().objects.create_user(
+            email="second@example.test", password="pw-for-tests", role="student"
+        )
+        ClassroomMembership.objects.create(
+            classroom=self.classroom, user=user, role=ClassroomMembership.ROLE_STUDENT
+        )
+        return user
+
+    def _finish_all(self, session, participant):
+        participant.refresh_from_db()
+        while participant.finished_at is None:
+            self._answer(session, participant)
+            participant.refresh_from_db()
+
+    def _two_playing(self, *, second_connected: bool):
+        session = self._paced()
+        first = services.join_session(session=session, user=self.student)
+        second = services.join_session(session=session, user=self._second_student())
+        LiveQuizParticipant.objects.filter(pk=second.pk).update(connections=1 if second_connected else 0)
+        session = services.start_game(session=session)
+        session, _ = paced.begin_play(session=session)
+        return session, first
+
+    def test_the_game_ends_when_the_last_student_finishes(self):
+        session, participant = self._in_play()
+        self._finish_all(session, participant)
+        session = LiveQuizSession.objects.get(pk=session.pk)
+        self.assertTrue(services.finish_when_everyone_is_done(session=session))
+        session.refresh_from_db()
+        self.assertEqual(session.status, const.STATUS_FINISHED)
+        participant.refresh_from_db()
+        self.assertEqual(participant.rank, 1)
+        # Only the call that ended it says so.
+        self.assertFalse(services.finish_when_everyone_is_done(session=session))
+
+    def test_it_waits_for_a_student_still_playing(self):
+        session, first = self._two_playing(second_connected=True)
+        self._finish_all(session, first)
+        self.assertFalse(
+            services.finish_when_everyone_is_done(session=LiveQuizSession.objects.get(pk=session.pk))
+        )
+
+    def test_a_student_who_left_unfinished_does_not_hold_the_room(self):
+        session, first = self._two_playing(second_connected=False)
+        self._finish_all(session, first)
+        self.assertTrue(
+            services.finish_when_everyone_is_done(session=LiveQuizSession.objects.get(pk=session.pk))
+        )
+
+    def test_nobody_finished_means_nothing_ends(self):
+        session, _ = self._in_play()
+        self.assertFalse(services.finish_when_everyone_is_done(session=session))
+
+    def test_a_teacher_paced_game_never_ends_itself(self):
+        session = self._session()
+        self._playing(session)
+        session, _ = self._open_first(session)
+        self.assertFalse(services.finish_when_everyone_is_done(session=session))
+
+
 class PauseTests(PacedBase):
     def test_a_pause_gives_every_student_their_time_back(self):
         session, participant = self._in_play()
@@ -456,6 +522,38 @@ class PacedSocketTests(TransactionTestCase):
             progress = await await_frame(host, const.EV_PLAYER_PROGRESS)
             self.assertTrue(progress["data"]["cell"]["correct"])
 
+            await player.disconnect()
+            await host.disconnect()
+
+        async_to_sync(run)()
+
+    def test_the_game_ends_itself_when_everyone_is_done(self):
+        async def run():
+            host, player = self._client(self.teacher), self._client(self.student)
+            await host.connect()
+            await host.receive_json_from()
+            await player.connect()
+            await player.receive_json_from()
+            with mock.patch.object(const, "COUNTDOWN_SECONDS", 0), mock.patch.object(
+                const, "FEEDBACK_SECONDS", 0
+            ):
+                await host.send_json_to({"type": const.CMD_START_GAME})
+                frame = await await_frame(player, const.EV_QUESTION_STARTED)
+                while True:
+                    question_id = frame["data"]["question"]["id"]
+                    await player.send_json_to(
+                        {
+                            "type": const.CMD_SUBMIT_ANSWER,
+                            "question_id": question_id,
+                            "answer": await self._key(question_id),
+                        }
+                    )
+                    result = await await_frame(player, const.EV_ANSWER_RESULT)
+                    if result["data"]["finished"]:
+                        break
+                    frame = await await_frame(player, const.EV_QUESTION_STARTED)
+                finished = await await_frame(host, const.EV_GAME_FINISHED, limit=80)
+            self.assertEqual(finished["data"]["leaderboard"]["rows"][0]["rank"], 1)
             await player.disconnect()
             await host.disconnect()
 

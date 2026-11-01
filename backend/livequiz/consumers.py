@@ -76,6 +76,8 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         self._own_timer: asyncio.Task | None = None
         self._ticker: asyncio.Task | None = None
         self._board_seen: tuple | None = None
+        # Student-paced: the wait between the last answer and the game ending itself.
+        self._finish_task: asyncio.Task | None = None
 
     @property
     def group_name(self) -> str:
@@ -150,11 +152,15 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         self._cancel_timer()
         self._cancel_own_timer()
         self._stop_ticker()
+        if self._finish_task is not None and not self._finish_task.done():
+            self._finish_task.cancel()
         if self.participant_id:
             await self._count_connection(up=False)
             try:
                 await self._broadcast(const.EV_PARTICIPANT_LEFT, await self._lobby())
                 await self._broadcast(const.EV_LOBBY_UPDATED, await self._lobby())
+                # The one student everybody was waiting for may just have left.
+                await self._try_finish_now()
             except Exception:  # pragma: no cover - the room may be gone entirely
                 pass
         if self.channel_layer is not None:
@@ -300,6 +306,8 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         # anything new, and it is the removed player's own socket that acts on it.
         await self._broadcast(const.EV_REMOVED, {"participant_id": removed})
         await self._broadcast(const.EV_LOBBY_UPDATED, await self._lobby())
+        # Removing the last student still playing leaves nobody to wait for.
+        await self._try_finish_now()
 
     async def _cmd_leave(self, _content):
         await self.close()
@@ -361,6 +369,31 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             # Somebody finished — the waiting screens of everyone already done move too, unless
             # the leaderboard is off, when only the teacher sees it.
             await self._broadcast(const.EV_LEADERBOARD_UPDATED, leaderboard, audience=standings_to)
+        if move.finished:
+            self._schedule_finish_check()
+
+    # ── Student-paced: the game ends itself when everyone is done ────────────
+
+    def _schedule_finish_check(self) -> None:
+        """After a student's last answer: let their result show, then end the game if it's over."""
+        if self._finish_task is not None and not self._finish_task.done():
+            self._finish_task.cancel()
+        self._finish_task = asyncio.create_task(self._finish_after_feedback())
+
+    async def _finish_after_feedback(self) -> None:
+        try:
+            # The last student reads how their last answer went before the podium replaces it.
+            await asyncio.sleep(const.FEEDBACK_SECONDS)
+            await self._try_finish_now()
+        except asyncio.CancelledError:  # pragma: no cover - their socket closed first
+            raise
+        except Exception:  # pragma: no cover
+            logger.exception("livequiz_auto_finish_failed session=%s", self.session_id)
+
+    async def _try_finish_now(self) -> None:
+        if self.student_paced and await self._finish_if_done():
+            self._stop_ticker()
+            await self._announce_finished()
 
     async def _send_personal(self, participant_id: int, event: str, data: dict) -> None:
         await self.channel_layer.group_send(
@@ -749,6 +782,11 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             (participant_id, events.gems_awarded(payout))
             for participant_id, payout in gems.award_for_game(session).items()
         ]
+
+    @database_sync_to_async
+    def _finish_if_done(self) -> bool:
+        session = LiveQuizSession.objects.select_related("classroom").get(pk=self.session_id)
+        return services.finish_when_everyone_is_done(session=session)
 
     @database_sync_to_async
     def _board_snapshot(self):
