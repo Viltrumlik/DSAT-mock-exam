@@ -3,6 +3,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
 import { money } from "../format";
+import { costRows, deliveryRows } from "../charts/rows";
 import { parseRange, rangeDates, serializeRange } from "../RangePicker";
 import type { SmsMessagePage } from "../smsApi";
 import { message } from "./fixtures";
@@ -24,6 +25,25 @@ vi.mock("@/components/ui", async (importOriginal) => ({
 
 const { BalanceBanner } = await import("@/features/ops/sms/BalanceBanner");
 const { UndeliveredList } = await import("@/features/ops/sms/UndeliveredList");
+
+describe("chart rows", () => {
+  const day = (d: string, delivered: number, undelivered = 0, rejected = 0) => ({
+    day: d, sent: delivered + undelivered, delivered, undelivered, rejected, failed: 0, pending: 0,
+    rate: delivered + undelivered + rejected ? delivered / (delivered + undelivered + rejected) : null, cost: 0,
+  });
+
+  it("draws the delivered % only for days with enough SMS to mean something", () => {
+    const rows = deliveryRows([day("2026-11-01", 180, 9, 1), day("2026-11-02", 1, 1), day("2026-11-03", 0)]);
+    expect(rows.map((r) => r.percent)).toEqual([95, null, null]);
+    expect(rows[0].label).toBe("1 Nov");
+  });
+
+  it("counts the cost in thousands of so'm, months by name", () => {
+    expect(costRows([{ month: "2026-11", debt_warning: 32300, campaign: 0, automation: 0, test: 510, total: 32810 }])).toEqual([
+      { month: "Nov 2026", debt_warning: 32.3, campaign: 0, automation: 0, test: 0.5, total: 32.8 },
+    ]);
+  });
+});
 
 describe("the range", () => {
   it("reads and writes the address form", () => {

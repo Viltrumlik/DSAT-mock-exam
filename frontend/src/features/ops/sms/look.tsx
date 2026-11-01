@@ -114,7 +114,7 @@ export function StatTile({
   return (
     <div className="border border-border bg-card px-4 py-3">
       <div className="text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{label}</div>
-      <div className={`mt-1 text-[26px] font-semibold leading-tight tabular-nums ${TILE_TONE[tone]}`}>
+      <div className={`mt-1 text-[21px] font-semibold leading-tight tabular-nums sm:text-[26px] ${TILE_TONE[tone]}`}>
         {value === null ? "—" : format(shown)}
       </div>
       {hint ? <div className="mt-0.5 text-[12px] text-muted-foreground">{hint}</div> : null}

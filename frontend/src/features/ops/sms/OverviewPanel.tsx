@@ -21,6 +21,7 @@ import { LineChart, StackedBarChart } from "@/components/ui/charts";
 import { DebtEffect } from "./charts/DebtEffect";
 import { DeliveryChart } from "./charts/DeliveryChart";
 import { OperatorChart } from "./charts/OperatorChart";
+import { costByDayRows, costRows } from "./charts/rows";
 import { dayLabel, hourLabel, money, plural, splitCounts, todayInTashkent } from "./format";
 import { StatTile } from "./look";
 import { LoadError, Loading, Section, TEXT_BUTTON } from "./panelKit";
@@ -102,7 +103,7 @@ function Charts({ stats }: { stats: SmsStats }) {
   if (!stats.by_day.length) {
     return <p className="border border-border bg-card px-3 py-6 text-center text-[13px] text-muted-foreground">No SMS in this range.</p>;
   }
-  const costByDay = stats.by_day.map((d) => ({ day: dayLabel(d.day).replace(/ \d{4}$/, ""), cost: d.cost }));
+  const inThousands = (v: number) => money(v * 1000);
   return (
     <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
       <Section title={`Delivery by day · ${percent(stats.totals.rate) ?? "—"}% delivered`} className="xl:col-span-2">
@@ -117,8 +118,23 @@ function Charts({ stats }: { stats: SmsStats }) {
       </Section>
       <Section title={`Cost · ${money(stats.totals.cost)}`}>
         <div className="space-y-2 px-2 py-3">
-          <StackedBarChart data={stats.cost_by_month.map((m) => ({ ...m }))} xKey="month" series={COST_SERIES} height={160} valueFormatter={money} />
-          <LineChart data={costByDay} xKey="day" series={[{ key: "cost", label: "Per day", color: "var(--sms-accent)" }]} height={110} valueFormatter={money} />
+          <ul aria-label="Kinds" className="flex flex-wrap gap-x-3 gap-y-1 px-1 text-[12px] text-muted-foreground">
+            {COST_SERIES.map((s) => (
+              <li key={s.key} className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="size-2 rounded-sm" style={{ background: s.color }} />
+                {s.label}
+              </li>
+            ))}
+            <li className="ml-auto">thousand so&apos;m</li>
+          </ul>
+          <StackedBarChart data={costRows(stats.cost_by_month)} xKey="month" series={COST_SERIES} height={160} valueFormatter={inThousands} />
+          <LineChart
+            data={costByDayRows(stats.by_day)}
+            xKey="day"
+            series={[{ key: "cost", label: "Per day", color: "var(--sms-accent)" }]}
+            height={110}
+            valueFormatter={inThousands}
+          />
         </div>
       </Section>
     </div>

@@ -7,20 +7,18 @@ import { CHART_GRID, axisTick } from "@/components/ui/charts/palette";
 import { useChartReady } from "@/components/ui/charts/useChartReady";
 import { TONE_COLOR } from "../look";
 import type { SmsStatsDay } from "../smsApi";
+import { deliveryRows } from "./rows";
 
 export type DeliveryChartProps = { data: SmsStatsDay[]; height?: number };
 
-/** "2026-11-01" → "1 Nov". */
-const dayTick = (day: string) => {
-  const [y, m, d] = day.split("-").map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-};
-
-/** Each day's SMS by how they ended (stacked), and the share delivered as a line on its own axis. */
+/**
+ * Each day's SMS by how they ended (stacked), and the share delivered on its own axis — as a dot per
+ * day, and only on days with enough SMS for a share to mean something (`deliveryRows`).
+ */
 export function DeliveryChartImpl({ data, height = 260 }: DeliveryChartProps) {
   const ready = useChartReady();
   if (!ready) return <ChartSkeleton height={height} />;
-  const rows = data.map((d) => ({ ...d, label: dayTick(d.day), percent: d.rate === null ? null : Math.round(d.rate * 100) }));
+  const rows = deliveryRows(data);
   return (
     <div style={{ width: "100%", height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -33,7 +31,16 @@ export function DeliveryChartImpl({ data, height = 260 }: DeliveryChartProps) {
           <Bar yAxisId="count" dataKey="delivered" name="Delivered" stackId="day" fill={TONE_COLOR.delivered} maxBarSize={36} />
           <Bar yAxisId="count" dataKey="undelivered" name="Not delivered" stackId="day" fill={TONE_COLOR.undelivered} maxBarSize={36} />
           <Bar yAxisId="count" dataKey="rejected" name="Refused" stackId="day" fill={TONE_COLOR.rejected} radius={[4, 4, 0, 0]} maxBarSize={36} />
-          <Line yAxisId="rate" type="monotone" dataKey="percent" name="Delivered %" stroke="var(--sms-accent)" strokeWidth={2} dot={false} connectNulls />
+          <Line
+            yAxisId="rate"
+            type="linear"
+            dataKey="percent"
+            name="Delivered %"
+            stroke="var(--sms-accent)"
+            strokeWidth={2}
+            dot={{ r: 3, fill: "var(--sms-accent)", strokeWidth: 0 }}
+            connectNulls
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
