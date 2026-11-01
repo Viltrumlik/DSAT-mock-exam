@@ -88,9 +88,9 @@ We copy **mechanics**, not branding: our own colours, words and visuals.
   tracebacks. Found and fixed: join race (500), host stuck on "Get ready…", canvas under the shell,
   stale correct count, toggles, tile padding.
 
-## Parked questions for the owner (ask after the exam, one at a time)
+## Parked questions for the owner (asked one at a time after the exam)
 
-1. ★ Default mode for a new room — student-paced (built as default) or teacher-led?
+1. ~~★ Default mode for a new room~~ — **answered 2026-11-01: student-paced stays the default** (as built).
 2. ★ Should the game give XP/coins now? (v1 said no.)
 3. Power-ups — keep all five, fewer, or off by default?
 4. Should the game end by itself when every student has finished, or only when the teacher ends it (built)?
