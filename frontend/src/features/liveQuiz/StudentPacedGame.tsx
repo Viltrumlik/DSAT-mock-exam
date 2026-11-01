@@ -120,7 +120,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
   return (
     <GameCanvas>
       <GameTopBar
-        index={room.finished ? undefined : question?.index}
+        index={room.finished || room.secondTry ? undefined : question?.index}
         total={room.questionTotal}
         // A room that hides correctness hides the score too — it is the same information.
         score={blind ? undefined : room.me?.score}
@@ -185,6 +185,11 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
 
       {room.status === "QUESTION_ACTIVE" && question && opened && !showSplash && !finished && (
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 px-4 pb-8 pt-2 sm:px-6">
+          {room.secondTry && (
+            <p className="mx-auto rounded-full bg-cyan-400/15 px-4 py-1.5 text-center text-sm font-bold text-cyan-100 ring-1 ring-cyan-300/30">
+              Second chance — you missed this one. Get it right now and it counts.
+            </p>
+          )}
           <QuestionCard prompt={question.prompt} questionPrompt={question.question_prompt} />
 
           {question.question_type === "multiple_choice" && choices.length > 0 ? (

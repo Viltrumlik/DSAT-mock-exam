@@ -92,6 +92,7 @@ def normalize_config(raw: dict | None) -> dict:
         "shuffle_answers",
         "show_answers",
         "powerups",
+        "redemption",
     ):
         out[key] = bool(raw.get(key, defaults[key]))
 
@@ -100,9 +101,12 @@ def normalize_config(raw: dict | None) -> dict:
     if not out["reveal_correctness"]:
         out["show_answers"] = False
         out["show_leaderboard_between"] = False
+        # A question coming back would tell them they missed it.
+        out["redemption"] = False
     # Power-ups are a student-paced thing; a teacher-paced room keeps one clock for everybody.
     if mode != const.MODE_STUDENT_PACED:
         out["powerups"] = False
+        out["redemption"] = False
 
     # Not the host's to choose: the scale every new room scores on.
     out["point_scale"] = defaults["point_scale"]
@@ -784,6 +788,7 @@ def results_report(session) -> dict:
                     "order": question.order,
                     "answered": answer is not None and not timed_out,
                     "timed_out": timed_out,
+                    "second_try": answer.second_try_correct if answer else None,
                     "answer": answer.answer if answer else None,
                     "is_correct": bool(answer.is_correct) if answer else False,
                     "points_awarded": int(answer.points_awarded) if answer else 0,

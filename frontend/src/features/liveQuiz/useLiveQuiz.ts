@@ -50,6 +50,7 @@ export interface QuestionOutcome {
 /** Student-paced: what the student is told the moment they leave a question. */
 export interface OwnFeedback extends AnswerOutcome {
   timed_out?: boolean;
+  second_try?: boolean;
   breakdown?: { base: number; speed: number; multiplier: number; total: number };
   streak?: number;
   best_streak?: number;
@@ -88,6 +89,8 @@ export interface LiveQuizRoom {
   hidden: string[];
   armed: PowerUpKey[];
   frozen: boolean;
+  /** Student-paced: this question is a second chance at one they missed. */
+  secondTry: boolean;
   inventory: PowerUpKey[];
   awarded: { key: PowerUpKey; at: number } | null;
   feedback: OwnFeedback | null;
@@ -122,6 +125,7 @@ const EMPTY: LiveQuizRoom = {
   hidden: [],
   armed: [],
   frozen: false,
+  secondTry: false,
   inventory: [],
   awarded: null,
   feedback: null,
@@ -248,6 +252,7 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
         hidden: data.hidden_choices ?? [],
         armed: data.armed ?? [],
         frozen: Boolean(data.frozen),
+        secondTry: Boolean(data.second_try),
         inventory: data.me?.powerups ?? prev.inventory,
         board: data.board ? board : prev.board,
         participants: data.participants ?? [],
@@ -284,6 +289,7 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
           hidden: data.hidden_choices ?? [],
           armed: data.armed ?? [],
           frozen: Boolean(data.frozen),
+          secondTry: Boolean(data.second_try),
           myAnswer: null,
           error: null,
         };

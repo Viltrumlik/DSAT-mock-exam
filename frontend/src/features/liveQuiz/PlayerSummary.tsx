@@ -132,6 +132,11 @@ export function PlayerSummary({
                       <div className="font-medium">
                         <AssessmentText text={question.prompt} />
                       </div>
+                      {mine?.second_try != null && (
+                        <p className="mt-0.5 text-xs font-semibold text-cyan-200">
+                          Second chance: {mine.second_try ? "got it" : "not this time"}
+                        </p>
+                      )}
                       <p className="mt-1 text-emerald-300">
                         <AssessmentText text={textOf(question.correct_answer)} />
                       </p>

@@ -17,7 +17,7 @@ from classes.models import ClassroomMembership
 from core.errors.api import AppError
 
 from . import constants as const
-from . import paced, powerups, scoring, services
+from . import events, paced, powerups, scoring, services
 from .models import LiveQuizAnswer, LiveQuizParticipant, LiveQuizSession
 from .routing import websocket_urlpatterns
 from .tests_consumer import IN_MEMORY_LAYER, WebsocketClient, await_frame
@@ -316,6 +316,97 @@ class AutoEndTests(PacedBase):
         self._playing(session)
         session, _ = self._open_first(session)
         self.assertFalse(services.finish_when_everyone_is_done(session=session))
+
+
+class SecondTryTests(PacedBase):
+    """Owner, 2026-11-01: a question the student missed comes back once at the end."""
+
+    def _play_paper(self, session, participant, *, wrong_at=()):
+        """Answer the whole paper, missing the positions in ``wrong_at``. Returns the missed orders."""
+        participant.refresh_from_db()
+        missed = []
+        while participant.position < paced.paper_length(participant):
+            question = self._current(session, participant)
+            wrong = participant.position in wrong_at
+            if wrong:
+                missed.append(question.order)
+            self._answer(session, participant, right=not wrong)
+            participant.refresh_from_db()
+        return missed
+
+    def test_a_missed_question_comes_back_at_the_end(self):
+        session, participant = self._in_play()
+        missed = self._play_paper(session, participant, wrong_at=(1,))
+        participant.refresh_from_db()
+        self.assertIsNone(participant.finished_at)
+        self.assertTrue(paced.on_second_try(participant))
+        self.assertEqual(self._current(session, participant).order, missed[0])
+
+    def test_the_frame_says_it_is_a_second_chance(self):
+        session, participant = self._in_play()
+        self._play_paper(session, participant, wrong_at=(0,))
+        participant.refresh_from_db()
+        frame = events.own_question(participant, self._current(session, participant), now=timezone.now())
+        self.assertTrue(frame["second_try"])
+
+    def test_a_right_second_try_pays_the_base_and_counts_as_right(self):
+        session, participant = self._in_play()
+        self._play_paper(session, participant, wrong_at=(0,))
+        participant.refresh_from_db()
+        score, correct, streak = participant.score, participant.correct_count, participant.streak
+        move = self._answer(session, participant)
+        self.assertTrue(move.answer.is_correct)
+        self.assertTrue(move.answer.second_try_correct)
+        self.assertEqual(move.breakdown["total"], 600)
+        self.assertEqual(move.participant.score, score + 600)
+        self.assertEqual(move.participant.correct_count, correct + 1)
+        self.assertEqual(move.participant.streak, streak)
+        self.assertTrue(move.finished)
+
+    def test_a_wrong_second_try_changes_nothing(self):
+        session, participant = self._in_play()
+        self._play_paper(session, participant, wrong_at=(0,))
+        participant.refresh_from_db()
+        score, correct = participant.score, participant.correct_count
+        move = self._answer(session, participant, right=False)
+        self.assertFalse(move.answer.is_correct)
+        self.assertIs(move.answer.second_try_correct, False)
+        self.assertEqual((move.participant.score, move.participant.correct_count), (score, correct))
+        self.assertTrue(move.finished)
+
+    def test_running_out_on_a_second_try_still_finishes(self):
+        session, participant = self._in_play()
+        self._play_paper(session, participant, wrong_at=(0,))
+        participant.refresh_from_db()
+        move = paced.time_out(
+            session=session,
+            participant_id=participant.pk,
+            position=participant.position,
+            now=participant.question_ends_at + timedelta(seconds=1),
+        )
+        self.assertTrue(move.finished)
+        self.assertIs(move.answer.second_try_correct, False)
+
+    def test_a_clean_paper_has_no_second_try(self):
+        session, participant = self._in_play()
+        self._play_paper(session, participant)
+        participant.refresh_from_db()
+        self.assertIsNotNone(participant.finished_at)
+
+    def test_switched_off_there_is_no_second_try(self):
+        session, participant = self._in_play(redemption=False)
+        self._play_paper(session, participant, wrong_at=(0,))
+        participant.refresh_from_db()
+        self.assertIsNotNone(participant.finished_at)
+
+    def test_a_long_paper_brings_back_two(self):
+        self.assertEqual(paced.second_try_count(15), 1)
+        self.assertEqual(paced.second_try_count(16), 2)
+
+    def test_hidden_correctness_and_teacher_paced_rooms_have_none(self):
+        self.assertFalse(services.normalize_config({"reveal_correctness": False})["redemption"])
+        self.assertFalse(services.normalize_config({"mode": const.MODE_INSTRUCTOR_PACED})["redemption"])
+        self.assertTrue(services.normalize_config({})["redemption"])
 
 
 class PauseTests(PacedBase):

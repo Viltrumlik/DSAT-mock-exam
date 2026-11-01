@@ -111,6 +111,81 @@ def total_for(participant) -> int:
     return len(participant.question_order or [])
 
 
+# ─── Second chance ────────────────────────────────────────────────────────────
+#
+# When a student reaches the end of the paper having missed something, one missed question
+# (two, on a long paper) goes back on the end of their sequence. Asked again, a right answer
+# pays the base points — no speed bonus, no streak — and the question then counts as right;
+# a wrong one moves nothing. Off in test rooms: a question coming back says it was missed.
+
+
+def paper_length(participant) -> int:
+    """How many questions the paper itself had for this student, before any second try."""
+    if participant.redemption_from is not None:
+        return int(participant.redemption_from)
+    return total_for(participant)
+
+
+def on_second_try(participant) -> bool:
+    return participant.redemption_from is not None and participant.position >= participant.redemption_from
+
+
+def second_try_count(paper: int) -> int:
+    if paper <= 0:
+        return 0
+    return 1 if paper <= const.SECOND_TRY_LONG_PAPER else 2
+
+
+def _bring_back_missed_locked(*, session, participant, rng: random.Random | None = None) -> bool:
+    """At the end of the paper, put missed questions back on the end. True if any came back."""
+    if not session.setting("redemption") or participant.redemption_from is not None:
+        return False
+    missed = [
+        int(order)
+        for order in LiveQuizAnswer.objects.filter(participant=participant, is_correct=False)
+        .values_list("question__order", flat=True)
+    ]
+    count = second_try_count(total_for(participant))
+    if not missed or count == 0:
+        return False
+    picks = (rng or random).sample(missed, min(count, len(missed)))
+    participant.redemption_from = total_for(participant)
+    participant.question_order = list(participant.question_order or []) + picks
+    participant.save(update_fields=["redemption_from", "question_order", "updated_at"])
+    return True
+
+
+def _second_try_locked(*, session, participant, question, answer) -> tuple:
+    """Mark a second try. The caller holds the participant's row lock."""
+    row = LiveQuizAnswer.objects.select_for_update().get(participant=participant, question=question)
+    is_correct = bool(
+        grade_answer(
+            question_type=question.question_type,
+            correct_answer=question.correct_answer,
+            answer=answer,
+            config=question.grading_config or {},
+        )
+    )
+    base = max(0, int(question.points)) * int(session.setting("point_scale") or const.BASE_POINT_SCALE)
+    if is_correct and not row.is_correct:
+        if row.timed_out:
+            # It ran out the first time, so it was never an answer; now it is one.
+            participant.answered_count += 1
+        participant.score += base
+        participant.correct_count += 1
+        participant.save(update_fields=["score", "correct_count", "answered_count", "updated_at"])
+        row.is_correct = True
+        row.timed_out = False
+        row.answer = answer
+        row.points_awarded = base
+    row.second_try_correct = is_correct
+    row.save(
+        update_fields=["is_correct", "timed_out", "answer", "points_awarded", "second_try_correct", "updated_at"]
+    )
+    total = base if is_correct else 0
+    return row, {"base": total, "speed": 0, "multiplier": 1, "total": total}
+
+
 # ─── Opening questions ────────────────────────────────────────────────────────
 
 
@@ -192,6 +267,8 @@ def _advance_locked(*, session, participant, now):
         update_fields=["position", "question_started_at", "question_ends_at", "armed", "updated_at"]
     )
     nxt = current_question(session, participant)
+    if nxt is None and _bring_back_missed_locked(session=session, participant=participant):
+        nxt = current_question(session, participant)
     if nxt is None:
         participant.finished_at = now
         participant.save(update_fields=["finished_at", "updated_at"])
@@ -241,6 +318,21 @@ def submit(*, session, participant, question_id, answer, now=None) -> Move:
             (now - row.question_ends_at).total_seconds() * 1000.0 > const.LATE_ANSWER_GRACE_MS
         ):
             raise Conflict("Time is up for that question.", code=const.ERR_TOO_LATE)
+
+        if on_second_try(row):
+            answer_row, breakdown = _second_try_locked(
+                session=session, participant=row, question=question, answer=answer
+            )
+            nxt = _advance_locked(session=session, participant=row, now=now)
+            participant.refresh_from_db()
+            return Move(
+                answer=answer_row,
+                question=question,
+                participant=participant,
+                next_question=nxt,
+                breakdown=breakdown,
+                finished=participant.finished_at is not None,
+            )
 
         armed = dict(row.armed or {})
         # An app that shows the next question the moment it arrives can answer inside the
@@ -340,6 +432,22 @@ def time_out(*, session, participant_id: int, position: int, now=None) -> Move |
         question = current_question(session, row)
         if question is None:
             return None
+
+        if on_second_try(row):
+            # Out of time on a second try: nothing changes but the record of the retry.
+            answer_row = LiveQuizAnswer.objects.select_for_update().get(participant=row, question=question)
+            answer_row.second_try_correct = False
+            answer_row.save(update_fields=["second_try_correct", "updated_at"])
+            nxt = _advance_locked(session=session, participant=row, now=now)
+            row.refresh_from_db()
+            return Move(
+                answer=answer_row,
+                question=question,
+                participant=row,
+                next_question=nxt,
+                breakdown={"base": 0, "speed": 0, "multiplier": 1, "total": 0},
+                finished=row.finished_at is not None,
+            )
 
         armed = dict(row.armed or {})
         _settle_streak(row, is_correct=False, saved=bool(armed.get(powerups.STREAK_SAVER)))

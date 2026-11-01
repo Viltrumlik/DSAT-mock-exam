@@ -217,6 +217,9 @@ def own_question(participant, question, *, now) -> dict:
         "hidden_choices": list(armed.get("hidden", [])),
         "armed": sorted(key for key in armed if key not in ("hidden", "frozen_ms")),
         "frozen": "frozen_ms" in armed,
+        # A missed question asked again at the end — the screen says so.
+        "second_try": participant.redemption_from is not None
+        and participant.position >= participant.redemption_from,
     }
 
 
@@ -234,6 +237,7 @@ def own_answer_result(move, *, session, standing: dict | None) -> dict:
         "accepted": not answer.timed_out,
         "response_time_ms": answer.response_time_ms,
         "timed_out": answer.timed_out,
+        "second_try": answer.second_try_correct is not None,
         "progress": move.participant.position,
         "question_total": len(move.participant.question_order or []),
         "finished": move.finished,

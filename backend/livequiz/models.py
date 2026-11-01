@@ -241,6 +241,10 @@ class LiveQuizParticipant(TimestampedModel):
     finished_at = models.DateTimeField(
         null=True, blank=True, help_text="Student-paced: when they answered their last question."
     )
+    # Second chance: the position at which the missed questions brought back at the end begin.
+    # None until the paper is done and something was missed; a question at or past it is a
+    # second try, scored by its own rules (``paced``).
+    redemption_from = models.PositiveIntegerField(null=True, blank=True)
 
     # Power-ups held (a list of keys, duplicates allowed) and the ones armed for the question
     # in front of them — see ``powerups``.
@@ -292,6 +296,9 @@ class LiveQuizAnswer(TimestampedModel):
     # tallies leave it out of "answered".
     timed_out = models.BooleanField(default=False)
     powerups_used = models.JSONField(default=list, blank=True)
+    # Second chance: None if the question never came back; True/False for how the retry went.
+    # A right retry also turns ``is_correct`` on, so the paper reads as right from then on.
+    second_try_correct = models.BooleanField(null=True, blank=True)
 
     class Meta:
         db_table = "livequiz_answer"

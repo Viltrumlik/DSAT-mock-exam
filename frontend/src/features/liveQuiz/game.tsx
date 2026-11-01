@@ -338,7 +338,10 @@ export function FeedbackSplash({
         {feedback.timed_out ? <Clock className="h-8 w-8" aria-hidden /> : right || !known ? <Check className="h-9 w-9" aria-hidden /> : <X className="h-9 w-9" aria-hidden />}
       </div>
 
-      <p className="mt-4 text-3xl font-extrabold">
+      {feedback.second_try && (
+        <p className="mt-4 text-xs font-bold uppercase tracking-widest text-cyan-200">Second chance</p>
+      )}
+      <p className={cn("text-3xl font-extrabold", feedback.second_try ? "mt-1" : "mt-4")}>
         {feedback.timed_out ? "Time's up" : !known ? "Answer saved" : right ? "Correct!" : "Not this time"}
       </p>
 
