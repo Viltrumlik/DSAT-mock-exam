@@ -64,6 +64,9 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
     participant_id: int | None = None
     # Fixed when the room is created, so read once at connect.
     student_paced: bool = False
+    # A player in a room that hides correctness: every score in every frame they get is zeroed
+    # until the game is over. Fixed at creation, like the mode, so read once at connect.
+    score_blind: bool = False
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -113,7 +116,8 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         if resolved is None:
             await self.close(code=CLOSE_FORBIDDEN)
             return
-        self.role, self.participant_id, self.student_paced = resolved
+        self.role, self.participant_id, self.student_paced, hides_scores = resolved
+        self.score_blind = bool(self.participant_id) and hides_scores
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         if self.personal_group:
@@ -128,7 +132,9 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
                 await self._catch_up()
 
         state = await self._state()
-        await self.send_json({"type": const.EV_SESSION_STATE, "data": state})
+        await self.send_json(
+            {"type": const.EV_SESSION_STATE, "data": self._for_me(const.EV_SESSION_STATE, state)}
+        )
 
         if self.student_paced:
             if self.participant_id:
@@ -340,7 +346,7 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
 
     async def _publish_move(self, move) -> None:
         """Tell a student how that went and give them the next one; tell the host they moved."""
-        result, nxt, progress, leaderboard = await self._move_frames(move)
+        result, nxt, progress, leaderboard, standings_to = await self._move_frames(move)
         await self._send_personal(move.participant.id, const.EV_ANSWER_RESULT, result)
         if move.awarded:
             await self._send_personal(
@@ -352,8 +358,9 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             await self._send_personal(move.participant.id, const.EV_QUESTION_STARTED, nxt)
         await self._broadcast(const.EV_PLAYER_PROGRESS, progress, audience=services.ROLE_HOST)
         if leaderboard is not None:
-            # Somebody finished — the waiting screens of everyone already done move too.
-            await self._broadcast(const.EV_LEADERBOARD_UPDATED, leaderboard)
+            # Somebody finished — the waiting screens of everyone already done move too, unless
+            # the leaderboard is off, when only the teacher sees it.
+            await self._broadcast(const.EV_LEADERBOARD_UPDATED, leaderboard, audience=standings_to)
 
     async def _send_personal(self, participant_id: int, event: str, data: dict) -> None:
         await self.channel_layer.group_send(
@@ -427,12 +434,14 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         try:
             while True:
                 await asyncio.sleep(BOARD_REFRESH_SECONDS)
-                status, leaderboard, fingerprint = await self._board_snapshot()
+                status, leaderboard, fingerprint, standings_to = await self._board_snapshot()
                 if status != const.STATUS_QUESTION_ACTIVE:
                     return
                 if fingerprint != self._board_seen:
                     self._board_seen = fingerprint
-                    await self._broadcast(const.EV_LEADERBOARD_UPDATED, leaderboard)
+                    await self._broadcast(
+                        const.EV_LEADERBOARD_UPDATED, leaderboard, audience=standings_to
+                    )
         except asyncio.CancelledError:  # pragma: no cover
             raise
         except Exception:  # pragma: no cover
@@ -463,10 +472,16 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         if question is None:
             return
 
-        await self._broadcast(
-            const.EV_QUESTION_ENDED,
-            events.question_ended(session, question, tally=tally, total=total),
-        )
+        closing = events.question_ended(session, question, tally=tally, total=total)
+        if session.setting("show_answers"):
+            await self._broadcast(const.EV_QUESTION_ENDED, closing)
+        else:
+            # The teacher kept the answers to themselves: the projector still needs the key to
+            # reveal it when they choose, but no student's frame carries it.
+            await self._broadcast(const.EV_QUESTION_ENDED, closing, audience=services.ROLE_HOST)
+            await self._broadcast(
+                const.EV_QUESTION_ENDED, events.without_key(closing), audience=services.ROLE_PLAYER
+            )
         if bool(session.setting("show_leaderboard_between")):
             await self._broadcast(const.EV_LEADERBOARD_UPDATED, await self._leaderboard())
 
@@ -530,7 +545,9 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         audience = message.get("audience")
         if audience and audience != self.role:
             return
-        await self.send_json({"type": message["event"], "data": message["data"]})
+        await self.send_json(
+            {"type": message["event"], "data": self._for_me(message["event"], message["data"])}
+        )
 
         # The player who was removed hears it and then goes. Closing here rather than
         # waiting for them to navigate away means the lobby count is right immediately.
@@ -550,8 +567,19 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
                 # The room's frame says "resumed"; this student's clock moved by the pause,
                 # and only their own state carries the new deadline.
                 state = await self._state()
-                await self.send_json({"type": const.EV_SESSION_STATE, "data": state})
+                await self.send_json(
+                    {"type": const.EV_SESSION_STATE, "data": self._for_me(const.EV_SESSION_STATE, state)}
+                )
                 self._arm_own_timer(state)
+
+    def _for_me(self, event: str, data):
+        """The frame as this socket may see it. Only a score-blind player's frames change, and
+        only until the game is over — the final standings are everybody's."""
+        if not self.score_blind or event == const.EV_GAME_FINISHED:
+            return data
+        if isinstance(data, dict) and data.get("status") in const.TERMINAL_STATUSES:
+            return data
+        return events.without_scores(data)
 
     async def _error(self, code: str, detail: str) -> None:
         await self.send_json({"type": const.EV_ERROR, "data": events.error(code, detail)})
@@ -570,15 +598,16 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         if role is None:
             return None
         student_paced = paced.is_student_paced(session)
+        hides_scores = not session.setting("reveal_correctness")
         if role == services.ROLE_HOST:
-            return role, None, student_paced
+            return role, None, student_paced, hides_scores
 
         participant = LiveQuizParticipant.objects.filter(session=session, user=user).first()
         if participant is None or participant.status == const.PARTICIPANT_KICKED:
             # Joining happens over REST, where the code is checked. Arriving at the socket
             # without a place means a stale tab or a guessed session id.
             return None
-        return role, participant.id, student_paced
+        return role, participant.id, student_paced, hides_scores
 
     @database_sync_to_async
     def _frozen_now(self) -> bool:
@@ -707,14 +736,19 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
         leaderboard = (
             events.leaderboard(services.participants_of(session)) if move.finished else None
         )
-        return result, nxt, progress, leaderboard
+        return result, nxt, progress, leaderboard, services.standings_audience(session)
 
     @database_sync_to_async
     def _board_snapshot(self):
         session = LiveQuizSession.objects.get(pk=self.session_id)
         players = services.participants_of(session)
         fingerprint = tuple((p.id, p.score, p.position, p.status) for p in players)
-        return session.status, events.leaderboard(players), fingerprint
+        return (
+            session.status,
+            events.leaderboard(players),
+            fingerprint,
+            services.standings_audience(session),
+        )
 
     @database_sync_to_async
     def _lobby_sync(self):

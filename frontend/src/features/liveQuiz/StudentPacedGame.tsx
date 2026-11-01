@@ -113,6 +113,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
   };
 
   const exit = () => router.push("/live");
+  const blind = room.config.reveal_correctness === false;
   const totalSeconds = question?.time_limit_seconds ?? 0;
   const rank = feedback?.rank ?? null;
 
@@ -121,9 +122,10 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
       <GameTopBar
         index={room.finished ? undefined : question?.index}
         total={room.questionTotal}
-        score={room.me?.score}
-        streak={room.me?.streak}
-        rank={rank}
+        // A room that hides correctness hides the score too — it is the same information.
+        score={blind ? undefined : room.me?.score}
+        streak={blind ? undefined : room.me?.streak}
+        rank={blind ? null : rank}
         muted={sounds.muted}
         onToggleMute={sounds.toggle}
         onExit={exit}
@@ -173,9 +175,11 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
             title="You finished!"
             subtitle="Waiting for your teacher to end the game. Standings are still moving."
           />
-          <GamePanel className="p-4">
-            <FinalStandings rows={room.leaderboard} highlightUserId={room.me?.user_id ?? null} limit={10} />
-          </GamePanel>
+          {room.config.show_leaderboard_between !== false && (
+            <GamePanel className="p-4">
+              <FinalStandings rows={room.leaderboard} highlightUserId={room.me?.user_id ?? null} limit={10} />
+            </GamePanel>
+          )}
         </div>
       )}
 

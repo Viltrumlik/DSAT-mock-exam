@@ -95,9 +95,11 @@ def normalize_config(raw: dict | None) -> dict:
     ):
         out[key] = bool(raw.get(key, defaults[key]))
 
-    # Showing the right answer while hiding whether you were right would make no sense.
+    # Showing the right answer while hiding whether you were right would make no sense — and
+    # neither would standings, which are only scores, and a score says how many you got right.
     if not out["reveal_correctness"]:
         out["show_answers"] = False
+        out["show_leaderboard_between"] = False
     # Power-ups are a student-paced thing; a teacher-paced room keeps one clock for everybody.
     if mode != const.MODE_STUDENT_PACED:
         out["powerups"] = False
@@ -327,6 +329,15 @@ def mark_disconnected(participant) -> LiveQuizParticipant:
 def touch(participant) -> None:
     """Heartbeat. Cheap: one column, no read."""
     LiveQuizParticipant.objects.filter(pk=participant.pk).update(last_seen_at=timezone.now())
+
+
+def standings_audience(session) -> str | None:
+    """Who may see the standings while the game runs: everyone, or only the host.
+
+    The final standings at ``game_finished`` go to everyone regardless — this is about the
+    game in progress, where a room with the leaderboard off keeps it to the teacher.
+    """
+    return None if session.setting("show_leaderboard_between") else ROLE_HOST
 
 
 def participants_of(session):
