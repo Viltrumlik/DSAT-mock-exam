@@ -165,6 +165,16 @@ class DebtWarningTests(TestCase):
         self.assertIn("more than 1", counts["blocked"])
         self.assertEqual(fake.sent, [])
 
+    def test_a_month_start_with_most_students_owing_goes_out(self):
+        # 2026-11-01: lc-up charges the month on the 1st, so 195 of 250 linked students owed at once.
+        # The guard against wrong lc-up balances must sit above every linked student, not below them.
+        for i in range(200):
+            self.learner(1000 + i, f"debtor{i}", balance=-500000, phone=f"998901{i:06d}")
+        fake = FakeEskiz()
+        counts = debt_warnings.send(fake, at(1))
+        self.assertNotIn("blocked", counts)
+        self.assertEqual(len(fake.sent), 200)
+
     def test_a_preview_of_another_day(self):
         self.learner(101, "aziz", balance=-150000, seen=at(18, month=10, hour=9))
         planned = debt_warnings.plan(at(18, month=10), today=date(2026, 11, 1))

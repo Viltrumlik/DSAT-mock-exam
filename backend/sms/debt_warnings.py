@@ -46,8 +46,9 @@ from .models import SmsMessage
 logger = logging.getLogger("sms.debt_warnings")
 
 STALE_AFTER = timedelta(hours=24)
-#: 221 linked learners on 2026-10-18; more warnings than this in one morning means lc-up's numbers are wrong.
-MAX_PER_RUN = 150
+#: Above every linked learner (250 on 2026-11-01), so only lc-up's numbers going wrong can reach it.
+#: At 150 it held back the first real run: lc-up charges the month on the 1st, and 195 owed at once.
+MAX_PER_RUN = 300
 #: How far back /ops/sms lists the runs.
 RUNS_DAYS = 60
 #: eskiz bills what it took (or may have): not what never left (FAILED) or what it refused (REJECTED).

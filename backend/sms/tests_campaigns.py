@@ -74,7 +74,9 @@ class Fixture(TestCase):
 
 class ResolveTests(Fixture):
     def resolve(self, **extra):
-        return campaigns.resolve(campaigns.clean(self.draft(**extra), now=NOW))
+        # The fixture's balances were seen at NOW; resolving against the real clock made them stale
+        # (> 24 h) from 2026-10-21 on and emptied every list.
+        return campaigns.resolve(campaigns.clean(self.draft(**extra), now=NOW), now=NOW)
 
     def test_students_by_id(self):
         malika = self.learner(101, "malika")
