@@ -25,7 +25,7 @@ from core.errors.api import Conflict, Forbidden, NotFound
 from users.permissions import IsAuthenticatedAndNotFrozen
 
 from . import constants as const
-from . import question_builder, services
+from . import gems, question_builder, services
 from .models import LiveQuizSession
 from .serializers import CreateSessionSerializer, JoinSerializer, session_summary
 
@@ -310,3 +310,46 @@ class HostOptionsView(APIView):
                 ],
             }
         )
+
+
+# ─── The gem shop ─────────────────────────────────────────────────────────────
+
+
+class ShopView(APIView):
+    """Your gems, what the shop sells, what you own and what you are wearing."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def get(self, request):
+        _require_enabled()
+        return Response(gems.shop_state(request.user))
+
+
+class ShopBuyView(APIView):
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request):
+        _require_enabled()
+        gems.buy(request.user, str(request.data.get("item") or ""))
+        return Response(gems.shop_state(request.user))
+
+
+class ShopClaimView(APIView):
+    """The one free starter character."""
+
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request):
+        _require_enabled()
+        gems.claim_starter(request.user, str(request.data.get("character") or ""))
+        return Response(gems.shop_state(request.user))
+
+
+class ShopEquipView(APIView):
+    permission_classes = [IsAuthenticatedAndNotFrozen]
+
+    def post(self, request):
+        _require_enabled()
+        skin = request.data.get("skin") or None
+        gems.equip(request.user, str(request.data.get("character") or ""), str(skin) if skin else None)
+        return Response(gems.shop_state(request.user))

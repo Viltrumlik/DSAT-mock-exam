@@ -28,7 +28,7 @@ from core.errors.api import AppError
 from users.permissions import IsAuthenticatedAndNotFrozen, is_frozen_learner
 
 from . import constants as const
-from . import events, paced, services
+from . import events, gems, paced, services
 from .state_machine import InvalidTransition
 from .models import LiveQuizParticipant, LiveQuizSession
 
@@ -479,6 +479,9 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             const.EV_GAME_FINISHED,
             {"leaderboard": await self._leaderboard(), "session": await self._room_state()},
         )
+        # What each student earned is theirs alone: sent to their own sockets, not the room.
+        for participant_id, payload in await self._gem_frames():
+            await self._send_personal(participant_id, const.EV_GEMS_AWARDED, payload)
 
     # ── The timer ────────────────────────────────────────────────────────────
 
@@ -708,6 +711,15 @@ class LiveQuizConsumer(AsyncJsonWebsocketConsumer):
             events.leaderboard(services.participants_of(session)) if move.finished else None
         )
         return result, nxt, progress, leaderboard
+
+    @database_sync_to_async
+    def _gem_frames(self):
+        # The payout already happened inside finish_game; asking again returns what was paid.
+        session = LiveQuizSession.objects.get(pk=self.session_id)
+        return [
+            (participant_id, events.gems_awarded(payout))
+            for participant_id, payout in gems.award_for_game(session).items()
+        ]
 
     @database_sync_to_async
     def _board_snapshot(self):

@@ -8,6 +8,7 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Radio } from "lucide-react";
@@ -16,6 +17,7 @@ import { Button, Card, EmptyState, Field, Input } from "@/features/classroom/ui"
 import { normalizeApiError } from "@/lib/apiError";
 
 import { liveQuizApi } from "./api";
+import { GemIcon, LiveAvatar } from "./avatars";
 
 const CODE_LENGTH = 6;
 
@@ -28,6 +30,8 @@ export function JoinLiveQuiz() {
     queryFn: () => liveQuizApi.mine(),
     refetchInterval: 15_000,
   });
+
+  const shop = useQuery({ queryKey: ["livequiz", "shop"], queryFn: () => liveQuizApi.shop() });
 
   const join = useMutation({
     mutationFn: (value: string) => liveQuizApi.join(value),
@@ -42,6 +46,26 @@ export function JoinLiveQuiz() {
           Enter the code your teacher is showing.
         </p>
       </div>
+
+      <Link
+        href="/live/shop"
+        className="flex items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 transition hover:border-primary/40"
+      >
+        {shop.data?.look ? (
+          <LiveAvatar character={shop.data.look.character} skin={shop.data.look.skin} size={44} />
+        ) : (
+          <GemIcon size={32} />
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-semibold">Avatar shop</span>
+          <span className="block text-xs text-muted-foreground">
+            {shop.data?.look ? "Change what the class sees in every game" : "Pick a free character to play as"}
+          </span>
+        </span>
+        <span className="inline-flex items-center gap-1 font-mono text-sm font-bold tabular-nums">
+          <GemIcon size={16} /> {shop.data?.balance ?? "—"}
+        </span>
+      </Link>
 
       <Card className="space-y-4">
         <Field label="Game code">

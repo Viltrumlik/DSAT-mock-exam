@@ -33,7 +33,7 @@ import {
 } from "./game";
 import type { LiveParticipant } from "./api";
 import { useGameSounds } from "./sounds";
-import { initials, tileColor } from "./theme";
+import { PlayerAvatar } from "./avatars";
 import { useLiveQuiz, useSecondsLeft, type LiveQuizRoom } from "./useLiveQuiz";
 import { ConnectionBanner } from "./ui";
 
@@ -158,13 +158,7 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
                 className="group inline-flex items-center gap-2 rounded-full bg-white/10 py-1.5 pl-1.5 pr-2 text-sm font-semibold"
                 style={{ opacity: person.present ? 1 : 0.5 }}
               >
-                <span
-                  className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-black"
-                  style={{ background: tileColor(i) }}
-                  aria-hidden
-                >
-                  {initials(person.display_name)}
-                </span>
+                <PlayerAvatar avatar={person.avatar} name={person.display_name} size={30} colorIndex={i} />
                 {person.display_name}
                 <button
                   type="button"

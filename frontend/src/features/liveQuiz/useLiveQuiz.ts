@@ -70,6 +70,14 @@ export interface OwnFeedback extends AnswerOutcome {
   question: LiveQuestion | null;
 }
 
+export interface GemsAwarded {
+  earned: number;
+  balance: number;
+  /** The daily cap cut this game's share. */
+  capped: boolean;
+  breakdown: { correct?: number; finish?: number; podium?: number; total?: number };
+}
+
 export interface LiveQuizRoom {
   status: LiveQuizStatus | "CONNECTING";
   connection: LiveSocketStatus;
@@ -93,6 +101,8 @@ export interface LiveQuizRoom {
   feedback: OwnFeedback | null;
   /** Host, student-paced: every student's answers so far, keyed by participant id. */
   board: Record<number, BoardCell[]>;
+  /** What this student earned when the game finished. */
+  gems: GemsAwarded | null;
   participants: LiveParticipant[];
   me: LiveParticipant | null;
   myAnswer: AnswerOutcome | null;
@@ -126,6 +136,7 @@ const EMPTY: LiveQuizRoom = {
   awarded: null,
   feedback: null,
   board: {},
+  gems: null,
   participants: [],
   me: null,
   myAnswer: null,
@@ -384,6 +395,9 @@ export function reduce(prev: LiveQuizRoom, frame: LiveQuizFrame, at: number = Da
         error: null,
       };
     }
+
+    case "gems_awarded":
+      return { ...prev, gems: data as GemsAwarded };
 
     case "game_paused":
       return { ...prev, status: "PAUSED" };

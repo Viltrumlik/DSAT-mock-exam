@@ -244,6 +244,7 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
           me={room.me}
           leaderboard={room.leaderboard}
           questionTotal={room.questionTotal}
+          gems={room.gems}
         />
       )}
 

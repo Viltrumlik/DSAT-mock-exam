@@ -28,7 +28,7 @@ from classes.capabilities import classroom_capabilities
 from core.errors.api import BadRequest, Conflict, Forbidden, NotFound
 
 from . import constants as const
-from . import paced, question_builder, scoring, state_machine
+from . import gems, paced, question_builder, scoring, state_machine
 from .engine_db_guard import TransitionConflict, require_session_update
 from .models import (
     LiveQuizAnswer,
@@ -330,8 +330,11 @@ def touch(participant) -> None:
 
 
 def participants_of(session):
+    # The avatar look rides along: every board, lobby and standings frame draws it.
     return list(
-        session.participants.exclude(status=const.PARTICIPANT_KICKED).order_by("-score", "joined_at")
+        session.participants.exclude(status=const.PARTICIPANT_KICKED)
+        .select_related("user__live_avatar_look")
+        .order_by("-score", "joined_at")
     )
 
 
@@ -467,6 +470,8 @@ def finish_game(*, session) -> LiveQuizSession:
     )
     session.refresh_from_db()
     _write_ranks(session)
+    # Places are written, so the podium is known: pay out. Once per game, capped per day.
+    gems.award_for_game(session)
     return session
 
 
@@ -741,6 +746,7 @@ def results_report(session) -> dict:
         (row.participant_id, row.question_id): row
         for row in LiveQuizAnswer.objects.filter(session=session)
     }
+    gems_paid = gems.earned_in(session)
 
     rows = []
     for player in players:
@@ -771,6 +777,7 @@ def results_report(session) -> dict:
                 "correct_count": player.correct_count,
                 "answered_count": player.answered_count,
                 "best_streak": player.best_streak,
+                "gems": gems_paid.get(player.user_id, 0),
                 # Out of the questions they actually met — a student who joined late or left
                 # early is judged on what was in front of them.
                 "accuracy": round(100 * player.correct_count / seen) if seen else None,

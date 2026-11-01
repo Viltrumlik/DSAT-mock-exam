@@ -20,6 +20,7 @@ import { AssessmentText } from "@/lib/assessmentText";
 import { cn } from "@/lib/cn";
 
 import { liveQuizApi, type BoardCell, type LiveParticipant } from "./api";
+import { PlayerAvatar } from "./avatars";
 import { ConnectionBanner } from "./ui";
 import type { LiveQuizRoom, useLiveQuiz } from "./useLiveQuiz";
 
@@ -183,6 +184,7 @@ export function HostDashboard({ room, actions }: { room: LiveQuizRoom; actions: 
                             className={cn("h-2 w-2 shrink-0 rounded-full", player.present ? "bg-emerald-500" : "bg-slate-300")}
                             title={player.present ? "Connected" : "Not connected"}
                           />
+                          <PlayerAvatar avatar={player.avatar} name={player.display_name} size={26} colorIndex={index} />
                           <span className="truncate">{player.display_name}</span>
                           {player.finished && <Pill tone="success">done</Pill>}
                         </span>

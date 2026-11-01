@@ -11,6 +11,8 @@ student reading the socket in devtools sees exactly what a student is meant to s
 
 from __future__ import annotations
 
+from django.core.exceptions import ObjectDoesNotExist
+
 from . import constants as const
 
 
@@ -79,6 +81,26 @@ def participant_row(participant) -> dict:
         # Student-paced: how many of their questions are behind them, and whether that is all.
         "progress": participant.position,
         "finished": participant.finished_at is not None,
+        "avatar": avatar_of(participant),
+    }
+
+
+def avatar_of(participant) -> dict | None:
+    """The look a player is wearing, or None — the client then draws their initials."""
+    try:
+        look = participant.user.live_avatar_look
+    except ObjectDoesNotExist:
+        return None
+    return look.as_wire()
+
+
+def gems_awarded(payout: dict) -> dict:
+    """What one student earned from a game that just finished."""
+    return {
+        "earned": payout.get("earned", 0),
+        "balance": payout.get("balance", 0),
+        "capped": bool(payout.get("capped")),
+        "breakdown": payout.get("breakdown", {}),
     }
 
 

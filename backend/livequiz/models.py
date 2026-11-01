@@ -305,3 +305,120 @@ class LiveQuizAnswer(TimestampedModel):
 
     def __str__(self) -> str:
         return f"Answer p{self.participant_id} q{self.question_id} ({'correct' if self.is_correct else 'wrong'})"
+
+
+# ─── Gems: the Live Quiz's own currency, and the avatars it buys ─────────────────
+#
+# Kept apart from the school's coins on purpose: coins are worth money (1 coin = 1,000 so'm)
+# and a live game is easy to replay, so a game must never be a way to mint them. Gems buy
+# avatars and nothing else, and cannot be converted or passed on.
+
+
+def _today():
+    from django.utils import timezone
+
+    return timezone.localdate()
+
+
+class GemWallet(models.Model):
+    """A student's gem balance. ``balance`` caches ``sum(GemTransaction.amount)``; the ledger
+    is the truth and the column exists so a balance read is one row."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="gem_wallet"
+    )
+    balance = models.IntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "livequiz_gem_wallet"
+
+    def __str__(self) -> str:
+        return f"{self.user_id}: {self.balance} gems"
+
+
+class GemTransaction(models.Model):
+    """One movement of gems. Never edited, never deleted: a correction is a new ADJUST row."""
+
+    KIND_EARN = "EARN"
+    KIND_SPEND = "SPEND"
+    KIND_ADJUST = "ADJUST"
+    KIND_CHOICES = [
+        (KIND_EARN, "Earned in a game"),
+        (KIND_SPEND, "Spent in the shop"),
+        (KIND_ADJUST, "Adjusted by staff"),
+    ]
+
+    wallet = models.ForeignKey(GemWallet, on_delete=models.CASCADE, related_name="transactions")
+    kind = models.CharField(max_length=8, choices=KIND_CHOICES, db_index=True)
+    amount = models.IntegerField()
+    balance_after = models.IntegerField()
+    session = models.ForeignKey(
+        LiveQuizSession,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="gem_transactions",
+    )
+    item_key = models.CharField(max_length=64, blank=True, default="")
+    # The Tashkent day it counts toward, for the daily earning cap.
+    day = models.DateField(default=_today, db_index=True)
+    # EARN: how the amount was made up — {"correct", "finish", "podium", "total", "capped"}.
+    detail = models.JSONField(default=dict, blank=True)
+    note = models.CharField(max_length=200, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "livequiz_gem_transaction"
+        ordering = ["-created_at", "-id"]
+        indexes = [models.Index(fields=["wallet", "kind", "day"])]
+        constraints = [
+            # A game pays a student once, whatever calls the payout twice.
+            models.UniqueConstraint(
+                fields=["wallet", "session"],
+                condition=Q(kind="EARN"),
+                name="uniq_gem_earn_per_game",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.wallet_id} {self.kind} {self.amount:+d}"
+
+
+class OwnedAvatarItem(models.Model):
+    """An avatar item a student owns — see ``avatars`` for the keys."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="avatar_items"
+    )
+    item_key = models.CharField(max_length=64)
+    acquired_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "livequiz_owned_avatar_item"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "item_key"], name="uniq_owned_avatar_item"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.user_id} owns {self.item_key}"
+
+
+class AvatarLook(models.Model):
+    """What a student is wearing: a character, and optionally one of its skins."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="live_avatar_look"
+    )
+    character = models.CharField(max_length=32)
+    skin = models.CharField(max_length=16, blank=True, default="")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "livequiz_avatar_look"
+
+    def __str__(self) -> str:
+        return f"{self.user_id} wears {self.character}{':' + self.skin if self.skin else ''}"
+
+    def as_wire(self) -> dict:
+        return {"character": self.character, "skin": self.skin or None}

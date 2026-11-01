@@ -94,6 +94,36 @@ export interface LiveParticipant {
   /** Only on your own row. */
   powerups?: PowerUpKey[];
   question_total?: number;
+  /** The avatar they wear; null draws their initials. */
+  avatar?: AvatarWire | null;
+}
+
+export interface AvatarWire {
+  character: string;
+  skin: AvatarSkin | null;
+}
+
+export type AvatarSkin = "rare" | "epic" | "legendary";
+
+export interface ShopItem {
+  key: string;
+  kind: "character" | "skin";
+  character: string;
+  tier: "common" | "rare" | "epic" | "legendary";
+  name: string;
+  price: number;
+  starter: boolean;
+  owned: boolean;
+}
+
+export interface ShopState {
+  balance: number;
+  today_earned: number;
+  daily_cap: number;
+  can_claim_starter: boolean;
+  starters: string[];
+  look: AvatarWire | null;
+  items: ShopItem[];
 }
 
 export interface LiveChoice {
@@ -138,6 +168,8 @@ export interface LiveResultsReport {
     correct_count: number;
     answered_count: number;
     best_streak?: number;
+    /** Gems this game paid them. */
+    gems?: number;
     /** Out of the questions they actually met; null when they met none. */
     accuracy?: number | null;
     answers: Array<{
@@ -236,5 +268,27 @@ export const liveQuizApi = {
   }> {
     const { data } = await api.get("/livequiz/options/", { params: { classroom: classroomId } });
     return data;
+  },
+
+  /** The gem shop. Every move answers with the whole shop again, so the page never has to
+   *  work out a balance or an "owned" flag for itself. */
+  async shop(): Promise<ShopState> {
+    const { data } = await api.get("/livequiz/shop/");
+    return data as ShopState;
+  },
+
+  async buy(item: string): Promise<ShopState> {
+    const { data } = await api.post("/livequiz/shop/buy/", { item });
+    return data as ShopState;
+  },
+
+  async claimStarter(character: string): Promise<ShopState> {
+    const { data } = await api.post("/livequiz/shop/claim/", { character });
+    return data as ShopState;
+  },
+
+  async equip(character: string, skin: AvatarSkin | null): Promise<ShopState> {
+    const { data } = await api.post("/livequiz/shop/equip/", { character, skin });
+    return data as ShopState;
   },
 };

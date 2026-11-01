@@ -1,6 +1,37 @@
 from django.contrib import admin
 
-from .models import LiveQuizAnswer, LiveQuizParticipant, LiveQuizQuestion, LiveQuizSession
+from .models import (
+    GemTransaction,
+    GemWallet,
+    LiveQuizAnswer,
+    LiveQuizParticipant,
+    LiveQuizQuestion,
+    LiveQuizSession,
+)
+
+
+@admin.register(GemWallet)
+class GemWalletAdmin(admin.ModelAdmin):
+    """Read-only: a balance moves only through the ledger (``gems.grant`` for a correction)."""
+
+    list_display = ("user", "balance", "updated_at")
+    search_fields = ("user__email", "user__first_name", "user__last_name")
+    raw_id_fields = ("user",)
+    readonly_fields = ("user", "balance", "updated_at")
+
+
+@admin.register(GemTransaction)
+class GemTransactionAdmin(admin.ModelAdmin):
+    list_display = ("wallet", "kind", "amount", "balance_after", "item_key", "day", "created_at")
+    list_filter = ("kind", "day")
+    search_fields = ("wallet__user__email", "item_key")
+    raw_id_fields = ("wallet", "session")
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(LiveQuizSession)

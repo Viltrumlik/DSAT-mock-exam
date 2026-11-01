@@ -85,6 +85,7 @@ EV_PONG = "pong"
 EV_PLAYER_PROGRESS = "player_progress"      # to the host: one student just moved on
 EV_POWERUP_AWARDED = "powerup_awarded"      # to the student who earned it
 EV_POWERUP_APPLIED = "powerup_applied"      # to the student who used it
+EV_GEMS_AWARDED = "gems_awarded"            # to each student, once the game has finished
 
 
 # ─── Commands, client → server ────────────────────────────────────────────────
