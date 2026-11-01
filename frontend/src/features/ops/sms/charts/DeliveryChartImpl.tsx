@@ -39,7 +39,7 @@ export function DeliveryChartImpl({ data, height = 260 }: DeliveryChartProps) {
             stroke="var(--sms-accent)"
             strokeWidth={2}
             dot={{ r: 3, fill: "var(--sms-accent)", strokeWidth: 0 }}
-            connectNulls
+            connectNulls={false}
           />
         </ComposedChart>
       </ResponsiveContainer>
