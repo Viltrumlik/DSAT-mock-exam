@@ -235,7 +235,7 @@ class OverviewTests(ApiFixture):
         self.assertEqual(data["eskiz"], {"token_cached": False, "login_refused": False, "last_error": "HTTP 422: mobile_phone: …"})
         self.assertEqual(data["debt"], {
             "enabled": True, "env_enabled": True, "db_enabled": True, "freeze_enabled": True, "hour": 10,
-            "next_day": "2026-11-01", "next_count": 1,
+            "next_day": "2026-11-01", "next_count": 1, "today_sent": 0, "today_left": 0,
         })
         self.assertEqual(data["today"], {"total": 2, "by_status": {"DELIVERED": 1, "REJECTED": 1}})
         self.assertEqual(data["last7"]["total"], 2)
@@ -244,6 +244,32 @@ class OverviewTests(ApiFixture):
         with mock.patch("sms.views._today", return_value=date(2026, 11, 5)):
             debt = self.get("overview/").json()["debt"]
         self.assertEqual((debt["next_day"], debt["next_count"]), ("2026-11-05", 1))
+        self.assertEqual((debt["today_sent"], debt["today_left"]), (0, 1))
+
+    def warned(self, day, status="DELIVERED"):
+        SmsMessage.objects.create(
+            kind="debt_warning", run_on=day, dedupe_key="student:101", phone="998901234567", text="x", status=status,
+        )
+
+    def test_after_todays_run_next_moves_to_the_next_warning_day(self):
+        # 2026-11-01 on prod: the card still said "Next: 1 Nov · 195 students" after all 195 had gone.
+        self.warned(date(2026, 11, 3))
+        with mock.patch("sms.views._today", return_value=date(2026, 11, 3)):
+            debt = self.get("overview/").json()["debt"]
+        self.assertEqual((debt["today_sent"], debt["today_left"]), (1, 0))
+        self.assertEqual((debt["next_day"], debt["next_count"]), ("2026-11-04", 1))
+
+    def test_after_the_last_days_run_next_is_the_1st_of_next_month(self):
+        self.warned(date(2026, 12, 5))
+        with mock.patch("sms.views._today", return_value=date(2026, 12, 5)):
+            debt = self.get("overview/").json()["debt"]
+        self.assertEqual(debt["next_day"], "2027-01-01")
+
+    def test_a_failed_warning_is_still_left_to_send(self):
+        self.warned(date(2026, 11, 3), status="FAILED")
+        with mock.patch("sms.views._today", return_value=date(2026, 11, 3)):
+            debt = self.get("overview/").json()["debt"]
+        self.assertEqual((debt["today_sent"], debt["today_left"], debt["next_day"]), (0, 1, "2026-11-03"))
 
     @override_settings(LCUP_DEBT_FREEZE_ENABLED=False)
     def test_no_next_day_while_the_freeze_is_off(self):

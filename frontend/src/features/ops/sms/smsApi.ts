@@ -57,6 +57,9 @@ export interface SmsOverview {
     /** "YYYY-MM-DD", Tashkent; null when there is none ahead. */
     next_day: string | null;
     next_count: number;
+    /** On a warning day: the warnings today's runs did, and those still to go (0 / 0 on other days). */
+    today_sent: number;
+    today_left: number;
   };
   today: { total: number; by_status: StatusCounts };
   last7: { total: number; by_status: StatusCounts };

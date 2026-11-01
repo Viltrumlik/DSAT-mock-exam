@@ -30,7 +30,9 @@ This file is binding for both lanes of `2026-10-18-sms-ops-panel.md`.
     "freeze_enabled": true,
     "hour": 10,
     "next_day": "2026-11-01",
-    "next_count": 0
+    "next_count": 0,
+    "today_sent": 0,
+    "today_left": 0
   },
   "today": { "total": 2, "by_status": { "DELIVERED": 2 } },
   "last7": { "total": 2, "by_status": { "DELIVERED": 2 } }

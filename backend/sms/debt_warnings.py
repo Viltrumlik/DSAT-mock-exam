@@ -93,6 +93,16 @@ def next_warning_day(today):
     return date(today.year + (today.month == 12), today.month % 12 + 1, 1)
 
 
+def following_warning_day(day):
+    """The warning day after ``day``: tomorrow inside the warning days, else the 1st of next month."""
+    if debt_freeze_day() <= 1:
+        return None
+    tomorrow = day + timedelta(days=1)
+    if tomorrow.month == day.month and is_warning_day(tomorrow):
+        return tomorrow
+    return date(day.year + (day.month == 12), day.month % 12 + 1, 1)
+
+
 def _template_for(today, row):
     """(template, eskiz id) — days 1..freeze day − 2 the warning, the last day before the freeze its
     own ("Bugun oxirgi kun!"). Raises ``TemplateError`` when a pattern and its slots disagree."""
