@@ -16,7 +16,7 @@ vi.mock("next/link", () => ({
 }));
 vi.mock("@/features/ops/sms/smsHooks", () => ({ useSmsCampaigns: () => campaigns() }));
 
-const { CampaignsPanel } = await import("@/features/ops/sms/CampaignsPanel");
+const { CampaignsPanel, resultLabel } = await import("@/features/ops/sms/CampaignsPanel");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -73,6 +73,10 @@ describe("CampaignsPanel", () => {
     });
     expect(container.querySelector("li svg text")?.textContent).toBe("128/142");
     expect(container.querySelector('li [role="img"]')?.getAttribute("aria-label")).toBe("128 of 142 delivered");
+  });
+
+  it("counts what has gone so far while it is sending", () => {
+    expect(resultLabel({ result: { delivered: 41, undelivered: 2 } })).toBe("43 sent · 41 delivered");
   });
 
   it("has no ring before anything goes out, and a live dot only while sending", async () => {

@@ -22,7 +22,9 @@ import { NEW_CAMPAIGN_PATH, campaignHref } from "./smsTabs";
 export function resultLabel(c: Pick<Campaign, "result">): string {
   const r = c.result ?? {};
   if (!r.sent && !r.failed && !r.delivered) return "";
-  const parts = [`${r.sent ?? 0} sent`, `${r.delivered ?? 0} delivered`];
+  // `sent` is written when it finishes; until then the live counts are what has gone.
+  const sent = Math.max(r.sent ?? 0, (r.delivered ?? 0) + (r.undelivered ?? 0));
+  const parts = [`${sent} sent`, `${r.delivered ?? 0} delivered`];
   if (r.failed) parts.push(`${r.failed} failed`);
   if (r.uncertain) parts.push(`${r.uncertain} uncertain`);
   return parts.join(" · ");

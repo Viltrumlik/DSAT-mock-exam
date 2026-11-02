@@ -258,8 +258,9 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
       {maybeSent ? <Alert tone="danger">{MAYBE_SENT}</Alert> : null}
       {refused && refused.key === live.key ? <Alert tone="danger">{refused.text}</Alert> : null}
 
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_300px] md:items-start">
-        <div className="space-y-3">
+      {/* minmax(0,1fr) on a phone too: an auto column grows to a nowrap line and pushes the page sideways. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3 md:grid-cols-[minmax(0,1fr)_300px] md:items-start">
+        <div className="min-w-0 space-y-3">
           <Card mark="①" title="Who" summary={whoSummary} open={open === "who"} onOpen={() => setOpen("who")}>
             <AudienceStep value={who} onChange={setWho} allowed={KINDS} names={names} />
             {body && shown ? (
