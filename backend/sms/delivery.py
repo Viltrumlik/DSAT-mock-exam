@@ -2,8 +2,9 @@
 
 ``deliver`` writes the day's row before the request leaves. The unique (kind, day, key) is the
 lock: a second run the same day — the beat firing twice, a person re-running — finds the row and
-sends nothing, unless that SMS is FAILED: eskiz was never reached, so nothing left and it may go
-again. SENT, UNCERTAIN (it may have left) and PENDING (being sent, or died mid-request) never do.
+sends nothing, unless that SMS is FAILED: eskiz was not reached, or refused it for want of balance,
+so nothing left and it may go again. SENT, UNCERTAIN (it may have left) and PENDING (being sent, or
+died mid-request) never do, and neither does REJECTED (any other refusal, which would only repeat).
 """
 
 from __future__ import annotations

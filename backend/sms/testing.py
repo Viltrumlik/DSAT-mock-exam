@@ -1,6 +1,8 @@
-"""A stand-in for :class:`sms.eskiz.EskizClient` that records what would have been sent."""
+"""Stand-ins for eskiz: :class:`FakeEskiz` for the client, :class:`EskizAccount` for its far end."""
 
-from .eskiz import ACCEPTED, EskizError, SendResult, StatusResult
+from django.core.cache.backends.locmem import LocMemCache
+
+from .eskiz import ACCEPTED, EskizClient, EskizError, SendResult, StatusResult
 
 
 class FakeEskiz:
@@ -66,6 +68,51 @@ class FakeEskiz:
         self.balance_calls += 1
         self._account()
         return self.balance_value
+
+
+class _Answer:
+    def __init__(self, status_code, body):
+        self.status_code = status_code
+        self.body = body
+
+    def json(self):
+        return self.body
+
+
+class EskizAccount:
+    """eskiz's end of the wire, to run the real client through a morning with no money on the account:
+    a send is refused in eskiz's words until ``top_up``, then taken. ``refused`` maps a phone to the
+    refusal it gets whatever the balance ("perfectum: Not allowed"). ``asked`` counts the sends that
+    reached eskiz, ``taken`` lists the phones it took, one per SMS."""
+
+    def __init__(self, *, refused=None):
+        self.funded = False
+        self.refused = dict(refused or {})
+        self.asked = 0
+        self.taken = []
+
+    def top_up(self):
+        self.funded = True
+
+    def client(self) -> EskizClient:
+        return EskizClient(
+            base_url="https://eskiz.test/api", email="ops@example.uz", secret="key", sender="4546",
+            session=self, cache=LocMemCache(f"eskiz-account-{id(self)}", {}),
+        )
+
+    def request(self, method, url, data=None, json=None, headers=None, timeout=None):
+        if url.endswith("/auth/login"):
+            return _Answer(200, {"data": {"token": "jwt"}})
+        if url.endswith("/message/sms/check"):
+            return _Answer(200, {"data": {"forbidden": False, "keywords": []}})
+        self.asked += 1
+        phone = data["mobile_phone"]
+        if phone in self.refused:
+            return _Answer(400, {"message": self.refused[phone]})
+        if not self.funded:
+            return _Answer(400, {"message": "Please, fill the balance"})
+        self.taken.append(phone)
+        return _Answer(200, {"id": f"req-{len(self.taken)}", "message": "Waiting for SMS provider", "status": "waiting"})
 
 
 def configure(**fields):

@@ -202,9 +202,9 @@ def give_operator_rejections_one_more_try(run_on, now) -> int:
 
 def send(client, now, *, retry_only: bool = False) -> dict:
     """``retry_only`` is the 11:00 and 12:00 runs: only the warnings an earlier run today could not
-    get out (FAILED — eskiz unreachable, a refused login) go again, and once each, an SMS the operator
-    rejected (``give_operator_rejections_one_more_try``); never a new one, never one that may have
-    left. One student going wrong (the database, the cache) does not stop the rest."""
+    get out (FAILED — eskiz unreachable, a refused login, no balance) go again, and once each, an
+    SMS the operator rejected (``give_operator_rejections_one_more_try``); never a new one, never
+    one that may have left. One student going wrong (the database, the cache) does not stop the rest."""
     run_on = timezone.localdate(now)
     retry = None
     if retry_only:

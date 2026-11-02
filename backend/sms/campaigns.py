@@ -17,7 +17,7 @@ whatever already left is skipped — and three things do run it again:
   SENDING; one whose heartbeat (``started_at``, bumped every HEARTBEAT_EVERY recipients) is older
   than STUCK_AFTER is claimed again in one UPDATE and finished;
 * **the circuit breaker**: BREAKER_AFTER failed or uncertain sends in a row stop the campaign
-  (FAILED) with the rest unclaimed — eskiz is down, and 300 failures help nobody;
+  (FAILED) with the rest unclaimed — eskiz is down or out of balance, and 300 failures help nobody;
 * **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again. A stopped
   (FAILED) one goes on as a resume, the unreached sent too. A DONE one sends only what FAILED: it
   did reach everyone it meant to, and a student who joined the class since never had this text.

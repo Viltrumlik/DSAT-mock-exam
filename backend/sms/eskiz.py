@@ -17,6 +17,10 @@ tried once per SMS — 150 refused logins in a minute on an account lc-up shares
 balance) with a 200; a send is accepted only when the body says ``status == "waiting"`` and has an
 ``id``, the request id its delivery status is read by.
 
+**No balance is the one refusal that may go again.** eskiz did not take the SMS and a top-up is all
+it waits for, so it comes back FAILED ("HTTP 400: Please, fill the balance", 2026-11-02). Any other
+refusal comes back REJECTED: it would only repeat. A 5xx stays UNCERTAIN whatever its body says.
+
 ``send`` and ``status`` never raise: an eskiz outage must not break the task that calls them. The
 account reads (``templates``, ``nicks``, ``balance``) and ``submit_template`` are for a person at a
 terminal or in /ops/sms and raise :class:`EskizError`. Nothing here writes a phone number into an error: eskiz's messages quote it.
@@ -116,13 +120,24 @@ def _expired(resp) -> bool:
     return resp.status_code == 500 and "token has expired" in _message(resp).lower()
 
 
+def no_balance(text) -> bool:
+    """Whether these are eskiz's words for an account with no money: "Please, fill the balance"."""
+    return "balance" in str(text or "").lower()
+
+
 def _send_result(resp) -> SendResult:
     body = _body(resp)
     request_id = str(body.get("id") or "")
     if resp.status_code == 200 and str(body.get("status") or "").lower() == "waiting" and request_id:
         return SendResult(ACCEPTED, request_id=request_id)
-    outcome = UNCERTAIN if resp.status_code >= 500 else REJECTED
-    return SendResult(outcome, error=_mask(f"HTTP {resp.status_code}: {_message(resp)}"))
+    message = _message(resp)
+    if resp.status_code >= 500:
+        outcome = UNCERTAIN
+    elif no_balance(message):
+        outcome = FAILED
+    else:
+        outcome = REJECTED
+    return SendResult(outcome, error=_mask(f"HTTP {resp.status_code}: {message}"))
 
 
 class EskizClient:

@@ -5,15 +5,16 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from unittest import mock
 
+from django.core.cache import cache
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from lcup.models import LcupStudentLink, LinkStatus
-from sms import debt_warnings
+from sms import debt_warnings, tasks
 from sms.eskiz import FAILED
 from sms.models import EskizTemplate, SmsMessage
 from sms.templates import SmsTemplate
-from sms.testing import FakeEskiz, configure
+from sms.testing import EskizAccount, FakeEskiz, configure
 from users.models import User
 
 WARN = SmsTemplate(
@@ -275,6 +276,103 @@ class DebtWarningTests(TestCase):
         fake = FakeEskiz()
         debt_warnings.send(fake, at(5))
         self.assertEqual(fake.sent[0][1], "Bugun oxirgi kun! Testov Aziz, 150000 so'm.")
+
+
+AZIZ_PHONE, MALIKA_PHONE, PERFECTUM_PHONE = "998901111111", "998902222222", "998981234567"
+
+
+@override_settings(
+    LCUP_DEBT_FREEZE_ENABLED=True, LCUP_DEBT_FREEZE_DAY=6, SMS_DEBT_WARNINGS_ENABLED=True,
+    ESKIZ_EMAIL="ops@example.uz", ESKIZ_SECRET_KEY="key",
+)
+class NoBalanceTests(TestCase):
+    """2026-11-02: the balance ran out before the 10:00 run, eskiz refused 194 warnings, the owner topped
+    up at 14:00 and nothing happened by itself. The real tasks and client, only eskiz's end is a stand-in."""
+
+    def setUp(self):
+        use(WARN)
+        cache.delete(tasks.RUNNING_KEY)
+        self.account = EskizAccount(refused={PERFECTUM_PHONE: "perfectum: Not allowed"})
+        self.client_ = self.account.client()
+        self.debtor(101, "aziz", AZIZ_PHONE)
+        self.debtor(102, "malika", MALIKA_PHONE)
+
+    def debtor(self, lcup_id, username, phone):
+        user = User.objects.create_user(None, password=None, username=username, role="student")
+        LcupStudentLink.objects.create(
+            lcup_student_id=lcup_id, name=username.title(), user=user, status=LinkStatus.CONFIRMED, phone=phone,
+            balance=Decimal(-150000), balance_seen_at=at(1, hour=9),
+        )
+
+    def run_task(self, task, hour):
+        with (
+            mock.patch("django.utils.timezone.now", return_value=at(1, hour=hour)),
+            mock.patch("sms.eskiz.default_client", return_value=self.client_),
+        ):
+            return task()
+
+    def statuses(self):
+        return dict(SmsMessage.objects.values_list("dedupe_key", "status"))
+
+    def test_a_run_with_no_balance_leaves_failed_rows(self):
+        counts = self.run_task(tasks.debt_warnings_tick, 10)
+        self.assertEqual(counts["failed"], 2)
+        self.assertEqual(self.account.taken, [])
+        self.assertEqual(
+            list(SmsMessage.objects.values_list("status", "error", "sent_at").distinct()),
+            [(SmsMessage.STATUS_FAILED, "HTTP 400: Please, fill the balance", None)],
+        )
+
+    def test_a_retry_after_a_top_up_sends_them_once(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.account.top_up()
+        counts = self.run_task(tasks.retry_debt_warnings, 14)
+        self.assertEqual(counts["sent"], 2)
+        self.assertCountEqual(self.account.taken, [AZIZ_PHONE, MALIKA_PHONE])
+        self.assertEqual(set(self.statuses().values()), {SmsMessage.STATUS_SENT})
+
+    def test_the_second_retry_sends_nothing(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.account.top_up()
+        self.run_task(tasks.retry_debt_warnings, 14)
+        self.assertEqual(self.run_task(tasks.retry_debt_warnings, 14)["blocked"], "nothing to retry")
+        self.assertEqual(len(self.account.taken), 2)
+
+    def test_the_hourly_retry_heals_a_top_up_made_before_it(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.run_task(tasks.debt_warnings_tick, 11)  # still no money: refused again, nothing lost
+        self.assertEqual(self.account.taken, [])
+        self.account.top_up()
+        self.assertEqual(self.run_task(tasks.debt_warnings_tick, 12)["sent"], 2)
+        self.assertEqual(len(self.account.taken), 2)
+
+    def test_send_now_after_a_top_up_sends_them_once(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.account.top_up()
+        self.assertEqual(self.run_task(tasks.debt_warnings_now, 14)["sent"], 2)
+        self.assertEqual(self.run_task(tasks.debt_warnings_now, 14)["already_sent"], 2)
+        self.assertEqual(len(self.account.taken), 2)
+
+    def test_someone_who_paid_in_between_gets_nothing(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        LcupStudentLink.objects.filter(lcup_student_id=102).update(balance=Decimal(0))
+        self.account.top_up()
+        self.run_task(tasks.retry_debt_warnings, 14)
+        self.assertEqual(self.account.taken, [AZIZ_PHONE])
+        self.assertEqual(self.statuses()["student:102"], SmsMessage.STATUS_FAILED)
+
+    def test_a_refusal_that_would_only_repeat_stays_rejected(self):
+        self.debtor(103, "bek", PERFECTUM_PHONE)
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.assertEqual(self.statuses()["student:103"], SmsMessage.STATUS_REJECTED)
+        self.account.top_up()
+        self.run_task(tasks.retry_debt_warnings, 14)
+        self.assertCountEqual(self.account.taken, [AZIZ_PHONE, MALIKA_PHONE])
+        rejected = SmsMessage.objects.get(dedupe_key="student:103")
+        self.assertEqual(
+            (rejected.status, rejected.error, rejected.attempts),
+            (SmsMessage.STATUS_REJECTED, "HTTP 400: perfectum: Not allowed", 1),
+        )
 
 
 class RunsTests(TestCase):

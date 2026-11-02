@@ -14,7 +14,7 @@ from sms import templates as T
 from sms.campaigns import CampaignRefused
 from sms.eskiz import ACCEPTED, FAILED, UNCERTAIN
 from sms.models import EskizTemplate, SmsCampaign, SmsMessage
-from sms.testing import FakeEskiz
+from sms.testing import EskizAccount, FakeEskiz
 from users.models import User
 
 NOW = timezone.make_aware(datetime(2026, 10, 20, 15, 0))
@@ -754,6 +754,39 @@ class CircuitBreakerTests(Fixture):
         campaigns.dispatch_due(FakeEskiz(ACCEPTED, outcomes=[FAILED] * 4), NOW)
         campaign.refresh_from_db()
         self.assertEqual((campaign.status, campaign.result["failed"], campaign.result["sent"]), (SmsCampaign.STATUS_DONE, 4, 1))
+
+    def test_no_balance_stops_the_campaign_and_retry_finishes_it_after_a_top_up(self):
+        self.learners(9)
+        campaign = self.create()
+        account = EskizAccount()
+        client = account.client()
+        campaigns.dispatch_due(client, NOW)
+        campaign.refresh_from_db()
+        self.assertEqual(account.asked, campaigns.BREAKER_AFTER)
+        self.assertEqual(campaign.status, SmsCampaign.STATUS_FAILED)
+        self.assertEqual((campaign.result["sent"], campaign.result["failed"], campaign.result["rejected"]), (0, 5, 0))
+        account.top_up()
+        self.assertEqual(campaigns.retry(campaign, now=NOW), 9)
+        campaigns.resume(client, campaign.pk, now=NOW)
+        campaign.refresh_from_db()
+        self.assertEqual((campaign.status, campaign.error, campaign.result["sent"]), (SmsCampaign.STATUS_DONE, "", 9))
+        self.assertEqual(len(account.taken), 9)
+        self.assertEqual(len(set(account.taken)), 9)
+
+    def test_a_campaign_too_small_for_the_breaker_is_finished_by_retry_after_a_top_up(self):
+        self.learners(3)
+        campaign = self.create()
+        account = EskizAccount()
+        client = account.client()
+        campaigns.dispatch_due(client, NOW)
+        campaign.refresh_from_db()
+        self.assertEqual((campaign.status, campaign.result["failed"]), (SmsCampaign.STATUS_DONE, 3))
+        account.top_up()
+        self.assertEqual(campaigns.retry(campaign, now=NOW), 3)
+        campaigns.resume(client, campaign.pk, now=NOW, only_failed=True)
+        campaign.refresh_from_db()
+        self.assertEqual((campaign.status, campaign.result["sent"], campaign.result["failed"]), (SmsCampaign.STATUS_DONE, 3, 0))
+        self.assertEqual(len(account.taken), 3)
 
 
 class StaleBalanceTests(Fixture):
