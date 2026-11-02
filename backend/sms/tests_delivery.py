@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from sms import switchboard
 from sms.delivery import check_statuses, deliver, mask_phone
-from sms.eskiz import FAILED, REJECTED, UNCERTAIN
+from sms.eskiz import FAILED, NO_BALANCE_WORDS, REJECTED, UNCERTAIN
 from sms.models import SmsMessage
 from sms.testing import EskizAccount, FakeEskiz
 
@@ -142,6 +142,23 @@ class NoBalanceTests(TestCase):
         msg = send(client)
         msg.refresh_from_db()
         self.assertEqual((msg.status, msg.attempts), (SmsMessage.STATUS_SENT, 1))
+
+    def test_each_of_eskizs_words_for_no_balance_keeps_the_try_uncounted(self):
+        for i, words in enumerate(NO_BALANCE_WORDS):
+            with self.subTest(words=words):
+                key = f"student:{i}"
+                send(FakeEskiz(FAILED), key=key)
+                SmsMessage.objects.filter(dedupe_key=key).update(error=f"HTTP 400: {words.upper()}")
+                msg = send(FakeEskiz(), key=key)
+                msg.refresh_from_db()
+                self.assertEqual((msg.status, msg.attempts), (SmsMessage.STATUS_SENT, 1))
+
+    def test_a_failed_try_that_only_mentions_the_balance_still_counts(self):
+        send(FakeEskiz(FAILED))
+        SmsMessage.objects.update(error="HTTP 400: Balance account is blocked")
+        msg = send(FakeEskiz())
+        msg.refresh_from_db()
+        self.assertEqual(msg.attempts, 2)
 
     def test_any_other_refusal_stays_rejected_and_is_not_claimed_again(self):
         account = EskizAccount(refused={"998901234567": "perfectum: Not allowed"})

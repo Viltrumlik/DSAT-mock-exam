@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import timedelta
+from functools import reduce
+from operator import or_
 
 from django.db import IntegrityError, transaction
-from django.db.models import Case, F, PositiveSmallIntegerField, When
+from django.db.models import Case, F, PositiveSmallIntegerField, Q, When
 from django.utils import timezone
 
 from . import eskiz, switchboard
@@ -57,6 +59,8 @@ def deliver(
     return msg
 
 
+_REFUSED_FOR_BALANCE = reduce(or_, (Q(error__icontains=words) for words in eskiz.NO_BALANCE_WORDS))
+
 #: What a person may send again by hand: it did not arrive and nothing says it might have.
 #: UNCERTAIN (it may have left), SENT and PENDING (still on their way) and DELIVERED never are.
 RESENDABLE = (SmsMessage.STATUS_UNDELIVERED, SmsMessage.STATUS_REJECTED, SmsMessage.STATUS_FAILED)
@@ -83,7 +87,7 @@ def _claim(
     ).update(
         status=SmsMessage.STATUS_PENDING, phone=phone, text=text, error="",
         attempts=Case(
-            When(error__icontains=eskiz.NO_BALANCE_WORDS[0], then=F("attempts")),
+            When(_REFUSED_FOR_BALANCE, then=F("attempts")),
             default=F("attempts") + 1,
             output_field=PositiveSmallIntegerField(),
         ),
