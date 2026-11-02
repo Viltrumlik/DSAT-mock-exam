@@ -694,11 +694,11 @@ def _campaign_refused(exc: campaigns.CampaignRefused) -> Response:
     return _refused(exc.code, exc.message)
 
 
-def _queue_retry(pk: int):
+def _queue_retry(pk: int, only_failed: bool):
     def queue():
         from . import tasks
 
-        tasks.retry_campaign.delay(pk)
+        tasks.retry_campaign.delay(pk, only_failed=only_failed)
 
     return queue
 
@@ -750,9 +750,9 @@ class CampaignCancelView(_AdminView):
 
 
 class CampaignRetryView(_AdminView):
-    """Retry = resume, for a DONE or a stopped (FAILED) campaign: claimed SENDING here, at once (a
-    second click is refused), then sent by the queued task — the recipients worked out again, the
-    FAILED sent again, the never-reached sent, nothing that may have left."""
+    """Retry, for a DONE or a stopped (FAILED) campaign: claimed SENDING here, at once (a second
+    click is refused), then sent by the queued task — the FAILED sent again, nothing that may have
+    left, and for a stopped campaign the never-reached too."""
 
     def post(self, request, pk):
         campaign = _campaign(pk)
@@ -760,10 +760,11 @@ class CampaignRetryView(_AdminView):
             campaigns.check_retryable(campaign)
             if not conf.is_configured():
                 return _refused("not_configured", "eskiz is not configured on the server.")
+            only_failed = campaign.status == SmsCampaign.STATUS_DONE  # ``retry`` claims it SENDING
             queued = campaigns.retry(campaign)
         except campaigns.CampaignRefused as exc:
             return _campaign_refused(exc)
-        _on_commit(_queue_retry(campaign.pk))
+        _on_commit(_queue_retry(campaign.pk, only_failed))
         return Response({"queued": queued})
 
 

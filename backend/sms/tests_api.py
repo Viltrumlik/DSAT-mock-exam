@@ -447,7 +447,7 @@ class CampaignApiTests(ApiFixture):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.post(f"campaigns/{campaign['id']}/retry/")
         self.assertEqual(response.json(), {"queued": 1})
-        self.queued["retry_campaign"].assert_called_once_with(campaign["id"])
+        self.queued["retry_campaign"].assert_called_once_with(campaign["id"], only_failed=True)
         # Claimed at once: the page shows it sending, and a second click is refused.
         self.assertEqual(self.get(f"campaigns/{campaign['id']}/").json()["campaign"]["status"], "SENDING")
         again = self.post(f"campaigns/{campaign['id']}/retry/")
@@ -473,7 +473,7 @@ class CampaignApiTests(ApiFixture):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.post(f"campaigns/{pk}/retry/")
         self.assertEqual(response.json(), {"queued": 6})
-        self.queued["retry_campaign"].assert_called_once_with(pk)
+        self.queued["retry_campaign"].assert_called_once_with(pk, only_failed=False)
 
     @override_settings(ESKIZ_EMAIL="")
     def test_retry_refused_while_eskiz_is_not_configured(self):

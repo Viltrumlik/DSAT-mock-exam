@@ -229,11 +229,11 @@ How a campaign's `status` moves:
 | POST `campaigns/<id>/cancel/` | `{"campaign": Campaign}`. 400 with `code: "not_scheduled"` unless the campaign is SCHEDULED |
 | POST `campaigns/<id>/retry/` | `{"queued": n}`. 400 with `code: "not_done"` unless the campaign is DONE or FAILED; 400 `code: "not_configured"` when eskiz has no keys |
 
-`campaigns/<id>/retry/` is a **resume**:
+`campaigns/<id>/retry/`, for a stopped (`FAILED`) campaign, is a **resume**. For a `DONE` campaign it sends only the recipients whose message is FAILED: the campaign already reached everyone it meant to, and someone who joined the class since never had this text. (A worker that dies on such a retry is resumed by the reaper as any resume is.)
 
 - In the request, the campaign is claimed `SENDING` in one UPDATE (`started_at` = now, `finished_at` = null, `error` = ""). A second click, or a second admin, gets `not_done`.
 - A queued task then sends it again. The recipients are worked out anew, so a debtor who has paid since is skipped. The text is rendered again. FAILED messages are re-claimed and sent with the new text. Recipients with no message yet are sent. Every other message (SENT, DELIVERED, UNCERTAIN, …) is never sent again.
-- `queued` (best effort) is how many that would send: the recipients as of now whose message is missing or FAILED.
+- `queued` (best effort) is how many that would send: the recipients as of now whose message is FAILED, plus for a stopped campaign those with no message yet.
 - A campaign's messages are filed under the day it was **scheduled for** (`run_on`), so a resume or a retry on a later day still finds them.
 
 ### Draft (request body of preview and create)

@@ -118,9 +118,10 @@ def send_due_campaigns() -> dict:
 
 
 @shared_task(name="sms.tasks.retry_campaign")
-def retry_campaign(campaign_id: int) -> dict:
+def retry_campaign(campaign_id: int, only_failed: bool = False) -> dict:
     """Retry on a campaign, queued by the panel once ``campaigns.retry`` claimed it SENDING: a
-    resume — the unreached sent, the FAILED sent again, nothing that may have left."""
+    resume — the FAILED sent again, nothing that may have left, and the unreached sent too unless
+    ``only_failed`` (a DONE campaign, which reached everyone it meant to)."""
     if not conf.is_configured():
         return {"skipped": "eskiz is not configured"}
     from . import campaigns, eskiz
@@ -128,7 +129,7 @@ def retry_campaign(campaign_id: int) -> dict:
 
     if not SmsCampaign.objects.filter(pk=campaign_id, status=SmsCampaign.STATUS_SENDING).exists():
         return {"skipped": "not sending"}
-    campaign = campaigns.resume(eskiz.default_client(), campaign_id)
+    campaign = campaigns.resume(eskiz.default_client(), campaign_id, only_failed=only_failed)
     if campaign is None:
         return {"skipped": "not sending"}
     return {"status": campaign.status, "sent": campaign.result.get("sent", 0)}

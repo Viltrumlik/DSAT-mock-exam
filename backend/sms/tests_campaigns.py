@@ -522,10 +522,35 @@ class CancelAndRetryTests(Fixture):
 
     def retry(self, campaign, client, now=NOW):
         """What the API does (count and claim), then what the queued task does (send)."""
+        only_failed = campaign.status == SmsCampaign.STATUS_DONE
         queued = campaigns.retry(campaign, now=now)
-        campaigns.resume(client, campaign.pk, now=now)
+        campaigns.resume(client, campaign.pk, now=now, only_failed=only_failed)
         campaign.refresh_from_db()
         return queued
+
+    def test_retry_of_a_finished_campaign_does_not_reach_newcomers(self):
+        # "Send again to 1 whose SMS failed" must send 1: someone who joined the class since never
+        # had this text, and nobody asked to send it to them.
+        self.learner(101, "a", phone="998901111111", room=self.room)
+        campaign = self.create(audience="group", audience_ids=[self.room.pk])
+        campaigns.dispatch_due(FakeEskiz(FAILED), NOW)
+        self.learner(102, "newcomer", phone="998902222222", room=self.room)
+        campaign.refresh_from_db()
+        fake = FakeEskiz()
+        self.assertEqual(self.retry(campaign, fake), 1)
+        self.assertEqual([p for p, _, _ in fake.sent], ["998901111111"])
+        self.assertEqual(campaign.messages.count(), 1)
+
+    def test_a_worker_that_died_on_a_retry_finishes_what_it_was_doing(self):
+        # The reaper's resume has no flag to go on, so it goes on as any resume does: whoever is due.
+        self.learner(101, "a", phone="998901111111", room=self.room)
+        campaign = self.create(audience="group", audience_ids=[self.room.pk])
+        campaigns.dispatch_due(FakeEskiz(FAILED), NOW)
+        campaign.refresh_from_db()
+        campaigns.retry(campaign, now=NOW)
+        fake = FakeEskiz()
+        self.assertEqual(campaigns.resume_stuck(fake, NOW + timedelta(hours=1)), 1)
+        self.assertEqual([p for p, _, _ in fake.sent], ["998901111111"])
 
     def test_retry_resends_failed_and_never_uncertain(self):
         self.learner(101, "a", phone="998901111111")

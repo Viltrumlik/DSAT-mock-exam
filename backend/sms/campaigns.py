@@ -18,8 +18,9 @@ whatever already left is skipped — and three things do run it again:
   than STUCK_AFTER is claimed again in one UPDATE and finished;
 * **the circuit breaker**: BREAKER_AFTER failed or uncertain sends in a row stop the campaign
   (FAILED) with the rest unclaimed — eskiz is down, and 300 failures help nobody;
-* **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again and sent
-  as a resume — the recipients worked out anew, FAILED ones re-claimed, the unreached sent.
+* **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again. A stopped
+  (FAILED) one goes on as a resume, the unreached sent too. A DONE one sends only what FAILED: it
+  did reach everyone it meant to, and a student who joined the class since never had this text.
 
 **At most LIMIT recipients**, checked at the preview, at create and again at send: a class or the
 debtor list can grow between the two, and a campaign that grew past it sends nothing.
@@ -567,15 +568,19 @@ def _heartbeat(campaign) -> None:
     SmsCampaign.objects.filter(pk=campaign.pk, status=SmsCampaign.STATUS_SENDING).update(started_at=timezone.now())
 
 
-def send_campaign(client, campaign, now=None) -> SmsCampaign:
+def send_campaign(client, campaign, now=None, *, only_failed=False) -> SmsCampaign:
     """A claimed (SENDING) campaign, out. One recipient going wrong does not stop the rest;
-    BREAKER_AFTER going wrong in a row do. Safe to run again: what already left is skipped."""
+    BREAKER_AFTER going wrong in a row do. Safe to run again: what already left is skipped.
+    ``only_failed`` keeps it to the recipients whose SMS FAILED: a Retry of a DONE campaign."""
     now = now or timezone.now()
     try:
         recipients, skipped = resolve(campaign, now=now)
     except Exception as exc:  # the type only: a message can quote a phone
         logger.warning("campaign %s: the recipients could not be worked out: %s", campaign.pk, type(exc).__name__)
         return _finish(campaign, SmsCampaign.STATUS_FAILED, now, error=f"the recipients could not be worked out ({type(exc).__name__})")
+    if only_failed:
+        failed = set(campaign.messages.filter(status=SmsMessage.STATUS_FAILED).values_list("dedupe_key", flat=True))
+        recipients = [r for r in recipients if _key(campaign, r.link) in failed]
     if len(recipients) > LIMIT:
         return _finish(
             campaign, SmsCampaign.STATUS_FAILED, now, skipped=skipped,
@@ -634,13 +639,15 @@ def check_retryable(campaign) -> None:
 
 
 def to_resend(campaign, *, now=None) -> int:
-    """How many a resume would send, best effort: the recipients as of now with no SMS yet or a FAILED one."""
+    """How many a Retry would send, best effort: the recipients as of now with a FAILED SMS, and
+    those with none yet when the campaign was stopped short (a DONE one reached everyone it meant to)."""
     try:
         recipients, _ = resolve(campaign, now=now)
     except Exception:  # the send will say why; the count falls back to what is known to have failed
         return campaign.messages.filter(status=SmsMessage.STATUS_FAILED).count()
     states = dict(campaign.messages.values_list("dedupe_key", "status"))
-    return sum(1 for r in recipients if states.get(_key(campaign, r.link)) in (None, SmsMessage.STATUS_FAILED))
+    wanted = (SmsMessage.STATUS_FAILED,) if campaign.status == SmsCampaign.STATUS_DONE else (None, SmsMessage.STATUS_FAILED)
+    return sum(1 for r in recipients if states.get(_key(campaign, r.link)) in wanted)
 
 
 def retry(campaign, *, now=None) -> int:
@@ -658,7 +665,7 @@ def retry(campaign, *, now=None) -> int:
     return queued
 
 
-def resume(client, campaign_id, *, now=None) -> SmsCampaign | None:
+def resume(client, campaign_id, *, now=None, only_failed=False) -> SmsCampaign | None:
     """The send a retry queued: the campaign, if it is still the SENDING one ``retry`` claimed (the
     reaper may have finished it meanwhile), out again through ``send_campaign``."""
     campaign = SmsCampaign.objects.select_related("created_by").filter(
@@ -666,7 +673,7 @@ def resume(client, campaign_id, *, now=None) -> SmsCampaign | None:
     ).first()
     if campaign is None:
         return None
-    return send_campaign(client, campaign, now)
+    return send_campaign(client, campaign, now, only_failed=only_failed)
 
 
 # ── reading ───────────────────────────────────────────────────────────────
