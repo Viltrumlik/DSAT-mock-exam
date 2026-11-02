@@ -21,11 +21,26 @@ import { ArrowLeft } from "lucide-react";
 
 import { Alert, Badge, Button } from "@/components/ui";
 import { OpsPageHeader } from "@/features/ops/OpsPageHeader";
-import { campaignBadge, dateTime, money, plural, roleLabel, statusBadge } from "./format";
-import { BOX, CAPTION_TEXT, LoadError, Loading, Section, SkippedList, TABLE, TD, TH, TR, errorText } from "./panelKit";
+import { OperatorChart } from "./charts/OperatorChart";
+import { campaignBadge, dateTime, money, plural, roleLabel, statusBadge, todayInTashkent } from "./format";
+import {
+  BOX,
+  CAPTION_TEXT,
+  LINK_BUTTON_SECONDARY,
+  LoadError,
+  Loading,
+  Section,
+  SkippedList,
+  TABLE,
+  TD,
+  TH,
+  TR,
+  errorText,
+} from "./panelKit";
 import type { Campaign } from "./smsApi";
-import { useCancelCampaign, useRetryCampaign, useSmsCampaign, useSmsOverview } from "./smsHooks";
-import { smsTabHref } from "./smsTabs";
+import { useCancelCampaign, useRetryCampaign, useSmsCampaign, useSmsOverview, useSmsStats } from "./smsHooks";
+import { UndeliveredList } from "./UndeliveredList";
+import { NEW_CAMPAIGN_PATH, smsTabHref } from "./smsTabs";
 
 const BACK = (
   <Link
@@ -63,6 +78,28 @@ const RESULT_FIGURES: { key: keyof Campaign["result"]; label: string }[] = [
   { key: "uncertain", label: "uncertain" },
   { key: "errors", label: "errors" },
 ];
+
+/** How it went by operator, and what did not arrive, with Resend: once something has gone out. */
+function Outcome({ campaign, pricePerPart }: { campaign: Campaign; pricePerPart: number | undefined }) {
+  const stats = useSmsStats({
+    from: todayInTashkent(new Date(campaign.scheduled_at)),
+    to: todayInTashkent(),
+    campaign: campaign.id,
+  });
+  return (
+    <>
+      {stats.data && stats.data.by_operator.length > 0 ? (
+        <Section title="By operator">
+          <div className="px-3 py-2.5">
+            <OperatorChart data={stats.data.by_operator} />
+          </div>
+        </Section>
+      ) : null}
+      {/* Without the price the confirm could not name what Resend costs. */}
+      {pricePerPart ? <UndeliveredList filter={{ campaign: campaign.id }} pricePerPart={pricePerPart} /> : null}
+    </>
+  );
+}
 
 export function CampaignPage({ id }: { id: number }) {
   const detail = useSmsCampaign(id);
@@ -144,6 +181,9 @@ export function CampaignPage({ id }: { id: number }) {
         description={`${c.audience_label} · ${dateTime(c.scheduled_at)}`}
         actions={
           <>
+            <Link href={`${NEW_CAMPAIGN_PATH}?from=${c.id}`} className={LINK_BUTTON_SECONDARY}>
+              Repeat
+            </Link>
             {canCancel ? (
               <Button size="sm" variant="danger" disabled={busy} onClick={onCancel}>
                 Cancel campaign
@@ -210,6 +250,8 @@ export function CampaignPage({ id }: { id: number }) {
           </div>
         </Section>
       ) : null}
+
+      {started ? <Outcome campaign={c} pricePerPart={price} /> : null}
 
       {messages.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">Nothing has been sent yet.</p>

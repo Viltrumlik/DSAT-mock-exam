@@ -402,7 +402,8 @@ class OverviewView(_AdminView):
 
 
 class StatsView(_AdminView):
-    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``)."""
+    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``); with
+    ``campaign``, only that campaign's messages, and no debt warning's effect."""
 
     def get(self, request):
         params = request.query_params
@@ -410,6 +411,15 @@ class StatsView(_AdminView):
             start, end = stats.parse_range(params.get("from"), params.get("to"), today=timezone.localdate())
         except ValueError as exc:
             return _refused("range", str(exc))
+        if campaign := params.get("campaign"):
+            if not campaign.isdecimal():
+                return _refused("range", "A campaign is its id.")
+            return Response({
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                **stats.summary(start, end, qs=SmsMessage.objects.filter(campaign_id=int(campaign))),
+                "debt_effect": [],
+            })
         return Response({
             "from": start.isoformat(),
             "to": end.isoformat(),

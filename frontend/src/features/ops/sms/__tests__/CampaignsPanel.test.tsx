@@ -53,7 +53,7 @@ describe("CampaignsPanel", () => {
         }),
       ],
     });
-    const [scheduled, done] = [...container.querySelectorAll("tbody tr")];
+    const [scheduled, done] = [...container.querySelectorAll("li")];
     expect(scheduled.textContent).toContain("Scheduled");
     expect(scheduled.textContent).toContain("MASTER SAT'dan yozyabmiz. (STUDENT), sizda");
     expect(scheduled.textContent).toContain("Group: Junior G21 | Math");
@@ -63,6 +63,25 @@ describe("CampaignsPanel", () => {
     expect(done.textContent).toContain("Done");
     expect(done.textContent).toContain("Debtors");
     expect(done.textContent).toContain("12 sent · 10 delivered · 1 failed");
+  });
+
+  it("rings a campaign with what was delivered of what went out", async () => {
+    await render({
+      data: [
+        campaign({ status: "DONE", result: { sent: 140, failed: 1, rejected: 1, uncertain: 0, delivered: 128, undelivered: 12, errors: 0, skipped: {} } }),
+      ],
+    });
+    expect(container.querySelector("li svg text")?.textContent).toBe("128/142");
+    expect(container.querySelector('li [role="img"]')?.getAttribute("aria-label")).toBe("128 of 142 delivered");
+  });
+
+  it("has no ring before anything goes out, and a live dot only while sending", async () => {
+    await render({ data: [campaign(), campaign({ id: 8, status: "SENDING", result: { delivered: 3, undelivered: 1 } })] });
+    const [scheduled, sending] = [...container.querySelectorAll("li")];
+    expect(scheduled.querySelector("svg text")).toBeNull();
+    expect(scheduled.querySelector('[aria-label="Sending now"]')).toBeNull();
+    expect(sending.querySelector("svg text")?.textContent).toBe("3/4");
+    expect(sending.querySelector('[aria-label="Sending now"]')).not.toBeNull();
   });
 
   it("New campaign goes to the composer's page", async () => {

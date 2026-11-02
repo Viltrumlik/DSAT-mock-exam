@@ -10,8 +10,10 @@ import Link from "next/link";
 import { Send } from "lucide-react";
 
 import { Badge } from "@/components/ui";
+import { DeliveryRing, ringOf } from "./DeliveryRing";
 import { campaignBadge, dateTime, firstLine } from "./format";
-import { BOX, LINK_BUTTON, LoadError, Loading, TABLE, TD, TH, TR } from "./panelKit";
+import { LiveDot } from "./look";
+import { BOX, LINK_BUTTON, LoadError, Loading } from "./panelKit";
 import type { Campaign } from "./smsApi";
 import { useSmsCampaigns } from "./smsHooks";
 import { NEW_CAMPAIGN_PATH, campaignHref } from "./smsTabs";
@@ -55,45 +57,34 @@ export function CampaignsPanel() {
           </p>
         </div>
       ) : (
-        <div className={`${BOX} overflow-x-auto`}>
-          <table className={TABLE}>
-            <thead>
-              <tr>
-                <th className={TH}>Status</th>
-                <th className={TH}>Text</th>
-                <th className={TH}>To</th>
-                <th className={TH}>When</th>
-                <th className={TH}>Result</th>
-                <th className={TH}>By</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => {
-                const badge = campaignBadge(c.status);
-                return (
-                  <tr key={c.id} className={TR}>
-                    <td className={TD}>
-                      <Badge variant={badge.variant}>{badge.label}</Badge>
-                    </td>
-                    <td className={TD}>
-                      <Link
-                        href={campaignHref(c.id)}
-                        title={c.original || c.pattern}
-                        className="block max-w-[26rem] truncate font-medium text-primary hover:underline dark:text-primary-hover"
-                      >
-                        {firstLine(c.original || c.pattern) || `Campaign #${c.id}`}
-                      </Link>
-                    </td>
-                    <td className={`${TD} whitespace-nowrap`}>{c.audience_label}</td>
-                    <td className={`${TD} whitespace-nowrap tabular-nums`}>{dateTime(c.scheduled_at)}</td>
-                    <td className={`${TD} whitespace-nowrap text-muted-foreground`}>{resultLabel(c) || "—"}</td>
-                    <td className={`${TD} whitespace-nowrap`}>{c.created_by_name || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        <ul className={`${BOX} divide-y divide-border`}>
+          {rows.map((c) => {
+            const badge = campaignBadge(c.status);
+            const ring = ringOf(c);
+            return (
+              <li key={c.id} className="flex items-center gap-3 px-3 py-2 hover:bg-surface-2">
+                {/* The same width either way, so the rows' text lines up. */}
+                <div className="w-[52px] shrink-0">{ring ? <DeliveryRing {...ring} /> : null}</div>
+                <div className="min-w-0 flex-1 text-[13px]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={badge.variant}>{badge.label}</Badge>
+                    {c.status === "SENDING" ? <LiveDot /> : null}
+                    <Link
+                      href={campaignHref(c.id)}
+                      title={c.original || c.pattern}
+                      className="min-w-0 truncate font-medium text-primary hover:underline dark:text-primary-hover"
+                    >
+                      {firstLine(c.original || c.pattern) || `Campaign #${c.id}`}
+                    </Link>
+                  </div>
+                  <p className="mt-0.5 text-[12px] text-muted-foreground">
+                    {[c.audience_label, dateTime(c.scheduled_at), c.created_by_name, resultLabel(c)].filter(Boolean).join(" · ")}
+                  </p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </div>
   );

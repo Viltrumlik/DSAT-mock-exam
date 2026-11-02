@@ -117,9 +117,9 @@ export function firstLine(text: string, max = 90): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-/** "#64942 · MASTER SAT'dan yozyabmiz. (STUDENT), sizda…" — a template as a picker names it. */
-export function templateOption(t: Pick<EskizTemplate, "eskiz_id" | "original" | "pattern" | "status">): string {
-  return `#${t.eskiz_id} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
+/** "Debt reminder · MASTER SAT'dan yozyabmiz. (STUDENT), sizda…" — a template as a picker names it. */
+export function templateOption(t: Pick<EskizTemplate, "label" | "original" | "pattern" | "status">): string {
+  return `${t.label} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
 }
 
 // ── labels ───────────────────────────────────────────────────────────────

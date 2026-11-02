@@ -15,6 +15,7 @@ import {
   splitCounts,
   statusBadge,
   templateBadge,
+  templateOption,
   todayInTashkent,
 } from "../format";
 
@@ -88,6 +89,11 @@ describe("fillPattern", () => {
 });
 
 describe("labels", () => {
+  it("names a template by its name in a picker", () => {
+    const t = { label: "Debt reminder", original: "Salom (STUDENT)", pattern: "Salom %w", status: "reklama" as const };
+    expect(templateOption(t)).toBe("Debt reminder · Salom (STUDENT) (ad price)");
+  });
+
   it("names every SMS status, and shows an unknown one as it came", () => {
     expect(statusBadge("DELIVERED")).toEqual({ variant: "success", label: "Delivered" });
     expect(statusBadge("UNDELIVERED").label).toBe("Not delivered");

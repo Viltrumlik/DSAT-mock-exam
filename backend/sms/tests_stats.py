@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from lcup.models import LcupPayment
 from sms import stats
-from sms.models import SmsMessage
+from sms.models import SmsCampaign, SmsMessage
 from sms.tests_api import ApiFixture
 
 NOV1 = date(2026, 11, 1)
@@ -137,6 +137,27 @@ class DebtEffectTests(TestCase):
 
 
 class StatsApiTests(ApiFixture):
+    def test_the_campaign_param_narrows_the_rows(self):
+        campaign = SmsCampaign.objects.create(
+            template_eskiz_id=64942, pattern="p", slot_roles=[], slot_texts=[], audience="debtors",
+            scheduled_at=timezone.now(),
+        )
+        today = timezone.localdate()
+        row = sms(S.STATUS_DELIVERED, at=timezone.now(), kind=S.KIND_CAMPAIGN)
+        SmsMessage.objects.filter(pk=row.pk).update(campaign=campaign)
+        sms(S.STATUS_DELIVERED, at=timezone.now())
+        sms(S.STATUS_UNDELIVERED, at=timezone.now())
+        days = {"from": today.isoformat(), "to": today.isoformat()}
+        self.assertEqual(self.get("stats/", **days).json()["totals"]["sent"], 3)
+        data = self.get("stats/", campaign=campaign.pk, **days).json()
+        self.assertEqual((data["totals"]["sent"], data["totals"]["delivered"]), (1, 1))
+        self.assertEqual(data["debt_effect"], [])
+        self.assertEqual(self.get("stats/", campaign=campaign.pk + 1, **days).json()["totals"]["sent"], 0)
+
+    def test_a_campaign_that_cannot_be_read_is_refused(self):
+        response = self.get("stats/", campaign="x")
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "range"))
+
     def test_shape_and_default_range(self):
         sms(S.STATUS_DELIVERED, at=timezone.now())
         response = self.get("stats/")

@@ -52,7 +52,7 @@ export const smsKeys = {
   classrooms: ["sms", "audience", "classrooms"] as const,
   audienceOptions: ["sms", "audience", "options"] as const,
   students: (q: string) => ["sms", "audience", "students", q] as const,
-  stats: (range: StatsRange) => ["sms", "stats", range.from, range.to] as const,
+  stats: (range: StatsRange) => ["sms", "stats", range.from, range.to, range.campaign ?? null] as const,
   student: (userId: number) => ["sms", "student", userId] as const,
 };
 
@@ -94,7 +94,17 @@ export function useStudentSms(userId: number) {
 }
 
 export function useSmsCampaigns() {
-  return useQuery({ queryKey: smsKeys.campaigns, queryFn: () => smsApi.campaigns() });
+  return useQuery({
+    queryKey: smsKeys.campaigns,
+    queryFn: () => smsApi.campaigns(),
+    // Only while one is on its way out: a campaign due next week has nothing new to show.
+    refetchInterval: (query) => {
+      const going = (query.state.data ?? []).some(
+        (c) => c.status === "SENDING" || (c.status === "SCHEDULED" && new Date(c.scheduled_at).getTime() <= Date.now()),
+      );
+      return going ? CAMPAIGN_POLL_MS : false;
+    },
+  });
 }
 
 /** One campaign, asked again every CAMPAIGN_POLL_MS while it is SCHEDULED or SENDING. */
@@ -222,6 +232,15 @@ export function useDebtSendNow() {
 export function useSyncTemplates() {
   const invalidate = useInvalidateSms();
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: () => smsApi.syncTemplates(), onSuccess: invalidate });
+}
+
+export function useRenameTemplate() {
+  const invalidate = useInvalidateSms();
+  return useMutation({
+    ...MUTATION_DEFAULTS,
+    mutationFn: ({ eskizId, alias }: { eskizId: number; alias: string }) => smsApi.renameTemplate(eskizId, alias),
+    onSuccess: invalidate,
+  });
 }
 
 export function useSubmitTemplate() {

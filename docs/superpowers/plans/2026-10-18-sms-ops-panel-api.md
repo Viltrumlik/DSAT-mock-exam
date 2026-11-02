@@ -55,6 +55,7 @@ Added by plan 2026-11-01-sms-v2, Task 2. The query is `?from=YYYY-MM-DD&to=YYYY-
 - No `to` means today.
 - No `from` means 30 days ending at `to`.
 - `to` before `from`, more than 366 days, or a date it cannot read: **400** with `code: "range"`.
+- `campaign=<id>` narrows it to that campaign's messages, and `debt_effect` is then `[]`. A value that is not an id is a 400 with `code: "range"`.
 
 ```json
 {

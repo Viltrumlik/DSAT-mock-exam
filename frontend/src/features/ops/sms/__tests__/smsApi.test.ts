@@ -130,7 +130,11 @@ describe("smsApi", () => {
     ]);
 
     await smsApi.updateSettings({ debt_hour: 9 });
-    expect(patch.mock.calls).toEqual([["/sms/admin/settings/", { debt_hour: 9 }]]);
+    await smsApi.renameTemplate(64942, "Debt reminder");
+    expect(patch.mock.calls).toEqual([
+      ["/sms/admin/settings/", { debt_hour: 9 }],
+      ["/sms/admin/templates/64942/", { alias: "Debt reminder" }],
+    ]);
   });
 
   it("answers empty lists, not undefined, when a list body is missing", async () => {

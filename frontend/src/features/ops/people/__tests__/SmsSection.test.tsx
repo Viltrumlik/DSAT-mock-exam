@@ -65,4 +65,15 @@ describe("SmsSection", () => {
     await render({ isError: true, data: undefined, error: { response: { status: 403 } } });
     expect(text()).toContain("Only admins can see SMS.");
   });
+
+  it("Send SMS opens the composer for this student", async () => {
+    await render({ data: { results: [], summary: {} } });
+    const link = Array.from(host.querySelectorAll("a")).find((a) => a.textContent?.trim() === "Send SMS")!;
+    expect(link.getAttribute("href")).toBe("/ops/sms/campaigns/new?student=5");
+  });
+
+  it("offers no Send SMS to someone who cannot use it", async () => {
+    await render({ isError: true, error: { response: { status: 403 } } });
+    expect(text()).not.toContain("Send SMS");
+  });
 });

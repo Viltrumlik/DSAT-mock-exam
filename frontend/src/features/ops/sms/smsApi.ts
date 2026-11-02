@@ -88,10 +88,11 @@ export interface MonthGlance {
 
 // ── statistics ───────────────────────────────────────────────────────────
 
-/** Inclusive Tashkent days, "YYYY-MM-DD". */
+/** Inclusive Tashkent days, "YYYY-MM-DD"; `campaign` narrows it to that campaign's messages. */
 export interface StatsRange {
   from: string;
   to: string;
+  campaign?: number;
 }
 
 export interface SmsStatsTotals {
@@ -508,7 +509,8 @@ export const smsApi = {
     return data;
   },
   async stats(range: StatsRange): Promise<SmsStats> {
-    const { data } = await api.get<SmsStats>(`${BASE}/stats/`, { params: { from: range.from, to: range.to } });
+    const params = { from: range.from, to: range.to, ...(range.campaign ? { campaign: range.campaign } : {}) };
+    const { data } = await api.get<SmsStats>(`${BASE}/stats/`, { params });
     return data;
   },
   async studentMessages(userId: number): Promise<StudentSms> {
@@ -582,6 +584,10 @@ export const smsApi = {
     return data;
   },
   /** `template` is null when eskiz has not listed the new text yet. */
+  async renameTemplate(eskizId: number, alias: string): Promise<EskizTemplate> {
+    const { data } = await api.patch<{ template: EskizTemplate }>(`${BASE}/templates/${eskizId}/`, { alias });
+    return data.template;
+  },
   async submitTemplate(text: string): Promise<{ template: EskizTemplate | null; sync: TemplateSync }> {
     const { data } = await api.post<{ template: EskizTemplate | null; sync: TemplateSync }>(`${BASE}/templates/`, {
       text,

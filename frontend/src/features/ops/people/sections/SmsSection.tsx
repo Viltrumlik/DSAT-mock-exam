@@ -1,11 +1,14 @@
 "use client";
 
-import { MessageSquare } from "lucide-react";
+import Link from "next/link";
+import { MessageSquare, Send } from "lucide-react";
 
 import { dateTime, splitCounts } from "@/features/ops/sms/format";
 import { StatusPill } from "@/features/ops/sms/look";
+import { LINK_BUTTON_SECONDARY } from "@/features/ops/sms/panelKit";
 import type { SmsMessage } from "@/features/ops/sms/smsApi";
 import { useStudentSms } from "@/features/ops/sms/smsHooks";
+import { NEW_CAMPAIGN_PATH } from "@/features/ops/sms/smsTabs";
 import { Fieldset } from "../Fieldset";
 
 /**
@@ -71,6 +74,12 @@ export function SmsSection({ id }: { id: number }) {
 
   return (
     <Fieldset title="SMS" icon={MessageSquare} tone="neutral" description="Every SMS sent to this student's lc-up phone.">
+      {query.data ? (
+        <Link href={`${NEW_CAMPAIGN_PATH}?student=${id}`} className={`${LINK_BUTTON_SECONDARY} mb-3`}>
+          <Send className="h-4 w-4" aria-hidden />
+          Send SMS
+        </Link>
+      ) : null}
       {body}
     </Fieldset>
   );

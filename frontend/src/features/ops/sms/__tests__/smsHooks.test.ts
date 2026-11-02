@@ -35,6 +35,7 @@ const MUTATIONS: [string, () => unknown][] = [
   ["cancel campaign", () => hooks.useCancelCampaign(7)],
   ["retry campaign", () => hooks.useRetryCampaign(7)],
   ["preview an audience", () => hooks.usePreviewAudience()],
+  ["rename a template", () => hooks.useRenameTemplate()],
   ["debt send now", () => hooks.useDebtSendNow()],
   ["test SMS", () => hooks.useSendTestSms()],
   ["submit template", () => hooks.useSubmitTemplate()],
@@ -44,6 +45,18 @@ const MUTATIONS: [string, () => unknown][] = [
 ];
 
 beforeEach(() => invalidateQueries.mockReset());
+
+describe("the campaigns list", () => {
+  const list = () => hooks.useSmsCampaigns();
+
+  it("is asked again only while one is on its way out", () => {
+    expect(interval(list(), [{ status: "SENDING", scheduled_at: "2026-10-20T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
+    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
+    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2099-01-01T09:30:00+05:00" }])).toBe(false);
+    expect(interval(list(), [{ status: "DONE", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(false);
+    expect(interval(list(), undefined)).toBe(false);
+  });
+});
 
 describe("SMS mutations", () => {
   it.each(MUTATIONS)("%s is never retried by React Query", (_name, hook) => {

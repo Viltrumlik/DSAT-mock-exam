@@ -24,6 +24,8 @@ export const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
 /** A link that looks like a small primary Button: where a click goes to another page. */
 export const LINK_BUTTON =
   "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary-hover";
+export const LINK_BUTTON_SECONDARY =
+  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 text-[13px] font-semibold text-foreground hover:border-border-strong hover:bg-surface-2";
 export const TEXT_BUTTON =
   "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-hover";
 
