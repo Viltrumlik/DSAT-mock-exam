@@ -199,7 +199,9 @@ Added by Task 5. Response: `{"summary": {"DELIVERED": 3, …}, "results": [Messa
 }
 ```
 
-`audience_label` comes from the server. Examples: `"Debtors"`, `"Group: <classroom name>"`, `"3 students"`, `"Student: <name>"`.
+`audience_label` comes from the server. Examples: `"Debtors"`, `"Group: <classroom name>"`, `"2 groups"`, `"Math · Junior · Chilonzor"`, `"3 students"`, `"Student: <name>"`.
+
+A Campaign also carries `audience_filter` (`{"subjects", "levels", "branches", "days"}` lists; `{}` unless the audience is `filter`) and `excluded_user_ids` (the people taken out by hand).
 
 `result.delivered` and `result.undelivered` are counted live from the campaign's messages. The other counts are filled at send time.
 
@@ -211,7 +213,7 @@ How a campaign's `status` moves:
 - A `SENDING` campaign whose `started_at` (a heartbeat, bumped every 20 recipients) is older than **15 min** lost its worker: the minute beat claims it again and finishes it, skipping every recipient whose SMS already exists.
 - `DONE` / `FAILED` → `SENDING` on Retry (below).
 
-`result.skipped` and the preview's `skipped` always carry `no_link`, `no_phone`, `stale_balance`, `not_debtor` and `bad_text`; `same_phone` appears when a sibling on the same phone gets the same words (one SMS between them).
+`result.skipped` and the preview's `skipped` always carry `no_link`, `no_phone`, `stale_balance`, `not_debtor`, `bad_text` and `excluded` (taken out by hand); `same_phone` appears when a sibling on the same phone gets the same words (one SMS between them).
 
 - `stale_balance`: the audience is `debtors`, or a slot is `debt`, and lc-up's `balance_seen_at` is missing or older than 24 h. This is checked at preview, at create and again at send.
 
@@ -250,8 +252,11 @@ How a campaign's `status` moves:
 - `slot_texts` has one entry per slot. A `text` slot needs a value; other slots ignore theirs.
 - `audience_ids` depends on the audience:
   - `student`: user ids, 1 to 300 of them;
-  - `group`: one classroom id;
-  - `debtors`: an empty list.
+  - `group`: 1 to 50 active classroom ids;
+  - `debtors` and `filter`: an empty list.
+- `audience: "filter"` takes `audience_filter`: `{"subjects": ["MATH"], "levels": ["junior"], "branches": [3], "days": ["ODD"]}`. Active classes only: AND across the keys, OR within one. Values are `ENGLISH`/`MATH`, `foundation`/`junior`/`middle`/`senior`, branch ids, `ODD`/`EVEN`. With no value at all it is refused (`code: "audience"`).
+- `excluded_user_ids` (optional, any audience): these people are skipped under `excluded`.
+- A student in two of the classes gets one SMS. Who is in a class or a filter is decided when it goes out.
 - `scheduled_at` null means send now.
 
 ### Preview
@@ -408,6 +413,7 @@ It renders the template with `SAMPLE_VALUES` (`student = "Test Testov,"`, `debt 
 
 | Endpoint | Response |
 |---|---|
+| GET `audience/options/` | `{"subjects": [{"value": "MATH", "label": "Math", "classes": 12}], "levels": […], "branches": [{"value": 3, "label": "Chilonzor", "classes": 8}], "days": […]}`: the values some active class has, and how many classes |
 | GET `audience/classrooms/` | `{"classrooms": [{"id": 61, "name": "Junior G21 \| Math", "students": 14, "with_phone": 12}]}` |
 | GET `audience/students/?q=` | `{"students": [{"id": 5, "name": "Malika Karimova", "lcup_name": "Karimova Malika", "phone": "998901234567", "balance": -150000}]}` |
 
@@ -421,7 +427,7 @@ It renders the template with `SAMPLE_VALUES` (`student = "Test Testov,"`, `debt 
 | `status` | `PENDING`, `SENT`, `DELIVERED`, `UNDELIVERED`, `REJECTED`, `FAILED`, `UNCERTAIN` |
 | `kind` | `debt_warning`, `campaign`, `test` |
 | campaign status | `SCHEDULED`, `SENDING`, `DONE`, `CANCELLED`, `FAILED` |
-| `audience` | `student`, `group`, `debtors` |
+| `audience` | `student`, `group`, `debtors`, `filter` |
 | slot role | `student`, `debt`, `text` |
 | template status | `service`, `reklama`, `moderation`, `inproccess`, `rejected`, `gone` |
 | campaign skip reason | `no_link`, `no_phone`, `stale_balance`, `not_debtor`, `bad_text`, `same_phone` |

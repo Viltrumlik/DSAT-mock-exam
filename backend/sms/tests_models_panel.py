@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from django.db import connection
 from django.test import TestCase
 from django.utils import timezone
 
@@ -57,3 +58,27 @@ class SmsCampaignTests(TestCase):
         )
         self.assertEqual(list(campaign.messages.all()), [msg])
         self.assertIn(("campaign", "Campaign"), SmsMessage.KIND_CHOICES)
+
+
+class DeployWindowTests(TestCase):
+    """The deploy migrates first while the old code still runs, and that code's INSERTs know nothing
+    of the new columns: without a default kept on the column they would be refused."""
+
+    def test_old_code_can_still_add_a_template(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO sms_eskiz_templates (eskiz_id, pattern, original, status, synced_at) VALUES (%s, %s, %s, %s, %s)",
+                [1, "p", "o", "service", timezone.now()],
+            )
+        self.assertEqual(EskizTemplate.objects.get(eskiz_id=1).alias, "")
+
+    def test_old_code_can_still_add_a_campaign(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO sms_campaigns (template_eskiz_id, pattern, original, slot_roles, slot_texts, audience,"
+                " audience_ids, scheduled_at, status, result, error, created_at)"
+                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                [1, "p", "o", "[]", "[]", "debtors", "[]", timezone.now(), "SCHEDULED", "{}", "", timezone.now()],
+            )
+        row = SmsCampaign.objects.get()
+        self.assertEqual((row.audience_filter, row.excluded_user_ids), ({}, []))

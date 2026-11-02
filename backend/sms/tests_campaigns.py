@@ -7,7 +7,7 @@ from unittest import mock
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership, Region
 from lcup.models import LcupStudentLink, LinkStatus
 from sms import campaigns
 from sms import templates as T
@@ -72,6 +72,198 @@ class Fixture(TestCase):
             return campaigns.create(self.draft(**extra), self.admin, now=NOW)
 
 
+class AudienceTests(Fixture):
+    """Several groups, a subject/level/branch slice, and people taken out by hand."""
+
+    def setUp(self):
+        super().setUp()
+        region = Region.objects.create(name="Tashkent")
+        self.chilonzor = Branch.objects.create(region=region, name="Chilonzor")
+        self.yunusobod = Branch.objects.create(region=region, name="Yunusobod")
+        self.room2 = self.classroom("Junior G22 | Math", days=Classroom.DAYS_EVEN)
+
+    def classroom(self, name, *, subject=Classroom.SUBJECT_MATH, level="junior", days=Classroom.DAYS_ODD, **extra):
+        return Classroom.objects.create(
+            name=name, subject=subject, level=level, lesson_days=days, created_by=self.admin, **extra
+        )
+
+    def resolve(self, **extra):
+        return campaigns.resolve(campaigns.clean(self.draft(**extra), now=NOW), now=NOW)
+
+    def slice(self, **chosen):
+        recipients, _ = self.resolve(audience="filter", audience_filter=chosen)
+        return {r.user.username for r in recipients}
+
+    def seat(self, user, room):
+        ClassroomMembership.objects.create(classroom=room, user=user, role=ClassroomMembership.ROLE_STUDENT)
+
+    def test_two_groups_one_sms(self):
+        both = self.learner(101, "both", phone="998901111111", room=self.room)
+        self.seat(both, self.room2)
+        self.learner(102, "second", phone="998902222222", room=self.room2)
+        campaign = self.create(audience="group", audience_ids=[self.room.pk, self.room2.pk])
+        fake = FakeEskiz()
+        campaigns.dispatch_due(fake, NOW)
+        self.assertEqual(sorted(m.phone for m in campaign.messages.all()), ["998901111111", "998902222222"])
+        self.assertEqual(len(fake.sent), 2)
+
+    def test_someone_skipped_in_two_groups_is_listed_once(self):
+        nophone = self.learner(101, "nophone", phone="", room=self.room)
+        self.seat(nophone, self.room2)
+        nolink = self.learner(102, "nolink", link=False, room=self.room)
+        self.seat(nolink, self.room2)
+        _, skipped = self.resolve(audience="group", audience_ids=[self.room.pk, self.room2.pk])
+        self.assertEqual([w["user_id"] for w in skipped["no_phone"]], [nophone.pk])
+        self.assertEqual([w["user_id"] for w in skipped["no_link"]], [nolink.pk])
+
+    def test_51_groups_refused(self):
+        rooms = [self.classroom(f"Room {i}").pk for i in range(campaigns.MAX_GROUPS + 1)]
+        with self.assertRaises(CampaignRefused) as caught:
+            self.resolve(audience="group", audience_ids=rooms)
+        self.assertEqual(caught.exception.code, "audience")
+        self.learner(101, "a", room=self.room)
+        recipients, _ = self.resolve(audience="group", audience_ids=[self.room.pk] + rooms[:campaigns.MAX_GROUPS - 1])
+        self.assertEqual(len(recipients), 1)
+
+    def test_a_closed_class_among_the_groups_is_refused(self):
+        closed = self.classroom("Closed", is_active=False)
+        with self.assertRaises(CampaignRefused) as caught:
+            self.resolve(audience="group", audience_ids=[self.room.pk, closed.pk])
+        self.assertEqual(caught.exception.code, "audience")
+
+    def test_filter_math_junior_only(self):
+        self.learner(101, "mathjunior", phone="998901111111", room=self.room)
+        senior = self.classroom("Senior | Math", level="senior")
+        self.learner(102, "mathsenior", phone="998902222222", room=senior)
+        english = self.classroom("Junior | English", subject=Classroom.SUBJECT_ENGLISH)
+        self.learner(103, "englishjunior", phone="998903333333", room=english)
+        self.assertEqual(self.slice(subjects=["MATH"], levels=["junior"]), {"mathjunior"})
+
+    def test_filter_and_across_or_within(self):
+        self.learner(101, "oddjunior", phone="998901111111", room=self.room)
+        self.learner(102, "evenjunior", phone="998902222222", room=self.room2)
+        senior = self.classroom("Senior | Math", level="senior", branch=self.chilonzor)
+        self.learner(103, "oddsenior", phone="998903333333", room=senior)
+        middle = self.classroom("Middle | Math", level="middle", branch=self.yunusobod)
+        self.learner(104, "oddmiddle", phone="998904444444", room=middle)
+        self.assertEqual(self.slice(levels=["junior", "senior"]), {"oddjunior", "evenjunior", "oddsenior"})
+        self.assertEqual(self.slice(levels=["junior", "senior"], days=["ODD"]), {"oddjunior", "oddsenior"})
+        self.assertEqual(self.slice(branches=[self.chilonzor.pk, self.yunusobod.pk]), {"oddsenior", "oddmiddle"})
+        self.assertEqual(self.slice(branches=[self.yunusobod.pk], levels=["senior"]), set())
+
+    def test_a_closed_class_is_not_in_the_filter(self):
+        closed = self.classroom("Closed", is_active=False)
+        self.learner(101, "closed", room=closed)
+        self.assertEqual(self.slice(subjects=["MATH"]), set())
+
+    def test_empty_filter_refused(self):
+        for raw in ({}, None, {"subjects": []}, {"subjects": [], "levels": [], "branches": [], "days": []}, {"other": ["x"]}):
+            with self.subTest(raw=raw), self.assertRaises(CampaignRefused) as caught:
+                self.resolve(audience="filter", audience_filter=raw)
+            self.assertEqual(
+                (caught.exception.code, caught.exception.message),
+                ("audience", "Choose at least one subject, level, branch or day."),
+            )
+
+    def test_filter_values_are_checked(self):
+        for raw in (
+            {"subjects": ["PHYSICS"]}, {"levels": ["expert"]}, {"days": ["MONDAY"]}, {"branches": [99999]},
+            {"branches": ["x"]}, {"subjects": "MATH"}, ["MATH"], "MATH",
+        ):
+            with self.subTest(raw=raw), self.assertRaises(CampaignRefused) as caught:
+                campaigns.clean_filter(raw)
+            self.assertEqual(caught.exception.code, "audience")
+
+    def test_clean_filter_keeps_the_four_keys_without_repeats(self):
+        self.assertEqual(
+            campaigns.clean_filter({"subjects": ["MATH", "MATH"], "branches": [str(self.chilonzor.pk)], "other": ["x"]}),
+            {"subjects": ["MATH"], "levels": [], "branches": [self.chilonzor.pk], "days": []},
+        )
+
+    def test_filter_is_worked_out_when_it_goes_out(self):
+        self.learner(101, "first", phone="998901111111", room=self.room)
+        campaign = self.create(audience="filter", audience_filter={"subjects": ["MATH"]})
+        newer = self.classroom("New | Math")
+        self.learner(102, "newcomer", phone="998902222222", room=newer)
+        campaigns.dispatch_due(FakeEskiz(), NOW)
+        self.assertEqual(campaign.messages.count(), 2)
+
+    def test_excluded_is_skipped_with_reason(self):
+        malika = self.learner(101, "malika", phone="998901111111", room=self.room)
+        aziza = self.learner(102, "aziza", phone="998902222222", room=self.room)
+        recipients, skipped = self.resolve(
+            audience="group", audience_ids=[self.room.pk], excluded_user_ids=[aziza.pk],
+        )
+        self.assertEqual([r.user for r in recipients], [malika])
+        self.assertEqual(skipped["excluded"], [{"user_id": aziza.pk, "name": "Aziza Karimova"}])
+
+    def test_a_campaign_keeps_its_exclusions_when_it_goes_out(self):
+        self.learner(101, "malika", phone="998901111111", room=self.room)
+        aziza = self.learner(102, "aziza", phone="998902222222", room=self.room)
+        campaign = self.create(audience="group", audience_ids=[self.room.pk], excluded_user_ids=[aziza.pk])
+        self.assertEqual(campaign.excluded_user_ids, [aziza.pk])
+        campaigns.dispatch_due(FakeEskiz(), NOW)
+        campaign.refresh_from_db()
+        self.assertEqual([m.phone for m in campaign.messages.all()], ["998901111111"])
+        self.assertEqual([w["user_id"] for w in campaign.result["skipped"]["excluded"]], [aziza.pk])
+
+    def test_everyone_excluded_is_empty(self):
+        malika = self.learner(101, "malika", room=self.room)
+        with self.assertRaises(CampaignRefused) as caught:
+            self.create(audience="group", audience_ids=[self.room.pk], excluded_user_ids=[malika.pk])
+        self.assertEqual(caught.exception.code, "empty")
+
+    def test_excluded_must_be_ids(self):
+        with self.assertRaises(CampaignRefused) as caught:
+            self.resolve(excluded_user_ids=["x"])
+        self.assertEqual(caught.exception.code, "audience")
+
+    def test_old_single_group_campaign_still_resolves(self):
+        self.learner(101, "malika", room=self.room)
+        old = SmsCampaign.objects.create(
+            template_eskiz_id=64942, pattern=T.DEBT_WARNING.text, original=ORIGINAL_64942, slot_roles=["student"],
+            slot_texts=[""], audience="group", audience_ids=[self.room.pk], scheduled_at=NOW,
+        )
+        recipients, skipped = campaigns.resolve(old, now=NOW)
+        self.assertEqual(len(recipients), 1)
+        self.assertEqual(skipped["excluded"], [])
+        self.assertEqual(campaigns.audience_label(old), "Group: Junior G21 | Math")
+
+    def test_labels(self):
+        def label(**extra):
+            return campaigns.audience_label(self.create(**extra))
+
+        self.learner(101, "a", room=self.room)
+        self.seat(User.objects.get(username="a"), self.room2)
+        self.assertEqual(label(audience="group", audience_ids=[self.room.pk, self.room2.pk]), "2 groups")
+        branch_room = self.classroom("Branch | Math", branch=self.chilonzor)
+        self.seat(User.objects.get(username="a"), branch_room)
+        self.assertEqual(
+            label(audience="filter", audience_filter={
+                "subjects": ["MATH"], "levels": ["junior"], "branches": [self.chilonzor.pk], "days": ["ODD"],
+            }),
+            "Math · Junior · Chilonzor · Odd days",
+        )
+
+    def test_a_deleted_branch_does_not_break_the_label(self):
+        self.learner(101, "a", room=self.room)
+        campaign = self.create(audience="filter", audience_filter={"subjects": ["MATH"]})
+        SmsCampaign.objects.filter(pk=campaign.pk).update(audience_filter={"branches": [99999], "subjects": ["MATH"]})
+        campaign.refresh_from_db()
+        self.assertEqual(campaigns.audience_label(campaign), "Math · a deleted branch")
+
+    def test_include_recipients_masks_phone(self):
+        malika = self.learner(101, "malika", phone="998901234567", room=self.room)
+        self.seat(malika, self.room2)
+        data = self.draft(audience="group", audience_ids=[self.room.pk], include_recipients=True)
+        self.assertEqual(campaigns.preview(data, now=NOW)["recipients"], [{
+            "user_id": malika.pk, "name": "Malika Karimova", "phone": "99890***4567",
+            "groups": ["Junior G21 | Math", "Junior G22 | Math"],
+        }])
+        del data["include_recipients"]
+        self.assertNotIn("recipients", campaigns.preview(data, now=NOW))
+
+
 class ResolveTests(Fixture):
     def resolve(self, **extra):
         # The fixture's balances were seen at NOW; resolving against the real clock made them stale
@@ -84,7 +276,7 @@ class ResolveTests(Fixture):
         recipients, skipped = self.resolve(audience="student", audience_ids=[malika.pk])
         self.assertEqual([(r.user, r.phone, r.text) for r in recipients], [(malika, "998901234567", MALIKA_64942)])
         self.assertEqual(
-            skipped, {"no_link": [], "no_phone": [], "stale_balance": [], "not_debtor": [], "bad_text": []},
+            skipped, {"no_link": [], "no_phone": [], "stale_balance": [], "not_debtor": [], "bad_text": [], "excluded": []},
         )
 
     def test_a_group_is_its_active_students(self):

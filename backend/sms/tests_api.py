@@ -17,7 +17,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as C
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership, Region
 from lcup.models import LcupStudentLink, LinkStatus
 from sms import eskiz, urls, views
 from sms import templates as T
@@ -49,7 +49,8 @@ MESSAGE_KEYS = {
 }
 CAMPAIGN_KEYS = {
     "id", "status", "template_eskiz_id", "pattern", "original", "slot_roles", "slot_texts", "audience", "audience_ids",
-    "audience_label", "scheduled_at", "created_at", "started_at", "finished_at", "created_by_name", "error", "result",
+    "audience_label", "audience_filter", "excluded_user_ids", "scheduled_at", "created_at", "started_at", "finished_at",
+    "created_by_name", "error", "result",
 }
 RESULT_KEYS = {"sent", "failed", "rejected", "uncertain", "delivered", "undelivered", "errors", "skipped"}
 TEMPLATE_KEYS = {
@@ -388,7 +389,7 @@ class CampaignApiTests(ApiFixture):
         self.assertEqual((data["count"], data["over_limit"], data["limit"], data["parts_total"], data["cost"]), (1, False, 300, 1, 170))
         self.assertEqual(data["samples"][0]["text"][:40], "MASTER SAT'dan yozyabmiz. Karimova Malik")
         self.assertEqual(set(data["samples"][0]), {"name", "phone", "text", "parts"})
-        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "stale_balance", "not_debtor", "bad_text"})
+        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "stale_balance", "not_debtor", "bad_text", "excluded"})
 
     def test_create_queues_a_now_campaign(self):
         with self.captureOnCommitCallbacks(execute=True):
@@ -636,6 +637,58 @@ class DebtApiTests(ApiFixture):
         )
         runs = self.get("debt/runs/").json()["runs"]
         self.assertEqual(runs, [{"run_on": timezone.localdate().isoformat(), "total": 1, "by_status": {"DELIVERED": 1}, "parts": 1, "cost": 170}])
+
+
+class AudienceOptionsApiTests(ApiFixture):
+    def test_audience_options_counts(self):
+        region = Region.objects.create(name="Tashkent")
+        chilonzor = Branch.objects.create(region=region, name="Chilonzor")
+        Branch.objects.create(region=region, name="Empty")
+        for name, subject, level, days, branch, active in (
+            ("a", "ENGLISH", "senior", "EVEN", chilonzor, True),
+            ("b", "MATH", "", "EVEN", chilonzor, True),
+            ("closed", "ENGLISH", "middle", "ODD", chilonzor, False),
+        ):
+            Classroom.objects.create(
+                name=name, subject=subject, level=level, lesson_days=days, branch=branch, is_active=active,
+                created_by=self.admin,
+            )
+        data = self.get("audience/options/").json()
+        self.assertEqual(data, {
+            "subjects": [
+                {"value": "ENGLISH", "label": "English", "classes": 1},
+                {"value": "MATH", "label": "Math", "classes": 2},
+            ],
+            "levels": [
+                {"value": "junior", "label": "Junior", "classes": 1},
+                {"value": "senior", "label": "Senior", "classes": 1},
+            ],
+            "branches": [{"value": chilonzor.pk, "label": "Chilonzor", "classes": 2}],
+            "days": [
+                {"value": "ODD", "label": "Odd days", "classes": 1},
+                {"value": "EVEN", "label": "Even days", "classes": 2},
+            ],
+        })
+
+    def test_for_admins_only(self):
+        self.assertEqual(self.get("audience/options/", self.teacher).status_code, 403)
+
+    def test_a_filter_campaign_through_the_api(self):
+        body = self.draft(audience="filter", audience_ids=[], audience_filter={"subjects": ["MATH"], "levels": ["junior"]})
+        preview = self.post("campaigns/preview/", {**body, "include_recipients": True}).json()
+        self.assertEqual(preview["count"], 1)
+        self.assertEqual(preview["recipients"][0]["phone"], "99890***4567")
+        response = self.post("campaigns/", {**body, "excluded_user_ids": [self.student.pk]})
+        self.assertEqual(response.status_code, 201, response.content)
+        row = response.json()["campaign"]
+        self.assertEqual(set(row), CAMPAIGN_KEYS)
+        self.assertEqual(row["audience_label"], "Math · Junior")
+        self.assertEqual(row["audience_filter"], {"subjects": ["MATH"], "levels": ["junior"], "branches": [], "days": []})
+        self.assertEqual(row["excluded_user_ids"], [self.student.pk])
+
+    def test_an_empty_filter_through_the_api(self):
+        response = self.post("campaigns/preview/", self.draft(audience="filter", audience_ids=[]))
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "audience"))
 
 
 class TemplatesApiTests(ApiFixture):

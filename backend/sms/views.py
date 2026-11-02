@@ -34,7 +34,7 @@ from rest_framework.views import APIView
 
 from access import constants as C
 from classes.capabilities import is_global_admin
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership
 from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
 from lcup.phones import normalize_phone
@@ -226,6 +226,8 @@ def campaign_row(campaign, labels, live) -> dict:
         "audience": campaign.audience,
         "audience_ids": campaign.audience_ids,
         "audience_label": labels[campaign.pk],
+        "audience_filter": campaign.audience_filter,
+        "excluded_user_ids": campaign.excluded_user_ids,
         "scheduled_at": _iso(campaign.scheduled_at),
         "created_at": _iso(campaign.created_at),
         "started_at": _iso(campaign.started_at),
@@ -1010,6 +1012,29 @@ class AudienceClassroomsView(_AdminView):
             "classrooms": [
                 {"id": pk, "name": name, "students": students[pk], "with_phone": with_phone[pk]} for pk, name in rooms
             ]
+        })
+
+
+def _class_counts(field) -> dict:
+    rows = Classroom.objects.filter(is_active=True).values_list(field).annotate(n=Count("id")).order_by()
+    return dict(rows)
+
+
+def _options(choices, counts) -> list[dict]:
+    return [{"value": value, "label": label, "classes": counts[value]} for value, label in choices if counts.get(value)]
+
+
+class AudienceOptionsView(_AdminView):
+    """What a filter audience can choose from: only values some active class has, with how many."""
+
+    def get(self, request):
+        branches = _class_counts("branch_id")
+        names = Branch.objects.filter(pk__in=[pk for pk in branches if pk]).order_by("name", "pk").values_list("pk", "name")
+        return Response({
+            "subjects": _options(Classroom.SUBJECT_CHOICES, _class_counts("subject")),
+            "levels": _options(Classroom.LEVEL_CHOICES, _class_counts("level")),
+            "branches": _options(names, branches),
+            "days": _options(Classroom.DAYS_CHOICES, _class_counts("lesson_days")),
         })
 
 

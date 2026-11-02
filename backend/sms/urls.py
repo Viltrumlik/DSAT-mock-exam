@@ -27,6 +27,7 @@ urlpatterns = [
     path("admin/templates/sync/", views.TemplateSyncView.as_view(), name="sms-admin-templates-sync"),
     path("admin/templates/<int:eskiz_id>/", views.TemplateDetailView.as_view(), name="sms-admin-template"),
     path("admin/test/", views.TestSmsView.as_view(), name="sms-admin-test"),
+    path("admin/audience/options/", views.AudienceOptionsView.as_view(), name="sms-admin-audience-options"),
     path("admin/audience/classrooms/", views.AudienceClassroomsView.as_view(), name="sms-admin-audience-classrooms"),
     path("admin/audience/students/", views.AudienceStudentsView.as_view(), name="sms-admin-audience-students"),
 ]
