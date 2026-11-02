@@ -728,16 +728,7 @@ export function LiveAvatar({
   );
 }
 
-/** A player's face anywhere in the game: their avatar, or their initials if they have none. */
-export function PlayerAvatar({
-  avatar,
-  name,
-  size = 32,
-  colorIndex = 0,
-  face,
-  still,
-  className,
-}: {
+interface PlayerAvatarProps {
   avatar?: AvatarWire | null;
   name: string;
   size?: number;
@@ -745,7 +736,10 @@ export function PlayerAvatar({
   face?: AvatarFace;
   still?: boolean;
   className?: string;
-}) {
+}
+
+/** The player without their frame: their character, or their initials if they have none. */
+function BareAvatar({ avatar, name, size = 32, colorIndex = 0, face, still, className }: PlayerAvatarProps) {
   if (avatar && CHARACTERS[avatar.character]) {
     return (
       <LiveAvatar
@@ -770,6 +764,26 @@ export function PlayerAvatar({
   );
 }
 
+/**
+ * A player's face anywhere in the game, in the frame they wear. The frame stays inside the size
+ * given, so a row of names does not move for it.
+ */
+export function PlayerAvatar({ className, ...player }: PlayerAvatarProps) {
+  const size = player.size ?? 32;
+  const ring = player.avatar?.frame ? FRAME_RINGS[player.avatar.frame] : undefined;
+  if (!ring) return <BareAvatar {...player} className={className} />;
+  return (
+    <span
+      className={cn("flex shrink-0 rounded-full", className)}
+      style={{ width: size, height: size, padding: Math.max(2, Math.round(size * 0.03)), background: ring }}
+    >
+      <span className="flex h-full w-full items-center justify-center rounded-full bg-[#1b1636]">
+        <BareAvatar {...player} size={Math.round(size * 0.78)} />
+      </span>
+    </span>
+  );
+}
+
 /** An avatar on its round backdrop: the disc the lobby, the podium and the top bar all share. */
 export function AvatarDisc({
   avatar,
@@ -790,18 +804,9 @@ export function AvatarDisc({
   background?: string;
   className?: string;
 }) {
-  const ring = avatar?.frame ? FRAME_RINGS[avatar.frame] : undefined;
-  if (ring) {
-    return (
-      <span
-        className={cn("flex shrink-0 rounded-full", className)}
-        style={{ width: size, height: size, padding: Math.max(2, Math.round(size * 0.03)), background: ring }}
-      >
-        <span className="flex h-full w-full items-center justify-center rounded-full bg-[#1b1636]">
-          <PlayerAvatar avatar={avatar} name={name} size={Math.round(size * 0.78)} face={face} still={still} colorIndex={colorIndex} />
-        </span>
-      </span>
-    );
+  // A frame is its own backdrop.
+  if (avatar?.frame && FRAME_RINGS[avatar.frame]) {
+    return <PlayerAvatar avatar={avatar} name={name} size={size} face={face} still={still} colorIndex={colorIndex} className={className} />;
   }
   return (
     <span
