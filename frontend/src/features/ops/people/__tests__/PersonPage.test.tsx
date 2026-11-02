@@ -79,6 +79,7 @@ function core(over: Partial<PersonCore> = {}): PersonCore {
       debt: 250000,
       updated_at: "2026-10-15T09:00:00+05:00",
       frozen_for_debt: false,
+      debt_notice: true,
       freeze_day: 6,
       monthly_cost: 500000,
       groups: [{ name: "G21", monthly_cost: 500000 }],
