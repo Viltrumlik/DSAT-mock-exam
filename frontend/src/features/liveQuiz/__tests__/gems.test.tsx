@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/live/shop", useRouter: 
 const { AVATAR_CHARACTERS, AvatarDisc, EmoteBubble, LiveAvatar, PlayerAvatar } = await import("../avatars");
 const { GemShop } = await import("../GemShop");
 const { Locker } = await import("../Locker");
+const { NextLookCard } = await import("../PlayerSummary");
 const { EMPTY_ROOM, reduce } = await import("../useLiveQuiz");
 const { gamesToGo, nextGoal } = await import("../theme");
 
@@ -367,6 +368,48 @@ describe("what to save for next", () => {
 
   it("is nothing at all when they own the whole shop", () => {
     expect(nextGoal(state({ character: "fox", skin: null }, [skin("char:fox", 100, true)]))).toBeNull();
+  });
+
+  const accessory = (kind: string, key: string, price: number, owned = false) =>
+    item(`${kind}:${key}`, { kind, character: "", slot_key: key, name: key, price, owned }) as ReturnType<typeof item>;
+
+  it("moves on to the cheapest hat, frame or emote once the characters and skins are theirs", () => {
+    const shop = state({ character: "fox", skin: null }, [
+      skin("char:fox", 100, true),
+      skin("skin:fox:rare", 150, true),
+      accessory("hat", "crown", 600),
+      accessory("frame", "bronze", 150),
+      accessory("emote", "gg", 120, true),
+    ]);
+    expect(nextGoal(shop)?.key).toBe("frame:bronze");
+  });
+
+  it("still puts a skin before a cheaper hat", () => {
+    const shop = state({ character: "fox", skin: null }, [skin("char:fox", 100, true), skin("skin:fox:rare", 150), accessory("emote", "gg", 120)]);
+    expect(nextGoal(shop)?.key).toBe("skin:fox:rare");
+  });
+
+  describe("the card after a game", () => {
+    const card = (items: ReturnType<typeof item>[]) =>
+      renderToStaticMarkup(<NextLookCard shop={{ ...state({ character: "fox", skin: null }, items), can_claim_starter: false }} />);
+
+    it("draws a hat on what they wear, and leads to the locker, where it is sold", () => {
+      const html = card([skin("char:fox", 100, true), accessory("hat", "crown", 600)]);
+      expect(html).not.toContain("You own the whole shop");
+      expect(html).toContain('aria-label="Ember with Crown"');
+      expect(html).toContain('href="/live/locker"');
+      expect(html).not.toContain('href="/live/shop"');
+    });
+
+    it("draws a skin on its own character, and leads to the shop", () => {
+      const html = card([skin("char:fox", 100, true), skin("skin:fox:rare", 150)]);
+      expect(html).toContain('aria-label="Sunset Ember"');
+      expect(html).toContain('href="/live/shop"');
+    });
+
+    it("says the shop is theirs only when nothing is left", () => {
+      expect(card([skin("char:fox", 100, true), accessory("hat", "crown", 600, true)])).toContain("You own the whole shop");
+    });
   });
 
   it("says roughly how many games a price is", () => {
