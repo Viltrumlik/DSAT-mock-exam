@@ -153,6 +153,9 @@ export function GameTopBar({
   const hasIndex = typeof index === "number" && typeof total === "number" && total > 0;
   return (
     <div className="sticky top-0 z-10 space-y-3 px-4 pb-2 pt-4 sm:px-6">
+      {/* What scrolls under the bar blurs rather than reading through its counters. On a layer of
+          its own: a backdrop filter on the bar would trap the host's full-screen dialogs. */}
+      <div aria-hidden className="absolute inset-0 -z-10 mb-0 backdrop-blur-md [mask-image:linear-gradient(to_bottom,black_88%,transparent)]" />
       <div className="flex flex-wrap items-center gap-2">
         {onExit && (
           <button type="button" onClick={onExit} aria-label="Leave the game" className={ROUND_BUTTON}>

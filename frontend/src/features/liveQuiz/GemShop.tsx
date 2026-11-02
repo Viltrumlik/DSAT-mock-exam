@@ -112,7 +112,7 @@ export function GemShop() {
   const openCharacter = opened ? characters.find((c) => c.character === opened) : undefined;
   if (openCharacter) {
     return (
-      <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-4">
+      <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-4 sm:px-4">
         {header}
         <button
           type="button"
@@ -136,7 +136,7 @@ export function GemShop() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4 px-1 py-4 sm:px-4">
       <Link href="/live" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Live quiz
       </Link>

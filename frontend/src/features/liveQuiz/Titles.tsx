@@ -44,7 +44,7 @@ export function Titles() {
   }
   if (!shop.data.look) {
     return (
-      <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-6 text-center">
+      <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-6 text-center sm:px-4">
         <p className="text-lg font-bold">A title goes with a character</p>
         <p className="text-sm text-muted-foreground">Pick your free character first, then come back here.</p>
         <Link href="/live/shop" className="inline-flex h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-bold text-primary-foreground">
@@ -74,7 +74,7 @@ function TitlesBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
   const limited = shop.items.filter((item) => item.limited);
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-4">
+    <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-4 sm:px-4">
       <Link href="/live" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Live quiz
       </Link>

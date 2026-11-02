@@ -93,7 +93,7 @@ export function Locker() {
   }
   if (!shop.data.look) {
     return (
-      <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-6 text-center">
+      <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-6 text-center sm:px-4">
         <p className="text-lg font-bold">Your locker is empty</p>
         <p className="text-sm text-muted-foreground">Pick your free character first, then dress them here.</p>
         <Link href="/live/shop" className="inline-flex h-12 items-center rounded-xl bg-primary px-6 text-[15px] font-bold text-primary-foreground">
@@ -128,7 +128,7 @@ function LockerBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
   const name = [me?.first_name, me?.last_name].filter(Boolean).join(" ");
 
   return (
-    <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-4">
+    <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-4 sm:px-4">
       <Link href="/live" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Live quiz
       </Link>
@@ -270,8 +270,9 @@ function SlotGrid({
         <Check className="h-3 w-3" aria-hidden /> Owned
       </span>
     ) : item.limited && !item.on_sale ? (
-      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
-        <Lock className="h-3 w-3" aria-hidden /> Back in {item.back_in}
+      <span className="text-center text-[11px] font-bold leading-tight text-muted-foreground">
+        <Lock className="mr-1 inline h-3 w-3 align-[-2px]" aria-hidden />
+        Back in {item.back_in}
       </span>
     ) : item.limited ? (
       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
