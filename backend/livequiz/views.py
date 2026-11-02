@@ -364,7 +364,7 @@ class ShopEquipView(APIView):
         _require_enabled()
         skin = request.data.get("skin") or None
         # A slot left out of the request stays as it is; one sent empty comes off.
-        slots = {slot: request.data[slot] for slot in avatars.SLOTS if slot in request.data}
+        slots = {slot: request.data[slot] for slot in (*avatars.SLOTS, "title") if slot in request.data}
         gems.equip(request.user, str(request.data.get("character") or ""), str(skin) if skin else None, **slots)
         return Response(gems.shop_state(request.user))
 

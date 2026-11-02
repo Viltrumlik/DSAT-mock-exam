@@ -20,6 +20,9 @@ the character changes.
 
 from __future__ import annotations
 
+import calendar
+from datetime import date, timedelta
+
 COMMON = "common"
 RARE = "rare"
 EPIC = "epic"
@@ -54,6 +57,7 @@ CHARACTERS: dict[str, dict] = {
 STARTERS = tuple(key for key, info in CHARACTERS.items() if info["starter"])
 
 LEGENDARY = "legendary"
+LIMITED = "limited"
 
 # The slots a look has besides its character and skin, each with what can go in it.
 HATS: dict[str, dict] = {
@@ -61,6 +65,10 @@ HATS: dict[str, dict] = {
     "headphones": {"name": "Headphones", "tier": RARE, "price": 200},
     "doppi": {"name": "Doʻppi", "tier": EPIC, "price": 350},
     "crown": {"name": "Crown", "tier": LEGENDARY, "price": 600},
+    # On sale only in these months. Once bought they are the student's for good, in or out of
+    # season: a season limits the selling, not the wearing.
+    "winter_beanie": {"name": "Winter beanie", "tier": LIMITED, "price": 250, "months": (12, 1, 2)},
+    "navroz_tulips": {"name": "Navroʻz tulips", "tier": LIMITED, "price": 250, "months": (3,)},
 }
 FRAMES: dict[str, dict] = {
     "bronze": {"name": "Bronze frame", "tier": COMMON, "price": 150},
@@ -114,7 +122,26 @@ def price_of(item_key: str) -> int | None:
     return SLOTS[kind][key]["price"]
 
 
-def all_items() -> list[dict]:
+def season_of(item_key: str, today: date) -> dict | None:
+    """When a limited item can be bought, or None for an item that is always on sale."""
+    parsed = parse(item_key)
+    months = SLOTS[parsed[0]][parsed[1]].get("months") if parsed and parsed[0] in SLOTS else None
+    if not months:
+        return None
+    if today.month not in months:
+        month = today.month
+        while month not in months:
+            month = month % 12 + 1
+        return {"on_sale": False, "days_left": None, "back_in": calendar.month_name[month]}
+    days_left = 0
+    day = today
+    while day.month in months:
+        days_left += 1
+        day += timedelta(days=1)
+    return {"on_sale": True, "days_left": days_left, "back_in": None}
+
+
+def all_items(today: date) -> list[dict]:
     """Every item in shop order: each character followed by its three skins, then each slot's."""
     rows = []
     for key, info in CHARACTERS.items():
@@ -156,4 +183,7 @@ def all_items() -> list[dict]:
                     "starter": False,
                 }
             )
+            season = season_of(slot_key(slot, key), today)
+            if season:
+                rows[-1].update(limited=True, **season)
     return rows
