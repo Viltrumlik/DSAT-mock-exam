@@ -7,7 +7,9 @@ import { authApi } from "@/lib/api";
 import { useMe } from "@/hooks/useMe";
 import { cn } from "@/lib/cn";
 import { AppShell } from "./AppShell";
-import { isPublicStudent } from "@/lib/roles";
+import { isCentreStudent, isPublicStudent } from "@/lib/roles";
+import { DebtTicker } from "@/features/finance/DebtTicker";
+import { useDebtNotice } from "@/features/finance/financeHooks";
 import { publicStudentNav, studentNav, reviewNavSection } from "./navConfig";
 import { EventsHeaderButton, EventsMenuRow, StudentHeaderExtras, StudentAccountMenuRows } from "./StudentHeaderExtras";
 import { isReviewerRole } from "@/features/reviewCenter/ui";
@@ -26,6 +28,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
     last_name?: string;
     profile_image_url?: string | null;
     role?: string;
+    is_frozen?: boolean;
   } | undefined;
   const name = [m?.first_name, m?.last_name].filter(Boolean).join(" ").trim() || undefined;
 
@@ -55,6 +58,9 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
     /^\/classes\/[^/]+\/assignments\/(new|[^/]+\/edit)(\/|$)/.test(p) ||
     /^\/vocabulary\/sets\/\d+\/(flashcards|matching|speed|test)$/.test(p) ||
     p === QOTD_PATH;
+  // The red band under the header: a centre student's, not a frozen one's, whose own screen says the
+  // amount. A runner has no header to run under, and no business asking.
+  const debt = useDebtNotice(isAuthenticated && !isImmersiveRunner && isCentreStudent(m?.role) && !m?.is_frozen);
   if (isImmersiveRunner) {
     return (
       <AuthGuard>
@@ -82,6 +88,7 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
         // Reviewers and staff browse the student shell but earn nothing, so a points pill
         // reading zero on every page would be noise rather than information.
         headerSlot={isAuthenticated && !isReviewer ? learnerHeader : undefined}
+        belowHeader={debt !== null ? <DebtTicker debt={debt} /> : undefined}
         accountMenu={isAuthenticated && !isReviewer ? learnerMenuRows : undefined}
         // Gated on being signed in: the summary endpoint 401s for an anonymous visitor, and
         // a bell nobody can fill is the decoration this was rebuilt to remove.
@@ -103,7 +110,9 @@ export default function StudentAppShell({ children }: { children: React.ReactNod
           {isAuthenticated && !isReviewer ? <StudentPrompts surveys={!isPublic} /> : null}
           {/* Today's Question of the Day, top right until the student solves it or says "Not
               today". Centre learners only: a public learner is not dealt one. */}
-          {isAuthenticated && !isReviewer && !isPublic ? <QuestionOfTheDayPrompt userId={m?.id} /> : null}
+          {isAuthenticated && !isReviewer && !isPublic ? (
+            <QuestionOfTheDayPrompt userId={m?.id} belowTicker={debt !== null} />
+          ) : null}
           {children}
         </div>
       </AppShell>

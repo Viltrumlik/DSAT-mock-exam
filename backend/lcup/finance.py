@@ -248,8 +248,8 @@ def _payment_row(p) -> dict:
 
 
 def student_finance(user) -> dict:
-    """A student's own money, for their Payments panel and the frozen screen."""
-    link = LcupStudentLink.objects.filter(user=user).first()
+    """A student's own money, for their Payments panel, the frozen screen and the ticker under the header."""
+    link = LcupStudentLink.objects.select_related("user").filter(user=user).first()
     if link is None:
         return {"linked": False}
     groups = _live_groups([link]).get(link.pk, [])
@@ -261,6 +261,8 @@ def student_finance(user) -> dict:
         "debt": max(0, -balance) if balance is not None else None,
         "updated_at": link.balance_seen_at.isoformat() if link.balance_seen_at else None,
         "frozen_for_debt": _debt_frozen(user),
+        # The ticker goes to whom the SMS warns. A frozen learner's own screen already says the amount.
+        "debt_notice": freezable(link),
         "freeze_day": debt_freeze_day(),
         "monthly_cost": sum(_group_cost(g) for g in groups),
         "groups": [{"name": _group_name(g), "monthly_cost": _group_cost(g)} for g in groups],

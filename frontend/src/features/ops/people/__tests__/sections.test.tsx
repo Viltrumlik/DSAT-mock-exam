@@ -377,6 +377,7 @@ describe("the debt-freeze tile", () => {
     debt: 650000,
     updated_at: null,
     frozen_for_debt: false,
+    debt_notice: true,
     freeze_day: 6,
     monthly_cost: 650000,
     groups: [],

@@ -18,13 +18,21 @@
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import { Button } from "@/components/ui";
+import { cn } from "@/lib/cn";
 import { rewardLabel, trackLabel } from "./dailyQuestionsFormat";
 import { useTodaysQuestions } from "./dailyQuestionsHooks";
 import { useQotdSkip } from "./useQotdSkip";
 
 export const QOTD_PATH = "/question-of-the-day";
 
-export function QuestionOfTheDayPrompt({ userId }: { userId: number | null | undefined }) {
+export function QuestionOfTheDayPrompt({
+  userId,
+  belowTicker = false,
+}: {
+  userId: number | null | undefined;
+  /** The debt band is under the header, where this would sit. Lower on a phone: reduced motion wraps it. */
+  belowTicker?: boolean;
+}) {
   const router = useRouter();
   const today = useTodaysQuestions();
   const skip = useQotdSkip(userId, today.data?.date);
@@ -39,7 +47,10 @@ export function QuestionOfTheDayPrompt({ userId }: { userId: number | null | und
   return (
     <section
       aria-labelledby="qotd-prompt-title"
-      className="ds-anim-slide-right fixed left-3 right-3 top-[76px] z-[45] rounded-2xl border border-border bg-card p-4 shadow-modal md:left-auto md:right-6 md:w-[360px]"
+      className={cn(
+        "ds-anim-slide-right fixed left-3 right-3 z-[45] rounded-2xl border border-border bg-card p-4 shadow-modal md:left-auto md:right-6 md:w-[360px]",
+        belowTicker ? "top-[124px] md:top-[112px]" : "top-[76px]",
+      )}
     >
       <div className="flex items-start gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-soft text-primary">

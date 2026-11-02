@@ -1,0 +1,69 @@
+/* Red and yellow are the owner's, the same in both themes. This red, not a brighter one: yellow on it
+   stays readable at this size. */
+.bar {
+  /* Below md the document scrolls and the header stays: so does this, right under it. */
+  position: sticky;
+  top: 4rem;
+  z-index: 30;
+  overflow: hidden;
+  background: #b91c1c;
+  color: #fde047;
+  padding-block: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  /* From md the column does not scroll. Under <main> (z-10), so a dialog inside a page covers it. */
+  .bar {
+    position: relative;
+    top: auto;
+    z-index: 1;
+  }
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  /* About 50px a second on any screen: the track's width comes from the text, not the screen. */
+  animation: debt-ticker 96s linear infinite;
+}
+
+.copy {
+  flex: none;
+  padding-inline: 1.5rem;
+  white-space: nowrap;
+}
+
+/* Half of itself: the second half lands exactly where the first began, moving right to left. */
+@keyframes debt-ticker {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@media (hover: hover) {
+  .bar:hover .track {
+    animation-play-state: paused;
+  }
+}
+
+/* No motion: the sentence once, standing still, wrapping on a phone. */
+@media (prefers-reduced-motion: reduce) {
+  .track {
+    width: auto;
+    justify-content: center;
+    animation: none;
+  }
+
+  .copy {
+    flex: 0 1 auto;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .copy[aria-hidden] {
+    display: none;
+  }
+}

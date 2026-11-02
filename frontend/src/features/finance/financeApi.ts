@@ -21,6 +21,8 @@ export interface MyFinance {
   debt: number | null;
   updated_at: string | null;
   frozen_for_debt: boolean;
+  /** Whether the band under the header is theirs: whom the debt SMS warns, `lcup.finance.freezable`. */
+  debt_notice: boolean;
   /** From this day of each month an unpaid balance freezes the account. */
   freeze_day: number;
   monthly_cost: number;
