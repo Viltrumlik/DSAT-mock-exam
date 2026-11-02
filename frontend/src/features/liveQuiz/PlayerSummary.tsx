@@ -16,7 +16,16 @@ import { cn } from "@/lib/cn";
 
 import Link from "next/link";
 
-import { SHOP_KEY, liveQuizApi, type AvatarSkin, type LiveParticipant, type ShopState, type TeamStanding } from "./api";
+import {
+  SHOP_KEY,
+  liveQuizApi,
+  type AvatarSkin,
+  type AvatarWire,
+  type LiveParticipant,
+  type ShopItem,
+  type ShopState,
+  type TeamStanding,
+} from "./api";
 import { AvatarDisc, GemIcon } from "./avatars";
 import { Confetti, FinalStandings, GamePanel, Podium, TrophyHeading } from "./game";
 import { gamesToGo, nextGoal, ordinal, tileColor } from "./theme";
@@ -266,11 +275,17 @@ function GemsCard({
 }
 
 /** What their gems are getting them closer to, with the real distance. */
-function NextLookCard({ shop }: { shop: ShopState }) {
+/** What a goal looks like: a hat or frame on what they already wear, a skin on its character. */
+function goalLook(goal: ShopItem, worn: AvatarWire | null): AvatarWire {
+  if (goal.slot_key && worn) return { ...worn, [goal.kind]: goal.slot_key };
+  return { character: goal.character, skin: goal.kind === "skin" ? (goal.tier as AvatarSkin) : null };
+}
+
+export function NextLookCard({ shop }: { shop: ShopState }) {
   const goal = nextGoal(shop);
-  const button = (label: string) => (
+  const button = (label: string, href = "/live/shop") => (
     <Link
-      href="/live/shop"
+      href={href}
       className="inline-flex h-12 w-full items-center justify-center rounded-[14px] bg-white text-base font-extrabold text-violet-700 shadow-[inset_0_-4px_0_rgba(109,40,217,0.16)]"
     >
       {label}
@@ -294,7 +309,7 @@ function NextLookCard({ shop }: { shop: ShopState }) {
     <GamePanel className="flex flex-col gap-3 px-4 py-3.5">
       <div className="flex items-center gap-3.5">
         <AvatarDisc
-          avatar={{ character: goal.character, skin: goal.kind === "skin" ? (goal.tier as AvatarSkin) : null }}
+          avatar={goalLook(goal, shop.look)}
           name={goal.name}
           size={62}
           still
@@ -318,7 +333,8 @@ function NextLookCard({ shop }: { shop: ShopState }) {
           </p>
         </div>
       </div>
-      {button("Open the shop")}
+      {/* The shop sells characters and skins; hats, frames and emotes are in the locker. */}
+      {goal.slot_key ? button("Open your locker", "/live/locker") : button("Open the shop")}
     </GamePanel>
   );
 }

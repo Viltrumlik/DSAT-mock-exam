@@ -51,7 +51,8 @@ const byPrice = (a: ShopItem, b: ShopItem) => a.price - b.price;
 
 /**
  * The look worth saving for next: the cheapest skin of the character they are wearing, then the
- * cheapest new character, then any skin left. Null when they own the whole shop.
+ * cheapest new character, then any skin left, then the cheapest hat, frame or emote. Null when
+ * they own the whole shop.
  */
 export function nextGoal(shop: ShopState): ShopItem | null {
   const unowned = shop.items.filter((item) => !item.owned);
@@ -62,6 +63,7 @@ export function nextGoal(shop: ShopState): ShopItem | null {
     skins.find((item) => item.character === worn) ??
     unowned.filter((item) => item.kind === "character").sort(byPrice)[0] ??
     skins.find((item) => own.includes(item.character)) ??
+    unowned.filter((item) => item.slot_key).sort(byPrice)[0] ??
     null
   );
 }

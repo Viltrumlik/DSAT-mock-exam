@@ -34,7 +34,7 @@ import { cn } from "@/lib/cn";
 
 import type { AvatarWire, LiveChoice, LiveParticipant, PowerUpKey, TeamStanding } from "./api";
 import styles from "./game.module.css";
-import { AvatarDisc, GemIcon, PlayerAvatar, type AvatarFace } from "./avatars";
+import { AvatarDisc, EmoteBubble, GemIcon, PlayerAvatar, type AvatarFace } from "./avatars";
 import { POWERUPS, ordinal, shortName, tileColor, tileShape, type TileShape } from "./theme";
 import type { OwnFeedback } from "./useLiveQuiz";
 
@@ -426,6 +426,11 @@ export function FeedbackSplash({
       aria-live="polite"
     >
       <div className={cn("relative z-[1]", styles.bob)}>
+        {right && avatar?.emote && (
+          <span className="absolute -right-10 -top-3 z-[2]">
+            <EmoteBubble emote={avatar.emote} />
+          </span>
+        )}
         <span
           className="flex h-[156px] w-[156px] items-center justify-center rounded-full"
           style={{ background: "rgba(18, 13, 38, 0.9)", boxShadow: `0 0 0 6px rgba(${tone.rgb}, 0.25)` }}
@@ -618,6 +623,11 @@ export function Podium({ rows, size = "small" }: { rows: LiveParticipant[]; size
           <div key={row.id} className={cn("flex flex-col items-center", look.width, styles.rise)}
             style={{ animationDelay: `${[400, 800, 0][i]}ms` }}
           >
+            {row.avatar?.emote && (
+              <span className="mb-3">
+                <EmoteBubble emote={row.avatar.emote} />
+              </span>
+            )}
             <AvatarDisc
               avatar={row.avatar}
               name={row.display_name}
@@ -897,8 +907,11 @@ export function PlayerLobby({ me, participants }: { me: LiveParticipant | null; 
     >
       {me && <p className="mt-6 text-xl font-bold">{me.display_name}</p>}
       {me && (
-        <Link href="/live/shop" className="mt-1 inline-flex items-center gap-1 text-sm text-cyan-200 hover:underline">
-          <GemIcon size={14} /> {me.avatar ? "Change your avatar" : "Pick an avatar in the shop"}
+        <Link
+          href={me.avatar ? "/live/locker" : "/live/shop"}
+          className="mt-1 inline-flex items-center gap-1 text-sm text-cyan-200 hover:underline"
+        >
+          <GemIcon size={14} /> {me.avatar ? "Change your look" : "Pick an avatar in the shop"}
         </Link>
       )}
       {me && typeof me.team === "number" && (
