@@ -120,11 +120,15 @@ def _expired(resp) -> bool:
     return resp.status_code == 500 and "token has expired" in _message(resp).lower()
 
 
+#: eskiz's words for an account with no money, in lower case ("Please, fill the balance"). Not any
+#: mention of the balance: a refusal a top-up would not fix must stay REJECTED.
+NO_BALANCE_WORDS = ("fill the balance", "insufficient balance")
+
+
 def no_balance(text) -> bool:
-    """Whether these are eskiz's words for an account with no money: "Please, fill the balance".
-    Not any mention of the balance: a refusal a top-up would not fix must stay REJECTED."""
+    """Whether these are eskiz's words for an account with no money."""
     words = str(text or "").lower()
-    return "fill the balance" in words or "insufficient balance" in words
+    return any(phrase in words for phrase in NO_BALANCE_WORDS)
 
 
 def _send_result(resp) -> SendResult:

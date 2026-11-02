@@ -361,6 +361,67 @@ class NoBalanceTests(TestCase):
         self.assertEqual(self.account.taken, [AZIZ_PHONE])
         self.assertEqual(self.statuses()["student:102"], SmsMessage.STATUS_FAILED)
 
+    def operator_rejects(self, phone):
+        """What the :30 status check records when the operator turns down an SMS eskiz took."""
+        SmsMessage.objects.filter(phone=phone).update(status=SmsMessage.STATUS_UNDELIVERED, eskiz_status="REJECTED")
+
+    def aziz(self):
+        msg = SmsMessage.objects.get(phone=AZIZ_PHONE)
+        return msg.status, msg.attempts
+
+    def test_tries_refused_for_want_of_balance_do_not_use_up_the_one_more_try(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_tick, 11)
+        self.assertEqual(self.aziz(), (SmsMessage.STATUS_SENT, 1))
+        self.operator_rejects(AZIZ_PHONE)
+        self.run_task(tasks.debt_warnings_tick, 12)
+        self.assertEqual(self.aziz(), (SmsMessage.STATUS_SENT, 2))
+        self.assertEqual(self.account.taken.count(AZIZ_PHONE), 2)
+        self.assertEqual(self.account.taken.count(MALIKA_PHONE), 1)
+
+    def test_a_top_up_after_the_retries_still_gets_the_one_more_try_at_a_later_hour(self):
+        # 2026-11-02 as it happened: nothing went until "Send now" at 14:00; 12 were then rejected.
+        for hour in (10, 11, 12):
+            self.run_task(tasks.debt_warnings_tick, hour)
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_now, 14)
+        self.operator_rejects(AZIZ_PHONE)
+        self.assertEqual(self.run_task(tasks.debt_warnings_tick, 15)["sent"], 1)
+        self.assertEqual(self.account.taken.count(AZIZ_PHONE), 2)
+        self.assertEqual(self.account.taken.count(MALIKA_PHONE), 1)
+
+    def test_the_second_operator_rejection_of_a_healed_sms_is_final(self):
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_now, 14)
+        self.operator_rejects(AZIZ_PHONE)
+        self.run_task(tasks.debt_warnings_tick, 15)
+        self.operator_rejects(AZIZ_PHONE)
+        self.assertEqual(self.run_task(tasks.debt_warnings_tick, 16), {"skipped": "not the hour"})
+        self.assertEqual(self.account.taken.count(AZIZ_PHONE), 2)
+
+    def test_the_one_more_try_refused_for_want_of_balance_is_still_the_last_one(self):
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_tick, 10)
+        self.operator_rejects(AZIZ_PHONE)
+        self.account.funded = False
+        self.run_task(tasks.debt_warnings_tick, 11)
+        self.assertEqual(self.aziz(), (SmsMessage.STATUS_FAILED, 2))
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_tick, 12)
+        self.assertEqual(self.aziz(), (SmsMessage.STATUS_SENT, 2))
+        self.operator_rejects(AZIZ_PHONE)
+        self.assertEqual(self.run_task(tasks.debt_warnings_tick, 13), {"skipped": "not the hour"})
+        self.assertEqual(self.account.taken.count(AZIZ_PHONE), 2)
+
+    def test_no_one_more_try_goes_out_after_the_last_hour_the_panel_allows(self):
+        self.account.top_up()
+        self.run_task(tasks.debt_warnings_now, 20)
+        self.operator_rejects(AZIZ_PHONE)
+        self.assertEqual(self.run_task(tasks.debt_warnings_tick, 21), {"skipped": "not the hour"})
+        self.assertEqual(self.account.taken.count(AZIZ_PHONE), 1)
+
     def test_a_refusal_that_would_only_repeat_stays_rejected(self):
         self.debtor(103, "bek", PERFECTUM_PHONE)
         self.run_task(tasks.debt_warnings_tick, 10)

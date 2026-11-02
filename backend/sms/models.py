@@ -217,7 +217,8 @@ class SmsMessage(models.Model):
     #: so'm per part when it was claimed (``switchboard.price_per_part``), so a later price leaves past costs alone.
     unit_price = models.PositiveIntegerField(null=True, blank=True)
     error = models.CharField(max_length=400, blank=True, default="")
-    #: 1, plus one for every later run that sent a FAILED one (it never left) again.
+    #: 1, plus one for every later run that sent a FAILED one (it never left) again, unless that one
+    #: was refused for want of balance: no operator saw it, so the next send is not another try.
     attempts = models.PositiveSmallIntegerField(default=1)
     sent_at = models.DateTimeField(null=True, blank=True)
     checked_at = models.DateTimeField(null=True, blank=True)

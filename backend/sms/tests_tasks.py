@@ -119,6 +119,32 @@ class TickTests(TestCase):
             self.assertEqual(result, {"skipped": "not the hour"})
             send.assert_not_called()
 
+    def rejected_by_operator(self, *, sent_hour=14, sent_minute=0, attempts=1):
+        from sms.models import SmsMessage
+
+        SmsMessage.objects.create(
+            kind=SmsMessage.KIND_DEBT_WARNING, run_on=local(10).date(), dedupe_key="student:101", phone="998901234567",
+            text="x", status=SmsMessage.STATUS_UNDELIVERED, eskiz_status="REJECTED", attempts=attempts,
+            sent_at=local(sent_hour).replace(minute=sent_minute),
+        )
+
+    def test_an_operator_rejection_after_the_retries_gets_a_later_retry_run(self):
+        self.rejected_by_operator()
+        self.assertEqual(self.tick(15)[1].call_args.kwargs, {"retry_only": True})
+
+    def test_the_later_run_waits_out_the_half_hour(self):
+        self.rejected_by_operator(sent_minute=45)
+        self.assertEqual(self.tick(15)[0], {"skipped": "not the hour"})
+
+    def test_a_second_rejection_gets_no_later_run(self):
+        self.rejected_by_operator(attempts=2)
+        self.assertEqual(self.tick(15)[0], {"skipped": "not the hour"})
+
+    def test_the_later_run_stops_at_the_last_hour_the_panel_allows(self):
+        self.rejected_by_operator()
+        self.assertEqual(self.tick(20)[1].call_args.kwargs, {"retry_only": True})
+        self.assertEqual(self.tick(21)[0], {"skipped": "not the hour"})
+
     def test_a_changed_hour_is_honoured(self):
         configure(debt_hour=9)
         self.assertEqual(self.tick(9)[1].call_args.kwargs, {"retry_only": False})

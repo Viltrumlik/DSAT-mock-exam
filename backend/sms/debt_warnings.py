@@ -188,16 +188,28 @@ OPERATOR_REJECTED = ("REJECTED", "REJECTD")
 RESEND_AFTER = timedelta(minutes=30)
 
 
+def _owed_one_more_try(run_on, now):
+    return SmsMessage.objects.filter(
+        kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, status=SmsMessage.STATUS_UNDELIVERED,
+        eskiz_status__in=OPERATOR_REJECTED, attempts=1, sent_at__lte=now - RESEND_AFTER,
+    )
+
+
+def owes_one_more_try(now) -> bool:
+    """Whether a warning from today waits for its one more try: what brings the tick back after the
+    retries are over, when a late top-up and "Send now" put it out after them."""
+    return _owed_one_more_try(timezone.localdate(now), now).exists()
+
+
 def give_operator_rejections_one_more_try(run_on, now) -> int:
     """Owner, 2026-11-01 ("Faqat qayta urinish"): a warning the operator rejected goes once more in the
     next retry run — that morning Uzmobile rejected 8 of the first 16 of a fast burst and took the
     slower ones. The row is set back to FAILED, so deliver() re-claims it (attempts 2) and sends it;
     a second rejection is final. Not a phone off for 24 h (EXPIRED), and not eskiz's own refusal at
     send (REJECTED status, e.g. "perfectum: Not allowed"): those would only fail again."""
-    return SmsMessage.objects.filter(
-        kind=SmsMessage.KIND_DEBT_WARNING, run_on=run_on, status=SmsMessage.STATUS_UNDELIVERED,
-        eskiz_status__in=OPERATOR_REJECTED, attempts=1, sent_at__lte=now - RESEND_AFTER,
-    ).update(status=SmsMessage.STATUS_FAILED, error="the operator rejected it; one more try")
+    return _owed_one_more_try(run_on, now).update(
+        status=SmsMessage.STATUS_FAILED, error="the operator rejected it; one more try"
+    )
 
 
 def send(client, now, *, retry_only: bool = False) -> dict:

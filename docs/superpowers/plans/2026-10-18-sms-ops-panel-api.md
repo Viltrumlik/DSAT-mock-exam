@@ -152,7 +152,7 @@ Columns, in this order: `Date` (Tashkent, `YYYY-MM-DD HH:MM`), `Name`, `Phone`, 
 - Unknown — may have gone;
 - Waiting for the operator.
 
-` · try N` is added when attempts > 1.
+` · try N` is added when attempts > 1. A send after a refusal for want of balance does not add to `attempts`: no operator saw that try.
 
 ## POST messages/resend/
 
