@@ -278,6 +278,9 @@ class UserMeSerializer(serializers.ModelSerializer):
     def validate_profile_image(self, value):
         if value is None:
             return value
+        reason = getattr(self.instance, "profile_image_ban_reason", "")
+        if reason:
+            raise serializers.ValidationError(f"You can't set a profile photo: {reason}. Please visit the administration.")
         max_b = int(getattr(settings, "USER_PROFILE_MAX_IMAGE_BYTES", 5 * 1024 * 1024))
         size = int(getattr(value, "size", 0) or 0)
         if size > max_b:
