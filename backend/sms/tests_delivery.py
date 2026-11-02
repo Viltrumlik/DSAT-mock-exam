@@ -127,9 +127,21 @@ class NoBalanceTests(TestCase):
         account.top_up()
         again = send(client)
         again.refresh_from_db()
-        self.assertEqual((again.pk, again.status, again.attempts, again.error), (msg.pk, SmsMessage.STATUS_SENT, 2, ""))
+        self.assertEqual((again.pk, again.status, again.error), (msg.pk, SmsMessage.STATUS_SENT, ""))
         self.assertIsNone(send(client))
         self.assertEqual(account.taken, ["998901234567"])
+
+    def test_a_try_refused_for_want_of_balance_is_not_counted_as_a_try(self):
+        # No operator saw it, so it must not use up the one more try an operator's rejection earns.
+        account = EskizAccount()
+        client = account.client()
+        send(client)
+        send(client)
+        self.assertEqual(SmsMessage.objects.get().attempts, 1)
+        account.top_up()
+        msg = send(client)
+        msg.refresh_from_db()
+        self.assertEqual((msg.status, msg.attempts), (SmsMessage.STATUS_SENT, 1))
 
     def test_any_other_refusal_stays_rejected_and_is_not_claimed_again(self):
         account = EskizAccount(refused={"998901234567": "perfectum: Not allowed"})

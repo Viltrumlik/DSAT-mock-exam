@@ -18,7 +18,11 @@ def debt_warnings_tick() -> dict:
     plan says "not a warning day" and nothing is sent — the day rule lives in one place, the code.
 
     Unless today has no warning at all: the hour was moved earlier after it had passed (10 → 9 at
-    09:30), so its tick never ran. Then the first tick of the window is the day's run (a catch-up)."""
+    09:30), so its tick never ran. Then the first tick of the window is the day's run (a catch-up).
+
+    After those hours, until DEBT_HOUR_MAX (the latest the panel lets a warning go), a tick is one more
+    retry run only when an SMS the operator rejected is owed its one more try: it went out after the
+    retries were over (a late top-up, then "Send now"). Whatever else is FAILED goes with it."""
     return _tick(timezone.now())
 
 
@@ -29,13 +33,17 @@ def _warned_today(now) -> bool:
 
 
 def _tick(now) -> dict:
+    from . import debt_warnings as warnings
     from . import switchboard
+    from .models import DEBT_HOUR_MAX
 
     hour, start = timezone.localtime(now).hour, switchboard.current().debt_hour
     if hour == start:
         return _warn(retry_only=False)
     if start < hour <= start + RETRY_HOURS:
         return _warn(retry_only=_warned_today(now))
+    if start + RETRY_HOURS < hour <= DEBT_HOUR_MAX and warnings.owes_one_more_try(now):
+        return _warn(retry_only=True)
     return {"skipped": "not the hour"}
 
 

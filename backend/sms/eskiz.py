@@ -120,9 +120,13 @@ def _expired(resp) -> bool:
     return resp.status_code == 500 and "token has expired" in _message(resp).lower()
 
 
+#: The word in eskiz's refusal for an account with no money: "Please, fill the balance".
+NO_BALANCE_WORD = "balance"
+
+
 def no_balance(text) -> bool:
-    """Whether these are eskiz's words for an account with no money: "Please, fill the balance"."""
-    return "balance" in str(text or "").lower()
+    """Whether these are eskiz's words for an account with no money."""
+    return NO_BALANCE_WORD in str(text or "").lower()
 
 
 def _send_result(resp) -> SendResult:

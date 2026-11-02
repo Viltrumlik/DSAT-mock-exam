@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import F
+from django.db.models import Case, F, PositiveSmallIntegerField, When
 from django.utils import timezone
 
 from . import eskiz, switchboard
@@ -75,12 +75,19 @@ def _claim(
             )
     except IntegrityError:
         pass
-    # One UPDATE, so of two runs re-claiming the same FAILED row exactly one wins.
+    # One UPDATE, so of two runs re-claiming the same FAILED row exactly one wins. A try refused for
+    # want of balance reached no operator, so the one after it is not another try: it must not use up
+    # the one more try an operator's rejection earns (debt_warnings.give_operator_rejections_one_more_try).
     claimed = SmsMessage.objects.filter(
         kind=kind, run_on=run_on, dedupe_key=dedupe_key, status=SmsMessage.STATUS_FAILED
     ).update(
         status=SmsMessage.STATUS_PENDING, phone=phone, text=text, error="",
-        attempts=F("attempts") + 1, updated_at=timezone.now(),
+        attempts=Case(
+            When(error__icontains=eskiz.NO_BALANCE_WORD, then=F("attempts")),
+            default=F("attempts") + 1,
+            output_field=PositiveSmallIntegerField(),
+        ),
+        updated_at=timezone.now(),
     )
     return SmsMessage.objects.get(kind=kind, run_on=run_on, dedupe_key=dedupe_key) if claimed else None
 
