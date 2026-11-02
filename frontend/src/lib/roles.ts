@@ -66,8 +66,11 @@ const norm = (r: unknown) => String(r ?? "").trim().toLowerCase();
  */
 export const isPublicStudent = (r: unknown) => norm(r) === "public_student";
 
+/** A student of the learning center. Mirrors `ROLE_STUDENT`. */
+export const isCentreStudent = (r: unknown) => norm(r) === "student";
+
 /** Roles whose home is the student site: the learning center's students and public learners. */
-export const isStudentSiteRole = (r: unknown) => norm(r) === "student" || isPublicStudent(r);
+export const isStudentSiteRole = (r: unknown) => isCentreStudent(r) || isPublicStudent(r);
 
 export const PUBLIC_STUDENT_HOME = "/mock-exam";
 

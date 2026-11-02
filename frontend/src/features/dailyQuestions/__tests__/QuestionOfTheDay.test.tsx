@@ -172,6 +172,16 @@ describe("QuestionOfTheDayPrompt", () => {
     await mount(<QuestionOfTheDayPrompt userId={7} />);
     expect(host.textContent).toBe("");
   });
+
+  it("sits lower when the debt band takes the place under the header", async () => {
+    get.mockResolvedValue(today([card()]));
+    await mount(<QuestionOfTheDayPrompt userId={7} />);
+    expect(host.querySelector("section")?.className).toContain("top-[76px]");
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await mount(<QuestionOfTheDayPrompt userId={7} belowTicker />);
+    expect(host.querySelector("section")?.className).not.toContain("top-[76px]");
+  });
 });
 
 describe("QuestionOfTheDayRunner", () => {

@@ -52,6 +52,8 @@ export type AppShellProps = {
    * open surveys) is injected here rather than imported into this file.
    */
   headerSlot?: React.ReactNode;
+  /** A strip between the top bar and the page, injected for the same reason as `headerSlot`. */
+  belowHeader?: React.ReactNode;
   /** Extra rows at the top of the avatar menu — the student's points and open surveys. */
   accountMenu?: React.ReactNode;
   /** Render the notification bell. There is an API behind it now — see
@@ -69,6 +71,7 @@ export function AppShell({
   onSignOut,
   onSignIn,
   headerSlot,
+  belowHeader,
   accountMenu,
   notifications = false,
   children,
@@ -708,6 +711,8 @@ export function AppShell({
             ) : null}
           </div>
         </header>
+
+        {belowHeader}
 
         <main
           id="main"

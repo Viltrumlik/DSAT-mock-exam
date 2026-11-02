@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { financeApi } from "./financeApi";
 
 const ROOT = ["finance"] as const;
+const LCUP_SYNC_MS = 15 * 60 * 1000;
 
 export const financeKeys = {
   mine: [...ROOT, "mine"] as const,
@@ -15,6 +16,18 @@ export const financeKeys = {
 /** A student's own money (and the frozen screen's amount). */
 export function useMyFinance(enabled = true) {
   return useQuery({ queryKey: financeKeys.mine, queryFn: () => financeApi.mine(), enabled });
+}
+
+/** What the band under the header says is owed, null when it has nothing to say. Read again as often
+ *  as lc-up syncs, so a payment clears it without a reload. */
+export function useDebtNotice(enabled: boolean): number | null {
+  const { data } = useQuery({
+    queryKey: financeKeys.mine,
+    queryFn: () => financeApi.mine(),
+    enabled,
+    refetchInterval: LCUP_SYNC_MS,
+  });
+  return enabled && data?.linked && data.debt_notice && data.debt ? data.debt : null;
 }
 
 export function useFinanceSummary(month: string) {
