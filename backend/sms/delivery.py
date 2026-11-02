@@ -83,7 +83,7 @@ def _claim(
     ).update(
         status=SmsMessage.STATUS_PENDING, phone=phone, text=text, error="",
         attempts=Case(
-            When(error__icontains=eskiz.NO_BALANCE_WORD, then=F("attempts")),
+            When(error__icontains=eskiz.NO_BALANCE_WORDS[0], then=F("attempts")),
             default=F("attempts") + 1,
             output_field=PositiveSmallIntegerField(),
         ),
