@@ -16,10 +16,10 @@ import { cn } from "@/lib/cn";
 
 import Link from "next/link";
 
-import { liveQuizApi, type LiveParticipant, type TeamStanding } from "./api";
-import { GemIcon } from "./avatars";
+import { SHOP_KEY, liveQuizApi, type AvatarSkin, type LiveParticipant, type ShopState, type TeamStanding } from "./api";
+import { AvatarDisc, GemIcon } from "./avatars";
 import { Confetti, FinalStandings, GamePanel, Podium, TrophyHeading } from "./game";
-import { ordinal, tileColor } from "./theme";
+import { gamesToGo, nextGoal, ordinal, tileColor } from "./theme";
 import type { GemsAwarded } from "./useLiveQuiz";
 
 export function PlayerSummary({
@@ -45,6 +45,13 @@ export function PlayerSummary({
     retry: 1,
   });
 
+  // The balance has just moved, so this reads after the payout, not before it.
+  const shop = useQuery({
+    queryKey: [...SHOP_KEY, "after-game", gems?.balance ?? null],
+    queryFn: () => liveQuizApi.shop(),
+    retry: 1,
+  });
+
   const myRow = results.data?.report.participants[0];
   const earned = gems?.earned ?? myRow?.gems ?? null;
   const questions = results.data?.report.questions ?? [];
@@ -52,12 +59,13 @@ export function PlayerSummary({
   const myTeam = typeof me?.team === "number" ? teams.find((t) => t.team === me.team) : undefined;
   const missed = myRow ? myRow.answers.filter((a) => a.timed_out).length : 0;
   const wrong = myRow ? myRow.answers.filter((a) => a.answered && !a.is_correct).length : 0;
-  const accuracy =
-    myRow?.accuracy ??
-    (me && questionTotal > 0 ? Math.round((100 * me.correct_count) / questionTotal) : null);
+  // The same count the server's accuracy is out of: every question that was in front of them.
+  const seen = myRow ? myRow.answers.filter((a) => a.answered || a.timed_out).length : me?.answered_count ?? 0;
+  const correct = myRow?.correct_count ?? me?.correct_count ?? 0;
+  const accuracy = myRow?.accuracy ?? (seen > 0 ? Math.round((100 * correct) / seen) : null);
 
   return (
-    <div className="relative mx-auto w-full max-w-3xl space-y-6 px-4 pb-16 pt-4">
+    <div className="relative mx-auto w-full max-w-3xl space-y-3.5 px-4 pb-16 pt-1">
       {place !== null && place <= 3 && <Confetti />}
       <TrophyHeading
         title={place ? `You finished ${ordinal(place)}` : "That is the quiz"}
@@ -65,20 +73,21 @@ export function PlayerSummary({
       />
 
       {me && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <Stat label="Score" value={me.score.toLocaleString()} />
-          <Stat label="Accuracy" value={accuracy !== null ? `${accuracy}%` : "—"} />
+          <Stat label="Correct" value={`${correct} / ${questionTotal || correct}`} />
           <Stat
-            label="Correct"
-            value={`${myRow?.correct_count ?? me.correct_count}/${questionTotal || me.correct_count}`}
+            label="Accuracy"
+            value={accuracy !== null ? `${accuracy}%` : "—"}
+            note={accuracy !== null && seen > 0 ? `of the ${seen} you saw` : undefined}
           />
           <Stat
             label="Best streak"
             value={
-              <span className="inline-flex items-center gap-1">
-                <Flame className="h-5 w-5 text-orange-400" aria-hidden />
+              <>
+                <Flame className="h-[22px] w-[22px] text-orange-400" aria-hidden />
                 {me.best_streak ?? 0}
-              </span>
+              </>
             }
           />
         </div>
@@ -96,19 +105,10 @@ export function PlayerSummary({
       )}
 
       {earned !== null && (
-        <GamePanel className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <p className="inline-flex items-center gap-2 text-lg font-extrabold">
-            <GemIcon size={24} /> +{earned} gems
-            {gems?.capped && <span className="text-xs font-semibold text-white/60">· today&apos;s limit reached</span>}
-          </p>
-          <Link
-            href="/live/shop"
-            className="rounded-xl bg-white px-4 py-2 text-sm font-extrabold text-violet-700 transition hover:-translate-y-0.5"
-          >
-            Spend them in the shop
-          </Link>
-        </GamePanel>
+        <GemsCard earned={earned} gems={gems} correct={correct} place={place} shop={shop.data} />
       )}
+
+      {shop.data && <NextLookCard shop={shop.data} />}
 
       {leaderboard.length >= 2 && (
         <GamePanel className="px-4 pb-0 pt-6">
@@ -209,11 +209,116 @@ export function PlayerSummary({
   );
 }
 
-function Stat({ label, value }: { label: string; value: React.ReactNode }) {
+function Stat({ label, value, note }: { label: string; value: React.ReactNode; note?: string }) {
   return (
-    <GamePanel className="px-3 py-4 text-center">
-      <p className="text-xs font-semibold uppercase tracking-wide text-white/60">{label}</p>
-      <p className="mt-1 font-mono text-2xl font-black tabular-nums">{value}</p>
+    <GamePanel className="px-4 py-3.5">
+      <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-white/70">{label}</p>
+      <p className="mt-1 flex items-center gap-1.5 font-mono text-[26px] font-extrabold tabular-nums">{value}</p>
+      {note && <p className="mt-0.5 text-xs text-white/70">{note}</p>}
+    </GamePanel>
+  );
+}
+
+function GemsCard({
+  earned,
+  gems,
+  correct,
+  place,
+  shop,
+}: {
+  earned: number;
+  gems: GemsAwarded | null;
+  correct: number;
+  place: number | null;
+  shop?: ShopState;
+}) {
+  const parts = gems?.breakdown;
+  // Only what this game actually paid: a line of +0 is noise.
+  const lines: Array<[string, number]> = parts
+    ? [
+        [`${correct} right ${correct === 1 ? "answer" : "answers"}`, parts.correct ?? 0],
+        ["Played to the end", parts.finish ?? 0],
+        [place ? `${ordinal(place)} place` : "Podium", parts.podium ?? 0],
+      ]
+    : [];
+  return (
+    <GamePanel className="flex flex-col gap-2 px-4 py-3.5">
+      <div className="flex items-center gap-2.5">
+        <GemIcon size={26} />
+        <span className="text-xl font-extrabold">+{earned} gems</span>
+        {shop && (
+          <span className="ml-auto text-xs text-white/70">
+            {shop.today_earned} of {shop.daily_cap} today
+          </span>
+        )}
+      </div>
+      {lines
+        .filter(([, amount]) => amount > 0)
+        .map(([label, amount]) => (
+          <div key={label} className="flex justify-between text-[13px] text-white/80">
+            <span>{label}</span>
+            <span className="font-mono tabular-nums">+{amount}</span>
+          </div>
+        ))}
+      {gems?.capped && <p className="text-[13px] text-amber-200">Today&apos;s limit took the rest. It starts again tomorrow.</p>}
+    </GamePanel>
+  );
+}
+
+/** What their gems are getting them closer to, with the real distance. */
+function NextLookCard({ shop }: { shop: ShopState }) {
+  const goal = nextGoal(shop);
+  const button = (label: string) => (
+    <Link
+      href="/live/shop"
+      className="inline-flex h-12 w-full items-center justify-center rounded-[14px] bg-white text-base font-extrabold text-violet-700 shadow-[inset_0_-4px_0_rgba(109,40,217,0.16)]"
+    >
+      {label}
+    </Link>
+  );
+
+  if (shop.can_claim_starter || !goal) {
+    return (
+      <GamePanel className="flex flex-col gap-3 px-4 py-3.5">
+        <p className="text-[15px] font-bold">
+          {shop.can_claim_starter ? "Pick your free character" : "You own the whole shop"}
+        </p>
+        {button(shop.can_claim_starter ? "Choose one" : "Open the shop")}
+      </GamePanel>
+    );
+  }
+
+  const short = Math.max(0, goal.price - shop.balance);
+  const percent = Math.min(100, Math.round((100 * shop.balance) / goal.price));
+  return (
+    <GamePanel className="flex flex-col gap-3 px-4 py-3.5">
+      <div className="flex items-center gap-3.5">
+        <AvatarDisc
+          avatar={{ character: goal.character, skin: goal.kind === "skin" ? (goal.tier as AvatarSkin) : null }}
+          name={goal.name}
+          size={62}
+          still
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-bold">Next: {goal.name}</p>
+          <div
+            className="mt-2 h-2 rounded-full bg-white/[0.12]"
+            role="progressbar"
+            aria-label={`Gems towards ${goal.name}`}
+            aria-valuemin={0}
+            aria-valuemax={goal.price}
+            aria-valuenow={Math.min(shop.balance, goal.price)}
+          >
+            <div className="h-2 rounded-full bg-gradient-to-r from-cyan-300 to-violet-600" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-1.5 text-xs text-white/70">
+            {short > 0
+              ? `${shop.balance} of ${goal.price} · ${short} more, ${gamesToGo(short)}`
+              : `You have enough for it: ${goal.price}`}
+          </p>
+        </div>
+      </div>
+      {button("Open the shop")}
     </GamePanel>
   );
 }

@@ -221,6 +221,9 @@ export interface LiveResultsReport {
   }>;
 }
 
+/** The shop's cache key: every shop answer replaces it, wherever the shop is read from. */
+export const SHOP_KEY = ["livequiz", "shop"] as const;
+
 export const liveQuizApi = {
   async listSessions(params: { classroom?: number; live?: boolean } = {}): Promise<LiveSession[]> {
     const { data } = await api.get("/livequiz/sessions/", {

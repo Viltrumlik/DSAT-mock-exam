@@ -43,6 +43,8 @@ export type LiveSocketStatus = "connecting" | "open" | "closed" | "refused";
 export interface LiveSocketHandle {
   send: (type: string, payload?: Record<string, unknown>) => void;
   close: () => void;
+  /** Stop waiting out the backoff and try now. */
+  retryNow: () => void;
 }
 
 /** Close codes the server uses. 1000–2999 are the protocol's own. */
@@ -71,7 +73,7 @@ export function openLiveQuizSocket(
   sessionId: number,
   handlers: {
     onFrame: (frame: LiveQuizFrame) => void;
-    onStatus?: (status: LiveSocketStatus, detail?: { code?: number }) => void;
+    onStatus?: (status: LiveSocketStatus, detail?: { code?: number; attempt?: number }) => void;
   },
 ): LiveSocketHandle {
   let socket: WebSocket | null = null;
@@ -79,6 +81,8 @@ export function openLiveQuizSocket(
   let retry: ReturnType<typeof setTimeout> | null = null;
   let backoff = BACKOFF_START_MS;
   let disposed = false;
+  // Tries since the socket last had a connection; the screen shows it when this drags on.
+  let attempt = 0;
 
   const clearTimers = () => {
     if (heartbeat) clearInterval(heartbeat);
@@ -95,7 +99,8 @@ export function openLiveQuizSocket(
 
   function connect() {
     if (disposed) return;
-    handlers.onStatus?.("connecting");
+    attempt += 1;
+    handlers.onStatus?.("connecting", { attempt });
 
     let next: WebSocket;
     try {
@@ -110,7 +115,8 @@ export function openLiveQuizSocket(
 
     next.onopen = () => {
       backoff = BACKOFF_START_MS;
-      handlers.onStatus?.("open");
+      attempt = 0;
+      handlers.onStatus?.("open", { attempt });
       heartbeat = setInterval(() => {
         if (next.readyState === WebSocket.OPEN) {
           next.send(JSON.stringify({ type: "heartbeat" }));
@@ -137,7 +143,7 @@ export function openLiveQuizSocket(
         handlers.onStatus?.("refused", { code: event.code });
         return;
       }
-      handlers.onStatus?.("closed", { code: event.code });
+      handlers.onStatus?.("closed", { code: event.code, attempt });
       schedule();
     };
 
@@ -153,6 +159,14 @@ export function openLiveQuizSocket(
       if (socket && socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type, ...payload }));
       }
+    },
+    retryNow() {
+      // Only while waiting out a backoff; a socket that is still trying is left to it.
+      if (disposed || socket || !retry) return;
+      clearTimeout(retry);
+      retry = null;
+      backoff = BACKOFF_START_MS;
+      connect();
     },
     close() {
       disposed = true;

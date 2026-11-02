@@ -12,7 +12,7 @@
  * is on screen by itself, so the projector and thirty phones never disagree.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ChevronRight, Pause, Play, Rocket, SkipForward, Square, Users, X } from "lucide-react";
 
@@ -28,6 +28,7 @@ import {
   GameTopBar,
   Podium,
   QuestionCard,
+  RestChips,
   TeamColumns,
   TimerBar,
   TrophyHeading,
@@ -35,11 +36,29 @@ import {
 } from "./game";
 import type { LiveParticipant } from "./api";
 import { useGameSounds } from "./sounds";
-import { PlayerAvatar } from "./avatars";
+import { AvatarDisc } from "./avatars";
 import { useLiveQuiz, useSecondsLeft, type LiveQuizRoom } from "./useLiveQuiz";
 import { ConnectionBanner } from "./ui";
 
 type Actions = ReturnType<typeof useLiveQuiz>["actions"];
+
+const JUST_JOINED_MS = 5000;
+
+/** The newest arrival's id, for a few seconds after they arrive. */
+function useJustJoined(newest: number | null): number | null {
+  const [fresh, setFresh] = useState<number | null>(null);
+  const highest = useRef(0);
+
+  useEffect(() => {
+    if (newest === null || newest <= highest.current) return;
+    highest.current = newest;
+    setFresh(newest);
+    const id = setTimeout(() => setFresh(null), JUST_JOINED_MS);
+    return () => clearTimeout(id);
+  }, [newest]);
+
+  return fresh;
+}
 
 export function HostGame({ sessionId }: { sessionId: number }) {
   const { room, actions } = useLiveQuiz(sessionId);
@@ -71,6 +90,9 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
   const [removing, setRemoving] = useState<LiveParticipant | null>(null);
 
   const playing = room.participants.filter((p) => p.status === "JOINED");
+  // Ids rise as students join, so the newest arrival is the one to look for.
+  const newestFirst = [...playing].sort((a, b) => b.id - a.id);
+  const justJoined = useJustJoined(newestFirst[0]?.id ?? null);
   const teamCount = room.config.teams ?? 0;
   const isLast = room.currentIndex + 1 >= room.questionTotal;
   const question = room.question;
@@ -127,60 +149,86 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
       {room.status === "CONNECTING" && room.connection !== "refused" && <CenterMessage title="Opening the room…" />}
 
       {room.status === "LOBBY" && (
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col items-center gap-8 px-4 pb-10 pt-4">
-          <div className="w-full max-w-2xl rounded-3xl bg-white px-6 py-6 text-center text-slate-900 shadow-2xl sm:py-8">
-            <p className="text-sm font-semibold uppercase tracking-widest text-slate-500">
-              Join at <span className="text-violet-700">mastersat.uz/live</span>
-            </p>
-            <p className="mt-2 font-mono text-6xl font-black tracking-[0.18em] sm:text-8xl">{room.joinCode}</p>
+        <div className="mx-auto flex w-full max-w-[1360px] flex-1 flex-col gap-5 px-4 pb-10 pt-2 sm:px-6">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-stretch lg:gap-7">
+            <div className="rounded-3xl bg-white px-6 py-5 text-[#120d26] sm:px-8 lg:w-[620px] lg:shrink-0">
+              <p className="text-sm font-bold uppercase tracking-[0.12em] text-slate-600">
+                Join at <span className="text-violet-700">mastersat.uz/live</span>
+              </p>
+              <p className="mt-1.5 font-mono text-5xl font-extrabold leading-none tracking-[0.14em] sm:text-8xl">{room.joinCode}</p>
+            </div>
+            <div className="flex flex-1 flex-col justify-center gap-4">
+              <div className="flex items-center gap-3.5">
+                <span className="font-mono text-[64px] font-extrabold leading-none tabular-nums">{playing.length}</span>
+                <span className="text-base leading-snug text-white/70">
+                  {playing.length === 1 ? "player" : "players"}
+                  <br />
+                  in the room
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-4">
+                <button
+                  type="button"
+                  disabled={playing.length === 0}
+                  onClick={actions.startGame}
+                  className="inline-flex h-[60px] items-center gap-2 rounded-[14px] bg-white px-6 text-xl font-extrabold text-violet-700 shadow-[inset_0_-4px_0_rgba(109,40,217,0.16)] transition hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0"
+                >
+                  <Rocket className="h-5 w-5" aria-hidden />
+                  {playing.length === 0 ? "Waiting for players…" : "Start"}
+                </button>
+                <span className="text-sm text-white/70">{settingsLine(room)}</span>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-4">
-            <span className="rounded-full bg-white/10 px-4 py-2 text-lg font-bold">
-              {playing.length} {playing.length === 1 ? "player" : "players"}
-            </span>
-            <button
-              type="button"
-              disabled={playing.length === 0}
-              onClick={actions.startGame}
-              className="inline-flex items-center gap-2 rounded-2xl bg-white px-8 py-3.5 text-lg font-extrabold text-violet-700 shadow-[inset_0_-5px_0_rgba(0,0,0,0.15)] transition hover:-translate-y-0.5 disabled:opacity-40 disabled:hover:translate-y-0"
-            >
-              <Rocket className="h-5 w-5" aria-hidden />
-              {playing.length === 0 ? "Waiting for players…" : "Start"}
-            </button>
-          </div>
-          <p className="text-sm text-white/60">{settingsLine(room)}</p>
-
-          {teamCount > 0 && (
+          {teamCount > 0 ? (
             <TeamColumns
               participants={playing}
               teams={teamCount}
               onMove={(p) => actions.moveTeam(p.id, ((p.team ?? 0) + 1) % teamCount)}
+              onRemove={setRemoving}
             />
+          ) : (
+            <>
+              <h2 className="mt-1 text-[13px] font-bold uppercase tracking-[0.14em] text-white/70">
+                In the room · newest first
+              </h2>
+              {playing.length === 0 && <p className="py-8 text-center text-white/70">Names appear here as students join.</p>}
+              <ul className="grid grid-cols-2 gap-3.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                {newestFirst.map((person, i) => {
+                  const fresh = person.id === justJoined;
+                  return (
+                    <li
+                      key={person.id}
+                      className={
+                        "relative flex min-w-0 flex-col items-center gap-2.5 rounded-[20px] px-2.5 pb-3.5 pt-[18px] " +
+                        (fresh
+                          ? "border-2 border-[#a78bfa] shadow-[0_0_0_4px_rgba(167,139,250,0.22)]"
+                          : "border border-white/10 bg-white/[0.07]")
+                      }
+                      style={{ opacity: person.present ? 1 : 0.5 }}
+                    >
+                      {fresh && (
+                        <span className="absolute left-2.5 top-2.5 rounded-full bg-[#a78bfa] px-[9px] py-[3px] text-[11px] font-extrabold text-[#120d26]">
+                          Just joined
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => setRemoving(person)}
+                        aria-label={`Remove ${person.display_name}`}
+                        className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-white/[0.08] text-white/70 hover:bg-white/15 hover:text-white"
+                      >
+                        <X className="h-3.5 w-3.5" aria-hidden />
+                      </button>
+                      <AvatarDisc avatar={person.avatar} name={person.display_name} size={112} colorIndex={i} />
+                      <p className="max-w-full truncate text-[15px] font-bold">{person.display_name}</p>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
           )}
-          <div className={teamCount > 0 ? "hidden" : "flex w-full flex-wrap justify-center gap-2.5"}>
-            {playing.length === 0 && (
-              <p className="py-8 text-white/60">Names appear here as students join.</p>
-            )}
-            {playing.map((person, i) => (
-              <span
-                key={person.id}
-                className="group inline-flex items-center gap-2 rounded-full bg-white/10 py-1.5 pl-1.5 pr-2 text-sm font-semibold"
-                style={{ opacity: person.present ? 1 : 0.5 }}
-              >
-                <PlayerAvatar avatar={person.avatar} name={person.display_name} size={30} colorIndex={i} />
-                {person.display_name}
-                <button
-                  type="button"
-                  onClick={() => setRemoving(person)}
-                  aria-label={`Remove ${person.display_name}`}
-                  className="rounded-full p-0.5 text-white/50 hover:bg-white/15 hover:text-white"
-                >
-                  <X className="h-3.5 w-3.5" aria-hidden />
-                </button>
-              </span>
-            ))}
-          </div>
         </div>
       )}
 
@@ -250,36 +298,47 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
       )}
 
       {room.finished && (
-        <div className="relative mx-auto w-full max-w-4xl flex-1 space-y-8 px-4 pb-12 pt-4">
+        <div className="relative mx-auto flex w-full max-w-[1360px] flex-1 flex-col gap-5 px-4 pb-8 pt-2 sm:px-6">
           <Confetti />
           <TrophyHeading
             title="Game over"
-            subtitle={`${playing.length} players · ${room.questionTotal} questions`}
+            subtitle={[
+              `${playing.length} players`,
+              room.teams.length > 0 ? `${room.teams.length} teams` : null,
+              `${room.questionTotal} questions`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           />
-          {room.teams.length > 0 && (
-            <>
-              <p className="text-center text-sm font-bold uppercase tracking-widest text-white/60">Teams</p>
-              <Podium rows={teamRows(room.teams)} />
-            </>
+          {room.teams.length > 0 ? (
+            <div className="grid flex-1 gap-5 lg:grid-cols-2 lg:gap-7">
+              <PodiumPanel title="Teams">
+                <Podium rows={teamRows(room.teams)} size="panel" />
+              </PodiumPanel>
+              <PodiumPanel title="Top players">
+                <Podium rows={room.leaderboard} size="panel" />
+              </PodiumPanel>
+            </div>
+          ) : (
+            room.leaderboard.length > 0 && (
+              <div className="flex flex-1 items-end justify-center">
+                <Podium rows={room.leaderboard} size="stage" />
+              </div>
+            )
           )}
-          {room.leaderboard.length > 0 && <Podium rows={room.leaderboard} />}
-          {room.leaderboard.length > 3 && (
-            <GamePanel className="p-4">
-              <FinalStandings rows={room.leaderboard.slice(3)} limit={20} />
-            </GamePanel>
-          )}
+          <RestChips rows={room.leaderboard.slice(3)} />
           <div className="flex flex-wrap justify-center gap-3">
             <button
               type="button"
               onClick={() => router.push(`/teacher/live/${room.sessionId}/results`)}
-              className="rounded-2xl bg-white px-6 py-3 font-extrabold text-violet-700"
+              className="h-[52px] rounded-[14px] bg-white px-6 font-extrabold text-violet-700 shadow-[inset_0_-4px_0_rgba(109,40,217,0.16)]"
             >
               Open the report
             </button>
             <button
               type="button"
               onClick={() => router.push("/teacher/live")}
-              className="rounded-2xl bg-white/10 px-6 py-3 font-bold text-white hover:bg-white/20"
+              className="h-[52px] rounded-[14px] border border-white/20 bg-white/[0.08] px-6 font-bold text-white hover:bg-white/15"
             >
               Back to live quizzes
             </button>
@@ -322,6 +381,15 @@ function HostScreen({ room, actions }: { room: LiveQuizRoom; actions: Actions })
         }}
       />
     </GameCanvas>
+  );
+}
+
+function PodiumPanel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <GamePanel className="flex min-w-0 flex-col gap-3.5 overflow-hidden px-4 pt-[22px] sm:px-7">
+      <h2 className="text-center text-[13px] font-bold uppercase tracking-[0.14em] text-white/70">{title}</h2>
+      <div className="flex flex-1 items-end justify-center">{children}</div>
+    </GamePanel>
   );
 }
 

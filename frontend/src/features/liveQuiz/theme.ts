@@ -3,7 +3,7 @@
  * order. Kept apart from the components so a test can check the shuffle without rendering.
  */
 
-import type { LiveChoice, PowerUpKey } from "./api";
+import type { LiveChoice, PowerUpKey, ShopItem, ShopState } from "./api";
 
 /**
  * One colour per option position — the tile, not the letter, is what a student finds with
@@ -16,22 +16,64 @@ export function tileColor(position: number): string {
   return TILE_COLORS[position % TILE_COLORS.length];
 }
 
+/** Each position's shape too, so a tile is never told apart by colour alone. */
+export const TILE_SHAPES = ["Triangle", "Diamond", "Circle", "Square", "Star"] as const;
+
+export type TileShape = (typeof TILE_SHAPES)[number];
+
+export function tileShape(position: number): TileShape {
+  return TILE_SHAPES[position % TILE_SHAPES.length];
+}
+
 export interface PowerUpMeta {
   label: string;
   /** One line for the button's tooltip and the "you earned" toast. */
   help: string;
-  /** Short mark drawn on the button. */
-  glyph: string;
   color: string;
 }
 
 export const POWERUPS: Record<PowerUpKey, PowerUpMeta> = {
-  double: { label: "Double", help: "A right answer on this question scores twice.", glyph: "2×", color: "#f59e0b" },
-  fifty_fifty: { label: "50-50", help: "Two wrong options disappear.", glyph: "½", color: "#22c55e" },
-  eraser: { label: "Eraser", help: "One wrong option disappears.", glyph: "⌫", color: "#38bdf8" },
-  streak_saver: { label: "Streak saver", help: "A wrong answer here will not break your streak.", glyph: "🛡", color: "#a78bfa" },
-  time_freeze: { label: "Time freeze", help: "The clock stops for this question.", glyph: "❄", color: "#67e8f9" },
+  double: { label: "Double", help: "A right answer on this question scores twice.", color: "#f59e0b" },
+  fifty_fifty: { label: "50-50", help: "Two wrong options disappear.", color: "#22c55e" },
+  eraser: { label: "Eraser", help: "One wrong option disappears.", color: "#38bdf8" },
+  streak_saver: { label: "Streak saver", help: "A wrong answer here will not break your streak.", color: "#a78bfa" },
+  time_freeze: { label: "Time freeze", help: "The clock stops for this question.", color: "#67e8f9" },
 };
+
+/** "Aziza Rahimova" → "Aziza R.", for a chip with no room for the whole name. */
+export function shortName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return name;
+  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
+}
+
+const byPrice = (a: ShopItem, b: ShopItem) => a.price - b.price;
+
+/**
+ * The look worth saving for next: the cheapest skin of the character they are wearing, then the
+ * cheapest new character, then any skin left. Null when they own the whole shop.
+ */
+export function nextGoal(shop: ShopState): ShopItem | null {
+  const unowned = shop.items.filter((item) => !item.owned);
+  const skins = unowned.filter((item) => item.kind === "skin").sort(byPrice);
+  const worn = shop.look?.character;
+  const own = shop.items.filter((item) => item.kind === "character" && item.owned).map((item) => item.character);
+  return (
+    skins.find((item) => item.character === worn) ??
+    unowned.filter((item) => item.kind === "character").sort(byPrice)[0] ??
+    skins.find((item) => own.includes(item.character)) ??
+    null
+  );
+}
+
+/** A good game pays about this much; only used to say roughly how far off a price is. */
+const GEMS_PER_GAME = 100;
+const COUNT_WORDS = ["", "one", "two", "three", "four", "five"];
+
+export function gamesToGo(short: number): string {
+  const games = Math.max(1, Math.ceil(short / GEMS_PER_GAME));
+  return `about ${COUNT_WORDS[games] ?? games} ${games === 1 ? "game" : "games"}`;
+}
 
 /** A small, fast, seedable generator — the same seed always deals the same order. */
 function mulberry32(seed: number) {
