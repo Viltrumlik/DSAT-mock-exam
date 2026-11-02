@@ -75,6 +75,10 @@ export function gamesToGo(short: number): string {
   return `about ${COUNT_WORDS[games] ?? games} ${games === 1 ? "game" : "games"}`;
 }
 
+export function daysLeft(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"} left`;
+}
+
 /** A small, fast, seedable generator — the same seed always deals the same order. */
 function mulberry32(seed: number) {
   let a = seed >>> 0;

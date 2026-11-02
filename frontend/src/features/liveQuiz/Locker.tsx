@@ -11,7 +11,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Check, CircleDot, GraduationCap, MessageCircle, Palette, Smile } from "lucide-react";
+import { ArrowLeft, Calendar, Check, CircleDot, GraduationCap, Lock, MessageCircle, Palette, Smile } from "lucide-react";
 
 import { ErrorState, LoadingState } from "@/features/classroom/ui";
 import { useMe } from "@/hooks/useMe";
@@ -27,9 +27,9 @@ import {
   type ShopItem,
   type ShopState,
 } from "./api";
-import { AvatarDisc, EmoteBubble, GemIcon, LiveAvatar } from "./avatars";
+import { AvatarDisc, EmoteBubble, GemIcon, LiveAvatar, TitleChip } from "./avatars";
 import styles from "./game.module.css";
-import { gamesToGo, shortName } from "./theme";
+import { daysLeft, gamesToGo, shortName } from "./theme";
 
 type Tab = "character" | "skin" | AvatarSlot;
 
@@ -123,7 +123,8 @@ function LockerBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
   const saved = draftOf(look);
   const missing = useMemo(() => piecesOf(draft, shop.items).filter((item) => !item.owned), [draft, shop.items]);
   const nextToBuy = missing[0];
-  const short = nextToBuy ? Math.max(0, nextToBuy.price - shop.balance) : 0;
+  const offSeason = Boolean(nextToBuy?.limited && !nextToBuy.on_sale);
+  const short = nextToBuy && !offSeason ? Math.max(0, nextToBuy.price - shop.balance) : 0;
   const name = [me?.first_name, me?.last_name].filter(Boolean).join(" ");
 
   return (
@@ -133,6 +134,9 @@ function LockerBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
       </Link>
       <div className="flex items-center gap-3">
         <h1 className="flex-1 text-lg font-extrabold">Locker</h1>
+        <Link href="/live/titles" className="text-sm font-bold text-primary hover:underline">
+          Titles
+        </Link>
         <Link href="/live/shop" className="text-sm font-bold text-primary hover:underline">
           Shop
         </Link>
@@ -157,6 +161,7 @@ function LockerBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
           <AvatarDisc avatar={wireOf(draft)} name={name} size={140} background="rgba(255, 255, 255, 0.06)" />
         </div>
         {name && <p className="text-[17px] font-extrabold">{shortName(name)}</p>}
+        <TitleChip title={look.title} />
       </div>
 
       <div role="tablist" aria-label="Slots" className="flex gap-2 overflow-x-auto pb-0.5">
@@ -195,11 +200,17 @@ function LockerBody({ shop, look }: { shop: ShopState; look: AvatarWire }) {
           )}
           <button
             type="button"
-            disabled={busy || short > 0}
+            disabled={busy || short > 0 || offSeason}
             onClick={() => buy.mutate(nextToBuy.key)}
             className="inline-flex h-[52px] w-full items-center justify-center gap-1.5 rounded-[14px] bg-primary text-base font-bold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
           >
-            Buy {nextToBuy.name} for <GemIcon size={16} /> {nextToBuy.price}
+            {offSeason ? (
+              `Back in ${nextToBuy.back_in}`
+            ) : (
+              <>
+                Buy {nextToBuy.name} for <GemIcon size={16} /> {nextToBuy.price}
+              </>
+            )}
           </button>
         </div>
       ) : (
@@ -257,6 +268,14 @@ function SlotGrid({
     ) : item.owned ? (
       <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
         <Check className="h-3 w-3" aria-hidden /> Owned
+      </span>
+    ) : item.limited && !item.on_sale ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-muted-foreground">
+        <Lock className="h-3 w-3" aria-hidden /> Back in {item.back_in}
+      </span>
+    ) : item.limited ? (
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 dark:text-emerald-400">
+        <Calendar className="h-3 w-3" aria-hidden /> {daysLeft(item.days_left ?? 0)}
       </span>
     ) : (
       <span className="inline-flex items-center gap-1 font-mono text-[11px] font-extrabold tabular-nums">

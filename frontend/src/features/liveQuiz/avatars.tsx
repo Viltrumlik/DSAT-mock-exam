@@ -18,7 +18,7 @@
  */
 
 import { createContext, useContext, useId } from "react";
-import { Flame, Rocket, Sparkles, Star } from "lucide-react";
+import { BookOpen, Flame, Rocket, Sparkles, Star, Target, Users, Zap } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
@@ -456,6 +456,15 @@ function paletteFor(character: string, skin: AvatarSkin | null, ids: { galaxy: s
 }
 
 /** A hat sits on the head, wherever the character. `crown` is the gradient id its gold needs. */
+/** The Navroʻz garland's five flowers: where each leaf sits, the petals, and their colour. */
+const TULIPS: Array<[number, number, string, string]> = [
+  [22, 36, "M22 34 Q22 27 24 26 L26 29 L28 26 Q30 27 30 34 Q26 37 22 34 Z", "#ef4444"],
+  [34, 29, "M34 27 Q34 20 36 19 L38 22 L40 19 Q42 20 42 27 Q38 30 34 27 Z", "#f472b6"],
+  [46, 26, "M46 24 Q46 17 48 16 L50 19 L52 16 Q54 17 54 24 Q50 27 46 24 Z", "#facc15"],
+  [58, 29, "M58 27 Q58 20 60 19 L62 22 L64 19 Q66 20 66 27 Q62 30 58 27 Z", "#ef4444"],
+  [70, 36, "M70 34 Q70 27 72 26 L74 29 L76 26 Q78 27 78 34 Q74 37 70 34 Z", "#f472b6"],
+];
+
 const HATS: Record<string, { title: string; draw: (crown: string) => React.ReactNode }> = {
   grad_cap: {
     title: "Graduation cap",
@@ -511,6 +520,33 @@ const HATS: Record<string, { title: string; draw: (crown: string) => React.React
         <circle cx="50" cy="9" r="2.6" fill="#fde047" />
         <circle cx="73" cy="15" r="2.4" fill="#fde047" />
       </>
+    ),
+  },
+  winter_beanie: {
+    title: "Winter beanie",
+    draw: () => (
+      <>
+        <path d="M24 40 Q24 13 50 13 Q76 13 76 40 Z" fill="#2563eb" />
+        <path d="M28 24 Q50 18 72 24" fill="none" stroke="#93c5fd" strokeWidth="3" strokeLinecap="round" />
+        <path d="M25.5 31 Q50 25 74.5 31" fill="none" stroke="#ffffff" strokeWidth="3" strokeLinecap="round" opacity="0.9" />
+        <rect x="22" y="34" width="56" height="9" rx="4.5" fill="#1e3a8a" />
+        <circle cx="50" cy="11" r="6.5" fill="#f8fafc" />
+        <circle cx="48" cy="9" r="2" fill="#ffffff" />
+      </>
+    ),
+  },
+  navroz_tulips: {
+    title: "Navroʻz tulips",
+    draw: () => (
+      <g transform="translate(0 2)">
+        <path d="M22 38 Q50 20 78 38" fill="none" stroke="#16a34a" strokeWidth="3" strokeLinecap="round" />
+        {TULIPS.map(([x, y, petals, fill]) => (
+          <g key={x}>
+            <ellipse cx={x} cy={y} rx="3" ry="1.6" fill="#22c55e" transform={`rotate(-30 ${x} ${y})`} />
+            <path d={petals} fill={fill} />
+          </g>
+        ))}
+      </g>
     ),
   },
 };
@@ -806,6 +842,68 @@ export function EmoteBubble({ emote, className }: { emote?: string | null; class
       <Icon className="h-[15px] w-[15px] shrink-0" style={{ color: meta.color }} aria-hidden />
       {meta.label}
       <span aria-hidden className="absolute -bottom-[5px] left-[18px] h-2.5 w-2.5 rotate-45 bg-white" />
+    </span>
+  );
+}
+
+export type TitleTone = "amber" | "teal" | "blue" | "violet";
+
+export const TITLES: Record<string, { name: string; icon: React.ElementType; tone: TitleTone }> = {
+  streak_master: { name: "Streak master", icon: Flame, tone: "amber" },
+  team_captain: { name: "Team captain", icon: Users, tone: "amber" },
+  lightning: { name: "Lightning", icon: Zap, tone: "teal" },
+  word_wise: { name: "Word wise", icon: BookOpen, tone: "blue" },
+  perfect_game: { name: "Perfect game", icon: Target, tone: "violet" },
+};
+
+const TITLE_CHIP: Record<TitleTone, Record<"dark" | "light", React.CSSProperties>> = {
+  amber: {
+    dark: { background: "rgba(251, 191, 36, 0.16)", borderColor: "rgba(251, 191, 36, 0.45)", color: "#fde68a" },
+    light: { background: "#fffbeb", borderColor: "rgba(217, 119, 6, 0.3)", color: "#92400e" },
+  },
+  teal: {
+    dark: { background: "rgba(45, 212, 191, 0.14)", borderColor: "rgba(45, 212, 191, 0.45)", color: "#99f6e4" },
+    light: { background: "#f0fdfa", borderColor: "rgba(15, 118, 110, 0.3)", color: "#115e59" },
+  },
+  blue: {
+    dark: { background: "rgba(96, 165, 250, 0.16)", borderColor: "rgba(96, 165, 250, 0.45)", color: "#bfdbfe" },
+    light: { background: "#eff6ff", borderColor: "rgba(29, 78, 216, 0.3)", color: "#1e40af" },
+  },
+  violet: {
+    dark: { background: "rgba(167, 139, 250, 0.16)", borderColor: "rgba(167, 139, 250, 0.45)", color: "#ddd6fe" },
+    light: { background: "#f5f3ff", borderColor: "rgba(109, 40, 217, 0.3)", color: "#5b21b6" },
+  },
+};
+
+/**
+ * A title the student has earned. `fit` is for a column narrower than the longest name, which on
+ * a phone a podium's is: the chip then takes two lines rather than running into its neighbour.
+ */
+export function TitleChip({
+  title,
+  tone = "dark",
+  fit = false,
+  className,
+}: {
+  title?: string | null;
+  tone?: "dark" | "light";
+  fit?: boolean;
+  className?: string;
+}) {
+  const meta = title ? TITLES[title] : undefined;
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span
+      className={cn(
+        "inline-flex max-w-full items-center gap-[5px] rounded-full border px-[9px] py-[3px] text-[11px] font-extrabold uppercase leading-tight tracking-[0.08em]",
+        fit ? "max-sm:rounded-xl max-sm:px-1.5 max-sm:text-[10px] sm:whitespace-nowrap" : "whitespace-nowrap",
+        className,
+      )}
+      style={TITLE_CHIP[meta.tone][tone]}
+    >
+      <Icon className="h-3 w-3 shrink-0" aria-hidden />
+      {meta.name}
     </span>
   );
 }

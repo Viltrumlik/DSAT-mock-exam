@@ -34,7 +34,7 @@ import { cn } from "@/lib/cn";
 
 import type { AvatarWire, LiveChoice, LiveParticipant, PowerUpKey, TeamStanding } from "./api";
 import styles from "./game.module.css";
-import { AvatarDisc, EmoteBubble, GemIcon, PlayerAvatar, type AvatarFace } from "./avatars";
+import { AvatarDisc, EmoteBubble, GemIcon, PlayerAvatar, TitleChip, type AvatarFace } from "./avatars";
 import { POWERUPS, ordinal, shortName, tileColor, tileShape, type TileShape } from "./theme";
 import type { OwnFeedback } from "./useLiveQuiz";
 
@@ -638,6 +638,7 @@ export function Podium({ rows, size = "small" }: { rows: LiveParticipant[]; size
               className={size === "stage" ? STAGE_DISC_ON_PHONE : undefined}
             />
             <p className={cn("mt-2 line-clamp-2 max-w-full text-center font-bold", look.name)}>{row.display_name}</p>
+            <TitleChip title={row.avatar?.title} fit className="mt-1.5" />
             <p className="mt-0.5 font-mono text-[15px] tabular-nums text-white/80">{row.score.toLocaleString()}</p>
             <div
               className={cn("mt-2.5 flex w-full justify-center pt-2.5", styles.podiumBar)}

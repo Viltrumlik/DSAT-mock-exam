@@ -113,6 +113,7 @@ export interface AvatarWire {
   hat?: string;
   frame?: string;
   emote?: string;
+  title?: string;
 }
 
 export type AvatarSkin = "rare" | "epic" | "legendary";
@@ -126,11 +127,26 @@ export interface ShopItem {
   character: string;
   /** A slot's item only: the key the look stores, and the art is drawn from. */
   slot_key?: string;
-  tier: "common" | "rare" | "epic" | "legendary";
+  tier: "common" | "rare" | "epic" | "legendary" | "limited";
   name: string;
   price: number;
   starter: boolean;
   owned: boolean;
+  /** Only on an item sold for a season. */
+  limited?: boolean;
+  on_sale?: boolean;
+  days_left?: number | null;
+  back_in?: string | null;
+}
+
+/** A title and how far this student has come. They are earned by playing, never sold. */
+export interface TitleProgress {
+  key: string;
+  name: string;
+  rule: string;
+  goal: number;
+  progress: number;
+  earned: boolean;
 }
 
 export interface ShopState {
@@ -141,6 +157,7 @@ export interface ShopState {
   starters: string[];
   look: AvatarWire | null;
   items: ShopItem[];
+  titles: TitleProgress[];
 }
 
 export interface LiveChoice {
@@ -328,7 +345,7 @@ export const liveQuizApi = {
   async equip(
     character: string,
     skin: AvatarSkin | null,
-    slots: Partial<Record<AvatarSlot, string | null>> = {},
+    slots: Partial<Record<AvatarSlot | "title", string | null>> = {},
   ): Promise<ShopState> {
     const { data } = await api.post("/livequiz/shop/equip/", { character, skin, ...slots });
     return data as ShopState;
