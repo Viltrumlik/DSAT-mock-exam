@@ -414,6 +414,7 @@ It renders the template with `SAMPLE_VALUES` (`student = "Test Testov,"`, `debt 
 | Endpoint | Response |
 |---|---|
 | GET `audience/options/` | `{"subjects": [{"value": "MATH", "label": "Math", "classes": 12}], "levels": […], "branches": [{"value": 3, "label": "Chilonzor", "classes": 8}], "days": […]}`: the values some active class has, and how many classes |
+| POST `audience/preview/` | `{"count": 142, "over_limit": false, "limit": 300, "skipped": {…}, "recipients": [{"user_id": 5, "name": "…", "phone": "99890***4567", "groups": ["…"]}]}`. Who an audience is before any template is chosen: the body is a draft's `audience`, `audience_ids`, `audience_filter`, `excluded_user_ids`, refused like a draft. No words yet, so siblings on one phone both count |
 | GET `audience/classrooms/` | `{"classrooms": [{"id": 61, "name": "Junior G21 \| Math", "students": 14, "with_phone": 12}]}` |
 | GET `audience/students/?q=` | `{"students": [{"id": 5, "name": "Malika Karimova", "lcup_name": "Karimova Malika", "phone": "998901234567", "balance": -150000}]}` |
 

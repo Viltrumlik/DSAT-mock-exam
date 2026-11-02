@@ -1038,6 +1038,16 @@ class AudienceOptionsView(_AdminView):
         })
 
 
+class AudiencePreviewView(_AdminView):
+    def post(self, request):
+        if refused := _not_an_object(request):
+            return refused
+        try:
+            return Response(campaigns.audience_preview(request.data))
+        except campaigns.CampaignRefused as exc:
+            return _campaign_refused(exc)
+
+
 class AudienceStudentsView(_AdminView):
     def get(self, request):
         qs = User.objects.filter(role__in=C.LEARNER_ROLES, lcup_student_link__isnull=False)

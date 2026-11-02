@@ -252,6 +252,31 @@ class AudienceTests(Fixture):
         campaign.refresh_from_db()
         self.assertEqual(campaigns.audience_label(campaign), "Math · a deleted branch")
 
+    def test_an_audience_is_counted_before_any_template(self):
+        malika = self.learner(101, "malika", phone="998901234567", room=self.room)
+        nophone = self.learner(102, "nophone", phone="", room=self.room)
+        taken = self.learner(103, "taken", phone="998903333333", room=self.room)
+        data = campaigns.audience_preview(
+            {"audience": "group", "audience_ids": [self.room.pk], "excluded_user_ids": [taken.pk]}, now=NOW,
+        )
+        self.assertEqual((data["count"], data["over_limit"], data["limit"]), (1, False, campaigns.LIMIT))
+        self.assertEqual([w["user_id"] for w in data["skipped"]["no_phone"]], [nophone.pk])
+        self.assertEqual([w["user_id"] for w in data["skipped"]["excluded"]], [taken.pk])
+        self.assertEqual(data["recipients"][0]["user_id"], malika.pk)
+        self.assertEqual(data["recipients"][0]["phone"], "99890***4567")
+
+    def test_siblings_on_one_phone_both_count_until_a_template_says_otherwise(self):
+        self.learner(101, "first", phone="998901234567", room=self.room)
+        self.learner(102, "second", phone="998901234567", room=self.room)
+        data = campaigns.audience_preview({"audience": "group", "audience_ids": [self.room.pk]}, now=NOW)
+        self.assertEqual(data["count"], 2)
+
+    def test_an_audience_preview_refuses_as_a_draft_does(self):
+        for body in ({}, {"audience": "group", "audience_ids": []}, {"audience": "filter", "audience_filter": {}}):
+            with self.subTest(body=body), self.assertRaises(CampaignRefused) as caught:
+                campaigns.audience_preview(body, now=NOW)
+            self.assertEqual(caught.exception.code, "audience")
+
     def test_include_recipients_masks_phone(self):
         malika = self.learner(101, "malika", phone="998901234567", room=self.room)
         self.seat(malika, self.room2)

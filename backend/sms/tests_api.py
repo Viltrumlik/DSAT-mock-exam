@@ -686,6 +686,15 @@ class AudienceOptionsApiTests(ApiFixture):
         self.assertEqual(row["audience_filter"], {"subjects": ["MATH"], "levels": ["junior"], "branches": [], "days": []})
         self.assertEqual(row["excluded_user_ids"], [self.student.pk])
 
+    def test_the_audience_preview_through_the_api(self):
+        response = self.post("audience/preview/", {"audience": "group", "audience_ids": [self.room.pk]})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(set(response.json()), {"count", "over_limit", "limit", "skipped", "recipients"})
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(self.post("audience/preview/", {"audience": "x"}).json()["code"], "audience")
+        self.assertEqual(self.as_().post(API + "audience/preview/", ["x"], format="json").json()["code"], "body")
+        self.assertEqual(self.post("audience/preview/", {"audience": "debtors"}, self.teacher).status_code, 403)
+
     def test_an_empty_filter_through_the_api(self):
         response = self.post("campaigns/preview/", self.draft(audience="filter", audience_ids=[]))
         self.assertEqual((response.status_code, response.json()["code"]), (400, "audience"))

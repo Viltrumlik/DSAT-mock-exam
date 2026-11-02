@@ -390,11 +390,12 @@ def resolve(campaign, *, now=None) -> tuple[list[Recipient], dict]:
             skipped["not_debtor"].append(who)
             continue
         try:
-            text = render_for(campaign, user, link, suffixes=suffixes)
+            # No pattern is ``audience_preview``: no words yet, so nothing to render or to compare.
+            text = render_for(campaign, user, link, suffixes=suffixes) if campaign.pattern else None
         except T.TemplateError:
             skipped["bad_text"].append(who)
             continue
-        if (phone, text) in texts:
+        if text is not None and (phone, text) in texts:
             skipped.setdefault(SAME_PHONE, []).append(who)
             continue
         students.add(link.lcup_student_id)
@@ -440,6 +441,25 @@ def preview(data, *, now=None) -> dict:
         "parts_total": total,
         "cost": total * switchboard.price_per_part(),
         "skipped": skipped,
+    }
+
+
+def audience_preview(data, *, now=None) -> dict:
+    """Who an audience is before any template is chosen: the composer's count as it is picked."""
+    now = now or timezone.now()
+    audience, ids = _audience(data.get("audience"), data.get("audience_ids"))
+    chosen = clean_filter(data.get("audience_filter")) if audience == SmsCampaign.AUDIENCE_FILTER else {}
+    draft = Draft(
+        template_id=0, pattern="", original="", slot_roles=(), slot_texts=(), audience=audience, audience_ids=ids,
+        audience_filter=chosen, excluded_user_ids=_excluded(data.get("excluded_user_ids")),
+    )
+    recipients, skipped = resolve(draft, now=now)
+    return {
+        "count": len(recipients),
+        "over_limit": len(recipients) > LIMIT,
+        "limit": LIMIT,
+        "skipped": skipped,
+        "recipients": _recipient_rows(recipients),
     }
 
 
