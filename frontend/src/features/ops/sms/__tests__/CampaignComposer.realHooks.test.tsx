@@ -37,9 +37,11 @@ const SOURCE = campaign({ id: 12, status: "DONE", audience: "debtors", audience_
 
 let container: HTMLDivElement;
 let root: Root;
+let client: QueryClient;
 const text = () => document.body.textContent ?? "";
 const buttons = () => Array.from(document.body.querySelectorAll("button"));
 const send = () => buttons().find((b) => b.textContent?.trim().startsWith("Send"))!;
+const priced = () => send()?.disabled === false;
 const click = (el: HTMLElement) => act(async () => el.click());
 const pass = (ms: number) => act(async () => void (await new Promise((resolve) => setTimeout(resolve, ms))));
 const networkDown = () =>
@@ -47,15 +49,23 @@ const networkDown = () =>
     throw new Error("Network Error");
   });
 
+/**
+ * The 400 ms debounce and the answers run on real timers, so a fixed wait fails on a busy machine:
+ * in the full suite Send came on at 595-653 ms, past a 500 ms wait. The assertion after it says what never came.
+ */
+async function until(done: () => boolean, ms = 3000) {
+  const deadline = performance.now() + ms;
+  while (!done() && performance.now() < deadline) await pass(10);
+}
+
 async function mount(search: string) {
   query = search;
   // No query retries, so a failed refresh fails now and not three seconds from now.
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } });
+  client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 15_000 } } });
   container = document.createElement("div");
   document.body.appendChild(container);
   root = createRoot(container);
   await act(async () => root.render(<QueryClientProvider client={client}><CampaignComposer /></QueryClientProvider>));
-  await pass(500);
 }
 
 beforeEach(() => {
@@ -86,12 +96,14 @@ afterEach(async () => {
 describe("CampaignComposer on the real hooks", () => {
   it("a send with no answer, then a failed refresh of the campaign being repeated, keeps the page and Send off", async () => {
     await mount("from=12");
+    await until(priced);
     expect(send().disabled).toBe(false);
     api.createCampaign = networkDown();
     api.campaign = networkDown();
     await click(send());
-    await pass(50);
     // The no-answer invalidates the panel, and the source campaign's refresh fails: the page stays.
+    await until(() => api.campaign.mock.calls.length > 0 && client.isFetching() === 0);
+    await pass(50);
     expect(api.campaign).toHaveBeenCalled();
     expect(text()).not.toContain("didn't load");
     expect(text()).toContain("may already have sent");
@@ -101,8 +113,9 @@ describe("CampaignComposer on the real hooks", () => {
 
   it("Send stays off once the campaign is created, until the page has moved on", async () => {
     await mount("from=12");
+    await until(priced);
     await click(send());
-    await pass(50);
+    await until(() => push.mock.calls.length > 0);
     expect(push).toHaveBeenCalledWith("/ops/sms/campaigns/99");
     expect(send().disabled).toBe(true);
     await click(send());
@@ -113,9 +126,10 @@ describe("CampaignComposer on the real hooks", () => {
     let answerAudience: (reply: unknown) => void = () => {};
     api.previewAudience = vi.fn(() => new Promise((resolve) => (answerAudience = resolve)));
     await mount("student=5");
+    await until(() => api.previewAudience.mock.calls.length > 0);
     expect(api.previewAudience).toHaveBeenCalledTimes(1);
     await click(buttons().find((b) => b.textContent?.includes("Debt reminder"))!);
-    await pass(500);
+    await until(priced);
     expect(send().disabled).toBe(false);
     await act(async () => answerAudience({ ...AUDIENCE, count: 1 }));
     await pass(20);
