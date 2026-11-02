@@ -148,6 +148,7 @@ Columns, in this order: `Date` (Tashkent, `YYYY-MM-DD HH:MM`), `Name`, `Phone`, 
 - Forbidden word;
 - eskiz refused;
 - eskiz not reached;
+- No balance on eskiz (2026-11-02: a FAILED SMS whose error names the balance);
 - Unknown — may have gone;
 - Waiting for the operator.
 
@@ -433,3 +434,5 @@ It renders the template with `SAMPLE_VALUES` (`student = "Test Testov,"`, `debt 
 | slot role | `student`, `debt`, `text` |
 | template status | `service`, `reklama`, `moderation`, `inproccess`, `rejected`, `gone` |
 | campaign skip reason | `no_link`, `no_phone`, `stale_balance`, `not_debtor`, `bad_text`, `same_phone` |
+
+`FAILED` means the SMS never left and may go again: eskiz was not reached, or (since 2026-11-02) it refused for want of balance ("HTTP 400: Please, fill the balance"), so a top-up heals it through the next retry, "Send now" or a campaign's Retry. `REJECTED` is any other refusal at send (such as "perfectum: Not allowed"), which only a person's Resend sends again.

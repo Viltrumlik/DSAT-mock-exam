@@ -598,7 +598,7 @@ def _reason(msg) -> str:
     elif msg.status == SmsMessage.STATUS_REJECTED:
         text = "Forbidden word" if "forbidden" in (msg.error or "").lower() else "eskiz refused"
     elif msg.status == SmsMessage.STATUS_FAILED:
-        text = "eskiz not reached"
+        text = "No balance on eskiz" if eskiz.no_balance(msg.error) else "eskiz not reached"
     elif msg.status == SmsMessage.STATUS_UNCERTAIN:
         text = "Unknown — may have gone"
     else:
