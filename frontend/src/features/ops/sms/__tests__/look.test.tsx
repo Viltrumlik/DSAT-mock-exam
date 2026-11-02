@@ -24,6 +24,8 @@ describe("reasonOf", () => {
     [{ status: "REJECTED", error: "HTTP 400: forbidden words: shavkat" }, "Forbidden word"],
     [{ status: "REJECTED", error: "perfectum: Not allowed" }, "eskiz refused"],
     [{ status: "FAILED" }, "eskiz not reached"],
+    [{ status: "FAILED", error: "HTTP 400: Please, fill the balance" }, "No balance on eskiz"],
+    [{ status: "FAILED", error: "HTTP 400: Please, fill the balance", attempts: 2 }, "No balance on eskiz · try 2"],
     [{ status: "UNCERTAIN" }, "Unknown — may have gone"],
     [{ status: "SENT" }, "Waiting for the operator"],
     [{ status: "PENDING" }, "Waiting for the operator"],

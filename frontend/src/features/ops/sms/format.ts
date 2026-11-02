@@ -168,7 +168,7 @@ export function reasonOf(m: Pick<SmsMessage, "status" | "eskiz_status" | "error"
       text = (m.error || "").toLowerCase().includes("forbidden") ? "Forbidden word" : "eskiz refused";
       break;
     case "FAILED":
-      text = "eskiz not reached";
+      text = (m.error || "").toLowerCase().includes("balance") ? "No balance on eskiz" : "eskiz not reached";
       break;
     case "UNCERTAIN":
       text = "Unknown — may have gone";

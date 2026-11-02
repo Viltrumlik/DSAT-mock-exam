@@ -5,8 +5,8 @@ the debt warning gets people to pay (plan 2026-11-01-sms-v2, Task 2).
 PENDING or UNCERTAIN SMS has not, so it is counted as pending and left out of the rate.
 
 **Cost** is parts × the row's price per part (today's price for rows from before prices were kept),
-for every SMS eskiz took or may have taken. FAILED (eskiz never reached) and REJECTED (eskiz refused
-it at send) cost nothing: eskiz sends neither. It is an estimate — the panel says so.
+for every SMS eskiz took or may have taken. FAILED (eskiz not reached, or no balance) and REJECTED
+(eskiz refused it at send) cost nothing: eskiz sends neither. It is an estimate — the panel says so.
 
 Days and months are Tashkent's, from ``created_at``.
 """

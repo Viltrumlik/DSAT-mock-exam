@@ -7,7 +7,7 @@ from sms import switchboard
 from sms.delivery import check_statuses, deliver, mask_phone
 from sms.eskiz import FAILED, REJECTED, UNCERTAIN
 from sms.models import SmsMessage
-from sms.testing import FakeEskiz
+from sms.testing import EskizAccount, FakeEskiz
 
 DAY = date(2026, 11, 1)
 NOW = timezone.make_aware(datetime(2026, 11, 1, 11, 30))
@@ -113,6 +113,33 @@ class RetryTests(TestCase):
         fake = FakeEskiz()
         self.assertIsNone(send(fake))
         self.assertEqual(fake.sent, [])
+
+
+class NoBalanceTests(TestCase):
+    def test_a_refusal_for_no_balance_goes_again_after_a_top_up_and_only_once(self):
+        account = EskizAccount()
+        client = account.client()
+        msg = send(client)
+        msg.refresh_from_db()
+        self.assertEqual(
+            (msg.status, msg.error, msg.sent_at), (SmsMessage.STATUS_FAILED, "HTTP 400: Please, fill the balance", None)
+        )
+        account.top_up()
+        again = send(client)
+        again.refresh_from_db()
+        self.assertEqual((again.pk, again.status, again.attempts, again.error), (msg.pk, SmsMessage.STATUS_SENT, 2, ""))
+        self.assertIsNone(send(client))
+        self.assertEqual(account.taken, ["998901234567"])
+
+    def test_any_other_refusal_stays_rejected_and_is_not_claimed_again(self):
+        account = EskizAccount(refused={"998901234567": "perfectum: Not allowed"})
+        client = account.client()
+        msg = send(client)
+        msg.refresh_from_db()
+        self.assertEqual((msg.status, msg.error), (SmsMessage.STATUS_REJECTED, "HTTP 400: perfectum: Not allowed"))
+        account.top_up()
+        self.assertIsNone(send(client))
+        self.assertEqual(account.asked, 1)
 
 
 class CampaignFieldsTests(TestCase):

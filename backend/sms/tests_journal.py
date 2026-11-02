@@ -97,6 +97,13 @@ class JournalFilterTests(ApiFixture):
         body = self.get("messages/export/").content.decode("utf-8-sig")
         self.assertIn("Debt reminder", body)
 
+    def test_the_export_says_when_it_was_the_balance_and_not_eskiz_being_away(self):
+        S.objects.filter(pk=self.m2.pk).update(status=S.STATUS_FAILED, error="HTTP 400: Please, fill the balance")
+        S.objects.filter(pk=self.m3.pk).update(status=S.STATUS_FAILED, error="eskiz unreachable: ConnectTimeout")
+        body = self.get("messages/export/").content.decode("utf-8-sig")
+        self.assertIn("No balance on eskiz", body)
+        self.assertIn("eskiz not reached", body)
+
     def test_from_to_are_inclusive_tashkent_days(self):
         self.assertEqual(self.ids(**{"from": "2026-11-01", "to": "2026-11-01"}), [self.m1.pk])
         self.assertEqual(self.ids(**{"from": "2026-11-02"}), [self.m3.pk, self.m2.pk])

@@ -175,8 +175,8 @@ class SmsMessage(models.Model):
     STATUS_SENT = "SENT"  # eskiz took it; delivery not known yet
     STATUS_DELIVERED = "DELIVERED"
     STATUS_UNDELIVERED = "UNDELIVERED"  # the operator gave up: blacklist, phone off for 24 h, …
-    STATUS_REJECTED = "REJECTED"  # eskiz refused it: not an approved text, a bad number, no balance
-    STATUS_FAILED = "FAILED"  # eskiz was not reached; nothing was sent
+    STATUS_REJECTED = "REJECTED"  # eskiz refused it and would again: not an approved text, a bad number
+    STATUS_FAILED = "FAILED"  # it never left, and may go again: eskiz not reached, or no balance
     STATUS_UNCERTAIN = "UNCERTAIN"  # the request left and no answer came: it may have been sent
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
