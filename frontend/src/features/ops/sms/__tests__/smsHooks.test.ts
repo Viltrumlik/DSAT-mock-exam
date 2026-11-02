@@ -52,9 +52,20 @@ describe("the campaigns list", () => {
   it("is asked again only while one is on its way out", () => {
     expect(interval(list(), [{ status: "SENDING", scheduled_at: "2026-10-20T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
     expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
-    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2099-01-01T09:30:00+05:00" }])).toBe(false);
     expect(interval(list(), [{ status: "DONE", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(false);
     expect(interval(list(), undefined)).toBe(false);
+  });
+
+  it("wakes up when the next scheduled one comes due, or nothing would ever ask again", () => {
+    const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+    const scheduled = (m: number) => ({ status: "SCHEDULED", scheduled_at: inMinutes(m) });
+    const wait = interval(list(), [scheduled(30), scheduled(2)]) as number;
+    expect(wait).toBeGreaterThan(115_000);
+    expect(wait).toBeLessThanOrEqual(120_000);
+    // Moments away is still no faster than the poll.
+    expect(interval(list(), [scheduled(0.01)])).toBe(hooks.CAMPAIGN_POLL_MS);
+    // Far away is checked hourly: a timer past about 24 days overflows and fires at once.
+    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2099-01-01T09:30:00+05:00" }])).toBe(60 * 60_000);
   });
 });
 

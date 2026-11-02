@@ -7,6 +7,7 @@ import {
   messagesQuery,
   smsApi,
   type AudienceBody,
+  type Campaign,
   type CampaignDraft,
   type CampaignStatus,
   type SmsSettingsPatch,
@@ -33,6 +34,8 @@ export const MUTATION_DEFAULTS = { retry: false } as const;
 
 /** How often a campaign page asks again while the campaign waits or goes out. */
 export const CAMPAIGN_POLL_MS = 5_000;
+/** The longest the list waits for a scheduled campaign: a timer past about 24 days overflows and fires at once. */
+const SCHEDULED_WAKE_MAX_MS = 60 * 60_000;
 /** How often the debt tab asks again after "Send now", and for how long at most. */
 export const DEBT_POLL_MS = 5_000;
 export const DEBT_POLL_FOR_MS = 2 * 60_000;
@@ -93,17 +96,25 @@ export function useStudentSms(userId: number) {
   return useQuery({ queryKey: smsKeys.student(userId), queryFn: () => smsApi.studentMessages(userId) });
 }
 
+/**
+ * When to ask for the campaigns again. Every CAMPAIGN_POLL_MS while one is on its way out; otherwise
+ * when the next scheduled one comes due, since returning false here would leave no timer to notice.
+ */
+function campaignsPollMs(rows: Campaign[] | undefined): number | false {
+  const waits: number[] = [];
+  for (const c of rows ?? []) {
+    if (c.status === "SENDING") return CAMPAIGN_POLL_MS;
+    if (c.status === "SCHEDULED") waits.push(new Date(c.scheduled_at).getTime() - Date.now());
+  }
+  if (waits.length === 0) return false;
+  return Math.min(Math.max(Math.min(...waits), CAMPAIGN_POLL_MS), SCHEDULED_WAKE_MAX_MS);
+}
+
 export function useSmsCampaigns() {
   return useQuery({
     queryKey: smsKeys.campaigns,
     queryFn: () => smsApi.campaigns(),
-    // Only while one is on its way out: a campaign due next week has nothing new to show.
-    refetchInterval: (query) => {
-      const going = (query.state.data ?? []).some(
-        (c) => c.status === "SENDING" || (c.status === "SCHEDULED" && new Date(c.scheduled_at).getTime() <= Date.now()),
-      );
-      return going ? CAMPAIGN_POLL_MS : false;
-    },
+    refetchInterval: (query) => campaignsPollMs(query.state.data),
   });
 }
 
