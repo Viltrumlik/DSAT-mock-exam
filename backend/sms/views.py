@@ -34,7 +34,7 @@ from rest_framework.views import APIView
 
 from access import constants as C
 from classes.capabilities import is_global_admin
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership
 from core.csv_download import csv_download_response
 from lcup.conf import debt_freeze_day, debt_freeze_enabled
 from lcup.phones import normalize_phone
@@ -60,6 +60,7 @@ BALANCE_LOCK_TTL = 30
 BALANCE_ERROR_TTL = 60
 CAMPAIGN_LIST_MAX = 200
 STUDENT_PICKER_MAX = 20
+USED_WINDOW_DAYS = 90
 MESSAGE_SEARCH = [
     "phone", "text", "user__first_name", "user__last_name", "user__username", "user__lcup_student_link__name",
 ]
@@ -133,18 +134,38 @@ def _cost(msg) -> int:
     return (msg.parts or T.parts(msg.text)) * (msg.unit_price or switchboard.price_per_part())
 
 
+def _aliases(template_ids) -> dict[int, str]:
+    """The panel's names of these templates, for ``_template_label``: one query."""
+    ids = {pk for pk in template_ids if pk}
+    if not ids:
+        return {}
+    return dict(EskizTemplate.objects.filter(eskiz_id__in=ids).exclude(alias="").values_list("eskiz_id", "alias"))
+
+
+def _template_label(template_id, aliases) -> str:
+    if not template_id:
+        return ""
+    return aliases.get(template_id) or f"#{template_id}"
+
+
 def message_rows(msgs) -> list[dict]:
-    """``message_row`` for each, the campaigns' audience labels and the debt warning's switch asked once."""
+    """``message_row`` for each: the campaigns' audience labels, the templates' names and the debt
+    warning's switch asked once."""
     msgs = list(msgs)
     campaign_ids = {m.campaign_id for m in msgs if m.campaign_id}
     labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=campaign_ids)) if campaign_ids else {}
+    aliases = _aliases(m.template_eskiz_id for m in msgs)
     today, debt_on = timezone.localdate(), warnings.switched_on()
-    return [message_row(m, labels, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs]
+    return [
+        message_row(m, labels, aliases, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs
+    ]
 
 
-def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
+def message_row(msg, campaign_labels=None, aliases=None, *, can_resend=None) -> dict:
     if can_resend is None:
         can_resend = resend.refusal(msg, timezone.localdate()) is None
+    if aliases is None:
+        aliases = _aliases([msg.template_eskiz_id])
     return {
         "id": msg.pk,
         "created_at": _iso(msg.created_at),
@@ -169,7 +190,7 @@ def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
         "source": _source(msg, campaign_labels or {}),
         "template": {
             "id": msg.template_eskiz_id,
-            "label": f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+            "label": _template_label(msg.template_eskiz_id, aliases),
         },
         "cost": _cost(msg),
         # Whether Resend may take it now (``resend.refusal``): a debt warning only on its own day.
@@ -205,6 +226,8 @@ def campaign_row(campaign, labels, live) -> dict:
         "audience": campaign.audience,
         "audience_ids": campaign.audience_ids,
         "audience_label": labels[campaign.pk],
+        "audience_filter": campaign.audience_filter,
+        "excluded_user_ids": campaign.excluded_user_ids,
         "scheduled_at": _iso(campaign.scheduled_at),
         "created_at": _iso(campaign.created_at),
         "started_at": _iso(campaign.started_at),
@@ -222,10 +245,27 @@ def _campaign_rows(items) -> list[dict]:
     return [campaign_row(c, labels, live) for c in items]
 
 
-def template_row(row) -> dict:
+def _template_usage(**only) -> dict[int, tuple[int, object]]:
+    """``{eskiz_id: (messages in the last USED_WINDOW_DAYS, the newest one's time)}``: one grouped query."""
+    rows = (
+        SmsMessage.objects.filter(created_at__gte=timezone.now() - timedelta(days=USED_WINDOW_DAYS), **only)
+        .exclude(template_eskiz_id=None)
+        .values("template_eskiz_id")
+        .annotate(n=Count("id"), last=Max("created_at"))
+        .order_by()
+    )
+    return {r["template_eskiz_id"]: (r["n"], r["last"]) for r in rows}
+
+
+def template_row(row, usage=None) -> dict:
     text = row.pattern or row.original
+    used_count, last_used_at = (usage or {}).get(row.eskiz_id, (0, None))
     return {
         "eskiz_id": row.eskiz_id,
+        "alias": row.alias,
+        "label": row.label,
+        "used_count": used_count,
+        "last_used_at": _iso(last_used_at),
         "status": row.status,
         "pattern": row.pattern,
         "original": row.original,
@@ -362,7 +402,8 @@ class OverviewView(_AdminView):
 
 
 class StatsView(_AdminView):
-    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``)."""
+    """Delivery, cost and the debt warning's effect over ``from``..``to`` (``stats``); with
+    ``campaign``, only that campaign's messages, and no debt warning's effect."""
 
     def get(self, request):
         params = request.query_params
@@ -370,6 +411,15 @@ class StatsView(_AdminView):
             start, end = stats.parse_range(params.get("from"), params.get("to"), today=timezone.localdate())
         except ValueError as exc:
             return _refused("range", str(exc))
+        if campaign := params.get("campaign"):
+            if not campaign.isdecimal():
+                return _refused("range", "A campaign is its id.")
+            return Response({
+                "from": start.isoformat(),
+                "to": end.isoformat(),
+                **stats.summary(start, end, qs=SmsMessage.objects.filter(campaign_id=int(campaign))),
+                "debt_effect": [],
+            })
         return Response({
             "from": start.isoformat(),
             "to": end.isoformat(),
@@ -465,8 +515,11 @@ def _teacher_choices(qs):
 
 
 def _template_choices(qs):
-    rows = qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
-    return [(str(r["template_eskiz_id"]), f"#{r['template_eskiz_id']}", r["n"]) for r in rows]
+    rows = list(
+        qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
+    )
+    aliases = _aliases(r["template_eskiz_id"] for r in rows)
+    return [(str(r["template_eskiz_id"]), _template_label(r["template_eskiz_id"], aliases), r["n"]) for r in rows]
 
 
 def _campaign_choices(qs):
@@ -569,6 +622,7 @@ class MessageExportView(_AdminView):
             ids = {m.campaign_id for m in chunk if m.campaign_id}
             if ids:
                 labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=ids))
+            aliases = _aliases(m.template_eskiz_id for m in chunk)
             for msg in chunk:
                 writer.writerow([
                     timezone.localtime(msg.created_at).strftime("%Y-%m-%d %H:%M"),
@@ -578,7 +632,7 @@ class MessageExportView(_AdminView):
                     operator_of(msg.phone),
                     _KINDS.get(msg.kind, msg.kind),
                     _source(msg, labels)["label"],
-                    f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+                    _template_label(msg.template_eskiz_id, aliases),
                     msg.status,
                     _reason(msg),
                     msg.parts or T.parts(msg.text),
@@ -640,11 +694,11 @@ def _campaign_refused(exc: campaigns.CampaignRefused) -> Response:
     return _refused(exc.code, exc.message)
 
 
-def _queue_retry(pk: int):
+def _queue_retry(pk: int, only_failed: bool):
     def queue():
         from . import tasks
 
-        tasks.retry_campaign.delay(pk)
+        tasks.retry_campaign.delay(pk, only_failed=only_failed)
 
     return queue
 
@@ -696,9 +750,9 @@ class CampaignCancelView(_AdminView):
 
 
 class CampaignRetryView(_AdminView):
-    """Retry = resume, for a DONE or a stopped (FAILED) campaign: claimed SENDING here, at once (a
-    second click is refused), then sent by the queued task — the recipients worked out again, the
-    FAILED sent again, the never-reached sent, nothing that may have left."""
+    """Retry, for a DONE or a stopped (FAILED) campaign: claimed SENDING here, at once (a second
+    click is refused), then sent by the queued task — the FAILED sent again, nothing that may have
+    left, and for a stopped campaign the never-reached too."""
 
     def post(self, request, pk):
         campaign = _campaign(pk)
@@ -706,10 +760,11 @@ class CampaignRetryView(_AdminView):
             campaigns.check_retryable(campaign)
             if not conf.is_configured():
                 return _refused("not_configured", "eskiz is not configured on the server.")
+            only_failed = campaign.status == SmsCampaign.STATUS_DONE  # ``retry`` claims it SENDING
             queued = campaigns.retry(campaign)
         except campaigns.CampaignRefused as exc:
             return _campaign_refused(exc)
-        _on_commit(_queue_retry(campaign.pk))
+        _on_commit(_queue_retry(campaign.pk, only_failed))
         return Response({"queued": queued})
 
 
@@ -858,11 +913,13 @@ class DebtRunsView(_AdminView):
 
 class TemplateListView(_AdminView):
     def get(self, request):
+        usage = _template_usage()
         rows = sorted(
-            EskizTemplate.objects.select_related("submitted_by"), key=lambda t: (not t.usable, -t.eskiz_id)
+            EskizTemplate.objects.select_related("submitted_by"),
+            key=lambda t: (not t.usable, -usage.get(t.eskiz_id, (0,))[0], -t.eskiz_id),
         )
         synced_at = EskizTemplate.objects.aggregate(last=Max("synced_at"))["last"]
-        return Response({"templates": [template_row(t) for t in rows], "synced_at": _iso(synced_at)})
+        return Response({"templates": [template_row(t, usage) for t in rows], "synced_at": _iso(synced_at)})
 
     def post(self, request):
         if refused := _not_an_object(request):
@@ -872,6 +929,20 @@ class TemplateListView(_AdminView):
         except eskiz_templates.TemplateRefused as exc:
             return _refused(exc.code, exc.message)
         return Response({"template": template_row(row) if row else None, "sync": counts}, status=http.HTTP_201_CREATED)
+
+
+class TemplateDetailView(_AdminView):
+    def patch(self, request, eskiz_id):
+        if refused := _not_an_object(request):
+            return refused
+        row = get_object_or_404(EskizTemplate.objects.select_related("submitted_by"), eskiz_id=eskiz_id)
+        alias = request.data.get("alias")
+        max_length = EskizTemplate._meta.get_field("alias").max_length
+        if not isinstance(alias, str) or len(alias.strip()) > max_length:
+            return _refused("alias", f"A template's name is text of at most {max_length} characters.")
+        row.alias = alias.strip()
+        row.save(update_fields=["alias"])
+        return Response({"template": template_row(row, _template_usage(template_eskiz_id=row.eskiz_id))})
 
 
 class TemplateSyncView(_AdminView):
@@ -953,6 +1024,39 @@ class AudienceClassroomsView(_AdminView):
                 {"id": pk, "name": name, "students": students[pk], "with_phone": with_phone[pk]} for pk, name in rooms
             ]
         })
+
+
+def _class_counts(field) -> dict:
+    rows = Classroom.objects.filter(is_active=True).values_list(field).annotate(n=Count("id")).order_by()
+    return dict(rows)
+
+
+def _options(choices, counts) -> list[dict]:
+    return [{"value": value, "label": label, "classes": counts[value]} for value, label in choices if counts.get(value)]
+
+
+class AudienceOptionsView(_AdminView):
+    """What a filter audience can choose from: only values some active class has, with how many."""
+
+    def get(self, request):
+        branches = _class_counts("branch_id")
+        names = Branch.objects.filter(pk__in=[pk for pk in branches if pk]).order_by("name", "pk").values_list("pk", "name")
+        return Response({
+            "subjects": _options(Classroom.SUBJECT_CHOICES, _class_counts("subject")),
+            "levels": _options(Classroom.LEVEL_CHOICES, _class_counts("level")),
+            "branches": _options(names, branches),
+            "days": _options(Classroom.DAYS_CHOICES, _class_counts("lesson_days")),
+        })
+
+
+class AudiencePreviewView(_AdminView):
+    def post(self, request):
+        if refused := _not_an_object(request):
+            return refused
+        try:
+            return Response(campaigns.audience_preview(request.data))
+        except campaigns.CampaignRefused as exc:
+            return _campaign_refused(exc)
 
 
 class AudienceStudentsView(_AdminView):

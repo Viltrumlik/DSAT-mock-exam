@@ -12,15 +12,15 @@
  * SMS of a template 70 characters a part instead of 160 — about twice the price — so it is flagged.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { FileText, RefreshCw } from "lucide-react";
 
 import { useToast } from "@/components/ToastProvider";
-import { Badge, Button } from "@/components/ui";
+import { Badge, Button, Input } from "@/components/ui";
 import { dateTime, roleLabel, slotLabel, templateBadge } from "./format";
-import { BOX, LoadError, Loading, TABLE, TD, TH, TR, errorText } from "./panelKit";
+import { BOX, LoadError, Loading, TABLE, TD, TEXT_BUTTON, TH, TR, errorText } from "./panelKit";
 import type { EskizTemplate } from "./smsApi";
-import { useSmsTemplates, useSyncTemplates } from "./smsHooks";
+import { useRenameTemplate, useSmsTemplates, useSyncTemplates } from "./smsHooks";
 import { SubmitTemplateModal } from "./SubmitTemplateModal";
 
 /** "1–4 words · Student's name; a number · Debt amount" — each slot and the role guessed for it. */
@@ -32,6 +32,66 @@ export function slotsSummary(t: Pick<EskizTemplate, "slots" | "guessed_roles">):
 }
 
 const WIDE = "block max-w-[22rem] whitespace-pre-wrap break-words";
+
+/** The panel's own name for a template, edited in place: Enter saves, Esc cancels. eskiz never sees it. */
+function NameCell({ t }: { t: EskizTemplate }) {
+  const rename = useRenameTemplate();
+  const { push } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(t.alias);
+  const saving = useRef(false);
+
+  const save = () => {
+    const alias = value.trim();
+    if (alias === t.alias) return setEditing(false);
+    if (saving.current) return;
+    saving.current = true;
+    rename.mutate(
+      { eskizId: t.eskiz_id, alias },
+      {
+        onSuccess: () => {
+          setEditing(false);
+          push({ tone: "success", message: alias ? `Template #${t.eskiz_id} is now "${alias}".` : `Template #${t.eskiz_id} has no name now.` });
+        },
+        onError: (e) => push({ tone: "error", message: errorText(e, "Couldn't save the name. Try again.") }),
+        onSettled: () => {
+          saving.current = false;
+        },
+      },
+    );
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        aria-label={`Name template ${t.eskiz_id}`}
+        className={TEXT_BUTTON}
+        onClick={() => {
+          setValue(t.alias);
+          setEditing(true);
+        }}
+      >
+        {t.alias || "Add a name"}
+      </button>
+    );
+  }
+  return (
+    <Input
+      aria-label="Template name"
+      autoFocus
+      inputSize="sm"
+      maxLength={80}
+      className="w-40"
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") save();
+        if (e.key === "Escape") setEditing(false);
+      }}
+    />
+  );
+}
 
 export function TemplatesPanel() {
   const templates = useSmsTemplates();
@@ -86,11 +146,14 @@ export function TemplatesPanel() {
             <thead>
               <tr>
                 <th className={TH}>ID</th>
+                <th className={TH}>Name</th>
                 <th className={TH}>Status</th>
                 <th className={TH}>What eskiz approved</th>
                 <th className={TH}>As written</th>
                 <th className={TH}>Slots</th>
                 <th className={`${TH} text-right`}>Parts</th>
+                <th className={`${TH} text-right`} title="Messages in the last 90 days">Used</th>
+                <th className={TH}>Last used</th>
                 <th className={TH}>Notes</th>
               </tr>
             </thead>
@@ -100,6 +163,9 @@ export function TemplatesPanel() {
                 return (
                   <tr key={t.eskiz_id} className={`${TR} align-top`}>
                     <td className={`${TD} tabular-nums`}>{t.eskiz_id}</td>
+                    <td className={`${TD} whitespace-nowrap`}>
+                      <NameCell t={t} />
+                    </td>
                     <td className={TD}>
                       <Badge variant={badge.variant}>{badge.label}</Badge>
                     </td>
@@ -111,6 +177,8 @@ export function TemplatesPanel() {
                     </td>
                     <td className={`${TD} text-[12px]`}>{slotsSummary(t)}</td>
                     <td className={`${TD} text-right tabular-nums`}>{t.parts}</td>
+                    <td className={`${TD} text-right tabular-nums`}>{t.used_count}</td>
+                    <td className={`${TD} whitespace-nowrap`}>{t.last_used_at ? dateTime(t.last_used_at) : "—"}</td>
                     <td className={`${TD} space-y-1 text-[12px]`}>
                       {t.ascii ? null : (
                         <span

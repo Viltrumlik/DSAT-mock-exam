@@ -12,6 +12,7 @@ import { EVENT_TEMPLATE, REJECTED_TEMPLATE, template } from "./fixtures";
 
 const templates = vi.fn();
 const sync = vi.fn();
+const rename = vi.fn();
 const toast = vi.fn();
 const refetch = vi.fn();
 
@@ -19,6 +20,7 @@ vi.mock("@/components/ToastProvider", () => ({ useToast: () => ({ push: toast })
 vi.mock("@/features/ops/sms/smsHooks", () => ({
   useSmsTemplates: () => templates(),
   useSyncTemplates: () => ({ mutate: sync, isPending: false }),
+  useRenameTemplate: () => ({ mutate: rename, isPending: false }),
 }));
 vi.mock("@/features/ops/sms/SubmitTemplateModal", () => ({
   SubmitTemplateModal: () => <div role="dialog">submit-open</div>,
@@ -120,5 +122,82 @@ describe("TemplatesPanel", () => {
     expect(text()).toContain("The templates didn't load.");
     await act(async () => button("Try again").click());
     expect(refetch).toHaveBeenCalled();
+  });
+
+  describe("a template's name", () => {
+    const nameButton = (id: number) => document.body.querySelector<HTMLButtonElement>(`[aria-label="Name template ${id}"]`)!;
+    const input = () => document.body.querySelector<HTMLInputElement>('input[aria-label="Template name"]');
+    const type = async (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(input()!, value);
+        input()!.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    const press = async (key: string) =>
+      act(async () => void input()!.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+
+    beforeEach(() => rename.mockReset());
+
+    it("shows the name, how often it went out and when last", async () => {
+      await render({
+        data: {
+          synced_at: null,
+          templates: [template({ alias: "Debt reminder", label: "Debt reminder", used_count: 12, last_used_at: "2026-10-18T12:00:00+05:00" }), EVENT_TEMPLATE],
+        },
+      });
+      expect(nameButton(64942).textContent).toBe("Debt reminder");
+      expect(nameButton(70001).textContent).toBe("Add a name");
+      expect(text()).toContain("Used");
+      expect(text()).toContain("Last used");
+      const [first] = [...container.querySelectorAll("tbody tr")];
+      expect(first.textContent).toContain("12");
+      expect(first.textContent).toContain("18 Oct 2026");
+    });
+
+    it("Enter saves once, trimmed, and says so", async () => {
+      await render({ data: { templates: [template()], synced_at: null } });
+      await act(async () => nameButton(64942).click());
+      await type("  Debt reminder ");
+      await press("Enter");
+      await press("Enter");
+      expect(rename).toHaveBeenCalledTimes(1);
+      expect(rename.mock.calls[0][0]).toEqual({ eskizId: 64942, alias: "Debt reminder" });
+      await act(async () => {
+        rename.mock.calls[0][1].onSuccess();
+        rename.mock.calls[0][1].onSettled();
+      });
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ tone: "success" }));
+      expect(input()).toBeNull();
+    });
+
+    it("Esc cancels", async () => {
+      await render({ data: { templates: [template({ alias: "Old", label: "Old" })], synced_at: null } });
+      await act(async () => nameButton(64942).click());
+      await type("New");
+      await press("Escape");
+      expect(rename).not.toHaveBeenCalled();
+      expect(input()).toBeNull();
+      expect(nameButton(64942).textContent).toBe("Old");
+    });
+
+    it("an unchanged name asks nothing", async () => {
+      await render({ data: { templates: [template({ alias: "Old", label: "Old" })], synced_at: null } });
+      await act(async () => nameButton(64942).click());
+      await press("Enter");
+      expect(rename).not.toHaveBeenCalled();
+      expect(input()).toBeNull();
+    });
+
+    it("a refusal says why and keeps what was typed", async () => {
+      await render({ data: { templates: [template()], synced_at: null } });
+      await act(async () => nameButton(64942).click());
+      await type("x");
+      await press("Enter");
+      await act(async () => {
+        rename.mock.calls[0][1].onError({ response: { data: { detail: "Too long." } } });
+        rename.mock.calls[0][1].onSettled();
+      });
+      expect(toast).toHaveBeenCalledWith({ tone: "error", message: "Too long." });
+      expect(input()?.value).toBe("x");
+    });
   });
 });

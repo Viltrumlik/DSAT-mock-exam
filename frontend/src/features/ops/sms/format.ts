@@ -117,9 +117,9 @@ export function firstLine(text: string, max = 90): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-/** "#64942 · MASTER SAT'dan yozyabmiz. (STUDENT), sizda…" — a template as a picker names it. */
-export function templateOption(t: Pick<EskizTemplate, "eskiz_id" | "original" | "pattern" | "status">): string {
-  return `#${t.eskiz_id} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
+/** "Debt reminder · MASTER SAT'dan yozyabmiz. (STUDENT), sizda…" — a template as a picker names it. */
+export function templateOption(t: Pick<EskizTemplate, "label" | "original" | "pattern" | "status">): string {
+  return `${t.label} · ${firstLine(t.original || t.pattern, 70)}${t.status === "reklama" ? " (ad price)" : ""}`;
 }
 
 // ── labels ───────────────────────────────────────────────────────────────
@@ -142,7 +142,7 @@ export function statusBadge(status: string): Badge {
 const OPERATOR_REJECTED = new Set(["REJECTED", "REJECTD"]);
 
 /** "10:02" in Tashkent, where the server counts its days. */
-function tashkentTime(iso: string): string {
+export function tashkentTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", minute: "2-digit" }).format(d);
@@ -233,6 +233,7 @@ const SKIP_LABEL: Record<string, string> = {
   bad_text: "Text doesn't fit the template",
   same_phone: "Same phone — one SMS between siblings",
   stale_balance: "Balance out of date",
+  excluded: "Taken out by hand",
 };
 
 /** A reason the panel knows by name, or the server's code in words. */
@@ -260,6 +261,28 @@ export function dayLabel(iso: string | null | undefined): string {
   const [year, mon, date] = iso.slice(0, 10).split("-").map(Number);
   if (!year || !mon || !date) return iso;
   return new Date(year, mon - 1, date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/** The hour (0–23) in Tashkent. */
+export function tashkentHour(when: Date): number {
+  return Number(
+    new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tashkent", hour: "2-digit", hourCycle: "h23" }).format(when),
+  );
+}
+
+/** 21:00 to 09:00 in Tashkent: an SMS then wakes people up. */
+export function isNightInTashkent(when: Date): boolean {
+  const hour = tashkentHour(when);
+  return hour >= 21 || hour < 9;
+}
+
+/** "3 Nov, 10:00" in Tashkent. */
+export function tashkentDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(d);
 }
 
 /** Today's "YYYY-MM-DD" in Tashkent — the calendar the server's warning days are counted in. */

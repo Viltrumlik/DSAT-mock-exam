@@ -11,6 +11,7 @@ import { campaign, message } from "./fixtures";
  */
 
 const detail = vi.fn();
+const stats = vi.fn();
 const cancel = vi.fn();
 const retry = vi.fn();
 const confirmSpy = vi.fn();
@@ -26,6 +27,15 @@ vi.mock("@/features/ops/sms/smsHooks", () => ({
   useCancelCampaign: () => ({ mutate: cancel, isPending: false }),
   useRetryCampaign: () => ({ mutate: retry, isPending: false }),
   useSmsOverview: () => ({ data: overviewData }),
+  useSmsStats: (range: unknown) => stats(range) ?? { data: undefined },
+}));
+vi.mock("@/features/ops/sms/charts/OperatorChart", () => ({
+  OperatorChart: ({ data }: { data: unknown[] }) => <div>operator-chart-{data.length}</div>,
+}));
+vi.mock("@/features/ops/sms/UndeliveredList", () => ({
+  UndeliveredList: ({ filter, pricePerPart, emptyText }: { filter: { campaign: number }; pricePerPart: number; emptyText?: string }) => (
+    <div>undelivered-{filter.campaign}-{pricePerPart}-{emptyText}</div>
+  ),
 }));
 
 const { CampaignPage } = await import("@/features/ops/sms/CampaignPage");
@@ -191,5 +201,54 @@ describe("CampaignPage", () => {
 
     await render({ isError: true, data: undefined });
     expect(text()).toContain("The campaign didn't load.");
+  });
+
+  describe("the new parts", () => {
+    const DONE = campaign({
+      status: "DONE",
+      scheduled_at: "2026-10-20T09:30:00+05:00",
+      result: { sent: 2, failed: 0, rejected: 0, uncertain: 0, delivered: 1, undelivered: 1, errors: 0, skipped: {} },
+    });
+
+    beforeEach(() => stats.mockReset().mockReturnValue({ data: { by_operator: [{ operator: "Beeline" }] } }));
+
+    it("Repeat opens the composer prefilled from this campaign", async () => {
+      await render({ data: { campaign: DONE, messages: [] } });
+      const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.trim() === "Repeat")!;
+      expect(link.getAttribute("href")).toBe("/ops/sms/campaigns/new?from=7");
+    });
+
+    it("once it went out: its operators, from its own day, and what did not arrive", async () => {
+      await render({ data: { campaign: DONE, messages: [message()] } });
+      const asked = stats.mock.calls.at(-1)![0];
+      expect(asked.campaign).toBe(7);
+      expect(asked.from).toBe("2026-10-20");
+      expect(text()).toContain("operator-chart-1");
+      expect(text()).toContain("undelivered-7-170");
+    });
+
+    it("makes no claim about what arrived: a delivery report can come later", async () => {
+      await render({ data: { campaign: DONE, messages: [message()] } });
+      expect(text()).toContain("Nothing undelivered so far.");
+    });
+
+    it("while it is sending: neither, since both would be out of date at once", async () => {
+      await render({ data: { campaign: campaign({ status: "SENDING", result: { delivered: 1, undelivered: 0 } }), messages: [message()] } });
+      expect(text()).not.toContain("operator-chart");
+      expect(text()).not.toContain("undelivered-");
+    });
+
+    it("before it goes out: neither", async () => {
+      await render({ data: { campaign: LATER, messages: [] } });
+      expect(text()).not.toContain("operator-chart");
+      expect(text()).not.toContain("undelivered-");
+    });
+
+    it("offers no resend until the price is known", async () => {
+      overviewData = undefined;
+      await render({ data: { campaign: DONE, messages: [message()] } });
+      expect(text()).not.toContain("undelivered-");
+      overviewData = { price_per_part: 170 };
+    });
   });
 });

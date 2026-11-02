@@ -15,3 +15,5 @@ export function smsTabHref(key: SmsTab): string {
 }
 
 export const campaignHref = (id: number) => `${SMS_PATH}/campaigns/${id}`;
+
+export const NEW_CAMPAIGN_PATH = `${SMS_PATH}/campaigns/new`;

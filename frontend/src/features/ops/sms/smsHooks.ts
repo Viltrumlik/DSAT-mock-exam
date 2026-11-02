@@ -6,6 +6,8 @@ import { mayHaveBeenSent } from "./panelKit";
 import {
   messagesQuery,
   smsApi,
+  type AudienceBody,
+  type Campaign,
   type CampaignDraft,
   type CampaignStatus,
   type SmsSettingsPatch,
@@ -32,6 +34,8 @@ export const MUTATION_DEFAULTS = { retry: false } as const;
 
 /** How often a campaign page asks again while the campaign waits or goes out. */
 export const CAMPAIGN_POLL_MS = 5_000;
+/** The longest the list waits for a scheduled campaign: a timer past about 24 days overflows and fires at once. */
+const SCHEDULED_WAKE_MAX_MS = 60 * 60_000;
 /** How often the debt tab asks again after "Send now", and for how long at most. */
 export const DEBT_POLL_MS = 5_000;
 export const DEBT_POLL_FOR_MS = 2 * 60_000;
@@ -49,8 +53,9 @@ export const smsKeys = {
   debtRuns: ["sms", "debt", "runs"] as const,
   templates: ["sms", "templates"] as const,
   classrooms: ["sms", "audience", "classrooms"] as const,
+  audienceOptions: ["sms", "audience", "options"] as const,
   students: (q: string) => ["sms", "audience", "students", q] as const,
-  stats: (range: StatsRange) => ["sms", "stats", range.from, range.to] as const,
+  stats: (range: StatsRange) => ["sms", "stats", range.from, range.to, range.campaign ?? null] as const,
   student: (userId: number) => ["sms", "student", userId] as const,
 };
 
@@ -91,12 +96,30 @@ export function useStudentSms(userId: number) {
   return useQuery({ queryKey: smsKeys.student(userId), queryFn: () => smsApi.studentMessages(userId) });
 }
 
-export function useSmsCampaigns() {
-  return useQuery({ queryKey: smsKeys.campaigns, queryFn: () => smsApi.campaigns() });
+/**
+ * When to ask for the campaigns again. Every CAMPAIGN_POLL_MS while one is on its way out; otherwise
+ * when the next scheduled one comes due, since returning false here would leave no timer to notice.
+ */
+function campaignsPollMs(rows: Campaign[] | undefined): number | false {
+  const waits: number[] = [];
+  for (const c of rows ?? []) {
+    if (c.status === "SENDING") return CAMPAIGN_POLL_MS;
+    if (c.status === "SCHEDULED") waits.push(new Date(c.scheduled_at).getTime() - Date.now());
+  }
+  if (waits.length === 0) return false;
+  return Math.min(Math.max(Math.min(...waits), CAMPAIGN_POLL_MS), SCHEDULED_WAKE_MAX_MS);
 }
 
-/** One campaign, asked again every CAMPAIGN_POLL_MS while it is SCHEDULED or SENDING. */
-export function useSmsCampaign(id: number) {
+export function useSmsCampaigns() {
+  return useQuery({
+    queryKey: smsKeys.campaigns,
+    queryFn: () => smsApi.campaigns(),
+    refetchInterval: (query) => campaignsPollMs(query.state.data),
+  });
+}
+
+/** One campaign, asked again every CAMPAIGN_POLL_MS while it is SCHEDULED or SENDING, if `live`. */
+export function useSmsCampaign(id: number, live = true) {
   return useQuery({
     queryKey: smsKeys.campaign(id),
     queryFn: () => smsApi.campaign(id),
@@ -104,7 +127,7 @@ export function useSmsCampaign(id: number) {
     enabled: Number.isInteger(id) && id > 0,
     refetchInterval: (query) => {
       const status = query.state.data?.campaign?.status;
-      return status && LIVE_CAMPAIGN.has(status) ? CAMPAIGN_POLL_MS : false;
+      return live && status && LIVE_CAMPAIGN.has(status) ? CAMPAIGN_POLL_MS : false;
     },
   });
 }
@@ -144,6 +167,10 @@ export function useAudienceClassrooms() {
   return useQuery({ queryKey: smsKeys.classrooms, queryFn: () => smsApi.classrooms(), staleTime: 60_000 });
 }
 
+export function useAudienceOptions() {
+  return useQuery({ queryKey: smsKeys.audienceOptions, queryFn: () => smsApi.audienceOptions(), staleTime: 60_000 });
+}
+
 export function useAudienceStudents(q: string) {
   const term = q.trim();
   return useQuery({
@@ -158,10 +185,15 @@ export function useAudienceStudents(q: string) {
 
 /**
  * The one POST that changes nothing: it resolves the audience and prices the send. It invalidates
- * nothing, so a preview does not refetch the whole panel behind the wizard.
+ * nothing, so a preview does not refetch the whole panel behind the composer.
  */
 export function usePreviewCampaign() {
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: (draft: CampaignDraft) => smsApi.previewCampaign(draft) });
+}
+
+/** The same for who an audience is, before any template is chosen. */
+export function usePreviewAudience() {
+  return useMutation({ ...MUTATION_DEFAULTS, mutationFn: (body: AudienceBody) => smsApi.previewAudience(body) });
 }
 
 /** For a POST that sends SMS: with no answer it may have gone out, so the panel is asked again. */
@@ -211,6 +243,15 @@ export function useDebtSendNow() {
 export function useSyncTemplates() {
   const invalidate = useInvalidateSms();
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: () => smsApi.syncTemplates(), onSuccess: invalidate });
+}
+
+export function useRenameTemplate() {
+  const invalidate = useInvalidateSms();
+  return useMutation({
+    ...MUTATION_DEFAULTS,
+    mutationFn: ({ eskizId, alias }: { eskizId: number; alias: string }) => smsApi.renameTemplate(eskizId, alias),
+    onSuccess: invalidate,
+  });
 }
 
 export function useSubmitTemplate() {

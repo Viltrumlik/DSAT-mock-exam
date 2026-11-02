@@ -10,7 +10,7 @@ from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 from classes.models import Classroom, ClassroomMembership
-from sms.models import SmsCampaign, SmsMessage
+from sms.models import EskizTemplate, SmsCampaign, SmsMessage
 from sms.tests_api import ApiFixture
 
 S = SmsMessage
@@ -83,6 +83,19 @@ class JournalFilterTests(ApiFixture):
         self.assertEqual(self.options("template"), {"#64942": 1, "#70000": 1})
         self.assertEqual(self.ids(campaign=self.campaign.pk), [self.m2.pk])
         self.assertEqual(self.options("campaign"), {f"#{self.campaign.pk} · Debtors": 1})
+
+    def test_journal_template_label_uses_alias(self):
+        EskizTemplate.objects.filter(eskiz_id=64942).update(alias="Debt reminder")
+        rows = {r["id"]: r["template"] for r in self.get("messages/").json()["results"]}
+        self.assertEqual(rows[self.m1.pk], {"id": 64942, "label": "Debt reminder"})
+        self.assertEqual(rows[self.m2.pk], {"id": 70000, "label": "#70000"})
+        self.assertEqual(rows[self.m3.pk], {"id": None, "label": ""})
+        self.assertEqual(self.options("template"), {"Debt reminder": 1, "#70000": 1})
+
+    def test_the_export_names_the_template_by_its_alias(self):
+        EskizTemplate.objects.filter(eskiz_id=64942).update(alias="Debt reminder")
+        body = self.get("messages/export/").content.decode("utf-8-sig")
+        self.assertIn("Debt reminder", body)
 
     def test_from_to_are_inclusive_tashkent_days(self):
         self.assertEqual(self.ids(**{"from": "2026-11-01", "to": "2026-11-01"}), [self.m1.pk])

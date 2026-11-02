@@ -9,13 +9,15 @@ from decimal import Decimal
 from unittest import mock
 
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import URLPattern
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from access import constants as C
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership, Region
 from lcup.models import LcupStudentLink, LinkStatus
 from sms import eskiz, urls, views
 from sms import templates as T
@@ -47,12 +49,13 @@ MESSAGE_KEYS = {
 }
 CAMPAIGN_KEYS = {
     "id", "status", "template_eskiz_id", "pattern", "original", "slot_roles", "slot_texts", "audience", "audience_ids",
-    "audience_label", "scheduled_at", "created_at", "started_at", "finished_at", "created_by_name", "error", "result",
+    "audience_label", "audience_filter", "excluded_user_ids", "scheduled_at", "created_at", "started_at", "finished_at",
+    "created_by_name", "error", "result",
 }
 RESULT_KEYS = {"sent", "failed", "rejected", "uncertain", "delivered", "undelivered", "errors", "skipped"}
 TEMPLATE_KEYS = {
     "eskiz_id", "status", "pattern", "original", "slots", "guessed_roles", "parts", "ascii", "usable", "synced_at",
-    "submitted_by_name", "submitted_at",
+    "submitted_by_name", "submitted_at", "alias", "label", "used_count", "last_used_at",
 }
 SETTINGS_KEYS = {
     "debt_enabled", "debt_hour", "warning_template_id", "warning_pattern", "warning_slots", "last_day_template_id",
@@ -386,7 +389,7 @@ class CampaignApiTests(ApiFixture):
         self.assertEqual((data["count"], data["over_limit"], data["limit"], data["parts_total"], data["cost"]), (1, False, 300, 1, 170))
         self.assertEqual(data["samples"][0]["text"][:40], "MASTER SAT'dan yozyabmiz. Karimova Malik")
         self.assertEqual(set(data["samples"][0]), {"name", "phone", "text", "parts"})
-        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "stale_balance", "not_debtor", "bad_text"})
+        self.assertEqual(set(data["skipped"]), {"no_link", "no_phone", "stale_balance", "not_debtor", "bad_text", "excluded"})
 
     def test_create_queues_a_now_campaign(self):
         with self.captureOnCommitCallbacks(execute=True):
@@ -444,7 +447,7 @@ class CampaignApiTests(ApiFixture):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.post(f"campaigns/{campaign['id']}/retry/")
         self.assertEqual(response.json(), {"queued": 1})
-        self.queued["retry_campaign"].assert_called_once_with(campaign["id"])
+        self.queued["retry_campaign"].assert_called_once_with(campaign["id"], only_failed=True)
         # Claimed at once: the page shows it sending, and a second click is refused.
         self.assertEqual(self.get(f"campaigns/{campaign['id']}/").json()["campaign"]["status"], "SENDING")
         again = self.post(f"campaigns/{campaign['id']}/retry/")
@@ -470,7 +473,7 @@ class CampaignApiTests(ApiFixture):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.post(f"campaigns/{pk}/retry/")
         self.assertEqual(response.json(), {"queued": 6})
-        self.queued["retry_campaign"].assert_called_once_with(pk)
+        self.queued["retry_campaign"].assert_called_once_with(pk, only_failed=False)
 
     @override_settings(ESKIZ_EMAIL="")
     def test_retry_refused_while_eskiz_is_not_configured(self):
@@ -636,6 +639,67 @@ class DebtApiTests(ApiFixture):
         self.assertEqual(runs, [{"run_on": timezone.localdate().isoformat(), "total": 1, "by_status": {"DELIVERED": 1}, "parts": 1, "cost": 170}])
 
 
+class AudienceOptionsApiTests(ApiFixture):
+    def test_audience_options_counts(self):
+        region = Region.objects.create(name="Tashkent")
+        chilonzor = Branch.objects.create(region=region, name="Chilonzor")
+        Branch.objects.create(region=region, name="Empty")
+        for name, subject, level, days, branch, active in (
+            ("a", "ENGLISH", "senior", "EVEN", chilonzor, True),
+            ("b", "MATH", "", "EVEN", chilonzor, True),
+            ("closed", "ENGLISH", "middle", "ODD", chilonzor, False),
+        ):
+            Classroom.objects.create(
+                name=name, subject=subject, level=level, lesson_days=days, branch=branch, is_active=active,
+                created_by=self.admin,
+            )
+        data = self.get("audience/options/").json()
+        self.assertEqual(data, {
+            "subjects": [
+                {"value": "ENGLISH", "label": "English", "classes": 1},
+                {"value": "MATH", "label": "Math", "classes": 2},
+            ],
+            "levels": [
+                {"value": "junior", "label": "Junior", "classes": 1},
+                {"value": "senior", "label": "Senior", "classes": 1},
+            ],
+            "branches": [{"value": chilonzor.pk, "label": "Chilonzor", "classes": 2}],
+            "days": [
+                {"value": "ODD", "label": "Odd days", "classes": 1},
+                {"value": "EVEN", "label": "Even days", "classes": 2},
+            ],
+        })
+
+    def test_for_admins_only(self):
+        self.assertEqual(self.get("audience/options/", self.teacher).status_code, 403)
+
+    def test_a_filter_campaign_through_the_api(self):
+        body = self.draft(audience="filter", audience_ids=[], audience_filter={"subjects": ["MATH"], "levels": ["junior"]})
+        preview = self.post("campaigns/preview/", {**body, "include_recipients": True}).json()
+        self.assertEqual(preview["count"], 1)
+        self.assertEqual(preview["recipients"][0]["phone"], "99890***4567")
+        response = self.post("campaigns/", {**body, "excluded_user_ids": [self.student.pk]})
+        self.assertEqual(response.status_code, 201, response.content)
+        row = response.json()["campaign"]
+        self.assertEqual(set(row), CAMPAIGN_KEYS)
+        self.assertEqual(row["audience_label"], "Math · Junior")
+        self.assertEqual(row["audience_filter"], {"subjects": ["MATH"], "levels": ["junior"], "branches": [], "days": []})
+        self.assertEqual(row["excluded_user_ids"], [self.student.pk])
+
+    def test_the_audience_preview_through_the_api(self):
+        response = self.post("audience/preview/", {"audience": "group", "audience_ids": [self.room.pk]})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(set(response.json()), {"count", "over_limit", "limit", "skipped", "recipients"})
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(self.post("audience/preview/", {"audience": "x"}).json()["code"], "audience")
+        self.assertEqual(self.as_().post(API + "audience/preview/", ["x"], format="json").json()["code"], "body")
+        self.assertEqual(self.post("audience/preview/", {"audience": "debtors"}, self.teacher).status_code, 403)
+
+    def test_an_empty_filter_through_the_api(self):
+        response = self.post("campaigns/preview/", self.draft(audience="filter", audience_ids=[]))
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "audience"))
+
+
 class TemplatesApiTests(ApiFixture):
     def test_usable_first_then_newest(self):
         data = self.get("templates/").json()
@@ -647,6 +711,63 @@ class TemplatesApiTests(ApiFixture):
             (row["slots"], row["guessed_roles"], row["parts"], row["ascii"], row["usable"]),
             ([{"kind": "w", "min": 1, "max": 4}], ["student"], 1, True, True),
         )
+
+    def used(self, eskiz_id, key, *, days_ago=0):
+        msg = SmsMessage.objects.create(
+            kind=SmsMessage.KIND_TEST, run_on=timezone.localdate(), dedupe_key=key, phone="998901234567", text="x",
+            status=SmsMessage.STATUS_DELIVERED, template_eskiz_id=eskiz_id,
+        )
+        SmsMessage.objects.filter(pk=msg.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+        return msg
+
+    def test_list_sorted_by_use(self):
+        self.used(52393, "a")
+        self.used(52393, "b")
+        self.used(64942, "c")
+        self.used(80000, "d")  # awaiting moderation: however used, it cannot be picked, so it stays below
+        rows = self.get("templates/").json()["templates"]
+        self.assertEqual([t["eskiz_id"] for t in rows], [52393, 64942, 70000, 64950, 80000])
+        self.assertEqual([t["used_count"] for t in rows], [2, 1, 0, 0, 1])
+
+    def test_used_count_is_the_last_90_days(self):
+        self.used(64942, "new", days_ago=89)
+        self.used(64942, "old", days_ago=91)
+        row = next(t for t in self.get("templates/").json()["templates"] if t["eskiz_id"] == 64942)
+        self.assertEqual(row["used_count"], 1)
+        self.assertIsNotNone(row["last_used_at"])
+        unused = next(t for t in self.get("templates/").json()["templates"] if t["eskiz_id"] == 70000)
+        self.assertEqual((unused["used_count"], unused["last_used_at"]), (0, None))
+
+    def test_the_usage_is_one_query_however_many_templates(self):
+        self.used(64942, "a")
+        with CaptureQueriesContext(connection) as ctx:
+            self.get("templates/")
+        self.assertEqual(sum('"sms_messages"' in q["sql"] for q in ctx.captured_queries), 1)
+
+    def test_patch_alias_trim_and_clear(self):
+        response = self.patch("templates/64942/", {"alias": "  Debt reminder  "})
+        self.assertEqual(response.status_code, 200, response.content)
+        row = response.json()["template"]
+        self.assertEqual(set(row), TEMPLATE_KEYS)
+        self.assertEqual((row["alias"], row["label"]), ("Debt reminder", "Debt reminder"))
+        self.assertEqual(EskizTemplate.objects.get(eskiz_id=64942).alias, "Debt reminder")
+        row = self.patch("templates/64942/", {"alias": ""}).json()["template"]
+        self.assertEqual((row["alias"], row["label"]), ("", "#64942"))
+
+    def test_alias_over_80_is_400(self):
+        self.assertEqual(self.patch("templates/64942/", {"alias": " " + "x" * 80 + " "}).status_code, 200)
+        response = self.patch("templates/64942/", {"alias": "x" * 81})
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "alias"))
+        self.assertEqual(EskizTemplate.objects.get(eskiz_id=64942).alias, "x" * 80)
+
+    def test_alias_refusals(self):
+        self.assertEqual(self.patch("templates/1/", {"alias": "x"}).status_code, 404)
+        for body in ({}, {"alias": None}, {"alias": 5}):
+            with self.subTest(body=body):
+                response = self.patch("templates/64942/", body)
+                self.assertEqual((response.status_code, response.json()["code"]), (400, "alias"))
+        self.assertEqual(self.patch("templates/64942/", ["x"]).json()["code"], "body")
+        self.assertEqual(self.patch("templates/64942/", {"alias": "x"}, self.teacher).status_code, 403)
 
     def test_sync(self):
         EskizTemplate.objects.filter(eskiz_id=52393).delete()

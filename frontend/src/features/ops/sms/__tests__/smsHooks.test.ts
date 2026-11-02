@@ -34,6 +34,8 @@ const MUTATIONS: [string, () => unknown][] = [
   ["preview campaign", () => hooks.usePreviewCampaign()],
   ["cancel campaign", () => hooks.useCancelCampaign(7)],
   ["retry campaign", () => hooks.useRetryCampaign(7)],
+  ["preview an audience", () => hooks.usePreviewAudience()],
+  ["rename a template", () => hooks.useRenameTemplate()],
   ["debt send now", () => hooks.useDebtSendNow()],
   ["test SMS", () => hooks.useSendTestSms()],
   ["submit template", () => hooks.useSubmitTemplate()],
@@ -43,6 +45,29 @@ const MUTATIONS: [string, () => unknown][] = [
 ];
 
 beforeEach(() => invalidateQueries.mockReset());
+
+describe("the campaigns list", () => {
+  const list = () => hooks.useSmsCampaigns();
+
+  it("is asked again only while one is on its way out", () => {
+    expect(interval(list(), [{ status: "SENDING", scheduled_at: "2026-10-20T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
+    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(hooks.CAMPAIGN_POLL_MS);
+    expect(interval(list(), [{ status: "DONE", scheduled_at: "2020-01-01T09:30:00+05:00" }])).toBe(false);
+    expect(interval(list(), undefined)).toBe(false);
+  });
+
+  it("wakes up when the next scheduled one comes due, or nothing would ever ask again", () => {
+    const inMinutes = (m: number) => new Date(Date.now() + m * 60_000).toISOString();
+    const scheduled = (m: number) => ({ status: "SCHEDULED", scheduled_at: inMinutes(m) });
+    const wait = interval(list(), [scheduled(30), scheduled(2)]) as number;
+    expect(wait).toBeGreaterThan(115_000);
+    expect(wait).toBeLessThanOrEqual(120_000);
+    // Moments away is still no faster than the poll.
+    expect(interval(list(), [scheduled(0.01)])).toBe(hooks.CAMPAIGN_POLL_MS);
+    // Far away is checked hourly: a timer past about 24 days overflows and fires at once.
+    expect(interval(list(), [{ status: "SCHEDULED", scheduled_at: "2099-01-01T09:30:00+05:00" }])).toBe(60 * 60_000);
+  });
+});
 
 describe("SMS mutations", () => {
   it.each(MUTATIONS)("%s is never retried by React Query", (_name, hook) => {
@@ -77,6 +102,8 @@ describe("polling", () => {
     expect(at("FAILED")).toBe(false);
     expect(at("CANCELLED")).toBe(false);
     expect(interval(hooks.useSmsCampaign(7), undefined)).toBe(false);
+    // The composer reads the campaign it repeats once: its figures are not what it is there for.
+    expect(interval(hooks.useSmsCampaign(7, false), { campaign: { status: "SENDING" }, messages: [] })).toBe(false);
   });
 
   it("polls the debt preview after Send now while warnings are left, for about two minutes", () => {

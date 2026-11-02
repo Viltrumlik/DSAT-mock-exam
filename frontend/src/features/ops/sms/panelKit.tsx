@@ -21,6 +21,11 @@ export const TABLE = "w-full border-separate border-spacing-0 text-[13px] text-f
 export const TH = "h-8 whitespace-nowrap border-b border-border bg-card px-2 text-left text-[12px] font-semibold text-muted-foreground";
 export const TD = "h-[34px] border-b border-border px-2 py-1";
 export const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+/** A link that looks like a small primary Button: where a click goes to another page. */
+export const LINK_BUTTON =
+  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary-hover";
+export const LINK_BUTTON_SECONDARY =
+  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-3 text-[13px] font-semibold text-foreground hover:border-border-strong hover:bg-surface-2";
 export const TEXT_BUTTON =
   "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-hover";
 
@@ -83,15 +88,17 @@ export function errorText(e: unknown, fallback = "That didn't work. Try again.")
 /**
  * A paid POST that failed with no HTTP answer — the network, a timeout, or the auth layer's
  * AUTH_TEMPORAL_STALE (which rejects an answer that did arrive) — may well have reached the
- * server and sent its SMS. A refusal (any answer) means nothing went out.
+ * server and sent its SMS. So may a 5xx: a create commits and queues before its response is built,
+ * and a gateway answers 502 for a worker killed in between. Only a refusal means nothing went out.
  */
 export function mayHaveBeenSent(e: unknown): boolean {
-  return !(e as { response?: unknown } | null | undefined)?.response;
+  const response = (e as { response?: { status?: number } } | null | undefined)?.response;
+  return !response || (response.status ?? 0) >= 500;
 }
 
 export const MAYBE_SENT = "The server may already have sent this — check the list before trying again.";
 
-/** `errorText` for a POST that costs money: no answer is "it may have gone", never "try again". */
+/** `errorText` for a POST that costs money: no answer, or a 5xx, is "it may have gone", never "try again". */
 export function paidErrorText(e: unknown, fallback?: string): string {
   return mayHaveBeenSent(e) ? MAYBE_SENT : errorText(e, fallback);
 }

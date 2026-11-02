@@ -1,5 +1,5 @@
-"""Manual sends ("jo'natma") from /ops/sms: one approved template to some students, a class or every
-debtor — now, or at a set time.
+"""Manual sends ("jo'natma") from /ops/sms: one approved template to some students, some classes, a
+subject/level/branch slice or every debtor — now, or at a set time.
 
 **Who gets one is decided when it goes out**, not when it is written: ``send_campaign`` resolves the
 audience again, so a debtor who paid after a campaign was scheduled is skipped. The phone is always
@@ -18,8 +18,9 @@ whatever already left is skipped — and three things do run it again:
   than STUCK_AFTER is claimed again in one UPDATE and finished;
 * **the circuit breaker**: BREAKER_AFTER failed or uncertain sends in a row stop the campaign
   (FAILED) with the rest unclaimed — eskiz is down, and 300 failures help nobody;
-* **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again and sent
-  as a resume — the recipients worked out anew, FAILED ones re-claimed, the unreached sent.
+* **Retry** (``retry`` + ``resume``): a DONE or FAILED campaign is claimed SENDING again. A stopped
+  (FAILED) one goes on as a resume, the unreached sent too. A DONE one sends only what FAILED: it
+  did reach everyone it meant to, and a student who joined the class since never had this text.
 
 **At most LIMIT recipients**, checked at the preview, at create and again at send: a class or the
 debtor list can grow between the two, and a campaign that grew past it sends nothing.
@@ -29,7 +30,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 
 from django.db import transaction
@@ -37,7 +38,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from access import constants as C
-from classes.models import Classroom, ClassroomMembership
+from classes.models import Branch, Classroom, ClassroomMembership
 from lcup.models import LcupStudentLink
 from lcup.phones import normalize_phone
 from users.models import User
@@ -45,17 +46,19 @@ from users.models import User
 from . import forbidden, switchboard
 from . import templates as T
 from .debt_warnings import STALE_AFTER
-from .delivery import deliver
+from .delivery import deliver, mask_phone
 from .models import EskizTemplate, SmsCampaign, SmsMessage
 
 logger = logging.getLogger("sms.campaigns")
 
 #: The most SMS one campaign may send (owner, 2026-10-18).
 LIMIT = 300
+#: The most classes one campaign may name.
+MAX_GROUPS = 50
 #: A "send at" a little in the past (the time it took to click Confirm) still means now.
 PAST_GRACE = timedelta(minutes=1)
 SAMPLES = 3
-SKIP_REASONS = ("no_link", "no_phone", "stale_balance", "not_debtor", "bad_text")
+SKIP_REASONS = ("no_link", "no_phone", "stale_balance", "not_debtor", "bad_text", "excluded")
 #: A send bumps its campaign's ``started_at`` at least this often (recipients): the reaper's heartbeat.
 HEARTBEAT_EVERY = 20
 #: A SENDING campaign whose heartbeat is older than this lost its worker. One eskiz request is at most
@@ -95,6 +98,8 @@ class Draft:
     audience_ids: tuple
     #: None means now.
     scheduled_at: object = None
+    audience_filter: dict = field(default_factory=dict)
+    excluded_user_ids: tuple = ()
 
 
 @dataclass
@@ -168,17 +173,22 @@ def clean_slots(pattern, roles, texts) -> tuple[list[str], list[str]]:
     return roles, texts
 
 
+_AUDIENCES = tuple(value for value, _ in SmsCampaign.AUDIENCE_CHOICES)
+
+
 def _audience(audience, raw_ids) -> tuple[str, tuple]:
-    if audience not in (SmsCampaign.AUDIENCE_STUDENT, SmsCampaign.AUDIENCE_GROUP, SmsCampaign.AUDIENCE_DEBTORS):
-        raise CampaignRefused("audience", "Choose who gets it: students, a class or the debtors.")
-    if audience == SmsCampaign.AUDIENCE_DEBTORS:
+    if audience not in _AUDIENCES:
+        raise CampaignRefused("audience", "Choose who gets it: students, classes, a filter or the debtors.")
+    if audience in (SmsCampaign.AUDIENCE_DEBTORS, SmsCampaign.AUDIENCE_FILTER):
         return audience, ()
     ids = _ints(raw_ids)
     if not ids:
         raise CampaignRefused("audience", "Pick at least one student." if audience == "student" else "Pick a class.")
     if audience == SmsCampaign.AUDIENCE_GROUP:
-        if len(ids) != 1 or not Classroom.objects.filter(pk=ids[0], is_active=True).exists():
-            raise CampaignRefused("audience", "Pick one active class.")
+        if len(ids) > MAX_GROUPS:
+            raise CampaignRefused("audience", f"At most {MAX_GROUPS} classes in one campaign.")
+        if Classroom.objects.filter(pk__in=ids, is_active=True).count() != len(ids):
+            raise CampaignRefused("audience", "Pick active classes only.")
         return audience, tuple(ids)
     if len(ids) > LIMIT:
         raise CampaignRefused("over_limit", f"At most {LIMIT} students in one campaign.")
@@ -186,6 +196,65 @@ def _audience(audience, raw_ids) -> tuple[str, tuple]:
     if len(found) != len(ids):
         raise CampaignRefused("audience", "A student in the list is not known.")
     return audience, tuple(ids)
+
+
+_FILTER_CHOICES = {
+    "subjects": frozenset(dict(Classroom.SUBJECT_CHOICES)),
+    "levels": frozenset(dict(Classroom.LEVEL_CHOICES)),
+    "days": frozenset(dict(Classroom.DAYS_CHOICES)),
+}
+
+
+def _filter_values(key, raw) -> list:
+    """The chosen values of one filter key, known ones only and no repeats."""
+    if raw is None:
+        return []
+    if key == "branches":
+        ids = _ints(raw)
+        if ids is None or Branch.objects.filter(pk__in=ids).count() != len(ids):
+            raise CampaignRefused("audience", "A branch in the filter is not known.")
+        return ids
+    if not isinstance(raw, (list, tuple)):
+        raise CampaignRefused("audience", f"The filter's {key} are a list.")
+    values = []
+    for value in raw:
+        if not isinstance(value, str) or value not in _FILTER_CHOICES[key]:
+            raise CampaignRefused("audience", f"The filter's {key} has an unknown value.")
+        if value not in values:
+            values.append(value)
+    return values
+
+
+def clean_filter(raw) -> dict:
+    """``{"subjects", "levels", "branches", "days"}``, checked: at least one value in all."""
+    if raw is not None and not isinstance(raw, dict):
+        raise CampaignRefused("audience", "The filter is an object.")
+    raw = raw or {}
+    chosen = {key: _filter_values(key, raw.get(key)) for key in ("subjects", "levels", "branches", "days")}
+    if not any(chosen.values()):
+        raise CampaignRefused("audience", "Choose at least one subject, level, branch or day.")
+    return chosen
+
+
+def filter_classrooms(f: dict):
+    """The active classes in a filter: AND across its keys, OR within one."""
+    rooms = Classroom.objects.filter(is_active=True)
+    if f.get("subjects"):
+        rooms = rooms.filter(subject__in=f["subjects"])
+    if f.get("levels"):
+        rooms = rooms.filter(level__in=f["levels"])
+    if f.get("branches"):
+        rooms = rooms.filter(branch_id__in=f["branches"])
+    if f.get("days"):
+        rooms = rooms.filter(lesson_days__in=f["days"])
+    return rooms
+
+
+def _excluded(raw) -> tuple:
+    ids = _ints(raw if raw is not None else [])
+    if ids is None:
+        raise CampaignRefused("audience", "The people taken out are a list of ids.")
+    return tuple(ids)
 
 
 def _when(raw, now):
@@ -213,10 +282,12 @@ def clean(data, *, now) -> Draft:
     template = usable_template(data.get("template_id"))
     roles, texts = clean_slots(template.pattern, data.get("slot_roles"), data.get("slot_texts"))
     audience, ids = _audience(data.get("audience"), data.get("audience_ids"))
+    chosen = clean_filter(data.get("audience_filter")) if audience == SmsCampaign.AUDIENCE_FILTER else {}
     return Draft(
         template_id=template.eskiz_id, pattern=template.pattern, original=template.original,
         slot_roles=tuple(roles), slot_texts=tuple(texts), audience=audience, audience_ids=ids,
-        scheduled_at=_when(data.get("scheduled_at"), now),
+        scheduled_at=_when(data.get("scheduled_at"), now), audience_filter=chosen,
+        excluded_user_ids=_excluded(data.get("excluded_user_ids")),
     )
 
 
@@ -235,16 +306,18 @@ def _people(campaign) -> list[tuple[User, LcupStudentLink | None]]:
         )
         return [(link.user, link) for link in links]
     ids = list(campaign.audience_ids or ())
-    if campaign.audience == SmsCampaign.AUDIENCE_GROUP:
+    if campaign.audience in (SmsCampaign.AUDIENCE_GROUP, SmsCampaign.AUDIENCE_FILTER):
+        rooms = ids if campaign.audience == SmsCampaign.AUDIENCE_GROUP else filter_classrooms(campaign.audience_filter)
         seats = (
             ClassroomMembership.objects.filter(
-                classroom_id__in=ids, classroom__is_active=True,
+                classroom_id__in=rooms, classroom__is_active=True,
                 role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE,
             )
             .select_related("user")
             .order_by("user__first_name", "user__last_name", "user_id")
         )
-        users = [seat.user for seat in seats]
+        # A student in two of the classes is one person: one SMS, and one line if skipped.
+        users = list({seat.user_id: seat.user for seat in seats}.values())
     else:
         by_id = User.objects.filter(role__in=C.LEARNER_ROLES).in_bulk(ids)
         users = [by_id[i] for i in ids if i in by_id]
@@ -296,8 +369,12 @@ def resolve(campaign, *, now=None) -> tuple[list[Recipient], dict]:
     suffixes = T.role_suffixes(campaign.original, campaign.pattern)
     recipients, skipped = [], {reason: [] for reason in SKIP_REASONS}
     students, texts = set(), set()
+    excluded = set(campaign.excluded_user_ids or ())
     for user, link in _people(campaign):
         who = {"user_id": user.pk, "name": _name(user, link)}
+        if user.pk in excluded:
+            skipped["excluded"].append(who)
+            continue
         if link is None:
             skipped["no_link"].append(who)
             continue
@@ -314,11 +391,12 @@ def resolve(campaign, *, now=None) -> tuple[list[Recipient], dict]:
             skipped["not_debtor"].append(who)
             continue
         try:
-            text = render_for(campaign, user, link, suffixes=suffixes)
+            # No pattern is ``audience_preview``: no words yet, so nothing to render or to compare.
+            text = render_for(campaign, user, link, suffixes=suffixes) if campaign.pattern else None
         except T.TemplateError:
             skipped["bad_text"].append(who)
             continue
-        if (phone, text) in texts:
+        if text is not None and (phone, text) in texts:
             skipped.setdefault(SAME_PHONE, []).append(who)
             continue
         students.add(link.lcup_student_id)
@@ -327,13 +405,34 @@ def resolve(campaign, *, now=None) -> tuple[list[Recipient], dict]:
     return recipients, skipped
 
 
+def _recipient_rows(recipients) -> list[dict]:
+    """Who gets it, for the list an admin takes people out of: the phone masked, the classes they sit in now."""
+    seats = (
+        ClassroomMembership.objects.filter(
+            user__in=[r.user.pk for r in recipients], classroom__is_active=True,
+            role=ClassroomMembership.ROLE_STUDENT, status=ClassroomMembership.STATUS_ACTIVE,
+        )
+        .order_by("classroom__name", "classroom_id")
+        .values_list("user_id", "classroom__name")
+    )
+    groups: dict[int, list[str]] = {}
+    for user_id, name in seats:
+        groups.setdefault(user_id, []).append(name)
+    return [
+        {"user_id": r.user.pk, "name": r.name, "phone": mask_phone(r.phone), "groups": groups.get(r.user.pk, [])}
+        for r in recipients
+    ]
+
+
 def preview(data, *, now=None) -> dict:
     now = now or timezone.now()
     draft = clean(data, now=now)
     recipients, skipped = resolve(draft, now=now)
     parts = [T.parts(r.text) for r in recipients]
     total = sum(parts)
+    extra = {"recipients": _recipient_rows(recipients)} if data.get("include_recipients") is True else {}
     return {
+        **extra,
         "count": len(recipients),
         "over_limit": len(recipients) > LIMIT,
         "limit": LIMIT,
@@ -343,6 +442,25 @@ def preview(data, *, now=None) -> dict:
         "parts_total": total,
         "cost": total * switchboard.price_per_part(),
         "skipped": skipped,
+    }
+
+
+def audience_preview(data, *, now=None) -> dict:
+    """Who an audience is before any template is chosen: the composer's count as it is picked."""
+    now = now or timezone.now()
+    audience, ids = _audience(data.get("audience"), data.get("audience_ids"))
+    chosen = clean_filter(data.get("audience_filter")) if audience == SmsCampaign.AUDIENCE_FILTER else {}
+    draft = Draft(
+        template_id=0, pattern="", original="", slot_roles=(), slot_texts=(), audience=audience, audience_ids=ids,
+        audience_filter=chosen, excluded_user_ids=_excluded(data.get("excluded_user_ids")),
+    )
+    recipients, skipped = resolve(draft, now=now)
+    return {
+        "count": len(recipients),
+        "over_limit": len(recipients) > LIMIT,
+        "limit": LIMIT,
+        "skipped": skipped,
+        "recipients": _recipient_rows(recipients),
     }
 
 
@@ -367,8 +485,8 @@ def create(data, user, *, now=None) -> SmsCampaign:
     campaign = SmsCampaign.objects.create(
         template_eskiz_id=draft.template_id, pattern=draft.pattern, original=draft.original,
         slot_roles=list(draft.slot_roles), slot_texts=list(draft.slot_texts),
-        audience=draft.audience, audience_ids=list(draft.audience_ids),
-        scheduled_at=draft.scheduled_at or now, created_by=user,
+        audience=draft.audience, audience_ids=list(draft.audience_ids), audience_filter=draft.audience_filter,
+        excluded_user_ids=list(draft.excluded_user_ids), scheduled_at=draft.scheduled_at or now, created_by=user,
     )
     if campaign.scheduled_at <= now:
         # robust: a broker hiccup must not fail a create that has committed; the minute beat sends it.
@@ -450,15 +568,19 @@ def _heartbeat(campaign) -> None:
     SmsCampaign.objects.filter(pk=campaign.pk, status=SmsCampaign.STATUS_SENDING).update(started_at=timezone.now())
 
 
-def send_campaign(client, campaign, now=None) -> SmsCampaign:
+def send_campaign(client, campaign, now=None, *, only_failed=False) -> SmsCampaign:
     """A claimed (SENDING) campaign, out. One recipient going wrong does not stop the rest;
-    BREAKER_AFTER going wrong in a row do. Safe to run again: what already left is skipped."""
+    BREAKER_AFTER going wrong in a row do. Safe to run again: what already left is skipped.
+    ``only_failed`` keeps it to the recipients whose SMS FAILED: a Retry of a DONE campaign."""
     now = now or timezone.now()
     try:
         recipients, skipped = resolve(campaign, now=now)
     except Exception as exc:  # the type only: a message can quote a phone
         logger.warning("campaign %s: the recipients could not be worked out: %s", campaign.pk, type(exc).__name__)
         return _finish(campaign, SmsCampaign.STATUS_FAILED, now, error=f"the recipients could not be worked out ({type(exc).__name__})")
+    if only_failed:
+        failed = set(campaign.messages.filter(status=SmsMessage.STATUS_FAILED).values_list("dedupe_key", flat=True))
+        recipients = [r for r in recipients if _key(campaign, r.link) in failed]
     if len(recipients) > LIMIT:
         return _finish(
             campaign, SmsCampaign.STATUS_FAILED, now, skipped=skipped,
@@ -517,13 +639,15 @@ def check_retryable(campaign) -> None:
 
 
 def to_resend(campaign, *, now=None) -> int:
-    """How many a resume would send, best effort: the recipients as of now with no SMS yet or a FAILED one."""
+    """How many a Retry would send, best effort: the recipients as of now with a FAILED SMS, and
+    those with none yet when the campaign was stopped short (a DONE one reached everyone it meant to)."""
     try:
         recipients, _ = resolve(campaign, now=now)
     except Exception:  # the send will say why; the count falls back to what is known to have failed
         return campaign.messages.filter(status=SmsMessage.STATUS_FAILED).count()
     states = dict(campaign.messages.values_list("dedupe_key", "status"))
-    return sum(1 for r in recipients if states.get(_key(campaign, r.link)) in (None, SmsMessage.STATUS_FAILED))
+    wanted = (SmsMessage.STATUS_FAILED,) if campaign.status == SmsCampaign.STATUS_DONE else (None, SmsMessage.STATUS_FAILED)
+    return sum(1 for r in recipients if states.get(_key(campaign, r.link)) in wanted)
 
 
 def retry(campaign, *, now=None) -> int:
@@ -541,7 +665,7 @@ def retry(campaign, *, now=None) -> int:
     return queued
 
 
-def resume(client, campaign_id, *, now=None) -> SmsCampaign | None:
+def resume(client, campaign_id, *, now=None, only_failed=False) -> SmsCampaign | None:
     """The send a retry queued: the campaign, if it is still the SENDING one ``retry`` claimed (the
     reaper may have finished it meanwhile), out again through ``send_campaign``."""
     campaign = SmsCampaign.objects.select_related("created_by").filter(
@@ -549,18 +673,40 @@ def resume(client, campaign_id, *, now=None) -> SmsCampaign | None:
     ).first()
     if campaign is None:
         return None
-    return send_campaign(client, campaign, now)
+    return send_campaign(client, campaign, now, only_failed=only_failed)
 
 
 # ── reading ───────────────────────────────────────────────────────────────
 
 
+_SUBJECT_LABELS = dict(Classroom.SUBJECT_CHOICES)
+_LEVEL_LABELS = dict(Classroom.LEVEL_CHOICES)
+_DAY_LABELS = dict(Classroom.DAYS_CHOICES)
+
+
+def _filter_label(chosen, branch_names) -> str:
+    """"Math · Junior · Chilonzor · Odd days": the chosen values, subjects first. Reads a stored
+    filter, so a value that has since gone from the code or the branches still reads."""
+    return " · ".join([
+        *(_SUBJECT_LABELS.get(v, v) for v in chosen.get("subjects", ())),
+        *(_LEVEL_LABELS.get(v, v) for v in chosen.get("levels", ())),
+        *(branch_names.get(v, "a deleted branch") for v in chosen.get("branches", ())),
+        *(_DAY_LABELS.get(v, v) for v in chosen.get("days", ())),
+    ])
+
+
 def audience_labels(campaigns) -> dict[int, str]:
-    """"Debtors", "Group: <class>", "Student: <name>" or "<n> students", for each campaign's pk."""
+    """"Debtors", "Group: <class>", "<n> groups", "Math · Junior", "Student: <name>" or "<n> students",
+    for each campaign's pk."""
     campaigns = list(campaigns)
     rooms = {
-        c.audience_ids[0] for c in campaigns if c.audience == SmsCampaign.AUDIENCE_GROUP and c.audience_ids
+        c.audience_ids[0] for c in campaigns if c.audience == SmsCampaign.AUDIENCE_GROUP and len(c.audience_ids) == 1
     }
+    branches = {
+        pk for c in campaigns if c.audience == SmsCampaign.AUDIENCE_FILTER
+        for pk in (c.audience_filter or {}).get("branches", ())
+    }
+    branch_names = dict(Branch.objects.filter(pk__in=branches).values_list("pk", "name")) if branches else {}
     singles = {
         c.audience_ids[0] for c in campaigns if c.audience == SmsCampaign.AUDIENCE_STUDENT and len(c.audience_ids) == 1
     }
@@ -571,6 +717,10 @@ def audience_labels(campaigns) -> dict[int, str]:
         ids = list(c.audience_ids or [])
         if c.audience == SmsCampaign.AUDIENCE_DEBTORS:
             labels[c.pk] = "Debtors"
+        elif c.audience == SmsCampaign.AUDIENCE_FILTER:
+            labels[c.pk] = _filter_label(c.audience_filter or {}, branch_names)
+        elif c.audience == SmsCampaign.AUDIENCE_GROUP and len(ids) > 1:
+            labels[c.pk] = f"{len(ids)} groups"
         elif c.audience == SmsCampaign.AUDIENCE_GROUP:
             labels[c.pk] = f"Group: {room_names.get(ids[0], 'a deleted class') if ids else 'none'}"
         elif len(ids) == 1:

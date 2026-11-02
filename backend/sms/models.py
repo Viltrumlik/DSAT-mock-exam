@@ -68,6 +68,10 @@ class EskizTemplate(models.Model):
     USABLE_STATUSES = (STATUS_SERVICE, STATUS_REKLAMA)
 
     eskiz_id = models.PositiveIntegerField(unique=True)
+    # The panel's own name for it. ``sync`` writes only eskiz's fields, so it never touches this.
+    # ``db_default`` here and on the campaign's two fields below is deploy safety: the deploy migrates
+    # first while the old code still runs, and its INSERTs do not name the new columns.
+    alias = models.CharField(max_length=80, blank=True, default="", db_default="")
     pattern = models.TextField(blank=True, default="")
     original = models.TextField(blank=True, default="")
     status = models.CharField(max_length=16, db_index=True)
@@ -87,6 +91,10 @@ class EskizTemplate(models.Model):
     @property
     def usable(self) -> bool:
         return self.status in self.USABLE_STATUSES
+
+    @property
+    def label(self) -> str:
+        return self.alias or f"#{self.eskiz_id}"
 
 
 class SmsCampaign(models.Model):
@@ -110,7 +118,13 @@ class SmsCampaign(models.Model):
     AUDIENCE_STUDENT = "student"
     AUDIENCE_GROUP = "group"
     AUDIENCE_DEBTORS = "debtors"
-    AUDIENCE_CHOICES = [(AUDIENCE_STUDENT, "Students"), (AUDIENCE_GROUP, "Group"), (AUDIENCE_DEBTORS, "Debtors")]
+    AUDIENCE_FILTER = "filter"
+    AUDIENCE_CHOICES = [
+        (AUDIENCE_STUDENT, "Students"),
+        (AUDIENCE_GROUP, "Group"),
+        (AUDIENCE_DEBTORS, "Debtors"),
+        (AUDIENCE_FILTER, "Filter"),
+    ]
 
     template_eskiz_id = models.PositiveIntegerField()
     pattern = models.TextField()
@@ -120,8 +134,12 @@ class SmsCampaign(models.Model):
     #: One per slot: the typed value of a ``text`` slot, "" for the others.
     slot_texts = models.JSONField(default=list)
     audience = models.CharField(max_length=10, choices=AUDIENCE_CHOICES)
-    #: User ids (student), [classroom id] (group) or [] (debtors).
+    #: User ids (student), classroom ids (group) or [] (debtors, filter).
     audience_ids = models.JSONField(default=list, blank=True)
+    #: ``campaigns.clean_filter``'s lists: subjects, levels, branches, days. Only for a filter audience.
+    audience_filter = models.JSONField(default=dict, db_default={}, blank=True)
+    #: People taken out by hand: skipped under ``excluded``, whatever the audience.
+    excluded_user_ids = models.JSONField(default=list, db_default=[], blank=True)
     scheduled_at = models.DateTimeField()
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_SCHEDULED, db_index=True)
     #: Filled at send time: {sent, failed, rejected, uncertain, errors, skipped: {reason: [{user_id, name}]}}.

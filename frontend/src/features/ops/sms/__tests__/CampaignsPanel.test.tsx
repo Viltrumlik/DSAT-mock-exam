@@ -15,11 +15,8 @@ vi.mock("next/link", () => ({
   ),
 }));
 vi.mock("@/features/ops/sms/smsHooks", () => ({ useSmsCampaigns: () => campaigns() }));
-vi.mock("@/features/ops/sms/CampaignWizard", () => ({
-  CampaignWizard: () => <div role="dialog">wizard-open</div>,
-}));
 
-const { CampaignsPanel } = await import("@/features/ops/sms/CampaignsPanel");
+const { CampaignsPanel, resultLabel } = await import("@/features/ops/sms/CampaignsPanel");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -56,7 +53,7 @@ describe("CampaignsPanel", () => {
         }),
       ],
     });
-    const [scheduled, done] = [...container.querySelectorAll("tbody tr")];
+    const [scheduled, done] = [...container.querySelectorAll("li")];
     expect(scheduled.textContent).toContain("Scheduled");
     expect(scheduled.textContent).toContain("MASTER SAT'dan yozyabmiz. (STUDENT), sizda");
     expect(scheduled.textContent).toContain("Group: Junior G21 | Math");
@@ -68,11 +65,33 @@ describe("CampaignsPanel", () => {
     expect(done.textContent).toContain("12 sent · 10 delivered · 1 failed");
   });
 
-  it("opens the wizard from New campaign", async () => {
+  it("rings a campaign with what was delivered of what went out", async () => {
+    await render({
+      data: [
+        campaign({ status: "DONE", result: { sent: 140, failed: 1, rejected: 1, uncertain: 0, delivered: 128, undelivered: 12, errors: 0, skipped: {} } }),
+      ],
+    });
+    expect(container.querySelector("li svg text")?.textContent).toBe("128/142");
+    expect(container.querySelector('li [role="img"]')?.getAttribute("aria-label")).toBe("128 of 142 delivered");
+  });
+
+  it("counts what has gone so far while it is sending", () => {
+    expect(resultLabel({ result: { delivered: 41, undelivered: 2 } })).toBe("43 sent · 41 delivered");
+  });
+
+  it("has no ring before anything goes out, and a live dot only while sending", async () => {
+    await render({ data: [campaign(), campaign({ id: 8, status: "SENDING", result: { delivered: 3, undelivered: 1 } })] });
+    const [scheduled, sending] = [...container.querySelectorAll("li")];
+    expect(scheduled.querySelector("svg text")).toBeNull();
+    expect(scheduled.querySelector('[aria-label="Sending now"]')).toBeNull();
+    expect(sending.querySelector("svg text")?.textContent).toBe("3/4");
+    expect(sending.querySelector('[aria-label="Sending now"]')).not.toBeNull();
+  });
+
+  it("New campaign goes to the composer's page", async () => {
     await render({ data: [] });
-    expect(text()).not.toContain("wizard-open");
-    await act(async () => button("New campaign").click());
-    expect(text()).toContain("wizard-open");
+    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.trim() === "New campaign")!;
+    expect(link.getAttribute("href")).toBe("/ops/sms/campaigns/new");
   });
 
   it("says there are none yet, and offers a retry when the list did not load", async () => {
