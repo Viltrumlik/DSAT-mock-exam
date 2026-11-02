@@ -68,6 +68,8 @@ class EskizTemplate(models.Model):
     USABLE_STATUSES = (STATUS_SERVICE, STATUS_REKLAMA)
 
     eskiz_id = models.PositiveIntegerField(unique=True)
+    # The panel's own name for it. ``sync`` writes only eskiz's fields, so it never touches this.
+    alias = models.CharField(max_length=80, blank=True, default="")
     pattern = models.TextField(blank=True, default="")
     original = models.TextField(blank=True, default="")
     status = models.CharField(max_length=16, db_index=True)
@@ -87,6 +89,10 @@ class EskizTemplate(models.Model):
     @property
     def usable(self) -> bool:
         return self.status in self.USABLE_STATUSES
+
+    @property
+    def label(self) -> str:
+        return self.alias or f"#{self.eskiz_id}"
 
 
 class SmsCampaign(models.Model):

@@ -29,6 +29,12 @@ class SyncTests(TestCase):
         self.assertEqual(EskizTemplate.objects.get(eskiz_id=5).status, "gone")
         self.assertEqual(EskizTemplate.objects.get(eskiz_id=70001).status, "moderation")
 
+    def test_sync_keeps_alias(self):
+        EskizTemplate.objects.create(eskiz_id=64942, pattern="old", status="moderation", synced_at=NOW, alias="Debt reminder")
+        eskiz_templates.sync(FakeEskiz(template_rows=ROWS), now=NOW)
+        live = EskizTemplate.objects.get(eskiz_id=64942)
+        self.assertEqual((live.pattern, live.alias), ("MASTER %w{1,4} sizda", "Debt reminder"))
+
     def test_a_second_sync_marks_nothing_gone_twice(self):
         EskizTemplate.objects.create(eskiz_id=5, pattern="x", status="gone", synced_at=NOW)
         self.assertEqual(eskiz_templates.sync(FakeEskiz(template_rows=ROWS), now=NOW)["gone"], 0)

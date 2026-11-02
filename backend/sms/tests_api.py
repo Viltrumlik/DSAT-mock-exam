@@ -9,7 +9,9 @@ from decimal import Decimal
 from unittest import mock
 
 from django.core.cache import cache
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import URLPattern
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -52,7 +54,7 @@ CAMPAIGN_KEYS = {
 RESULT_KEYS = {"sent", "failed", "rejected", "uncertain", "delivered", "undelivered", "errors", "skipped"}
 TEMPLATE_KEYS = {
     "eskiz_id", "status", "pattern", "original", "slots", "guessed_roles", "parts", "ascii", "usable", "synced_at",
-    "submitted_by_name", "submitted_at",
+    "submitted_by_name", "submitted_at", "alias", "label", "used_count", "last_used_at",
 }
 SETTINGS_KEYS = {
     "debt_enabled", "debt_hour", "warning_template_id", "warning_pattern", "warning_slots", "last_day_template_id",
@@ -647,6 +649,63 @@ class TemplatesApiTests(ApiFixture):
             (row["slots"], row["guessed_roles"], row["parts"], row["ascii"], row["usable"]),
             ([{"kind": "w", "min": 1, "max": 4}], ["student"], 1, True, True),
         )
+
+    def used(self, eskiz_id, key, *, days_ago=0):
+        msg = SmsMessage.objects.create(
+            kind=SmsMessage.KIND_TEST, run_on=timezone.localdate(), dedupe_key=key, phone="998901234567", text="x",
+            status=SmsMessage.STATUS_DELIVERED, template_eskiz_id=eskiz_id,
+        )
+        SmsMessage.objects.filter(pk=msg.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
+        return msg
+
+    def test_list_sorted_by_use(self):
+        self.used(52393, "a")
+        self.used(52393, "b")
+        self.used(64942, "c")
+        self.used(80000, "d")  # awaiting moderation: however used, it cannot be picked, so it stays below
+        rows = self.get("templates/").json()["templates"]
+        self.assertEqual([t["eskiz_id"] for t in rows], [52393, 64942, 70000, 64950, 80000])
+        self.assertEqual([t["used_count"] for t in rows], [2, 1, 0, 0, 1])
+
+    def test_used_count_is_the_last_90_days(self):
+        self.used(64942, "new", days_ago=89)
+        self.used(64942, "old", days_ago=91)
+        row = next(t for t in self.get("templates/").json()["templates"] if t["eskiz_id"] == 64942)
+        self.assertEqual(row["used_count"], 1)
+        self.assertIsNotNone(row["last_used_at"])
+        unused = next(t for t in self.get("templates/").json()["templates"] if t["eskiz_id"] == 70000)
+        self.assertEqual((unused["used_count"], unused["last_used_at"]), (0, None))
+
+    def test_the_usage_is_one_query_however_many_templates(self):
+        self.used(64942, "a")
+        with CaptureQueriesContext(connection) as ctx:
+            self.get("templates/")
+        self.assertEqual(sum('"sms_messages"' in q["sql"] for q in ctx.captured_queries), 1)
+
+    def test_patch_alias_trim_and_clear(self):
+        response = self.patch("templates/64942/", {"alias": "  Debt reminder  "})
+        self.assertEqual(response.status_code, 200, response.content)
+        row = response.json()["template"]
+        self.assertEqual(set(row), TEMPLATE_KEYS)
+        self.assertEqual((row["alias"], row["label"]), ("Debt reminder", "Debt reminder"))
+        self.assertEqual(EskizTemplate.objects.get(eskiz_id=64942).alias, "Debt reminder")
+        row = self.patch("templates/64942/", {"alias": ""}).json()["template"]
+        self.assertEqual((row["alias"], row["label"]), ("", "#64942"))
+
+    def test_alias_over_80_is_400(self):
+        self.assertEqual(self.patch("templates/64942/", {"alias": " " + "x" * 80 + " "}).status_code, 200)
+        response = self.patch("templates/64942/", {"alias": "x" * 81})
+        self.assertEqual((response.status_code, response.json()["code"]), (400, "alias"))
+        self.assertEqual(EskizTemplate.objects.get(eskiz_id=64942).alias, "x" * 80)
+
+    def test_alias_refusals(self):
+        self.assertEqual(self.patch("templates/1/", {"alias": "x"}).status_code, 404)
+        for body in ({}, {"alias": None}, {"alias": 5}):
+            with self.subTest(body=body):
+                response = self.patch("templates/64942/", body)
+                self.assertEqual((response.status_code, response.json()["code"]), (400, "alias"))
+        self.assertEqual(self.patch("templates/64942/", ["x"]).json()["code"], "body")
+        self.assertEqual(self.patch("templates/64942/", {"alias": "x"}, self.teacher).status_code, 403)
 
     def test_sync(self):
         EskizTemplate.objects.filter(eskiz_id=52393).delete()

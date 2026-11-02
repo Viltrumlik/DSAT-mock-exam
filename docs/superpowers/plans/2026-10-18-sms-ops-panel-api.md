@@ -373,9 +373,12 @@ The body may contain any of: `debt_enabled`, `debt_hour` (8–20), `warning_temp
 
 | Endpoint | Response |
 |---|---|
-| GET `templates/` | `{"templates": [Template], "synced_at": "…|null"}`. Usable templates come first, then by `eskiz_id` descending |
+| GET `templates/` | `{"templates": [Template], "synced_at": "…|null"}`. Usable templates come first, then the most used, then by `eskiz_id` descending |
+| PATCH `templates/<eskiz_id>/` | `{"template": Template}`. Body `{"alias": "…"}`: trimmed, at most 80 characters, `""` clears it. Anything else is a 400 with `code: "alias"`; an unknown id is a 404 |
 | POST `templates/sync/` | `{"added": 0, "updated": 32, "gone": 0, "total": 32}` |
 | POST `templates/` | 201 `{"template": Template\|null, "sync": {…}}`, with `template` null if eskiz has not listed it yet |
+
+A Template carries `alias` (the panel's own name, kept by every sync), `label` (the alias, else `#<eskiz_id>`), `used_count` (messages with this template in the last 90 days) and `last_used_at` (the newest of those, or null). The journal's `template.label` and its template filter use `label`.
 
 `POST templates/` takes `{"text": "…"}`. It is refused with `code: "text"` when the text is empty or longer than 1000 characters, with `code: "eskiz"` when eskiz refuses (`detail` carries eskiz's words), and with `code: "body"` when the body is not an object.
 

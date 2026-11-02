@@ -60,6 +60,7 @@ BALANCE_LOCK_TTL = 30
 BALANCE_ERROR_TTL = 60
 CAMPAIGN_LIST_MAX = 200
 STUDENT_PICKER_MAX = 20
+USED_WINDOW_DAYS = 90
 MESSAGE_SEARCH = [
     "phone", "text", "user__first_name", "user__last_name", "user__username", "user__lcup_student_link__name",
 ]
@@ -133,18 +134,38 @@ def _cost(msg) -> int:
     return (msg.parts or T.parts(msg.text)) * (msg.unit_price or switchboard.price_per_part())
 
 
+def _aliases(template_ids) -> dict[int, str]:
+    """The panel's names of these templates, for ``_template_label``: one query."""
+    ids = {pk for pk in template_ids if pk}
+    if not ids:
+        return {}
+    return dict(EskizTemplate.objects.filter(eskiz_id__in=ids).exclude(alias="").values_list("eskiz_id", "alias"))
+
+
+def _template_label(template_id, aliases) -> str:
+    if not template_id:
+        return ""
+    return aliases.get(template_id) or f"#{template_id}"
+
+
 def message_rows(msgs) -> list[dict]:
-    """``message_row`` for each, the campaigns' audience labels and the debt warning's switch asked once."""
+    """``message_row`` for each: the campaigns' audience labels, the templates' names and the debt
+    warning's switch asked once."""
     msgs = list(msgs)
     campaign_ids = {m.campaign_id for m in msgs if m.campaign_id}
     labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=campaign_ids)) if campaign_ids else {}
+    aliases = _aliases(m.template_eskiz_id for m in msgs)
     today, debt_on = timezone.localdate(), warnings.switched_on()
-    return [message_row(m, labels, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs]
+    return [
+        message_row(m, labels, aliases, can_resend=resend.refusal(m, today, debt_on=debt_on) is None) for m in msgs
+    ]
 
 
-def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
+def message_row(msg, campaign_labels=None, aliases=None, *, can_resend=None) -> dict:
     if can_resend is None:
         can_resend = resend.refusal(msg, timezone.localdate()) is None
+    if aliases is None:
+        aliases = _aliases([msg.template_eskiz_id])
     return {
         "id": msg.pk,
         "created_at": _iso(msg.created_at),
@@ -169,7 +190,7 @@ def message_row(msg, campaign_labels=None, *, can_resend=None) -> dict:
         "source": _source(msg, campaign_labels or {}),
         "template": {
             "id": msg.template_eskiz_id,
-            "label": f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+            "label": _template_label(msg.template_eskiz_id, aliases),
         },
         "cost": _cost(msg),
         # Whether Resend may take it now (``resend.refusal``): a debt warning only on its own day.
@@ -222,10 +243,27 @@ def _campaign_rows(items) -> list[dict]:
     return [campaign_row(c, labels, live) for c in items]
 
 
-def template_row(row) -> dict:
+def _template_usage(**only) -> dict[int, tuple[int, object]]:
+    """``{eskiz_id: (messages in the last USED_WINDOW_DAYS, the newest one's time)}``: one grouped query."""
+    rows = (
+        SmsMessage.objects.filter(created_at__gte=timezone.now() - timedelta(days=USED_WINDOW_DAYS), **only)
+        .exclude(template_eskiz_id=None)
+        .values("template_eskiz_id")
+        .annotate(n=Count("id"), last=Max("created_at"))
+        .order_by()
+    )
+    return {r["template_eskiz_id"]: (r["n"], r["last"]) for r in rows}
+
+
+def template_row(row, usage=None) -> dict:
     text = row.pattern or row.original
+    used_count, last_used_at = (usage or {}).get(row.eskiz_id, (0, None))
     return {
         "eskiz_id": row.eskiz_id,
+        "alias": row.alias,
+        "label": row.label,
+        "used_count": used_count,
+        "last_used_at": _iso(last_used_at),
         "status": row.status,
         "pattern": row.pattern,
         "original": row.original,
@@ -465,8 +503,11 @@ def _teacher_choices(qs):
 
 
 def _template_choices(qs):
-    rows = qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
-    return [(str(r["template_eskiz_id"]), f"#{r['template_eskiz_id']}", r["n"]) for r in rows]
+    rows = list(
+        qs.exclude(template_eskiz_id=None).values("template_eskiz_id").annotate(n=Count("id")).order_by("template_eskiz_id")
+    )
+    aliases = _aliases(r["template_eskiz_id"] for r in rows)
+    return [(str(r["template_eskiz_id"]), _template_label(r["template_eskiz_id"], aliases), r["n"]) for r in rows]
 
 
 def _campaign_choices(qs):
@@ -569,6 +610,7 @@ class MessageExportView(_AdminView):
             ids = {m.campaign_id for m in chunk if m.campaign_id}
             if ids:
                 labels = campaigns.audience_labels(SmsCampaign.objects.filter(pk__in=ids))
+            aliases = _aliases(m.template_eskiz_id for m in chunk)
             for msg in chunk:
                 writer.writerow([
                     timezone.localtime(msg.created_at).strftime("%Y-%m-%d %H:%M"),
@@ -578,7 +620,7 @@ class MessageExportView(_AdminView):
                     operator_of(msg.phone),
                     _KINDS.get(msg.kind, msg.kind),
                     _source(msg, labels)["label"],
-                    f"#{msg.template_eskiz_id}" if msg.template_eskiz_id else "",
+                    _template_label(msg.template_eskiz_id, aliases),
                     msg.status,
                     _reason(msg),
                     msg.parts or T.parts(msg.text),
@@ -858,11 +900,13 @@ class DebtRunsView(_AdminView):
 
 class TemplateListView(_AdminView):
     def get(self, request):
+        usage = _template_usage()
         rows = sorted(
-            EskizTemplate.objects.select_related("submitted_by"), key=lambda t: (not t.usable, -t.eskiz_id)
+            EskizTemplate.objects.select_related("submitted_by"),
+            key=lambda t: (not t.usable, -usage.get(t.eskiz_id, (0,))[0], -t.eskiz_id),
         )
         synced_at = EskizTemplate.objects.aggregate(last=Max("synced_at"))["last"]
-        return Response({"templates": [template_row(t) for t in rows], "synced_at": _iso(synced_at)})
+        return Response({"templates": [template_row(t, usage) for t in rows], "synced_at": _iso(synced_at)})
 
     def post(self, request):
         if refused := _not_an_object(request):
@@ -872,6 +916,20 @@ class TemplateListView(_AdminView):
         except eskiz_templates.TemplateRefused as exc:
             return _refused(exc.code, exc.message)
         return Response({"template": template_row(row) if row else None, "sync": counts}, status=http.HTTP_201_CREATED)
+
+
+class TemplateDetailView(_AdminView):
+    def patch(self, request, eskiz_id):
+        if refused := _not_an_object(request):
+            return refused
+        row = get_object_or_404(EskizTemplate.objects.select_related("submitted_by"), eskiz_id=eskiz_id)
+        alias = request.data.get("alias")
+        max_length = EskizTemplate._meta.get_field("alias").max_length
+        if not isinstance(alias, str) or len(alias.strip()) > max_length:
+            return _refused("alias", f"A template's name is text of at most {max_length} characters.")
+        row.alias = alias.strip()
+        row.save(update_fields=["alias"])
+        return Response({"template": template_row(row, _template_usage(template_eskiz_id=row.eskiz_id))})
 
 
 class TemplateSyncView(_AdminView):
