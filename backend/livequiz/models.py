@@ -445,13 +445,20 @@ class OwnedAvatarItem(models.Model):
 
 
 class AvatarLook(models.Model):
-    """What a student is wearing: a character, and optionally one of its skins."""
+    """What a student is wearing: a character, optionally one of its skins, and what is in the
+    hat, frame and emote slots."""
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="live_avatar_look"
     )
     character = models.CharField(max_length=32)
     skin = models.CharField(max_length=16, blank=True, default="")
+    # The default is in the database too: the migration runs while the old code is still
+    # serving, and that code inserts looks without these columns.
+    hat = models.CharField(max_length=24, blank=True, default="", db_default="")
+    frame = models.CharField(max_length=24, blank=True, default="", db_default="")
+    emote = models.CharField(max_length=24, blank=True, default="", db_default="")
+    title = models.CharField(max_length=24, blank=True, default="", db_default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -461,4 +468,10 @@ class AvatarLook(models.Model):
         return f"{self.user_id} wears {self.character}{':' + self.skin if self.skin else ''}"
 
     def as_wire(self) -> dict:
-        return {"character": self.character, "skin": self.skin or None}
+        wire = {"character": self.character, "skin": self.skin or None}
+        # Only what is worn: this goes out for every player in every room frame.
+        for slot in ("hat", "frame", "emote", "title"):
+            value = getattr(self, slot)
+            if value:
+                wire[slot] = value
+        return wire

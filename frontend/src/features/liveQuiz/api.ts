@@ -109,19 +109,44 @@ export interface LiveParticipant {
 export interface AvatarWire {
   character: string;
   skin: AvatarSkin | null;
+  /** Each slot is present only when something is in it. */
+  hat?: string;
+  frame?: string;
+  emote?: string;
+  title?: string;
 }
 
 export type AvatarSkin = "rare" | "epic" | "legendary";
 
+export type AvatarSlot = "hat" | "frame" | "emote";
+
 export interface ShopItem {
   key: string;
-  kind: "character" | "skin";
+  kind: "character" | "skin" | AvatarSlot;
+  /** Empty for a slot's item: a hat is for any character. */
   character: string;
-  tier: "common" | "rare" | "epic" | "legendary";
+  /** A slot's item only: the key the look stores, and the art is drawn from. */
+  slot_key?: string;
+  tier: "common" | "rare" | "epic" | "legendary" | "limited";
   name: string;
   price: number;
   starter: boolean;
   owned: boolean;
+  /** Only on an item sold for a season. */
+  limited?: boolean;
+  on_sale?: boolean;
+  days_left?: number | null;
+  back_in?: string | null;
+}
+
+/** A title and how far this student has come. They are earned by playing, never sold. */
+export interface TitleProgress {
+  key: string;
+  name: string;
+  rule: string;
+  goal: number;
+  progress: number;
+  earned: boolean;
 }
 
 export interface ShopState {
@@ -132,6 +157,7 @@ export interface ShopState {
   starters: string[];
   look: AvatarWire | null;
   items: ShopItem[];
+  titles: TitleProgress[];
 }
 
 export interface LiveChoice {
@@ -220,6 +246,9 @@ export interface LiveResultsReport {
     by_choice: Record<string, number>;
   }>;
 }
+
+/** The shop's cache key: every shop answer replaces it, wherever the shop is read from. */
+export const SHOP_KEY = ["livequiz", "shop"] as const;
 
 export const liveQuizApi = {
   async listSessions(params: { classroom?: number; live?: boolean } = {}): Promise<LiveSession[]> {
@@ -312,8 +341,13 @@ export const liveQuizApi = {
     return data as ShopState;
   },
 
-  async equip(character: string, skin: AvatarSkin | null): Promise<ShopState> {
-    const { data } = await api.post("/livequiz/shop/equip/", { character, skin });
+  /** A slot left out stays as it is; one sent as null comes off. */
+  async equip(
+    character: string,
+    skin: AvatarSkin | null,
+    slots: Partial<Record<AvatarSlot | "title", string | null>> = {},
+  ): Promise<ShopState> {
+    const { data } = await api.post("/livequiz/shop/equip/", { character, skin, ...slots });
     return data as ShopState;
   },
 };

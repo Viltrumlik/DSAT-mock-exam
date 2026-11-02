@@ -239,7 +239,7 @@ SECOND_TRY_LONG_PAPER = 15
 # Team mode.
 MIN_TEAMS = 2
 MAX_TEAMS = 6
-TEAM_NAMES = ("Comets", "Falcons", "Tigers", "Waves", "Pixels", "Rockets")
+TEAM_NAMES = ("Comets", "Falcons", "Meteors", "Waves", "Pixels", "Rockets")
 
 # Answers that arrive within this many milliseconds after the deadline still count. The
 # deadline is the server's, so a student who tapped at 19.9s can easily arrive at 20.2s;

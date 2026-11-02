@@ -29,10 +29,11 @@ import {
   GameTopBar,
   PlayerLobby,
   QuestionCard,
+  ReconnectScreen,
   TimerBar,
 } from "./game";
 import { useGameSounds } from "./sounds";
-import { useLiveQuiz, useSecondsLeft, type LiveQuizRoom, type OwnFeedback } from "./useLiveQuiz";
+import { useLiveQuiz, useSecondsLeft, useStalled, type LiveQuizRoom, type OwnFeedback } from "./useLiveQuiz";
 import { ConnectionBanner } from "./ui";
 
 export function StudentGame({ sessionId }: { sessionId: number }) {
@@ -105,6 +106,24 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
         }
       : null;
 
+  const stalled = useStalled(
+    (room.connection === "connecting" || room.connection === "closed") && !room.finished && !room.removed,
+  );
+
+  if (stalled) {
+    return (
+      <GameCanvas>
+        <ReconnectScreen
+          code={room.joinCode || undefined}
+          gameRunning={room.status !== "CONNECTING"}
+          attempt={room.attempt}
+          onRetry={actions.retry}
+          onExit={() => router.push("/live")}
+        />
+      </GameCanvas>
+    );
+  }
+
   return (
     <GameCanvas>
       <GameTopBar
@@ -113,14 +132,17 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
         score={room.config.reveal_correctness === false ? undefined : mine?.score}
         streak={room.config.reveal_correctness === false ? undefined : mine?.streak}
         rank={room.config.show_leaderboard_between && place > 0 ? place : null}
+        avatar={room.me?.avatar}
+        name={room.me?.display_name}
         muted={sounds.muted}
         onToggleMute={sounds.toggle}
         onExit={() => router.push("/live")}
-      >
-        {room.status === "QUESTION_ACTIVE" && question && (
-          <TimerBar secondsLeft={secondsLeft} totalSeconds={question.time_limit_seconds} />
-        )}
-      </GameTopBar>
+        timer={
+          room.status === "QUESTION_ACTIVE" && question ? (
+            <TimerBar secondsLeft={secondsLeft} totalSeconds={question.time_limit_seconds} />
+          ) : undefined
+        }
+      />
 
       {room.connection !== "open" && (
         <div className="mx-auto w-full max-w-xl px-4">
@@ -192,7 +214,7 @@ function TeacherPacedPlayer({ room, actions }: { room: LiveQuizRoom; actions: Ac
 
       {reveal && (
         <div className="mx-auto flex w-full max-w-xl flex-1 flex-col justify-center gap-5 px-4 py-8">
-          <FeedbackSplash feedback={reveal} opensAt={null} />
+          <FeedbackSplash feedback={reveal} opensAt={null} avatar={room.me?.avatar} name={room.me?.display_name} />
           {room.config.show_leaderboard_between && room.leaderboard.length > 0 && (
             <GamePanel className="p-4">
               <FinalStandings rows={room.leaderboard} highlightUserId={room.me?.user_id ?? null} limit={5} />

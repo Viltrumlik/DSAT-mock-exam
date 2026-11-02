@@ -84,6 +84,8 @@ export interface LiveQuizRoom {
   status: LiveQuizStatus | "CONNECTING";
   connection: LiveSocketStatus;
   refusedReason: string | null;
+  /** How many tries the socket is into since it last had a connection; 0 while it has one. */
+  attempt: number;
   sessionId: number;
   joinCode: string;
   config: Partial<LiveQuizConfig>;
@@ -125,6 +127,7 @@ const EMPTY: LiveQuizRoom = {
   status: "CONNECTING",
   connection: "connecting",
   refusedReason: null,
+  attempt: 0,
   sessionId: 0,
   joinCode: "",
   config: {},
@@ -170,6 +173,7 @@ export function useLiveQuiz(sessionId: number | null) {
         setRoom((prev) => ({
           ...prev,
           connection,
+          attempt: detail?.attempt ?? prev.attempt,
           refusedReason: connection === "refused" ? closeReasonText(detail?.code) : null,
         })),
       onFrame: (frame) => {
@@ -204,6 +208,7 @@ export function useLiveQuiz(sessionId: number | null) {
       usePowerUp: (key: PowerUpKey) => send("use_powerup", { powerup: key }),
       moveTeam: (participantId: number, team: number) =>
         send("move_team", { participant_id: participantId, team }),
+      retry: () => handle.current?.retryNow(),
     }),
     [send],
   );
@@ -498,6 +503,25 @@ export function useSecondsUntil(deadline: number | null): number | null {
   }, [deadline]);
 
   return left;
+}
+
+/**
+ * True once `active` has held for `ms` without a break: how a screen tells a blink of the
+ * connection, which a small banner is enough for, from a wait worth explaining.
+ */
+export function useStalled(active: boolean, ms = 8000): boolean {
+  const [stalled, setStalled] = useState(false);
+
+  useEffect(() => {
+    if (!active) {
+      setStalled(false);
+      return;
+    }
+    const id = setTimeout(() => setStalled(true), ms);
+    return () => clearTimeout(id);
+  }, [active, ms]);
+
+  return stalled;
 }
 
 /** True once `instant` has passed; re-renders at that moment. Null counts as passed. */

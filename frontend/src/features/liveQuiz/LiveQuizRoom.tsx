@@ -23,7 +23,9 @@ import { ErrorState, LoadingState } from "@/features/classroom/ui";
 import { normalizeApiError } from "@/lib/apiError";
 
 import { liveQuizApi } from "./api";
+import { GameCanvas, ReconnectScreen } from "./game";
 import { StudentGame } from "./StudentGame";
+import { useStalled } from "./useLiveQuiz";
 
 export function LiveQuizRoom({ sessionId }: { sessionId: number }) {
   const place = useMutation({
@@ -34,6 +36,16 @@ export function LiveQuizRoom({ sessionId }: { sessionId: number }) {
   useEffect(() => {
     mutate();
   }, [mutate, sessionId]);
+
+  // A slow network must not leave a student looking at a spinner with no way out.
+  const stalled = useStalled(place.isPending);
+  if (stalled) {
+    return (
+      <GameCanvas>
+        <ReconnectScreen onRetry={() => place.mutate()} />
+      </GameCanvas>
+    );
+  }
 
   if (place.isError) {
     return (

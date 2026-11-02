@@ -25,6 +25,7 @@ from vocabulary.models import VocabSet
 from core.errors.api import Conflict, Forbidden, NotFound
 from users.permissions import IsAuthenticatedAndNotFrozen
 
+from . import avatars
 from . import constants as const
 from . import gems, question_builder, services
 from .models import LiveQuizSession
@@ -362,7 +363,9 @@ class ShopEquipView(APIView):
     def post(self, request):
         _require_enabled()
         skin = request.data.get("skin") or None
-        gems.equip(request.user, str(request.data.get("character") or ""), str(skin) if skin else None)
+        # A slot left out of the request stays as it is; one sent empty comes off.
+        slots = {slot: request.data[slot] for slot in (*avatars.SLOTS, "title") if slot in request.data}
+        gems.equip(request.user, str(request.data.get("character") or ""), str(skin) if skin else None, **slots)
         return Response(gems.shop_state(request.user))
 
 

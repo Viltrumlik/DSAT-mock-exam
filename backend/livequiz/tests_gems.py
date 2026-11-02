@@ -61,9 +61,23 @@ class CatalogTests(PlainTestCase):
         self.assertEqual(avatars.price_of("skin:owl:legendary"), 600)
 
     def test_nonsense_is_not_an_item(self):
-        for key in ("", "char:", "char:nope", "skin:owl", "skin:owl:mythic", "hat:owl"):
+        for key in ("", "char:", "char:nope", "skin:owl", "skin:owl:mythic", "hat:owl", "frame:", "emote:shout"):
             self.assertIsNone(avatars.parse(key), key)
             self.assertIsNone(avatars.price_of(key), key)
+
+    def test_hats_frames_and_emotes_have_keys_and_the_prices_drawn(self):
+        self.assertEqual(avatars.parse("hat:crown"), ("hat", "crown", None))
+        self.assertEqual(avatars.parse("frame:aurora"), ("frame", "aurora", None))
+        self.assertEqual(avatars.parse("emote:gg"), ("emote", "gg", None))
+        self.assertEqual(
+            {key: avatars.price_of(f"hat:{key}") for key in ("grad_cap", "headphones", "doppi", "crown")},
+            {"grad_cap": 200, "headphones": 200, "doppi": 350, "crown": 600},
+        )
+        self.assertEqual(
+            {key: avatars.price_of(f"frame:{key}") for key in ("bronze", "silver", "gold", "aurora")},
+            {"bronze": 150, "silver": 300, "gold": 500, "aurora": 800},
+        )
+        self.assertEqual(avatars.price_of("emote:wow"), 120)
 
 
 class GemsBase(PacedBase):
@@ -240,6 +254,72 @@ class ShopTests(GemsBase):
             gems.buy(self.student, "char:nope")
         self.assertEqual(caught.exception.code, "no_such_item")
 
+    def test_a_hat_goes_on_any_character_stays_on_and_comes_off(self):
+        gems.claim_starter(self.student, "owl")
+        gems.grant(self.student, 300)
+        gems.buy(self.student, "hat:grad_cap")
+        # Buying is not wearing: the student chooses, in the locker.
+        self.assertEqual(AvatarLook.objects.get(user=self.student).hat, "")
+
+        gems.equip(self.student, "owl", None, hat="grad_cap")
+        look = AvatarLook.objects.get(user=self.student)
+        self.assertEqual(look.as_wire(), {"character": "owl", "skin": None, "hat": "grad_cap"})
+
+        # A slot nobody mentioned is left as it was, even across a change of character.
+        gems.buy(self.student, "char:fox")
+        gems.equip(self.student, "fox")
+        self.assertEqual(AvatarLook.objects.get(user=self.student).hat, "grad_cap")
+
+        # Mentioned and empty takes it off.
+        gems.equip(self.student, "fox", None, hat=None)
+        self.assertEqual(AvatarLook.objects.get(user=self.student).hat, "")
+
+    def test_only_what_you_own_goes_in_a_slot(self):
+        gems.claim_starter(self.student, "owl")
+        for slot, value in (("hat", "crown"), ("frame", "gold"), ("emote", "gg")):
+            with self.assertRaises(AppError) as caught:
+                gems.equip(self.student, "owl", None, **{slot: value})
+            self.assertEqual(caught.exception.code, "not_owned", slot)
+        look = AvatarLook.objects.get(user=self.student)
+        self.assertEqual((look.hat, look.frame, look.emote), ("", "", ""))
+
+    def test_a_key_of_another_kind_does_not_fit_a_slot(self):
+        gems.claim_starter(self.student, "owl")
+        gems.grant(self.student, 300)
+        gems.buy(self.student, "frame:bronze")
+        with self.assertRaises(AppError):
+            gems.equip(self.student, "owl", None, hat="bronze")
+
+    def test_the_locker_saves_every_slot_at_once(self):
+        gems.claim_starter(self.student, "owl")
+        gems.grant(self.student, 1000)
+        for key in ("hat:doppi", "frame:gold", "emote:gg"):
+            gems.buy(self.student, key)
+        api = APIClient()
+        api.force_authenticate(user=self.student)
+        reply = api.post(
+            "/api/livequiz/shop/equip/",
+            {"character": "owl", "skin": None, "hat": "doppi", "frame": "gold", "emote": "gg"},
+            format="json",
+        )
+        self.assertEqual(reply.status_code, 200)
+        self.assertEqual(
+            reply.json()["look"],
+            {"character": "owl", "skin": None, "hat": "doppi", "frame": "gold", "emote": "gg"},
+        )
+        # The older call, with no slots in it, takes nothing off.
+        reply = api.post("/api/livequiz/shop/equip/", {"character": "owl"}, format="json")
+        self.assertEqual(reply.json()["look"]["frame"], "gold")
+        reply = api.post("/api/livequiz/shop/equip/", {"character": "owl", "frame": None}, format="json")
+        self.assertNotIn("frame", reply.json()["look"])
+
+    def test_the_shop_sells_the_new_kinds(self):
+        state = gems.shop_state(self.student)
+        kinds = {i["kind"] for i in state["items"]}
+        self.assertLessEqual({"hat", "frame", "emote"}, kinds)
+        crown = next(i for i in state["items"] if i["key"] == "hat:crown")
+        self.assertEqual((crown["name"], crown["tier"], crown["price"], crown["owned"]), ("Crown", "legendary", 600, False))
+
     def test_the_shop_endpoint(self):
         gems.grant(self.student, 120)
         api = APIClient()
@@ -270,6 +350,16 @@ class WireTests(GemsBase):
         gems.claim_starter(self.student, "robot")
         row = events.participant_row(services.participants_of(session)[0])
         self.assertEqual(row["avatar"], {"character": "robot", "skin": None})
+
+    def test_a_player_row_carries_what_is_in_their_slots(self):
+        session = self._paced()
+        services.join_session(session=session, user=self.student)
+        gems.claim_starter(self.student, "robot")
+        gems.grant(self.student, 500)
+        gems.buy(self.student, "frame:silver")
+        gems.equip(self.student, "robot", None, frame="silver")
+        row = events.participant_row(services.participants_of(session)[0])
+        self.assertEqual(row["avatar"], {"character": "robot", "skin": None, "frame": "silver"})
 
     def test_the_report_says_what_each_earned(self):
         session, participant = self._in_play()
