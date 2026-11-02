@@ -21,8 +21,9 @@ vi.mock("@/lib/api", () => ({
 }));
 vi.mock("next/navigation", () => ({ usePathname: () => "/live/shop", useRouter: () => ({ push: vi.fn() }) }));
 
-const { AVATAR_CHARACTERS, LiveAvatar, PlayerAvatar } = await import("../avatars");
+const { AVATAR_CHARACTERS, AvatarDisc, EmoteBubble, LiveAvatar, PlayerAvatar } = await import("../avatars");
 const { GemShop } = await import("../GemShop");
+const { Locker } = await import("../Locker");
 const { EMPTY_ROOM, reduce } = await import("../useLiveQuiz");
 const { gamesToGo, nextGoal } = await import("../theme");
 
@@ -190,6 +191,156 @@ describe("the shop", () => {
     await settle();
     expect(text()).toContain("A skin needs its character first");
     expect(Array.from(host.querySelectorAll("button")).some((b) => b.textContent?.startsWith("Buy for"))).toBe(false);
+  });
+});
+
+describe("the locker", () => {
+  let host: HTMLElement;
+  let root: Root;
+
+  beforeEach(() => {
+    (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+    host = document.createElement("div");
+    document.body.appendChild(host);
+    root = createRoot(host);
+    apiGet.mockReset();
+    apiPost.mockReset();
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    host.remove();
+  });
+
+  const hat = (key: string, name: string, owned: boolean, price = 200) => ({
+    key: `hat:${key}`,
+    kind: "hat",
+    character: "",
+    slot_key: key,
+    tier: "rare",
+    name,
+    price,
+    starter: false,
+    owned,
+  });
+  const state = (balance: number, owned: Record<string, boolean>, look: Record<string, unknown> = {}) => ({
+    balance,
+    today_earned: 0,
+    daily_cap: 300,
+    can_claim_starter: false,
+    starters: [],
+    look: { character: "fox", skin: null, ...look },
+    items: [
+      item("char:fox", { owned: true, name: "Ember" }),
+      hat("crown", "Crown", Boolean(owned.crown), 600),
+      hat("doppi", "Doʻppi", Boolean(owned.doppi)),
+    ],
+  });
+  const showShop = (data: unknown) => {
+    // The locker also asks who is signed in; only the shop's answer matters here.
+    apiGet.mockImplementation(async (url: string) => (url.includes("shop") ? { data } : { data: { id: 1, first_name: "Ali", last_name: "Vali" } }));
+  };
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) {
+      await act(async () => {
+        await new Promise((r) => setTimeout(r, 0));
+      });
+    }
+  };
+  const open = async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    await act(async () => {
+      root.render(
+        <QueryClientProvider client={client}>
+          <Locker />
+        </QueryClientProvider>,
+      );
+    });
+    await settle();
+  };
+  const text = () => (host.textContent ?? "").replace(/\s+/g, " ");
+  const pick = async (label: string) => {
+    await act(async () => (host.querySelector(`[aria-label="${label}"]`) as HTMLButtonElement).click());
+    await settle();
+  };
+  const buttonStarting = (start: string) =>
+    Array.from(host.querySelectorAll("button")).find((b) => b.textContent?.trim().startsWith(start)) as HTMLButtonElement | undefined;
+
+  it("sends a student with no character to pick one", async () => {
+    showShop({ ...state(0, {}), look: null });
+    await open();
+    expect(text()).toContain("Pick your character");
+  });
+
+  it("tapping only previews: nothing is sent until Save look", async () => {
+    showShop(state(0, { doppi: true }));
+    await open();
+    expect(buttonStarting("You are wearing this")?.disabled).toBe(true);
+    await pick("Doʻppi");
+    expect(apiPost).not.toHaveBeenCalled();
+    expect(host.querySelector('[aria-label="Ember with Doʻppi"]')).toBeTruthy();
+
+    apiPost.mockResolvedValue({ data: state(0, { doppi: true }, { hat: "doppi" }) });
+    await act(async () => buttonStarting("Save look")!.click());
+    await settle();
+    expect(apiPost).toHaveBeenCalledWith("/livequiz/shop/equip/", { character: "fox", skin: null, hat: "doppi", frame: null, emote: null });
+  });
+
+  it("an item not owned turns the button into its price, and short of gems it is off", async () => {
+    showShop(state(100, {}));
+    await open();
+    await pick("Crown");
+    expect(buttonStarting("Save look")).toBeUndefined();
+    expect(buttonStarting("Buy Crown for")?.disabled).toBe(true);
+    expect(text()).toContain("500 more gems · about five games");
+  });
+
+  it("buys what the look needs, then offers to save it", async () => {
+    showShop(state(700, {}));
+    await open();
+    await pick("Crown");
+    apiPost.mockResolvedValue({ data: state(100, { crown: true }) });
+    await act(async () => buttonStarting("Buy Crown for")!.click());
+    await settle();
+    expect(apiPost).toHaveBeenCalledWith("/livequiz/shop/buy/", { item: "hat:crown" });
+    expect(buttonStarting("Save look")?.disabled).toBe(false);
+  });
+
+  it("takes a hat off with No hat", async () => {
+    showShop(state(0, { doppi: true }, { hat: "doppi" }));
+    await open();
+    await pick("No hat");
+    apiPost.mockResolvedValue({ data: state(0, { doppi: true }) });
+    await act(async () => buttonStarting("Save look")!.click());
+    await settle();
+    expect(apiPost).toHaveBeenCalledWith("/livequiz/shop/equip/", { character: "fox", skin: null, hat: null, frame: null, emote: null });
+  });
+});
+
+describe("what a look wears", () => {
+  it("draws every hat on every character, and names it", () => {
+    for (const character of AVATAR_CHARACTERS) {
+      for (const hat of ["grad_cap", "headphones", "doppi", "crown"]) {
+        expect(renderToStaticMarkup(<LiveAvatar character={character} hat={hat} size={96} />), `${character}/${hat}`).toContain("<svg");
+      }
+    }
+    expect(renderToStaticMarkup(<LiveAvatar character="cat" hat="crown" size={96} />)).toContain('aria-label="Mochi with Crown"');
+  });
+
+  it("ignores a hat this build does not know, rather than breaking the avatar", () => {
+    expect(renderToStaticMarkup(<LiveAvatar character="cat" hat="top_hat" size={96} />)).toContain('aria-label="Mochi"');
+  });
+
+  it("rings the disc with a frame only when one is worn", () => {
+    const plain = renderToStaticMarkup(<AvatarDisc avatar={{ character: "cat", skin: null }} name="A" size={96} />);
+    const framed = renderToStaticMarkup(<AvatarDisc avatar={{ character: "cat", skin: null, frame: "gold" }} name="A" size={96} />);
+    expect(plain).not.toContain("linear-gradient(135deg");
+    expect(framed).toContain("linear-gradient(135deg");
+  });
+
+  it("says the emote, and nothing for one it does not know", () => {
+    expect(renderToStaticMarkup(<EmoteBubble emote="gg" />)).toContain("GG");
+    expect(renderToStaticMarkup(<EmoteBubble emote="shout" />)).toBe("");
   });
 });
 

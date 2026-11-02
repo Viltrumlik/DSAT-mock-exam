@@ -220,15 +220,24 @@ def claim_starter(user, character: str) -> None:
         _wear_if_bare(user, character)
 
 
-def equip(user, character: str, skin: str | None = None) -> None:
+def equip(user, character: str, skin: str | None = None, **slots) -> None:
+    """Put a look on. A slot passed with nothing in it comes off; a slot not passed is left alone,
+    so a hat survives a change of character."""
     owned = _owned(user)
     if character not in avatars.CHARACTERS or avatars.character_key(character) not in owned:
         raise Conflict("You do not have that character yet.", code="not_owned")
     if skin:
         if skin not in avatars.SKIN_TIERS or avatars.skin_key(character, skin) not in owned:
             raise Conflict("You do not have that skin yet.", code="not_owned")
+    worn = {}
+    for slot, key in slots.items():
+        key = str(key or "")
+        # Ownership alone proves the key is real, and of this slot's kind.
+        if key and avatars.slot_key(slot, key) not in owned:
+            raise Conflict("You do not have that yet.", code="not_owned")
+        worn[slot] = key
     AvatarLook.objects.update_or_create(
-        user=user, defaults={"character": character, "skin": skin or ""}
+        user=user, defaults={"character": character, "skin": skin or "", **worn}
     )
 
 

@@ -109,14 +109,23 @@ export interface LiveParticipant {
 export interface AvatarWire {
   character: string;
   skin: AvatarSkin | null;
+  /** Each slot is present only when something is in it. */
+  hat?: string;
+  frame?: string;
+  emote?: string;
 }
 
 export type AvatarSkin = "rare" | "epic" | "legendary";
 
+export type AvatarSlot = "hat" | "frame" | "emote";
+
 export interface ShopItem {
   key: string;
-  kind: "character" | "skin";
+  kind: "character" | "skin" | AvatarSlot;
+  /** Empty for a slot's item: a hat is for any character. */
   character: string;
+  /** A slot's item only: the key the look stores, and the art is drawn from. */
+  slot_key?: string;
   tier: "common" | "rare" | "epic" | "legendary";
   name: string;
   price: number;
@@ -315,8 +324,13 @@ export const liveQuizApi = {
     return data as ShopState;
   },
 
-  async equip(character: string, skin: AvatarSkin | null): Promise<ShopState> {
-    const { data } = await api.post("/livequiz/shop/equip/", { character, skin });
+  /** A slot left out stays as it is; one sent as null comes off. */
+  async equip(
+    character: string,
+    skin: AvatarSkin | null,
+    slots: Partial<Record<AvatarSlot, string | null>> = {},
+  ): Promise<ShopState> {
+    const { data } = await api.post("/livequiz/shop/equip/", { character, skin, ...slots });
     return data as ShopState;
   },
 };

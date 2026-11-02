@@ -18,6 +18,7 @@
  */
 
 import { createContext, useContext, useId } from "react";
+import { Flame, Rocket, Sparkles, Star } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 
@@ -60,9 +61,11 @@ export const AVATAR_CHARACTERS = Object.keys(CHARACTERS);
 
 const SKIN_TITLES: Record<AvatarSkin, string> = { rare: "Sunset", epic: "Galaxy", legendary: "Golden" };
 
-export function avatarName(character: string, skin: AvatarSkin | null): string {
+export function avatarName(character: string, skin: AvatarSkin | null, hat?: string | null): string {
   const base = CHARACTERS[character]?.name ?? "Avatar";
-  return skin ? `${SKIN_TITLES[skin]} ${base}` : base;
+  const look = skin ? `${SKIN_TITLES[skin]} ${base}` : base;
+  const title = hat ? HATS[hat]?.title : undefined;
+  return title ? `${look} with ${title}` : look;
 }
 
 /** Eyes sit here unless a character moves them (the frog wears them on top). */
@@ -452,6 +455,69 @@ function paletteFor(character: string, skin: AvatarSkin | null, ids: { galaxy: s
   return art.base;
 }
 
+/** A hat sits on the head, wherever the character. `crown` is the gradient id its gold needs. */
+const HATS: Record<string, { title: string; draw: (crown: string) => React.ReactNode }> = {
+  grad_cap: {
+    title: "Graduation cap",
+    draw: () => (
+      <>
+        <path d="M33 30 L33 38 Q50 44 67 38 L67 30 Z" fill="#2b2a3d" />
+        <polygon points="18,26 50,13 82,26 50,39" fill="#1f1d2e" />
+        <polygon points="18,26 50,13 82,26 50,19" fill="#3a3756" />
+        <circle cx="50" cy="26" r="2.2" fill="#fbbf24" />
+        <path d="M50 26 L74 30 L76 42" fill="none" stroke="#fbbf24" strokeWidth="1.8" strokeLinecap="round" />
+        <rect x="73.5" y="41" width="5" height="8" rx="2" fill="#fbbf24" />
+      </>
+    ),
+  },
+  headphones: {
+    title: "Headphones",
+    draw: () => (
+      <>
+        <path d="M19 60 Q17 18 50 18 Q83 18 81 60" fill="none" stroke="#334155" strokeWidth="6" strokeLinecap="round" />
+        <path d="M21 56 Q20 22 50 22 Q80 22 79 56" fill="none" stroke="#64748b" strokeWidth="1.6" strokeLinecap="round" />
+        <rect x="10" y="50" width="14" height="24" rx="6" fill="#2563eb" />
+        <rect x="76" y="50" width="14" height="24" rx="6" fill="#2563eb" />
+        <rect x="13" y="54" width="8" height="16" rx="4" fill="#93c5fd" opacity="0.6" />
+        <rect x="79" y="54" width="8" height="16" rx="4" fill="#93c5fd" opacity="0.6" />
+      </>
+    ),
+  },
+  doppi: {
+    title: "Doʻppi",
+    draw: () => (
+      <>
+        <path d="M25 39 L27.5 15 Q50 6 72.5 15 L75 39 Q50 32.5 25 39 Z" fill="#111827" />
+        <line x1="50" y1="9" x2="50" y2="33.5" stroke="#374151" strokeWidth="1" strokeLinecap="round" />
+        <path d="M37.5 17 q5.2 5.4 0.4 11.6 q-5.4 -4.8 -0.4 -11.6 z" fill="#f8fafc" />
+        <path d="M50 13.5 q5.2 5.4 0.4 11.6 q-5.4 -4.8 -0.4 -11.6 z" fill="#f8fafc" />
+        <path d="M62.5 17 q5.2 5.4 0.4 11.6 q-5.4 -4.8 -0.4 -11.6 z" fill="#f8fafc" />
+        <circle cx="43.5" cy="27" r="1.2" fill="#f8fafc" />
+        <circle cx="56.5" cy="27" r="1.2" fill="#f8fafc" />
+        <path d="M25.5 37 Q50 30.5 74.5 37" fill="none" stroke="#f8fafc" strokeWidth="1.8" strokeLinecap="round" />
+      </>
+    ),
+  },
+  crown: {
+    title: "Crown",
+    draw: (crown) => (
+      <>
+        <polygon points="29,36 27,15 39,25 50,9 61,25 73,15 71,36" fill={`url(#${crown})`} stroke="#b45309" strokeWidth="1" />
+        <rect x="29" y="31" width="42" height="7" rx="2" fill="#f59e0b" />
+        <circle cx="39" cy="34.5" r="2.2" fill="#ef4444" />
+        <circle cx="50" cy="34.5" r="2.2" fill="#2563eb" />
+        <circle cx="61" cy="34.5" r="2.2" fill="#10b981" />
+        <circle cx="27" cy="15" r="2.4" fill="#fde047" />
+        <circle cx="50" cy="9" r="2.6" fill="#fde047" />
+        <circle cx="73" cy="15" r="2.4" fill="#fde047" />
+      </>
+    ),
+  },
+};
+
+/** The frog's eyes are on top of its head, so a hat sits higher to keep them showing. */
+const HAT_LIFT: Record<string, number> = { frog: -12 };
+
 /** A four-point sparkle whose top point is at (x, y). */
 function sparkle(x: number, y: number, s: number): string {
   const a = 0.3 * s;
@@ -481,12 +547,14 @@ export function LiveAvatar({
   size = 48,
   face = "waiting",
   still = false,
+  hat,
   className,
 }: {
   character: string;
   skin?: AvatarSkin | null;
   size?: number;
   face?: AvatarFace;
+  hat?: string | null;
   /** Hold the effects still, whatever the size: a long list would otherwise all move at once. */
   still?: boolean;
   className?: string;
@@ -496,7 +564,8 @@ export function LiveAvatar({
   const features = FEATURES[character];
   if (!features || !CHARACTERS[character]) return null;
   const p = paletteFor(character, skin, ids);
-  const name = avatarName(character, skin);
+  const name = avatarName(character, skin, hat);
+  const hatArt = hat ? HATS[hat] : undefined;
   const rich = size >= EFFECTS_FROM;
   const moving = rich && !still && size >= MOTION_FROM;
 
@@ -521,6 +590,12 @@ export function LiveAvatar({
           <stop offset="0.5" stopColor="#f59e0b" />
           <stop offset="1" stopColor="#b45309" />
         </linearGradient>
+        {hat === "crown" && (
+          <linearGradient id={`lqk-${uid}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#fef08a" />
+            <stop offset="1" stopColor="#f59e0b" />
+          </linearGradient>
+        )}
         {skin === "rare" && rich && (
           <radialGradient id={`lqs-${uid}`} cx="0.5" cy="0.5" r="0.5">
             <stop offset="0" stopColor="#fdba74" stopOpacity="0.75" />
@@ -589,6 +664,7 @@ export function LiveAvatar({
         </g>
       )}
       <FaceContext.Provider value={face}>{features.front(p)}</FaceContext.Provider>
+      {hatArt && <g transform={`translate(0 ${HAT_LIFT[character] ?? 0})`}>{hatArt.draw(`lqk-${uid}`)}</g>}
       {skin === "epic" && rich && (
         <path d={RING_FRONT} fill="none" stroke="#c4b5fd" strokeWidth="2.2" opacity="0.9" transform="rotate(-12 50 64)" />
       )}
@@ -635,7 +711,17 @@ export function PlayerAvatar({
   className?: string;
 }) {
   if (avatar && CHARACTERS[avatar.character]) {
-    return <LiveAvatar character={avatar.character} skin={avatar.skin} size={size} face={face} still={still} className={className} />;
+    return (
+      <LiveAvatar
+        character={avatar.character}
+        skin={avatar.skin}
+        hat={avatar.hat}
+        size={size}
+        face={face}
+        still={still}
+        className={className}
+      />
+    );
   }
   return (
     <span
@@ -668,12 +754,58 @@ export function AvatarDisc({
   background?: string;
   className?: string;
 }) {
+  const ring = avatar?.frame ? FRAME_RINGS[avatar.frame] : undefined;
+  if (ring) {
+    return (
+      <span
+        className={cn("flex shrink-0 rounded-full", className)}
+        style={{ width: size, height: size, padding: Math.max(2, Math.round(size * 0.03)), background: ring }}
+      >
+        <span className="flex h-full w-full items-center justify-center rounded-full bg-[#1b1636]">
+          <PlayerAvatar avatar={avatar} name={name} size={Math.round(size * 0.78)} face={face} still={still} colorIndex={colorIndex} />
+        </span>
+      </span>
+    );
+  }
   return (
     <span
       className={cn("flex shrink-0 items-center justify-center rounded-full", className)}
       style={{ width: size, height: size, background }}
     >
       <PlayerAvatar avatar={avatar} name={name} size={Math.round(size * 0.82)} face={face} still={still} colorIndex={colorIndex} />
+    </span>
+  );
+}
+
+const FRAME_RINGS: Record<string, string> = {
+  bronze: "linear-gradient(135deg, #f3c49b, #b45309 55%, #7c2d12)",
+  silver: "linear-gradient(135deg, #f8fafc, #94a3b8 55%, #475569)",
+  gold: "linear-gradient(135deg, #fef08a, #f59e0b 55%, #b45309)",
+  aurora: "conic-gradient(#22d3ee, #a78bfa, #f472b6, #34d399, #22d3ee)",
+};
+
+const EMOTES: Record<string, { label: string; icon: React.ElementType; color: string }> = {
+  lets_go: { label: "Let’s go!", icon: Rocket, color: "#2563eb" },
+  on_fire: { label: "On fire", icon: Flame, color: "#ea580c" },
+  gg: { label: "GG", icon: Sparkles, color: "#7c3aed" },
+  wow: { label: "Wow", icon: Star, color: "#b45309" },
+};
+
+/** What a student says on the podium and at the reveal, as a speech bubble. */
+export function EmoteBubble({ emote, className }: { emote?: string | null; className?: string }) {
+  const meta = emote ? EMOTES[emote] : undefined;
+  if (!meta) return null;
+  const Icon = meta.icon;
+  return (
+    <span
+      className={cn(
+        "relative inline-flex items-center gap-[7px] whitespace-nowrap rounded-[14px] bg-white px-[11px] py-1.5 text-[13px] font-extrabold text-[#1f1d2e] shadow-[0_6px_16px_rgba(0,0,0,0.3)]",
+        className,
+      )}
+    >
+      <Icon className="h-[15px] w-[15px] shrink-0" style={{ color: meta.color }} aria-hidden />
+      {meta.label}
+      <span aria-hidden className="absolute -bottom-[5px] left-[18px] h-2.5 w-2.5 rotate-45 bg-white" />
     </span>
   );
 }

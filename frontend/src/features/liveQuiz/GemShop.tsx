@@ -139,9 +139,16 @@ export function GemShop() {
         <ArrowLeft className="h-4 w-4" aria-hidden /> Live quiz
       </Link>
       {header}
-      <p className="text-[13px] text-muted-foreground">
-        {data.today_earned} of {data.daily_cap} earned today · games pay 10 a right answer
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-[13px] text-muted-foreground">
+          {data.today_earned} of {data.daily_cap} earned today · games pay 10 a right answer
+        </p>
+        {data.look && (
+          <Link href="/live/locker" className="text-sm font-bold text-primary hover:underline">
+            Hats, frames and emotes are in your locker
+          </Link>
+        )}
+      </div>
 
       {data.can_claim_starter && (
         <Card className="space-y-3 border-primary/30 bg-primary/5">
@@ -285,7 +292,13 @@ function TryOn({
             </span>
           )}
           <div className={cn(styles.bob, scene.id === "podium" && "-mt-10")}>
-            <LiveAvatar character={character.character} skin={skinOf(selected)} size={scene.id === "podium" ? 150 : 172} face={scene.face} />
+            <LiveAvatar
+              character={character.character}
+              skin={skinOf(selected)}
+              hat={shop.look?.hat}
+              size={scene.id === "podium" ? 150 : 172}
+              face={scene.face}
+            />
           </div>
         </div>
 
