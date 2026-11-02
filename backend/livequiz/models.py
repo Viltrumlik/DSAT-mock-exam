@@ -458,6 +458,7 @@ class AvatarLook(models.Model):
     hat = models.CharField(max_length=24, blank=True, default="", db_default="")
     frame = models.CharField(max_length=24, blank=True, default="", db_default="")
     emote = models.CharField(max_length=24, blank=True, default="", db_default="")
+    title = models.CharField(max_length=24, blank=True, default="", db_default="")
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -469,7 +470,7 @@ class AvatarLook(models.Model):
     def as_wire(self) -> dict:
         wire = {"character": self.character, "skin": self.skin or None}
         # Only what is worn: this goes out for every player in every room frame.
-        for slot in ("hat", "frame", "emote"):
+        for slot in ("hat", "frame", "emote", "title"):
             value = getattr(self, slot)
             if value:
                 wire[slot] = value

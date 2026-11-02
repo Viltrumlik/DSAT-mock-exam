@@ -23,7 +23,7 @@ from django.utils import timezone
 
 from core.errors.api import Conflict, NotFound
 
-from . import avatars, paced
+from . import avatars, paced, titles
 from . import constants as const
 from .models import AvatarLook, GemTransaction, GemWallet, OwnedAvatarItem
 
@@ -189,6 +189,9 @@ def buy(user, item_key: str) -> None:
         raise NotFound("There is no such item in the shop.", code="no_such_item")
     kind, character, _tier = parsed
     price = avatars.price_of(item_key)
+    season = avatars.season_of(item_key, timezone.localdate())
+    if season and not season["on_sale"]:
+        raise Conflict(f"This one is back in {season['back_in']}.", code="not_on_sale")
 
     with transaction.atomic():
         wallet = _wallet(user, lock=True)
@@ -232,8 +235,11 @@ def equip(user, character: str, skin: str | None = None, **slots) -> None:
     worn = {}
     for slot, key in slots.items():
         key = str(key or "")
+        if key and slot == "title":
+            if key not in titles.earned(user):
+                raise Conflict("You have not earned that title yet.", code="not_earned")
         # Ownership alone proves the key is real, and of this slot's kind.
-        if key and avatars.slot_key(slot, key) not in owned:
+        elif key and avatars.slot_key(slot, key) not in owned:
             raise Conflict("You do not have that yet.", code="not_owned")
         worn[slot] = key
     AvatarLook.objects.update_or_create(
@@ -258,5 +264,6 @@ def shop_state(user) -> dict:
         "can_claim_starter": not has_character,
         "starters": list(avatars.STARTERS),
         "look": look_of(user),
-        "items": [{**item, "owned": item["key"] in owned} for item in avatars.all_items()],
+        "items": [{**item, "owned": item["key"] in owned} for item in avatars.all_items(timezone.localdate())],
+        "titles": titles.state_of(user),
     }

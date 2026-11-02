@@ -55,7 +55,8 @@ const byPrice = (a: ShopItem, b: ShopItem) => a.price - b.price;
  * they own the whole shop.
  */
 export function nextGoal(shop: ShopState): ShopItem | null {
-  const unowned = shop.items.filter((item) => !item.owned);
+  // A hat out of season cannot be bought, so it cannot be saved for.
+  const unowned = shop.items.filter((item) => !item.owned && (!item.limited || item.on_sale));
   const skins = unowned.filter((item) => item.kind === "skin").sort(byPrice);
   const worn = shop.look?.character;
   const own = shop.items.filter((item) => item.kind === "character" && item.owned).map((item) => item.character);
@@ -75,6 +76,10 @@ const COUNT_WORDS = ["", "one", "two", "three", "four", "five"];
 export function gamesToGo(short: number): string {
   const games = Math.max(1, Math.ceil(short / GEMS_PER_GAME));
   return `about ${COUNT_WORDS[games] ?? games} ${games === 1 ? "game" : "games"}`;
+}
+
+export function daysLeft(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"} left`;
 }
 
 /** A small, fast, seedable generator — the same seed always deals the same order. */

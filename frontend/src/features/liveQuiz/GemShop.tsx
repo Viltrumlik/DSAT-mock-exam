@@ -32,6 +32,7 @@ const TIER_STYLE: Record<ShopItem["tier"], string> = {
   rare: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
   epic: "bg-violet-500/10 text-violet-700 dark:text-violet-300",
   legendary: "bg-amber-500/15 text-amber-800 dark:text-amber-300",
+  limited: "bg-teal-500/10 text-teal-700 dark:text-teal-300",
 };
 
 /** The same chip on the dark stage. */
@@ -40,6 +41,7 @@ const TIER_ON_DARK: Record<ShopItem["tier"], string> = {
   rare: "bg-blue-400/[0.18] text-blue-200",
   epic: "bg-violet-400/20 text-violet-200",
   legendary: "bg-amber-400/[0.16] text-amber-200",
+  limited: "bg-teal-400/[0.14] text-teal-200",
 };
 
 const STAGE_BACKGROUND =
@@ -110,7 +112,7 @@ export function GemShop() {
   const openCharacter = opened ? characters.find((c) => c.character === opened) : undefined;
   if (openCharacter) {
     return (
-      <div className="mx-auto w-full max-w-xl space-y-3 px-4 py-4">
+      <div className="mx-auto w-full max-w-xl space-y-3 px-1 py-4 sm:px-4">
         {header}
         <button
           type="button"
@@ -134,7 +136,7 @@ export function GemShop() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-4 px-4 py-4">
+    <div className="mx-auto w-full max-w-5xl space-y-4 px-1 py-4 sm:px-4">
       <Link href="/live" className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground">
         <ArrowLeft className="h-4 w-4" aria-hidden /> Live quiz
       </Link>
