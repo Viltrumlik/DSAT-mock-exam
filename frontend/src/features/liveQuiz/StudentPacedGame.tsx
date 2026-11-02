@@ -27,11 +27,12 @@ import {
   PlayerLobby,
   PowerUpBar,
   QuestionCard,
+  ReconnectScreen,
   TimerBar,
 } from "./game";
 import { useGameSounds } from "./sounds";
-import { POWERUPS, ordinal, seedFor, shuffledChoices } from "./theme";
-import { useHasPassed, useSecondsUntil, type LiveQuizRoom, type useLiveQuiz } from "./useLiveQuiz";
+import { POWERUPS, seedFor, shuffledChoices } from "./theme";
+import { useHasPassed, useSecondsUntil, useStalled, type LiveQuizRoom, type useLiveQuiz } from "./useLiveQuiz";
 import { ConnectionBanner } from "./ui";
 
 type Actions = ReturnType<typeof useLiveQuiz>["actions"];
@@ -116,6 +117,23 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
   const blind = room.config.reveal_correctness === false;
   const totalSeconds = question?.time_limit_seconds ?? 0;
   const rank = feedback?.rank ?? null;
+  const stalled = useStalled(
+    (room.connection === "connecting" || room.connection === "closed") && !room.finished && !room.removed,
+  );
+
+  if (stalled) {
+    return (
+      <GameCanvas>
+        <ReconnectScreen
+          code={room.joinCode || undefined}
+          gameRunning={room.status !== "CONNECTING"}
+          attempt={room.attempt}
+          onRetry={actions.retry}
+          onExit={exit}
+        />
+      </GameCanvas>
+    );
+  }
 
   return (
     <GameCanvas>
@@ -127,14 +145,17 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
         streak={blind ? undefined : room.me?.streak}
         rank={blind ? null : rank}
         team={room.me?.team}
+        avatar={room.me?.avatar}
+        name={room.me?.display_name}
         muted={sounds.muted}
         onToggleMute={sounds.toggle}
         onExit={exit}
-      >
-        {room.status === "QUESTION_ACTIVE" && opened && !showSplash && !finished && (
-          <TimerBar secondsLeft={secondsLeft} totalSeconds={totalSeconds} frozen={room.frozen} />
-        )}
-      </GameTopBar>
+        timer={
+          room.status === "QUESTION_ACTIVE" && opened && !showSplash && !finished ? (
+            <TimerBar secondsLeft={secondsLeft} totalSeconds={totalSeconds} frozen={room.frozen} />
+          ) : undefined
+        }
+      />
 
       {room.connection !== "open" && (
         <div className="mx-auto w-full max-w-xl px-4">
@@ -166,7 +187,12 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
 
       {room.status === "QUESTION_ACTIVE" && showSplash && feedback && (
         <div className="flex flex-1 items-center justify-center px-4 py-8">
-          <FeedbackSplash feedback={feedback} opensAt={finished ? null : room.opensAt} />
+          <FeedbackSplash
+            feedback={feedback}
+            opensAt={finished ? null : room.opensAt}
+            avatar={room.me?.avatar}
+            name={room.me?.display_name}
+          />
         </div>
       )}
 
@@ -242,9 +268,6 @@ export function StudentPacedGame({ room, actions }: { room: LiveQuizRoom; action
             <p className="text-center text-sm text-white/70">
               New power-up: {POWERUPS[room.awarded.key].label} — {POWERUPS[room.awarded.key].help}
             </p>
-          )}
-          {rank !== null && (
-            <p className="text-center text-xs text-white/50 sm:hidden">You are {ordinal(rank)}</p>
           )}
         </div>
       )}
