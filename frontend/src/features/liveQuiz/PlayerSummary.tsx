@@ -296,7 +296,11 @@ export function NextLookCard({ shop }: { shop: ShopState }) {
     return (
       <GamePanel className="flex flex-col gap-3 px-4 py-3.5">
         <p className="text-[15px] font-bold">
-          {shop.can_claim_starter ? "Pick your free character" : "You own the whole shop"}
+          {shop.can_claim_starter
+            ? "Pick your free character"
+            : shop.items.every((item) => item.owned)
+              ? "You own the whole shop"
+              : "You own everything on sale"}
         </p>
         {button(shop.can_claim_starter ? "Choose one" : "Open the shop")}
       </GamePanel>

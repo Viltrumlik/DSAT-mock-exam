@@ -24,6 +24,8 @@ vi.mock("next/navigation", () => ({ usePathname: () => "/live/titles", useRouter
 const { AVATAR_CHARACTERS, LiveAvatar, TitleChip } = await import("../avatars");
 const { Podium } = await import("../game");
 const { Locker } = await import("../Locker");
+const { NextLookCard } = await import("../PlayerSummary");
+const { nextGoal } = await import("../theme");
 const { Titles } = await import("../Titles");
 
 const title = (key: string, name: string, progress: number, goal: number) => ({
@@ -105,6 +107,28 @@ describe("the podium", () => {
     const html = renderToStaticMarkup(<Podium rows={[row] as never} />);
     expect(html.indexOf("Aziza R")).toBeLessThan(html.indexOf("Lightning"));
     expect(html.indexOf("Lightning")).toBeLessThan(html.indexOf("4,200"));
+  });
+});
+
+describe("what to save for next", () => {
+  const fox = shop().items[0];
+  const card = (data: unknown) => renderToStaticMarkup(<NextLookCard shop={data as never} />);
+
+  it("can be a hat on sale, drawn on what they wear", () => {
+    const data = shop({ items: [fox, limited("winter_beanie", "Winter beanie", ON_SALE)] });
+    expect(nextGoal(data as never)?.key).toBe("hat:winter_beanie");
+    expect(card(data)).toContain('aria-label="Ember with Winter beanie"');
+  });
+
+  it("is never a hat out of season, which could not be bought", () => {
+    const data = shop({ items: [fox, limited("navroz_tulips", "Navroʻz tulips", OFF_SEASON)] });
+    expect(nextGoal(data as never)).toBeNull();
+    expect(card(data)).toContain("You own everything on sale");
+    expect(card(data)).not.toContain("the whole shop");
+  });
+
+  it("says the shop is theirs once they have that hat too", () => {
+    expect(card(shop({ items: [fox, limited("navroz_tulips", "Navroʻz tulips", OFF_SEASON, true)] }))).toContain("You own the whole shop");
   });
 });
 

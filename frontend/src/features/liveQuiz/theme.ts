@@ -55,7 +55,8 @@ const byPrice = (a: ShopItem, b: ShopItem) => a.price - b.price;
  * they own the whole shop.
  */
 export function nextGoal(shop: ShopState): ShopItem | null {
-  const unowned = shop.items.filter((item) => !item.owned);
+  // A hat out of season cannot be bought, so it cannot be saved for.
+  const unowned = shop.items.filter((item) => !item.owned && (!item.limited || item.on_sale));
   const skins = unowned.filter((item) => item.kind === "skin").sort(byPrice);
   const worn = shop.look?.character;
   const own = shop.items.filter((item) => item.kind === "character" && item.owned).map((item) => item.character);
