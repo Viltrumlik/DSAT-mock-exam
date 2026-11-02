@@ -102,6 +102,8 @@ describe("polling", () => {
     expect(at("FAILED")).toBe(false);
     expect(at("CANCELLED")).toBe(false);
     expect(interval(hooks.useSmsCampaign(7), undefined)).toBe(false);
+    // The composer reads the campaign it repeats once: its figures are not what it is there for.
+    expect(interval(hooks.useSmsCampaign(7, false), { campaign: { status: "SENDING" }, messages: [] })).toBe(false);
   });
 
   it("polls the debt preview after Send now while warnings are left, for about two minutes", () => {

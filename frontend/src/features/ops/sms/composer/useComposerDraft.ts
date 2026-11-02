@@ -51,11 +51,13 @@ function fromCampaign(c: Campaign): ComposerDraft {
 export function useComposerDraft(search: URLSearchParams) {
   const from = wholeId(search.get("from"));
   const student = wholeId(search.get("student"));
-  const source = useSmsCampaign(from);
+  const source = useSmsCampaign(from, false);
   if (from) {
     return {
       isPending: source.isPending,
-      isError: source.isError,
+      // Only with nothing to go on. A later refresh failing (the panel is invalidated when a send
+      // gets no answer) must not take down the form, and with it what the form knows about that send.
+      isError: source.isError && !source.data,
       refetch: source.refetch,
       draft: source.data ? fromCampaign(source.data.campaign) : null,
     };

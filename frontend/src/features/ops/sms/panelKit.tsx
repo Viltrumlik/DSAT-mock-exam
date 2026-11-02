@@ -88,15 +88,17 @@ export function errorText(e: unknown, fallback = "That didn't work. Try again.")
 /**
  * A paid POST that failed with no HTTP answer — the network, a timeout, or the auth layer's
  * AUTH_TEMPORAL_STALE (which rejects an answer that did arrive) — may well have reached the
- * server and sent its SMS. A refusal (any answer) means nothing went out.
+ * server and sent its SMS. So may a 5xx: a create commits and queues before its response is built,
+ * and a gateway answers 502 for a worker killed in between. Only a refusal means nothing went out.
  */
 export function mayHaveBeenSent(e: unknown): boolean {
-  return !(e as { response?: unknown } | null | undefined)?.response;
+  const response = (e as { response?: { status?: number } } | null | undefined)?.response;
+  return !response || (response.status ?? 0) >= 500;
 }
 
 export const MAYBE_SENT = "The server may already have sent this — check the list before trying again.";
 
-/** `errorText` for a POST that costs money: no answer is "it may have gone", never "try again". */
+/** `errorText` for a POST that costs money: no answer, or a 5xx, is "it may have gone", never "try again". */
 export function paidErrorText(e: unknown, fallback?: string): string {
   return mayHaveBeenSent(e) ? MAYBE_SENT : errorText(e, fallback);
 }

@@ -160,6 +160,13 @@ describe("UndeliveredList", () => {
     expect(document.querySelector<HTMLInputElement>("input[aria-label='Select Bekzod Rahimov']")?.disabled).toBe(true);
   });
 
+  it("says what an empty list means where it is shown", async () => {
+    messages.mockReturnValue({ data: page([]), isPending: false, isError: false, refetch: vi.fn() });
+    await render(<UndeliveredList filter={{ campaign: 7 }} pricePerPart={170} emptyText="Nothing undelivered so far." />);
+    expect(text()).toContain("Nothing undelivered so far.");
+    expect(text()).not.toContain("Everything in this range arrived.");
+  });
+
   it("says when everything arrived", async () => {
     messages.mockReturnValue({ data: page([]), isPending: false, isError: false, refetch: vi.fn() });
     await render(<UndeliveredList filter={{}} pricePerPart={170} />);

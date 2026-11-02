@@ -96,7 +96,9 @@ function Outcome({ campaign, pricePerPart }: { campaign: Campaign; pricePerPart:
         </Section>
       ) : null}
       {/* Without the price the confirm could not name what Resend costs. */}
-      {pricePerPart ? <UndeliveredList filter={{ campaign: campaign.id }} pricePerPart={pricePerPart} /> : null}
+      {pricePerPart ? (
+        <UndeliveredList filter={{ campaign: campaign.id }} pricePerPart={pricePerPart} emptyText="Nothing undelivered so far." />
+      ) : null}
     </>
   );
 }
@@ -251,7 +253,9 @@ export function CampaignPage({ id }: { id: number }) {
         </Section>
       ) : null}
 
-      {started ? <Outcome campaign={c} pricePerPart={price} /> : null}
+      {/* Not while it sends: neither polls, and both would stay as they were at the first SMS. They
+          mount fresh when it finishes (the page's own poll sees that), and a Retry starts this over. */}
+      {started && c.status !== "SENDING" ? <Outcome campaign={c} pricePerPart={price} /> : null}
 
       {messages.length === 0 ? (
         <p className="text-[13px] text-muted-foreground">Nothing has been sent yet.</p>

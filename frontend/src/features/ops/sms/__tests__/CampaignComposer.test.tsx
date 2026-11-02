@@ -17,6 +17,7 @@ const create = vi.fn();
 const toast = vi.fn();
 const push = vi.fn();
 const confirmSpy = vi.fn();
+const sourceArgs = vi.fn();
 let query = "";
 let balance: number | null = 1_000_000;
 let source: Record<string, unknown> = {};
@@ -55,7 +56,10 @@ vi.mock("@/features/ops/sms/smsHooks", () => ({
   }),
   useAudienceStudents: () => ({ data: undefined, isPending: false, isError: false, isFetching: false }),
   useSmsOverview: () => ({ data: { balance } }),
-  useSmsCampaign: () => source,
+  useSmsCampaign: (...args: unknown[]) => {
+    sourceArgs(...args);
+    return source;
+  },
   usePreviewCampaign: () => ({ mutate: previewDraft }),
   usePreviewAudience: () => ({ mutate: previewAudience }),
   useCreateCampaign: () => ({ mutate: create, isPending: false }),
@@ -208,6 +212,8 @@ describe("CampaignComposer", () => {
       },
     };
     await render("from=7");
+    // Read once: a poll of a campaign still sending would be a request for nothing, every 5 s.
+    expect(sourceArgs).toHaveBeenLastCalledWith(7, false);
     expect(lastDraft()).toEqual({
       template_id: 70001, slot_roles: ["text", "text"], slot_texts: ["Mock imtihon", "10"], audience: "filter",
       audience_ids: [], audience_filter: { subjects: ["MATH"], levels: [], branches: [], days: [] },
@@ -292,9 +298,19 @@ describe("CampaignComposer", () => {
     expect(sendButtons().every((b) => b.disabled)).toBe(true);
   });
 
+  it("treats a 5xx the same: the server may have created it before it failed", async () => {
+    create.mockImplementation((_d: unknown, o: { onError: (e: unknown) => void }) =>
+      o.onError({ response: { status: 502, data: "<html>Bad Gateway</html>" } }),
+    );
+    await ready();
+    await click(sendButtons()[0]);
+    expect(text()).toContain("may already have sent");
+    expect(sendButtons().every((b) => b.disabled)).toBe(true);
+  });
+
   it("lets a refused send be tried again", async () => {
     create.mockImplementation((_d: unknown, o: { onError: (e: unknown) => void }) =>
-      o.onError({ response: { data: { detail: "Nobody in that audience can get it." } } }),
+      o.onError({ response: { status: 400, data: { detail: "Nobody in that audience can get it." } } }),
     );
     await ready();
     await click(sendButtons()[0]);

@@ -118,8 +118,8 @@ export function useSmsCampaigns() {
   });
 }
 
-/** One campaign, asked again every CAMPAIGN_POLL_MS while it is SCHEDULED or SENDING. */
-export function useSmsCampaign(id: number) {
+/** One campaign, asked again every CAMPAIGN_POLL_MS while it is SCHEDULED or SENDING, if `live`. */
+export function useSmsCampaign(id: number, live = true) {
   return useQuery({
     queryKey: smsKeys.campaign(id),
     queryFn: () => smsApi.campaign(id),
@@ -127,7 +127,7 @@ export function useSmsCampaign(id: number) {
     enabled: Number.isInteger(id) && id > 0,
     refetchInterval: (query) => {
       const status = query.state.data?.campaign?.status;
-      return status && LIVE_CAMPAIGN.has(status) ? CAMPAIGN_POLL_MS : false;
+      return live && status && LIVE_CAMPAIGN.has(status) ? CAMPAIGN_POLL_MS : false;
     },
   });
 }

@@ -15,7 +15,7 @@
  */
 
 import Link from "next/link";
-import { Suspense, useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowLeft, Send } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -68,17 +68,26 @@ function useLivePreview(question: Question | null) {
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [lastReply, setLastReply] = useState<Reply | null>(null);
   const [asked, setAsked] = useState(0);
+  const latestKey = useRef(key);
+  useEffect(() => {
+    latestKey.current = key;
+  });
 
   useEffect(() => {
     if (!key) return;
     const q = JSON.parse(key) as Question;
     const timer = setTimeout(() => {
+      // Two hooks ask, so an audience answer can land after the draft's: an old answer changes nothing.
       const done = {
         onSuccess: (reply: Reply) => {
+          if (latestKey.current !== key) return;
           setAnswer({ key, reply });
           setLastReply(reply);
         },
-        onError: (e: unknown) => setAnswer({ key, error: errorText(e, "Couldn't work it out. Try again.") }),
+        onError: (e: unknown) => {
+          if (latestKey.current !== key) return;
+          setAnswer({ key, error: errorText(e, "Couldn't work it out. Try again.") });
+        },
       };
       if (q.kind === "draft") previewDraft(q.body, done);
       else previewAudience(q.body, done);
@@ -188,6 +197,7 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
   const [listOpen, setListOpen] = useState(false);
   const [refused, setRefused] = useState<{ key: string | null; text: string } | null>(null);
   const [maybeSent, setMaybeSent] = useState(false);
+  const [created, setCreated] = useState(false);
 
   const template = (templates.data?.templates ?? []).find((t) => t.usable && t.eskiz_id === message.templateId) ?? null;
   const body = audienceBody(who);
@@ -219,7 +229,8 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
   const priced = reply && "cost" in reply ? reply : null;
   const sample = priced?.samples[0];
   const text = sample?.text ?? (template ? fillPattern(template.pattern, sampleValues(message.roles, message.texts)) : "");
-  const canSend = Boolean(draft && priced && !priced.over_limit && priced.count > 0) && !live.checking && !creator.isPending && !maybeSent;
+  const canSend =
+    Boolean(draft && priced && !priced.over_limit && priced.count > 0) && !live.checking && !creator.isPending && !maybeSent && !created;
   const figures = shown ? figuresOf(reply ?? shown) : null;
 
   const send = () => {
@@ -228,14 +239,15 @@ function ComposerForm({ start }: { start: ComposerDraft }) {
     if (!window.confirm(`Send ${priced.count} SMS, ~${money(priced.cost)}, ${moment}?`)) return;
     setRefused(null);
     creator.mutate(draft, {
-      onSuccess: (created) => {
+      onSuccess: (campaign) => {
+        setCreated(true); // it stays on screen until the route changes, and it is paid for now
         push({
           tone: "success",
           message: draft.scheduled_at
-            ? `Campaign #${created.id} is scheduled for ${tashkentDateTime(created.scheduled_at ?? draft.scheduled_at)}.`
-            : `Campaign #${created.id} is sending now.`,
+            ? `Campaign #${campaign.id} is scheduled for ${tashkentDateTime(campaign.scheduled_at ?? draft.scheduled_at)}.`
+            : `Campaign #${campaign.id} is sending now.`,
         });
-        router.push(campaignHref(created.id));
+        router.push(campaignHref(campaign.id));
       },
       onError: (e) => {
         if (mayHaveBeenSent(e)) setMaybeSent(true);

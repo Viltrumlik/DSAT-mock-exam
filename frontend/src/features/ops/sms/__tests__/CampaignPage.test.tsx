@@ -33,8 +33,8 @@ vi.mock("@/features/ops/sms/charts/OperatorChart", () => ({
   OperatorChart: ({ data }: { data: unknown[] }) => <div>operator-chart-{data.length}</div>,
 }));
 vi.mock("@/features/ops/sms/UndeliveredList", () => ({
-  UndeliveredList: ({ filter, pricePerPart }: { filter: { campaign: number }; pricePerPart: number }) => (
-    <div>undelivered-{filter.campaign}-{pricePerPart}</div>
+  UndeliveredList: ({ filter, pricePerPart, emptyText }: { filter: { campaign: number }; pricePerPart: number; emptyText?: string }) => (
+    <div>undelivered-{filter.campaign}-{pricePerPart}-{emptyText}</div>
   ),
 }));
 
@@ -225,6 +225,17 @@ describe("CampaignPage", () => {
       expect(asked.from).toBe("2026-10-20");
       expect(text()).toContain("operator-chart-1");
       expect(text()).toContain("undelivered-7-170");
+    });
+
+    it("makes no claim about what arrived: a delivery report can come later", async () => {
+      await render({ data: { campaign: DONE, messages: [message()] } });
+      expect(text()).toContain("Nothing undelivered so far.");
+    });
+
+    it("while it is sending: neither, since both would be out of date at once", async () => {
+      await render({ data: { campaign: campaign({ status: "SENDING", result: { delivered: 1, undelivered: 0 } }), messages: [message()] } });
+      expect(text()).not.toContain("operator-chart");
+      expect(text()).not.toContain("undelivered-");
     });
 
     it("before it goes out: neither", async () => {

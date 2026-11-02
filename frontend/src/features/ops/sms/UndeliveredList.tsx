@@ -51,7 +51,16 @@ export function useConfirmedResend(pricePerPart: number) {
   return { send, isPending: resend.isPending };
 }
 
-export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredFilter; pricePerPart: number }) {
+export function UndeliveredList({
+  filter,
+  pricePerPart,
+  emptyText = "Everything in this range arrived.",
+}: {
+  filter: UndeliveredFilter;
+  pricePerPart: number;
+  /** What an empty list means where it is shown. */
+  emptyText?: string;
+}) {
   const filters = useMemo(() => {
     const out: Record<string, string> = { resendable: "1" };
     for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== "") out[key] = String(value);
@@ -80,7 +89,7 @@ export function UndeliveredList({ filter, pricePerPart }: { filter: UndeliveredF
   } else if (list.isError || !list.data) {
     body = <div className="p-2"><LoadError what="list of what did not arrive" onRetry={() => void list.refetch()} /></div>;
   } else if (!rows.length) {
-    body = <p className="px-3 py-3 text-[13px] text-muted-foreground">Everything in this range arrived.</p>;
+    body = <p className="px-3 py-3 text-[13px] text-muted-foreground">{emptyText}</p>;
   } else {
     body = (
       <>
