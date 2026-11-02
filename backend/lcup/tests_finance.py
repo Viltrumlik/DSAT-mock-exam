@@ -334,6 +334,31 @@ class StudentFinanceViewTests(FinanceFixture):
         self.assertTrue(response.json()["frozen_for_debt"])
         self.assertEqual(response.json()["debt"], 150000)
 
+    def notice(self, user):
+        return self.get(user).json()["debt_notice"]
+
+    def test_the_ticker_is_for_a_student_who_owes(self):
+        self.assertTrue(self.notice(self.aziz))
+
+    def test_no_ticker_without_a_debt(self):
+        self.assertFalse(self.notice(self.malika))
+        self.set_balance(self.aziz_link, 0)
+        self.assertFalse(self.notice(self.aziz))
+        self.set_balance(self.aziz_link, None)
+        self.assertFalse(self.notice(self.aziz))
+
+    def test_no_ticker_for_a_debtor_an_admin_exempted(self):
+        LcupStudentLink.objects.filter(pk=self.aziz_link.pk).update(debt_freeze_exempt_at=at(1))
+        self.assertFalse(self.notice(self.aziz))
+
+    def test_no_ticker_for_a_frozen_debtor_whose_frozen_screen_says_it(self):
+        self.freeze(self.aziz)
+        self.assertFalse(self.notice(self.aziz))
+
+    def test_no_ticker_for_a_debtor_lcup_no_longer_lists(self):
+        LcupStudentLink.objects.filter(pk=self.aziz_link.pk).update(deleted_in_lcup=True)
+        self.assertFalse(self.notice(self.aziz))
+
     def test_a_public_learner_may_reach_their_own_page_and_nothing_else_of_lcup(self):
         self.assertTrue(public_student_may(self.URL))
         self.assertFalse(public_student_may("/api/lcup/finance/summary/"))
