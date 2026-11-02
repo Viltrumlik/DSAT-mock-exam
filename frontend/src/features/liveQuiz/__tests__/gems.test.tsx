@@ -339,6 +339,42 @@ describe("what a look wears", () => {
     expect(framed).toContain("linear-gradient(135deg");
   });
 
+  describe("a frame", () => {
+    const RING = "linear-gradient(135deg";
+    const worn = { character: "cat", skin: null, frame: "gold" };
+
+    it("shows wherever the avatar is drawn, not only on a disc", () => {
+      expect(renderToStaticMarkup(<PlayerAvatar avatar={{ character: "cat", skin: null }} name="A" size={28} />)).not.toContain(RING);
+      expect(renderToStaticMarkup(<PlayerAvatar avatar={worn} name="A" size={28} />)).toContain(RING);
+    });
+
+    it("is drawn once on a disc, not a ring inside a ring", () => {
+      expect(renderToStaticMarkup(<AvatarDisc avatar={worn} name="A" size={96} />).split(RING)).toHaveLength(2);
+    });
+
+    it("keeps the space the avatar was given, so a row does not move", () => {
+      expect(renderToStaticMarkup(<PlayerAvatar avatar={worn} name="A" size={28} />)).toContain("width:28px;height:28px");
+    });
+
+    it("passes the face and the name on to the character inside", () => {
+      const html = renderToStaticMarkup(<PlayerAvatar avatar={worn} name="A" size={128} face="right" />);
+      expect(html).toBe(renderToStaticMarkup(<AvatarDisc avatar={worn} name="A" size={128} face="right" />));
+      expect(html).toContain('aria-label="Mochi"');
+    });
+
+    it("is ignored when this build does not know it", () => {
+      const html = renderToStaticMarkup(<PlayerAvatar avatar={{ ...worn, frame: "neon" }} name="A" size={28} />);
+      expect(html).not.toContain(RING);
+      expect(html).toContain('aria-label="Mochi"');
+    });
+
+    it("rings a player with no character too, around their initials", () => {
+      const html = renderToStaticMarkup(<PlayerAvatar avatar={{ ...worn, character: "kraken" }} name="Bek Tursunov" size={28} />);
+      expect(html).toContain(RING);
+      expect(html).toContain("BT");
+    });
+  });
+
   it("says the emote, and nothing for one it does not know", () => {
     expect(renderToStaticMarkup(<EmoteBubble emote="gg" />)).toContain("GG");
     expect(renderToStaticMarkup(<EmoteBubble emote="shout" />)).toBe("");
