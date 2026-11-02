@@ -35,6 +35,7 @@ class CustomUserChangeForm(UserChangeForm):
             "phone_number",
             "telegram_id",
             "profile_image",
+            "profile_image_ban_reason",
             "sat_exam_date",
             "target_score",
             "role",
@@ -62,7 +63,7 @@ class CustomUserAdmin(UserAdmin):
         (None, {"fields": ("email", "username", "password")}),
         (
             "Personal info",
-            {"fields": ("first_name", "last_name", "phone_number", "telegram_id", "profile_image", "sat_exam_date", "target_score", "target_english", "target_math")},
+            {"fields": ("first_name", "last_name", "phone_number", "telegram_id", "profile_image", "profile_image_ban_reason", "sat_exam_date", "target_score", "target_english", "target_math")},
         ),
         (
             "Role & scope",

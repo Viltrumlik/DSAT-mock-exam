@@ -10,6 +10,7 @@ from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import RequestFactory, TestCase, override_settings
 from PIL import Image
+from rest_framework.test import APIClient
 
 from users.photos import PROFILE_IMAGE_MAX_PX, downscale_profile_image, profile_image_url
 from users.serializers import UserMeSerializer, UserSerializer
@@ -121,3 +122,63 @@ class SerializerPhotoFieldTests(TestCase):
         # UserSerializer also backs public registration; nothing about a photo URL should
         # ever be writable through it.
         self.assertTrue(UserSerializer().fields["profile_image_url"].read_only)
+
+
+@override_settings(ALLOWED_HOSTS=["mastersat.uz", "testserver"])
+class PhotoBanTests(TestCase):
+    """A filled ``profile_image_ban_reason`` takes away the right to a new photo, and nothing else."""
+
+    REASON = "your last one used another learning center's logo"
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="ban@example.com", password="x", profile_image_ban_reason=self.REASON)
+        self.api = APIClient()
+        self.api.force_authenticate(self.user)
+
+    def _patch(self, data, *, format="multipart"):
+        return self.api.patch("/api/users/me/", data, format=format)
+
+    def test_a_new_photo_is_refused_with_the_reason_web_and_ios_show(self):
+        response = self._patch({"profile_image": _jpeg(64, 64)})
+
+        self.assertEqual(response.status_code, 400, response.content)
+        self.assertEqual(
+            response.json()["profile_image"][0],
+            "You can't set a profile photo: your last one used another learning center's logo. "
+            "Please visit the administration.",
+        )
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.profile_image)
+
+    def test_the_photo_they_already_have_can_still_be_removed(self):
+        self.user.profile_image = _jpeg(64, 64)
+        self.user.save(update_fields=["profile_image"])
+
+        response = self._patch({"clear_profile_image": True}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.profile_image)
+
+    def test_the_rest_of_the_profile_still_saves(self):
+        response = self._patch({"target_score": 1400}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.target_score, 1400)
+
+    def test_they_cannot_lift_the_ban_themselves(self):
+        self._patch({"profile_image_ban_reason": ""}, format="json")
+
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.profile_image_ban_reason, self.REASON)
+
+    def test_someone_with_no_ban_still_uploads(self):
+        self.user.profile_image_ban_reason = ""
+        self.user.save(update_fields=["profile_image_ban_reason"])
+
+        response = self._patch({"profile_image": _jpeg(64, 64)})
+
+        self.assertEqual(response.status_code, 200, response.content)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.profile_image)

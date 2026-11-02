@@ -134,6 +134,18 @@ class User(AbstractUser):
         ),
     )
     profile_image = models.ImageField(upload_to='profiles/', null=True, blank=True)
+    # ``db_default`` is deploy safety: the migration runs while the old code, which doesn't name
+    # this column, still inserts users. See ``AssessmentSet.secondary_level``.
+    profile_image_ban_reason = models.CharField(
+        max_length=200,
+        blank=True,
+        default='',
+        db_default='',
+        help_text=(
+            "Filled: this person can't set a new profile photo. They read: "
+            "\"You can't set a profile photo: <this>. Please visit the administration.\""
+        ),
+    )
     sat_exam_date = models.DateField(null=True, blank=True, help_text='Planned SAT exam date')
     target_score = models.PositiveIntegerField(null=True, blank=True, help_text='Target total SAT score (400–1600)')
     target_english = models.PositiveIntegerField(null=True, blank=True, help_text='Target English/Reading-Writing score (200–800)')
