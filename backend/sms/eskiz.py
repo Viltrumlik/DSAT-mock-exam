@@ -121,8 +121,10 @@ def _expired(resp) -> bool:
 
 
 def no_balance(text) -> bool:
-    """Whether these are eskiz's words for an account with no money: "Please, fill the balance"."""
-    return "balance" in str(text or "").lower()
+    """Whether these are eskiz's words for an account with no money: "Please, fill the balance".
+    Not any mention of the balance: a refusal a top-up would not fix must stay REJECTED."""
+    words = str(text or "").lower()
+    return "fill the balance" in words or "insufficient balance" in words
 
 
 def _send_result(resp) -> SendResult:

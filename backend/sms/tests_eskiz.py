@@ -143,6 +143,12 @@ class SendTests(SimpleTestCase):
         result = eskiz.send("998981234567", "x")
         self.assertEqual((result.outcome, result.error), (REJECTED, "HTTP 400: perfectum: Not allowed"))
 
+    def test_a_refusal_that_only_mentions_the_balance_stays_rejected(self):
+        # Codex on #345: a top-up would not fix this, so it must not read as "no balance" and go again.
+        eskiz, _ = client([login_ok(), FakeResponse(400, {"message": "Balance account is blocked"})])
+        result = eskiz.send("998901234567", "x")
+        self.assertEqual((result.outcome, result.error), (REJECTED, "HTTP 400: Balance account is blocked"))
+
     def test_a_5xx_naming_the_balance_may_still_have_left(self):
         # A paid SMS never goes twice: only a refusal below 500 says eskiz did not take it.
         eskiz, _ = client([login_ok(), FakeResponse(502, {"message": "Please, fill the balance"})])
