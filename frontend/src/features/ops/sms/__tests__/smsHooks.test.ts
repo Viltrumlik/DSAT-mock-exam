@@ -34,6 +34,7 @@ const MUTATIONS: [string, () => unknown][] = [
   ["preview campaign", () => hooks.usePreviewCampaign()],
   ["cancel campaign", () => hooks.useCancelCampaign(7)],
   ["retry campaign", () => hooks.useRetryCampaign(7)],
+  ["preview an audience", () => hooks.usePreviewAudience()],
   ["debt send now", () => hooks.useDebtSendNow()],
   ["test SMS", () => hooks.useSendTestSms()],
   ["submit template", () => hooks.useSubmitTemplate()],

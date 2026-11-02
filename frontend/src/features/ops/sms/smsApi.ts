@@ -16,7 +16,7 @@ import type { ChangeListParams } from "@/features/ops/changelist/useChangeListPa
 export type SmsStatus = "PENDING" | "SENT" | "DELIVERED" | "UNDELIVERED" | "REJECTED" | "FAILED" | "UNCERTAIN";
 export type SmsKind = "debt_warning" | "campaign" | "test";
 export type CampaignStatus = "SCHEDULED" | "SENDING" | "DONE" | "CANCELLED" | "FAILED";
-export type AudienceKind = "student" | "group" | "debtors";
+export type AudienceKind = "student" | "group" | "debtors" | "filter";
 export type SlotRole = "student" | "debt" | "text";
 export type TemplateStatus = "service" | "reklama" | "moderation" | "inproccess" | "rejected" | "gone";
 /**
@@ -24,7 +24,7 @@ export type TemplateStatus = "service" | "reklama" | "moderation" | "inproccess"
  * naming the debt, and lc-up's balance is older than 24 h. `same_phone`: a sibling on the same
  * phone gets the same words, so one SMS goes between them.
  */
-export type SkipReason = "no_link" | "no_phone" | "stale_balance" | "not_debtor" | "bad_text" | "same_phone";
+export type SkipReason = "no_link" | "no_phone" | "stale_balance" | "not_debtor" | "bad_text" | "same_phone" | "excluded";
 
 /** `{DELIVERED: 2}` — only the statuses that occurred are present. */
 export type StatusCounts = Partial<Record<SmsStatus, number>>;
@@ -273,8 +273,12 @@ export interface Campaign {
   slot_texts: string[];
   audience: AudienceKind;
   audience_ids: number[];
-  /** Server-made: "Debtors", "Group: <name>", "3 students", "Student: <name>". */
+  /** Server-made: "Debtors", "Group: <name>", "2 groups", "Math · Junior", "3 students", "Student: <name>". */
   audience_label: string;
+  /** `{}` unless the audience is `filter`. */
+  audience_filter: Partial<AudienceFilter>;
+  /** People taken out by hand. */
+  excluded_user_ids: number[];
   scheduled_at: string;
   created_at: string;
   started_at: string | null;
@@ -285,17 +289,64 @@ export interface Campaign {
   result: Partial<CampaignResult>;
 }
 
+/** A filter audience: active classes, AND across the keys, OR within one. */
+export interface AudienceFilter {
+  subjects: string[];
+  levels: string[];
+  /** Branch ids. */
+  branches: number[];
+  days: string[];
+}
+
+/** Who a campaign goes to: the body of `audience/preview/`, and part of a draft. */
+export interface AudienceBody {
+  audience: AudienceKind;
+  /** student: user ids (1–300); group: classroom ids (1–50); debtors, filter: []. */
+  audience_ids: number[];
+  audience_filter?: AudienceFilter;
+  excluded_user_ids?: number[];
+}
+
 /** The body of `campaigns/preview/` and `campaigns/`. */
-export interface CampaignDraft {
+export interface CampaignDraft extends AudienceBody {
   /** An EskizTemplate.eskiz_id. */
   template_id: number;
   slot_roles: SlotRole[];
   slot_texts: string[];
-  audience: AudienceKind;
-  /** student: user ids (1–300); group: [classroom id]; debtors: []. */
-  audience_ids: number[];
   /** ISO; null means now. */
   scheduled_at: string | null;
+}
+
+export interface PreviewRecipient {
+  user_id: number;
+  name: string;
+  /** Masked: 99890***4567. */
+  phone: string;
+  /** The active classes they sit in now. */
+  groups: string[];
+}
+
+/** Who an audience is before any template is chosen. */
+export interface AudiencePreview {
+  count: number;
+  over_limit: boolean;
+  limit: number;
+  skipped: Skipped;
+  recipients: PreviewRecipient[];
+}
+
+export interface AudienceOption<V = string> {
+  value: V;
+  label: string;
+  /** Active classes with this value. */
+  classes: number;
+}
+
+export interface AudienceOptions {
+  subjects: AudienceOption[];
+  levels: AudienceOption[];
+  branches: AudienceOption<number>[];
+  days: AudienceOption[];
 }
 
 export interface CampaignPreview {
@@ -308,6 +359,7 @@ export interface CampaignPreview {
   /** parts_total × price_per_part. */
   cost: number;
   skipped: Skipped;
+  recipients?: PreviewRecipient[];
 }
 
 // ── settings ─────────────────────────────────────────────────────────────
@@ -388,6 +440,13 @@ export interface TemplateSlot {
 
 export interface EskizTemplate {
   eskiz_id: number;
+  /** The panel's own name; "" when it has none. */
+  alias: string;
+  /** The alias, else "#<eskiz_id>". */
+  label: string;
+  /** Messages with this template in the last 90 days. */
+  used_count: number;
+  last_used_at: string | null;
   status: TemplateStatus;
   /** What eskiz moderated, with %w / %d slots — the text an SMS must match. */
   pattern: string;
@@ -475,7 +534,7 @@ export const smsApi = {
     return data;
   },
   async previewCampaign(draft: CampaignDraft): Promise<CampaignPreview> {
-    const { data } = await api.post<CampaignPreview>(`${BASE}/campaigns/preview/`, draft);
+    const { data } = await api.post<CampaignPreview>(`${BASE}/campaigns/preview/`, { ...draft, include_recipients: true });
     return data;
   },
   async createCampaign(draft: CampaignDraft): Promise<Campaign> {
@@ -535,6 +594,14 @@ export const smsApi = {
     return data?.message;
   },
 
+  async previewAudience(body: AudienceBody): Promise<AudiencePreview> {
+    const { data } = await api.post<AudiencePreview>(`${BASE}/audience/preview/`, body);
+    return data;
+  },
+  async audienceOptions(): Promise<AudienceOptions> {
+    const { data } = await api.get<AudienceOptions>(`${BASE}/audience/options/`);
+    return data;
+  },
   async classrooms(): Promise<AudienceClassroom[]> {
     const { data } = await api.get<{ classrooms: AudienceClassroom[] }>(`${BASE}/audience/classrooms/`);
     return data?.classrooms ?? [];

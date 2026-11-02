@@ -21,6 +21,9 @@ export const TABLE = "w-full border-separate border-spacing-0 text-[13px] text-f
 export const TH = "h-8 whitespace-nowrap border-b border-border bg-card px-2 text-left text-[12px] font-semibold text-muted-foreground";
 export const TD = "h-[34px] border-b border-border px-2 py-1";
 export const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+/** A link that looks like a small primary Button: where a click goes to another page. */
+export const LINK_BUTTON =
+  "ds-ring inline-flex h-9 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 text-[13px] font-semibold text-primary-foreground hover:bg-primary-hover";
 export const TEXT_BUTTON =
   "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 dark:text-primary-hover";
 

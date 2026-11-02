@@ -15,9 +15,6 @@ vi.mock("next/link", () => ({
   ),
 }));
 vi.mock("@/features/ops/sms/smsHooks", () => ({ useSmsCampaigns: () => campaigns() }));
-vi.mock("@/features/ops/sms/CampaignWizard", () => ({
-  CampaignWizard: () => <div role="dialog">wizard-open</div>,
-}));
 
 const { CampaignsPanel } = await import("@/features/ops/sms/CampaignsPanel");
 
@@ -68,11 +65,10 @@ describe("CampaignsPanel", () => {
     expect(done.textContent).toContain("12 sent · 10 delivered · 1 failed");
   });
 
-  it("opens the wizard from New campaign", async () => {
+  it("New campaign goes to the composer's page", async () => {
     await render({ data: [] });
-    expect(text()).not.toContain("wizard-open");
-    await act(async () => button("New campaign").click());
-    expect(text()).toContain("wizard-open");
+    const link = Array.from(document.body.querySelectorAll("a")).find((a) => a.textContent?.trim() === "New campaign")!;
+    expect(link.getAttribute("href")).toBe("/ops/sms/campaigns/new");
   });
 
   it("says there are none yet, and offers a retry when the list did not load", async () => {

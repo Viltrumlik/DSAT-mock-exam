@@ -17,6 +17,10 @@ const confirmSpy = vi.fn();
 function template(over: Partial<EskizTemplate> = {}): EskizTemplate {
   return {
     eskiz_id: 64942,
+    alias: "",
+    label: "#64942",
+    used_count: 0,
+    last_used_at: null,
     status: "service",
     pattern:
       "MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",

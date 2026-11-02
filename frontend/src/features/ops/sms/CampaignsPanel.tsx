@@ -1,22 +1,20 @@
 "use client";
 
 /**
- * Campaigns ("jo'natma"): every manual send — to one or more students, a class or the debtors,
- * now or at a set time. Newest first; a row opens the campaign's page, where it can be cancelled
- * while it waits and its failures retried once it is done. "New campaign" opens the wizard.
+ * Campaigns ("jo'natma"): every manual send — to one or more students, some classes, a filter or
+ * the debtors, now or at a set time. Newest first; a row opens the campaign's page, where it can be
+ * cancelled while it waits and its failures retried once it is done. "New campaign" opens the composer.
  */
 
 import Link from "next/link";
-import { useState } from "react";
 import { Send } from "lucide-react";
 
-import { Badge, Button } from "@/components/ui";
-import { CampaignWizard } from "./CampaignWizard";
+import { Badge } from "@/components/ui";
 import { campaignBadge, dateTime, firstLine } from "./format";
-import { BOX, LoadError, Loading, TABLE, TD, TH, TR } from "./panelKit";
+import { BOX, LINK_BUTTON, LoadError, Loading, TABLE, TD, TH, TR } from "./panelKit";
 import type { Campaign } from "./smsApi";
 import { useSmsCampaigns } from "./smsHooks";
-import { campaignHref } from "./smsTabs";
+import { NEW_CAMPAIGN_PATH, campaignHref } from "./smsTabs";
 
 /** "12 sent · 10 delivered · 1 failed" — empty before anything went out. */
 export function resultLabel(c: Pick<Campaign, "result">): string {
@@ -30,7 +28,6 @@ export function resultLabel(c: Pick<Campaign, "result">): string {
 
 export function CampaignsPanel() {
   const campaigns = useSmsCampaigns();
-  const [creating, setCreating] = useState(false);
   const rows = campaigns.data ?? [];
 
   return (
@@ -39,10 +36,10 @@ export function CampaignsPanel() {
         <p className="text-[13px] text-muted-foreground">
           Recipients are worked out when a campaign sends: a debtor who has paid by then is skipped.
         </p>
-        <Button size="sm" className="ml-auto" onClick={() => setCreating(true)}>
+        <Link href={NEW_CAMPAIGN_PATH} className={`${LINK_BUTTON} ml-auto`}>
           <Send className="h-4 w-4" aria-hidden />
           New campaign
-        </Button>
+        </Link>
       </div>
 
       {campaigns.isPending ? (
@@ -54,7 +51,7 @@ export function CampaignsPanel() {
           <Send className="mx-auto mb-2 h-7 w-7 text-muted-foreground" aria-hidden />
           <p className="text-[13px] font-semibold text-foreground">No campaigns yet</p>
           <p className="mt-1 text-[13px] text-muted-foreground">
-            Send an approved template to a student, a class or every debtor.
+            Send an approved template to a student, some classes, a filter or every debtor.
           </p>
         </div>
       ) : (
@@ -98,8 +95,6 @@ export function CampaignsPanel() {
           </table>
         </div>
       )}
-
-      {creating ? <CampaignWizard onClose={() => setCreating(false)} /> : null}
     </div>
   );
 }

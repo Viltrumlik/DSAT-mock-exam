@@ -109,6 +109,7 @@ describe("smsApi", () => {
     };
     await smsApi.previewCampaign(draft);
     await smsApi.createCampaign(draft);
+    await smsApi.previewAudience({ audience: "debtors", audience_ids: [], excluded_user_ids: [5] });
     await smsApi.cancelCampaign(7);
     await smsApi.retryCampaign(7);
     await smsApi.debtSendNow();
@@ -116,8 +117,10 @@ describe("smsApi", () => {
     await smsApi.submitTemplate("Salom (STUDENT)!");
     await smsApi.sendTest({ phone: "998880032508", template_id: 64942, slot_texts: [""] });
     expect(post.mock.calls).toEqual([
-      ["/sms/admin/campaigns/preview/", draft],
+      // Only the preview asks for the list of people: a create posts the draft as it is.
+      ["/sms/admin/campaigns/preview/", { ...draft, include_recipients: true }],
       ["/sms/admin/campaigns/", draft],
+      ["/sms/admin/audience/preview/", { audience: "debtors", audience_ids: [], excluded_user_ids: [5] }],
       ["/sms/admin/campaigns/7/cancel/"],
       ["/sms/admin/campaigns/7/retry/"],
       ["/sms/admin/debt/send-now/"],

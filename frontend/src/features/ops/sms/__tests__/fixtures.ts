@@ -5,6 +5,10 @@ import type { Campaign, EskizTemplate, SmsMessage } from "../smsApi";
 export function template(over: Partial<EskizTemplate> = {}): EskizTemplate {
   return {
     eskiz_id: 64942,
+    alias: "",
+    label: `#${over.eskiz_id ?? 64942}`,
+    used_count: 0,
+    last_used_at: null,
     status: "service",
     pattern:
       "MASTER SAT'dan yozyabmiz. %w{1,4} sizda qarzdorlik mavjud. To'lovni amalga oshirish uchun zudlik bilan administratsiyaga uchrang!",
@@ -51,6 +55,8 @@ export function campaign(over: Partial<Campaign> = {}): Campaign {
     audience: "group",
     audience_ids: [61],
     audience_label: "Group: Junior G21 | Math",
+    audience_filter: {},
+    excluded_user_ids: [],
     scheduled_at: "2026-10-20T09:30:00+05:00",
     created_at: "2026-10-18T21:00:00+05:00",
     started_at: null,

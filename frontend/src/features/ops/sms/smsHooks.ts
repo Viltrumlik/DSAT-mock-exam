@@ -6,6 +6,7 @@ import { mayHaveBeenSent } from "./panelKit";
 import {
   messagesQuery,
   smsApi,
+  type AudienceBody,
   type CampaignDraft,
   type CampaignStatus,
   type SmsSettingsPatch,
@@ -49,6 +50,7 @@ export const smsKeys = {
   debtRuns: ["sms", "debt", "runs"] as const,
   templates: ["sms", "templates"] as const,
   classrooms: ["sms", "audience", "classrooms"] as const,
+  audienceOptions: ["sms", "audience", "options"] as const,
   students: (q: string) => ["sms", "audience", "students", q] as const,
   stats: (range: StatsRange) => ["sms", "stats", range.from, range.to] as const,
   student: (userId: number) => ["sms", "student", userId] as const,
@@ -144,6 +146,10 @@ export function useAudienceClassrooms() {
   return useQuery({ queryKey: smsKeys.classrooms, queryFn: () => smsApi.classrooms(), staleTime: 60_000 });
 }
 
+export function useAudienceOptions() {
+  return useQuery({ queryKey: smsKeys.audienceOptions, queryFn: () => smsApi.audienceOptions(), staleTime: 60_000 });
+}
+
 export function useAudienceStudents(q: string) {
   const term = q.trim();
   return useQuery({
@@ -158,10 +164,15 @@ export function useAudienceStudents(q: string) {
 
 /**
  * The one POST that changes nothing: it resolves the audience and prices the send. It invalidates
- * nothing, so a preview does not refetch the whole panel behind the wizard.
+ * nothing, so a preview does not refetch the whole panel behind the composer.
  */
 export function usePreviewCampaign() {
   return useMutation({ ...MUTATION_DEFAULTS, mutationFn: (draft: CampaignDraft) => smsApi.previewCampaign(draft) });
+}
+
+/** The same for who an audience is, before any template is chosen. */
+export function usePreviewAudience() {
+  return useMutation({ ...MUTATION_DEFAULTS, mutationFn: (body: AudienceBody) => smsApi.previewAudience(body) });
 }
 
 /** For a POST that sends SMS: with no answer it may have gone out, so the panel is asked again. */
