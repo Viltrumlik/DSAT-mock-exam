@@ -161,10 +161,15 @@ export function openLiveQuizSocket(
       }
     },
     retryNow() {
-      // Only while waiting out a backoff; a socket that is still trying is left to it.
-      if (disposed || socket || !retry) return;
-      clearTimeout(retry);
-      retry = null;
+      if (disposed || socket?.readyState === WebSocket.OPEN) return;
+      // A handshake still trying may be hanging on a dead network, for as long as the browser
+      // cares to wait. Replace it rather than leave the button doing nothing.
+      if (socket) {
+        socket.onclose = null;
+        socket.close();
+        socket = null;
+      }
+      clearTimers();
       backoff = BACKOFF_START_MS;
       connect();
     },
