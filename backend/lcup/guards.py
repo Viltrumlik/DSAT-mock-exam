@@ -26,6 +26,12 @@ def is_lcup_managed(classroom) -> bool:
     ).exists()
 
 
+def seats_locked() -> bool:
+    """Whether a seat's money stays lc-up's (``classes.seat_actions``). Wider than ``is_lcup_managed``: while lc-up
+    runs the ledger only follows it, so a seat written here would be money it never heard of, on any class."""
+    return lcup_enabled()
+
+
 def lcup_managed_ids(classroom_ids) -> set[int]:
     """The classes among ``classroom_ids`` that follow lc-up — ``is_lcup_managed`` for many at once."""
     ids = [i for i in classroom_ids if i is not None]
