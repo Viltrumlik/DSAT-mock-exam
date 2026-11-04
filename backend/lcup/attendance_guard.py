@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from classes.models import ClassroomMembership
 
-from .conf import attendance_pull_enabled, free_trial_lessons
+from .conf import attendance_pull_enabled, free_trial_lessons, lcup_enabled
 from .followups import missing_seats, trial_seats
 from .guards import is_lcup_managed
 from .models import GroupLinkStatus, LcupAbsenceReason, LcupMembership
@@ -34,7 +34,11 @@ def frozen_in_lcup(classroom) -> set[int]:
     """Our user ids frozen in this class. lc-up refuses every mark for a frozen member
     (``not_in_group``: 13 of 13 refusals up to 2026-10-16, against 102 of 102 active and trial marks
     taken), so the register offers none and the push sends none. The seat itself says so; while lc-up
-    runs the class its own list counts too, so a seat the sync has not filled yet loses nobody."""
+    runs the class its own list counts too, so a seat the sync has not filled yet loses nobody. In a class
+    lc-up does not run while it is on, nothing writes the seat, so a status copied earlier says nothing."""
+    managed = is_lcup_managed(classroom)
+    if lcup_enabled() and not managed:
+        return set()
     frozen = set(
         ClassroomMembership.objects.filter(
             classroom=classroom,
@@ -43,7 +47,7 @@ def frozen_in_lcup(classroom) -> set[int]:
             seat_status=ClassroomMembership.SEAT_FROZEN,
         ).values_list("user_id", flat=True)
     )
-    if not is_lcup_managed(classroom):
+    if not managed:
         return frozen
     return frozen | set(
         LcupMembership.objects.filter(

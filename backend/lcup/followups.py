@@ -115,6 +115,12 @@ def trial_seats(*, classroom=None, before: date | None = None) -> list[TrialSeat
     ).select_related("user")
     if classroom is not None:
         rows = rows.filter(classroom=classroom)
+    if lcup_enabled():
+        # In a class lc-up does not run, nothing writes the seat: a status copied earlier says nothing.
+        rows = rows.filter(
+            classroom__lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+            classroom__lcup_group_link__deleted_in_lcup_at__isnull=True,
+        )
     seats, known = [], set()
     for row in rows.order_by("pk"):
         known.add((row.user_id, row.classroom_id))

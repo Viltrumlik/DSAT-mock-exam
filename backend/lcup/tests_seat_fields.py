@@ -147,6 +147,47 @@ class DailyComparisonTests(SeatCase):
         self.assertIn("A Student", run.alerts[0])
 
 
+class UnpairedClassTests(SeatCase):
+    """An admin can take a class back from lc-up, and then nothing writes its seats any more: a status copied
+    earlier must not keep a student unmarkable in a class that is managed by hand."""
+
+    def unpair(self):
+        LcupGroupLink.objects.filter(pk=self.group.pk).update(status=GroupLinkStatus.IGNORED, classroom=None)
+
+    @override_settings(LCUP_ENABLED=True)
+    def test_a_copied_freeze_does_not_count_in_a_class_lc_up_no_longer_runs(self):
+        M.objects.filter(pk=self.seat.pk).update(seat_status="frozen")
+        self.unpair()
+        self.assertEqual(frozen_in_lcup(self.room), set())
+
+    @override_settings(LCUP_ENABLED=True)
+    def test_a_copied_trial_does_not_count_in_a_class_lc_up_no_longer_runs(self):
+        M.objects.filter(pk=self.seat.pk).update(seat_status="trial")
+        self.unpair()
+        self.assertEqual(trial_seats(classroom=self.room), [])
+
+    def test_the_next_sync_clears_what_it_copied(self):
+        M.objects.filter(pk=self.seat.pk).update(seat_status="frozen")
+        self.unpair()
+        self.fill()
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.seat_status, "active")
+
+    def test_a_group_lc_up_deleted_is_cleared_too(self):
+        M.objects.filter(pk=self.seat.pk).update(seat_status="frozen")
+        LcupGroupLink.objects.filter(pk=self.group.pk).update(deleted_in_lcup_at=at(2026, 11, 9))
+        self.fill()
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.seat_status, "active")
+
+    def test_a_class_lc_up_still_runs_keeps_its_seats(self):
+        self.lcup_seat("frozen")
+        self.fill()
+        self.fill()
+        self.seat.refresh_from_db()
+        self.assertEqual(self.seat.seat_status, "frozen")
+
+
 class FrozenReaderTests(SeatCase):
     @override_settings(LCUP_ENABLED=True)
     def test_the_new_field_is_read(self):

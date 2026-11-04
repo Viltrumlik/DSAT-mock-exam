@@ -34,9 +34,11 @@ def _cost(link) -> int | None:
 
 
 def fill_from_lcup() -> int:
-    """Copy each paired group's price and its members' details. How many rows changed."""
+    """Copy each paired group's price and its members' details. How many rows changed. A class lc-up no longer
+    runs is managed by hand again, so a status copied into it earlier goes back to plain active."""
     written = 0
-    for link in _links():
+    links = list(_links())
+    for link in links:
         room, cost = link.classroom, _cost(link)
         if cost and room.monthly_price != cost:
             Classroom.objects.filter(pk=room.pk).update(monthly_price=cost)
@@ -51,6 +53,8 @@ def fill_from_lcup() -> int:
             if (row.seat_status, row.seat_start_date, row.seat_left_on) != (status, member.start_date, left_on):
                 M.objects.filter(pk=row.pk).update(seat_status=status, seat_start_date=member.start_date, seat_left_on=left_on)
                 written += 1
+    stale = M.objects.filter(role=M.ROLE_STUDENT).exclude(classroom_id__in=[link.classroom_id for link in links])
+    written += stale.exclude(seat_status=M.SEAT_ACTIVE).update(seat_status=M.SEAT_ACTIVE)
     return written
 
 
