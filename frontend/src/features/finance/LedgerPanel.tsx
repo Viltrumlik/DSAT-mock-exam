@@ -277,7 +277,13 @@ export function LedgerPanel() {
         The ledger runs beside lc-up and changes nothing yet: payments are still entered in lc-up.{" "}
         {summary.enabled ? `Last followed lc-up: ${moment(summary.last_tick_at)}.` : "Following lc-up is switched off."}
       </p>
-      <dl className="grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-4 xl:grid-cols-7">
+      {/* Seven figures leave a hole in two or four columns, so the last one takes the rest of its row. */}
+      <dl
+        className={cn(
+          "grid grid-cols-2 gap-px border border-border bg-border sm:grid-cols-4 xl:grid-cols-7",
+          counts && "[&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1",
+        )}
+      >
         <Figure label="Accounts" value={String(summary.accounts)} />
         <Figure label="Former students" value={String(summary.former)} />
         {counts ? (
