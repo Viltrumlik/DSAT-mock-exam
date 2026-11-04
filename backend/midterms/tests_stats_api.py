@@ -8,8 +8,11 @@ be able to open one), the month defaulting, and the 400s that stop a mistyped fi
 answering with the whole school under a heading that says otherwise.
 """
 
+from datetime import datetime
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from classes.models import Branch, Classroom, ClassroomMembership, Region
@@ -327,6 +330,12 @@ class DefaultMonthTests(TestCase):
 class UnpaddedMonthTests(TestCase):
     """``strptime("2026-9", "%Y-%m")`` succeeds, and no key in the index is unpadded."""
 
+    # Literals, not LAST_MONTH: from November to January that has two digits and so no unpadded
+    # spelling, and the request these tests call unpadded is a valid one. Nothing here asks
+    # whether the month is past or future, so a literal cannot change what they mean.
+    MONTH = "2026-09"
+    UNPADDED = "2026-9"
+
     def setUp(self):
         self.admin = User.objects.create(username="adm", role="admin")
         self.c = APIClient()
@@ -335,29 +344,24 @@ class UnpaddedMonthTests(TestCase):
         roster = students("s", 4)
         enrol(self.classroom, *roster)
         midterm = make_midterm("Midterm 12")
-        MidtermSchedule.objects.create(
-            classroom=self.classroom, midterm=midterm, starts_at=LAST_MONTH_AT
-        )
+        sat_at = timezone.make_aware(datetime(2026, 9, 10, 9, 0))
+        MidtermSchedule.objects.create(classroom=self.classroom, midterm=midterm, starts_at=sat_at)
         for student in roster:
-            sit(midterm, student, score=800, when=LAST_MONTH_AT)
-
-    def _unpadded(self, month_key):
-        year, month = month_key.split("-")
-        return f"{year}-{int(month)}"
+            sit(midterm, student, score=800, when=sat_at)
 
     def test_an_unpadded_month_is_a_400_rather_than_an_empty_page(self):
         """It matched no zero-padded key, fell through to the empty shell, and the page said
         "No midterms in this month" for a month with a full set of results."""
-        padded = self.c.get(MONTHLY_URL, {"month": LAST_MONTH}).json()
+        padded = self.c.get(MONTHLY_URL, {"month": self.MONTH}).json()
         self.assertEqual(padded["totals"]["roster"], 4)
 
-        r = self.c.get(MONTHLY_URL, {"month": self._unpadded(LAST_MONTH)})
+        r = self.c.get(MONTHLY_URL, {"month": self.UNPADDED})
         self.assertEqual(r.status_code, 400, r.content)
         self.assertIn("YYYY-MM", r.json()["detail"])
 
     def test_an_unpadded_month_on_a_classroom_is_a_400_too(self):
         url = f"/api/midterms/admin/stats/classrooms/{self.classroom.id}/"
-        r = self.c.get(url, {"month": self._unpadded(LAST_MONTH)})
+        r = self.c.get(url, {"month": self.UNPADDED})
         self.assertEqual(r.status_code, 400, r.content)
         self.assertIn("YYYY-MM", r.json()["detail"])
 
