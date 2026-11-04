@@ -21,11 +21,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Sum
 from django.utils import timezone
 
-from lcup.models import LcupMembership, LcupPayment, LcupStudentLink, LcupSyncRun
+from lcup.models import GroupLinkStatus, LcupGroupLink, LcupMembership, LcupPayment, LcupStudentLink, LcupSyncRun
 from lcup.models_archive import ArchiveEntity, LcupArchiveRecord
 from lcup.seats import differences as seat_differences
 
@@ -129,6 +129,29 @@ def _refresh_accounts() -> None:
         account.save(update_fields=["user", "name", "phone"])
 
 
+def link_seats_to_classes(result: Result) -> None:
+    """Each seat's class, from its group's pairing, so the seats are already linked on the day lc-up goes. A seat
+    of our own has no group and is none of this pass's business."""
+    paired = dict(
+        LcupGroupLink.objects.filter(status=GroupLinkStatus.CONFIRMED, classroom__isnull=False)
+        .values_list("lcup_group_id", "classroom_id")
+    )
+    seats = list(Seat.objects.filter(lcup_group_id__isnull=False))
+    # Off first: a class passed from one group to another must not meet itself on the way.
+    stale = [seat.pk for seat in seats if seat.classroom_id and seat.classroom_id != paired.get(seat.lcup_group_id)]
+    Seat.objects.filter(pk__in=stale).update(classroom=None)
+    for seat in seats:
+        wanted = paired.get(seat.lcup_group_id)
+        if not wanted or seat.classroom_id == wanted:
+            continue
+        try:
+            with transaction.atomic():
+                Seat.objects.filter(pk=seat.pk).update(classroom_id=wanted)
+            result.counts["seats_linked"] += 1
+        except IntegrityError as exc:  # the account already has a seat of our own in that class
+            result.fail(f"seat {seat.pk}", exc)
+
+
 def _group_details(group) -> tuple[str, int, list[int]]:
     snapshot = group.snapshot or {}
     try:
@@ -201,6 +224,7 @@ def open_ledger(now, *, apply: bool) -> dict:
                 ledger.start_span(seat, _first_day(membership, today), today=today, opening_month=month)
                 report["spans"] += 1
                 report["no_price_or_days"] += not (price and days)
+        link_seats_to_classes(Result())
         state.opened_at = now
         state.opening_max_payment_id = LcupPayment.objects.aggregate(top=Max("lcup_payment_id"))["top"] or 0
         state.save(update_fields=["opened_at", "opening_max_payment_id"])
@@ -341,6 +365,7 @@ def tick(now=None, *, allow_mass: bool = False) -> dict:
     result.counts.update(watched.counts)
     result.errors += watched.errors
     result.alerts += watched.alerts
+    link_seats_to_classes(result)
     result.errors += ledger.bill_open_spans(timezone.localdate(now))
     if written := Entry.objects.count() - rows_before:
         result.counts["rows"] = written
