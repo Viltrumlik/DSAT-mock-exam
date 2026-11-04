@@ -463,6 +463,7 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
         # rather than "the field was discarded".
         "telegram_chat_id",
         "max_students",
+        "monthly_price",
         "schedule_summary",
         "is_active",
     )
@@ -473,7 +474,8 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
             return Response({"detail": "Admin only."}, status=http.HTTP_403_FORBIDDEN)
         classroom = get_object_or_404(Classroom, pk=classroom_pk)
 
-        from .serializers import ClassroomCreateSerializer, ClassroomSerializer
+        from .seat_actions import class_terms_changed
+        from .serializers import ClassroomAdminSerializer, ClassroomSerializer
 
         payload = {k: v for k, v in (request.data or {}).items() if k in self.EDITABLE}
         from lcup.guards import is_lcup_managed, lcup_managed_response, lcup_owned_changes
@@ -499,8 +501,11 @@ class ClassroomGovernanceUpdateView(_AdminClassroomGovernanceView):
                 status=http.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = ClassroomCreateSerializer(classroom, data=payload, partial=True)
+        terms = (classroom.monthly_price, classroom.lesson_days)
+        serializer = ClassroomAdminSerializer(classroom, data=payload, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         classroom.refresh_from_db()
+        if terms != (classroom.monthly_price, classroom.lesson_days):
+            class_terms_changed(classroom)
         return Response(ClassroomSerializer(classroom, context={"request": request}).data)

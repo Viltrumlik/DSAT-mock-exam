@@ -244,7 +244,8 @@ def history_part(user) -> dict:
                                      "by": "lc-up sync" if rc.source == "lcup_sync" else rc.source}))
     for ev in ClassroomMembershipEvent.objects.filter(student=user).order_by("-created_at")[:HISTORY_LIMIT]:
         rows.append((ev.created_at, {"kind": "group",
-                                     "title": f"{MEMBERSHIP_ACTIONS.get(ev.action, ev.action)} {ev.classroom_name}",
+                                     "title": f"{MEMBERSHIP_ACTIONS.get(ev.action, ev.action)} {ev.classroom_name}"
+                                              + (f": {ev.note}" if ev.note else ""),
                                      "by": ev.actor_name or ""}))
     for ev in SecurityAuditEvent.objects.filter(user=user).exclude(event_type__in=NOISE)[:HISTORY_LIMIT]:
         admin = ev.event_type in ADMIN_EVENT_TYPES

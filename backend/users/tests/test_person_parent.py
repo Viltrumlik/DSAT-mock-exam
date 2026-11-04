@@ -1,9 +1,12 @@
+from types import SimpleNamespace
+
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from classes.models import Classroom, ClassroomMembership
 from users.models import SecurityAuditEvent
+from users.people_detail import person_core
 
 User = get_user_model()
 HOST = "admin.mastersat.uz"
@@ -43,18 +46,13 @@ class ParentDetailsTests(TestCase):
         boss = User.objects.create_user(None, password=None, username="owner", role="super_admin")
         self.assertEqual(self.core(boss).json()["parent"]["name"], "Karim")
 
-    def test_other_staff_who_can_open_the_page_do_not(self):
-        auditor = User.objects.create_user(None, password=None, username="ta", role="test_admin")
-        response = self.core(auditor)
-        self.assertEqual(response.status_code, 200, response.content)
-        self.assertIsNone(response.json()["parent"])
-        self.assertNotIn("998907777777", str(response.content))
-
-    def test_a_teacher_does_not_on_any_host(self):
+    def test_a_teacher_is_not_let_onto_the_page(self):
         response = self.client_for(self.teacher).get(f"/api/users/admin/people/{self.kid.pk}/")
-        self.assertNotIn("998907777777", str(response.content))
-        if response.status_code == 200:
-            self.assertIsNone(response.json()["parent"])
+        self.assertEqual(response.status_code, 403)
+
+    def test_the_page_itself_gives_them_to_an_admin_alone(self):
+        self.assertIsNone(person_core(self.kid, SimpleNamespace(user=self.teacher))["parent"])
+        self.assertIsNone(person_core(self.kid)["parent"])
 
     def test_an_admin_edits_them(self):
         response = self.patch(self.admin, {"parent_name": " Salima ", "parent_phone": "90 123 45 67"})

@@ -80,17 +80,19 @@ def _check_billable(room) -> None:
         raise SeatRefused(f"{room.name} has no lesson days. Set them on the class first, or take them on trial.")
 
 
-def _check_can_enrol(user) -> None:
+def enrol_refusal(user) -> str | None:
+    """Why this account cannot simply be given a seat, or None."""
     role = str(user.role or "").strip().lower()
     if role == acc_const.ROLE_PUBLIC_STUDENT:
         # Owner, 2026-10-13: a first enrolment is always a new account; only someone coming back keeps theirs.
         if not (M.objects.filter(user=user, role=_STUDENT).exists() or Account.objects.filter(user=user).exists()):
-            raise SeatRefused(
+            return (
                 f"{display_name(user)} has a public account and was never at the centre. A first enrolment is a "
                 "new account: use New student with their phone."
             )
     elif role != acc_const.ROLE_STUDENT:
-        raise SeatRefused("Only a student account can take a seat.")
+        return "Only a student account can take a seat."
+    return None
 
 
 def _seated(room, user) -> M:
@@ -217,7 +219,9 @@ def _join(room, user, status, day, *, today, by, personal_price=None, why="") ->
 def add_student(room, user, status, day, *, today, by) -> M:
     """``trial`` writes no money; ``active`` pays from ``day``."""
     _check_open()
-    _check_can_enrol(user)
+    refusal = enrol_refusal(user)
+    if refusal:
+        raise SeatRefused(refusal)
     return _join(room, user, status, day, today=today, by=by)
 
 

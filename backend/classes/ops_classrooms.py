@@ -18,6 +18,7 @@ STUDENT, TA, ACTIVE = (
 SESSIONS_LIMIT = 20
 HOMEWORK_LIMIT = 20
 HISTORY_LIMIT = 200
+LEFT_LIMIT = 50
 
 #: A class's students: active STUDENT seats. TAs, teachers and removed seats are not students.
 STUDENT_SEATS = Count(
@@ -135,6 +136,8 @@ def _lcup_block(room):
 
 def classroom_core(room) -> dict:
     """What the class's change form opens with: its fields, its staff, its size and its lc-up pairing."""
+    from lcup.guards import seats_locked
+
     tas = (
         ClassroomMembership.objects.filter(classroom=room, role=TA, status__in=ClassroomMembership.NON_REMOVED_STATUSES)
         .select_related("user")
@@ -154,6 +157,8 @@ def classroom_core(room) -> dict:
         "telegram_chat_id": room.telegram_chat_id or "",
         "telegram_group_url": room.telegram_group_url or "",
         "max_students": room.max_students,
+        "monthly_price": room.monthly_price,
+        "seats_open": not seats_locked(),
         "schedule_summary": room.schedule_summary or "",
         "is_active": room.is_active,
         "join_code": room.join_code,
@@ -242,12 +247,21 @@ def roster_part(room, request=None) -> dict:
                 "avatar_url": profile_image_url(s.user, request),
                 "section": section_of(s.user),
                 "joined_at": iso(s.joined_at),
+                "seat_status": s.seat_status,
+                "seat_start_date": iso(s.seat_start_date),
                 "owes": owes(s.user_id),
                 "attendance_rate": compute_attendance_score(statuses[s.user_id]) if statuses[s.user_id] else None,
                 "homework_rate": homework_rate(s.user_id),
             }
             for s in seats
-        ]
+        ],
+        # Whose seat ended here on a known day, so a leaving date typed wrong can be put right.
+        "left": [
+            {"id": s.user_id, "name": display_name(s.user), "section": section_of(s.user), "seat_left_on": iso(s.seat_left_on)}
+            for s in ClassroomMembership.objects.filter(
+                classroom=room, role=STUDENT, status=ClassroomMembership.STATUS_REMOVED, seat_left_on__isnull=False
+            ).select_related("user").order_by("-seat_left_on")[:LEFT_LIMIT]
+        ],
     }
 
 
@@ -328,6 +342,8 @@ def class_history_part(room, request=None) -> dict:
         role = _ROLE_WORDS.get(ev.new_role)  # a staff seat says so; a student's is the default
         if role:
             title += f" ({role})"
+        if ev.note:
+            title += f": {ev.note}"
         items.append({"at": iso(timezone.localtime(ev.created_at)), "title": title, "by": ev.actor_name or ""})
     return {"items": items, "truncated": len(events) > HISTORY_LIMIT}
 

@@ -299,6 +299,19 @@ class ClassroomCreateSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "join_code", "created_at"]
 
 
+class ClassroomAdminSerializer(ClassroomCreateSerializer):
+    """With the group's price, an admin's alone: a teacher edits their class through the serializer above, and its
+    answer would show them the price."""
+
+    def validate_monthly_price(self, value):
+        if value is not None and value < 1:
+            raise serializers.ValidationError("A monthly price is above zero, or empty for none yet.")
+        return value
+
+    class Meta(ClassroomCreateSerializer.Meta):
+        fields = [*ClassroomCreateSerializer.Meta.fields, "monthly_price"]
+
+
 class ClassroomMembershipSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     #: An account the lc-up sync created whose owner has not signed in yet. The roster view puts

@@ -232,7 +232,7 @@ def _lcup_locked_fields(user) -> list[str]:
 
 
 def _parent(user, request):
-    """Whom to call about this learner. An admin's alone, though a subject-scoped teacher can open this page too."""
+    """Whom to call about this learner. An admin's alone, though anyone who manages users can open this page."""
     return {"name": user.parent_name, "phone": user.parent_phone} if is_global_admin(getattr(request, "user", None)) else None
 
 
