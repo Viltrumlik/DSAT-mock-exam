@@ -318,7 +318,12 @@ def move(room, user, to_room, day, *, today, by) -> M:
     _check_day(day, today)
     seat = _find_seat(room, user)
     status = row.seat_status
-    _end_seat(seat, day, EndReason.LEAVE, SeatState.LEFT, today=today)
+    last_paid = day
+    running = _running(seat) if seat else None
+    if running and day.isoweekday() in seat.days and day.isoweekday() in weekdays_of(to_room):
+        # Both groups hold a lesson that day and they sit one of them, the new group's: it is paid once.
+        last_paid = max(running.start, day - timedelta(days=1))
+    _end_seat(seat, last_paid, EndReason.LEAVE, SeatState.LEFT, today=today)
     row.status, row.seat_left_on = _REMOVED, day
     row.save(update_fields=["status", "seat_left_on"])
     return _join(

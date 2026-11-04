@@ -393,6 +393,13 @@ class MoveTests(SeatCase):
         self.assertEqual(self.seat().spans.get().ended_by, EndReason.LEAVE)
         self.assertEqual(self.seat(self.other).state, SeatState.ACTIVE)
 
+    def test_a_lesson_both_groups_hold_that_day_is_paid_once(self):
+        """They sit one of the two lessons: the month adds up to its price, with no lesson charged twice."""
+        same_days = self.make_room("Middle G3", days="ODD")
+        self.add("active", oct_(1))
+        self.move(to=same_days)
+        self.assertEqual(self.balance(), -269_000 - 231_000)
+
     def test_it_goes_through_the_audit(self):
         self.add("active", oct_(1))
         self.move()
