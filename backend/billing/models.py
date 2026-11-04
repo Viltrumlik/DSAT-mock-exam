@@ -112,3 +112,40 @@ class Entry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.key} {self.amount}"
+
+
+class BillingState(models.Model):
+    """One row: when the ledger opened, and where lc-up's payments begin to be its own."""
+
+    opened_at = models.DateTimeField(null=True, blank=True)
+    #: lc-up payments up to this id are inside the opening balance and are never copied.
+    opening_max_payment_id = models.BigIntegerField(default=0)
+    last_tick_at = models.DateTimeField(null=True, blank=True)
+
+    @classmethod
+    def get(cls) -> "BillingState":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
+class BillingRun(models.Model):
+    """The opening, each day's comparison with lc-up, and any 15-minute tick where something happened."""
+
+    class Kind(models.TextChoices):
+        OPEN = "open", "Opening"
+        TICK = "tick", "Tick"
+        COMPARE = "compare", "Comparison"
+
+    kind = models.CharField(max_length=10, choices=Kind.choices)
+    #: The day a comparison speaks for.
+    day = models.DateField(null=True, blank=True)
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    ok = models.BooleanField(default=True)
+    counts = models.JSONField(default=dict, blank=True)
+    errors = models.JSONField(default=list, blank=True)
+    alerts = models.JSONField(default=list, blank=True)
+    #: A comparison's differences, biggest first: {account_id, name, ours, lcup, diff}.
+    rows = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ["-started_at"]
