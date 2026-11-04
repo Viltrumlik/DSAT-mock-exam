@@ -22,6 +22,7 @@ from .views_people import PeopleListView
 from .views_people_detail import (
     PersonDetailView,
     PersonOneTimePasswordView,
+    PersonParentView,
     PersonPartView,
     PersonRevokeSessionsView,
 )
@@ -46,6 +47,7 @@ urlpatterns = [
     path('admin/people/<int:pk>/', PersonDetailView.as_view(), name='users-admin-person'),
     path('admin/people/<int:pk>/one-time-password/', PersonOneTimePasswordView.as_view(), name='users-admin-person-otp'),
     path('admin/people/<int:pk>/revoke-sessions/', PersonRevokeSessionsView.as_view(), name='users-admin-person-revoke'),
+    path('admin/people/<int:pk>/parent/', PersonParentView.as_view(), name='users-admin-person-parent'),
     path('admin/people/<int:pk>/<str:part>/', PersonPartView.as_view(), name='users-admin-person-part'),
     path('admin/bulk/', UserBulkActionView.as_view(), name='admin-user-bulk'),
     path('', UserListView.as_view(), name='user-list'),

@@ -62,8 +62,8 @@ class ClaimLoginTests(TestCase):
         self.assertIsNone(LcupClaimBackend().authenticate(None, username="998901234567", password="4567"))
 
     @override_settings(LCUP_ENABLED=False)
-    def test_nothing_signs_in_while_the_integration_is_off(self):
-        self.assertEqual(self.login("998901234567", "4567").status_code, 401)
+    def test_an_open_claim_outlives_the_integration(self):
+        self.assertEqual(self.login("998901234567", "4567").status_code, 200)
 
 
 @override_settings(LCUP_ENABLED=True)

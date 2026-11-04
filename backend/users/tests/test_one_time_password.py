@@ -88,10 +88,10 @@ class OneTimePasswordTests(TestCase):
         self.assertEqual(self.post(self.admin).status_code, 400)
 
     @override_settings(LCUP_ENABLED=False)
-    def test_nothing_changes_while_one_time_sign_in_is_off(self):
-        self.assertEqual(self.post(self.kid).status_code, 409)
+    def test_it_outlives_the_lc_up_integration(self):
+        self.assertEqual(self.post(self.kid).status_code, 200)
         self.kid.refresh_from_db()
-        self.assertTrue(self.kid.has_usable_password())
+        self.assertFalse(self.kid.has_usable_password())
 
     def test_the_page_says_a_one_time_password_is_open(self):
         url = f"/api/users/admin/people/{self.kid.pk}/"

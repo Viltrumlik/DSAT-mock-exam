@@ -10,6 +10,7 @@ from django.db.models import Count, Max, Q
 from django.db.models.functions import Lower
 
 from access import constants as C
+from classes.capabilities import is_global_admin
 from classes.models import Classroom, ClassroomMembership, Submission
 from classes.models_membership_audit import ClassroomMembershipEvent
 
@@ -230,6 +231,11 @@ def _lcup_locked_fields(user) -> list[str]:
     return locked_fields(user)
 
 
+def _parent(user, request):
+    """Whom to call about this learner. An admin's alone, though a subject-scoped teacher can open this page too."""
+    return {"name": user.parent_name, "phone": user.parent_phone} if is_global_admin(getattr(request, "user", None)) else None
+
+
 def person_core(user, request=None) -> dict:
     from lcup.models import LcupStudentLink, LinkStatus
 
@@ -253,6 +259,7 @@ def person_core(user, request=None) -> dict:
         "email": user.email or "",
         "email_verified": bool(user.email_verified),
         "phone": user.phone_number or "",
+        "parent": _parent(user, request) if learner else None,
         "role": user.role,
         "subject": user.subject or "",
         "status": status_of(user, section),

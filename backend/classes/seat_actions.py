@@ -17,6 +17,7 @@ from datetime import date, timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.utils import timezone
 
 from access import constants as acc_const
 from access.models import UserAccess
@@ -24,6 +25,7 @@ from billing import ledger
 from billing.models import Account, EndReason, Seat, SeatPriceChange, SeatState
 from users import audience as A
 from users.people_detail import display_name
+from users.phone_utils import clean_parent_phone
 
 from .models import Classroom, ClassroomMembership as M
 from .models_membership_audit import ClassroomMembershipEvent as Event
@@ -216,6 +218,30 @@ def add_student(room, user, status, day, *, today, by) -> M:
     """``trial`` writes no money; ``active`` pays from ``day``."""
     _check_open()
     _check_can_enrol(user)
+    return _join(room, user, status, day, today=today, by=by)
+
+
+@transaction.atomic
+def new_student(room, *, full_name, phone, status, day, today, by, parent_name="", parent_phone="") -> M:
+    """Someone new to the centre: a new account (``lcup.accounts.create_centre_account``) and their seat, together.
+    A refused seat takes the account, and any phone it moved, back with it. ``PhoneTaken`` says whose phone it is."""
+    from lcup.accounts import create_centre_account
+    from lcup.phones import normalize_phone
+
+    _check_open()
+    full_name = " ".join(str(full_name or "").split())
+    if not full_name:
+        raise SeatRefused("Enter the student's full name.")
+    login = normalize_phone(phone)
+    if not login:
+        raise SeatRefused("That is not an Uzbek phone number. They sign in with it, so it has to be one.")
+    try:
+        parent_phone = clean_parent_phone(parent_phone)
+    except ValueError as refused:
+        raise SeatRefused(f"Parent's phone: {refused}") from None
+    user = create_centre_account(
+        full_name[:200], login, now=timezone.now(), parent_name=str(parent_name or "").strip()[:200], parent_phone=parent_phone
+    )
     return _join(room, user, status, day, today=today, by=by)
 
 

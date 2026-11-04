@@ -194,6 +194,7 @@ EVENT_TITLES = {
     "session_revoke_others": "Signed out of other devices",
     "lcup_phone_confirmed": "Confirmed their phone number",
     "lcup_phone_moved": "Phone number moved to a new lc-up account",
+    "centre_phone_moved": "Phone number moved to a new learning center account",
     "lcup_claim_login": "First sign-in with an lc-up code",
     "email_verify_confirmed": "Verified their email",
     "auto_revoke_all_sessions": "Signed out everywhere by the risk check",

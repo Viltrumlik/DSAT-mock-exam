@@ -92,9 +92,52 @@ def create_teacher_account_for(link, *, subject: str, now) -> User | None:
     return user
 
 
-def _claimable_account(link, phone: str, *, now, **fields) -> User:
-    """The account, its first-sign-in claim, and the link pointing at it. Inside the caller's atomic."""
-    first_name, last_name = split_lcup_name(link.name)
+class PhoneTaken(Exception):
+    """The phone a new student was given is someone's already; ``account`` is whose, for the admin to see."""
+
+    def __init__(self, account):
+        super().__init__(f"phone taken by account {account.pk}")
+        self.account = account
+
+
+def create_centre_account(full_name: str, phone: str, *, now, **fields) -> User:
+    """A new student an admin enrols, with no lc-up behind them. ``phone`` is normalised. The owner's rules
+    (2026-10-13) as above: a phone on one public account moves here and that account keeps its email or Google
+    sign-in. Anyone else on it stops this, so the admin adds that person or types another phone for a sibling; so
+    does a public account whose LOGIN is the phone, which would lose its way in."""
+    holder = User.objects.filter(username__iexact=phone).first()
+    if holder is None:
+        # The claim backend looks a phone up among OPEN claims; two open on one phone would be a coin toss.
+        waiting = AccountClaim.objects.filter(phone=phone, password_set_at__isnull=True).select_related("user").first()
+        holder = waiting.user if waiting else None
+    if holder is not None:
+        raise PhoneTaken(holder)
+    owners = phone_owners(User.objects.all(), phone)
+    if owners and not (len(owners) == 1 and owners[0].role == acc_const.ROLE_PUBLIC_STUDENT):
+        raise PhoneTaken(owners[0])
+    moved = owners[0] if owners else None
+    try:
+        with transaction.atomic():
+            if moved:
+                moved.phone_number = None
+                moved.save(update_fields=["phone_number"])
+            user = _claimable_user(full_name, phone, now=now, role=acc_const.ROLE_STUDENT, **fields)
+            if moved:
+                SecurityAuditEvent.objects.create(
+                    user=moved, event_type="centre_phone_moved", detail={"to_user_id": user.pk}
+                )
+            return user
+    except IntegrityError:
+        # Someone took the username or phone between the check and the insert.
+        holder = User.objects.filter(username__iexact=phone).first() or User.objects.filter(phone_number=phone).first()
+        if holder is None:
+            raise
+        raise PhoneTaken(holder) from None
+
+
+def _claimable_user(name: str, phone: str, *, now, **fields) -> User:
+    """The account and its first-sign-in claim. Inside the caller's atomic."""
+    first_name, last_name = split_lcup_name(name)
     # password=None makes create_user store an unusable password.
     user = User.objects.create_user(
         None,
@@ -106,6 +149,12 @@ def _claimable_account(link, phone: str, *, now, **fields) -> User:
         **fields,
     )
     AccountClaim.objects.create(user=user, phone=phone, expires_at=now + timedelta(days=CLAIM_DAYS))
+    return user
+
+
+def _claimable_account(link, phone: str, *, now, **fields) -> User:
+    """The account, its claim, and the link pointing at it. Inside the caller's atomic."""
+    user = _claimable_user(link.name, phone, now=now, **fields)
     link.user = user
     link.status = LinkStatus.CREATED
     link.match_reason = "account created"
@@ -125,10 +174,6 @@ def issue_one_time_password(user, *, now) -> AccountClaim:
     again, reused whole: the password becomes unusable, the claim reopens for ``CLAIM_DAYS``, and the
     completion gate asks for a new password straight after that one sign-in (``claims``).
     """
-    from .conf import lcup_enabled
-
-    if not lcup_enabled():
-        raise OneTimePasswordRefused("One-time sign-in is turned off.")
     phone = normalize_phone(user.phone_number)
     if not phone:
         raise OneTimePasswordRefused("This account has no phone number. Add one first.")
