@@ -348,6 +348,9 @@ LCUP_ARCHIVE_SINCE = os.getenv("LCUP_ARCHIVE_SINCE", "2025-01-01").strip()
 # The money ledger beside lc-up (backend/billing; owner, 2026-11-04, the centre is leaving lc-up): it follows
 # lc-up and is compared with it each day. Off by default; literal "true" only.
 BILLING_SHADOW_ENABLED = os.getenv("BILLING_SHADOW_ENABLED", "False").lower() == "true"
+# Admins enter payments in the Ledger tab: for the cutover, and never while BILLING_SHADOW_ENABLED is on (a payment
+# entered here and in lc-up would count twice). Off by default; literal "true" only.
+BILLING_PAYMENTS_OPEN = os.getenv("BILLING_PAYMENTS_OPEN", "False").lower() == "true"
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.

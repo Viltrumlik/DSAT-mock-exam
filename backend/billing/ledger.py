@@ -7,6 +7,8 @@ It knows seats, spans and rows, and nothing about where a change came from: duri
 * Ending a span (leaving, a freeze) gives back the lessons not reached. Coming back is a new span.
 * A date that turns out wrong voids the span's rows and writes them again, so both stay visible.
 * Every row has a key and a key has one live row, so running any of this twice writes nothing twice.
+* A person enters payments, refunds and adjustments with ``enter_money`` and takes them back with
+  ``void_entered``. What the ledger wrote itself is never voided by hand.
 """
 
 import logging
@@ -18,9 +20,18 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .lessons import month_amount
-from .models import Entry, EntryKind, Span
+from .models import BillingState, Entry, EntryKind, PaymentMethod, Span
 
 logger = logging.getLogger(__name__)
+
+#: What the key of a row a person entered starts with: the only rows a person can void.
+MANUAL_KEY = "manual:"
+#: Stops a slip of the hand; a year of two groups is far below it.
+MAX_AMOUNT = 50_000_000
+
+
+class EntryRefused(ValueError):
+    """Why this money cannot be entered, in words for the person at the form."""
 
 
 def month_of(day: date) -> str:
@@ -64,6 +75,64 @@ def void(entry, reason: str, *, by=None) -> None:
         raise ValueError("A voided row needs a reason.")
     entry.voided_at, entry.voided_by, entry.void_reason = timezone.now(), by, reason[:300]
     entry.save(update_fields=["voided_at", "voided_by", "void_reason"])
+
+
+def was_entered_by_hand(entry) -> bool:
+    return entry.key.startswith(MANUAL_KEY)
+
+
+def _check_amount(amount) -> None:
+    if type(amount) is not int or amount <= 0:
+        raise EntryRefused("The amount must be a whole number of so'm above zero.")
+    if amount > MAX_AMOUNT:
+        raise EntryRefused(f"That amount is too large: the most is {MAX_AMOUNT:,} so'm at a time.")
+
+
+def enter_money(account, kind, amount, day, *, request_id, today, method="", note="", by=None) -> Entry:
+    """A payment, a refund or an adjustment a person enters. ``request_id`` comes from the form, so a double
+    click, or a retry after a lost answer, is the same row. An adjustment's amount carries its sign."""
+    key = f"{MANUAL_KEY}{request_id}"
+    existing = Entry.objects.filter(key=key).order_by("id").first()
+    if existing:
+        if existing.account_id != account.pk:
+            raise EntryRefused("This form was already used for another student. Reload the page.")
+        return existing
+    opened_at = BillingState.get().opened_at
+    if opened_at is None:
+        raise EntryRefused("The ledger is not open yet.")
+    if day > today:
+        raise EntryRefused("That day is in the future.")
+    if day < timezone.localdate(opened_at):
+        raise EntryRefused("That day is before the ledger's opening balance, which already carries that money.")
+    note = (note or "").strip()[:300]
+    if kind == EntryKind.ADJUST:
+        _check_amount(abs(amount) if type(amount) is int else amount)
+        if not note:
+            raise EntryRefused("An adjustment needs a reason.")
+        signed, method = amount, ""
+    elif kind in (EntryKind.PAYMENT, EntryKind.REFUND):
+        _check_amount(amount)
+        if method not in PaymentMethod.values:
+            raise EntryRefused("Choose a payment method.")
+        signed = amount if kind == EntryKind.PAYMENT else -amount
+    else:
+        raise EntryRefused("Only a payment, a refund or an adjustment can be entered.")
+    row = post(account, kind, signed, day, key, method=method, note=note, by=by)
+    return row or Entry.objects.get(key=key, voided_at__isnull=True)
+
+
+@transaction.atomic
+def void_entered(entry, reason: str, *, by) -> None:
+    """Take back money a person entered. Only that: a charge would be written again by the next tick, so a wrong
+    one is put right with an adjustment."""
+    row = Entry.objects.select_for_update().get(pk=entry.pk)
+    if not was_entered_by_hand(row):
+        raise EntryRefused("Only money entered by hand can be voided. Put anything else right with an adjustment.")
+    if row.voided_at:
+        raise EntryRefused("This row is already voided.")
+    if not (reason or "").strip():
+        raise EntryRefused("Say why this row is being voided.")
+    void(row, reason, by=by)
 
 
 def _give_back(span, month: str, charged: int, whole: int) -> None:
