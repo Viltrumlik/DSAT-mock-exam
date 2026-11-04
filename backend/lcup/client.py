@@ -7,8 +7,8 @@ happens only when there is none, or the one we just sent was refused — and the
 exactly one process logs in and the rest wait for its token.
 
 **The limits are lc-up's, enforced on our side** so we never meet them: 60 requests a minute per
-user (we stop at 55) and 2 requests at once per centre (two cache slots). 429/503 answers carry
-``Retry-After`` and are honoured.
+user (we stop at 55, in any 60 seconds: :meth:`LcupClient._pace`) and 2 requests at once per centre
+(two cache slots). 429/503 answers carry ``Retry-After`` and are honoured.
 
 **There is no generic ``post()``.** The only writes are the login and :meth:`LcupClient.post_attendance`.
 lc-up's ``POST /attendance`` charges a student's fee and messages their parents, so it is one named
@@ -17,6 +17,7 @@ method, behind its own switch (``LCUP_ATTENDANCE_PUSH_ENABLED``), that nothing c
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 
@@ -25,14 +26,20 @@ from django.core.cache import cache as default_cache
 
 from . import conf
 
+logger = logging.getLogger(__name__)
+
 TOKEN_KEY = "lcup:token"
 LOCK_KEY = "lcup:login-lock"
-RPM_KEY = "lcup:rpm:{minute}"
+SEAT_KEY = "lcup:seat:{seat}"
 SLOT_KEYS = ("lcup:slot:0", "lcup:slot:1")
 REQUESTS_PER_MINUTE = 55
+SEAT_SECONDS = 60
+SEAT_POLL_SECONDS = 0.5
 TIMEOUT = (5, 20)
 MAX_RETRIES = 3
 MAX_RETRY_AFTER = 60
+#: The least a 429 waits, per retry. The last one alone outlasts any lc-up minute.
+RATE_LIMIT_WAITS = (1, 15, 60)
 LOGIN_WAIT_SECONDS = 30
 ATTENDANCE_PATH = "/api/external/v1/attendance"
 MAX_ATTENDANCE_RECORDS = 100
@@ -72,21 +79,35 @@ def _refusal_reason(resp) -> str:
 
 
 def _retry_after(resp, attempt: int) -> float:
-    raw = resp.headers.get("Retry-After")
     try:
-        return min(int(raw), MAX_RETRY_AFTER)
+        told = max(min(int(resp.headers.get("Retry-After")), MAX_RETRY_AFTER), 0)
     except (TypeError, ValueError):
-        return min(2 ** attempt, MAX_RETRY_AFTER)
+        told = None
+    if resp.status_code == 429:
+        # Prod gave up after four refusals in a row (2026-11-04), so a wait of what lc-up said can end
+        # too soon: the header is in whole seconds, and a 0 would spend every retry at once. A refusal
+        # costs nothing to wait out; giving up costs the whole window of marks.
+        return max(MAX_RETRY_AFTER if told is None else told + 1, RATE_LIMIT_WAITS[attempt])
+    return min(2 ** attempt, MAX_RETRY_AFTER) if told is None else told
+
+
+def _limit_headers(resp) -> str:
+    """lc-up's own numbers on a refusal, for the log and the run's error."""
+    said = [
+        f"{name} {resp.headers.get(name)}"
+        for name in ("Retry-After", "X-RateLimit-Limit", "X-RateLimit-Remaining")
+        if resp.headers.get(name) is not None
+    ]
+    return f" ({', '.join(said)})" if said else ""
 
 
 class LcupClient:
-    def __init__(self, *, base_url, domain, mobile, password, session=None, cache=None, sleep=time.sleep, clock=time.time):
+    def __init__(self, *, base_url, domain, mobile, password, session=None, cache=None, sleep=time.sleep):
         self.base_url = (base_url or "").rstrip("/")
         self._creds = {"mobile_number": mobile, "password": password, "domain": domain}
         self.session = session or requests.Session()
         self.cache = cache or default_cache
         self.sleep = sleep
-        self.clock = clock
 
     # ── public ────────────────────────────────────────────────────────────
 
@@ -118,8 +139,10 @@ class LcupClient:
                 refreshed = True
                 continue
             if resp.status_code in (409, 429) or resp.status_code >= 500:
+                said = _limit_headers(resp)
+                logger.warning("lc-up answered %s on %s, try %s%s", resp.status_code, path, attempt + 1, said)
                 if attempt == MAX_RETRIES:
-                    raise LcupUnavailable(f"lc-up answered {resp.status_code} on {path}")
+                    raise LcupUnavailable(f"lc-up answered {resp.status_code} on {path}{said}")
                 self.sleep(_retry_after(resp, attempt))
                 continue
             if resp.status_code == 403:
@@ -196,17 +219,18 @@ class LcupClient:
             self.cache.delete(slot)
 
     def _pace(self) -> None:
-        now = self.clock()
-        minute = int(now // 60)
-        key = RPM_KEY.format(minute=minute)
-        self.cache.add(key, 0, timeout=120)
-        try:
-            count = self.cache.incr(key)
-        except ValueError:  # evicted between add and incr
-            self.cache.set(key, 1, timeout=120)
-            count = 1
-        if count > REQUESTS_PER_MINUTE:
-            self.sleep((minute + 1) * 60 - now + 0.05)
+        """Take one of ``REQUESTS_PER_MINUTE`` seats, each held for a minute, waiting for one to come
+        free. No 60 seconds can then hold more than that many requests, however lc-up counts its minute.
+        lc-up's is not the clock's, so a count per clock minute could not promise that: every archive
+        pass of 2026-11-04 met its limit. Spacing requests evenly would promise the same, but would hold
+        a sync back on every run, its attendance pushes last of all; alone, a sync never fills the seats
+        and never waits here."""
+        for _ in range(240):
+            for seat in range(REQUESTS_PER_MINUTE):
+                if self.cache.add(SEAT_KEY.format(seat=seat), "1", timeout=SEAT_SECONDS):
+                    return
+            self.sleep(SEAT_POLL_SECONDS)
+        raise LcupUnavailable("no free lc-up request seat")
 
     def _acquire_slot(self) -> str:
         for _ in range(240):
