@@ -70,6 +70,13 @@ class FillFromLcupTests(SeatCase):
         self.room.refresh_from_db()
         self.assertEqual(self.room.monthly_price, 450_000)
 
+    def test_a_price_lc_up_set_to_zero_clears_the_class(self):
+        Classroom.objects.filter(pk=self.room.pk).update(monthly_price=500_000)
+        LcupGroupLink.objects.filter(pk=self.group.pk).update(snapshot={"cost": 0, "days": [1, 3, 5]})
+        self.fill()
+        self.room.refresh_from_db()
+        self.assertIsNone(self.room.monthly_price)
+
     def test_an_unknown_status_changes_nothing(self):
         self.lcup_seat("paused")
         self.fill()

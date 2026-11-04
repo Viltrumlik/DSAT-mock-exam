@@ -26,11 +26,12 @@ def _links():
 
 
 def _cost(link) -> int | None:
+    """The group's price as lc-up states it, 0 included; ``None`` when it states none."""
     try:
-        cost = int(float((link.snapshot or {}).get("cost") or 0))
-    except (TypeError, ValueError):
+        cost = int(float((link.snapshot or {})["cost"]))
+    except (KeyError, TypeError, ValueError):
         return None
-    return cost if cost > 0 else None
+    return max(cost, 0)
 
 
 def fill_from_lcup() -> int:
@@ -40,8 +41,9 @@ def fill_from_lcup() -> int:
     links = list(_links())
     for link in links:
         room, cost = link.classroom, _cost(link)
-        if cost and room.monthly_price != cost:
-            Classroom.objects.filter(pk=room.pk).update(monthly_price=cost)
+        # No price from lc-up is a group with no price, which refuses a paid seat, never an old one kept.
+        if cost is not None and room.monthly_price != (cost or None):
+            Classroom.objects.filter(pk=room.pk).update(monthly_price=cost or None)
             written += 1
         rows = {row.user_id: row for row in M.objects.filter(classroom=room, role=M.ROLE_STUDENT)}
         for member in link.memberships.filter(student__user__isnull=False).select_related("student"):
