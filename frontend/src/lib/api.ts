@@ -1090,6 +1090,8 @@ export const classesApi = {
         return r.data;
     },
     create: async (data: { name: string; subject: 'ENGLISH' | 'MATH'; level?: string; description?: string; lesson_days: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number; start_date?: string; room_number?: string; telegram_chat_id?: string; teacher?: number; teacher_id?: number; max_students?: number; is_active?: boolean;
+        /** What a month costs, whole so'm. Written for an admin alone. */
+        monthly_price?: number;
         /** Where the class meets. Writable on the serializer; the REGION is derived from
          *  it server-side, so only the branch is ever sent. */
         branch?: number;
@@ -1336,7 +1338,7 @@ export const classesApi = {
         lesson_days?: 'ODD' | 'EVEN'; lesson_time?: string; lesson_hours?: number;
         start_date?: string | null; room_number?: string; branch?: number | null;
         telegram_group_url?: string; telegram_chat_id?: string; max_students?: number | null;
-        schedule_summary?: string; is_active?: boolean;
+        monthly_price?: number | null; schedule_summary?: string; is_active?: boolean;
     }) => {
         const r = await api.patch(`/classes/${classId}/details/`, data);
         return r.data;

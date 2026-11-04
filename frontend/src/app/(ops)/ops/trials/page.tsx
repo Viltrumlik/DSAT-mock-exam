@@ -6,9 +6,9 @@ import { NotOnListPanel, TrialStudentsPanel } from "@/features/lcup/LcupPanels";
 import { useLcupFollowups } from "@/features/lcup/lcupHooks";
 
 /**
- * Trials (owner, 2026-10-20): students lc-up holds on trial, and lc-up members no class list shows.
- * The teacher sends both kinds to the desk. The desk activates or links them in lc-up, and they
- * leave these lists within one sync. Nothing here writes.
+ * Trials (owner, 2026-10-20): students on trial, and lc-up members no class list shows. The teacher
+ * sends both kinds to the desk. While lc-up runs the desk activates or links them there, and they
+ * leave these lists within one sync; once it is off the desk activates or removes them here.
  */
 export default function OpsTrialsPage() {
   const [tab, setTab] = useState("trials");
@@ -23,8 +23,16 @@ export default function OpsTrialsPage() {
       <header>
         <h1 className="text-lg font-semibold text-foreground">Trials</h1>
         <p className="text-[13px] text-muted-foreground">
-          Students on trial in lc-up, and lc-up members their class list does not show. The free trial is {free} lesson
-          {free === 1 ? "" : "s"}. Activate or link a student in lc-up — they leave this page within 15 minutes.
+          {q.data?.seats_open ? (
+            <>
+              Students on trial. The free trial is {free} lesson{free === 1 ? "" : "s"}. Activate or remove them here.
+            </>
+          ) : (
+            <>
+              Students on trial in lc-up, and lc-up members their class list does not show. The free trial is {free} lesson
+              {free === 1 ? "" : "s"}. Activate or link a student in lc-up — they leave this page within 15 minutes.
+            </>
+          )}
         </p>
       </header>
       <Tabs tabs={tabs} value={tab} onValueChange={setTab} aria-label="Trials sections" />

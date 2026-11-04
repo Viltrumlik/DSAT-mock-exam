@@ -2,6 +2,9 @@
 
 import { useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
+import { classroomKeys } from "@/features/ops/classrooms/classroomsApi";
+import { SeatActionDialog } from "@/features/ops/classrooms/sections/SeatDialogs";
 import { useOrgClassrooms } from "@/features/org/orgHooks";
 import { formatApiErrorForToast } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
@@ -13,12 +16,15 @@ import {
   type LcupGroup,
   type LcupPerson,
   type LcupPhoneConflict,
+  type LcupRef,
   type LcupRun,
+  type LcupUserRef,
   type LinkStatus,
   type StudentFilter,
   type TrialState,
 } from "./lcupApi";
 import {
+  lcupKeys,
   useLcupAccounts,
   useLcupArchive,
   useLcupAttendancePushes,
@@ -886,42 +892,85 @@ const TRIAL_STATE: Record<TrialState, { label: string; tone: string }> = {
 
 const PERSON_LINK = "text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary";
 
-/** lc-up's trial students, neediest first — activate them in lc-up and they leave within one sync. */
+/**
+ * Trial students, neediest first. While lc-up runs they are activated there and leave within one sync; once it is
+ * off (`seats_open`) an admin activates or removes them here.
+ */
 export function TrialStudentsPanel() {
   const q = useLcupFollowups();
+  const qc = useQueryClient();
+  const [asking, setAsking] = useState<{ action: "activate" | "leave"; room: LcupRef; student: LcupUserRef; name: string } | null>(null);
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) return <LoadError error={q.error} onRetry={() => void q.refetch()} />;
-  if (!q.data.trials.length) return <p className="text-[13px] text-muted-foreground">No one is on trial in lc-up right now.</p>;
+  const open = q.data.seats_open ?? false;
+  if (!q.data.trials.length) {
+    return (
+      <p className="text-[13px] text-muted-foreground">
+        {open ? "No one is on trial right now." : "No one is on trial in lc-up right now."}
+      </p>
+    );
+  }
   return (
-    <DenseTable
-      caption="Trial students"
-      head={
-        <>
-          <th scope="col" className={TH}>Student</th>
-          <th scope="col" className={TH}>Class</th>
-          <th scope="col" className={TH}>Teacher</th>
-          <th scope="col" className={TH}>Trial since</th>
-          <th scope="col" className={TH_R}>Lessons came</th>
-          <th scope="col" className={TH}>Status</th>
-        </>
-      }
-    >
-      {q.data.trials.map((row) => (
-        <tr key={row.membership_id} className={TR}>
-          <td className={cn(TD, "font-medium")}>
-            {row.student ? <Link href={`/ops/students/${row.student.id}`} className={PERSON_LINK}>{row.name}</Link> : row.name}
-          </td>
-          <td className={TD}>{row.classroom.name}</td>
-          <td className={TD}>{row.teachers.join(", ") || "—"}</td>
-          <td className={TD}>{row.since ?? "—"}</td>
-          <td className={TD_R}>{row.lessons}</td>
-          <td className={cn(TD, TRIAL_STATE[row.state].tone)}>
-            {TRIAL_STATE[row.state].label}
-            {row.state === "came" && row.first_lesson ? ` (${row.first_lesson})` : ""}
-          </td>
-        </tr>
-      ))}
-    </DenseTable>
+    <>
+      <DenseTable
+        caption="Trial students"
+        head={
+          <>
+            <th scope="col" className={TH}>Student</th>
+            <th scope="col" className={TH}>Class</th>
+            <th scope="col" className={TH}>Teacher</th>
+            <th scope="col" className={TH}>Trial since</th>
+            <th scope="col" className={TH_R}>Lessons came</th>
+            <th scope="col" className={TH}>Status</th>
+            {open ? <th scope="col" className={TH} aria-label="Actions" /> : null}
+          </>
+        }
+      >
+        {q.data.trials.map((row) => (
+          <tr key={row.membership_id} className={TR}>
+            <td className={cn(TD, "font-medium")}>
+              {row.student ? <Link href={`/ops/students/${row.student.id}`} className={PERSON_LINK}>{row.name}</Link> : row.name}
+            </td>
+            <td className={TD}>{row.classroom.name}</td>
+            <td className={TD}>{row.teachers.join(", ") || "—"}</td>
+            <td className={TD}>{row.since ?? "—"}</td>
+            <td className={TD_R}>{row.lessons}</td>
+            <td className={cn(TD, TRIAL_STATE[row.state].tone)}>
+              {TRIAL_STATE[row.state].label}
+              {row.state === "came" && row.first_lesson ? ` (${row.first_lesson})` : ""}
+            </td>
+            {open ? (
+              <td className={TD}>
+                {row.student ? (
+                  <span className="flex justify-end gap-1.5">
+                    <Btn primary onClick={() => setAsking({ action: "activate", room: row.classroom, student: row.student!, name: row.name })}>
+                      Activate
+                    </Btn>
+                    <Btn onClick={() => setAsking({ action: "leave", room: row.classroom, student: row.student!, name: row.name })}>
+                      Remove
+                    </Btn>
+                  </span>
+                ) : null}
+              </td>
+            ) : null}
+          </tr>
+        ))}
+      </DenseTable>
+      {asking ? (
+        <SeatActionDialog
+          roomId={asking.room.id}
+          student={{ id: asking.student.id, name: asking.name }}
+          action={asking.action}
+          words={asking.action === "leave" ? { title: `Remove ${asking.name} from ${asking.room.name}?`, confirm: "Remove" } : undefined}
+          onClose={() => setAsking(null)}
+          onDone={() => {
+            setAsking(null);
+            void qc.invalidateQueries({ queryKey: lcupKeys.followups });
+            void qc.invalidateQueries({ queryKey: classroomKeys.all });
+          }}
+        />
+      ) : null}
+    </>
   );
 }
 

@@ -45,6 +45,7 @@ const { ClassroomPage } = await import("../ClassroomPage");
 
 const LOCKED = [
   "name", "subject", "level", "lesson_days", "lesson_time", "lesson_hours", "branch", "room_number", "start_date", "is_active",
+  "monthly_price",
 ];
 
 function core(over: Partial<ClassroomCore> = {}): ClassroomCore {
@@ -63,6 +64,8 @@ function core(over: Partial<ClassroomCore> = {}): ClassroomCore {
     telegram_chat_id: "",
     telegram_group_url: "",
     max_students: null,
+    monthly_price: 500000,
+    seats_open: false,
     schedule_summary: "",
     is_active: true,
     join_code: "ABC123",

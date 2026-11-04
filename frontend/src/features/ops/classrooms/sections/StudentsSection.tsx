@@ -5,11 +5,11 @@ import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Lock, Search, UserPlus, Users } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
-import { Avatar } from "@/components/ui";
+import { Avatar, Badge } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
-import type { PeoplePage, StudentRow } from "@/features/ops/changelist/peopleApi";
+import type { PeoplePage, PublicRow, StudentRow } from "@/features/ops/changelist/peopleApi";
 import { formatDate } from "@/features/ops/users/peopleColumns";
 import {
   Fieldset,
@@ -21,14 +21,18 @@ import {
   WIDE_ONLY,
   type Column,
 } from "@/features/ops/people/Fieldset";
+import { formatDay } from "@/features/ops/people/format";
 import { rateTone } from "@/features/ops/people/PersonHeader";
 import { serverReason, useClassroomPart, type ClassroomCore, type ClassroomRoster } from "../classroomsApi";
+import type { SeatAction, SeatStatus } from "../seatsApi";
+import { AddSeatDialog, NewStudentDialog, SeatActionDialog } from "./SeatDialogs";
 
 /**
- * The class's students, each with their photo, what they owe and how they are doing here — a debt
- * in red, a rate in the colour of its verdict. A class that follows an lc-up group takes its
- * students from lc-up, so it offers no add or remove (the server refuses both); any other class
- * adds students by search and removes them here.
+ * The class's students, each with their seat, photo, what they owe and how they are doing here — a
+ * debt in red, a rate in the colour of its verdict. While lc-up runs a class that follows it offers
+ * no add or remove (the server refuses both), and any other class adds by search and removes here,
+ * with no money. Once lc-up is off (`room.seats_open`) a seat is the admin's: add, new student, and
+ * per row the actions that fit it, each writing the seat and the ledger together.
  */
 
 export const SMALL_BUTTON =
@@ -36,23 +40,63 @@ export const SMALL_BUTTON =
 
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n)}%`);
 
-function AddStudent({ room, onAdded }: { room: ClassroomCore; onAdded: () => void }) {
+/** What fits each seat, in the order they read; the server refuses anything else anyway. */
+const SEAT_ACTIONS: Record<SeatStatus, { action: SeatAction; label: string }[]> = {
+  trial: [
+    { action: "activate", label: "Activate" },
+    { action: "move", label: "Move" },
+    { action: "leave", label: "Leave" },
+    { action: "fix-date", label: "Fix date" },
+  ],
+  active: [
+    { action: "freeze", label: "Freeze" },
+    { action: "move", label: "Move" },
+    { action: "leave", label: "Leave" },
+    { action: "fix-date", label: "Fix date" },
+  ],
+  frozen: [
+    { action: "return", label: "Return" },
+    { action: "leave", label: "Leave" },
+    { action: "fix-date", label: "Fix date" },
+  ],
+};
+
+/** Which date Fix date is about: the one the seat is standing on. */
+const FIXED_DATE: Record<SeatStatus, string> = { trial: "Start date", active: "Start date", frozen: "Frozen from" };
+
+type Found = (StudentRow | PublicRow) & { groups?: StudentRow["groups"] };
+
+function AddStudent({
+  room,
+  onAdded,
+  onChoose,
+}: {
+  room: ClassroomCore;
+  onAdded: () => void;
+  /** Once seats are open: asks trial or active and the date, rather than adding straight away. */
+  onChoose?: (row: { id: number; name: string }) => void;
+}) {
   const { push } = useToast();
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
   const term = q.trim();
   const search = useQuery({
-    queryKey: ["ops", "classrooms", room.id, "add-student", term],
+    queryKey: ["ops", "classrooms", room.id, "add-student", term, Boolean(onChoose)],
     enabled: term.length >= 2,
     placeholderData: keepPreviousData,
-    queryFn: async () =>
-      (await api.get<PeoplePage<StudentRow>>("/users/admin/people/", { params: { section: "students", q: term, page_size: 25 } }))
-        .data,
+    queryFn: async (): Promise<Found[]> => {
+      const read = async (section: string) =>
+        (await api.get<PeoplePage<Found>>("/users/admin/people/", { params: { section, q: term, page_size: 25 } })).data.results;
+      // Someone coming back is a public account by now; the server refuses one who was never at the centre.
+      const lists = await Promise.all(onChoose ? [read("students"), read("public")] : [read("students")]);
+      return lists.flat();
+    },
   });
-  // The roster endpoint enrols student accounts only; a public learner joins the centre through lc-up.
-  const rows = (search.data?.results ?? []).filter((r) => !r.groups.some((g) => g.id === room.id)).slice(0, 8);
+  // While lc-up runs the roster endpoint enrols student accounts only: a public learner joins through lc-up.
+  const rows = (search.data ?? []).filter((r) => !(r.groups ?? []).some((g) => g.id === room.id)).slice(0, 8);
 
-  const add = async (row: StudentRow) => {
+  const add = async (row: Found) => {
+    if (onChoose) return onChoose({ id: row.id, name: row.name || row.username || "" });
     setBusy(true);
     try {
       await classesApi.addMember(room.id, row.id);
@@ -84,7 +128,12 @@ function AddStudent({ room, onAdded }: { room: ClassroomCore; onAdded: () => voi
         />
       </div>
       {term.length < 2 ? null : search.isError ? (
-        <p className="mt-2 text-sm text-muted-foreground">Could not search. Try again.</p>
+        <p role="alert" className="mt-2 text-sm text-muted-foreground">
+          Could not search.{" "}
+          <button type="button" className="font-semibold text-primary hover:underline" onClick={() => void search.refetch()}>
+            Retry
+          </button>
+        </p>
       ) : search.isPending ? (
         <p className="mt-2 text-sm text-muted-foreground">Searching…</p>
       ) : rows.length === 0 ? (
@@ -98,7 +147,7 @@ function AddStudent({ room, onAdded }: { room: ClassroomCore; onAdded: () => voi
                 <span className="min-w-0 leading-tight">
                   <span className="block truncate text-sm font-medium text-foreground">{r.name || r.username}</span>
                   <span className="block truncate text-xs text-muted-foreground">
-                    {r.groups.map((g) => g.name).join(", ") || "no class"}
+                    {r.groups ? r.groups.map((g) => g.name).join(", ") || "no class" : "public account"}
                   </span>
                 </span>
               </span>
@@ -113,11 +162,22 @@ function AddStudent({ room, onAdded }: { room: ClassroomCore; onAdded: () => voi
   );
 }
 
+type SeatDialog =
+  | { kind: "action"; action: SeatAction; student: { id: number; name: string }; day?: string | null; dateLabel?: string }
+  | { kind: "add"; student: { id: number; name: string } }
+  | { kind: "new" };
+
 export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onChanged: () => void }) {
   const managed = room.lcup?.managed ?? false;
+  const seatsOpen = room.seats_open ?? false;
   const query = useClassroomPart<ClassroomRoster>(room.id, "roster");
   const { push } = useToast();
   const [busy, setBusy] = useState(false);
+  const [dialog, setDialog] = useState<SeatDialog | null>(null);
+  const done = () => {
+    setDialog(null);
+    onChanged();
+  };
 
   const remove = async (id: number, name: string) => {
     setBusy(true);
@@ -143,67 +203,166 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
   ];
 
   return (
-    <Fieldset title="Students" icon={Users} description="Who sits in this class, what they owe and how they are doing">
+    <Fieldset
+      title="Students"
+      icon={Users}
+      description="Who sits in this class, what they owe and how they are doing"
+      right={
+        seatsOpen ? (
+          <button type="button" className={SMALL_BUTTON} onClick={() => setDialog({ kind: "new" })}>
+            <UserPlus aria-hidden className="h-4 w-4" />
+            New student
+          </button>
+        ) : null
+      }
+    >
       {managed ? (
         <p className="mb-5 flex items-start gap-2.5 rounded-lg border border-info/20 bg-info-soft px-3.5 py-3 text-sm text-info-foreground">
           <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
           Students come from lc-up. Add or remove them there.
         </p>
       ) : (
-        <AddStudent room={room} onAdded={onChanged} />
+        <AddStudent
+          room={room}
+          onAdded={onChanged}
+          onChoose={seatsOpen ? (student) => setDialog({ kind: "add", student }) : undefined}
+        />
       )}
       <PartBody
         query={query}
-        isEmpty={(d) => d.students.length === 0}
+        isEmpty={(d) => d.students.length === 0 && !(d.left ?? []).length}
         render={(d) => (
-          <Table head={head}>
-            {d.students.map((s) => (
-              <tr key={s.id}>
-                <Td wrap className="sm:max-w-[18rem]">
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
-                    <span className="min-w-0">
-                      {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
-                      <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "break-words sm:truncate")}>
-                        {s.name || s.username}
-                      </Link>
+          <>
+            {d.students.length > 0 ? (
+              <Table head={head}>
+                {d.students.map((s) => (
+                  <tr key={s.id}>
+                    <Td wrap className="sm:max-w-[18rem]">
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
+                        <span className="min-w-0">
+                          {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
+                          <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "break-words sm:truncate")}>
+                            {s.name || s.username}
+                          </Link>
+                          {s.seat_status === "trial" ? <Badge variant="info" className="ml-1.5">Trial</Badge> : null}
+                          {s.seat_status === "frozen" ? <Badge variant="warning" className="ml-1.5">Frozen</Badge> : null}
+                          {s.owes ? (
+                            <span className="block text-xs font-semibold text-danger sm:hidden">owes {formatUzs(s.owes)}</span>
+                          ) : null}
+                        </span>
+                      </span>
+                    </Td>
+                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
+                      {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
+                    </Td>
+                    <Td className={`${WIDE_ONLY} tabular-nums`}>
                       {s.owes ? (
-                        <span className="block text-xs font-semibold text-danger sm:hidden">owes {formatUzs(s.owes)}</span>
-                      ) : null}
-                    </span>
-                  </span>
-                </Td>
-                <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>{formatDate(s.joined_at)}</Td>
-                <Td className={`${WIDE_ONLY} tabular-nums`}>
-                  {s.owes ? (
-                    <span className="font-semibold text-danger">{formatUzs(s.owes)}</span>
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </Td>
-                <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
-                  {pct(s.attendance_rate)}
-                </Td>
-                <Td className={cn(WIDE_ONLY, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
-                  {pct(s.homework_rate)}
-                </Td>
-                {managed ? null : (
-                  <Td className="text-right">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void remove(s.id, s.name || s.username)}
-                      className={SMALL_BUTTON}
-                    >
-                      Remove
-                    </button>
-                  </Td>
-                )}
-              </tr>
-            ))}
-          </Table>
+                        <span className="font-semibold text-danger">{formatUzs(s.owes)}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </Td>
+                    <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
+                      {pct(s.attendance_rate)}
+                    </Td>
+                    <Td className={cn(WIDE_ONLY, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
+                      {pct(s.homework_rate)}
+                    </Td>
+                    {managed ? null : seatsOpen ? (
+                      <Td wrap className="text-right">
+                        <span className="inline-flex flex-wrap justify-end gap-1.5">
+                          {SEAT_ACTIONS[s.seat_status ?? "active"].map(({ action, label }) => (
+                            <button
+                              key={action}
+                              type="button"
+                              onClick={() =>
+                                setDialog({
+                                  kind: "action",
+                                  action,
+                                  student: { id: s.id, name: s.name || s.username },
+                                  ...(action === "fix-date"
+                                    ? { day: s.seat_status === "frozen" ? null : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
+                                    : {}),
+                                })
+                              }
+                              className={SMALL_BUTTON}
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </span>
+                      </Td>
+                    ) : (
+                      <Td className="text-right">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => void remove(s.id, s.name || s.username)}
+                          className={SMALL_BUTTON}
+                        >
+                          Remove
+                        </button>
+                      </Td>
+                    )}
+                  </tr>
+                ))}
+              </Table>
+            ) : null}
+            {seatsOpen && (d.left ?? []).length > 0 ? (
+              <div className="mt-5">
+                <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Left this group</h3>
+                <Table head={["Name", "Last day", ""]}>
+                  {d.left.map((s) => (
+                    <tr key={s.id}>
+                      <Td wrap>
+                        <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={LINK_CLASS}>
+                          {s.name}
+                        </Link>
+                      </Td>
+                      <Td className="tabular-nums text-muted-foreground">{formatDay(s.seat_left_on)}</Td>
+                      <Td className="text-right">
+                        <button
+                          type="button"
+                          className={SMALL_BUTTON}
+                          onClick={() =>
+                            setDialog({
+                              kind: "action",
+                              action: "fix-date",
+                              student: { id: s.id, name: s.name },
+                              day: s.seat_left_on,
+                              dateLabel: "Last day",
+                            })
+                          }
+                        >
+                          Fix date
+                        </button>
+                      </Td>
+                    </tr>
+                  ))}
+                </Table>
+              </div>
+            ) : null}
+          </>
         )}
       />
+      {dialog?.kind === "action" ? (
+        <SeatActionDialog
+          roomId={room.id}
+          student={dialog.student}
+          action={dialog.action}
+          day={dialog.day}
+          dateLabel={dialog.dateLabel}
+          onClose={() => setDialog(null)}
+          onDone={done}
+        />
+      ) : null}
+      {dialog?.kind === "add" ? (
+        <AddSeatDialog roomId={room.id} student={dialog.student} onClose={() => setDialog(null)} onDone={done} />
+      ) : null}
+      {dialog?.kind === "new" ? (
+        <NewStudentDialog roomId={room.id} onClose={() => setDialog(null)} onDone={onChanged} />
+      ) : null}
     </Fieldset>
   );
 }

@@ -38,6 +38,7 @@ type CreateForm = {
   lesson_days: "ODD" | "EVEN";
   lesson_time: string;
   room_number: string;
+  monthlyPrice: string;
   teacherId: string; // "" = assign a teacher later
   supportIds: number[];
   telegramChatId: string;
@@ -46,7 +47,7 @@ type CreateForm = {
   branchId: string;
 };
 const BLANK: CreateForm = {
-  name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "",
+  name: "", subject: "ENGLISH", level: "", lesson_days: "ODD", lesson_time: "", room_number: "", monthlyPrice: "",
   teacherId: "", supportIds: [], telegramChatId: "", regionId: "", branchId: "",
 };
 
@@ -114,6 +115,7 @@ export function CreateClassroomModal({
         lesson_days: form.lesson_days,
         lesson_time: form.lesson_time.trim() || undefined,
         room_number: form.room_number.trim() || undefined,
+        monthly_price: form.monthlyPrice.trim() ? Number(form.monthlyPrice) : undefined,
         teacher_id: form.teacherId ? Number(form.teacherId) : undefined,
         telegram_chat_id: form.telegramChatId.trim() || undefined,
         support_teacher_ids: form.supportIds.length ? form.supportIds : undefined,
@@ -229,6 +231,16 @@ export function CreateClassroomModal({
               id="create-room"
               value={form.room_number}
               onChange={(e) => setForm({ ...form, room_number: e.target.value })}
+              placeholder="Optional"
+            />
+          </Field>
+          <Field label="Monthly price (so'm)" htmlFor="create-price">
+            <Input
+              id="create-price"
+              type="number"
+              min={1}
+              value={form.monthlyPrice}
+              onChange={(e) => setForm({ ...form, monthlyPrice: e.target.value })}
               placeholder="Optional"
             />
           </Field>

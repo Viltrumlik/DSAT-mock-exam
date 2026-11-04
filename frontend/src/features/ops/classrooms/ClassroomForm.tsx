@@ -67,6 +67,7 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
   const [chatId, setChatId] = useState(room.telegram_chat_id);
   const [groupUrl, setGroupUrl] = useState(room.telegram_group_url);
   const [maxStudents, setMaxStudents] = useState(room.max_students == null ? "" : String(room.max_students));
+  const [price, setPrice] = useState(room.monthly_price == null ? "" : String(room.monthly_price));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,6 +106,7 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
         telegram_chat_id: chatId.trim(),
         telegram_group_url: groupUrl.trim(),
         max_students: maxStudents.trim() ? Number(maxStudents) : null,
+        monthly_price: price.trim() ? Number(price) : null,
       };
       if (hours.trim()) payload.lesson_hours = Number(hours);
       for (const field of locked) delete payload[field];
@@ -126,8 +128,8 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
             <Lock aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
             {/* The group's name is in the Summary beside this form; lc-up's names run long. */}
             <span>
-              This class follows its lc-up group. Its name, schedule, room and branch come from lc-up at every sync —
-              change them there.
+              This class follows its lc-up group. Its name, schedule, room, branch and price come from lc-up at every
+              sync — change them there.
             </span>
           </p>
         ) : null}
@@ -157,6 +159,18 @@ export function ClassroomForm({ room, onSaved }: { room: ClassroomCore; onSaved:
               value={maxStudents}
               onChange={(e) => setMaxStudents(e.target.value)}
               placeholder="No limit"
+              className={INPUT}
+            />
+          </Field>
+          <Field id={id("price")} label="Monthly price (so'm)" locked={off("monthly_price")}>
+            <input
+              id={id("price")}
+              type="number"
+              min={1}
+              value={price}
+              disabled={off("monthly_price")}
+              onChange={(e) => setPrice(e.target.value)}
+              placeholder="Not set"
               className={INPUT}
             />
           </Field>

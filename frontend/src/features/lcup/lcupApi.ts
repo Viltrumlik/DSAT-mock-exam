@@ -195,8 +195,10 @@ export interface LcupMissingRow {
   reason_text: string;
 }
 
-/** /ops/trials (backend lcup.followups): read-only; a student is activated in lc-up itself. */
+/** /ops/trials (backend lcup.followups). While lc-up runs a student is activated there; after it, on the page. */
 export interface LcupFollowups {
+  /** The seat actions are open: lc-up no longer runs. */
+  seats_open?: boolean;
   free_trial_lessons: number;
   trials: LcupTrialRow[];
   not_on_list: LcupMissingRow[];
