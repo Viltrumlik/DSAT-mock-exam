@@ -9,18 +9,21 @@ import {
   PaymentsPanel,
   currentMonth,
 } from "@/features/finance/FinancePanels";
+import { LedgerPanel } from "@/features/finance/LedgerPanel";
 
 /**
  * Money as lc-up keeps it: who owes and how much, who is frozen for it (or exempt from the
  * freeze), and what was paid each month. lc-up is the ledger — nothing here changes a balance;
  * the one write is exempting a student from the monthly debt freeze. Its own page, not a tab of
- * /ops/lcup: the owner wanted the money apart from the sync.
+ * /ops/lcup: the owner wanted the money apart from the sync. The Ledger tab is the centre's own
+ * ledger, running beside lc-up until the cutover.
  */
 
 const TABS = [
   { value: "overview", label: "Overview" },
   { value: "debtors", label: "Debtors" },
   { value: "payments", label: "Payments" },
+  { value: "ledger", label: "Ledger" },
 ];
 
 export default function OpsFinancePage() {
@@ -36,11 +39,12 @@ export default function OpsFinancePage() {
         </p>
       </header>
       <Tabs tabs={TABS} value={tab} onValueChange={setTab} aria-label="Finance sections" />
-      {/* Debtors are "right now" — only the overview and the payments belong to a month. */}
-      {tab !== "debtors" ? <MonthPicker value={month} onChange={setMonth} /> : null}
+      {/* Debtors and the ledger are "right now" — only the overview and the payments belong to a month. */}
+      {tab === "overview" || tab === "payments" ? <MonthPicker value={month} onChange={setMonth} /> : null}
       {tab === "overview" ? <FinanceOverviewPanel month={month} /> : null}
       {tab === "debtors" ? <DebtorsPanel /> : null}
       {tab === "payments" ? <PaymentsPanel month={month} /> : null}
+      {tab === "ledger" ? <LedgerPanel /> : null}
     </div>
   );
 }

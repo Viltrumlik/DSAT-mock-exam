@@ -21,22 +21,22 @@ import { useDebtors, useFinanceSummary, useMonthPayments, useSetExempt } from ".
 // `cn` does not merge Tailwind classes, so a cell's alignment and colour are never set twice:
 // the table carries the colour and `nowrap` (both inherit), a cell only adds what differs.
 
-const BOX = "border border-border bg-card";
-const CAPTION =
+export const BOX = "border border-border bg-card";
+export const CAPTION =
   "border-b border-border px-3 py-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-muted-foreground";
-const TABLE = "w-full border-separate border-spacing-0 whitespace-nowrap text-[13px] text-foreground";
+export const TABLE = "w-full border-separate border-spacing-0 whitespace-nowrap text-[13px] text-foreground";
 const TH_BASE = "h-8 border-b border-border bg-card px-2 text-[12px] font-semibold text-muted-foreground";
-const TH = `${TH_BASE} text-left`;
-const TH_R = `${TH_BASE} text-right`;
-const TD = "h-[34px] border-b border-border px-2 py-1";
-const TD_R = `${TD} text-right tabular-nums`;
-const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
-const CONTROL =
+export const TH = `${TH_BASE} text-left`;
+export const TH_R = `${TH_BASE} text-right`;
+export const TD = "h-[34px] border-b border-border px-2 py-1";
+export const TD_R = `${TD} text-right tabular-nums`;
+export const TR = "hover:bg-surface-2 [&:last-child>td]:border-b-0";
+export const CONTROL =
   "h-7 rounded-md border border-border bg-card px-2 text-[13px] text-foreground placeholder:text-muted-foreground focus-visible:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30";
-const TEXT_BUTTON =
+export const TEXT_BUTTON =
   "rounded-sm text-[13px] font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline dark:text-primary-hover";
 
-function Btn({ primary, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
+export function Btn({ primary, className, ...rest }: ButtonHTMLAttributes<HTMLButtonElement> & { primary?: boolean }) {
   return (
     <button
       type="button"
@@ -81,7 +81,7 @@ export function monthLabel(month: string, style: "long" | "short" = "long"): str
 }
 
 /** "2026-10-03" → "3 Oct 2026". Parsed by hand: `new Date("2026-10-03")` is UTC midnight. */
-function day(iso: string | null | undefined): string {
+export function day(iso: string | null | undefined): string {
   if (!iso) return "—";
   const [year, mon, date] = iso.slice(0, 10).split("-").map(Number);
   if (!year || !mon || !date) return iso;
@@ -108,7 +108,7 @@ export function MonthPicker({ value, onChange }: { value: string; onChange: (mon
 
 // ── shared states ────────────────────────────────────────────────────────
 
-function Loading() {
+export function Loading() {
   return (
     <p role="status" className="text-[13px] text-muted-foreground">
       Loading…
@@ -116,7 +116,7 @@ function Loading() {
   );
 }
 
-function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+export function LoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
   return (
     <div role="alert" className={cn(BOX, "px-3 py-3 text-[13px]")}>
       <span className="font-semibold text-danger">This did not load.</span>{" "}
@@ -135,7 +135,7 @@ const METHOD_LABEL: Record<string, string> = {
   "Bank hisobi": "Bank transfer",
 };
 
-function methodLabel(method: string): string {
+export function methodLabel(method: string): string {
   const key = method.trim();
   if (!key || key === "—") return "—";
   return METHOD_LABEL[key] ?? key;
@@ -147,7 +147,7 @@ function list(names: string[]): string {
 
 // ── overview ─────────────────────────────────────────────────────────────
 
-function Figure({ label, value, debt = false }: { label: string; value: string; debt?: boolean }) {
+export function Figure({ label, value, debt = false }: { label: string; value: string; debt?: boolean }) {
   return (
     <div className="bg-card px-3 py-2">
       <dt className="text-[12px] text-muted-foreground">{label}</dt>
