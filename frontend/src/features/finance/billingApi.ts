@@ -62,6 +62,9 @@ export interface LedgerEntry {
   by: string;
   voided_at: string | null;
   void_reason: string;
+  voided_by: string;
+  /** Money a person entered and nobody has taken back; what the ledger wrote itself is never voided by hand. */
+  can_void: boolean;
 }
 
 export interface LedgerAccount {
@@ -71,6 +74,21 @@ export interface LedgerAccount {
   balance: number;
   seats: { id: number; group_name: string; state: string; price: number }[];
   rows: LedgerEntry[];
+  /** Money is entered here only after the cutover; until then the server refuses it too. */
+  payments_open: boolean;
+}
+
+export type EnterableKind = "payment" | "refund" | "adjust";
+
+export interface EnterMoneyBody {
+  kind: EnterableKind;
+  /** Above zero, except an adjustment, whose sign says which way it goes. */
+  amount: number;
+  day: string;
+  method: string;
+  note: string;
+  /** One per open form: a retry of the same request is the same row. */
+  request_id: string;
 }
 
 export const billingApi = {
@@ -82,5 +100,11 @@ export const billingApi = {
   },
   async account(id: number): Promise<LedgerAccount> {
     return (await api.get<LedgerAccount>(`/billing/accounts/${id}/`)).data;
+  },
+  async enter(accountId: number, body: EnterMoneyBody): Promise<{ balance: number }> {
+    return (await api.post<{ balance: number }>(`/billing/accounts/${accountId}/entries/`, body)).data;
+  },
+  async voidEntry(id: number, reason: string): Promise<{ balance: number }> {
+    return (await api.post<{ balance: number }>(`/billing/entries/${id}/void/`, { reason })).data;
   },
 };

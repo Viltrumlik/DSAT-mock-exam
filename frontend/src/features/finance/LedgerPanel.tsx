@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "./financeApi";
+import { ENTER_LABEL, EntryForm, VoidForm } from "./LedgerEntryForm";
 import {
   BOX,
   Btn,
@@ -22,12 +23,13 @@ import {
   methodLabel,
   monthLabel,
 } from "./FinancePanels";
-import type { LedgerComparison, LedgerEntry, LedgerProblem, LedgerScope } from "./billingApi";
+import type { EnterableKind, LedgerComparison, LedgerEntry, LedgerProblem, LedgerScope } from "./billingApi";
 import { useLedgerAccount, useLedgerAccounts, useLedgerSummary } from "./billingHooks";
 
 /**
- * The Ledger tab of /ops/finance: the centre's own ledger beside lc-up, and how the two compare. Read-only,
- * and nothing anyone else sees depends on it until the cutover.
+ * The Ledger tab of /ops/finance: the centre's own ledger beside lc-up, and how the two compare. Nothing anyone
+ * else sees depends on it until the cutover, and until then it is read-only: `LedgerEntryForm` appears only
+ * when the server says money is entered here.
  *
  * "Every balance matches" is said only by a comparison that really ran: a failed read, no comparison yet and
  * a comparison the sync could not support each say so in their own words.
@@ -193,8 +195,16 @@ function entryDetails(entry: LedgerEntry): string {
   return parts.filter(Boolean).join(" · ");
 }
 
+function voidedText(entry: LedgerEntry): string {
+  return `Voided${entry.voided_by ? ` by ${entry.voided_by}` : ""}: ${entry.void_reason}`;
+}
+
+const ENTERABLE: EnterableKind[] = ["payment", "refund", "adjust"];
+
 function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
   const q = useLedgerAccount(id);
+  const [entering, setEntering] = useState<EnterableKind | null>(null);
+  const [voiding, setVoiding] = useState<number | null>(null);
   const back = <Btn onClick={onBack}>Back to the ledger</Btn>;
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) {
@@ -220,6 +230,17 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
           </p>
         ))}
       </header>
+      {account.payments_open ? (
+        entering ? (
+          <EntryForm accountId={account.id} balance={account.balance} kind={entering} onClose={() => setEntering(null)} />
+        ) : (
+          <div role="group" aria-label="Enter money" className="flex flex-wrap gap-1">
+            {ENTERABLE.map((kind) => (
+              <Btn key={kind} onClick={() => setEntering(kind)}>{ENTER_LABEL[kind]}</Btn>
+            ))}
+          </div>
+        )
+      ) : null}
       <section aria-label="Rows" className={BOX}>
         <div className="overflow-x-auto">
           <table className={TABLE}>
@@ -235,21 +256,38 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
             </thead>
             <tbody>
               {account.rows.map((entry) => (
-                <tr key={entry.id} className={TR}>
-                  <td className={TD}>{day(entry.day)}</td>
-                  <td className={TD}>{entry.label}</td>
-                  <td className={TD_R}>
-                    {entry.voided_at ? (
-                      <span className="text-muted-foreground line-through">{formatUzs(entry.amount)}</span>
-                    ) : (
-                      money(entry.amount)
-                    )}
-                  </td>
-                  <td className={TD_R}>{money(entry.running)}</td>
-                  <td className={cn(TD, "text-muted-foreground")}>
-                    {entry.voided_at ? `Voided: ${entry.void_reason}` : entryDetails(entry) || "—"}
-                  </td>
-                </tr>
+                <Fragment key={entry.id}>
+                  <tr className={TR}>
+                    <td className={TD}>{day(entry.day)}</td>
+                    <td className={TD}>{entry.label}</td>
+                    <td className={TD_R}>
+                      {entry.voided_at ? (
+                        <span className="text-muted-foreground line-through">{formatUzs(entry.amount)}</span>
+                      ) : (
+                        money(entry.amount)
+                      )}
+                    </td>
+                    <td className={TD_R}>{money(entry.running)}</td>
+                    <td className={cn(TD, "text-muted-foreground")}>
+                      {entry.voided_at ? voidedText(entry) : entryDetails(entry) || "—"}
+                      {account.payments_open && entry.can_void && voiding !== entry.id ? (
+                        <>
+                          {" "}
+                          <button type="button" className={TEXT_BUTTON} onClick={() => setVoiding(entry.id)}>
+                            Void
+                          </button>
+                        </>
+                      ) : null}
+                    </td>
+                  </tr>
+                  {voiding === entry.id ? (
+                    <tr>
+                      <td colSpan={5} className={TD}>
+                        <VoidForm entryId={entry.id} onClose={() => setVoiding(null)} />
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
               ))}
             </tbody>
           </table>
