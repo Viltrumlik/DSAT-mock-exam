@@ -264,6 +264,9 @@ class SubdomainAPIGuardMiddleware:
             # first-password step is on the apex, which needs no entry.
             if path.startswith("/api/lcup/"):
                 return self.get_response(request)
+            # The money ledger, on /ops/finance. Admin-only in the view; there is no student surface yet.
+            if path.startswith("/api/billing/"):
+                return self.get_response(request)
             # SMS panel (/ops/sms): the balance, the journal, campaigns, the debt warning's settings and
             # eskiz's templates. Admin-only in the view; there is no student surface.
             if path.startswith("/api/sms/"):
