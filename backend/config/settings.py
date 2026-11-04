@@ -221,6 +221,7 @@ INSTALLED_APPS = [
     'mobile.apps.MobileConfig',
     'desktop.apps.DesktopConfig',
     'lcup.apps.LcupConfig',
+    'billing.apps.BillingConfig',
     'sms.apps.SmsConfig',
     'daily_questions.apps.DailyQuestionsConfig',
 ]
