@@ -78,6 +78,14 @@ class EntryKind(models.TextChoices):
     ADJUST = "adjust", "Adjustment"
 
 
+class PaymentMethod(models.TextChoices):
+    """lc-up's own names, so a payment reads the same before and after the cutover."""
+
+    CASH = "Naqd pul", "Cash"
+    CARD = "Plastik karta", "Card"
+    BANK = "Bank hisobi", "Bank transfer"
+
+
 class Entry(models.Model):
     """One movement of money. Never edited and never deleted: a wrong row is voided, with a reason, and
     stays visible. The balance is the sum of the rows that are not voided."""

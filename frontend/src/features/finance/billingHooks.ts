@@ -1,7 +1,7 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { billingApi, type LedgerScope } from "./billingApi";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { billingApi, type EnterMoneyBody, type LedgerScope } from "./billingApi";
 
 const ROOT = ["billing"] as const;
 
@@ -21,4 +21,21 @@ export function useLedgerAccounts(scope: LedgerScope) {
 
 export function useLedgerAccount(id: number) {
   return useQuery({ queryKey: billingKeys.account(id), queryFn: () => billingApi.account(id) });
+}
+
+/** Money moved: this person's rows, the lists and the comparison figures are all read again. */
+export function useEnterMoney(accountId: number) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: EnterMoneyBody) => billingApi.enter(accountId, body),
+    onSuccess: () => client.invalidateQueries({ queryKey: ROOT }),
+  });
+}
+
+export function useVoidEntry() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: number; reason: string }) => billingApi.voidEntry(id, reason),
+    onSuccess: () => client.invalidateQueries({ queryKey: ROOT }),
+  });
 }
