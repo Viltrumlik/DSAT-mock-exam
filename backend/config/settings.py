@@ -221,6 +221,7 @@ INSTALLED_APPS = [
     'mobile.apps.MobileConfig',
     'desktop.apps.DesktopConfig',
     'lcup.apps.LcupConfig',
+    'billing.apps.BillingConfig',
     'sms.apps.SmsConfig',
     'daily_questions.apps.DailyQuestionsConfig',
 ]
@@ -344,6 +345,9 @@ LCUP_PROFILE_SYNC_ENABLED = os.getenv("LCUP_PROFILE_SYNC_ENABLED", "False").lowe
 # Attendance and payments from SINCE. Off by default; literal "true" only.
 LCUP_ARCHIVE_ENABLED = os.getenv("LCUP_ARCHIVE_ENABLED", "False").lower() == "true"
 LCUP_ARCHIVE_SINCE = os.getenv("LCUP_ARCHIVE_SINCE", "2025-01-01").strip()
+# The money ledger beside lc-up (backend/billing; owner, 2026-11-04, the centre is leaving lc-up): it follows
+# lc-up and is compared with it each day. Off by default; literal "true" only.
+BILLING_SHADOW_ENABLED = os.getenv("BILLING_SHADOW_ENABLED", "False").lower() == "true"
 
 # SMS through eskiz.uz (backend/sms, docs/superpowers/plans/2026-10-18-eskiz-sms-debt-warnings.md): days
 # 1..LCUP_DEBT_FREEZE_DAY-1 at 10:00, everyone the freeze would take gets one SMS on their lc-up phone.
@@ -708,6 +712,16 @@ CELERY_BEAT_SCHEDULE = {
     "lcup-archive": {
         "task": "lcup.tasks.archive",
         "schedule": crontab(hour=3, minute=5),
+    },
+    # The money ledger (billing.shadow): five minutes after each lc-up sync, and each day's comparison with
+    # lc-up after the 23:30 sync. Both return at once while BILLING_SHADOW_ENABLED is off.
+    "billing-shadow-tick": {
+        "task": "billing.tasks.shadow_tick",
+        "schedule": crontab(minute="5,20,35,50"),
+    },
+    "billing-compare": {
+        "task": "billing.tasks.compare",
+        "schedule": crontab(hour=23, minute=40),
     },
     # SMS before the debt freeze (backend/sms): every hour at :00 (CELERY_TIMEZONE is Tashkent), and the
     # code decides — at the hour set in /ops/sms (10:00 by default) it warns on days 1..LCUP_DEBT_FREEZE_DAY-1,
