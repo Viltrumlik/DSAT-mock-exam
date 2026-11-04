@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "./financeApi";
-import { ENTER_LABEL, EntryForm, VoidForm } from "./LedgerEntryForm";
+import { ENTER_LABEL, EntryForm, SeatPriceForm, VoidForm } from "./LedgerEntryForm";
 import {
   BOX,
   Btn,
@@ -23,7 +23,7 @@ import {
   methodLabel,
   monthLabel,
 } from "./FinancePanels";
-import type { EnterableKind, LedgerComparison, LedgerEntry, LedgerProblem, LedgerScope } from "./billingApi";
+import type { EnterableKind, LedgerComparison, LedgerEntry, LedgerProblem, LedgerScope, LedgerSeat } from "./billingApi";
 import { useLedgerAccount, useLedgerAccounts, useLedgerSummary } from "./billingHooks";
 
 /**
@@ -195,6 +195,19 @@ function entryDetails(entry: LedgerEntry): string {
   return parts.filter(Boolean).join(" · ");
 }
 
+function priceWord(price: number | null): string {
+  if (price === null) return "group price";
+  return price === 0 ? "grant" : formatUzs(price);
+}
+
+function seatPrice(seat: LedgerSeat): string {
+  if (seat.personal_price === null || seat.personal_price === undefined) return `${formatUzs(seat.price)} a month`;
+  const group = `(group ${formatUzs(seat.price)})`;
+  return seat.personal_price === 0
+    ? `Grant, nothing charged ${group}`
+    : `${formatUzs(seat.personal_price)} a month, personal ${group}`;
+}
+
 function voidedText(entry: LedgerEntry): string {
   return `Voided${entry.voided_by ? ` by ${entry.voided_by}` : ""}: ${entry.void_reason}`;
 }
@@ -205,7 +218,8 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
   const q = useLedgerAccount(id);
   const [entering, setEntering] = useState<EnterableKind | null>(null);
   const [voiding, setVoiding] = useState<number | null>(null);
-  const back = <Btn onClick={onBack}>Back to the ledger</Btn>;
+  const [pricing, setPricing] = useState<number | null>(null);
+  const back =<Btn onClick={onBack}>Back to the ledger</Btn>;
   if (q.isLoading) return <Loading />;
   if (q.error || !q.data) {
     return (
@@ -225,9 +239,22 @@ function AccountView({ id, onBack }: { id: number; onBack: () => void }) {
           {account.phone || "No phone"} · Balance {money(account.balance)}
         </p>
         {account.seats.map((seat) => (
-          <p key={seat.id} className="text-[13px] text-muted-foreground">
-            {seat.group_name} · {SEAT_STATE[seat.state] ?? seat.state} · {formatUzs(seat.price)} a month
-          </p>
+          <div key={seat.id} className="text-[13px] text-muted-foreground">
+            <p>
+              {seat.group_name} · {SEAT_STATE[seat.state] ?? seat.state} · {seatPrice(seat)}{" "}
+              {pricing === seat.id ? null : (
+                <button type="button" className={TEXT_BUTTON} onClick={() => setPricing(seat.id)}>
+                  Personal price
+                </button>
+              )}
+            </p>
+            {pricing === seat.id ? <SeatPriceForm seat={seat} onClose={() => setPricing(null)} /> : null}
+            {seat.price_changes?.map((change) => (
+              <p key={change.at} className="text-[12px]">
+                {moment(change.at)} · {change.by || "—"} · {priceWord(change.old_price)} → {priceWord(change.new_price)} · {change.reason}
+              </p>
+            ))}
+          </div>
         ))}
       </header>
       {account.payments_open ? (

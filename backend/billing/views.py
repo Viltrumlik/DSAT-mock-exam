@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 from classes.capabilities import is_global_admin
 
 from . import conf, ledger
-from .models import Account, BillingRun, BillingState, Entry, EntryKind, SeatState
+from .models import Account, BillingRun, BillingState, Entry, EntryKind, Seat, SeatState
 
 #: How many runs with something wrong the summary shows.
 PROBLEMS_SHOWN = 5
@@ -99,8 +99,18 @@ class AccountDetailView(_AdminView):
                 "can_void": ledger.was_entered_by_hand(entry) and entry.voided_at is None,
             })
         seats = [
-            {"id": seat.pk, "group_name": seat.group_name, "state": seat.state, "price": seat.price}
-            for seat in account.seats.order_by("id")
+            {
+                "id": seat.pk, "group_name": seat.group_name, "state": seat.state, "price": seat.price,
+                "personal_price": seat.personal_price,
+                "price_changes": [
+                    {
+                        "at": _iso(change.changed_at), "old_price": change.old_price, "new_price": change.new_price,
+                        "reason": change.reason, "by": change.changed_by.username if change.changed_by else "",
+                    }
+                    for change in seat.price_changes.all()
+                ],
+            }
+            for seat in account.seats.order_by("id").prefetch_related("price_changes__changed_by")
         ]
         return Response({
             "id": account.pk, "name": account.name, "phone": account.phone, "balance": running,
@@ -146,6 +156,24 @@ class EntryCreateView(_AdminView):
         except ledger.EntryRefused as exc:
             return _bad(str(exc))
         return Response({"balance": ledger.balance(account)}, status=status.HTTP_201_CREATED)
+
+
+class SeatPriceView(_AdminView):
+    """A student's own price. Open while lc-up runs, unlike entering money: it only touches this ledger, and it
+    is how a difference from lc-up over a discount gets put right."""
+
+    def post(self, request, pk):
+        seat = get_object_or_404(Seat.objects.select_related("account"), pk=pk)
+        if "price" not in request.data:
+            return _bad("Send a price, or null for the group's price.")
+        try:
+            ledger.set_personal_price(
+                seat, request.data["price"], reason=str(request.data.get("reason") or ""), by=request.user,
+                today=timezone.localdate(),
+            )
+        except ledger.EntryRefused as exc:
+            return _bad(str(exc))
+        return Response({"balance": ledger.balance(seat.account)})
 
 
 class EntryVoidView(_AdminView):

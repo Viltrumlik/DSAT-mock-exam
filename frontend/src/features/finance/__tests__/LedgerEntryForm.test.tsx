@@ -266,6 +266,82 @@ describe("entering money", () => {
   });
 });
 
+describe("a personal price", () => {
+  const SEAT = { id: 7, group_name: "Junior G1", state: "active", price: 500000, personal_price: null, price_changes: [] };
+
+  it("can be set while entering money is still closed", async () => {
+    post.mockResolvedValue({ data: { balance: -400000 } });
+    await open(account({ payments_open: false, seats: [SEAT] }));
+    await click("Personal price");
+    await type("Personal price, UZS", "400 000");
+    expect(button("Save price")?.disabled).toBe(true);
+    await type("Why this price?", "Agreed with the family");
+    await click("Save price");
+    expect(post).toHaveBeenCalledWith("/billing/seats/7/price/", { price: 400000, reason: "Agreed with the family" });
+    expect(button("Save price")).toBeUndefined();
+  });
+
+  it("takes zero as a grant", async () => {
+    post.mockResolvedValue({ data: { balance: 0 } });
+    await open(account({ seats: [SEAT] }));
+    await click("Personal price");
+    await type("Personal price, UZS", "0");
+    await type("Why this price?", "Grant");
+    await click("Save price");
+    expect(post.mock.calls[0][1]).toEqual({ price: 0, reason: "Grant" });
+  });
+
+  it("will not save without an amount", async () => {
+    await open(account({ seats: [SEAT] }));
+    await click("Personal price");
+    await type("Why this price?", "Agreed");
+    expect(button("Save price")?.disabled).toBe(true);
+    await type("Personal price, UZS", "12.5");
+    expect(button("Save price")?.disabled).toBe(true);
+  });
+
+  it("shows the personal price beside the group's, with who changed it and why", async () => {
+    const changes = [{ at: "2026-12-03T10:00:00+05:00", old_price: null, new_price: 400000, reason: "Agreed with the family", by: "boss" }];
+    await open(account({ seats: [{ ...SEAT, personal_price: 400000, price_changes: changes }] }));
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("400,000 UZS a month, personal (group 500,000 UZS)");
+    expect(text).toContain("boss");
+    expect(text).toContain("Agreed with the family");
+  });
+
+  it("says a grant is a grant", async () => {
+    await open(account({ seats: [{ ...SEAT, personal_price: 0 }] }));
+    expect(document.body.textContent).toContain("Grant, nothing charged (group 500,000 UZS)");
+  });
+
+  it("goes back to the group's price with a reason", async () => {
+    post.mockResolvedValue({ data: { balance: -500000 } });
+    await open(account({ seats: [{ ...SEAT, personal_price: 400000 }] }));
+    await click("Personal price");
+    expect(button("Back to the group's price")?.disabled).toBe(true);
+    await type("Why this price?", "The agreement ended");
+    await click("Back to the group's price");
+    expect(post).toHaveBeenCalledWith("/billing/seats/7/price/", { price: null, reason: "The agreement ended" });
+  });
+
+  it("offers no way back when there is no personal price", async () => {
+    await open(account({ seats: [SEAT] }));
+    await click("Personal price");
+    expect(button("Back to the group's price")).toBeUndefined();
+  });
+
+  it("shows why it was refused and keeps the form", async () => {
+    post.mockRejectedValue(refusal("A personal price needs a reason."));
+    await open(account({ seats: [SEAT] }));
+    await click("Personal price");
+    await type("Personal price, UZS", "400000");
+    await type("Why this price?", "Agreed");
+    await click("Save price");
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("A personal price needs a reason.");
+    expect(button("Save price")).toBeDefined();
+  });
+});
+
 describe("voiding", () => {
   it("is offered only on a row entered by hand", async () => {
     await open();
