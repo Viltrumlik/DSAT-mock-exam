@@ -10,9 +10,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const get = vi.fn();
+const post = vi.fn();
 
 vi.mock("@/lib/api", () => ({
-  default: { get: (...args: unknown[]) => get(...args), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: { get: (...args: unknown[]) => get(...args), post: (...args: unknown[]) => post(...args), patch: vi.fn(), delete: vi.fn() },
 }));
 
 const { NotOnListPanel, TrialStudentsPanel } = await import("../LcupPanels");
@@ -26,6 +27,7 @@ beforeEach(() => {
   document.body.appendChild(host);
   root = createRoot(host);
   get.mockReset();
+  post.mockReset();
 });
 
 afterEach(() => {
@@ -80,6 +82,59 @@ describe("/ops/trials panels", () => {
     expect(rows[1]).toContain("Came to trial (2026-10-16)");
     expect(rows[2]).toContain("Not come yet");
     expect(host.querySelector<HTMLAnchorElement>('a[href="/ops/students/41"]')?.textContent).toBe("Sardor Nazarov");
+  });
+
+  it("offers no action while lc-up runs", async () => {
+    await mount(<TrialStudentsPanel />);
+    expect(host.textContent).not.toContain("Activate");
+    expect(host.textContent).not.toContain("Remove");
+  });
+
+  describe("once lc-up is off", () => {
+    const OPEN = { ...FOLLOWUPS, seats_open: true };
+    const row = (name: string) => Array.from(host.querySelectorAll("tbody tr")).find((tr) => tr.textContent?.includes(name))!;
+    const button = (el: Element, label: string) =>
+      Array.from(el.querySelectorAll("button")).find((b) => b.textContent?.trim() === label) as HTMLButtonElement;
+    const dialog = () => document.body.querySelector('[role="dialog"]') as HTMLElement;
+
+    it("offers Activate and Remove on a row with an account", async () => {
+      await mount(<TrialStudentsPanel />, OPEN);
+      expect(button(row("Sardor Nazarov"), "Activate")).toBeDefined();
+      expect(button(row("Sardor Nazarov"), "Remove")).toBeDefined();
+      expect(button(row("Ali Valiyev"), "Activate")).toBeUndefined();
+    });
+
+    it("activates from the date asked for and reads the list again", async () => {
+      await mount(<TrialStudentsPanel />, OPEN);
+      post.mockResolvedValue({ data: {} });
+      const reads = get.mock.calls.length;
+      await act(async () => button(row("Sardor Nazarov"), "Activate").click());
+      const date = dialog().querySelector('input[type="date"]') as HTMLInputElement;
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(date, "2026-10-21");
+        date.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await act(async () => button(dialog(), "Activate").click());
+      expect(post).toHaveBeenCalledWith("/classes/admin/classrooms/12/seats/41/activate/", { date: "2026-10-21" });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(get.mock.calls.length).toBeGreaterThan(reads);
+    });
+
+    it("removes as a leave and shows the server's reason", async () => {
+      await mount(<TrialStudentsPanel />, OPEN);
+      post.mockRejectedValue({ response: { data: { detail: "Sardor Nazarov has left this group." } } });
+      await act(async () => button(row("Sardor Nazarov"), "Remove").click());
+      await act(async () => button(dialog(), "Remove").click());
+      expect(post.mock.calls[0][0]).toBe("/classes/admin/classrooms/12/seats/41/leave/");
+      expect(dialog().textContent).toContain("Sardor Nazarov has left this group.");
+    });
+
+    it("words the empty list without lc-up", async () => {
+      await mount(<TrialStudentsPanel />, { ...OPEN, trials: [] });
+      expect(host.textContent).toContain("No one is on trial right now.");
+    });
   });
 
   it("says so when nobody is on trial", async () => {

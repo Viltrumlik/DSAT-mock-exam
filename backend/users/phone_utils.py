@@ -19,3 +19,14 @@ def normalize_phone(value: Optional[str]) -> Optional[str]:
     if not re.match(r"^\+?[0-9]+$", compact):
         raise ValueError("Phone number may only contain digits and an optional leading +.")
     return compact
+
+
+def clean_parent_phone(value: Optional[str]) -> str:
+    """A parent's number: "" for none, 998… when Uzbek, as typed when not, since parents work abroad. An admin calls
+    it and nothing logs in with it, so unlike a student's it need not be Uzbek. ValueError when it is no number."""
+    from lcup.phones import normalize_phone as uzbek
+
+    compact = normalize_phone(value)
+    if compact is None:
+        return ""
+    return uzbek(compact) or compact

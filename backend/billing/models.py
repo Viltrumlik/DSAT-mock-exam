@@ -35,6 +35,11 @@ class Seat(models.Model):
     account = models.ForeignKey(Account, on_delete=models.PROTECT, related_name="seats")
     group_name = models.CharField(max_length=200)
     lcup_group_id = models.PositiveIntegerField(null=True, blank=True)
+    #: The class of ours this seat is in. ``shadow`` keeps it from the paired group until lc-up goes; after that a
+    #: seat is found by account and class. Deleting a class leaves the seat, whose money still stands.
+    classroom = models.ForeignKey(
+        "classes.Classroom", null=True, blank=True, on_delete=models.SET_NULL, related_name="billing_seats"
+    )
     price = models.PositiveIntegerField(default=0)
     #: A price agreed for this student alone, which replaces the group's; 0 is a grant. lc-up's API does not
     #: give these, so an admin enters them (``ledger.set_personal_price``).
@@ -46,7 +51,12 @@ class Seat(models.Model):
     lcup_left_on = models.DateField(null=True, blank=True)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=["account", "lcup_group_id"], name="billing_seat_unique")]
+        constraints = [
+            models.UniqueConstraint(fields=["account", "lcup_group_id"], name="billing_seat_unique"),
+            models.UniqueConstraint(
+                fields=["account", "classroom"], condition=Q(classroom__isnull=False), name="billing_seat_one_per_class"
+            ),
+        ]
 
     def __str__(self) -> str:
         return f"{self.account} in {self.group_name}"

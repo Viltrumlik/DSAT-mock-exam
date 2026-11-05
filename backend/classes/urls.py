@@ -106,6 +106,7 @@ from .views_ops_classrooms import (
     ClassroomPartView,
     ClassroomTelegramRemoveView,
 )
+from .views_seats import SeatActionView, SeatAddView, SeatNewStudentView
 from .views_teacher import TeacherTodayView
 from .views_media import AssignmentVideoUploadUrlView
 from .views_roadmap import RoadmapReadingView, StudentPeerProgressView, StudentProgressView, StudentRoadmapView
@@ -152,6 +153,13 @@ urlpatterns = [
     # <pk> classroom routes below never read it as a classroom id.
     path("admin/classrooms/", ClassroomChangeListView.as_view(), name="ops-classrooms"),
     path("admin/classrooms/<int:pk>/", ClassroomDetailView.as_view(), name="ops-classroom"),
+    path("admin/classrooms/<int:pk>/seats/", SeatAddView.as_view(), name="ops-classroom-seat-add"),
+    path("admin/classrooms/<int:pk>/seats/new-student/", SeatNewStudentView.as_view(), name="ops-classroom-seat-new"),
+    path(
+        "admin/classrooms/<int:pk>/seats/<int:user_id>/<str:action>/",
+        SeatActionView.as_view(),
+        name="ops-classroom-seat-action",
+    ),
     path("admin/classrooms/<int:pk>/<str:part>/", ClassroomPartView.as_view(), name="ops-classroom-part"),
     path(
         "admin/classrooms/<int:pk>/telegram/remove/",

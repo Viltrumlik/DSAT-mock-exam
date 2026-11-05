@@ -65,7 +65,7 @@ from .homework_auto_submit import (
     sync_practice_submission_for_assignment,
     sync_practice_submissions_for_class,
 )
-from .capabilities import can as has_cap
+from .capabilities import can as has_cap, is_global_admin
 from .views_rankings import resolve_ranking_visibility
 from .throttles import HomeworkSubmitClassThrottle, HomeworkSubmitGlobalThrottle, HomeworkSubmitThrottle
 from .submission_state import (
@@ -306,6 +306,7 @@ class _ClassroomMemberGateMixin:
 
 from .serializers import (
     ClassroomSerializer,
+    ClassroomAdminSerializer,
     ClassroomCreateSerializer,
     ClassroomMembershipSerializer,
     ClassPostSerializer,
@@ -950,7 +951,8 @@ class ClassroomViewSet(ModelViewSet):
                 {"detail": "You do not have permission to create groups."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        serializer = self.get_serializer(data=request.data)
+        serializer_class = ClassroomAdminSerializer if is_global_admin(request.user) else self.get_serializer_class()
+        serializer = serializer_class(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
         teacher = serializer.validated_data.get("teacher") or request.user
         classroom = serializer.save(created_by=request.user, teacher=teacher)

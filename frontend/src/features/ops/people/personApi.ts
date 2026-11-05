@@ -94,6 +94,8 @@ export type PersonCore = {
   email: string;
   email_verified: boolean;
   phone: string;
+  /** Whom to call: given to an admin about a learner, null or absent for anyone else. */
+  parent?: { name: string; phone: string } | null;
   role: string;
   subject: string;
   /** `users.audience.kind_of` for learners; "active" | "frozen" for staff. */

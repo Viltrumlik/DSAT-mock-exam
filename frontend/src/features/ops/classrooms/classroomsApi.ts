@@ -5,6 +5,7 @@ import api from "@/lib/api";
 import type { ChangeListData } from "@/features/ops/changelist/ChangeList";
 import type { ChangeListParams } from "@/features/ops/changelist/useChangeListParams";
 import type { PeopleSection } from "@/features/ops/changelist/peopleApi";
+import type { SeatStatus } from "./seatsApi";
 
 /**
  * `/classes/admin/classrooms/` — the /ops Classrooms changelist and each class's change form
@@ -51,6 +52,10 @@ export type ClassroomCore = {
   telegram_chat_id: string;
   telegram_group_url: string;
   max_students: number | null;
+  /** What a month costs, whole so'm; null until someone states it. */
+  monthly_price: number | null;
+  /** The seat actions are open: lc-up no longer runs. */
+  seats_open: boolean;
   schedule_summary: string;
   is_active: boolean;
   join_code: string;
@@ -84,11 +89,16 @@ export type ClassroomRoster = {
     avatar_url: string | null;
     section: PeopleSection;
     joined_at: string | null;
+    seat_status: SeatStatus;
+    /** "YYYY-MM-DD": when this stretch of the seat began, null when nobody said. */
+    seat_start_date: string | null;
     /** What lc-up says they owe, in whole UZS; null when nothing. */
     owes: number | null;
     attendance_rate: number | null;
     homework_rate: number | null;
   }[];
+  /** Whose seat ended here on a known day, latest first. */
+  left: { id: number; name: string; section: PeopleSection; seat_left_on: string }[];
 };
 
 export type ClassroomAttendance = {

@@ -15,6 +15,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { LINK_CLASS } from "./Fieldset";
 import { formatPhone, LIST_LABEL } from "./format";
 import { isNotFound, personActions, personKeys, usePerson, type PersonCore } from "./personApi";
+import { ParentCard } from "./ParentCard";
 import { PersonForm } from "./PersonForm";
 import { PersonHeader } from "./PersonHeader";
 import { activeTab, panelId, TabBar, tabHref, tabId, tabsFor, type TabKey } from "./PersonTabs";
@@ -216,7 +217,10 @@ export function PersonPage({ section, id }: { section: PeopleSection; id: number
           <>
             <SameNameNotice person={person} />
             <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <PersonForm key={person.id} person={person} onSaved={refresh} />
+              <div className="min-w-0 space-y-5">
+                <PersonForm key={person.id} person={person} onSaved={refresh} />
+                {person.parent ? <ParentCard key={`parent-${person.id}`} id={person.id} parent={person.parent} onSaved={refresh} /> : null}
+              </div>
               <SummaryCard person={person} />
             </div>
           </>

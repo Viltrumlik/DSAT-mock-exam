@@ -158,6 +158,10 @@ class User(AbstractUser):
         db_index=True,
         help_text="E.164-style or local digits; optional, unique when set (e.g. for Telegram users).",
     )
+    #: Whom an admin calls about a learner (owner, 2026-11-04). Admins only: no serializer a student or teacher
+    #: reads names these, the person page gives them to an admin alone, and SMS stays on the student's own phone.
+    parent_name = models.CharField(max_length=200, blank=True, default="", db_default="")
+    parent_phone = models.CharField(max_length=20, blank=True, default="", db_default="")
     #: The subject of an ``oauth.telegram.org`` OIDC login — NOT a Bot API user id, however
     #: much the name suggests otherwise. Telegram issues this per application and it arrives
     #: 17-19 digits long, where a Bot API id is 9-11. The two never match, and treating them

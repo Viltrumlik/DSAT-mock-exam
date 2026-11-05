@@ -20,6 +20,8 @@ FROZEN_LCUP_DEBT = "lcup_debt"
 
 SOURCE_SYNC = "lcup_sync"
 SOURCE_SPLIT = "split"
+#: An admin's seat action (``classes.seat_actions``), after lc-up.
+SOURCE_SEATS = "seat_action"
 
 REASON_INITIAL_SPLIT = "initial_split"
 REASON_JOINED = "lcup_joined"

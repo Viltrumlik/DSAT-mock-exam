@@ -8,12 +8,15 @@ from __future__ import annotations
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from access import constants as C
 from access.permissions import HasManageUsers, HasManageUsersOrAssignTestAccess
+from billing.views import IsGlobalAdmin
 
 from . import admin_audit
 from .models import RefreshSession
 from .people_detail import person_core
 from .people_parts import PARTS
+from .phone_utils import clean_parent_phone
 from .views import manageable_users_queryset
 
 
@@ -29,6 +32,38 @@ class PersonDetailView(APIView):
         if user is None:
             return Response({"detail": "Not found."}, status=404)
         return Response(person_core(user, request))
+
+
+class PersonParentView(APIView):
+    """PATCH {parent_name?, parent_phone?} — whom to call about this learner. Admins only, unlike the rest of the
+    page. Its own endpoint because ``UserUpdateView``'s serializer also answers teachers. The log names the fields
+    and not the values, since the person's History is read more widely than the details are."""
+
+    permission_classes = [IsGlobalAdmin]
+
+    def patch(self, request, pk: int):
+        user = scoped_person(request, pk)
+        if user is None:
+            return Response({"detail": "Not found."}, status=404)
+        if user.role not in C.LEARNER_ROLES:
+            return Response({"detail": "Only a learner has a parent here."}, status=400)
+        changes = {}
+        if "parent_name" in request.data:
+            changes["parent_name"] = str(request.data["parent_name"] or "").strip()[:200]
+        if "parent_phone" in request.data:
+            try:
+                changes["parent_phone"] = clean_parent_phone(request.data["parent_phone"])
+            except ValueError as refused:
+                return Response({"detail": f"Parent's phone: {refused}"}, status=400)
+        changes = {field: value for field, value in changes.items() if getattr(user, field) != value}
+        if changes:
+            for field, value in changes.items():
+                setattr(user, field, value)
+            user.save(update_fields=list(changes))
+            admin_audit.log_admin_action(
+                request=request, user_id=user.pk, event_type=admin_audit.ADMIN_UPDATE, changes=dict.fromkeys(changes)
+            )
+        return Response({"name": user.parent_name, "phone": user.parent_phone})
 
 
 class PersonPartView(APIView):

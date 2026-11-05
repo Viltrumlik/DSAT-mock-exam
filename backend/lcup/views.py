@@ -476,6 +476,7 @@ class FollowupsView(_AdminView):
 
         from .conf import free_trial_lessons
         from .followups import REASON_TEXT, STATE_ORDER, missing_seats, pending, teachers_by_room, trial_seats
+        from .guards import seats_locked
 
         seats = trial_seats()
         missing = missing_seats()
@@ -485,6 +486,7 @@ class FollowupsView(_AdminView):
         users = User.objects.in_bulk({s.user_id for s in seats if s.user_id} | {s.user_id for s in missing if s.user_id})
         ordered = sorted(seats, key=lambda s: (STATE_ORDER[s.state], s.since or date.max, s.name))
         return Response({
+            "seats_open": not seats_locked(),
             "free_trial_lessons": free_trial_lessons(),
             "trials": [
                 {

@@ -194,6 +194,7 @@ EVENT_TITLES = {
     "session_revoke_others": "Signed out of other devices",
     "lcup_phone_confirmed": "Confirmed their phone number",
     "lcup_phone_moved": "Phone number moved to a new lc-up account",
+    "centre_phone_moved": "Phone number moved to a new learning center account",
     "lcup_claim_login": "First sign-in with an lc-up code",
     "email_verify_confirmed": "Verified their email",
     "auto_revoke_all_sessions": "Signed out everywhere by the risk check",
@@ -243,7 +244,8 @@ def history_part(user) -> dict:
                                      "by": "lc-up sync" if rc.source == "lcup_sync" else rc.source}))
     for ev in ClassroomMembershipEvent.objects.filter(student=user).order_by("-created_at")[:HISTORY_LIMIT]:
         rows.append((ev.created_at, {"kind": "group",
-                                     "title": f"{MEMBERSHIP_ACTIONS.get(ev.action, ev.action)} {ev.classroom_name}",
+                                     "title": f"{MEMBERSHIP_ACTIONS.get(ev.action, ev.action)} {ev.classroom_name}"
+                                              + (f": {ev.note}" if ev.note else ""),
                                      "by": ev.actor_name or ""}))
     for ev in SecurityAuditEvent.objects.filter(user=user).exclude(event_type__in=NOISE)[:HISTORY_LIMIT]:
         admin = ev.event_type in ADMIN_EVENT_TYPES
