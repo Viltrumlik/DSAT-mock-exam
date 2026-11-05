@@ -13,7 +13,8 @@ from rest_framework.test import APIClient
 
 from lcup.classrooms import teachers_for
 from lcup.matching import SUPPORTER_REASON
-from lcup.models import LcupTeacherLink, LinkStatus
+from classes.models import ClassroomMembership
+from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState, LcupTeacherLink, LinkStatus
 from lcup.sync import run_sync
 from lcup.testing import FakeLcupClient
 from lcup.tests_sync import API, lcup_data
@@ -117,3 +118,78 @@ class SupporterSyncTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         link = self.link()
         self.assertEqual((link.status, link.match_reason, link.user_id), (LinkStatus.IGNORED, SUPPORTER_REASON, self.support.pk))
+
+
+class SupporterLedGroupTests(TestCase):
+    """Foundation G14 (owner, 2026-11-05): lc-up's only teacher of the group is a support teacher."""
+
+    def setUp(self):
+        self.now = timezone.now()
+        self.support = User.objects.create_user(
+            None, password=None, username="ulugbek", role="support_teacher", subject="math", phone_number="+998 90 888 88 88",
+        )
+        LcupTeacherLink.objects.create(
+            lcup_teacher_id=2009, name="Ulug'bek Abdurasulov", phone="998908888888", user=self.support,
+            status=LinkStatus.IGNORED, match_reason="support teacher (marked by an admin)",
+        )
+        state = LcupState.get()
+        state.initial_review_done_at = self.now
+        state.save()
+        self.data = lcup_data()
+        group = dict(self.data[f"{API}/groups"][0], id=25599, name="Foundation G14 | Math | Ulug'bek")
+        group["teachers"] = [{"id": 2009, "name": "Ulug'bek Abdurasulov"}]
+        self.data[f"{API}/groups"] = [group]
+        self.data[f"{API}/teachers"] = self.data[f"{API}/teachers"] + [
+            {"id": 2009, "name": "Ulug'bek Abdurasulov", "phone": "998908888888", "group_ids": [], "is_supporter": False}
+        ]
+        self.data[f"{API}/groups/25599/students"] = []
+
+    def test_the_sync_opens_the_class_with_them_as_ta_not_as_its_teacher(self):
+        run = run_sync(FakeLcupClient(self.data), now=self.now)
+        self.assertTrue(run.ok, run.errors)
+        link = LcupGroupLink.objects.get(lcup_group_id=25599)
+        self.assertEqual(link.status, GroupLinkStatus.CONFIRMED)
+        room = link.classroom
+        self.assertIsNone(room.teacher_id)
+        self.assertEqual(room.created_by_id, self.support.pk)
+        seat = ClassroomMembership.objects.get(classroom=room, user=self.support)
+        self.assertEqual((seat.role, seat.status), (ClassroomMembership.ROLE_TA, ClassroomMembership.STATUS_ACTIVE))
+        self.support.refresh_from_db()
+        self.assertEqual(self.support.role, "support_teacher")
+
+    def test_later_syncs_leave_the_ta_seat_and_the_empty_teacher_alone(self):
+        run_sync(FakeLcupClient(self.data), now=self.now)
+        run = run_sync(FakeLcupClient(self.data), now=self.now)
+        self.assertTrue(run.ok, run.errors)
+        room = LcupGroupLink.objects.get(lcup_group_id=25599).classroom
+        self.assertIsNone(room.teacher_id)
+        self.assertEqual(
+            list(ClassroomMembership.objects.filter(classroom=room).exclude(role=ClassroomMembership.ROLE_STUDENT).values_list("user_id", "role", "status")),
+            [(self.support.pk, ClassroomMembership.ROLE_TA, ClassroomMembership.STATUS_ACTIVE)],
+        )
+
+    def test_the_ta_can_take_this_class_attendance(self):
+        from classes.capabilities import classroom_capabilities
+
+        run_sync(FakeLcupClient(self.data), now=self.now)
+        room = LcupGroupLink.objects.get(lcup_group_id=25599).classroom
+        self.assertTrue(classroom_capabilities(self.support, room).can_take_attendance)
+
+    def test_with_no_teacher_and_no_supporter_it_still_waits(self):
+        LcupTeacherLink.objects.filter(lcup_teacher_id=2009).update(user=None)
+        run_sync(FakeLcupClient(self.data), now=self.now)
+        link = LcupGroupLink.objects.get(lcup_group_id=25599)
+        self.assertEqual((link.status, link.classroom_id), (GroupLinkStatus.NEEDS_TEACHER, None))
+
+    def test_the_create_class_button_does_the_same(self):
+        LcupGroupLink.objects.create(
+            lcup_group_id=25599, name="Foundation G14 | Math | Ulug'bek", snapshot=self.data[f"{API}/groups"][0],
+            status=GroupLinkStatus.NEEDS_TEACHER,
+        )
+        link = LcupGroupLink.objects.get(lcup_group_id=25599)
+        admin = User.objects.create_user(None, password=None, username="adm", role="admin")
+        api = APIClient()
+        api.force_authenticate(admin)
+        self.assertEqual(api.post(f"/api/lcup/groups/{link.pk}/create-class/").status_code, 201)
+        link.refresh_from_db()
+        self.assertIsNone(link.classroom.teacher_id)
