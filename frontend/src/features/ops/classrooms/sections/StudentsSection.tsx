@@ -227,12 +227,14 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
   };
 
   // A phone keeps the name (its debt under it), attendance and the Remove button; the table fits.
+  // Beside the seat actions a narrow screen also gives up what the person's page shows too, or the actions scroll off.
+  const spare = seatsOpen ? "hidden xl:table-cell" : WIDE_ONLY;
   const head: Column[] = [
     "Name",
-    { label: "Joined", className: WIDE_ONLY },
+    { label: "Joined", className: spare },
     { label: "Owes", className: WIDE_ONLY },
     "Attendance",
-    { label: "Homework", className: WIDE_ONLY },
+    { label: "Homework", className: spare },
     ...(managed ? [] : [""]),
   ];
 
@@ -294,7 +296,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                         </span>
                       </span>
                     </Td>
-                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
+                    <Td className={`${spare} tabular-nums text-muted-foreground`}>
                       {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
                     </Td>
                     <Td className={`${WIDE_ONLY} tabular-nums`}>
@@ -307,7 +309,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                     <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
                       {pct(s.attendance_rate)}
                     </Td>
-                    <Td className={cn(WIDE_ONLY, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
+                    <Td className={cn(spare, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
                       {pct(s.homework_rate)}
                     </Td>
                     {managed ? null : seatsOpen ? (

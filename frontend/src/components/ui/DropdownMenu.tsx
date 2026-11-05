@@ -81,9 +81,12 @@ export function DropdownMenu({
       role="menu"
       style={portal ? place : undefined}
       className={cn(
-        "z-[250] min-w-[168px] overflow-hidden rounded-xl border border-slate-200/90 bg-white/95 py-1 shadow-xl shadow-slate-900/10 transition-[opacity,transform] duration-200 animate-[ds-modal-in_0.2s_ease-out]",
-        "dark:border-slate-600 dark:bg-slate-900/95 dark:shadow-black/50",
-        portal ? cn("fixed", face) : cn("absolute mt-1", align === "end" ? "right-0" : "left-0"),
+        "z-[250] min-w-[168px] overflow-hidden rounded-xl border border-slate-200/90 py-1 shadow-xl shadow-slate-900/10 transition-[opacity,transform] duration-200 animate-[ds-modal-in_0.2s_ease-out]",
+        "dark:border-slate-600 dark:shadow-black/50",
+        // Solid on <body>: it opens over a table's rows, and their buttons would read through it.
+        portal
+          ? cn("fixed bg-card", face)
+          : cn("absolute mt-1 bg-white/95 dark:bg-slate-900/95", align === "end" ? "right-0" : "left-0"),
       )}
     >
       {children}
