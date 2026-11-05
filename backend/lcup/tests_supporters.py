@@ -12,9 +12,9 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from lcup.classrooms import teachers_for
-from lcup.matching import SUPPORTER_REASON
+from lcup.matching import SUPPORTER_REASON, days_from, subject_from
 from access.models import UserAccess
-from classes.models import ClassroomMembership
+from classes.models import Classroom, ClassroomMembership
 from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState, LcupTeacherLink, LinkStatus
 from lcup.sync import run_sync
 from lcup.testing import FakeLcupClient
@@ -178,6 +178,18 @@ class SupporterLedGroupTests(TestCase):
         caps = classroom_capabilities(self.support, room)
         self.assertTrue(caps.can_take_attendance)
         self.assertTrue(caps.is_owner)
+
+    def test_a_class_they_already_teach_is_suggested_not_duplicated(self):
+        group = self.data[f"{API}/groups"][0]
+        room = Classroom.objects.create(
+            name="Their class", subject=subject_from(group), level="", lesson_days=days_from(group),
+            lesson_time=str(group["start_time"])[:5], created_by=self.support, teacher=self.support,
+        )
+        run_sync(FakeLcupClient(self.data), now=self.now)
+        link = LcupGroupLink.objects.get(lcup_group_id=25599)
+        self.assertEqual((link.status, link.suggestion_id, link.classroom_id), (GroupLinkStatus.SUGGESTED, room.pk, None))
+        self.assertIn("teacher", link.suggestion_reasons)
+        self.assertEqual(Classroom.objects.count(), 1)
 
     def test_with_no_teacher_and_no_supporter_it_still_waits(self):
         LcupTeacherLink.objects.filter(lcup_teacher_id=2009).update(user=None)

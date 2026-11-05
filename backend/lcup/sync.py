@@ -234,7 +234,7 @@ def _groups(client, run: _Run) -> None:
         branch = branch_for(row)
         suggestion = suggest_classroom(
             row,
-            teacher_user_ids={t.pk for t in teachers},
+            teacher_user_ids={t.pk for t in teachers or supporters},
             branch_id=branch.pk if branch else None,
             taken_classroom_ids=taken,
         )
