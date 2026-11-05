@@ -22,7 +22,7 @@ from django.utils import timezone
 from access import constants as acc_const
 from access.models import UserAccess
 from billing import ledger
-from billing.models import Account, EndReason, Seat, SeatPriceChange, SeatState
+from billing.models import Account, EndReason, Seat, SeatPriceChange, SeatState, Span
 from users import audience as A
 from users.people_detail import display_name
 from users.phone_utils import clean_parent_phone
@@ -368,6 +368,12 @@ def _after_the_last_group(user, day: date, *, today: date) -> None:
         user, reason=A.REASON_LEFT_WITH_DEBT if owes else A.REASON_LEFT, source=A.SOURCE_SEATS, freeze_for_debt=owes
     )
     M.objects.filter(pk__in=[row.pk for row in others]).update(seat_left_on=day)
+
+
+def frozen_on(room) -> dict[int, date]:
+    """The day each seat in this class last froze, by user: the date ``fix_date`` puts right on a frozen seat."""
+    spans = Span.objects.filter(seat__classroom=room, ended_by=EndReason.FREEZE, seat__account__user__isnull=False)
+    return dict(spans.order_by("id").values_list("seat__account__user_id", "end"))
 
 
 @transaction.atomic

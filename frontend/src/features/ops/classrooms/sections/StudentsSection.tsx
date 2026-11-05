@@ -322,7 +322,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                               student: { id: s.id, name: s.name || s.username },
                               trial: s.seat_status === "trial",
                               ...(action === "fix-date"
-                                ? { day: s.seat_status === "frozen" ? null : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
+                                ? { day: s.seat_status === "frozen" ? s.seat_frozen_on : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
                                 : {}),
                             })
                           }

@@ -64,6 +64,48 @@ class SeatCase(TestCase):
         return self.assertRaisesMessage(S.SeatRefused, words)
 
 
+class FrozenDateOnTheRosterTests(SeatCase):
+    """Fix date opens at the date being fixed, so the roster has to say when a frozen seat froze."""
+
+    def on_the_roster(self):
+        from classes.ops_classrooms import roster_part
+
+        return roster_part(self.room)["students"][0]["seat_frozen_on"]
+
+    def test_a_frozen_seat_says_when_it_froze(self):
+        self.add("active", oct_(1))
+        self.freeze(oct_(19))
+        self.assertEqual(self.on_the_roster(), "2026-10-19")
+
+    def test_the_latest_freeze_is_the_one_it_says(self):
+        self.add("active", oct_(1))
+        self.freeze(oct_(9))
+        S.return_seat(self.room, self.student, oct_(12), today=oct_(12), by=self.boss)
+        self.freeze(oct_(19))
+        self.assertEqual(self.on_the_roster(), "2026-10-19")
+
+    def test_a_fixed_date_is_the_date_it_says_after(self):
+        self.add("active", oct_(1))
+        self.freeze(oct_(19))
+        S.fix_date(self.room, self.student, oct_(21), today=oct_(26), by=self.boss)
+        self.assertEqual(self.on_the_roster(), "2026-10-21")
+
+    def test_a_running_seat_says_nothing(self):
+        self.add("active", oct_(1))
+        self.assertIsNone(self.on_the_roster())
+
+    def test_a_seat_back_from_a_freeze_says_nothing(self):
+        self.add("active", oct_(1))
+        self.freeze(oct_(9))
+        S.return_seat(self.room, self.student, oct_(12), today=oct_(12), by=self.boss)
+        self.assertIsNone(self.on_the_roster())
+
+    def test_a_member_the_ledger_never_billed_says_nothing(self):
+        M.objects.create(classroom=self.room, user=self.student, role=M.ROLE_STUDENT)
+        self.freeze(oct_(19))
+        self.assertIsNone(self.on_the_roster())
+
+
 class AddTests(SeatCase):
     def test_a_trial_writes_no_money(self):
         self.add("trial", oct_(19))

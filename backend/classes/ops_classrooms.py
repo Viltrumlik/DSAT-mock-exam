@@ -215,9 +215,11 @@ def roster_part(room, request=None) -> dict:
     from .analytics import _completion_map
     from .attendance import compute_attendance_score
     from .models_attendance import AttendanceRecord
+    from .seat_actions import frozen_on
 
     seats = sorted(_student_seats(room), key=lambda s: display_name(s.user).casefold())
     ids = [s.user_id for s in seats]
+    froze = frozen_on(room) if any(s.seat_status == ClassroomMembership.SEAT_FROZEN for s in seats) else {}
     statuses = defaultdict(list)
     for student_id, status in AttendanceRecord.objects.filter(
         session__classroom=room, student_id__in=ids
@@ -249,6 +251,8 @@ def roster_part(room, request=None) -> dict:
                 "joined_at": iso(s.joined_at),
                 "seat_status": s.seat_status,
                 "seat_start_date": iso(s.seat_start_date),
+                # What Fix date puts right on a frozen seat; a seat that is not frozen has no such date.
+                "seat_frozen_on": iso(froze.get(s.user_id)) if s.seat_status == ClassroomMembership.SEAT_FROZEN else None,
                 "owes": owes(s.user_id),
                 "attendance_rate": compute_attendance_score(statuses[s.user_id]) if statuses[s.user_id] else None,
                 "homework_rate": homework_rate(s.user_id),

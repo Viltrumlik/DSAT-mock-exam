@@ -34,7 +34,8 @@ const ROOM = {
 
 const row = (id: number, name: string, seat_status: "active" | "trial" | "frozen") => ({
   id, name, username: name, avatar_url: null, section: "students" as const, joined_at: null, seat_status,
-  seat_start_date: "2026-10-12", owes: null, attendance_rate: null, homework_rate: null,
+  seat_start_date: "2026-10-12", seat_frozen_on: seat_status === "frozen" ? "2026-10-20" : null,
+  owes: null, attendance_rate: null, homework_rate: null,
 });
 const ROSTER: ClassroomRoster = {
   students: [row(1, "Ali Trial", "trial"), row(2, "Vali Active", "active"), row(3, "Sara Frozen", "frozen")],
@@ -267,6 +268,21 @@ describe("once lc-up is off", () => {
     setValue(dateInput(), "2026-10-14");
     await click(button(dialog()!, "Fix date"));
     expect(post).toHaveBeenCalledWith("/classes/admin/classrooms/45/seats/2/fix-date/", { date: "2026-10-14" });
+  });
+
+  it("starts a frozen seat's Fix date from the day it froze", async () => {
+    route();
+    await mount();
+    await choose("Sara Frozen", "Fix date");
+    expect(dateInput().value).toBe("2026-10-20");
+    expect(dialog()!.textContent).toContain("Frozen from");
+  });
+
+  it("starts from today when nothing says when it froze", async () => {
+    route({ roster: { students: [{ ...row(3, "Sara Frozen", "frozen"), seat_frozen_on: null }], left: [] } });
+    await mount();
+    await choose("Sara Frozen", "Fix date");
+    expect(dateInput().value).toBe(todayIso());
   });
 
   it("shows the server's reason and stays open", async () => {

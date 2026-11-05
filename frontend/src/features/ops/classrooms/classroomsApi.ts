@@ -92,6 +92,8 @@ export type ClassroomRoster = {
     seat_status: SeatStatus;
     /** "YYYY-MM-DD": when this stretch of the seat began, null when nobody said. */
     seat_start_date: string | null;
+    /** "YYYY-MM-DD": the day a frozen seat froze, null for any other seat or when the ledger never billed it. */
+    seat_frozen_on: string | null;
     /** What lc-up says they owe, in whole UZS; null when nothing. */
     owes: number | null;
     attendance_rate: number | null;
