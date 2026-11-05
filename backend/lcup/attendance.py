@@ -203,6 +203,44 @@ def push_held_reason(link) -> str | None:
     return None
 
 
+def registers_just_closed(now) -> set[datetime]:
+    """When the marked registers of paired classes closed, for those still inside lc-up's last minutes:
+    a sync now reaches lc-up in time. Reads only, and asks lc-up nothing."""
+    from classes.attendance_window import LCUP_PUSH_LEAD_MINUTES, marking_window
+
+    from .models import GroupLinkStatus
+
+    today = timezone.localdate(now)
+    sessions = (
+        AttendanceSession.objects.filter(
+            date__in=[today, today - timedelta(days=1)],
+            records__isnull=False,
+            classroom__lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+            classroom__lcup_group_link__deleted_in_lcup_at__isnull=True,
+        )
+        .distinct()
+        .select_related("classroom")
+    )
+    lead = timedelta(minutes=LCUP_PUSH_LEAD_MINUTES)
+    closes = (marking_window(session.classroom, session.date)[1] for session in sessions)
+    return {close for close in closes if close <= now < close + lead}
+
+
+def push_worth_retrying(now) -> bool:
+    """A sync just ran as registers closed: is something still unsent that another try could get through
+    while lc-up's window lasts? Its last run hit an error (the marks may never have been read), or a send
+    failed and has attempts left. A refusal is final and is not counted."""
+    from .models import LcupSyncRun
+
+    run = LcupSyncRun.objects.filter(dry_run=False).order_by("-id").first()
+    if run is not None and not run.ok:
+        return True
+    today = timezone.localdate(now)
+    return LcupAttendancePush.objects.filter(
+        state=LcupAttendancePush.STATE_FAILED, attempts__lt=MAX_PUSH_ATTEMPTS, date__in=[today, today - timedelta(days=1)]
+    ).exists()
+
+
 def push_day(client, plan: DayPlan, *, now):
     """Send ``plan.push`` to lc-up — once for this group and day — and record it. None when there
     is nothing to send, the switch is off, the day is before the cutover, the group is held, or the

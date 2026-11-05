@@ -28,7 +28,7 @@ from users.models import User
 from . import finance, profiles, tasks
 from .accounts import create_account_for, reissue_claim
 from .auth_backend import _audit
-from .classrooms import branch_for, create_classroom_for, teachers_for
+from .classrooms import branch_for, create_classroom_for, supporters_for, teachers_for
 from .claims import set_initial_password
 from .conf import lcup_enabled, profile_sync_enabled
 from .matching import SUPPORTER_REASON
@@ -164,10 +164,11 @@ class GroupCreateClassView(_AdminView):
             return _bad("This lc-up group already has a class.")
         snapshot = link.snapshot or {}
         teachers = teachers_for(snapshot)
-        if not teachers:
+        supporters = [] if teachers else supporters_for(snapshot)
+        if not teachers and not supporters:
             return _bad("Link this group's lc-up teacher to one of our teachers first.")
         try:
-            create_classroom_for(link, teacher_users=teachers, branch=branch_for(snapshot))
+            create_classroom_for(link, teacher_users=teachers, support_users=supporters, branch=branch_for(snapshot))
         except ValueError as exc:
             return _bad(str(exc))
         return Response(group_row(link), status=status.HTTP_201_CREATED)

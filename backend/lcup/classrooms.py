@@ -4,6 +4,10 @@ Built the way ``ClassroomViewSet.create`` builds one (classes/views.py): the own
 ``ADMIN`` membership and a classroom-scoped ``UserAccess`` for the class's subject, so the class
 works for them exactly as if they had created it. A second lc-up teacher becomes a ``TEACHER``.
 
+A group whose only lc-up teachers are our support teachers still gets its class (owner, 2026-11-05,
+Foundation G14: "teacherlar emas support teacherlar"): they hold ``TA`` seats, which may take attendance,
+and the class has no ``Classroom.teacher``, never a support teacher on that field (``views_assign``).
+
 The lesson length comes from lc-up's start/finish times and is rounded *up* to whole hours:
 ``attendance_window`` closes the register two hours after the lesson's end, and a lesson recorded
 as shorter than it is would close the register while the class is still in the room.
@@ -44,6 +48,23 @@ def teachers_for(snapshot: dict) -> list:
     user_ids = [user_by_lcup[i] for i in lcup_ids if i in user_by_lcup]
     users = User.objects.in_bulk(user_ids)
     return [users[i] for i in user_ids if i in users]
+
+
+def supporters_for(snapshot: dict) -> list:
+    """Our support teachers among the group's lc-up teachers, in lc-up's order. lc-up lists them as
+    ordinary teachers, and leaves ``is_supporter`` false: their link is what says so."""
+    from users.models import User
+
+    from .models import LcupTeacherLink, LinkStatus
+
+    lcup_ids = [t.get("id") for t in snapshot.get("teachers") or [] if t.get("id") is not None]
+    user_by_lcup = dict(
+        LcupTeacherLink.objects.filter(
+            lcup_teacher_id__in=lcup_ids, status=LinkStatus.IGNORED, user__role=acc_const.ROLE_SUPPORT_TEACHER
+        ).values_list("lcup_teacher_id", "user_id")
+    )
+    users = User.objects.in_bulk(list(user_by_lcup.values()))
+    return [users[user_by_lcup[i]] for i in lcup_ids if i in user_by_lcup]
 
 
 def branch_for(snapshot: dict):
@@ -87,8 +108,8 @@ def _lesson_hours(snapshot: dict) -> int:
     return max(1, math.ceil(seconds / 3600)) if seconds > 0 else DEFAULT_LESSON_HOURS
 
 
-def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
-    if not teacher_users:
+def create_classroom_for(link, *, teacher_users: list, branch, support_users: tuple | list = ()) -> Classroom:
+    if not teacher_users and not support_users:
         raise ValueError("an lc-up group needs a linked teacher before a class can be created for it")
     snapshot = link.snapshot or {}
     subject = subject_from(snapshot)
@@ -98,7 +119,7 @@ def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
     if days is None:
         raise ValueError("lc-up lesson days are neither Mon/Wed/Fri nor Tue/Thu/Sat")
 
-    owner = teacher_users[0]
+    owner = teacher_users[0] if teacher_users else None
     domain = acc_const.DOMAIN_MATH if subject == Classroom.SUBJECT_MATH else acc_const.DOMAIN_ENGLISH
     with transaction.atomic():
         room = Classroom.objects.create(
@@ -111,13 +132,17 @@ def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
             room_number=room_number_from(snapshot),
             start_date=start_date_from(snapshot),
             branch=branch,
-            created_by=owner,
+            created_by=owner or support_users[0],
             teacher=owner,
         )
         for index, teacher in enumerate(teacher_users):
             role = ClassroomMembership.ROLE_ADMIN if index == 0 else ClassroomMembership.ROLE_TEACHER
             ClassroomMembership.objects.get_or_create(classroom=room, user=teacher, defaults={"role": role})
             UserAccess.objects.get_or_create(user=teacher, subject=domain, classroom=room, defaults={"granted_by": None})
+        for supporter in support_users:
+            ClassroomMembership.objects.get_or_create(
+                classroom=room, user=supporter, defaults={"role": ClassroomMembership.ROLE_TA}
+            )
         link.classroom = room
         link.status = GroupLinkStatus.CONFIRMED
         link.save(update_fields=["classroom", "status"])

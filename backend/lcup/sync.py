@@ -33,7 +33,7 @@ from classes.models import Branch, Classroom, ClassroomMembership
 from . import audience, finance, profiles
 from .accounts import create_account_for, create_teacher_account_for
 from .attendance import apply_day, plan_day, push_day, push_held_reason
-from .classrooms import branch_for, create_classroom_for, teachers_for
+from .classrooms import branch_for, create_classroom_for, supporters_for, teachers_for
 from .client import LcupAuthError
 from .conf import attendance_pull_enabled, attendance_push_enabled, attendance_push_from
 from .follow import archive_class, follow_details, follow_teachers, reopen_class
@@ -230,6 +230,7 @@ def _groups(client, run: _Run) -> None:
             continue
 
         teachers = teachers_for(row)
+        supporters = [] if teachers else supporters_for(row)
         branch = branch_for(row)
         suggestion = suggest_classroom(
             row,
@@ -242,14 +243,14 @@ def _groups(client, run: _Run) -> None:
         link.suggestion_reasons = suggestion.reasons
         if suggestion.classroom_id:
             link.status = GroupLinkStatus.SUGGESTED
-        elif not teachers:
+        elif not teachers and not supporters:
             link.status = GroupLinkStatus.NEEDS_TEACHER
         elif not run.review_done:
             link.status = GroupLinkStatus.SUGGESTED
             link.suggestion_reasons = ["no matching class; one is created after the initial review"]
         else:
             try:
-                room = create_classroom_for(link, teacher_users=teachers, branch=branch)
+                room = create_classroom_for(link, teacher_users=teachers, support_users=supporters, branch=branch)
             except ValueError as exc:
                 link.status = GroupLinkStatus.SUGGESTED
                 link.suggestion_reasons = [str(exc)]
@@ -502,7 +503,8 @@ def _reasons(client, run: _Run) -> None:
 
 def _attendance(client, run: _Run) -> None:
     """Closed registers of the last few days agree with lc-up; after the cutover, what lc-up lacks
-    is sent once (``lcup.attendance``). A register still open is the teacher's and is not read."""
+    is sent once (``lcup.attendance``). A register still open is the teacher's and is not read. Besides
+    the quarter hours, this runs as registers close (``tasks.push_closed_registers``)."""
     from classes import attendance_window
 
     if not attendance_pull_enabled():

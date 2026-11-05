@@ -47,6 +47,10 @@ from .lesson_schedule import lesson_interval
 
 #: How long after a lesson ENDS a teacher may still write its register. The school's number.
 MARKING_GRACE_MINUTES = 120
+#: A class whose registers go to lc-up shuts this much sooner, and is sent the moment it shuts. lc-up's
+#: own window ends at those same two hours, so a register sent as it closed was refused for good whenever
+#: the sync ran a minute late (owner, 2026-11-05: "limitdan 5 daqiqa oldin jo'nating").
+LCUP_PUSH_LEAD_MINUTES = 5
 
 STATE_PENDING = "PENDING"
 STATE_OPEN = "OPEN"
@@ -66,9 +70,10 @@ _REASON = {
 def marking_window(classroom, day) -> tuple[datetime, datetime]:
     """``(opens_at, closes_at)`` for ``classroom``'s register on ``day``. Never ``None``.
 
-    Opens when the lesson starts and closes :data:`MARKING_GRACE_MINUTES` after it ends. A
-    classroom whose ``lesson_time`` cannot be read gets the whole of ``day`` instead — see
-    the module docstring on why that is the right degradation.
+    Opens when the lesson starts and closes :data:`MARKING_GRACE_MINUTES` after it ends, or
+    :data:`LCUP_PUSH_LEAD_MINUTES` before that if its registers go to lc-up. A classroom whose
+    ``lesson_time`` cannot be read gets the whole of ``day`` instead — see the module docstring
+    on why that is the right degradation.
     """
     interval = lesson_interval(classroom, day)
     if interval is None:
@@ -77,7 +82,8 @@ def marking_window(classroom, day) -> tuple[datetime, datetime]:
         return opens_at, opens_at + timedelta(days=1)
 
     starts_at, ends_at = interval
-    return starts_at, ends_at + timedelta(minutes=MARKING_GRACE_MINUTES)
+    grace = MARKING_GRACE_MINUTES - (LCUP_PUSH_LEAD_MINUTES if _pushes_to_lcup(classroom) else 0)
+    return starts_at, ends_at + timedelta(minutes=grace)
 
 
 def marking_state(classroom, day, *, now=None) -> str:
@@ -117,6 +123,12 @@ def _may_override(user) -> bool:
     from .capabilities import is_global_admin
 
     return is_global_admin(user)
+
+
+def _pushes_to_lcup(classroom) -> bool:
+    from lcup.attendance_guard import pushes_to_lcup
+
+    return pushes_to_lcup(classroom)
 
 
 def _lcup_owns(classroom, state) -> bool:

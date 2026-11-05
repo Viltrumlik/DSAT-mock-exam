@@ -706,6 +706,12 @@ CELERY_BEAT_SCHEDULE = {
     # The lesson-end check (lcup.followups, owner 2026-10-20): each paired class's teachers are told who is
     # absent without a reason, who has had the free trial and whom lc-up lists but the register cannot show —
     # once, as the lesson ends. Returns at once while LCUP_ATTENDANCE_CHECKS_ENABLED is off.
+    # Registers of paired classes close 5 minutes before lc-up's window does, and go at that minute
+    # (lcup.tasks.push_closed_registers). Runs a sync only when one has just closed; off with the push switch.
+    "lcup-push-closed-registers": {
+        "task": "lcup.tasks.push_closed_registers",
+        "schedule": crontab(minute="*"),
+    },
     "lcup-attendance-checks": {
         "task": "lcup.tasks.attendance_checks",
         "schedule": crontab(minute="*/5"),

@@ -25,6 +25,31 @@ def sync() -> dict:
     return _exclusive(dry_run=False)
 
 
+@shared_task(name="lcup.tasks.push_closed_registers")
+def push_closed_registers() -> dict:
+    """Beat asks every minute; a sync runs only as registers close, so they reach lc-up in its window
+    and not at the next quarter hour (``classes.attendance_window.LCUP_PUSH_LEAD_MINUTES``). Once per
+    closing time, unless it failed. While another sync runs, the next minute tries again."""
+    from django.utils import timezone
+
+    from .attendance import push_worth_retrying, registers_just_closed
+    from .conf import attendance_pull_enabled, attendance_push_enabled
+
+    if not (lcup_enabled() and attendance_pull_enabled() and attendance_push_enabled()):
+        return {"skipped": "disabled"}
+    keys = {f"lcup:push-tick:{close.timestamp():.0f}" for close in registers_just_closed(timezone.now())}
+    fresh = [key for key in keys if not cache.get(key)]
+    if not fresh:
+        return {"due": 0}
+    result = _exclusive(dry_run=False)
+    if "skipped" in result:
+        return result
+    if push_worth_retrying(timezone.now()):
+        return {"due": len(fresh), "retry": True}
+    cache.set_many({key: "1" for key in fresh}, timeout=30 * 60)
+    return {"due": len(fresh)}
+
+
 @shared_task(name="lcup.tasks.dry_run")
 def dry_run() -> dict:
     """The /ops/lcup "Dry run" button. Allowed while the integration is off — previewing a sync
