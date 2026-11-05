@@ -51,10 +51,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
           <div
             key={t.id}
             className={cn(
-              "rounded-2xl border border-border bg-card px-4 py-3 shadow-lg",
+              "rounded-2xl border bg-card px-4 py-3 shadow-lg",
               overlayFaceClass(t.face),
-              t.tone === "success" && "border-primary/20 bg-primary/5",
-              t.tone === "error" && "border-red-500/20 bg-red-500/5",
+              // A tint laid over the solid card: a see-through background would let the page read through the toast.
+              t.tone === "success"
+                ? "border-primary/20 bg-[linear-gradient(var(--primary-soft),var(--primary-soft))]"
+                : t.tone === "error"
+                  ? "border-red-500/20 bg-[linear-gradient(var(--danger-soft),var(--danger-soft))]"
+                  : "border-border",
             )}
           >
             <p className="text-sm font-extrabold text-foreground">{t.tone === "error" ? "Error" : "Notice"}</p>
