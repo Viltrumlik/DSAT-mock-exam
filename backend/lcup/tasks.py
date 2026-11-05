@@ -29,10 +29,10 @@ def sync() -> dict:
 def push_closed_registers() -> dict:
     """Beat asks every minute; a sync runs only as registers close, so they reach lc-up in its window
     and not at the next quarter hour (``classes.attendance_window.LCUP_PUSH_LEAD_MINUTES``). Once per
-    closing time. While another sync runs, the next minute tries again."""
+    closing time, unless it failed. While another sync runs, the next minute tries again."""
     from django.utils import timezone
 
-    from .attendance import registers_just_closed
+    from .attendance import push_worth_retrying, registers_just_closed
     from .conf import attendance_pull_enabled, attendance_push_enabled
 
     if not (lcup_enabled() and attendance_pull_enabled() and attendance_push_enabled()):
@@ -44,6 +44,8 @@ def push_closed_registers() -> dict:
     result = _exclusive(dry_run=False)
     if "skipped" in result:
         return result
+    if push_worth_retrying(timezone.now()):
+        return {"due": len(fresh), "retry": True}
     cache.set_many({key: "1" for key in fresh}, timeout=30 * 60)
     return {"due": len(fresh)}
 

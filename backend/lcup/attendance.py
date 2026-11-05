@@ -226,6 +226,21 @@ def registers_just_closed(now) -> set[datetime]:
     return {close for close in closes if close <= now < close + lead}
 
 
+def push_worth_retrying(now) -> bool:
+    """A sync just ran as registers closed: is something still unsent that another try could get through
+    while lc-up's window lasts? Its last run hit an error (the marks may never have been read), or a send
+    failed and has attempts left. A refusal is final and is not counted."""
+    from .models import LcupSyncRun
+
+    run = LcupSyncRun.objects.filter(dry_run=False).order_by("-id").first()
+    if run is not None and not run.ok:
+        return True
+    today = timezone.localdate(now)
+    return LcupAttendancePush.objects.filter(
+        state=LcupAttendancePush.STATE_FAILED, attempts__lt=MAX_PUSH_ATTEMPTS, date__in=[today, today - timedelta(days=1)]
+    ).exists()
+
+
 def push_day(client, plan: DayPlan, *, now):
     """Send ``plan.push`` to lc-up — once for this group and day — and record it. None when there
     is nothing to send, the switch is off, the day is before the cutover, the group is held, or the

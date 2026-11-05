@@ -16,7 +16,8 @@ from django.utils import timezone
 
 from classes.attendance_window import STATE_LOCKED, STATE_OPEN, marking_state, marking_window
 from classes.models import Classroom
-from lcup.attendance import registers_just_closed
+from lcup.attendance import MAX_PUSH_ATTEMPTS, registers_just_closed
+from lcup.models import LcupAttendancePush, LcupSyncRun
 from lcup.sync import API, _attendance, _Run
 from lcup.tasks import push_closed_registers
 from lcup.testing import FakeLcupClient
@@ -107,6 +108,43 @@ class TickTests(ReconcileFixture):
         result, _ = self.tick(at(19, 55), result={"skipped": "already running"})
         self.assertEqual(result, {"skipped": "already running"})
         self.assertEqual(self.tick(at(19, 56))[1].call_count, 1)
+
+    @override_settings(**PUSH_ON)
+    def test_a_send_that_failed_is_tried_again_while_the_window_lasts(self):
+        self.mark(self.s1, R.STATUS_PRESENT)
+        push = LcupAttendancePush.objects.create(group=self.link, date=DAY, state=LcupAttendancePush.STATE_FAILED, attempts=1)
+        result, _ = self.tick(at(19, 55))
+        self.assertEqual(result, {"due": 1, "retry": True})
+        self.assertEqual(self.tick(at(19, 56))[1].call_count, 1)
+
+        push.state = LcupAttendancePush.STATE_SENT
+        push.save()
+        self.assertEqual(self.tick(at(19, 57))[1].call_count, 1)  # sent: this one marks the closing time done
+        self.assertEqual(self.tick(at(19, 58))[1].call_count, 0)
+
+    @override_settings(**PUSH_ON)
+    def test_out_of_attempts_it_stops_asking(self):
+        self.mark(self.s1, R.STATUS_PRESENT)
+        LcupAttendancePush.objects.create(
+            group=self.link, date=DAY, state=LcupAttendancePush.STATE_FAILED, attempts=MAX_PUSH_ATTEMPTS
+        )
+        self.assertEqual(self.tick(at(19, 55))[0], {"due": 1})
+        self.assertEqual(self.tick(at(19, 56))[1].call_count, 0)
+
+    @override_settings(**PUSH_ON)
+    def test_a_refusal_is_final(self):
+        self.mark(self.s1, R.STATUS_PRESENT)
+        LcupAttendancePush.objects.create(group=self.link, date=DAY, state=LcupAttendancePush.STATE_REFUSED, attempts=1)
+        self.assertEqual(self.tick(at(19, 55))[0], {"due": 1})
+        self.assertEqual(self.tick(at(19, 56))[1].call_count, 0)
+
+    @override_settings(**PUSH_ON)
+    def test_a_sync_with_errors_is_tried_again(self):
+        self.mark(self.s1, R.STATUS_PRESENT)
+        LcupSyncRun.objects.create(ok=False, errors=[{"stage": "attendance", "error": "LcupUnavailable"}])
+        self.assertEqual(self.tick(at(19, 55))[0], {"due": 1, "retry": True})
+        LcupSyncRun.objects.create(ok=True)
+        self.assertEqual(self.tick(at(19, 56))[0], {"due": 1})
 
     def test_it_waits_for_its_switches(self):
         self.mark(self.s1, R.STATUS_PRESENT)
