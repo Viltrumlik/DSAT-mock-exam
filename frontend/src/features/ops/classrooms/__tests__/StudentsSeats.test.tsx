@@ -34,7 +34,8 @@ const ROOM = {
 
 const row = (id: number, name: string, seat_status: "active" | "trial" | "frozen") => ({
   id, name, username: name, avatar_url: null, section: "students" as const, joined_at: null, seat_status,
-  seat_start_date: "2026-10-12", owes: null, attendance_rate: null, homework_rate: null,
+  seat_start_date: "2026-10-12", seat_frozen_on: seat_status === "frozen" ? "2026-10-20" : null,
+  owes: null, attendance_rate: null, homework_rate: null,
 });
 const ROSTER: ClassroomRoster = {
   students: [row(1, "Ali Trial", "trial"), row(2, "Vali Active", "active"), row(3, "Sara Frozen", "frozen")],
@@ -103,12 +104,31 @@ function setValue(el: HTMLInputElement | HTMLSelectElement, value: string) {
 }
 
 const dateInput = () => dialog()!.querySelector('input[type="date"]') as HTMLInputElement;
+const menu = () => document.body.querySelector('[role="menu"]') as HTMLElement | null;
+const more = (name: string) => rowOf(name).querySelector(`button[aria-label="More actions for ${name}"]`) as HTMLButtonElement | null;
 
 async function click(el: HTMLElement | undefined) {
   await act(async () => {
     el!.click();
   });
   await settle();
+}
+
+/** An action on a row: its own button, or the one behind its menu. */
+async function choose(name: string, label: string) {
+  const direct = button(rowOf(name), label);
+  if (direct) return click(direct);
+  await click(more(name)!);
+  await click(button(menu()!, label));
+}
+
+/** Everything a row offers, the menu's items after the button. */
+async function offered(name: string) {
+  const own = buttonsIn(rowOf(name)).filter(Boolean);
+  await click(more(name)!);
+  const inside = buttonsIn(menu()!);
+  await click(more(name)!);
+  return [...own, ...inside];
 }
 
 beforeEach(() => {
@@ -160,9 +180,32 @@ describe("once lc-up is off", () => {
   it("offers on each row the actions that fit its seat", async () => {
     route();
     await mount();
-    expect(buttonsIn(rowOf("Ali Trial"))).toEqual(["Activate", "Move", "Leave", "Fix date"]);
-    expect(buttonsIn(rowOf("Vali Active"))).toEqual(["Freeze", "Move", "Leave", "Fix date"]);
-    expect(buttonsIn(rowOf("Sara Frozen"))).toEqual(["Return", "Leave", "Fix date"]);
+    expect(await offered("Ali Trial")).toEqual(["Activate", "Move", "Leave", "Fix date"]);
+    expect(await offered("Vali Active")).toEqual(["Freeze", "Move", "Leave", "Fix date"]);
+    expect(await offered("Sara Frozen")).toEqual(["Return", "Leave", "Fix date"]);
+  });
+
+  it("keeps one action on the row, and the rest out of the table that would cut them off", async () => {
+    route();
+    await mount();
+    expect(buttonsIn(rowOf("Vali Active")).filter(Boolean)).toEqual(["Freeze"]);
+    await click(more("Vali Active")!);
+    expect(menu()).not.toBeNull();
+    expect(host.contains(menu())).toBe(false);
+  });
+
+  it("closes the menu once an action in it is chosen", async () => {
+    route();
+    await mount();
+    await choose("Vali Active", "Leave");
+    expect(menu()).toBeNull();
+    expect(dialog()!.textContent).toContain("Vali Active leaves this group?");
+  });
+
+  it("names the student in full for when the row cuts the name short", async () => {
+    route();
+    await mount();
+    expect(rowOf("Vali Active").querySelector("a")!.getAttribute("title")).toBe("Vali Active");
   });
 
   it("asks for a date with today as the default and sends it", async () => {
@@ -195,20 +238,51 @@ describe("once lc-up is off", () => {
     route();
     post.mockResolvedValue({ data: {} });
     await mount();
-    await click(button(rowOf(name), label));
+    await choose(name, label);
     await click(button(dialog()!, label));
     expect(post).toHaveBeenCalledWith(`/classes/admin/classrooms/45/seats/${id}/${action}/`, { date: todayIso() });
+  });
+
+  it("speaks of money when a paying seat leaves", async () => {
+    route();
+    await mount();
+    await choose("Vali Active", "Leave");
+    expect(dialog()!.textContent).toContain("goes back to their balance");
+  });
+
+  it.each(["Leave", "Fix date"])("speaks of no money when a trial seat chooses %s", async (label) => {
+    route();
+    await mount();
+    await choose("Ali Trial", label);
+    expect(dialog()!.textContent).toContain("A trial costs nothing");
+    expect(dialog()!.textContent).not.toContain("balance");
+    expect(dialog()!.textContent).not.toContain("voided");
   });
 
   it("starts Fix date from the date being fixed", async () => {
     route();
     post.mockResolvedValue({ data: {} });
     await mount();
-    await click(button(rowOf("Vali Active"), "Fix date"));
+    await choose("Vali Active", "Fix date");
     expect(dateInput().value).toBe("2026-10-12");
     setValue(dateInput(), "2026-10-14");
     await click(button(dialog()!, "Fix date"));
     expect(post).toHaveBeenCalledWith("/classes/admin/classrooms/45/seats/2/fix-date/", { date: "2026-10-14" });
+  });
+
+  it("starts a frozen seat's Fix date from the day it froze", async () => {
+    route();
+    await mount();
+    await choose("Sara Frozen", "Fix date");
+    expect(dateInput().value).toBe("2026-10-20");
+    expect(dialog()!.textContent).toContain("Frozen from");
+  });
+
+  it("starts from today when nothing says when it froze", async () => {
+    route({ roster: { students: [{ ...row(3, "Sara Frozen", "frozen"), seat_frozen_on: null }], left: [] } });
+    await mount();
+    await choose("Sara Frozen", "Fix date");
+    expect(dateInput().value).toBe(todayIso());
   });
 
   it("shows the server's reason and stays open", async () => {
@@ -225,7 +299,7 @@ describe("once lc-up is off", () => {
     route();
     post.mockResolvedValue({ data: {} });
     await mount();
-    await click(button(rowOf("Vali Active"), "Move"));
+    await choose("Vali Active", "Move");
     const select = dialog()!.querySelector("select") as HTMLSelectElement;
     expect(Array.from(select.options).map((o) => o.textContent)).toEqual(["— Choose a group —", "Middle G2"]);
     setValue(select, "46");
@@ -236,7 +310,7 @@ describe("once lc-up is off", () => {
   it("says so with a retry when the groups cannot be read", async () => {
     route({ rooms: false });
     await mount();
-    await click(button(rowOf("Vali Active"), "Move"));
+    await choose("Vali Active", "Move");
     expect(dialog()!.textContent).toContain("Could not load the groups.");
     route();
     await click(button(dialog()!, "Retry"));

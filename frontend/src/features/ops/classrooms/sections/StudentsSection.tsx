@@ -3,9 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Lock, Search, UserPlus, Users } from "lucide-react";
+import { Lock, MoreHorizontal, Search, UserPlus, Users } from "lucide-react";
 import api, { classesApi } from "@/lib/api";
-import { Avatar, Badge } from "@/components/ui";
+import { Avatar, Badge, DropdownMenu, DropdownMenuItem } from "@/components/ui";
 import { useToast } from "@/components/ToastProvider";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "@/features/finance/financeApi";
@@ -162,8 +162,42 @@ function AddStudent({
   );
 }
 
+/** The step a seat most often needs, and the rest behind a menu: four buttons on a row wrapped and pushed the table sideways. */
+function SeatRowActions({
+  name,
+  status,
+  onChoose,
+}: {
+  name: string;
+  status: SeatStatus;
+  onChoose: (action: SeatAction) => void;
+}) {
+  const [first, ...others] = SEAT_ACTIONS[status];
+  return (
+    <span className="inline-flex items-center justify-end gap-1.5">
+      <button type="button" onClick={() => onChoose(first.action)} className={SMALL_BUTTON}>
+        {first.label}
+      </button>
+      <DropdownMenu
+        portal
+        trigger={
+          <button type="button" aria-label={`More actions for ${name}`} className={SMALL_BUTTON}>
+            <MoreHorizontal aria-hidden className="h-4 w-4" />
+          </button>
+        }
+      >
+        {others.map(({ action, label }) => (
+          <DropdownMenuItem key={action} destructive={action === "leave"} onClick={() => onChoose(action)}>
+            {label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenu>
+    </span>
+  );
+}
+
 type SeatDialog =
-  | { kind: "action"; action: SeatAction; student: { id: number; name: string }; day?: string | null; dateLabel?: string }
+  | { kind: "action"; action: SeatAction; student: { id: number; name: string }; trial?: boolean; day?: string | null; dateLabel?: string }
   | { kind: "add"; student: { id: number; name: string } }
   | { kind: "new" };
 
@@ -193,12 +227,14 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
   };
 
   // A phone keeps the name (its debt under it), attendance and the Remove button; the table fits.
+  // Beside the seat actions a narrow screen also gives up what the person's page shows too, or the actions scroll off.
+  const spare = seatsOpen ? "hidden xl:table-cell" : WIDE_ONLY;
   const head: Column[] = [
     "Name",
-    { label: "Joined", className: WIDE_ONLY },
+    { label: "Joined", className: spare },
     { label: "Owes", className: WIDE_ONLY },
     "Attendance",
-    { label: "Homework", className: WIDE_ONLY },
+    { label: "Homework", className: spare },
     ...(managed ? [] : [""]),
   ];
 
@@ -242,18 +278,25 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                         <Avatar src={s.avatar_url ?? null} name={s.name || s.username} size={28} />
                         <span className="min-w-0">
                           {/* Wrapped on a phone ("Muhammadali …" lost half the name), one line from sm up. */}
-                          <Link href={`/ops/${s.section}/${s.id}`} prefetch={false} className={cn(LINK_CLASS, "break-words sm:truncate")}>
-                            {s.name || s.username}
-                          </Link>
-                          {s.seat_status === "trial" ? <Badge variant="info" className="ml-1.5">Trial</Badge> : null}
-                          {s.seat_status === "frozen" ? <Badge variant="warning" className="ml-1.5">Frozen</Badge> : null}
+                          <span className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 sm:flex-nowrap">
+                            <Link
+                              href={`/ops/${s.section}/${s.id}`}
+                              prefetch={false}
+                              title={s.name || s.username}
+                              className={cn(LINK_CLASS, "min-w-0 break-words sm:truncate")}
+                            >
+                              {s.name || s.username}
+                            </Link>
+                            {s.seat_status === "trial" ? <Badge variant="info" className="shrink-0">Trial</Badge> : null}
+                            {s.seat_status === "frozen" ? <Badge variant="warning" className="shrink-0">Frozen</Badge> : null}
+                          </span>
                           {s.owes ? (
                             <span className="block text-xs font-semibold text-danger sm:hidden">owes {formatUzs(s.owes)}</span>
                           ) : null}
                         </span>
                       </span>
                     </Td>
-                    <Td className={`${WIDE_ONLY} tabular-nums text-muted-foreground`}>
+                    <Td className={`${spare} tabular-nums text-muted-foreground`}>
                       {s.seat_start_date ? formatDay(s.seat_start_date) : formatDate(s.joined_at)}
                     </Td>
                     <Td className={`${WIDE_ONLY} tabular-nums`}>
@@ -266,32 +309,26 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                     <Td className={cn("font-semibold tabular-nums", TONE_TEXT[rateTone(s.attendance_rate)])}>
                       {pct(s.attendance_rate)}
                     </Td>
-                    <Td className={cn(WIDE_ONLY, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
+                    <Td className={cn(spare, "font-semibold tabular-nums", TONE_TEXT[rateTone(s.homework_rate)])}>
                       {pct(s.homework_rate)}
                     </Td>
                     {managed ? null : seatsOpen ? (
-                      <Td wrap className="text-right">
-                        <span className="inline-flex flex-wrap justify-end gap-1.5">
-                          {SEAT_ACTIONS[s.seat_status ?? "active"].map(({ action, label }) => (
-                            <button
-                              key={action}
-                              type="button"
-                              onClick={() =>
-                                setDialog({
-                                  kind: "action",
-                                  action,
-                                  student: { id: s.id, name: s.name || s.username },
-                                  ...(action === "fix-date"
-                                    ? { day: s.seat_status === "frozen" ? null : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
-                                    : {}),
-                                })
-                              }
-                              className={SMALL_BUTTON}
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </span>
+                      <Td className="text-right">
+                        <SeatRowActions
+                          name={s.name || s.username}
+                          status={s.seat_status ?? "active"}
+                          onChoose={(action) =>
+                            setDialog({
+                              kind: "action",
+                              action,
+                              student: { id: s.id, name: s.name || s.username },
+                              trial: s.seat_status === "trial",
+                              ...(action === "fix-date"
+                                ? { day: s.seat_status === "frozen" ? s.seat_frozen_on : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
+                                : {}),
+                            })
+                          }
+                        />
                       </Td>
                     ) : (
                       <Td className="text-right">
@@ -351,6 +388,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
           roomId={room.id}
           student={dialog.student}
           action={dialog.action}
+          trial={dialog.trial}
           day={dialog.day}
           dateLabel={dialog.dateLabel}
           onClose={() => setDialog(null)}

@@ -961,6 +961,7 @@ export function TrialStudentsPanel() {
           roomId={asking.room.id}
           student={{ id: asking.student.id, name: asking.name }}
           action={asking.action}
+          trial
           words={asking.action === "leave" ? { title: `Remove ${asking.name} from ${asking.room.name}?`, confirm: "Remove" } : undefined}
           onClose={() => setAsking(null)}
           onDone={() => {

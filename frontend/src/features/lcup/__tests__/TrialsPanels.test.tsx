@@ -122,6 +122,13 @@ describe("/ops/trials panels", () => {
       expect(get.mock.calls.length).toBeGreaterThan(reads);
     });
 
+    it("says a removed trial moves no money", async () => {
+      await mount(<TrialStudentsPanel />, OPEN);
+      await act(async () => button(row("Sardor Nazarov"), "Remove").click());
+      expect(dialog().textContent).toContain("A trial costs nothing");
+      expect(dialog().textContent).not.toContain("balance");
+    });
+
     it("removes as a leave and shows the server's reason", async () => {
       await mount(<TrialStudentsPanel />, OPEN);
       post.mockRejectedValue({ response: { data: { detail: "Sardor Nazarov has left this group." } } });
