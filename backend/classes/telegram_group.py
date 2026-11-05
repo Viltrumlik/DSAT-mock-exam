@@ -644,9 +644,11 @@ def student_state(*, user, classroom: Classroom) -> dict:
 # ── Removing somebody ────────────────────────────────────────────────────────
 
 
-def _removal_dm(user, names: list[str], reason: str) -> str:
+def _removal_dm(user, names: list[str], reason: str, *, removed: bool = True) -> str:
     """The bot's Uzbek note for coming out of one or more groups (plan 2026-10-16)."""
     groups = T.group_list(names)
+    if reason == ClassroomTelegramMember.REASON_IDENTITY_MISMATCH and not removed:
+        return T.MISMATCH_LEFT_IN_PLACE
     if reason == ClassroomTelegramMember.REASON_FROZEN:
         from users.audience import FROZEN_LCUP_DEBT
 
@@ -659,11 +661,25 @@ def _removal_dm(user, names: list[str], reason: str) -> str:
     return T.REMOVED_MANUAL.format(groups=groups)
 
 
-def _notify_removed(user, classroom: Classroom, reason: str, *, dm: bool = True) -> None:
-    """The site's notification (English, one per class) and, unless ``dm`` is off, the bot's."""
+def _notify_removed(
+    user, classroom: Classroom, reason: str, *, dm: bool = True, removed: bool = True
+) -> None:
+    """The site's notification (English, one per class) and, unless ``dm`` is off, the bot's.
+
+    ``removed=False`` is the rejection that did not end in a kick: the link was spent, and
+    saying anything about somebody being taken out of the group would be a lie the student
+    can check in one tap.
+    """
     if user is None:
         return
-    if reason == ClassroomTelegramMember.REASON_FROZEN:
+    if reason == ClassroomTelegramMember.REASON_IDENTITY_MISMATCH and not removed:
+        body = (
+            "Someone else opened your one-time invite link, so it was used up. That class "
+            "has finished, so its Telegram group is no longer ours to change and the person "
+            "who opened it was left in it — tell the front desk if that is a problem. Keep "
+            "your links to yourself."
+        )
+    elif reason == ClassroomTelegramMember.REASON_FROZEN:
         body = (
             "While your account is frozen you are out of the class Telegram group. You are "
             "still in the class here — your homework, points and results are exactly where "
@@ -687,11 +703,15 @@ def _notify_removed(user, classroom: Classroom, reason: str, *, dm: bool = True)
         title=f"{classroom.name}: Telegram group",
         body=body,
         link_url=f"/classes/{classroom.pk}",
-        dedupe_key=f"tg-group:{classroom.pk}:{user.pk}:{reason}",
+        # The outcome is in the key: the two bodies say different things, and a dedupe that
+        # could not tell them apart would swallow the second one.
+        dedupe_key=f"tg-group:{classroom.pk}:{user.pk}:{reason}:{'out' if removed else 'in'}",
     )
     telegram_id = bot_id_for(user)
     if dm and telegram_id:
-        api.send_message(int(telegram_id), _removal_dm(user, [classroom.name], reason))
+        api.send_message(
+            int(telegram_id), _removal_dm(user, [classroom.name], reason, removed=removed)
+        )
 
 
 def remove_member(
@@ -1230,7 +1250,15 @@ def _reject_join(
     # the class is finished, the chat is the group's own, and a dead ticket from before it
     # ended is not the site's licence to take somebody out of it. The ticket is still spent
     # below — that half is about the credential, not the room.
-    if chat and new_status not in api.CHAT_ADMIN_STATUSES and classroom.is_active:
+    #
+    # Asked of the ROOM, not of the ticket's own class, because ``telegram_chat_id`` is not
+    # unique: one chat may serve two classes, and a ticket from the finished one opened in a
+    # chat the site still manages for the live one leaves a stranger standing in a managed
+    # room. Everywhere else rule 4 reads the row's class, which is right there — a student
+    # whose finished class shares a chat with one they are still in belongs in it either way.
+    managed_room = any(c.is_active for c in classrooms_for_chat(chat)) if chat else False
+    kicked = bool(chat and new_status not in api.CHAT_ADMIN_STATUSES and managed_room)
+    if kicked:
         api.kick_chat_member(chat, tg_id)
 
     log_event(
@@ -1241,7 +1269,7 @@ def _reject_join(
         reason=ClassroomTelegramMember.REASON_IDENTITY_MISMATCH,
         detail=(
             f"link issued to user {ticket.user_id} was opened by telegram {tg_id}"
-            + ("" if classroom.is_active else "; left in place, this class is finished")
+            + ("" if kicked else "; left in place, no running class meets in this chat")
         ),
     )
 
@@ -1252,7 +1280,14 @@ def _reject_join(
         ticket.removed_reason = ClassroomTelegramMember.REASON_IDENTITY_MISMATCH
         ticket.removed_at = timezone.now()
     ticket.save()
-    _notify_removed(ticket.user, classroom, ClassroomTelegramMember.REASON_IDENTITY_MISMATCH)
+    # ``removed=kicked``: the note the owner gets says their link was spent either way, and
+    # says somebody was taken out of the group only when somebody was.
+    _notify_removed(
+        ticket.user,
+        classroom,
+        ClassroomTelegramMember.REASON_IDENTITY_MISMATCH,
+        removed=kicked,
+    )
 
 
 # ── The sweep ────────────────────────────────────────────────────────────────
