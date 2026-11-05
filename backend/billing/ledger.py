@@ -20,7 +20,7 @@ from django.db.models import Q, Sum
 from django.utils import timezone
 
 from .lessons import month_amount
-from .models import BillingState, Entry, EntryKind, PaymentMethod, Span
+from .models import BillingState, Entry, EntryKind, PaymentMethod, Seat, SeatPriceChange, Span
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +139,7 @@ def _give_back(span, month: str, charged: int, whole: int) -> None:
     """The lessons of the span's last month after its end. A whole-month charge is its own price, so a
     price changed since does not move what comes back."""
     seat = span.seat
-    price = charged if whole == seat.price else seat.price
+    price = charged if whole == seat.charge_price else seat.charge_price
     kept = month_amount(price, seat.days, month, start=span.start, end=span.end)
     if charged > kept:
         post(seat.account, EntryKind.CREDIT, charged - kept, span.end, f"end:{span.pk}:{month}", span=span, month=month)
@@ -152,7 +152,7 @@ def bill_span(span, today: date) -> None:
     end_month = max(first, month_of(span.end)) if span.end else None
     last = min(end_month, month_of(today)) if end_month else month_of(today)
     for month in _months(first, last):
-        whole = month_amount(seat.price, seat.days, month, start=span.start)
+        whole = month_amount(seat.charge_price, seat.days, month, start=span.start)
         if span.opening_month and month <= span.opening_month:
             charged = whole  # lc-up charged it; the opening balance carries it
         else:
@@ -178,6 +178,28 @@ def bill_open_spans(today: date) -> list[str]:
             logger.exception("billing: span %s failed", span.pk)
             errors.append(f"span {span.pk}: {type(exc).__name__}: {exc}"[:300])
     return errors
+
+
+@transaction.atomic
+def set_personal_price(seat, price: int | None, *, reason: str, by, today: date) -> None:
+    """A price for this student alone, ``None`` for the group's again, 0 for a grant. This month's charge is
+    voided and written again; earlier months stay as they were. Every change keeps who and why."""
+    reason = (reason or "").strip()[:300]
+    if not reason:
+        raise EntryRefused("A personal price needs a reason.")
+    if price is not None and (type(price) is not int or price < 0 or price > MAX_AMOUNT):
+        raise EntryRefused("A personal price is a whole number of so'm, or nothing for the group's price.")
+    seat = Seat.objects.select_for_update().get(pk=seat.pk)
+    if seat.personal_price == price:
+        return
+    SeatPriceChange.objects.create(seat=seat, old_price=seat.personal_price, new_price=price, reason=reason, changed_by=by)
+    seat.personal_price = price
+    seat.save(update_fields=["personal_price"])
+    month = month_of(today)
+    for span in seat.spans.filter(end__isnull=True):
+        for entry in span.entries.filter(voided_at__isnull=True, kind=EntryKind.CHARGE, month=month):
+            void(entry, f"New personal price: {reason}", by=by)
+        bill_span(span, today)
 
 
 @transaction.atomic

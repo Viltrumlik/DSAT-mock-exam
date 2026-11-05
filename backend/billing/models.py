@@ -36,6 +36,9 @@ class Seat(models.Model):
     group_name = models.CharField(max_length=200)
     lcup_group_id = models.PositiveIntegerField(null=True, blank=True)
     price = models.PositiveIntegerField(default=0)
+    #: A price agreed for this student alone, which replaces the group's; 0 is a grant. lc-up's API does not
+    #: give these, so an admin enters them (``ledger.set_personal_price``).
+    personal_price = models.PositiveIntegerField(null=True, blank=True)
     days = models.JSONField(default=list, blank=True)
     state = models.CharField(max_length=10, choices=SeatState.choices)
     #: lc-up's own dates as last seen, so a later change to either is noticed.
@@ -47,6 +50,26 @@ class Seat(models.Model):
 
     def __str__(self) -> str:
         return f"{self.account} in {self.group_name}"
+
+    @property
+    def charge_price(self) -> int:
+        return self.price if self.personal_price is None else self.personal_price
+
+
+class SeatPriceChange(models.Model):
+    """Who changed a personal price, when and why. A discount moves money as surely as a payment does."""
+
+    seat = models.ForeignKey(Seat, on_delete=models.PROTECT, related_name="price_changes")
+    old_price = models.PositiveIntegerField(null=True, blank=True)
+    new_price = models.PositiveIntegerField(null=True, blank=True)
+    reason = models.CharField(max_length=300)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    changed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-changed_at", "-id"]
 
 
 class EndReason(models.TextChoices):

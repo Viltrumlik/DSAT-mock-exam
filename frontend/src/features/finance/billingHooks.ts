@@ -32,6 +32,15 @@ export function useEnterMoney(accountId: number) {
   });
 }
 
+export function useSetSeatPrice() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, price, reason }: { id: number; price: number | null; reason: string }) =>
+      billingApi.setSeatPrice(id, price, reason),
+    onSuccess: () => client.invalidateQueries({ queryKey: ROOT }),
+  });
+}
+
 export function useVoidEntry() {
   const client = useQueryClient();
   return useMutation({

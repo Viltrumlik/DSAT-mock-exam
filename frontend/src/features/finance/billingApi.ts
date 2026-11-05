@@ -67,12 +67,22 @@ export interface LedgerEntry {
   can_void: boolean;
 }
 
+export interface LedgerSeat {
+  id: number;
+  group_name: string;
+  state: string;
+  price: number;
+  /** This student's own price, replacing the group's; 0 is a grant, null is the group's price. */
+  personal_price: number | null;
+  price_changes: { at: string; old_price: number | null; new_price: number | null; reason: string; by: string }[];
+}
+
 export interface LedgerAccount {
   id: number;
   name: string;
   phone: string;
   balance: number;
-  seats: { id: number; group_name: string; state: string; price: number }[];
+  seats: LedgerSeat[];
   rows: LedgerEntry[];
   /** Money is entered here only after the cutover; until then the server refuses it too. */
   payments_open: boolean;
@@ -103,6 +113,9 @@ export const billingApi = {
   },
   async enter(accountId: number, body: EnterMoneyBody): Promise<{ balance: number }> {
     return (await api.post<{ balance: number }>(`/billing/accounts/${accountId}/entries/`, body)).data;
+  },
+  async setSeatPrice(id: number, price: number | null, reason: string): Promise<{ balance: number }> {
+    return (await api.post<{ balance: number }>(`/billing/seats/${id}/price/`, { price, reason })).data;
   },
   async voidEntry(id: number, reason: string): Promise<{ balance: number }> {
     return (await api.post<{ balance: number }>(`/billing/entries/${id}/void/`, { reason })).data;

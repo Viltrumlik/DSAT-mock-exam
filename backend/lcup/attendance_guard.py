@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-from .conf import attendance_pull_enabled, free_trial_lessons
+from classes.models import ClassroomMembership
+
+from .conf import attendance_pull_enabled, free_trial_lessons, lcup_enabled
 from .followups import missing_seats, trial_seats
 from .guards import is_lcup_managed
 from .models import GroupLinkStatus, LcupAbsenceReason, LcupMembership
@@ -29,12 +31,25 @@ FROZEN_REASON = "Frozen in lc-up. lc-up takes no attendance for them — unfreez
 
 
 def frozen_in_lcup(classroom) -> set[int]:
-    """Our user ids lc-up holds frozen in this class's group. lc-up refuses every mark for a
-    frozen member (``not_in_group``: 13 of 13 refusals up to 2026-10-16, against 102 of 102
-    active and trial marks taken), so the register offers none and the push sends none."""
-    if not is_lcup_managed(classroom):
+    """Our user ids frozen in this class. lc-up refuses every mark for a frozen member
+    (``not_in_group``: 13 of 13 refusals up to 2026-10-16, against 102 of 102 active and trial marks
+    taken), so the register offers none and the push sends none. The seat itself says so; while lc-up
+    runs the class its own list counts too, so a seat the sync has not filled yet loses nobody. In a class
+    lc-up does not run while it is on, nothing writes the seat, so a status copied earlier says nothing."""
+    managed = is_lcup_managed(classroom)
+    if lcup_enabled() and not managed:
         return set()
-    return set(
+    frozen = set(
+        ClassroomMembership.objects.filter(
+            classroom=classroom,
+            role=ClassroomMembership.ROLE_STUDENT,
+            status=ClassroomMembership.STATUS_ACTIVE,
+            seat_status=ClassroomMembership.SEAT_FROZEN,
+        ).values_list("user_id", flat=True)
+    )
+    if not managed:
+        return frozen
+    return frozen | set(
         LcupMembership.objects.filter(
             group__classroom=classroom,
             group__status=GroupLinkStatus.CONFIRMED,
@@ -56,9 +71,7 @@ def excuse_reasons(classroom) -> list[dict]:
 def trial_in_lcup(classroom, day) -> dict[int, dict]:
     """Our user ids lc-up holds on trial in this class's group, with the lessons each came to here
     before ``day``. ``free_used``: they have had the free trial, so the teacher sends them to the
-    admin (owner, 2026-10-20). Empty for a class lc-up does not run."""
-    if not is_lcup_managed(classroom):
-        return {}
+    admin (owner, 2026-10-20)."""
     free = free_trial_lessons()
     return {
         seat.user_id: {"lessons_before": seat.lessons, "free_used": seat.lessons >= free}

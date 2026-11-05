@@ -37,6 +37,7 @@ from .classrooms import branch_for, create_classroom_for, teachers_for
 from .client import LcupAuthError
 from .conf import attendance_pull_enabled, attendance_push_enabled, attendance_push_from
 from .follow import archive_class, follow_details, follow_teachers, reopen_class
+from .seats import fill_from_lcup
 from .matching import SUPPORTER_REASON, match_student, match_supporter, match_teacher, subject_from, suggest_classroom
 from .models import (
     GroupLinkStatus,
@@ -399,6 +400,11 @@ def _accounts(run: _Run) -> None:
             run.counts["accounts_created"] += 1
 
 
+def _seat_fields(run: _Run) -> None:
+    if written := fill_from_lcup():
+        run.counts["seat_fields"] = written
+
+
 def _rosters(run: _Run) -> None:
     links = (
         LcupGroupLink.objects.filter(status=GroupLinkStatus.CONFIRMED, classroom__isnull=False, deleted_in_lcup_at__isnull=True)
@@ -457,6 +463,7 @@ def _run_stages(client, run: _Run) -> None:
     # After the links and accounts settle: every linked learner carries lc-up's name and phone.
     _stage(run, "profiles", lambda: profiles.apply(run))
     _stage(run, "rosters", lambda: _rosters(run))
+    _stage(run, "seat_fields", lambda: _seat_fields(run))
     # After rosters: the seat rule reads this run's seats — the roster adding a returning student
     # makes them a student again, and one it took out of their last class becomes public.
     _stage(run, "audience", lambda: audience.apply(run))

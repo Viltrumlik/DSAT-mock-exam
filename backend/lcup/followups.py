@@ -91,31 +91,54 @@ def _since(membership) -> date | None:
     return timezone.localdate(membership.joined_at) if membership.joined_at else None
 
 
+def _lessons_attended(user_id, classroom_id, since, before) -> tuple[date, ...]:
+    if not user_id:
+        return ()
+    records = AttendanceRecord.objects.filter(student_id=user_id, session__classroom_id=classroom_id, status__in=ATTENDED)
+    if since is not None:
+        records = records.filter(session__date__gte=since)
+    if before is not None:
+        records = records.filter(session__date__lt=before)
+    return tuple(sorted(records.values_list("session__date", flat=True)))
+
+
 def trial_seats(*, classroom=None, before: date | None = None) -> list[TrialSeat]:
     """Every live trial seat (of ``classroom`` only, when given). ``before`` counts only the lessons
-    held before that day — the register asks "had they had the free trial when this lesson began?"."""
+    held before that day — the register asks "had they had the free trial when this lesson began?".
+
+    The seat itself says so. While lc-up runs, its own list counts too: someone on trial there may have
+    no account here yet, and a seat the sync has not filled yet loses nobody."""
+    rows = ClassroomMembership.objects.filter(
+        role=ClassroomMembership.ROLE_STUDENT,
+        status=ClassroomMembership.STATUS_ACTIVE,
+        seat_status=ClassroomMembership.SEAT_TRIAL,
+    ).select_related("user")
+    if classroom is not None:
+        rows = rows.filter(classroom=classroom)
+    if lcup_enabled():
+        # In a class lc-up does not run, nothing writes the seat: a status copied earlier says nothing.
+        rows = rows.filter(
+            classroom__lcup_group_link__status=GroupLinkStatus.CONFIRMED,
+            classroom__lcup_group_link__deleted_in_lcup_at__isnull=True,
+        )
+    seats, known = [], set()
+    for row in rows.order_by("pk"):
+        known.add((row.user_id, row.classroom_id))
+        since = row.seat_start_date or timezone.localdate(row.joined_at)
+        dates = _lessons_attended(row.user_id, row.classroom_id, since, before)
+        seats.append(TrialSeat(row.pk, user_ref(row.user)["name"], row.user_id, row.classroom_id, since, dates))
     if not lcup_enabled():
-        return []
+        return seats
     memberships = live_memberships().filter(lcup_status=TRIAL).select_related("student", "group")
     if classroom is not None:
         memberships = memberships.filter(group__classroom=classroom)
-    seats = []
     for membership in memberships.order_by("pk"):
+        user_id, classroom_id = membership.student.user_id, membership.group.classroom_id
+        if (user_id, classroom_id) in known:
+            continue
         since = _since(membership)
-        user_id = membership.student.user_id
-        dates: tuple[date, ...] = ()
-        if user_id:
-            records = AttendanceRecord.objects.filter(
-                student_id=user_id, session__classroom_id=membership.group.classroom_id, status__in=ATTENDED
-            )
-            if since is not None:
-                records = records.filter(session__date__gte=since)
-            if before is not None:
-                records = records.filter(session__date__lt=before)
-            dates = tuple(sorted(records.values_list("session__date", flat=True)))
-        seats.append(
-            TrialSeat(membership.pk, membership.student.name.strip(), user_id, membership.group.classroom_id, since, dates)
-        )
+        dates = _lessons_attended(user_id, classroom_id, since, before)
+        seats.append(TrialSeat(membership.pk, membership.student.name.strip(), user_id, classroom_id, since, dates))
     return seats
 
 

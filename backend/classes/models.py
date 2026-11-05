@@ -108,6 +108,8 @@ class Classroom(models.Model):
         help_text="Invite link for the class Telegram group, e.g. https://t.me/joinchat/…",
     )
     max_students = models.PositiveIntegerField(null=True, blank=True)
+    #: What a month in this class costs, in whole so'm. Null until someone states it.
+    monthly_price = models.PositiveIntegerField(null=True, blank=True)
     teacher = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -202,6 +204,11 @@ class ClassroomMembership(models.Model):
     # may see/enter a classroom must exclude REMOVED. Keep this rule in one place.
     NON_REMOVED_STATUSES = (STATUS_ACTIVE, STATUS_INVITED)
 
+    SEAT_ACTIVE = "active"
+    SEAT_TRIAL = "trial"
+    SEAT_FROZEN = "frozen"
+    SEAT_STATUS_CHOICES = [(SEAT_ACTIVE, "Active"), (SEAT_TRIAL, "Trial"), (SEAT_FROZEN, "Frozen")]
+
     classroom = models.ForeignKey(
         Classroom, on_delete=models.CASCADE, related_name="memberships"
     )
@@ -213,6 +220,12 @@ class ClassroomMembership(models.Model):
         max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True
     )
     joined_at = models.DateTimeField(auto_now_add=True)
+    #: A student's seat: on trial or frozen they are still a member, and neither pays. Separate from
+    #: ``status``, which says whether they are in the class at all. lc-up's copy fills these until the
+    #: centre leaves it (``lcup.seats``).
+    seat_status = models.CharField(max_length=10, choices=SEAT_STATUS_CHOICES, default=SEAT_ACTIVE)
+    seat_start_date = models.DateField(null=True, blank=True)
+    seat_left_on = models.DateField(null=True, blank=True)
 
     class Meta:
         db_table = "classroom_memberships"

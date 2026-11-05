@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from lcup.models import LcupMembership, LcupPayment, LcupStudentLink, LcupSyncRun
 from lcup.models_archive import ArchiveEntity, LcupArchiveRecord
+from lcup.seats import differences as seat_differences
 
 from . import conf, ledger
 from .models import Account, BillingRun, BillingState, EndReason, Entry, EntryKind, Seat, SeatState
@@ -385,6 +386,8 @@ def compare(now=None) -> BillingRun:
             counts["missing"] += 1
             rows.append({"account_id": None, "name": person.name, "ours": 0, "lcup": person.balance, "diff": -person.balance})
     rows.sort(key=lambda row: -abs(row["diff"]))
+    drift = seat_differences()
+    alerts = [f"{len(drift)} seats differ from lc-up: " + "; ".join(drift[:5])[:400]] if drift else []
     return BillingRun.objects.create(
-        kind=BillingRun.Kind.COMPARE, day=today, finished_at=timezone.now(), counts=dict(counts), rows=rows
+        kind=BillingRun.Kind.COMPARE, day=today, finished_at=timezone.now(), counts=dict(counts), rows=rows, alerts=alerts
     )

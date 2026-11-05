@@ -5,8 +5,8 @@ import { formatApiErrorForToast } from "@/lib/apiError";
 import { cn } from "@/lib/cn";
 import { formatUzs } from "./financeApi";
 import { Btn, CONTROL, BOX } from "./FinancePanels";
-import type { EnterableKind } from "./billingApi";
-import { useEnterMoney, useVoidEntry } from "./billingHooks";
+import type { EnterableKind, LedgerSeat } from "./billingApi";
+import { useEnterMoney, useSetSeatPrice, useVoidEntry } from "./billingHooks";
 
 /**
  * Entering money on a person's page in the Ledger tab, and taking it back. Shown only once the server says
@@ -159,6 +159,71 @@ export function EntryForm({
           {enter.isPending ? "Saving…" : SAVE_LABEL[kind]}
         </Btn>
         <Btn onClick={onClose} disabled={enter.isPending}>Cancel</Btn>
+      </div>
+    </form>
+  );
+}
+
+/** Whole so'm, zero being a grant; null for anything else. */
+function parsePrice(raw: string): number | null {
+  const digits = raw.replace(/[\s,]/g, "");
+  if (!/^\d+$/.test(digits)) return null;
+  const price = Number(digits);
+  return Number.isSafeInteger(price) ? price : null;
+}
+
+/** A student's own price. Open while lc-up runs, unlike entering money: it only touches this ledger. */
+export function SeatPriceForm({ seat, onClose }: { seat: LedgerSeat; onClose: () => void }) {
+  const setPrice = useSetSeatPrice();
+  const [raw, setRaw] = useState("");
+  const [reason, setReason] = useState("");
+  const price = parsePrice(raw);
+  const hasReason = Boolean(reason.trim()) && !setPrice.isPending;
+
+  function save(next: number | null) {
+    setPrice.mutate({ id: seat.id, price: next, reason: reason.trim() }, { onSuccess: onClose });
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (hasReason && price !== null) save(price);
+  }
+
+  return (
+    <form onSubmit={submit} className={cn(BOX, "my-1 space-y-2 px-3 py-3")}>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className={LABEL}>
+          Personal price, UZS (0 is a grant)
+          <input
+            aria-label="Personal price, UZS"
+            inputMode="numeric"
+            autoComplete="off"
+            className={cn(CONTROL, "w-40 tabular-nums")}
+            value={raw}
+            onChange={(event) => setRaw(event.target.value)}
+          />
+        </label>
+        <label className={cn(LABEL, "min-w-[14rem] flex-1")}>
+          Reason (required)
+          <input
+            aria-label="Why this price?"
+            maxLength={300}
+            className={CONTROL}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="text-[12px] text-muted-foreground">This month's charge is written again at the new price.</p>
+      <Refusal error={setPrice.error} />
+      <div className="flex flex-wrap gap-1">
+        <Btn primary type="submit" disabled={!hasReason || price === null}>
+          {setPrice.isPending ? "Saving…" : "Save price"}
+        </Btn>
+        {seat.personal_price === null ? null : (
+          <Btn onClick={() => save(null)} disabled={!hasReason}>Back to the group's price</Btn>
+        )}
+        <Btn onClick={onClose} disabled={setPrice.isPending}>Cancel</Btn>
       </div>
     </form>
   );
