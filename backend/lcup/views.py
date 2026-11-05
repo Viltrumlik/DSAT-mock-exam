@@ -168,7 +168,7 @@ class GroupCreateClassView(_AdminView):
         if not teachers and not supporters:
             return _bad("Link this group's lc-up teacher to one of our teachers first.")
         try:
-            create_classroom_for(link, teacher_users=teachers, support_users=supporters, branch=branch_for(snapshot))
+            create_classroom_for(link, teacher_users=teachers or supporters, branch=branch_for(snapshot))
         except ValueError as exc:
             return _bad(str(exc))
         return Response(group_row(link), status=status.HTTP_201_CREATED)

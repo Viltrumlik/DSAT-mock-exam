@@ -4,9 +4,9 @@ Built the way ``ClassroomViewSet.create`` builds one (classes/views.py): the own
 ``ADMIN`` membership and a classroom-scoped ``UserAccess`` for the class's subject, so the class
 works for them exactly as if they had created it. A second lc-up teacher becomes a ``TEACHER``.
 
-A group whose only lc-up teachers are our support teachers still gets its class (owner, 2026-11-05,
-Foundation G14: "teacherlar emas support teacherlar"): they hold ``TA`` seats, which may take attendance,
-and the class has no ``Classroom.teacher``, never a support teacher on that field (``views_assign``).
+A group whose only lc-up teachers are our support teachers still gets its class, and they run it (owner,
+2026-11-05, Foundation G14: "2ta rol berib teacher va support teacher qilib o'z classroomini o'ziga qaytarib
+bering"). There is one account role, so it stays ``support_teacher``; this class's seat makes them its teacher.
 
 The lesson length comes from lc-up's start/finish times and is rounded *up* to whole hours:
 ``attendance_window`` closes the register two hours after the lesson's end, and a lesson recorded
@@ -108,8 +108,8 @@ def _lesson_hours(snapshot: dict) -> int:
     return max(1, math.ceil(seconds / 3600)) if seconds > 0 else DEFAULT_LESSON_HOURS
 
 
-def create_classroom_for(link, *, teacher_users: list, branch, support_users: tuple | list = ()) -> Classroom:
-    if not teacher_users and not support_users:
+def create_classroom_for(link, *, teacher_users: list, branch) -> Classroom:
+    if not teacher_users:
         raise ValueError("an lc-up group needs a linked teacher before a class can be created for it")
     snapshot = link.snapshot or {}
     subject = subject_from(snapshot)
@@ -119,7 +119,7 @@ def create_classroom_for(link, *, teacher_users: list, branch, support_users: tu
     if days is None:
         raise ValueError("lc-up lesson days are neither Mon/Wed/Fri nor Tue/Thu/Sat")
 
-    owner = teacher_users[0] if teacher_users else None
+    owner = teacher_users[0]
     domain = acc_const.DOMAIN_MATH if subject == Classroom.SUBJECT_MATH else acc_const.DOMAIN_ENGLISH
     with transaction.atomic():
         room = Classroom.objects.create(
@@ -132,17 +132,13 @@ def create_classroom_for(link, *, teacher_users: list, branch, support_users: tu
             room_number=room_number_from(snapshot),
             start_date=start_date_from(snapshot),
             branch=branch,
-            created_by=owner or support_users[0],
+            created_by=owner,
             teacher=owner,
         )
         for index, teacher in enumerate(teacher_users):
             role = ClassroomMembership.ROLE_ADMIN if index == 0 else ClassroomMembership.ROLE_TEACHER
             ClassroomMembership.objects.get_or_create(classroom=room, user=teacher, defaults={"role": role})
             UserAccess.objects.get_or_create(user=teacher, subject=domain, classroom=room, defaults={"granted_by": None})
-        for supporter in support_users:
-            ClassroomMembership.objects.get_or_create(
-                classroom=room, user=supporter, defaults={"role": ClassroomMembership.ROLE_TA}
-            )
         link.classroom = room
         link.status = GroupLinkStatus.CONFIRMED
         link.save(update_fields=["classroom", "status"])
