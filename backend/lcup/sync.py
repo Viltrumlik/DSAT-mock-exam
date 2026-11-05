@@ -250,7 +250,7 @@ def _groups(client, run: _Run) -> None:
             link.suggestion_reasons = ["no matching class; one is created after the initial review"]
         else:
             try:
-                room = create_classroom_for(link, teacher_users=teachers, support_users=supporters, branch=branch)
+                room = create_classroom_for(link, teacher_users=teachers or supporters, branch=branch)
             except ValueError as exc:
                 link.status = GroupLinkStatus.SUGGESTED
                 link.suggestion_reasons = [str(exc)]

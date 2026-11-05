@@ -13,6 +13,7 @@ from rest_framework.test import APIClient
 
 from lcup.classrooms import teachers_for
 from lcup.matching import SUPPORTER_REASON
+from access.models import UserAccess
 from classes.models import ClassroomMembership
 from lcup.models import GroupLinkStatus, LcupGroupLink, LcupState, LcupTeacherLink, LinkStatus
 from lcup.sync import run_sync
@@ -144,36 +145,39 @@ class SupporterLedGroupTests(TestCase):
         ]
         self.data[f"{API}/groups/25599/students"] = []
 
-    def test_the_sync_opens_the_class_with_them_as_ta_not_as_its_teacher(self):
+    def test_the_sync_opens_the_class_with_them_as_its_teacher(self):
         run = run_sync(FakeLcupClient(self.data), now=self.now)
         self.assertTrue(run.ok, run.errors)
         link = LcupGroupLink.objects.get(lcup_group_id=25599)
         self.assertEqual(link.status, GroupLinkStatus.CONFIRMED)
         room = link.classroom
-        self.assertIsNone(room.teacher_id)
+        self.assertEqual(room.teacher_id, self.support.pk)
         self.assertEqual(room.created_by_id, self.support.pk)
         seat = ClassroomMembership.objects.get(classroom=room, user=self.support)
-        self.assertEqual((seat.role, seat.status), (ClassroomMembership.ROLE_TA, ClassroomMembership.STATUS_ACTIVE))
+        self.assertEqual((seat.role, seat.status), (ClassroomMembership.ROLE_ADMIN, ClassroomMembership.STATUS_ACTIVE))
+        self.assertTrue(UserAccess.objects.filter(user=self.support, classroom=room).exists())
         self.support.refresh_from_db()
-        self.assertEqual(self.support.role, "support_teacher")
+        self.assertEqual(self.support.role, "support_teacher")  # still a support teacher everywhere else
 
-    def test_later_syncs_leave_the_ta_seat_and_the_empty_teacher_alone(self):
+    def test_later_syncs_leave_them_teaching_it(self):
         run_sync(FakeLcupClient(self.data), now=self.now)
         run = run_sync(FakeLcupClient(self.data), now=self.now)
         self.assertTrue(run.ok, run.errors)
         room = LcupGroupLink.objects.get(lcup_group_id=25599).classroom
-        self.assertIsNone(room.teacher_id)
+        self.assertEqual(room.teacher_id, self.support.pk)
         self.assertEqual(
             list(ClassroomMembership.objects.filter(classroom=room).exclude(role=ClassroomMembership.ROLE_STUDENT).values_list("user_id", "role", "status")),
-            [(self.support.pk, ClassroomMembership.ROLE_TA, ClassroomMembership.STATUS_ACTIVE)],
+            [(self.support.pk, ClassroomMembership.ROLE_ADMIN, ClassroomMembership.STATUS_ACTIVE)],
         )
 
-    def test_the_ta_can_take_this_class_attendance(self):
+    def test_they_run_this_class(self):
         from classes.capabilities import classroom_capabilities
 
         run_sync(FakeLcupClient(self.data), now=self.now)
         room = LcupGroupLink.objects.get(lcup_group_id=25599).classroom
-        self.assertTrue(classroom_capabilities(self.support, room).can_take_attendance)
+        caps = classroom_capabilities(self.support, room)
+        self.assertTrue(caps.can_take_attendance)
+        self.assertTrue(caps.is_owner)
 
     def test_with_no_teacher_and_no_supporter_it_still_waits(self):
         LcupTeacherLink.objects.filter(lcup_teacher_id=2009).update(user=None)
@@ -192,4 +196,4 @@ class SupporterLedGroupTests(TestCase):
         api.force_authenticate(admin)
         self.assertEqual(api.post(f"/api/lcup/groups/{link.pk}/create-class/").status_code, 201)
         link.refresh_from_db()
-        self.assertIsNone(link.classroom.teacher_id)
+        self.assertEqual(link.classroom.teacher_id, self.support.pk)
