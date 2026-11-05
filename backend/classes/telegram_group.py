@@ -1224,7 +1224,13 @@ def _reject_join(
     # Still never a chat admin — but everybody else goes, known account or not. A link
     # belonging to someone else is the one case where "we cannot identify you" is itself
     # the reason to act.
-    if chat and new_status not in api.CHAT_ADMIN_STATUSES:
+    #
+    # Rule 4 outranks even that. This is the one removal that does not go through
+    # ``remove_member``, so the rule has to be said again here or it would not be a rule:
+    # the class is finished, the chat is the group's own, and a dead ticket from before it
+    # ended is not the site's licence to take somebody out of it. The ticket is still spent
+    # below — that half is about the credential, not the room.
+    if chat and new_status not in api.CHAT_ADMIN_STATUSES and classroom.is_active:
         api.kick_chat_member(chat, tg_id)
 
     log_event(
@@ -1233,7 +1239,10 @@ def _reject_join(
         user=ticket.user,
         telegram_user_id=tg_id,
         reason=ClassroomTelegramMember.REASON_IDENTITY_MISMATCH,
-        detail=f"link issued to user {ticket.user_id} was opened by telegram {tg_id}",
+        detail=(
+            f"link issued to user {ticket.user_id} was opened by telegram {tg_id}"
+            + ("" if classroom.is_active else "; left in place, this class is finished")
+        ),
     )
 
     # The ticket is spent whatever happened, so its owner needs a new one.

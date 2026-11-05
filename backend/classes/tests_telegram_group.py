@@ -802,6 +802,44 @@ class FinishedClassTests(TelegramGroupBase):
         )
         self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
 
+    def test_a_stolen_ticket_is_burned_but_nobody_is_kicked(self):
+        """The one removal that does not go through `remove_member`.
+
+        A ticket minted while the class was still running, opened by somebody else after it
+        finished: the link is spent — that half is about the credential — but the chat is
+        the group's own now, so the person who walked in stays. Found by review (Codex, PR
+        #357), and right: a rule that one path does not say is not a rule.
+        """
+        link = self.issue_for(self.student)
+        self._finish()
+
+        self.tg.join(1002)  # self.other, on self.student's link
+        outcome = tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        self.assertEqual(outcome, "rejected_identity_mismatch")
+        self.assertEqual(self.tg.kicked, [])
+        self.assertEqual(self.row(self.student).invite_link, "")
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_JOIN_REJECTED,
+                detail__contains="this class is finished",
+            ).exists()
+        )
+
+    def test_a_stolen_ticket_in_a_running_class_still_gets_the_kick(self):
+        """The same path, the only difference being that the class has not finished — so
+        the test above is proving rule 4 rather than a rejection that stopped working."""
+        link = self.issue_for(self.student)
+
+        self.tg.join(1002)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": 1002}, invite_link=link)
+        )
+
+        self.assertEqual(self.tg.kicked, [(CHAT, 1002)])
+
     def test_reopening_the_class_puts_the_group_back_under_the_bot(self):
         """lc-up restores the group, `reopen_class` sets is_active again, and the class is
         running: there is nothing to undo, because the rule reads the class, not a flag of
