@@ -1,2 +1,3 @@
-mutmut==2.4.6
-
+# 2.x, not 3.x: the nightly passes `--paths-to-mutate` and `--runner`, which 3.x moved into
+# setup.cfg/pyproject.toml. (The previous pin, 2.4.6, was never published to PyPI.)
+mutmut==2.5.1
