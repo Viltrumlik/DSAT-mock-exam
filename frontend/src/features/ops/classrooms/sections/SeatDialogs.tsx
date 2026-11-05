@@ -82,10 +82,17 @@ const WORDS: Record<SeatAction, { title: (name: string) => string; confirm: stri
   },
 };
 
+/** A trial pays nothing, so these say so instead of speaking of paid lessons and balances. */
+const TRIAL_BODY: Partial<Record<SeatAction, string>> = {
+  leave: "A trial costs nothing, so no money moves. Leaving their last group makes them a public account, frozen if they owe.",
+  "fix-date": "A trial costs nothing, so no money moves. Only the date changes.",
+};
+
 export function SeatActionDialog({
   roomId,
   student,
   action,
+  trial = false,
   day,
   dateLabel,
   words,
@@ -95,6 +102,8 @@ export function SeatActionDialog({
   roomId: number;
   student: { id: number; name: string };
   action: SeatAction;
+  /** The seat is a trial. */
+  trial?: boolean;
   /** Where the date starts: today, unless the date being fixed is known. */
   day?: string | null;
   dateLabel?: string;
@@ -137,7 +146,7 @@ export function SeatActionDialog({
       onConfirm={() => void confirm()}
       body={
         <>
-          <p>{said.body}</p>
+          <p>{(trial && TRIAL_BODY[action]) || said.body}</p>
           <Labelled label={dateLabel ?? said.date}>
             <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={INPUT} />
           </Labelled>

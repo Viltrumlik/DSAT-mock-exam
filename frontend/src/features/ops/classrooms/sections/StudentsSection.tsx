@@ -197,7 +197,7 @@ function SeatRowActions({
 }
 
 type SeatDialog =
-  | { kind: "action"; action: SeatAction; student: { id: number; name: string }; day?: string | null; dateLabel?: string }
+  | { kind: "action"; action: SeatAction; student: { id: number; name: string }; trial?: boolean; day?: string | null; dateLabel?: string }
   | { kind: "add"; student: { id: number; name: string } }
   | { kind: "new" };
 
@@ -320,6 +320,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
                               kind: "action",
                               action,
                               student: { id: s.id, name: s.name || s.username },
+                              trial: s.seat_status === "trial",
                               ...(action === "fix-date"
                                 ? { day: s.seat_status === "frozen" ? null : s.seat_start_date, dateLabel: FIXED_DATE[s.seat_status ?? "active"] }
                                 : {}),
@@ -385,6 +386,7 @@ export function StudentsSection({ room, onChanged }: { room: ClassroomCore; onCh
           roomId={room.id}
           student={dialog.student}
           action={dialog.action}
+          trial={dialog.trial}
           day={dialog.day}
           dateLabel={dialog.dateLabel}
           onClose={() => setDialog(null)}

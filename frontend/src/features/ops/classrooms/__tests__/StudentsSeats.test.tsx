@@ -242,6 +242,22 @@ describe("once lc-up is off", () => {
     expect(post).toHaveBeenCalledWith(`/classes/admin/classrooms/45/seats/${id}/${action}/`, { date: todayIso() });
   });
 
+  it("speaks of money when a paying seat leaves", async () => {
+    route();
+    await mount();
+    await choose("Vali Active", "Leave");
+    expect(dialog()!.textContent).toContain("goes back to their balance");
+  });
+
+  it.each(["Leave", "Fix date"])("speaks of no money when a trial seat chooses %s", async (label) => {
+    route();
+    await mount();
+    await choose("Ali Trial", label);
+    expect(dialog()!.textContent).toContain("A trial costs nothing");
+    expect(dialog()!.textContent).not.toContain("balance");
+    expect(dialog()!.textContent).not.toContain("voided");
+  });
+
   it("starts Fix date from the date being fixed", async () => {
     route();
     post.mockResolvedValue({ data: {} });
