@@ -30,6 +30,8 @@ from notifications.models import Notification
 User = get_user_model()
 
 CHAT = "-1001234567890"
+#: A second group, for the tests that need a class still running beside a finished one.
+OTHER_CHAT = "-1009876543210"
 BOT_ID = 777
 BOT_USERNAME = "MasterSATTestBot"
 TOKEN = f"{BOT_ID}:TESTTOKEN"
@@ -666,6 +668,154 @@ class MembersFromBeforeTheBotTests(TelegramGroupBase):
         mine = next(r for r in body["members"] if r["user_id"] == self.student.pk)
         self.assertFalse(mine["watched"])
         self.assertFalse(mine["unmanaged"])  # known account — just not one the bot let in
+
+
+class FinishedClassTests(TelegramGroupBase):
+    """Rule 4: a finished class's group is nobody's to empty.
+
+    A course ends, lc-up deletes its group and ``follow.archive_class`` archives the class.
+    The chat carries on — the people in it finished the course together — and nothing here
+    reaches back into it. On prod the three archived classes that are connected still hold
+    live student seats, so without this rule the next debt freeze would walk into a room
+    nobody teaches in and take somebody out of it.
+    """
+
+    def _put_in_group(self, user, telegram_id):
+        link = self.issue_for(user)
+        self.tg.join(telegram_id)
+        tg.handle_chat_member_update(
+            chat_member_update(telegram_user={"id": telegram_id}, invite_link=link)
+        )
+        return link
+
+    def _finish(self):
+        """What lc-up does when it deletes the group: archive the class, touch nothing else.
+
+        Straight to the column — `follow.archive_class` is lc-up's own code and has its own
+        tests; what matters here is the state it leaves behind.
+        """
+        Classroom.objects.filter(pk=self.classroom.pk).update(is_active=False)
+        self.classroom.refresh_from_db()
+
+    def test_freezing_leaves_a_finished_class_group_alone(self):
+        self._put_in_group(self.student, 1001)
+        self._finish()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertEqual(self.tg.kicked, [])
+        # And the row still says what is true: they are in that group.
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_JOINED)
+        self.assertTrue(
+            ClassroomTelegramEvent.objects.filter(
+                action=ClassroomTelegramEvent.ACTION_RECONCILED,
+                user=self.student,
+                detail__contains="this class is finished",
+            ).exists()
+        )
+
+    def test_they_are_not_told_they_were_removed(self):
+        """The freeze DM names the groups somebody came out of. A finished group is not one
+        of them, and a message naming it would be a lie they can check in one tap."""
+        self._put_in_group(self.student, 1001)
+        self._finish()
+        self.tg.messages.clear()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertFalse(
+            Notification.objects.filter(recipient=self.student, event="TELEGRAM_GROUP").exists()
+        )
+        self.assertEqual(self.tg.messages, [])
+
+    def test_a_freeze_still_empties_the_classes_that_are_running(self):
+        """The rule is about finished classes, not about freezing. A student in both comes
+        out of the live one and stays in the finished one, from a single freeze."""
+        live = Classroom.objects.create(
+            name="Junior G16 English",
+            subject=Classroom.SUBJECT_ENGLISH,
+            lesson_days=Classroom.DAYS_ODD,
+            created_by=self.admin,
+            teacher=self.teacher,
+            telegram_chat_id=OTHER_CHAT,
+        )
+        ClassroomMembership.objects.create(
+            classroom=live, user=self.student, role=ClassroomMembership.ROLE_STUDENT
+        )
+        self._put_in_group(self.student, 1001)
+        self.tg.members[(OTHER_CHAT, 1001)] = "member"
+        ClassroomTelegramMember.objects.create(
+            classroom=live, user=self.student, telegram_user_id=1001,
+            status=ClassroomTelegramMember.STATUS_JOINED,
+            observed_arrival_at=timezone.now(),
+        )
+        self._finish()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertEqual(self.tg.kicked, [(OTHER_CHAT, 1001)])
+
+    def test_losing_the_seat_leaves_them_in_the_finished_group(self):
+        """The ordinary end of a course in lc-up: the class is archived, and whatever happens
+        to the seat afterwards is bookkeeping, not a reason to empty the chat."""
+        self._put_in_group(self.student, 1001)
+        self._finish()
+        membership = ClassroomMembership.objects.get(
+            classroom=self.classroom, user=self.student
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            membership.status = ClassroomMembership.STATUS_REMOVED
+            membership.save(update_fields=["status"])
+
+        self.assertEqual(self.tg.kicked, [])
+        self.assertEqual(self.row(self.student).status, ClassroomTelegramMember.STATUS_JOINED)
+
+    def test_the_sweep_walks_past_a_finished_class(self):
+        self._put_in_group(self.student, 1001)
+        User.objects.filter(pk=self.student.pk).update(is_frozen=True)
+        self._finish()
+        before = ClassroomTelegramEvent.objects.count()
+
+        result = tg.audit_classroom(self.classroom, sleep=0)
+
+        self.assertEqual(result["removed"], 0)
+        self.assertEqual(self.tg.kicked, [])
+        # Silent, too: a half-hourly pass that logged every class it has finished with would
+        # bury the events somebody needs to read.
+        self.assertEqual(ClassroomTelegramEvent.objects.count(), before)
+
+    def test_an_admin_can_still_take_somebody_out_by_hand(self):
+        """Rule 4 is about automation. A person who has decided otherwise still has the
+        /ops button — the same exemption rules 1 and 3 already carry."""
+        self._put_in_group(self.student, 1001)
+        self._finish()
+        row = self.row(self.student)
+
+        self.assertTrue(
+            tg.remove_member(row, reason=ClassroomTelegramMember.REASON_MANUAL, force=True)
+        )
+        self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
+
+    def test_reopening_the_class_puts_the_group_back_under_the_bot(self):
+        """lc-up restores the group, `reopen_class` sets is_active again, and the class is
+        running: there is nothing to undo, because the rule reads the class, not a flag of
+        its own."""
+        self._put_in_group(self.student, 1001)
+        self._finish()
+        Classroom.objects.filter(pk=self.classroom.pk).update(is_active=True)
+        self.classroom.refresh_from_db()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            self.student.is_frozen = True
+            self.student.save(update_fields=["is_frozen"])
+
+        self.assertEqual(self.tg.kicked, [(CHAT, 1001)])
 
 
 class AuditSweepTests(TelegramGroupBase):

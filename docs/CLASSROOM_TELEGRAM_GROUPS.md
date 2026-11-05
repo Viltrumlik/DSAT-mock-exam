@@ -55,6 +55,7 @@ their own `/start` link does.
 | A stranger joins some other way | recorded and reported, **not** removed | — |
 | Account deleted | stays in the group; the record survives as an unrecognised member | (the account is gone) |
 | **Anything at all, to somebody who was in the group before the bot** | nothing | as above |
+| **Anything at all, once the class is finished** | nothing | archived |
 
 Unfreezing deliberately does not re-invite anybody. The student presses the button again.
 
@@ -63,7 +64,7 @@ can no longer identify (rule 1 below), so the row is kept with its Telegram hand
 in the staff roster as unrecognised — remove them from the group by hand. Freeze rather than
 delete if you want the group to look after itself.
 
-## The three safety rules
+## The four safety rules
 
 The automation is allowed to run unattended because it will not act outside these:
 
@@ -73,6 +74,31 @@ The automation is allowed to run unattended because it will not act outside thes
 2. **It never removes a chat administrator**, whatever the site believes.
 3. **It never removes somebody it did not watch arrive.** See below — this is the rule that
    makes switching an existing group over a safe thing to do.
+4. **It never removes anybody from a finished class's group.** See below — this is the rule
+   that makes *finishing* one safe.
+
+Rules 1, 3 and 4 are set aside by the /ops forced removal, which is a person deciding. Rule
+2 never is.
+
+## When a class finishes
+
+A course ends, lc-up's group is deleted, and `lcup.follow.archive_class` archives the class
+(`is_active=False` — the soft archive, nothing is deleted). An administrator archiving a
+class by hand is the same thing.
+
+From that moment **the chat is the group's own, not the site's.** Nobody is taken out of it
+for any reason: not a debt freeze three weeks later, not the seat finally being closed in
+the CRM, not the half-hourly sweep. The people in it finished the course together and the
+site has no further opinion about who sits in the room.
+
+This matters because the two halves come apart. Archiving does not touch the student seats —
+on 2026-11-05 the three archived classes that were connected still held 6, 1 and 3 live
+seats between them — so without rule 4 the next thing to happen to any of those students
+would have reached into a group nobody teaches in any more.
+
+If lc-up restores the group, `reopen_class` sets `is_active` back and the class is managed
+again from that moment. There is nothing to undo: the rule reads the class, not a flag of
+its own.
 
 ## Switching on a group that already has people in it
 

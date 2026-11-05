@@ -9,7 +9,7 @@ class here, because being frozen is a pause, not an expulsion. When they are unf
 nothing happens automatically: they come back to the classroom page and press the button
 again, and get a fresh link.
 
-Three rules govern everything below, and all three exist to make the automation safe to
+Four rules govern everything below, and all four exist to make the automation safe to
 leave running:
 
 1. **The bot never removes anyone it cannot account for.** A Telegram account that matches
@@ -25,11 +25,22 @@ leave running:
    sees. Somebody from before who leaves and comes back arrives *on the watch*, and from
    that moment is managed like anybody else — which is the only way anyone ever crosses
    from one side of this rule to the other.
+4. **The bot removes nobody from a finished class's group** (owner, 2026-11-05: *"tugatilgan
+   guruhlardagi o'quvchilar guruhlarida qolishlari kerak"*). When a course ends the class is
+   archived — lc-up deletes its group and ``follow.archive_class`` sets ``is_active=False``,
+   or an administrator does it by hand — and from that moment the chat is the group's own,
+   not the site's. The people in it finished the course together; a debt freeze three weeks
+   later must not reach back and empty a room nobody is teaching in any more.
 
 The third rule is the reason a freeze can be a no-op: a frozen student who has been in the
-group since before the bot cannot be taken out of it by anything here. Staff can see who
-those people are — ``GET /api/classes/<id>/telegram/members/`` flags them — and remove them
-by hand if the school wants that.
+group since before the bot cannot be taken out of it by anything here. The fourth makes a
+freeze a no-op for a whole class at once, which is the intended end state of every class:
+it finishes, and its group carries on without the bot.
+
+Both are visible rather than silent. Staff can see who the bot will not act on —
+``GET /api/classes/<id>/telegram/members/`` flags them — and the /ops forced removal
+(``remove_member(force=True)``) sets rules 1, 3 and 4 aside for a person who has decided
+otherwise. Never rule 2.
 """
 
 from __future__ import annotations
@@ -323,13 +334,15 @@ def may_enforce_against(user, chat_status: str) -> bool:
 
 
 def may_remove(row: ClassroomTelegramMember, chat_status: str) -> bool:
-    """All three rules, for a row we are about to act on.
+    """All four rules, for a row we are about to act on.
 
-    Rule 3 first, because it is the one that holds even when the person is unambiguously a
-    student who unambiguously should not be there: if the bot never saw them come in, this
-    is a member of a group that existed before it, and the group was not handed over to be
-    emptied. They are left alone until they leave and come back of their own accord.
+    Rule 4 first, then rule 3: both hold even when the person is unambiguously a student who
+    unambiguously should not be there. A finished class's group is nobody's to empty, and
+    neither is a group the bot joined late — they are left alone, and in rule 3's case until
+    they leave and come back of their own accord.
     """
+    if not row.classroom.is_active:
+        return False
     if not row.is_managed:
         return False
     return may_enforce_against(row.user, chat_status)
@@ -747,6 +760,31 @@ def remove_member(
             detail=(
                 "forced removal refused: could not read this account's status in the group "
                 "(it may be a chat admin), so it was left in place"
+            ),
+        )
+        row.last_checked_at = timezone.now()
+        row.save()
+        return False
+
+    if not force and not classroom.is_active:
+        # Rule 4. The class is finished, so the group is no longer the site's to manage:
+        # whatever has changed about this person — frozen, seat gone, moved to another
+        # centre — it is not a reason to take them out of a room where the course they
+        # finished happened.
+        #
+        # Before rule 3 because it is the broader statement: rule 3 is about one person the
+        # bot cannot account for, this is about every person in a group it has stopped
+        # looking after. The ticket is burned as in the other leave-in-place branches.
+        _clear_ticket(row)
+        log_event(
+            classroom=classroom,
+            action=ClassroomTelegramEvent.ACTION_RECONCILED,
+            user=row.user,
+            telegram_user_id=int(telegram_id),
+            reason=reason,
+            detail=(
+                f"left in place ({chat_status or 'unknown'}): this class is finished, so "
+                f"its group is no longer managed"
             ),
         )
         row.last_checked_at = timezone.now()
