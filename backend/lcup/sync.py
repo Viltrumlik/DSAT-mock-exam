@@ -502,7 +502,8 @@ def _reasons(client, run: _Run) -> None:
 
 def _attendance(client, run: _Run) -> None:
     """Closed registers of the last few days agree with lc-up; after the cutover, what lc-up lacks
-    is sent once (``lcup.attendance``). A register still open is the teacher's and is not read."""
+    is sent once (``lcup.attendance``). A register still open is the teacher's and is not read. Besides
+    the quarter hours, this runs as registers close (``tasks.push_closed_registers``)."""
     from classes import attendance_window
 
     if not attendance_pull_enabled():

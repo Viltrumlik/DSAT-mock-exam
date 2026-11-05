@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from classes.models import ClassroomMembership
 
-from .conf import attendance_pull_enabled, free_trial_lessons, lcup_enabled
+from .conf import attendance_pull_enabled, attendance_push_enabled, free_trial_lessons, lcup_enabled
 from .followups import missing_seats, trial_seats
 from .guards import is_lcup_managed
 from .models import GroupLinkStatus, LcupAbsenceReason, LcupMembership
@@ -21,6 +21,11 @@ LOCKED_REASON = (
 def follows_lcup(classroom) -> bool:
     """A closed register of this class is lc-up's, so nobody here writes it."""
     return attendance_pull_enabled() and is_lcup_managed(classroom)
+
+
+def pushes_to_lcup(classroom) -> bool:
+    """This class's closed registers are sent to lc-up, so they must close inside lc-up's window."""
+    return attendance_push_enabled() and follows_lcup(classroom)
 
 
 #: lc-up's status for a member it has paused: still in the group, but not attending and not billed.
