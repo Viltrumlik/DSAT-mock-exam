@@ -26,6 +26,7 @@ class AllowedSourcesTests(TestCase):
                 AssessmentSet.SOURCE_PREP_PROS,
                 AssessmentSet.SOURCE_HARD_QUESTIONS,
                 AssessmentSet.SOURCE_EXTERNAL,
+                *AssessmentSet.FOUNDATION_SOURCES,
             },
         )
         self.assertEqual(AssessmentSet.allowed_sources_for_subject("nope"), ())

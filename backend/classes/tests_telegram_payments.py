@@ -264,16 +264,20 @@ class PaymentMessageTests(TestCase):
 
         self.payment(1, created=at(16, 11))
         self.payment(2, created=at(16, 12) - timedelta(seconds=30))
-        run = mock.Mock(dry_run=False, now=at(16, 12))
-        with self.captureOnCommitCallbacks(execute=True):
-            _queue_payment_messages(run)
+        # The task gives the notifier no `now`, so it reads the clock and looks back RECENT_DAYS
+        # from there. Left on the real clock, these payments aged out of that on 24 October.
+        with mock.patch("django.utils.timezone.now", return_value=at(16, 12)):
+            run = mock.Mock(dry_run=False, now=at(16, 12))
+            with self.captureOnCommitCallbacks(execute=True):
+                _queue_payment_messages(run)
         self.assertEqual(len(self.tg.messages), 1)
         self.assertIsNotNone(LcupPayment.objects.get(lcup_payment_id=1).bot_notified_at)
         self.assertIsNone(LcupPayment.objects.get(lcup_payment_id=2).bot_notified_at)
         # The next sync starts later, so its cut-off no longer holds payment 2 back.
-        run = mock.Mock(dry_run=False, now=at(16, 13))
-        with self.captureOnCommitCallbacks(execute=True):
-            _queue_payment_messages(run)
+        with mock.patch("django.utils.timezone.now", return_value=at(16, 13)):
+            run = mock.Mock(dry_run=False, now=at(16, 13))
+            with self.captureOnCommitCallbacks(execute=True):
+                _queue_payment_messages(run)
         self.assertEqual(len(self.tg.messages), 2)
 
     def test_an_unreadable_cutoff_sends_nothing(self):
