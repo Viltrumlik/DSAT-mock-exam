@@ -765,7 +765,7 @@ export function AttendancePushesPanel() {
           <th scope="col" className={TH}>Lesson</th>
           <th scope="col" className={TH}>State</th>
           <th scope="col" className={TH}>Marks</th>
-          <th scope="col" className={TH}>Not taken by lc-up</th>
+          <th scope="col" className={TH}>Not taken by lc-up, or not sent</th>
         </>
       }
     >
@@ -783,11 +783,17 @@ export function AttendancePushesPanel() {
             <td className={cn(TD_WRAP, quiet && "text-muted-foreground")}>
               {quiet ? "—" : null}
               {push.error ? <p className="text-[12px] text-muted-foreground">{push.error}</p> : null}
-              {push.failures.map((failure, index) => (
-                <p key={`${push.id}-${index}`}>
-                  {failure.student?.name ?? "A student"} — lc-up did not take this mark ({failure.code || "unknown"})
-                </p>
-              ))}
+              {push.failures.map((failure, index) =>
+                failure.code === "no_account" ? (
+                  <p key={`${push.id}-${index}`} className="text-danger">
+                    {failure.name || "A student"} — no account here, so not sent: mark them in lc-up by hand
+                  </p>
+                ) : (
+                  <p key={`${push.id}-${index}`}>
+                    {failure.student?.name ?? "A student"} — lc-up did not take this mark ({failure.code || "unknown"})
+                  </p>
+                ),
+              )}
             </td>
           </tr>
         );

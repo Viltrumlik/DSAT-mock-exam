@@ -1,8 +1,9 @@
 """Sending what only we have to lc-up — once per group and day, never before the cutover.
 
 lc-up charges the day's fee and messages the parents' bot for every mark it receives, so every
-refusal to send here is a guard on money: the switch, the cutover date, a student lc-up has that we
-could not match, and the one-push-per-register rule.
+refusal to send here is a guard on money: the switch, the cutover date and the one-push-per-register
+rule. A student lc-up has that we could not match is not sent and is named on the push; the rest of
+the group still goes (owner, 2026-11-06).
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from django.test import override_settings
 from django.utils import timezone
 
-from lcup.attendance import plan_day, push_day, push_held_reason
+from lcup.attendance import NO_ACCOUNT, plan_day, push_day
 from lcup.client import LcupUnavailable, LcupWindowClosed
 from lcup.models import LcupAttendancePush, LcupMembership, LcupStudentLink
 from lcup.testing import POST_ATTENDANCE, FakeLcupClient
@@ -59,14 +60,34 @@ class PushTests(ReconcileFixture):
         self.assertIsNone(self.push(client))
         self.assertEqual(client.posts, [])
 
-    def test_an_lcup_student_with_no_account_here_holds_the_push(self):
-        # Their fee would be missed: we can only send the students we know.
+    def test_an_lcup_student_with_no_account_here_does_not_hold_the_others(self):
+        # Prod, 2026-11: holding the whole group until the account was fixed let lc-up's window close
+        # on G27 three times — every mark lost, not one. The others go; the one we cannot send is named.
         unknown = LcupStudentLink.objects.create(lcup_student_id=555, name="Unknown Student")
         LcupMembership.objects.create(group=self.link, student=unknown, lcup_status="active")
         client = FakeLcupClient({})
-        self.assertIsNone(self.push(client))
-        self.assertEqual(client.posts, [])
-        self.assertIn(self.link.name, push_held_reason(self.link))
+        push = self.push(client)
+        self.assertEqual([r["student_id"] for r in client.posts[0][2]], [101, 102])
+        self.assertEqual(push.state, LcupAttendancePush.STATE_SENT)
+        self.assertEqual(
+            [(f["user_id"], f["student_id"], f["code"], f["name"]) for f in push.failures],
+            [(None, 555, NO_ACCOUNT, "Unknown Student")],
+        )
+
+    def test_a_frozen_or_departed_member_with_no_account_is_not_named(self):
+        # lc-up takes no mark for a frozen member, and one who left is not on the lesson at all.
+        frozen = LcupStudentLink.objects.create(lcup_student_id=556, name="Frozen Student")
+        LcupMembership.objects.create(group=self.link, student=frozen, lcup_status="frozen")
+        gone = LcupStudentLink.objects.create(lcup_student_id=557, name="Gone Student")
+        LcupMembership.objects.create(group=self.link, student=gone, lcup_status="active", left_at=timezone.now())
+        self.assertEqual(self.push(FakeLcupClient({})).failures, [])
+
+    def test_a_member_with_no_account_is_not_named_on_a_refused_push(self):
+        # Nothing went, so the push's own refusal is the whole story.
+        unknown = LcupStudentLink.objects.create(lcup_student_id=555, name="Unknown Student")
+        LcupMembership.objects.create(group=self.link, student=unknown, lcup_status="active")
+        push = self.push(FakeLcupClient({POST_ATTENDANCE: LcupWindowClosed("lc-up answered 403")}))
+        self.assertEqual((push.state, push.failures), (LcupAttendancePush.STATE_REFUSED, []))
 
     def test_a_member_lcup_holds_frozen_is_not_sent(self):
         # lc-up refuses a frozen member's mark (not_in_group, 13 of 13 on prod by 2026-10-16).
@@ -134,7 +155,8 @@ class PushListViewTests(ReconcileFixture):
             records=[{"user_id": self.s1.pk, "student_id": 101, "status": "present"},
                      {"user_id": self.s2.pk, "student_id": 102, "status": "absent"}],
             summary={"saved": 1, "failed": 1},
-            failures=[{"user_id": self.s2.pk, "student_id": 102, "code": "blocked_debt", "message": "x"}],
+            failures=[{"user_id": self.s2.pk, "student_id": 102, "code": "blocked_debt", "message": "x"},
+                      {"user_id": None, "student_id": 555, "code": NO_ACCOUNT, "name": "Unknown Student", "message": "y"}],
         )
         api = APIClient()
         api.force_authenticate(User.objects.create_user(None, password=None, username="boss", role="admin"))
@@ -144,6 +166,10 @@ class PushListViewTests(ReconcileFixture):
         self.assertEqual((push["group"], push["date"], push["state"], push["marks"]), (self.link.name, DAY.isoformat(), "sent", 2))
         self.assertEqual(push["failures"][0]["code"], "blocked_debt")
         self.assertEqual(push["failures"][0]["student"]["id"], self.s2.pk)
+        self.assertEqual(
+            (push["failures"][1]["student"], push["failures"][1]["name"], push["failures"][1]["code"]),
+            (None, "Unknown Student", NO_ACCOUNT),
+        )
 
     def test_a_teacher_is_refused(self):
         from rest_framework.test import APIClient

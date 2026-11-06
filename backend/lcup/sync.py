@@ -32,7 +32,7 @@ from classes.models import Branch, Classroom, ClassroomMembership
 
 from . import audience, finance, profiles
 from .accounts import create_account_for, create_teacher_account_for
-from .attendance import apply_day, plan_day, push_day, push_held_reason
+from .attendance import NO_ACCOUNT, apply_day, plan_day, push_day
 from .classrooms import branch_for, create_classroom_for, supporters_for, teachers_for
 from .client import LcupAuthError
 from .conf import attendance_pull_enabled, attendance_push_enabled, attendance_push_from
@@ -531,7 +531,6 @@ def _attendance(client, run: _Run) -> None:
         .select_related("classroom")
     )
     for link in links:
-        held = push_held_reason(link)
         for day in days:
             if attendance_window.marking_state(link.classroom, day, now=run.now) != attendance_window.STATE_LOCKED:
                 continue
@@ -548,9 +547,6 @@ def _attendance(client, run: _Run) -> None:
                 continue
             if not plan.push:
                 continue
-            if held:
-                run.alerts.append(held)
-                continue
             if run.dry_run:
                 run.counts["att_would_push"] += len(plan.push)
                 continue
@@ -562,10 +558,16 @@ def _report_push(run: _Run, link, day, push) -> None:
         return
     where = f"{link.name} {day.isoformat()}"
     if push.state == LcupAttendancePush.STATE_SENT:
-        run.counts["att_pushed"] += len(push.records) - len(push.failures)
-        if push.failures:
-            codes = ", ".join(sorted({f["code"] or "unknown" for f in push.failures}))
-            run.alerts.append(f"lc-up did not take {len(push.failures)} attendance mark(s) for {where}: {codes}")
+        unsent = [f for f in push.failures if f.get("code") == NO_ACCOUNT]
+        refused = [f for f in push.failures if f.get("code") != NO_ACCOUNT]
+        run.counts["att_pushed"] += len(push.records) - len(refused)
+        if refused:
+            codes = ", ".join(sorted({f["code"] or "unknown" for f in refused}))
+            run.alerts.append(f"lc-up did not take {len(refused)} attendance mark(s) for {where}: {codes}")
+        if unsent:
+            names = ", ".join(f.get("name") or f"lc-up student {f.get('student_id')}" for f in unsent)
+            run.counts["att_unsent_no_account"] += len(unsent)
+            run.alerts.append(f"attendance for {where} went without {names}: no account here — mark them in lc-up by hand")
     elif push.state == LcupAttendancePush.STATE_REFUSED:
         run.alerts.append(f"lc-up refused attendance for {where}: its attendance window is closed")
     else:

@@ -124,7 +124,8 @@ export interface LcupAttendancePush {
   attempts: number;
   marks: number;
   summary: { saved?: number; deleted?: number; unchanged?: number; failed?: number };
-  failures: { student: LcupUserRef | null; code: string; message: string }[];
+  /** lc-up's refusals, and ours: `no_account` is a member we never had an account for (named by lc-up's `name`). */
+  failures: { student: LcupUserRef | null; name?: string; code: string; message: string }[];
   error: string;
   sent_at: string | null;
 }
